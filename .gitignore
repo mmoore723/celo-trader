@@ -8,3 +8,10 @@ __pycache__/
 .DS_Store
 .fuse_hidden*
 bot.log.*
+*.db-wal
+*.db-shm
+tax_sweep.json
+tax_profile.json
+user_settings.json
+daily_universe.json
+scanner_state.json
