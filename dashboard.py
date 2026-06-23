@@ -1214,7 +1214,9 @@ except Exception:
 
 # ── Nav session state — initialise before sidebar renders ─────────────────────
 if "nav_page" not in st.session_state:
-    st.session_state["nav_page"] = "brief"
+    # Restore from URL query param on refresh so the page doesn't reset
+    _qp = st.query_params.get("page", "brief")
+    st.session_state["nav_page"] = _qp
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -1273,6 +1275,7 @@ with st.sidebar:
             use_container_width=True,
         ):
             st.session_state["nav_page"] = _nav_key
+            st.query_params["page"] = _nav_key
             st.rerun()
     st.markdown("<hr style='border-color:#cccccc;margin:10px 0'/>", unsafe_allow_html=True)
     # Live status
@@ -1310,9 +1313,11 @@ with st.sidebar:
         )
     st.markdown("---")
     # ── Bot start / stop ──────────────────────────────────────────────────────
+    # Use bot_state.json as source of truth — LIVE_STATE is only populated when
+    # the bot runs in the same process (not via systemd).
     if "bot_running" not in st.session_state:
-        st.session_state["bot_running"] = bool(LIVE_STATE.get("running", False))
-    _bot_running_now = st.session_state.get("bot_running", False) or bool(LIVE_STATE.get("running", False))
+        st.session_state["bot_running"] = bool(_sidebar_bot.get("running", False))
+    _bot_running_now = bool(_sidebar_bot.get("running", False))
     if _bot_running_now:
         st.markdown(
             "<style>"
