@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Celo Trader — EC2 Bootstrap Script
-# Run this ONCE on a fresh Ubuntu 22.04 EC2 instance:
+# Run this ONCE on a fresh Amazon Linux 2023 EC2 instance:
 #   chmod +x setup_ec2.sh && sudo ./setup_ec2.sh
 # =============================================================================
 set -euo pipefail
@@ -10,12 +10,12 @@ APP_DIR="/opt/celo_trader"
 APP_USER="celo"
 
 echo "━━━ [1/7] System packages ━━━"
-apt-get update -qq
-apt-get install -y -qq \
-    python3.11 python3.11-venv python3-pip \
+dnf update -y -q
+dnf install -y -q \
+    python3.11 python3.11-pip \
     git curl unzip rsync \
-    build-essential libssl-dev libffi-dev \
-    sqlite3 \
+    gcc openssl-devel libffi-devel \
+    sqlite \
     nginx
 
 echo "━━━ [2/7] Create app user ━━━"
@@ -100,10 +100,11 @@ systemctl daemon-reload
 systemctl enable celo-bot.service celo-dashboard.service
 echo "Services registered."
 
-echo "━━━ [7/7] Firewall (UFW) ━━━"
-ufw allow 22/tcp   comment "SSH"
-ufw allow 8501/tcp comment "Streamlit dashboard"
-ufw --force enable
+echo "━━━ [7/7] Firewall (firewalld) ━━━"
+systemctl enable --now firewalld
+firewall-cmd --permanent --add-service=ssh
+firewall-cmd --permanent --add-port=8501/tcp
+firewall-cmd --reload
 echo "Firewall configured."
 
 echo ""

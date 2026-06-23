@@ -72,7 +72,7 @@ Upload the setup script and run it:
 
 ```bash
 # From your Mac (in the celo_trader directory)
-scp -i ~/.ssh/celo_trader.pem deploy/setup_ec2.sh ubuntu@YOUR_ELASTIC_IP:~
+scp -i ~/.ssh/celo_trader.pem deploy/setup_ec2.sh ec2-user@3.148.153.141:~
 
 # On the server
 chmod +x setup_ec2.sh
