@@ -6,3 +6,5 @@ scanner_state.json
 __pycache__/
 *.pyc
 .DS_Store
+.fuse_hidden*
+bot.log.*
