@@ -1,0 +1,36 @@
+# ─── Celo Trader — Python Dependencies ────────────────────────────────────
+# Install with: pip install -r requirements.txt
+#
+# TA-Lib requires a separate C library installation — see SETUP.md for details.
+# If you cannot install TA-Lib, the bot falls back to pandas_ta for most indicators
+# (candlestick pattern recognition will be unavailable without the C library).
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+numpy>=1.24.0
+pandas>=2.0.0
+python-dotenv>=1.0.0
+
+# ── Technical Analysis ────────────────────────────────────────────────────────
+# TA-Lib and pandas-ta are optional — the bot uses pure-pandas indicators.
+# TA-Lib requires a C library; pandas-ta requires numba (unsupported on Py 3.14).
+# Uncomment only if you have a Python 3.10–3.13 environment.
+# TA-Lib>=0.4.28
+# pandas-ta
+
+# ── Broker / API ──────────────────────────────────────────────────────────────
+requests>=2.31.0
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+streamlit>=1.35.0
+plotly>=5.22.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+# sqlite3 is part of Python stdlib — no extra package needed
+
+# ── Optional: faster HTTP for API calls ───────────────────────────────────────
+httpx>=0.27.0
+
+pytz>=2024.1              # timezone handling for market hours
+
+# ── Market data fallback (ETFs on IEX-free tier have no data) ─────────────────
+yfinance>=0.2.40          # Yahoo Finance fallback for SPY/QQQ and any IEX gap

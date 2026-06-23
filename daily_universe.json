@@ -1,0 +1,38 @@
+{
+  "date": "2026-06-23",
+  "universe": [
+    "NFLX",
+    "BAC"
+  ],
+  "scan_details": [
+    {
+      "ticker": "NFLX",
+      "price": 73.55,
+      "gap_pct": -1.552,
+      "abs_gap": 1.552,
+      "gap_dir": "down",
+      "daily_vol": 6080917,
+      "prev_close": 77.33,
+      "avg_daily_vol": 2241636,
+      "atr_usd": 2.31,
+      "rvol": 211.59,
+      "rvol_capped": 20.0,
+      "score": 14.333651
+    },
+    {
+      "ticker": "BAC",
+      "price": 57.36,
+      "gap_pct": 1.389,
+      "abs_gap": 1.389,
+      "gap_dir": "up",
+      "daily_vol": 2847161,
+      "prev_close": 56.15,
+      "avg_daily_vol": 2254318,
+      "atr_usd": 1.07,
+      "rvol": 98.51,
+      "rvol_capped": 20.0,
+      "score": 5.948809
+    }
+  ],
+  "written_utc": "2026-06-23T13:30:09.956872"
+}
