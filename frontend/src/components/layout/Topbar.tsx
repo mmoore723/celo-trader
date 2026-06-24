@@ -1,8 +1,9 @@
 /**
  * Topbar — brand + live bot status strip + theme toggle.
  */
-import { Wifi, WifiOff, TrendingUp, TrendingDown } from "lucide-react";
+import { Wifi, WifiOff, TrendingUp, TrendingDown, Menu } from "lucide-react";
 import { useBotStore } from "../../store/bot";
+import { useUIStore } from "../../store/ui";
 import { ThemeToggle } from "./ThemeToggle";
 
 function fmt(n: number, prefix = "$") {
@@ -12,6 +13,7 @@ function fmt(n: number, prefix = "$") {
 
 export function Topbar() {
   const { status, connected } = useBotStore();
+  const { toggleMobileSidebar } = useUIStore();
 
   const pnl   = status?.session_pnl ?? 0;
   const bal   = status?.account_balance ?? 0;
@@ -23,6 +25,16 @@ export function Topbar() {
       className="app-topbar flex items-center px-5 gap-4 border-b"
       style={{ background: "var(--surface)", borderColor: "var(--border)" }}
     >
+      {/* Hamburger — mobile only */}
+      <button
+        className="hamburger-btn btn btn-ghost btn-sm shrink-0"
+        style={{ padding: "6px" }}
+        onClick={toggleMobileSidebar}
+        aria-label="Menu"
+      >
+        <Menu size={18} />
+      </button>
+
       {/* Brand */}
       <div className="flex items-center gap-2 shrink-0">
         <span

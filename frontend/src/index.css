@@ -182,3 +182,55 @@ html, body, #root {
 }
 .data-table tr:hover td { background: var(--muted); }
 .data-table tr:last-child td { border-bottom: none; }
+
+/* Hide hamburger on desktop */
+.hamburger-btn { display: none; }
+
+/* ── Responsive grid helpers ─────────────────────────────────────────────── */
+.chart-scanner-grid { grid-template-columns: 1fr 220px; }
+.two-col-grid        { grid-template-columns: 1fr 1fr; }
+
+/* ── Mobile responsive ───────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "topbar"
+      "main";
+  }
+
+  /* Sidebar slides in as a drawer */
+  .app-sidebar {
+    position: fixed;
+    left: -264px;
+    top: var(--topbar-h);
+    width: 240px;
+    height: calc(100vh - var(--topbar-h));
+    z-index: 50;
+    transition: left 0.22s ease;
+    box-shadow: var(--shadow-panel);
+    border-right: 1px solid var(--border);
+  }
+
+  .app-sidebar.mobile-open {
+    left: 0;
+  }
+
+  /* Scrim behind open sidebar */
+  .mobile-scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    top: var(--topbar-h);
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 49;
+  }
+  .mobile-scrim.active { display: block; }
+
+  /* Show hamburger on mobile */
+  .hamburger-btn { display: inline-flex; }
+
+  /* Stack grids on mobile */
+  .chart-scanner-grid { grid-template-columns: 1fr; }
+  .two-col-grid        { grid-template-columns: 1fr; }
+}

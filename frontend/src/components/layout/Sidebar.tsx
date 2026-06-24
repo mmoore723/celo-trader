@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useBotStore } from "../../store/bot";
+import { useUIStore } from "../../store/ui";
 import { api } from "../../lib/api";
 import { useState } from "react";
 
@@ -28,6 +29,7 @@ const NAV: NavItem[] = [
 
 export function Sidebar() {
   const { status } = useBotStore();
+  const { mobileSidebarOpen, closeMobileSidebar } = useUIStore();
   const running = status?.running ?? false;
   const [busy, setBusy] = useState(false);
 
@@ -46,8 +48,13 @@ export function Sidebar() {
   }
 
   return (
+    <>
+      {/* Mobile scrim */}
+      {mobileSidebarOpen && (
+        <div className="mobile-scrim active" onClick={closeMobileSidebar} />
+      )}
     <aside
-      className="app-sidebar flex flex-col border-r overflow-y-auto"
+      className={`app-sidebar flex flex-col border-r overflow-y-auto${mobileSidebarOpen ? " mobile-open" : ""}`}
       style={{ background: "var(--sidebar-bg)", borderColor: "var(--border)" }}
     >
       {/* Nav links */}
@@ -57,6 +64,7 @@ export function Sidebar() {
             key={item.to}
             to={item.to}
             end={item.to === "/"}
+            onClick={closeMobileSidebar}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -114,5 +122,6 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }

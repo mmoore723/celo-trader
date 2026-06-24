@@ -58,7 +58,7 @@ export function LiveTrading() {
   return (
     <div className="p-4 flex flex-col gap-4">
       {/* Stat bar */}
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3">
         {[
           { label: "Balance",    value: `$${(status?.account_balance ?? 0).toFixed(2)}` },
           { label: "Session P&L",value: <PnlBadge value={status?.session_pnl} /> },
@@ -77,7 +77,7 @@ export function LiveTrading() {
       </div>
 
       {/* Main grid: chart + scanner */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 220px" }}>
+      <div className="grid gap-4 chart-scanner-grid">
         {/* Chart panel */}
         <div className="card overflow-hidden">
           {/* Chart toolbar */}
@@ -215,7 +215,7 @@ export function LiveTrading() {
       </div>
 
       {/* Open positions + eval log */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+      <div className="grid gap-4 two-col-grid">
         {/* Open positions */}
         <div className="card">
           <div
