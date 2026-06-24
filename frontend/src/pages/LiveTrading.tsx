@@ -24,7 +24,9 @@ export function LiveTrading() {
   const [ticker, setTicker] = useState("SPY");
   const [tf, setTf] = useState("5Min");
   const [showVwap, setShowVwap] = useState(true);
+  const [showVwapBands, setShowVwapBands] = useState(true);
   const [showOR, setShowOR] = useState(true);
+  const [showSwings, setShowSwings] = useState(true);
   const { status, logs } = useBotStore();
 
   const { data: bars = [], isLoading: barsLoading } = useQuery({
@@ -54,6 +56,15 @@ export function LiveTrading() {
 
   // Trades for the current ticker
   const tickerTrades = openTrades.filter((t: Trade) => t.ticker === ticker);
+
+  // Build position levels from first open trade on this ticker (if any)
+  const openTickerTrade = tickerTrades.find((t: Trade) => !t.exit_time);
+  const positionLevels = openTickerTrade ? {
+    entry:  openTickerTrade.entry_price  ?? undefined,
+    stop:   openTickerTrade.stop_price   ?? undefined,
+    target: openTickerTrade.target_price ?? undefined,
+    trail:  openTickerTrade.trail_price  ?? undefined,
+  } : undefined;
 
   return (
     <div className="p-4 flex flex-col gap-4">
@@ -108,18 +119,19 @@ export function LiveTrading() {
             </div>
 
             {/* Overlay toggles */}
-            <label className="flex items-center gap-1.5 cursor-pointer text-xs"
-                   style={{ color: "var(--ink-muted)" }}>
-              <input type="checkbox" checked={showVwap}
-                     onChange={(e) => setShowVwap(e.target.checked)} />
-              VWAP
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer text-xs"
-                   style={{ color: "var(--ink-muted)" }}>
-              <input type="checkbox" checked={showOR}
-                     onChange={(e) => setShowOR(e.target.checked)} />
-              OR
-            </label>
+            {([
+              ["VWAP",    showVwap,      setShowVwap],
+              ["Bands",   showVwapBands, setShowVwapBands],
+              ["OR",      showOR,        setShowOR],
+              ["Swings",  showSwings,    setShowSwings],
+            ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
+              <label key={label} className="flex items-center gap-1 cursor-pointer text-xs"
+                     style={{ color: "var(--ink-muted)" }}>
+                <input type="checkbox" checked={val}
+                       onChange={(e) => setter(e.target.checked)} />
+                {label}
+              </label>
+            ))}
 
             <div className="flex-1" />
             {barsLoading && <RefreshCw size={13} className="animate-spin text-ink-muted" />}
@@ -129,9 +141,12 @@ export function LiveTrading() {
             bars={bars}
             trades={tickerTrades}
             showVwap={showVwap}
+            showVwapBands={showVwapBands}
             showOR={showOR}
+            showSwings={showSwings}
             orHigh={or?.high}
             orLow={or?.low}
+            positionLevels={positionLevels}
             ticker={ticker}
             height={420}
           />

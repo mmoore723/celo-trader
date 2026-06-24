@@ -41,6 +41,9 @@ export interface Trade {
   strategy_id?: string;
   entry_price: number;
   exit_price?: number;
+  stop_price?: number;
+  target_price?: number;
+  trail_price?: number;
   contracts: number;
   pnl?: number;
   status: string;
@@ -66,6 +69,10 @@ export interface Bar {
   close: number;
   volume: number;
   vwap?: number;
+  vwap_upper1?: number;
+  vwap_lower1?: number;
+  vwap_upper2?: number;
+  vwap_lower2?: number;
   rvol?: number;
   atr?: number;
 }

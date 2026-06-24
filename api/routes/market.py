@@ -21,7 +21,7 @@ def get_bars(
                trading engine for the SPY VWAP gate. Covers 4 AM–8 PM ET.
     """
     import pandas as pd
-    from signals import bars_to_df, compute_vwap, compute_rvol, compute_atr
+    from signals import bars_to_df, compute_vwap, compute_vwap_bands, compute_rvol, compute_atr
 
     df = pd.DataFrame()
 
@@ -82,9 +82,16 @@ def get_bars(
     if df.empty:
         raise HTTPException(status_code=503, detail=f"No bar data available for {ticker} from Alpaca or yfinance")
 
-    df["vwap"] = compute_vwap(df)
     df["rvol"] = compute_rvol(df)
     df["atr"]  = compute_atr(df)
+    # compute_vwap_bands returns a df with vwap, vwap_upper1/2, vwap_lower1/2
+    bands_df = compute_vwap_bands(df)
+    for col in ("vwap", "vwap_upper1", "vwap_lower1", "vwap_upper2", "vwap_lower2"):
+        df[col] = bands_df[col] if col in bands_df.columns else None
+
+    def _f(row: pd.Series, col: str):
+        v = row.get(col)
+        return float(v) if v is not None and pd.notna(v) else None
 
     result = []
     for _, row in df.iterrows():
@@ -96,9 +103,13 @@ def get_bars(
             low=float(row["low"]),
             close=float(row["close"]),
             volume=float(row.get("volume", 0)),
-            vwap=float(row["vwap"]) if pd.notna(row.get("vwap")) else None,
-            rvol=float(row["rvol"]) if pd.notna(row.get("rvol")) else None,
-            atr=float(row["atr"])  if pd.notna(row.get("atr"))  else None,
+            vwap=        _f(row, "vwap"),
+            vwap_upper1= _f(row, "vwap_upper1"),
+            vwap_lower1= _f(row, "vwap_lower1"),
+            vwap_upper2= _f(row, "vwap_upper2"),
+            vwap_lower2= _f(row, "vwap_lower2"),
+            rvol=        _f(row, "rvol"),
+            atr=         _f(row, "atr"),
         ))
     return result
 

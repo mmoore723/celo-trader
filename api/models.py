@@ -65,6 +65,10 @@ class Bar(BaseModel):
     close: float
     volume: float
     vwap: Optional[float]
+    vwap_upper1: Optional[float]
+    vwap_lower1: Optional[float]
+    vwap_upper2: Optional[float]
+    vwap_lower2: Optional[float]
     rvol: Optional[float]
     atr: Optional[float]
 
