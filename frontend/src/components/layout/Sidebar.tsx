@@ -3,7 +3,7 @@
  */
 import {
   Activity, BarChart2, BookOpen, Settings,
-  FlaskConical, Newspaper, Power, StopCircle, Skull,
+  FlaskConical, Newspaper, Power, StopCircle, Skull, CalendarDays,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useBotStore } from "../../store/bot";
@@ -22,6 +22,7 @@ const NAV: NavItem[] = [
   { label: "Trade Journal", to: "/journal",     icon: <BookOpen size={16} /> },
   { label: "Backtest",      to: "/backtest",    icon: <FlaskConical size={16} /> },
   { label: "Playbooks",     to: "/playbooks",   icon: <Newspaper size={16} /> },
+  { label: "Daily Brief",   to: "/daily-brief", icon: <CalendarDays size={16} /> },
   { label: "Settings",      to: "/settings",    icon: <Settings size={16} /> },
 ];
 

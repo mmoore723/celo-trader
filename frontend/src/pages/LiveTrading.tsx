@@ -143,12 +143,12 @@ export function LiveTrading() {
             className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
             style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
           >
-            Scanner
+            Premarket Scanner
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="overflow-y-auto">
             {scanner.length === 0 ? (
               <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                No results yet
+                No scan results yet — bot scans 9:00–9:25 ET
               </p>
             ) : (
               scanner.map((s) => (
@@ -173,6 +173,42 @@ export function LiveTrading() {
                   </span>
                 </button>
               ))
+            )}
+          </div>
+
+          {/* Pending signal — what the bot is looking to enter */}
+          <div
+            className="border-t px-3 py-2 text-xs font-semibold uppercase tracking-wider"
+            style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
+          >
+            Bot Focus
+          </div>
+          <div className="px-3 pb-3 flex flex-col gap-1.5">
+            {status?.ticker ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-sm" style={{ color: "var(--ink)" }}>
+                    {status.ticker}
+                  </span>
+                  {status.last_strategy_id && (
+                    <span className="badge badge-blue">{status.last_strategy_id}</span>
+                  )}
+                </div>
+                {status.last_signal && (
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+                    {status.last_signal}
+                  </p>
+                )}
+                {status.current_stop_pct != null && (
+                  <div className="text-xs num" style={{ color: "var(--negative)" }}>
+                    Stop: {(status.current_stop_pct * 100).toFixed(1)}% from entry
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                Waiting for bot to start scanning…
+              </p>
             )}
           </div>
         </div>
@@ -239,7 +275,7 @@ export function LiveTrading() {
             className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
             style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
           >
-            Eval Log
+            Bot Thinking
           </div>
           <div
             className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs"

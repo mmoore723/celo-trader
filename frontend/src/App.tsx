@@ -12,6 +12,7 @@ import { Journal }     from "./pages/Journal";
 import { Settings }    from "./pages/Settings";
 import { Backtest }    from "./pages/Backtest";
 import { Playbooks }   from "./pages/Playbooks";
+import { DailyBrief }  from "./pages/DailyBrief";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -38,6 +39,7 @@ function AppShell() {
           <Route path="/backtest"   element={<Backtest />} />
           <Route path="/playbooks"  element={<Playbooks />} />
           <Route path="/settings"   element={<Settings />} />
+          <Route path="/daily-brief" element={<DailyBrief />} />
         </Routes>
       </main>
     </div>
