@@ -228,17 +228,11 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 if direction == "bearish" and close >= vwap:
                     logger.debug("[%s] INST_ORB VWAP gate: bearish but close %.2f >= vwap %.2f, skip", ticker, close, vwap)
                     continue
-            else:
-                # Flipped signal: proximity check — price should still be near VWAP
-                # (within 1 ATR or 0.5% of VWAP), not screaming away from it.
-                vwap_proximity = abs(close - vwap)
-                vwap_limit     = max(atr, vwap * 0.005)
-                if vwap_proximity > vwap_limit:
-                    logger.debug(
-                        "[%s] INST_ORB flip VWAP proximity gate: |close %.2f - vwap %.2f| = %.2f > limit %.2f, skip",
-                        ticker, close, vwap, vwap_proximity, vwap_limit,
-                    )
-                    continue
+            # Flipped/fade entries: skip the VWAP proximity check entirely.
+            # On large gap-down days price breaks the OR Low well below VWAP —
+            # the proximity gate was incorrectly blocking the highest-probability
+            # snapback setups. OR-level rejection + MSA trend validation are
+            # sufficient for flipped entries; VWAP distance is irrelevant.
 
         # ── All gates passed — build signal ───────────────────────────────────
         confidence = _compute_confidence(

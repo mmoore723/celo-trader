@@ -44,7 +44,7 @@ def _debounced_log(level: str, module: str, message: str) -> None:
 
 # ── Retry helper ──────────────────────────────────────────────────────────────
 
-def _retry(fn, retries: int = 3, delay: float = 1.5):
+def _retry(fn, retries: int = 3, delay: float = 0.5):
     """
     Linear back-off retry: 1.5s, 3s, 4.5s.
 

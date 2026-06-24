@@ -78,6 +78,8 @@ class MarketStructureAnalyzer:
         n  = len(df)
         lb = self.LOOKBACK
 
+        # ── Confirmed pivots: require lb bars on BOTH sides ───────────────────
+        # These are fully confirmed — higher accuracy, 5-bar lag vs. live price.
         for i in range(lb, n - lb):
             bar   = df.iloc[i]
             left  = df.iloc[i - lb : i]
@@ -89,6 +91,25 @@ class MarketStructureAnalyzer:
             if bar["low"] < left["low"].min() and bar["low"] < right["low"].min():
                 pivots.append({"idx": i, "price": float(bar["low"]),
                                "type": "low",  "time": bar["time"]})
+
+        # ── Real-time fallback: left-side only for the last lb bars ───────────
+        # The confirmed loop above can never detect pivots within the last lb bars
+        # because right-side bars don't exist yet. This creates a 5-minute lag on
+        # 1-min charts — the bot enters trend-continuation setups at the end of the
+        # move rather than the start. The fallback uses only left-side confirmation
+        # (weaker but immediate) to surface structure shifts as they happen.
+        rt_start = max(lb, n - lb)
+        for i in range(rt_start, n):
+            bar  = df.iloc[i]
+            left = df.iloc[max(0, i - lb) : i]
+            if left.empty:
+                continue
+            if bar["high"] > left["high"].max():
+                pivots.append({"idx": i, "price": float(bar["high"]),
+                               "type": "high", "time": bar["time"], "realtime": True})
+            if bar["low"] < left["low"].min():
+                pivots.append({"idx": i, "price": float(bar["low"]),
+                               "type": "low",  "time": bar["time"], "realtime": True})
 
         pivots.sort(key=lambda p: p["idx"])
         return pivots
@@ -156,7 +177,11 @@ def _get_dynamic_rvol_threshold(
     msa_confirmed: bool = False,
 ) -> float:
     if msa_confirmed:
-        threshold = 0.75
+        # MSA confirmation means structure is validated — return the relaxed
+        # threshold directly and bypass the early-session floor entirely.
+        # Previously the floor of 1.0 silently overrode this 0.75, blocking
+        # valid early-session entries even when structure was fully confirmed.
+        return 0.75
     elif strategy_id == "CHAN_BREAK":
         threshold = 1.0
     else:
