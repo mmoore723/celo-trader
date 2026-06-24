@@ -23,6 +23,9 @@ def get_settings_endpoint() -> Settings:
         vwap_pullback_enabled=bool(s.get("vwap_pullback_enabled", True)),
         fvg_enabled=bool(s.get("fvg_enabled", True)),
         bos_mss_enabled=bool(s.get("bos_mss_enabled", True)),
+        chan_break_enabled=bool(s.get("strategy_chan_enabled", True)),
+        mid_brk_enabled=bool(s.get("strategy_mid_enabled", True)),
+        trend_cont_enabled=bool(s.get("strategy_tcont_enabled", True)),
     )
 
 
@@ -30,6 +33,11 @@ def get_settings_endpoint() -> Settings:
 def save_settings_endpoint(payload: Settings) -> Settings:
     from config import get_settings, save_settings
     current = get_settings()
-    current.update(payload.model_dump())
+    data = payload.model_dump()
+    # Map frontend field names → settings.json keys used by entry.py
+    data["strategy_chan_enabled"]  = data.pop("chan_break_enabled", True)
+    data["strategy_mid_enabled"]   = data.pop("mid_brk_enabled", True)
+    data["strategy_tcont_enabled"] = data.pop("trend_cont_enabled", True)
+    current.update(data)
     save_settings(current)
     return payload

@@ -97,6 +97,9 @@ export interface AppSettings {
   vwap_pullback_enabled: boolean;
   fvg_enabled: boolean;
   bos_mss_enabled: boolean;
+  chan_break_enabled: boolean;
+  mid_brk_enabled: boolean;
+  trend_cont_enabled: boolean;
 }
 
 export interface PerformanceStats {

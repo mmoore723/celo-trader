@@ -98,6 +98,9 @@ class Settings(BaseModel):
     vwap_pullback_enabled: bool
     fvg_enabled: bool
     bos_mss_enabled: bool
+    chan_break_enabled: bool = True
+    mid_brk_enabled: bool = True
+    trend_cont_enabled: bool = True
 
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
