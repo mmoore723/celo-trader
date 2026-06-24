@@ -60,10 +60,12 @@ export function LiveTrading() {
   // Build position levels from first open trade on this ticker (if any)
   const openTickerTrade = tickerTrades.find((t: Trade) => !t.exit_time);
   const positionLevels = openTickerTrade ? {
-    entry:  openTickerTrade.entry_price  ?? undefined,
-    stop:   openTickerTrade.stop_price   ?? undefined,
-    target: openTickerTrade.target_price ?? undefined,
-    trail:  openTickerTrade.trail_price  ?? undefined,
+    entry:     openTickerTrade.entry_price  ?? undefined,
+    stop:      openTickerTrade.stop_price   ?? undefined,
+    target:    openTickerTrade.target_price ?? undefined,
+    trail:     (openTickerTrade as any).trail_price ?? undefined,
+    direction: (openTickerTrade.direction === "short" ? "short" : "long") as "long" | "short",
+    contracts: openTickerTrade.contracts    ?? undefined,
   } : undefined;
 
   return (

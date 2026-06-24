@@ -9,22 +9,33 @@ router = APIRouter(prefix="/api/trades", tags=["trades"])
 
 
 def _row_to_trade(row: dict) -> Trade:
+    # DB stores 'realized_pnl' not 'pnl'; 'paper' int not 'mode' string;
+    # 'direction' doesn't exist — derive from option_type.
+    opt_type  = row.get("option_type") or ""
+    direction = "long" if opt_type.lower() == "call" else "short" if opt_type.lower() == "put" else "long"
+    mode      = "paper" if int(row.get("paper", 1)) else "live"
+    pnl_raw   = row.get("realized_pnl") if row.get("realized_pnl") is not None else row.get("pnl")
     return Trade(
         id=int(row.get("id", 0)),
         ticker=str(row.get("ticker", "")),
-        direction=str(row.get("direction", "")),
-        option_type=row.get("option_type"),
+        direction=direction,
+        option_type=opt_type or None,
         strategy_id=row.get("strategy_id"),
+        contract_symbol=row.get("contract_symbol"),
+        strike=float(row["strike"]) if row.get("strike") is not None else None,
+        expiry=row.get("expiry"),
         entry_price=float(row.get("entry_price", 0)),
         exit_price=float(row["exit_price"]) if row.get("exit_price") is not None else None,
+        stop_price=float(row["stop_price"]) if row.get("stop_price") is not None else None,
+        target_price=float(row["target_price"]) if row.get("target_price") is not None else None,
         contracts=int(row.get("contracts", 0)),
-        pnl=float(row["pnl"]) if row.get("pnl") is not None else None,
+        pnl=float(pnl_raw) if pnl_raw is not None else None,
         status=str(row.get("status", "")),
         entry_time=str(row["entry_time"]) if row.get("entry_time") else None,
         exit_time=str(row["exit_time"]) if row.get("exit_time") else None,
         exit_reason=row.get("exit_reason"),
         stage1_done=bool(row.get("stage1_done", False)),
-        mode=row.get("mode"),
+        mode=mode,
     )
 
 
@@ -67,8 +78,8 @@ def get_open_trades_endpoint() -> list[Trade]:
 def get_performance(mode: str = Query("paper")) -> PerformanceStats:
     from database import get_all_trades, get_daily_summaries
     rows = get_all_trades(limit=1000, mode=mode) or []
-    closed = [r for r in rows if r.get("pnl") is not None]
-    pnls = [float(r["pnl"]) for r in closed]
+    closed = [r for r in rows if r.get("realized_pnl") is not None or r.get("pnl") is not None]
+    pnls = [float(r.get("realized_pnl") or r.get("pnl") or 0) for r in closed]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
 

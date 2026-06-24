@@ -39,6 +39,8 @@ export interface PositionLevels {
   stop?: number;
   target?: number;
   trail?: number;
+  direction?: "long" | "short";   // "long" = call, "short" = put
+  contracts?: number;              // number of contracts
 }
 
 interface Props {
@@ -410,14 +412,16 @@ export function TradingChart({
       priceLineRefs.current = [];
 
       if (positionLevels) {
-        const defs: { key: keyof PositionLevels; color: string; label: string; dash: boolean }[] = [
+        // Only iterate the numeric price keys — not direction/contracts
+        type PriceKey = "entry" | "stop" | "target" | "trail";
+        const defs: { key: PriceKey; color: string; label: string; dash: boolean }[] = [
           { key: "entry",  color: C.entry,  label: "Entry",  dash: false },
           { key: "stop",   color: C.stop,   label: "Stop",   dash: false },
           { key: "target", color: C.target, label: "Target", dash: false },
           { key: "trail",  color: C.trail,  label: "Trail",  dash: true  },
         ];
         for (const def of defs) {
-          const price = positionLevels[def.key];
+          const price = positionLevels[def.key] as number | undefined;
           if (price != null && price > 0) {
             const pl = candleRef.current.createPriceLine({
               price,
@@ -470,6 +474,124 @@ export function TradingChart({
     return () => chart.unsubscribeCrosshairMove(handleCrosshair);
   }, [trades]);
 
+  // ── Position overlay card ─────────────────────────────────────────────────
+  // Shown when an open trade is active — mirrors TradingView's Long/Short tool
+  const posCard = (() => {
+    const pl = positionLevels;
+    if (!pl?.entry) return null;
+
+    const isLong   = (pl.direction ?? "long") === "long";
+    const stopPct  = pl.stop   ? Math.abs((pl.entry - pl.stop)   / pl.entry * 100) : null;
+    const tgtPct   = pl.target ? Math.abs((pl.target - pl.entry) / pl.entry * 100) : null;
+    const rr       = (stopPct && tgtPct && stopPct > 0) ? (tgtPct / stopPct) : null;
+    const riskDol  = (pl.stop && pl.contracts)
+      ? Math.abs((pl.entry - pl.stop) * pl.contracts * 100) : null;
+    const rewDol   = (pl.target && pl.contracts)
+      ? Math.abs((pl.target - pl.entry) * pl.contracts * 100) : null;
+
+    const fmt = (n: number) => n.toFixed(2);
+    const fmtPct = (n: number | null) => n != null ? `${n.toFixed(1)}%` : "—";
+
+    return (
+      <div
+        style={{
+          position: "absolute",
+          top: 36,
+          left: 8,
+          zIndex: 20,
+          pointerEvents: "none",
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 11,
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          minWidth: 200,
+        }}
+      >
+        {/* Direction badge */}
+        <div style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          background: isLong ? "rgba(63,185,80,0.18)" : "rgba(248,81,73,0.18)",
+          border: `1px solid ${isLong ? C.target : C.stop}`,
+          borderRadius: 4,
+          padding: "2px 8px",
+          color: isLong ? C.target : C.stop,
+          fontWeight: 700,
+          fontSize: 10,
+          letterSpacing: "0.08em",
+        }}>
+          {isLong ? "▲ LONG" : "▼ SHORT"}
+          {pl.contracts ? ` · ${pl.contracts} contract${pl.contracts > 1 ? "s" : ""}` : ""}
+        </div>
+
+        {/* Stop row */}
+        {pl.stop && (
+          <div style={{
+            background: "rgba(248,81,73,0.12)",
+            border: "1px solid rgba(248,81,73,0.40)",
+            borderRadius: 3,
+            padding: "3px 8px",
+          }}>
+            <span style={{ color: C.stop, fontWeight: 600 }}>STP</span>
+            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}>
+              {" "}{fmt(pl.stop)} ({fmtPct(stopPct)})
+            </span>
+            {riskDol != null && (
+              <span style={{ color: C.stop }}> · -${fmt(riskDol)}</span>
+            )}
+          </div>
+        )}
+
+        {/* Entry row */}
+        <div style={{
+          background: "rgba(234,179,8,0.10)",
+          border: "1px solid rgba(234,179,8,0.35)",
+          borderRadius: 3,
+          padding: "3px 8px",
+        }}>
+          <span style={{ color: C.entry, fontWeight: 600 }}>ENT</span>
+          <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}>{" "}{fmt(pl.entry)}</span>
+          {rr != null && (
+            <span style={{ color: "var(--ink-muted)" }}> · R:R {rr.toFixed(2)}</span>
+          )}
+        </div>
+
+        {/* Target row */}
+        {pl.target && (
+          <div style={{
+            background: "rgba(63,185,80,0.10)",
+            border: "1px solid rgba(63,185,80,0.35)",
+            borderRadius: 3,
+            padding: "3px 8px",
+          }}>
+            <span style={{ color: C.target, fontWeight: 600 }}>TGT</span>
+            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}>
+              {" "}{fmt(pl.target)} ({fmtPct(tgtPct)})
+            </span>
+            {rewDol != null && (
+              <span style={{ color: C.target }}> · +${fmt(rewDol)}</span>
+            )}
+          </div>
+        )}
+
+        {/* Trail row */}
+        {pl.trail && (
+          <div style={{
+            background: "rgba(147,51,234,0.10)",
+            border: "1px solid rgba(147,51,234,0.35)",
+            borderRadius: 3,
+            padding: "3px 8px",
+          }}>
+            <span style={{ color: C.trail, fontWeight: 600 }}>TRL</span>
+            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}>{" "}{fmt(pl.trail)}</span>
+          </div>
+        )}
+      </div>
+    );
+  })();
+
   return (
     <div className="relative w-full" style={{ height }}>
       {/* Ticker label */}
@@ -486,11 +608,10 @@ export function TradingChart({
         {showVwap && <span style={{ color: C.vwap }}>VWAP</span>}
         {showOR   && <span style={{ color: C.orHigh }}>OR▲</span>}
         {showOR   && <span style={{ color: C.orLow  }}>OR▼</span>}
-        {positionLevels?.entry  && <span style={{ color: C.entry  }}>ENT</span>}
-        {positionLevels?.stop   && <span style={{ color: C.stop   }}>STP</span>}
-        {positionLevels?.target && <span style={{ color: C.target }}>TGT</span>}
-        {positionLevels?.trail  && <span style={{ color: C.trail  }}>TRL</span>}
       </div>
+
+      {/* Position indicator card — appears when a trade is open */}
+      {posCard}
 
       {/* Chart canvas */}
       <div ref={containerRef} className="w-full h-full" />

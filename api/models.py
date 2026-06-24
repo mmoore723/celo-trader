@@ -33,19 +33,27 @@ class BotActionResponse(BaseModel):
 class Trade(BaseModel):
     id: int
     ticker: str
-    direction: str
+    direction: str           # "long" | "short" — derived from option_type
     option_type: Optional[str]
     strategy_id: Optional[str]
+    # ── Contract details ──────────────────────────────────────────────────────
+    contract_symbol: Optional[str]
+    strike: Optional[float]
+    expiry: Optional[str]
+    # ── Prices ────────────────────────────────────────────────────────────────
     entry_price: float
     exit_price: Optional[float]
+    stop_price: Optional[float]   # option premium stop-loss level at entry
+    target_price: Optional[float] # Stage-1 target at entry
+    # ── Size / P&L ────────────────────────────────────────────────────────────
     contracts: int
-    pnl: Optional[float]
+    pnl: Optional[float]          # realized_pnl from DB
     status: str
     entry_time: Optional[str]
     exit_time: Optional[str]
     exit_reason: Optional[str]
     stage1_done: Optional[bool]
-    mode: Optional[str]
+    mode: Optional[str]           # "paper" | "live" — derived from paper int column
 
 
 class TradeListResponse(BaseModel):

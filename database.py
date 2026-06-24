@@ -138,6 +138,12 @@ def init_db() -> None:
                 "ALTER TABLE trades ADD COLUMN strategy_id TEXT DEFAULT 'INST_ORB'"
             )
             logger.info("Migration: added strategy_id column to trades table")
+        if "stop_price" not in _cols:
+            conn.execute("ALTER TABLE trades ADD COLUMN stop_price REAL")
+            logger.info("Migration: added stop_price column to trades table")
+        if "target_price" not in _cols:
+            conn.execute("ALTER TABLE trades ADD COLUMN target_price REAL")
+            logger.info("Migration: added target_price column to trades table")
     logger.info("Database initialised at %s", _active_path)
     # Rebuild daily_summary from any closed trades that slipped through
     # (e.g. trades closed before this function existed, or after a transient error).
@@ -234,6 +240,8 @@ def insert_trade(
     entry_reason: str,
     paper: bool = True,
     strategy_id: str = "INST_ORB",   # which router strategy generated this signal
+    stop_price: Optional[float] = None,    # option premium stop-loss level at entry
+    target_price: Optional[float] = None,  # Stage-1 target at entry
 ) -> int:
     """
     Insert an open trade.  Returns the new row id so we can update it on close.
@@ -242,14 +250,15 @@ def insert_trade(
     sql = """
         INSERT INTO trades
             (ticker, contract_symbol, option_type, strike, expiry,
-             contracts, entry_price, entry_time, entry_reason, status, paper, strategy_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+             contracts, entry_price, entry_time, entry_reason,
+             status, paper, strategy_id, stop_price, target_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
     """
     with get_conn() as conn:
         cur = conn.execute(sql, (
             ticker, contract_symbol, option_type, strike, expiry,
             contracts, entry_price, _to_et_isoformat(entry_time), entry_reason,
-            1 if paper else 0, strategy_id,
+            1 if paper else 0, strategy_id, stop_price, target_price,
         ))
         trade_id = cur.lastrowid
     logger.info(

@@ -1152,6 +1152,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     entry_utc       = _now_et()   # tz-aware ET — stored as ET ISO in DB
 
     # ── Record to database ────────────────────────────────────────────────────
+    # Compute stop/target at entry — stored so the chart can show the position overlay
+    _stop_px   = round(_risk.dynamic_stop_price(confirmed_price, entry_utc), 4)
+    _target_px = round(_risk.stage1_exit_price(confirmed_price), 4)
+
     trade_id = insert_trade(
         ticker          = ticker,
         contract_symbol = contract["symbol"],
@@ -1164,6 +1168,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         entry_reason    = f"ORB {direction} | R:R={rr_audit['R_R_Ratio']}",
         paper           = paper,
         strategy_id     = LIVE_STATE.get("last_strategy_id", "INST_ORB"),
+        stop_price      = _stop_px,
+        target_price    = _target_px,
     )
 
     # Re-run R:R audit with real trade_id — final structured log record
