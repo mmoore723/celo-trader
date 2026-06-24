@@ -28,13 +28,21 @@ def _read_bot_state() -> dict[str, Any]:
 @router.get("/status", response_model=BotStatus)
 def get_status() -> BotStatus:
     from trading_logic import LIVE_STATE
+    from trading.state import _bot_loop_lock
     from config import get_settings, STARTING_CAPITAL
 
     state = _read_bot_state()
     settings = get_settings()
 
+    # Lock is held only while the bot loop is actually running.
+    # This is more reliable than the stale bot_state.json "running" flag.
+    lock_acquired = _bot_loop_lock.acquire(blocking=False)
+    if lock_acquired:
+        _bot_loop_lock.release()
+    actually_running = not lock_acquired  # True = lock is held = bot is running
+
     return BotStatus(
-        running=bool(state.get("running", LIVE_STATE.get("running", False))),
+        running=actually_running,
         mode=str(state.get("mode", LIVE_STATE.get("mode", "stopped"))),
         ticker=state.get("ticker") or LIVE_STATE.get("ticker"),
         account_balance=float(
@@ -56,10 +64,22 @@ def get_status() -> BotStatus:
 @router.post("/start", response_model=BotActionResponse)
 def start_bot(mode: str = "paper") -> BotActionResponse:
     from trading_logic import run_trading_loop, LIVE_STATE
-    if LIVE_STATE.get("running"):
+    from trading.state import _bot_loop_lock
+
+    # Prefer the live lock over stale bot_state.json "running" flag
+    lock_held = not _bot_loop_lock.acquire(blocking=False)
+    if lock_held:
         return BotActionResponse(ok=False, message="Bot is already running")
+    # Released immediately — we only peeked; run_trading_loop acquires it properly
+    _bot_loop_lock.release()
+
+    # Apply mode to settings BEFORE the loop starts reading them
+    from config import save_settings
+    save_settings({"paper_trading": mode != "live"})
+
+    # run_trading_loop(poll_interval: int) — do NOT pass mode as a positional arg
     thread = threading.Thread(
-        target=run_trading_loop, args=(mode,), daemon=True, name="celo-bot"
+        target=run_trading_loop, daemon=True, name="celo-bot"
     )
     thread.start()
     return BotActionResponse(ok=True, message=f"Bot started in {mode} mode")
