@@ -39,6 +39,9 @@ const DEFAULT: AppSettings = {
 export function Settings() {
   const [form, setForm] = useState<AppSettings>(DEFAULT);
   const [saved, setSaved] = useState(false);
+  // Raw watchlist text — only parsed into form.watchlist on blur so commas
+  // don't disappear while the user is still typing
+  const [watchlistRaw, setWatchlistRaw] = useState(DEFAULT.watchlist.join(", "));
   const qc = useQueryClient();
 
   const { data } = useQuery({
@@ -47,7 +50,10 @@ export function Settings() {
   });
 
   useEffect(() => {
-    if (data) setForm(data);
+    if (data) {
+      setForm(data);
+      setWatchlistRaw(data.watchlist.join(", "));
+    }
   }, [data]);
 
   function set<K extends keyof AppSettings>(key: K, val: AppSettings[K]) {
@@ -149,8 +155,9 @@ export function Settings() {
         <textarea
           className="input w-full font-mono text-sm"
           rows={3}
-          value={form.watchlist.join(", ")}
-          onChange={(e) =>
+          value={watchlistRaw}
+          onChange={(e) => setWatchlistRaw(e.target.value)}
+          onBlur={(e) =>
             set("watchlist", e.target.value.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean))
           }
           placeholder="SPY, QQQ, NVDA…"
