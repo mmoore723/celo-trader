@@ -143,18 +143,53 @@ class MarketStructureAnalyzer:
         return lo[-2]["price"] if len(lo) >= 2 else None
 
     def classify_trend(self) -> str:
+        """
+        Classify market trend using two passes:
+
+        Pass 1 — structural (confirmed swings, 5-bar lag):
+          HH + HL  → uptrend
+          LH + LL  → downtrend
+
+        Pass 2 — real-time override (no lag):
+          If confirmed pairs aren't available OR their conclusion is
+          "consolidation", compare the current bar's close against the
+          most recently detected swing levels:
+            close > last swing high → uptrend
+            close < last swing low  → downtrend
+          This eliminates the 25-minute blind spot where a market structure
+          shift has clearly happened (price already past the prior swing) but
+          the swing-pair logic hasn't caught up yet.
+        """
         highs = self._highs()
         lows  = self._lows()
-        if len(highs) < 2 or len(lows) < 2:
-            return "consolidation"
-        hh = highs[-1]["price"] > highs[-2]["price"]
-        hl = lows[-1]["price"]  > lows[-2]["price"]
-        lh = highs[-1]["price"] < highs[-2]["price"]
-        ll = lows[-1]["price"]  < lows[-2]["price"]
-        if hh and hl:
-            return "uptrend"
-        if lh and ll:
-            return "downtrend"
+
+        # Pass 1: structural trend from confirmed swing pairs
+        structural = "consolidation"
+        if len(highs) >= 2 and len(lows) >= 2:
+            hh = highs[-1]["price"] > highs[-2]["price"]
+            hl = lows[-1]["price"]  > lows[-2]["price"]
+            lh = highs[-1]["price"] < highs[-2]["price"]
+            ll = lows[-1]["price"]  < lows[-2]["price"]
+            if hh and hl:
+                structural = "uptrend"
+            elif lh and ll:
+                structural = "downtrend"
+
+        if structural != "consolidation":
+            return structural
+
+        # Pass 2: real-time override — current close vs. swing levels
+        # Only fires when structural pass returned "consolidation" (no clear
+        # HH/HL or LH/LL pair yet) so it never overrides a confirmed trend.
+        if not self._df.empty:
+            current_close = float(self._df.iloc[-1]["close"])
+            last_sh = self.last_swing_high()
+            last_sl = self.last_swing_low()
+            if last_sh is not None and current_close > last_sh:
+                return "uptrend"
+            if last_sl is not None and current_close < last_sl:
+                return "downtrend"
+
         return "consolidation"
 
     def confirmed_higher_low(self) -> bool:
