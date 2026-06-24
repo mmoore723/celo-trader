@@ -1,6 +1,7 @@
 .env
 *.db
-bot.log
+log/
+dashboard.log
 bot_state.json
 scanner_state.json
 __pycache__/

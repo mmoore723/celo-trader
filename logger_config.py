@@ -36,7 +36,9 @@ from config import BASE_DIR, LOG_LEVEL
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-LOG_FILE = BASE_DIR / "bot.log"
+LOG_DIR  = BASE_DIR / "log"
+LOG_DIR.mkdir(exist_ok=True)   # create log/ on first import
+LOG_FILE = LOG_DIR / "bot.log"
 
 # ── Secret patterns to redact ─────────────────────────────────────────────────
 # We match the *values* loaded from the environment so they can never appear

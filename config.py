@@ -10,7 +10,7 @@ BASE_DIR      = Path(__file__).resolve().parent
 DB_PATH       = BASE_DIR / "trades.db"          # legacy alias — kept so old imports don't break
 DB_PATH_PAPER = BASE_DIR / "trades_paper.db"    # paper-trading + simulation mode only
 DB_PATH_LIVE  = BASE_DIR / "trades_live.db"     # real live-trading mode only
-LOG_PATH      = BASE_DIR / "bot.log"
+LOG_PATH      = BASE_DIR / "log" / "bot.log"
 SETTINGS_PATH = BASE_DIR / "user_settings.json"
 
 
@@ -324,7 +324,7 @@ def setup_logging() -> logging.Logger:
             format=LOG_FORMAT,
             handlers=[
                 logging.StreamHandler(),
-                logging.FileHandler(BASE_DIR / "bot.log", mode="a"),
+                logging.FileHandler(BASE_DIR / "log" / "bot.log", mode="a"),
             ],
         )
         return logging.getLogger("celo_trader")

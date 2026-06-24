@@ -31,7 +31,8 @@ rsync -avz --progress \
     --exclude 'venv/' \
     --exclude 'deploy/' \
     --exclude '*.db' \
-    --exclude 'bot.log' \
+    --exclude 'log/' \
+    --exclude 'dashboard.log' \
     --exclude 'bot_state.json' \
     -e "ssh -i $KEY_FILE -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/" \
