@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=ubuntu
+User=ec2-user
 WorkingDirectory=/opt/celo_trader
 # Uvicorn serves the FastAPI backend.
 # The built React frontend is served as static files by FastAPI itself.
