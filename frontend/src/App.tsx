@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { Topbar }      from "./components/layout/Topbar";
 import { Sidebar }     from "./components/layout/Sidebar";
+import { TickerBar }   from "./components/layout/TickerBar";
 import { LiveTrading } from "./pages/LiveTrading";
 import { Performance } from "./pages/Performance";
 import { Journal }     from "./pages/Journal";
@@ -31,7 +32,7 @@ function AppShell() {
     <div className="app-shell">
       <Topbar />
       <Sidebar />
-      <main className="app-main">
+      <main className="app-main" style={{ paddingBottom: 36 }}>
         <Routes>
           <Route path="/"           element={<LiveTrading />} />
           <Route path="/performance" element={<Performance />} />
@@ -42,6 +43,7 @@ function AppShell() {
           <Route path="/daily-brief" element={<DailyBrief />} />
         </Routes>
       </main>
+      <TickerBar />
     </div>
   );
 }
