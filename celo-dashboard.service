@@ -8,7 +8,7 @@ User=ubuntu
 WorkingDirectory=/opt/celo_trader
 # Uvicorn serves the FastAPI backend.
 # The built React frontend is served as static files by FastAPI itself.
-ExecStart=/usr/local/bin/uvicorn api.main:app --host 0.0.0.0 --port 8501 --workers 1
+ExecStart=/opt/celo_trader/venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8501 --workers 1
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/celo_trader/log/dashboard.log
