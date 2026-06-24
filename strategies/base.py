@@ -96,20 +96,51 @@ class MarketStructureAnalyzer:
         # The confirmed loop above can never detect pivots within the last lb bars
         # because right-side bars don't exist yet. This creates a 5-minute lag on
         # 1-min charts — the bot enters trend-continuation setups at the end of the
-        # move rather than the start. The fallback uses only left-side confirmation
-        # (weaker but immediate) to surface structure shifts as they happen.
+        # move rather than the start.
+        #
+        # Volume-confirmation gate: a real-time pivot must have volume >= the
+        # rolling 20-bar mean of the left window. This filters single-wick retail
+        # noise on volatile names (NFLX, TSLA) that would otherwise flip trend
+        # classification 3–4 times in a single 15-minute window.
+        # ATR-body gate: the pivot extension must exceed 15% of the bar's ATR so
+        # micro-wicks (≤1 tick past the prior extreme) are ignored.
+        VOL_LOOKBACK = 20
         rt_start = max(lb, n - lb)
         for i in range(rt_start, n):
             bar  = df.iloc[i]
             left = df.iloc[max(0, i - lb) : i]
             if left.empty:
                 continue
-            if bar["high"] > left["high"].max():
-                pivots.append({"idx": i, "price": float(bar["high"]),
-                               "type": "high", "time": bar["time"], "realtime": True})
-            if bar["low"] < left["low"].min():
-                pivots.append({"idx": i, "price": float(bar["low"]),
-                               "type": "low",  "time": bar["time"], "realtime": True})
+
+            # Volume gate — bar must show at least average participation
+            vol_window = df.iloc[max(0, i - VOL_LOOKBACK) : i]
+            vol_mean   = float(vol_window["volume"].mean()) if not vol_window.empty else 0.0
+            bar_vol    = float(bar.get("volume", 0) or 0)
+            if vol_mean > 0 and bar_vol < vol_mean:
+                continue   # below-average volume → retail noise, skip
+
+            # ATR body gate — extension past the prior extreme must be meaningful
+            _atr_col = bar.get("atr")
+            bar_atr  = float(_atr_col) if (_atr_col is not None and not (isinstance(_atr_col, float) and np.isnan(_atr_col))) else None
+
+            left_high_max = left["high"].max()
+            left_low_min  = left["low"].min()
+
+            if bar["high"] > left_high_max:
+                extension = float(bar["high"]) - float(left_high_max)
+                if bar_atr and bar_atr > 0 and extension < 0.15 * bar_atr:
+                    pass   # micro-wick — skip this pivot
+                else:
+                    pivots.append({"idx": i, "price": float(bar["high"]),
+                                   "type": "high", "time": bar["time"], "realtime": True})
+
+            if bar["low"] < left_low_min:
+                extension = float(left_low_min) - float(bar["low"])
+                if bar_atr and bar_atr > 0 and extension < 0.15 * bar_atr:
+                    pass   # micro-wick — skip this pivot
+                else:
+                    pivots.append({"idx": i, "price": float(bar["low"]),
+                                   "type": "low",  "time": bar["time"], "realtime": True})
 
         pivots.sort(key=lambda p: p["idx"])
         return pivots
