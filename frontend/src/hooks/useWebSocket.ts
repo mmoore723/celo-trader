@@ -7,7 +7,7 @@ import { useBotStore } from "../store/bot";
 
 const WS_URL =
   import.meta.env.VITE_WS_URL ??
-  `ws://${window.location.host}/ws/live`;
+  `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/live`;
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
