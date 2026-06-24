@@ -56,10 +56,10 @@ def get_quotes(
         snaps = alpaca.get_snapshots(symbol_list)
         result = []
         for sym, snap in (snaps or {}).items():
-            price = float(snap.get("latestTrade", {}).get("p", 0) or 0)
-            prev  = float(snap.get("prevDailyBar", {}).get("c", price) or price)
-            change_pct = ((price - prev) / prev * 100) if prev else 0.0
-            vol = float(snap.get("dailyBar", {}).get("v", 0) or 0)
+            # broker.get_snapshots() already processes raw Alpaca data into flat fields
+            price      = float(snap.get("price", 0) or 0)
+            change_pct = float(snap.get("change_pct", 0) or 0)
+            vol        = float(snap.get("daily_vol", 0) or 0)
             result.append(Quote(
                 ticker=sym,
                 price=price,
