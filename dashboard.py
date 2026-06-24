@@ -1240,7 +1240,7 @@ with st.sidebar:
         ("📋  Daily Brief",     "brief"),
         ("📓  Trade Journal",   "journal"),
         (None, None),           # section separator
-        ("🗺  Income Roadmap",  "roadmap"),
+        ("🧪  Backtest",         "backtest"),
         ("📐  Strategy Playbooks", "playbooks"),
         ("⚙️  Settings",        "settings"),
     ]
@@ -5917,656 +5917,116 @@ elif page == "journal":
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PAGE 6: INCOME ROADMAP
-# ═══════════════════════════════════════════════════════════════════════════════
-elif page == "roadmap":
-    st.markdown("# 🗺  Income Roadmap & Projections")
-    _rm_settings = get_settings()
-    _flip_on     = _rm_settings.get("flip_trading_enabled", True)
-    _growth_on   = _rm_settings.get("growth_mode", False)
-    st.caption(
-        "8-Strategy Blend (ORB · BOS/MSS · VWAP Pullback · FVG · Mid-Day Breakdown · "
-        "Afternoon Reversal · Trend Continuation · Channel Rejection) · top-5 scanner · "
-        + ("3% risk until $50k → 1% · " if _growth_on else "1% risk · ")
-        + ("flip re-entry enabled · " if _flip_on else "")
-        + "R:R gate (1.2 → 1.6, balance-based) · 45-min time-box · dynamic stop · 10% daily loss hard cap"
-    )
-
-    current_balance = LIVE_STATE.get("account_balance", STARTING_CAPITAL)
-    settings        = _rm_settings
-    stats           = get_statistics()
-    live_wr         = stats.get("win_rate", 0.55)
-
-    if not current_balance:
-        st.info("ℹ️ No live balance — projections use your manually entered starting capital.")
-
-    # ── Controls ─────────────────────────────────────────────────────────────────
-    ctrl1, ctrl2, ctrl3, ctrl4 = st.columns(4)
-    with ctrl1:
-        sim_start = st.number_input(
-            "Starting Capital ($)",
-            min_value=100, max_value=500_000,
-            value=max(100, int(current_balance or STARTING_CAPITAL)),
-            step=100,
-        )
-    with ctrl2:
-        wr_pct = st.slider(
-            "Win Rate %",
-            min_value=40, max_value=68,
-            value=max(40, min(65, int(live_wr * 100) if live_wr > 0 else 55)),
-            step=1,
-            help="ORB with RVOL ≥ 200% + VWAP gate typically achieves 50–62%.",
-        ) / 100
-    with ctrl3:
-        monthly_target = st.slider(
-            "Income Target ($/mo)",
-            min_value=500, max_value=20_000,
-            value=int(st.session_state.get("income_goal", 3000)),
-            step=500,
-        )
-    with ctrl4:
-        show_growth = st.toggle(
-            "Show 3% and 5% risk comparison lines in chart",
-            value=_growth_on,
-            help="Adds two more curves to the chart below showing how the account "
-                 "would grow at a constant 3% or 5% risk per trade, for comparison "
-                 "against the 1% conservative curve. This is just for comparison — "
-                 "your actual risk tier (shown above in 'Active Risk Tier') always "
-                 "follows the real settings on the Settings page, regardless of "
-                 "this toggle.",
-        )
-    st.session_state["income_goal"] = monthly_target
-
-    import random as _random
-
-    # ── Strategy constants ────────────────────────────────────────────────────────
-    # Per-trade outcome as a fraction of equity (same structure as risk.py math).
-    # WIN:  stage-1 half at +50% (×0.95 slip) + stage-2 holdover ≈ 0.90% at 1% risk
-    # LOSS: dynamic stop avg 25% of premium (30%→25%→20%) ≈ 0.83% at 1% risk
-    # At 3% risk these scale linearly (×3).
-    _WIN_MULT  = 0.90    # win  as % of risk budget (baseline, before per-strategy R:R mult)
-    _LOSS_MULT = 0.83    # loss as % of risk budget (avg dynamic stop — same for every strategy,
-                         # since stop management in risk.py is universal, not per-strategy)
-
-    # ── 8-Strategy Profiles ───────────────────────────────────────────────────────
-    # Derived from each strategy's confidence formula in strategy_router.py
-    # (_eval_inst_orb, _eval_bos_mss, _eval_vwap_pullback, _eval_fvg,
-    # _eval_midday_breakdown, _eval_afternoon_reversal, _eval_trend_cont,
-    # _eval_chan_break). Each strategy differs in:
-    #   - conf_avg:    its typical signal confidence (drives win-rate scaling below)
-    #   - rr_mult:     its typical reward:risk profile relative to the ORB baseline
-    #                  (scales the WIN side of the trade only)
-    #   - freq_weight: how often it fires relative to the other 7 (sums to 1.00)
-    # The loss side is intentionally NOT scaled per-strategy — the dynamic stop
-    # ladder (risk.py) applies the same way regardless of which strategy entered.
-    STRATEGY_PROFILES: dict[str, dict] = {
-        "INST_ORB":   {"name": "Opening Range Breakout", "conf_avg": 0.89, "rr_mult": 1.30, "freq_weight": 0.16},
-        "BOS_MSS":    {"name": "Break of Structure",     "conf_avg": 0.79, "rr_mult": 1.15, "freq_weight": 0.10},
-        "VWAP_PB":    {"name": "VWAP Pullback",          "conf_avg": 0.71, "rr_mult": 1.05, "freq_weight": 0.16},
-        "FVG":        {"name": "Fair Value Gap",         "conf_avg": 0.68, "rr_mult": 1.00, "freq_weight": 0.10},
-        "MID_BRK":    {"name": "Mid-Day Breakdown",      "conf_avg": 0.76, "rr_mult": 1.10, "freq_weight": 0.12},
-        "AFT_REV":    {"name": "Afternoon Reversal",     "conf_avg": 0.73, "rr_mult": 1.08, "freq_weight": 0.10},
-        "TREND_CONT": {"name": "Trend Continuation",     "conf_avg": 0.74, "rr_mult": 1.08, "freq_weight": 0.14},
-        "CHAN_BREAK": {"name": "Channel Rejection",      "conf_avg": 0.83, "rr_mult": 1.20, "freq_weight": 0.12},
-    }
-    # ORB is the strategy the win-rate slider has historically been calibrated
-    # against, so it's the reference point for scaling the other 7.
-    _REF_CONF      = STRATEGY_PROFILES["INST_ORB"]["conf_avg"]
-    _STRAT_IDS     = list(STRATEGY_PROFILES.keys())
-    _STRAT_WEIGHTS = [STRATEGY_PROFILES[s]["freq_weight"] for s in _STRAT_IDS]
-
-    def _strategy_win_rate(base_wr: float, strat_id: str) -> float:
-        """Scale the slider win-rate per strategy by its confidence vs the ORB baseline."""
-        mult = STRATEGY_PROFILES[strat_id]["conf_avg"] / _REF_CONF
-        return min(0.70, max(0.40, base_wr * mult))
-
-    def _orb_pcts(risk_pct: float, strat_id: str = "INST_ORB") -> tuple[float, float]:
-        """Return (win_pct, loss_pct) fractions of equity for a given risk tier + strategy."""
-        rr = STRATEGY_PROFILES[strat_id]["rr_mult"]
-        return risk_pct * _WIN_MULT * rr, risk_pct * _LOSS_MULT
-
-    def _blended_ev_frac(risk_pct: float, base_wr: float) -> float:
-        """Frequency-weighted EV (as a fraction of equity) blended across all 8 strategies."""
-        total = 0.0
-        for sid, prof in STRATEGY_PROFILES.items():
-            win_pct, loss_pct = _orb_pcts(risk_pct, sid)
-            strat_wr = _strategy_win_rate(base_wr, sid)
-            total += prof["freq_weight"] * (strat_wr * win_pct - (1 - strat_wr) * loss_pct)
-        return total
-
-    # Every trading day now produces at least one trade — with 8 strategies,
-    # unlimited re-entry, and 45-min time-box cycling, "no qualifying setup
-    # today" essentially never happens in practice. CHOPPY_PROB still rolls
-    # per month to dampen the effective win rate on choppy months (see
-    # eff_wr below), it just no longer gates whether trades happen at all.
-    CHOPPY_PROB          = 0.28
-    FLIP_HARD_STOP_RATE  = 0.55
-    FLIP_SIGNAL_RATE     = 0.65
-    GROWTH_BOUNDARY      = float(settings.get("growth_risk_boundary", 50_000))
-
-    # ── Live risk tier — what the bot is ACTUALLY risking per trade right now ──
-    # config.get_risk_tier() is the SAME function risk.py calls fresh before
-    # every trade (mirrors the Settings page's "Current Active Settings" panel).
-    # It checks the manual risk_per_trade override FIRST — if set to
-    # 0.01 / 0.03 / 0.05 it wins outright, ignoring balance and Growth Mode
-    # entirely — then falls back to the 4-tier automatic ladder (5%/3%/2%/1%).
-    # This — not _growth_on alone — drives every "what's happening with my
-    # money right now" display below (Active Risk Tier, EV/Trade, Gross/Month,
-    # disclaimer).
-    from config import (
-        get_risk_tier as _get_rt,
-        _VALID_RISK_OVERRIDES as _VRO,
-        BOOTSTRAP_RISK_PCT as _BOOT_PCT,
-        GROWTH_MODE_RISK_PCT as _GROW_PCT,
-        MID_TIER_RISK_PCT as _MID_PCT,
-        CONSERVATIVE_RISK_PCT as _CONS_PCT,
-        GROWTH_RISK_BOUNDARY_BOOT as _GRB_BOOT_DEFAULT,
-        GROWTH_RISK_BOUNDARY_LOW as _GRB_LOW_DEFAULT,
-    )
-    _live_risk_pct   = _get_rt(current_balance)
-    _rpt_raw         = settings.get("risk_per_trade")
-    _override_active = _rpt_raw is not None and float(_rpt_raw) in _VRO
-    _BOUNDARY_BOOT   = float(settings.get("growth_risk_boundary_boot", _GRB_BOOT_DEFAULT))
-    _BOUNDARY_LOW    = float(settings.get("growth_risk_boundary_low",  _GRB_LOW_DEFAULT))
-
-    def _tier_for_balance(bal: float, growth_mode: bool) -> float:
-        """
-        Risk % this balance gets under the AUTOMATIC 4-tier ladder
-        (5% / 3% / 2% / 1%) for a given growth_mode flag, ignoring any manual
-        risk_per_trade override. Used by run_orb_sim() to simulate the full
-        ladder for the Growth Mode comparison curve.
-        """
-        if not growth_mode:
-            return _CONS_PCT
-        if bal < _BOUNDARY_BOOT:
-            return _BOOT_PCT
-        elif bal < _BOUNDARY_LOW:
-            return _GROW_PCT
-        elif bal < GROWTH_BOUNDARY:
-            return _MID_PCT
-        else:
-            return _CONS_PCT
-
-    def run_orb_sim(
-        start_bal:      float,
-        wr:             float,
-        seed:           int   = 42,
-        months:         int   = 60,
-        flip_enabled:   bool  = False,
-        growth_mode:    bool  = False,
-        fixed_risk_pct: float | None = None,
-    ) -> list[dict]:
-        """
-        Simulate the 8-strategy blend with optional growth mode (full 4-tier
-        ladder: 5% under $5k -> 3% $5k-$25k -> 2% $25k-$50k -> 1% at $50k+)
-        and flip trading. Each trade randomly draws one of the 8 strategies
-        weighted by its real-world firing frequency (freq_weight), then applies
-        that strategy's own win-rate scaling (conf_avg vs ORB baseline) and
-        reward multiplier (rr_mult) to the outcome.
-
-        If fixed_risk_pct is given, EVERY trade uses that constant risk %
-        (e.g. 0.01 / 0.03 / 0.05) instead of the balance-based ladder — this is
-        what drives the "1% vs 3% vs 5%" comparison curves on the Growth
-        Curves chart. growth_mode/_tier_for_balance is only used when
-        fixed_risk_pct is None.
-        """
-        rng = _random.Random(seed)
-        bal = start_bal
-        result = []
-
-        for month in range(1, months + 1):
-            choppy   = rng.random() < CHOPPY_PROB
-            mo_pnl, mo_trades, start_mo = 0.0, 0, bal
-
-            for _day in range(21):
-                if bal < 100:
-                    break
-
-                # With 8 strategies, flip re-entry, AND 45-min time-box exits
-                # that let the bot re-enter the SAME setup repeatedly while a
-                # strong trend persists, EVERY trading day now produces a
-                # cluster of 1-5 trades — e.g. 5 IWM ORB re-entries cycled via
-                # time-box on 2026-06-12. Model: 8% chance of 1 trade, 18%
-                # chance of 2, 28% chance of 3, 28% chance of 4, 18% chance of
-                # 5 (mean 3.30/day -> ~80 trades/mo with flip on).
-                _day_roll = rng.random()
-                _day_trades = (5 if _day_roll > 0.82 else
-                               4 if _day_roll > 0.54 else
-                               3 if _day_roll > 0.26 else
-                               2 if _day_roll > 0.08 else 1)
-
-                for _t in range(_day_trades):
-                    if bal < 100:
-                        break
-                    # Pick which of the 8 strategies fired this trade, weighted
-                    # by how often each one actually fires (freq_weight).
-                    strat_id = rng.choices(_STRAT_IDS, weights=_STRAT_WEIGHTS, k=1)[0]
-                    strat_wr = _strategy_win_rate(wr, strat_id)
-                    eff_wr   = max(0.40, strat_wr * (0.87 if choppy else 1.0))
-
-                    # Determine risk tier for THIS trade — fixed_risk_pct (if
-                    # given) overrides the balance-based ladder entirely.
-                    r_pct = (fixed_risk_pct if fixed_risk_pct is not None
-                             else _tier_for_balance(bal, growth_mode))
-                    orb_win, orb_loss = _orb_pcts(r_pct, strat_id)
-
-                    # ── Normal trade ──────────────────────────────────────
-                    won = rng.random() < eff_wr
-                    pnl = bal * orb_win if won else -(bal * orb_loss)
-                    bal = max(0, bal + pnl)
-                    mo_pnl    += pnl
-                    mo_trades += 1
-
-                    # ── Flip trade (hard stop only, same strategy re-fires) ─
-                    if flip_enabled and not won:
-                        flip_extra = (1 - eff_wr) * FLIP_HARD_STOP_RATE * FLIP_SIGNAL_RATE
-                        r2     = (fixed_risk_pct if fixed_risk_pct is not None
-                                  else _tier_for_balance(bal, growth_mode))
-                        w2, l2 = _orb_pcts(r2, strat_id)
-                        if rng.random() < flip_extra / max(1 - eff_wr, 0.01):
-                            flip_won = rng.random() < max(0.40, eff_wr * 0.92)
-                            flip_pnl = bal * w2 if flip_won else -(bal * l2)
-                            bal      = max(0, bal + flip_pnl)
-                            mo_pnl    += flip_pnl
-                            mo_trades += 1
-
-            result.append({
-                "month":     month,
-                "balance":   round(bal, 2),
-                "pnl":       round(mo_pnl, 2),
-                "trades":    mo_trades,
-                "choppy":    choppy,
-                "pct_chg":   round((bal - start_mo) / max(start_mo, 1) * 100, 2),
-                "risk_tier": f"{(fixed_risk_pct if fixed_risk_pct is not None else _tier_for_balance(bal, growth_mode))*100:.0f}%",
-            })
-        return result
-
-    # ── EV math — blended across all 8 strategies (1% risk, flip if enabled) ────
-    # Average trades per DAY: run_orb_sim (see the per-day loop above) now
-    # gives every trading day an 8% chance of 1 trade, 18% chance of 2, 28%
-    # chance of 3, 28% chance of 4, and 18% chance of 5 — expected value
-    # 0.08*1 + 0.18*2 + 0.28*3 + 0.28*4 + 0.18*5 = 3.30/day. Over 21 trading
-    # days/month that's ~69.3 base trades; flip re-entries (hard-stop losers
-    # re-firing the same strategy at a lower effective win rate) add roughly
-    # another 16%, bringing the total to ~80/mo with flip enabled. This
-    # reflects 45-min time-box re-entries letting the bot cycle the SAME
-    # setup multiple times on a strong-trend day (e.g. 5 IWM ORB trades on
-    # 2026-06-12), on EVERY trading day rather than just "signal days".
-    _DAY_TRADES_MULT    = 0.08 * 1 + 0.18 * 2 + 0.28 * 3 + 0.28 * 4 + 0.18 * 5   # = 3.30
-    _flip_extra_per_day = (1 - wr_pct) * FLIP_HARD_STOP_RATE * FLIP_SIGNAL_RATE if _flip_on else 0.0
-    _base_trades_month  = 21 * _DAY_TRADES_MULT
-    _flip_add_trades    = 21 * _DAY_TRADES_MULT * _flip_extra_per_day
-    avg_trades_month = _base_trades_month + _flip_add_trades
-
-    # ev_frac_c = frequency-weighted EV across all 8 strategies at the
-    # conservative 1% tier — used only as the basis for the chart's
-    # "income target" reference line (required_bal). Live displays (EV/Trade,
-    # Gross/Month) use _ev_frac_live, computed later from _live_risk_pct.
-    ev_frac_c               = _blended_ev_frac(0.01, wr_pct)
-    monthly_return_frac     = ev_frac_c * avg_trades_month
-    required_bal            = (monthly_target / monthly_return_frac
-                               if monthly_return_frac > 0 else 999_999_999)
-    tax_pct                 = float(settings.get("tax_reserve_pct", 25)) / 100
-    net_mult                = 1.0 - tax_pct
-
-    # Blended break-even win rate: frequency-weighted average win/loss payout
-    # at the 1% tier, independent of the assumed win rate (payout-ratio only).
-    _avg_win_c    = sum(p["freq_weight"] * _orb_pcts(0.01, s)[0] for s, p in STRATEGY_PROFILES.items())
-    _avg_loss_c   = _LOSS_MULT * 0.01
-    break_even_wr = _avg_loss_c / (_avg_win_c + _avg_loss_c)
-
-    # ── Run simulations ───────────────────────────────────────────────────────────
-    # Three constant-risk curves (1% / 3% / 5%) — NOT the balance-based ladder —
-    # so the chart shows a clean apples-to-apples comparison of "what if every
-    # trade risked X%", regardless of account size.
-    _sim_1pct = run_orb_sim(
-        sim_start, wr_pct, seed=42, months=60,
-        flip_enabled=_flip_on, fixed_risk_pct=0.01,
-    )
-    _sim_3pct = run_orb_sim(
-        sim_start, wr_pct, seed=42, months=60,
-        flip_enabled=_flip_on, fixed_risk_pct=0.03,
-    ) if show_growth else []
-    _sim_5pct = run_orb_sim(
-        sim_start, wr_pct, seed=42, months=60,
-        flip_enabled=_flip_on, fixed_risk_pct=0.05,
-    ) if show_growth else []
-
-    # ── Strategy Math Row ─────────────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("#### Strategy Math — At Current Balance (8-Strategy Blend)")
-    # EV/Trade and Gross/Month below use _live_risk_pct (config.get_risk_tier()),
-    # so they always match whatever the bot is actually risking right now —
-    # 5% / 3% / 2% / 1% automatic tier, or the manual override if one is set.
-    _ev_frac_live = _blended_ev_frac(_live_risk_pct, wr_pct)
-
-    mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-    with mc1:
-        _rt = f"{_live_risk_pct*100:.0f}%"
-        if _override_active:
-            st.metric("Active Risk Tier", _rt,
-                      help="Manual override (set on the Settings page) — this fixed "
-                           "% is used on every trade regardless of balance or Growth "
-                           "Mode, until changed or cleared.")
-        else:
-            st.metric("Active Risk Tier", _rt,
-                      help=f"Automatic tier for your current balance "
-                           f"(${current_balance:,.0f}) under the Growth Mode ladder: "
-                           f"{_BOOT_PCT*100:.0f}% under ${_BOUNDARY_BOOT:,.0f} -> "
-                           f"{_GROW_PCT*100:.0f}% up to ${_BOUNDARY_LOW:,.0f} -> "
-                           f"{_MID_PCT*100:.0f}% up to ${GROWTH_BOUNDARY:,.0f} -> "
-                           f"{_CONS_PCT*100:.0f}% above that.")
-    with mc2:
-        st.metric("EV / Trade", f"${current_balance * _ev_frac_live:,.2f}",
-                  help="Expected dollar gain per trade at current balance and risk tier.")
-    with mc3:
-        _trd_help = (f"~{_base_trades_month:.1f} base + ~{_flip_add_trades:.1f} flip = ~{avg_trades_month:.1f} total"
-                     if _flip_on and _flip_add_trades > 0.05
-                     else f"~{avg_trades_month:.1f}/mo (top-5 scanner)")
-        st.metric("Avg Trades / Mo", f"{avg_trades_month:.1f}", help=_trd_help)
-    with mc4:
-        _disp_gross = max(0, current_balance * _ev_frac_live * avg_trades_month)
-        _disp_net   = _disp_gross * net_mult
-        st.metric("Gross / Month", f"${_disp_gross:,.0f}",
-                  delta=f"Net ${_disp_net:,.0f} after {int(tax_pct*100)}% tax")
-    with mc5:
-        st.metric("Break-even WR", f"{break_even_wr*100:.1f}%",
-                  help="Win rate needed to break even. Losing below this shrinks the account.")
-
-    # ── Strategy Mix Breakdown (plain language) ────────────────────────────────────
-    # Replaces the old 7-column technical table (confidence-scaled win rates, R:R
-    # multipliers, per-strategy EV) with a short, plain-English summary: what each
-    # strategy is looking for, and roughly how often it's the one that fires.
-    # The underlying math (win rate / R:R / EV) is unchanged — it's still used in
-    # the simulation above — it's just no longer dumped on screen as raw numbers.
-    _STRATEGY_PLAIN: dict[str, str] = {
-        "INST_ORB":   "Catches the first strong move right after the market opens. "
-                      "Usually the bot's best-performing setup.",
-        "BOS_MSS":    "Jumps in when price breaks through a key level with a rush "
-                      "of buying or selling behind it.",
-        "VWAP_PB":    "Waits for price to dip back to its average price for the "
-                      "day, then bounce.",
-        "CHAN_BREAK": "Bets on a bounce when price hits the edge of a recent "
-                      "trading range and reverses hard.",
-        "TREND_CONT": "Rides the day's overall direction after a brief pause.",
-        "MID_BRK":    "Catches a real move during the usually-quiet midday hours.",
-        "AFT_REV":    "Looks for a late-day turnaround as traders reposition "
-                      "before the close.",
-        "FVG":        "Looks for price to fill back into a gap it left behind "
-                      "earlier in the day.",
-    }
-    st.markdown("---")
-    st.markdown("#### Strategy Mix — How the 8 Strategies Blend Together")
-    st.caption(
-        "The bot doesn't rely on one trick — it watches for 8 different setups "
-        "all day and only takes the ones that meet its rules. Listed from most "
-        "to least common."
-    )
-    _mix_rows = []
-    for _sid, _prof in sorted(
-        STRATEGY_PROFILES.items(), key=lambda kv: kv[1]["freq_weight"], reverse=True
-    ):
-        _mix_rows.append({
-            "Strategy":     _prof["name"],
-            "How Often":    f"~{_prof['freq_weight']*100:.0f}% of trades",
-            "What It Does": _STRATEGY_PLAIN.get(_sid, "Looks for a setup matching this strategy's rules."),
-        })
-    st.markdown(_html_table(_mix_rows), unsafe_allow_html=True)
-
-    # ── Dual-track Growth Chart ───────────────────────────────────────────────────
-    st.markdown("---")
-    _chart_title = "Growth Curves"
-    if show_growth:
-        _chart_title += " — 1% vs 3% vs 5% Risk Per Trade"
-    else:
-        _chart_title += f" — Conservative 1% Risk · Starting ${sim_start:,.0f}"
-
-    st.markdown(f"#### {_chart_title}")
-    _meta_note = (
-        f"~{avg_trades_month:.1f} trades/mo · {wr_pct*100:.0f}% win rate (8-strategy blend) · "
-        f"{'flip ON · ' if _flip_on else ''}"
-        f"Avg Win ≈+{_avg_win_c*100:.2f}% equity · Avg Loss ≈−{_avg_loss_c*100:.2f}% equity (1% tier)"
-    )
-    st.markdown(
-        f"<p style='font-size:0.75rem;color:#000000;margin:0 0 10px 0'>{_meta_note}</p>",
-        unsafe_allow_html=True,
-    )
-
-    df_1 = pd.DataFrame(_sim_1pct)
-    fig_cmp = go.Figure()
-    fig_cmp.add_trace(go.Scatter(
-        x=df_1["month"], y=df_1["balance"],
-        mode="lines", name="1% Risk",
-        line=dict(color="#00e5ff", width=2.5),
-        hovertemplate="Month %{x}<br>$%{y:,.0f}<extra>1% Risk</extra>",
-    ))
-    if show_growth and _sim_3pct and _sim_5pct:
-        df_3 = pd.DataFrame(_sim_3pct)
-        fig_cmp.add_trace(go.Scatter(
-            x=df_3["month"], y=df_3["balance"],
-            mode="lines", name="3% Risk",
-            line=dict(color="#ff9800", width=2.5),
-            hovertemplate="Month %{x}<br>$%{y:,.0f}<extra>3% Risk</extra>",
-        ))
-        df_5 = pd.DataFrame(_sim_5pct)
-        fig_cmp.add_trace(go.Scatter(
-            x=df_5["month"], y=df_5["balance"],
-            mode="lines", name="5% Risk",
-            line=dict(color="#ff5252", width=2.5),
-            hovertemplate="Month %{x}<br>$%{y:,.0f}<extra>5% Risk</extra>",
-        ))
-
-    # Reference line: $100k income-mode marker. (The old "income target"
-    # hline was removed — required_bal is often far outside the visible
-    # balance range, so it rendered nothing useful. The Income Target
-    # control now ties into the "% of Target" column in the table below
-    # instead — see that section.)
-    fig_cmp.add_hline(y=100_000, line_color="rgba(0,200,240,0.6)", line_width=1,
-                      line_dash="dot", annotation_text="$100k — income mode begins",
-                      annotation_font_color="rgba(0,200,240,0.6)",
-                      annotation_position="right")
-    fig_cmp.update_layout(
-        template="plotly_white",
-        paper_bgcolor=T["plot_paper"], plot_bgcolor=T["plot_bg"],
-        height=440, margin=dict(l=10, r=180, t=20, b=40),
-        font=dict(color="#000000"),
-        # Start zoomed in on the first 12 months; the range slider below the
-        # x-axis lets the user drag/expand to see the full 60-month curve.
-        xaxis=dict(title="Month", tickmode="linear", dtick=6,
-                   range=[0.5, 12.5],
-                   rangeslider=dict(visible=True, thickness=0.07),
-                   tickfont=dict(color="#000000"), title_font=dict(color="#000000")),
-        # Log scale on the Y axis: balances span ~$5k early on up to
-        # $100k-$1M+ by month 60, so a linear axis squishes the early
-        # (small-dollar) months into an unreadable sliver near zero. Log
-        # scale gives every order of magnitude equal visual space.
-        # dtick="D2" labels ticks at 1/2/5 of each decade — e.g. $1,000 /
-        # $2,000 / $5,000 / $10,000 / $20,000 / $50,000 / $100,000 — so
-        # the $5,000-$10,000 range is clearly labeled, not just $0 and $100k.
-        yaxis=dict(title="Account Balance", tickprefix="$", tickformat=",.0f",
-                   type="log", dtick="D2",
-                   tickfont=dict(color="#000000"), title_font=dict(color="#000000")),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0,
-                    font=dict(color="#000000")),
-        hovermode="x unified",
-    )
-    st.plotly_chart(fig_cmp, use_container_width=True)
-
-    # Milestone Timeline removed — replaced by strategy playbook below.
-
-    # ── Income Potential Table ────────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("#### Income Potential by Account Size")
-
-    # Tie the "Income Target ($/mo)" control (top of page) into this table:
-    # required_bal is the balance needed to hit that target at the 1%
-    # conservative tier, and each row's "% of Target" shows how close that
-    # account size gets using ITS OWN ladder tier (smaller accounts risk a
-    # higher % per trade, so they can approach the target with less capital
-    # than the 1%-tier required_bal figure alone implies).
-    if required_bal < 10_000_000:
-        st.info(
-            f"🎯 **Income Target: ${monthly_target:,.0f}/mo** — needs roughly "
-            f"**${required_bal:,.0f}** at the 1% conservative tier. The "
-            f"\"% of Target\" column below shows how each account size compares, "
-            f"using its own tier on the Growth Mode ladder."
-        )
-    else:
-        st.info(
-            f"🎯 **Income Target: ${monthly_target:,.0f}/mo** isn't reachable at "
-            f"any realistic balance under the 1% tier with the current win rate "
-            f"and trade frequency — try lowering the target."
-        )
-
-    _override_note = (
-        f" Your risk per trade is currently manually fixed at {_live_risk_pct*100:.0f}% "
-        f"on the Settings page, which overrides this ladder for your account today."
-        if _override_active else ""
-    )
-    st.caption(
-        "Shows how income scales as your account grows under the Growth Mode "
-        f"risk ladder ({_BOOT_PCT*100:.0f}% under ${_BOUNDARY_BOOT:,.0f} → "
-        f"{_GROW_PCT*100:.0f}% → {_MID_PCT*100:.0f}% → {_CONS_PCT*100:.0f}% at "
-        f"${GROWTH_BOUNDARY:,.0f}+), using your {wr_pct*100:.0f}% win rate and "
-        f"~{avg_trades_month:.1f} trades/mo." + _override_note
-    )
-    tier_rows = []
-    # $2,500 is included so the table can show the 5% bootstrap tier (sub-$5k) —
-    # the smallest/most aggressive rung of the real 4-tier ladder, and the one
-    # closest to this account's current balance.
-    for _bal in [2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000]:
-        # Always use the automatic 4-tier ladder (5%/3%/2%/1%) here, regardless
-        # of any manual override — this table's whole point is to show how risk
-        # AND income are designed to scale down as the account grows. A manual
-        # override (see caption above) applies a single fixed % to every
-        # balance instead, which would flatten every row to the same % return
-        # and defeat the purpose of a "by account size" table.
-        _tier   = _tier_for_balance(_bal, True)
-        _ev_day = _blended_ev_frac(_tier, wr_pct)
-        _gross  = max(0, _bal * _ev_day * avg_trades_month)
-        _net    = _gross * net_mult
-        _you    = " ← you" if abs(_bal - sim_start) / max(sim_start, 1) < 0.3 else ""
-        _tier_lbl = f"{_tier*100:.0f}%"
-        _action = (f"{_tier*100:.0f}% risk · withdraw to target" if _tier == _CONS_PCT
-                   else f"{_tier*100:.0f}% risk → compound toward next tier")
-        tier_rows.append({
-            "Account":                            f"${_bal:,.0f}{_you}",
-            "Risk Tier":                          _tier_lbl,
-            "Trades/Mo":                          f"{avg_trades_month:.1f}",
-            "Gross/Mo":                           f"${_gross:,.0f}",
-            f"Net/Mo ({int(tax_pct*100)}% tax)":  f"${_net:,.0f}",
-            "Annual Gross":                       f"${_gross*12:,.0f}",
-            "% of Target":                        f"{_gross/monthly_target*100:.0f}%",
-            "Action":                             _action,
-        })
-    st.markdown(_html_table(tier_rows), unsafe_allow_html=True)
-
-    # ── Should You Take Profit? ──────────────────────────────────────────────────
-    # Load tax profile + ledger here so profit_advisor() has the data it needs
-    balance      = current_balance
-    profile      = load_tax_profile()
-    ledger       = load_sweep_ledger()
-    tax_info     = compute_marginal_rate(
-        profile.get("salary", 0), profile.get("filing_status", "single"),
-        profile.get("state", "TX"), ytd_trading_pnl=profile.get("ytd_trading_pnl", 0.0),
-    )
-    st.markdown("---")
-    st.markdown("### Should You Take Profit?")
-    all_trades = get_all_trades(limit=500)
-    monthly_pnl = 0.0
-    if all_trades:
-        cutoff = (datetime.utcnow() - timedelta(days=30)).isoformat()
-        monthly_trades = [t for t in all_trades
-                         if t.get("exit_time", "") >= cutoff and t.get("realized_pnl")]
-        monthly_pnl = sum(t["realized_pnl"] for t in monthly_trades)
-    live_trades   = stats.get("total_trades", 0)
-    live_win_rate = stats.get("win_rate", 0.0)
-    profitable_months = 0
-    if all_trades:
-        from collections import defaultdict
-        mo_map = defaultdict(float)
-        for t in all_trades:
-            if t.get("exit_time") and t.get("realized_pnl"):
-                mo_map[t["exit_time"][:7]] += t["realized_pnl"]
-        for pnl in reversed(sorted(mo_map.items(), key=lambda x: x[0])):
-            if pnl[1] > 0:
-                profitable_months += 1
-            else:
-                break
-    try:
-        with get_conn() as conn:
-            halt_count = conn.execute(
-                "SELECT COUNT(*) FROM system_events WHERE level='WARNING' "
-                "AND message LIKE '%DAILY LOSS LIMIT%' "
-                "AND ts >= datetime('now','-30 days')"
-            ).fetchone()[0]
-    except Exception:
-        halt_count = 0
-    advice = profit_advisor(
-        current_balance    = balance,
-        starting_capital   = STARTING_CAPITAL,
-        total_realized_pnl = stats.get("total_pnl", 0.0),
-        monthly_pnl        = monthly_pnl,
-        tax_rate_pct       = tax_info["combined_pct"],
-        live_trades        = live_trades,
-        live_win_rate      = live_win_rate,
-        profitable_months  = profitable_months,
-        halt_events_30d    = halt_count,
-        total_swept_ytd    = ledger.get("total_swept", 0.0),
-    )
-    rec_colors = {"green": T["green"], "yellow": T["yellow"], "red": T["red"]}
-    rec_color  = rec_colors.get(advice["color"], T["accent"])
-    st.markdown(f"""
-    <div class="trade-card" style="border-left: 4px solid {rec_color}; padding: 1.5rem;">
-      <div style="font-size:0.65rem;color:{rec_color};text-transform:uppercase;
-                  letter-spacing:0.12em;margin-bottom:8px">Phase {advice['phase']} Recommendation</div>
-      <div style="font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;
-                  color:{rec_color};letter-spacing:-0.02em;margin-bottom:10px">
-        {advice['recommendation']}
-      </div>
-      <div style="font-size:0.72rem;line-height:1.7;max-width:700px">{advice['reason']}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    a1, a2, a3, a4 = st.columns(4)
-    with a1:
-        st.metric("Current Balance", f"${balance:,.2f}")
-    with a2:
-        st.metric("Net Monthly (est.)", f"${advice['net_monthly']:,.2f}")
-    with a3:
-        st.metric("Max Safe Withdrawal",
-                  f"${advice['max_withdrawal']:,.2f}" if advice["gates_passed"] else "LOCKED")
-    with a4:
-        gates_ok = sum(1 for g in advice["safety"]["gates"] if g["passed"])
-        total_gates = len(advice["safety"]["gates"])
-        st.metric("Safety Gates", f"{gates_ok} / {total_gates}",
-                  delta="All clear" if advice["gates_passed"] else f"{total_gates - gates_ok} blocking",
-                  delta_color="normal" if advice["gates_passed"] else "inverse")
-    st.markdown("---")
-    st.markdown("#### 🔒 Withdrawal Safety Gates")
-    for gate in advice["safety"]["gates"]:
-        icon  = "✅" if gate["passed"] else "🔴"
-        with st.expander(f"{icon}  {gate['name']}  —  {gate['actual']}", expanded=not gate["passed"]):
-            col_req, col_why = st.columns([1, 2])
-            with col_req:
-                st.markdown(f"**Required:** {gate['required']}")
-                st.markdown(f"**Your value:** {gate['actual']}")
-                st.markdown(f"**Status:** {'✅ Passed' if gate['passed'] else '🔴 Blocked'}")
-            with col_why:
-                st.markdown("**Why this gate exists:**")
-                st.markdown(gate["why"])
-    if not advice["gates_passed"] and advice.get("cost_of_early_withdrawal"):
-        st.error(
-            f"💸 **Cost of withdrawing $1,000 today:** "
-            f"~${advice['cost_of_early_withdrawal']:,.0f} in foregone future value. "
-            f"Patience is the strategy."
-        )
-    st.caption(
-        "⚠️ These are guidelines based on mathematical projections, not licensed financial advice."
-    )
-
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PAGE 6: BACKTEST
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "backtest":
+    st.markdown("# 🧪  Backtest")
+    st.caption(
+        "Replay historical 5-min bars through the live ORB strategy rules — "
+        "same signal gates, same R:R pre-flight, same two-stage exit. "
+        "Options pricing uses Black-Scholes estimates (no free historical chain data available)."
+    )
+
+    _bt_col1, _bt_col2 = st.columns([2, 1])
+    with _bt_col1:
+        _bt_ticker = st.selectbox(
+            "Ticker",
+            ["AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "SPY", "QQQ", "META", "NFLX", "GOOGL"],
+            key="bt_ticker",
+        )
+    with _bt_col2:
+        _bt_months = st.selectbox("Look-back", [1, 3, 6, 12], index=1, key="bt_months")
+
+    _bt_capital = st.number_input(
+        "Starting capital ($)", min_value=500, max_value=100_000,
+        value=int(STARTING_CAPITAL), step=500, key="bt_capital",
+    )
+
+    if st.button("▶  Run Backtest", type="primary", key="bt_run"):
+        with st.spinner(f"Replaying {_bt_months} month(s) of {_bt_ticker} bars…"):
+            try:
+                _bt_alpaca, _ = get_clients()
+                _bt = Backtester(
+                    alpaca           = _bt_alpaca,
+                    ticker           = _bt_ticker,
+                    months           = _bt_months,
+                    starting_capital = float(_bt_capital),
+                )
+                _bt_results = _bt.run()
+                st.session_state["bt_results"] = _bt_results
+                st.session_state["bt_label"]   = f"{_bt_ticker} · {_bt_months}mo · ${_bt_capital:,.0f}"
+            except Exception as _bt_err:
+                st.error(f"Backtest error: {_bt_err}")
+                st.session_state.pop("bt_results", None)
+
+    _bt_res = st.session_state.get("bt_results")
+    if _bt_res:
+        if "error" in _bt_res:
+            st.warning(_bt_res["error"])
+        else:
+            st.markdown(f"**{st.session_state.get('bt_label', '')}**")
+            # ── Summary metrics ───────────────────────────────────────────────
+            _bm = st.columns(5)
+            _bm[0].metric("Total Return", f"{_bt_res.get('total_return_pct', 0):.1f}%")
+            _bm[1].metric("Win Rate",     f"{_bt_res.get('win_rate_pct', 0):.1f}%")
+            _bm[2].metric("Trades",       _bt_res.get("total_trades", 0))
+            _bm[3].metric("Avg Win",      f"${_bt_res.get('avg_win', 0):.2f}")
+            _bm[4].metric("Avg Loss",     f"${_bt_res.get('avg_loss', 0):.2f}")
+
+            _bm2 = st.columns(4)
+            _bm2[0].metric("Sharpe",          f"{_bt_res.get('sharpe', 0):.2f}")
+            _bm2[1].metric("Max Drawdown",     f"{_bt_res.get('max_drawdown_pct', 0):.1f}%")
+            _bm2[2].metric("Final Balance",    f"${_bt_res.get('final_balance', 0):,.2f}")
+            _bm2[3].metric("Stage-1 Hit Rate", f"{_bt_res.get('stage1_rate_pct', 0):.1f}%")
+
+            # ── Equity curve ─────────────────────────────────────────────────
+            _bt_daily = _bt_res.get("daily_pnl", {})
+            if _bt_daily:
+                _bt_dates  = sorted(_bt_daily.keys())
+                _bt_equity = [float(_bt_capital)]
+                for _d in _bt_dates:
+                    _bt_equity.append(_bt_equity[-1] + _bt_daily[_d])
+                _bt_fig = go.Figure()
+                _bt_fig.add_trace(go.Scatter(
+                    x=list(range(len(_bt_equity))), y=_bt_equity,
+                    mode="lines", name="Equity",
+                    line=dict(color="#2563eb", width=2),
+                    fill="tozeroy", fillcolor="rgba(37,99,235,0.08)",
+                ))
+                _bt_fig.update_layout(
+                    height=300, margin=dict(l=10, r=10, t=30, b=10),
+                    xaxis_title="Trading Day", yaxis_title="Balance ($)",
+                    yaxis=dict(tickprefix="$"),
+                    plot_bgcolor="white", paper_bgcolor="white",
+                )
+                st.plotly_chart(_bt_fig, use_container_width=True)
+
+            # ── Exit reason breakdown ─────────────────────────────────────────
+            _bt_exits = _bt_res.get("exit_reasons", {})
+            if _bt_exits:
+                st.markdown("**Exit Breakdown**")
+                _exit_cols = st.columns(len(_bt_exits))
+                for _ei, (_reason, _data) in enumerate(_bt_exits.items()):
+                    _exit_cols[_ei].metric(
+                        _reason.replace("_", " ").title(),
+                        f"{_data['count']} trades",
+                        f"${_data['pnl']:.2f}",
+                    )
+
+            # ── Trade log ────────────────────────────────────────────────────
+            _bt_trades = _bt_res.get("trades", [])
+            if _bt_trades:
+                with st.expander(f"Trade log ({len(_bt_trades)} trades)"):
+                    _bt_df = pd.DataFrame(_bt_trades)
+                    _show_cols = [c for c in ["date", "option_type", "direction",
+                                              "entry_price", "exit_price", "pnl",
+                                              "exit_reason", "held_minutes"]
+                                  if c in _bt_df.columns]
+                    st.dataframe(_bt_df[_show_cols], use_container_width=True)
+
 # PAGE 7: STRATEGY PLAYBOOKS
 # ═══════════════════════════════════════════════════════════════════════════════
 elif page == "playbooks":
@@ -7719,48 +7179,5 @@ elif page == "playbooks":
                             for _m in _entry["match"]:
                                 st.code(_m, language=None)
 
-def render_income_roadmap():
-    st.markdown("<div class='ct-brand-wrap'><h1 class='ct-brand'>INCOME ROADMAP</h1><p class='ct-sub'>PREDICTIVE GROWTH ENGINE</p></div>", unsafe_allow_html=True)
-    
-    with st.sidebar:
-        st.subheader("Projection Settings")
-        daily_target = st.slider("Daily Growth Target (%)", 0.1, 5.0, 1.0, 0.1)
-        projection_days = st.slider("Projection Horizon (Days)", 30, 365, 90, 30)
-        st.info(f"Targeting {daily_target}% daily compounding over {projection_days} days.")
-
-    try:
-        data = {"Day": range(projection_days + 1)}
-        data["Balance"] = [STARTING_CAPITAL * ((1 + daily_target/100) ** i) for i in data["Day"]]
-        df = pd.DataFrame(data)
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df["Day"], y=df["Balance"],
-            fill='tozeroy', mode='lines',
-            line=dict(color=T.get("accent", "#2563eb"), width=3),
-            fillcolor="rgba(37, 99, 235, 0.1)"
-        ))
-        
-        fig.update_layout(
-            plot_bgcolor='white', paper_bgcolor='white',
-            margin=dict(l=20, r=20, t=30, b=20),
-            xaxis=dict(showgrid=True, gridcolor=T.get("border", "#e5e7eb")),
-            yaxis=dict(showgrid=True, gridcolor=T.get("border", "#e5e7eb"), tickprefix="$")
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("### Growth Milestones")
-        cols = st.columns(3)
-        milestones = [1.5, 2.0, 5.0]
-        for i, m in enumerate(milestones):
-            val = STARTING_CAPITAL * m
-            cols[i].markdown(
-                f"<div class='mc'><div class='ml'>{int(m*100)}% GROWTH</div>"
-                f"<div class='mv'>${val:,.0f}</div></div>", 
-                unsafe_allow_html=True
-            )
-    except Exception as e:
-        st.error(f"Error rendering roadmap: {e}")
 # ── Price ticker bar — rendered on every page (position:fixed bottom) ─────────
 _price_ticker_bar()
