@@ -220,6 +220,7 @@ class Backtester:
 
         in_trade           = False
         entry_price        = 0.0       # simulated option premium per share at entry
+        entry_strike       = 0.0       # FIXED at entry — never recalculated during trade
         entry_bar_idx      = 0
         entry_bar_time: Optional[pd.Timestamp] = None
         option_type        = "call"
@@ -239,9 +240,9 @@ class Backtester:
             if in_trade:
                 elapsed_min = (ts - entry_bar_time).total_seconds() / 60
 
-                # Simulate option price at current stock price
-                strike    = _simulated_strike(close, "bullish" if option_type == "call" else "bearish")
-                opt_price = _estimate_option_price(close, strike, 3, option_type=option_type)
+                # Reprice the SAME option contract we bought (fixed entry_strike)
+                # Using a floating strike re-anchors to ATM every bar and kills all gains
+                opt_price = _estimate_option_price(close, entry_strike, 3, option_type=option_type)
 
                 # Dynamic stop: tightens 5pp every 15 min (mirrors live logic)
                 elapsed_steps  = int(elapsed_min / self.STOP_TIGHTEN_INTERVAL)
@@ -378,6 +379,7 @@ class Backtester:
 
             in_trade          = True
             entry_price       = entry_opt_px
+            entry_strike      = strike          # fixed for the life of this trade
             option_type       = opt_type_str
             entry_bar_idx     = idx
             entry_bar_time    = ts
@@ -389,8 +391,7 @@ class Backtester:
         if in_trade and remaining_dollars > 0:
             last_bar   = day_df.iloc[-1]
             last_close = float(last_bar["close"])
-            strike     = _simulated_strike(last_close, "bullish" if option_type == "call" else "bearish")
-            eod_mid    = _estimate_option_price(last_close, strike, 3, option_type=option_type)
+            eod_mid    = _estimate_option_price(last_close, entry_strike, 3, option_type=option_type)
             eod_price  = round(eod_mid * (1.0 - self.SLIPPAGE_PCT), 4)
             pnl = self._close_bt_trade(
                 entry_price, eod_price, remaining_dollars, option_type, "eod",

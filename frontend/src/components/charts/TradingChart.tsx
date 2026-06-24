@@ -71,10 +71,10 @@ function colors(dark: boolean) {
     up:           dark ? "#3fb950" : "#16a34a",
     down:         dark ? "#f85149" : "#dc2626",
     vwap:         dark ? "#58a6ff" : "#2563eb",
-    vwapBand1:    dark ? "#58a6ff55" : "#2563eb44",  // ±1σ
-    vwapBand2:    dark ? "#58a6ff28" : "#2563eb22",  // ±2σ
-    orHigh:       dark ? "#3fb950" : "#16a34a",
-    orLow:        dark ? "#f85149" : "#dc2626",
+    vwapBand1:    dark ? "#58a6ffaa" : "#2563eb77",  // ±1σ — more visible
+    vwapBand2:    dark ? "#58a6ff55" : "#2563eb44",  // ±2σ
+    orHigh:       dark ? "#4ade80" : "#16a34a",      // bright green
+    orLow:        dark ? "#f87171" : "#dc2626",      // bright red
     volAvg:       dark ? "#9ca3af" : "#6b7280",
     volGate:      dark ? "#f59e0b55" : "#d9770644",  // 200% gate — amber
     swingH:       dark ? "#f85149" : "#dc2626",      // SH / LH — red
@@ -224,33 +224,33 @@ export function TradingChart({
 
     // ── VWAP bands (±2σ outer, ±1σ inner) ────────────────────────────────
     vwapU2Ref.current = chart.addSeries(LineSeries, {
-      color: C.vwapBand2, lineWidth: 1, lineStyle: LineStyle.Dotted,
+      color: C.vwapBand2, lineWidth: 1, lineStyle: LineStyle.Dashed,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
     vwapL2Ref.current = chart.addSeries(LineSeries, {
-      color: C.vwapBand2, lineWidth: 1, lineStyle: LineStyle.Dotted,
+      color: C.vwapBand2, lineWidth: 1, lineStyle: LineStyle.Dashed,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
     vwapU1Ref.current = chart.addSeries(LineSeries, {
-      color: C.vwapBand1, lineWidth: 1, lineStyle: LineStyle.Dashed,
+      color: C.vwapBand1, lineWidth: 2, lineStyle: LineStyle.Dashed,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
     vwapL1Ref.current = chart.addSeries(LineSeries, {
-      color: C.vwapBand1, lineWidth: 1, lineStyle: LineStyle.Dashed,
+      color: C.vwapBand1, lineWidth: 2, lineStyle: LineStyle.Dashed,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
-    // ── Opening Range ─────────────────────────────────────────────────────
+    // ── Opening Range — solid + thick so they're clearly visible ──────────
     orHighRef.current = chart.addSeries(LineSeries, {
-      color: C.orHigh, lineWidth: 1, lineStyle: LineStyle.Dashed,
+      color: C.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
     orLowRef.current = chart.addSeries(LineSeries, {
-      color: C.orLow, lineWidth: 1, lineStyle: LineStyle.Dashed,
+      color: C.orLow, lineWidth: 2, lineStyle: LineStyle.Solid,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 

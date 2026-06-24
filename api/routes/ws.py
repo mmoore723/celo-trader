@@ -18,7 +18,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 router = APIRouter(tags=["websocket"])
 
 _BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "bot_state.json"
-_LOG_PATH       = Path(__file__).resolve().parents[2] / "log" / "bot.log"
+_LOG_PATH       = Path(__file__).resolve().parents[2] / "bot.log"
 
 # Track connected clients
 _clients: set[WebSocket] = set()

@@ -113,6 +113,7 @@ html, body, #root {
 .badge-red    { background: var(--negative-bg); color: var(--negative); }
 .badge-blue   { background: var(--accent-subtle); color: var(--accent); }
 .badge-yellow { background: var(--warning-bg); color: var(--warning); }
+.badge-gray   { background: var(--surface-raised); color: var(--ink-muted); }
 
 /* ── Button base ────────────────────────────────────────────────────────── */
 .btn {

@@ -142,23 +142,57 @@ def get_quotes(
 
 @router.get("/scanner", response_model=list[ScannerResult])
 def get_scanner() -> list[ScannerResult]:
+    """
+    Returns today's premarket scan results.
+
+    Reads from daily_universe.json (scan_details) which stores full per-ticker
+    metrics (rvol, price, atr, gap_pct, score).  Falls back to scanner_state.json
+    if daily_universe.json is missing or stale.  scanner_state.json watchlist is a
+    plain list of strings — never call .get() on the items directly.
+    """
     try:
         import json
         from pathlib import Path
-        state_path = Path(__file__).resolve().parents[2] / "scanner_state.json"
-        if not state_path.exists():
-            return []
-        data = json.loads(state_path.read_text())
-        results = []
-        for i, item in enumerate(data.get("watchlist", [])[:10]):
-            results.append(ScannerResult(
-                ticker=item.get("ticker", ""),
-                rvol=float(item.get("rvol", 0)),
-                price=float(item.get("price", 0)),
-                atr=float(item.get("atr", 0)),
-                change_pct=float(item.get("change_pct", 0)),
-                rank=i + 1,
-            ))
+
+        base = Path(__file__).resolve().parents[2]
+        universe_path = base / "daily_universe.json"
+        state_path    = base / "scanner_state.json"
+        results: list[ScannerResult] = []
+
+        # ── Preferred source: daily_universe.json has rich per-ticker dicts ──
+        if universe_path.exists():
+            u = json.loads(universe_path.read_text())
+            details = u.get("scan_details", [])
+            for i, d in enumerate(details[:10]):
+                if not isinstance(d, dict) or not d.get("ticker"):
+                    continue
+                results.append(ScannerResult(
+                    ticker=d["ticker"],
+                    rvol=float(d.get("rvol_capped") or d.get("rvol") or 0),
+                    price=float(d.get("price", 0)),
+                    atr=float(d.get("atr_usd") or d.get("atr") or 0),
+                    change_pct=float(d.get("gap_pct") or d.get("change_pct") or 0),
+                    rank=i + 1,
+                ))
+            if results:
+                return results
+
+        # ── Fallback: scanner_state.json (watchlist is a list of plain strings) ──
+        if state_path.exists():
+            s = json.loads(state_path.read_text())
+            watchlist = s.get("watchlist", [])
+            scores    = s.get("scores", {})
+            for i, ticker in enumerate(watchlist[:10]):
+                if not isinstance(ticker, str):
+                    continue
+                results.append(ScannerResult(
+                    ticker=ticker,
+                    rvol=float(scores.get(ticker, 0)),
+                    price=0.0,
+                    atr=0.0,
+                    change_pct=0.0,
+                    rank=i + 1,
+                ))
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
