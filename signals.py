@@ -235,6 +235,23 @@ def compute_rvol(df: pd.DataFrame, lookback_days: int = 10) -> pd.Series:
     return rvol.rename("rvol")
 
 
+def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """
+    Average True Range (ATR) over `period` bars.
+    True Range = max(high-low, |high-prev_close|, |low-prev_close|)
+    Used by the chart API to surface volatility context.
+    """
+    if df.empty or len(df) < 2:
+        return pd.Series([np.nan] * len(df), index=df.index, name="atr")
+    prev_close = df["close"].shift(1)
+    tr = pd.concat([
+        df["high"] - df["low"],
+        (df["high"] - prev_close).abs(),
+        (df["low"]  - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean().rename("atr")
+
+
 def get_opening_range(df: pd.DataFrame) -> Optional[dict]:
     """
     Return the Opening Range (OR) — the first 15 minutes of the session,

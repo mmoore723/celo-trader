@@ -283,7 +283,10 @@ class AlpacaClient:
         # For daily bars Alpaca only returns the current partial bar without a start date
         # Explicitly request 6 months back to get full historical daily data
         # Always request IEX feed — free-tier Alpaca keys 403 on SIP.
-        params = {"timeframe": tf, "limit": limit, "adjustment": "split", "feed": "iex"}
+        # session=extended includes pre-market (4 AM–9:30 AM) and after-hours
+        # (4 PM–8 PM) bars — free IEX feed supports this.
+        params = {"timeframe": tf, "limit": limit, "adjustment": "split",
+                  "feed": "iex", "session": "extended"}
         if tf == "1Day":
             start = (_dt.datetime.utcnow() - _dt.timedelta(days=180)).strftime("%Y-%m-%d")
             params["start"] = start
