@@ -6,10 +6,11 @@ Architecture
 Replays N months of historical 5-min OHLCV bars through the same ORB signal
 and risk logic used in live trading.  Faithfully mirrors every rule:
 
-  Signal  : detect_orb_breakout()  (RVOL ≥ 200%, VWAP gate)
-  Sizing  : ORB 1% risk model — (equity × 0.01) / (premium × 0.30)
-  Stop    : 30% of option premium (hard, always active)
-  Stage 1 : sell 50% of contracts when premium ≥ entry × 1.50
+  Signal  : detect_orb_breakout()  (RVOL ≥ 120%, VWAP gate)
+  Sizing  : Dollar-based 1% risk model — position_$ = equity × 0.01 / stop_pct
+            Works for any account size — no per-contract minimum required.
+  Stop    : 20% of option premium (hard, always active; tightens dynamically)
+  Stage 1 : sell 50% of position dollars when premium ≥ entry × 1.50
   Stage 2 : hold remainder; exit at break-even (entry_price) or time-box
   Time-box: 45 minutes from entry — hard exit regardless of price
 
@@ -17,9 +18,11 @@ Key assumptions / limitations
 ──────────────────────────────
 1. Options pricing uses a simplified Black-Scholes estimate (no free
    historical options chain data available).
-2. Fill model: entry at ask estimate, exit at bid estimate (conservative).
-3. Commissions: $0 (Alpaca / Tradier are commission-free).
-4. RVOL uses bar-level compute_rvol() from signals.py — the same function
+2. Position sizing is dollar-based (not contract-count), so any account
+   size ≥ $100 can generate simulated trades on any ticker.
+3. Fill model: entry at ask estimate, exit at bid estimate (conservative).
+4. Commissions: $0 (Alpaca / Tradier are commission-free).
+5. RVOL uses bar-level compute_rvol() from signals.py — the same function
    called in live trading, so no divergence between backtest and live logic.
 
 Output metrics
@@ -44,7 +47,6 @@ import pandas as pd
 
 from config import (
     BACKTEST_MONTHS,
-    MIN_CONTRACT_COST, MAX_CONTRACT_COST,
     STARTING_CAPITAL,
 )
 from signals import (
@@ -101,7 +103,7 @@ class Backtester:
     """
 
     # Mirror the constants from RiskManager so they're always in sync
-    ORB_STOP_PCT          = RiskManager.ORB_STOP_PCT          # 0.30
+    ORB_STOP_PCT          = RiskManager.ORB_STOP_PCT          # 0.20 (tightened from 0.30)
     ORB_RISK_PCT          = RiskManager.ORB_RISK_PCT           # 0.01
     ORB_STAGE1_GAIN       = RiskManager.ORB_STAGE1_GAIN       # 0.50
     ORB_TIME_BOX          = RiskManager.ORB_TIME_BOX           # 45 minutes
@@ -216,15 +218,15 @@ class Backtester:
         or_high = or_info["high"]
         or_low  = or_info["low"]
 
-        in_trade        = False
-        entry_price     = 0.0          # simulated option premium at entry
-        entry_bar_idx   = 0
+        in_trade           = False
+        entry_price        = 0.0       # simulated option premium per share at entry
+        entry_bar_idx      = 0
         entry_bar_time: Optional[pd.Timestamp] = None
-        option_type     = "call"
-        n_contracts_full= 1            # total contracts at entry
-        n_remaining     = 1            # contracts still open (after stage 1)
-        stage1_done     = False
-        session_pnl     = 0.0
+        option_type        = "call"
+        position_dollars   = 0.0      # dollars allocated to this trade (full position)
+        remaining_dollars  = 0.0      # dollars still open after stage-1 partial exit
+        stage1_done        = False
+        session_pnl        = 0.0
 
         for idx in range(1, len(day_df)):    # skip opening-range bar
             bar   = day_df.iloc[idx]
@@ -238,8 +240,8 @@ class Backtester:
                 elapsed_min = (ts - entry_bar_time).total_seconds() / 60
 
                 # Simulate option price at current stock price
-                strike   = _simulated_strike(close, "bullish" if option_type == "call" else "bearish")
-                opt_price= _estimate_option_price(close, strike, 14, option_type=option_type)
+                strike    = _simulated_strike(close, "bullish" if option_type == "call" else "bearish")
+                opt_price = _estimate_option_price(close, strike, 3, option_type=option_type)
 
                 # Dynamic stop: tightens 5pp every 15 min (mirrors live logic)
                 elapsed_steps  = int(elapsed_min / self.STOP_TIGHTEN_INTERVAL)
@@ -249,26 +251,25 @@ class Backtester:
                 )
                 sl_price = entry_price * (1.0 - dynamic_sl_pct)
 
-                # Hard stop (all contracts) — uses dynamic tightened level
+                # Hard stop — dollar P&L on remaining position
                 if opt_price <= sl_price:
-                    # Apply exit slippage: we receive 5% less than mid on stop-out
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
-                        entry_price, exit_px, n_remaining, option_type,
+                        entry_price, exit_px, remaining_dollars, option_type,
                         "stop_loss", ts.hour,
                     )
                     session_pnl += pnl
                     in_trade = False
                     break   # one trade per session
 
-                # Stage 1: sell 50% at +50% gain
+                # Stage 1: sell 50% of position at +50% gain
                 if not stage1_done:
                     s1_price = entry_price * (1.0 + self.ORB_STAGE1_GAIN)
                     if opt_price >= s1_price:
-                        half = max(1, n_contracts_full // 2)
-                        # Apply exit slippage on stage-1 partial exit
-                        s1_exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
-                        s1_pnl = (s1_exit_px - entry_price) * half * 100
+                        s1_exit_px  = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
+                        half_dollars = position_dollars / 2.0
+                        # P&L on the half being closed now
+                        s1_pnl = half_dollars * ((s1_exit_px / entry_price) - 1.0)
                         session_pnl += s1_pnl
                         self.trades.append({
                             "option_type":  option_type,
@@ -280,16 +281,15 @@ class Backtester:
                             "entry_hour":   entry_bar_time.hour if entry_bar_time else ts.hour,
                             "held_minutes": round(elapsed_min, 1),
                         })
-                        n_remaining  = n_contracts_full - half
-                        stage1_done  = True
-                        # break-even stop now in effect for the remainder
-                        continue
+                        remaining_dollars = half_dollars
+                        stage1_done       = True
+                        continue   # break-even stop now in effect for the remainder
 
                 # Stage 2: break-even stop on remainder
                 if stage1_done and opt_price <= entry_price:
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
-                        entry_price, exit_px, n_remaining, option_type,
+                        entry_price, exit_px, remaining_dollars, option_type,
                         "stage2_break_even", ts.hour,
                         held_minutes=round(elapsed_min, 1),
                     )
@@ -301,7 +301,7 @@ class Backtester:
                 if elapsed_min >= self.ORB_TIME_BOX:
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
-                        entry_price, exit_px, n_remaining, option_type,
+                        entry_price, exit_px, remaining_dollars, option_type,
                         "time_box_45m", ts.hour,
                         held_minutes=round(elapsed_min, 1),
                     )
@@ -336,90 +336,64 @@ class Backtester:
             stock_price  = close
             opt_type_str = "call" if direction == "bullish" else "put"
             strike       = _simulated_strike(stock_price, direction)
-            raw_opt_px   = _estimate_option_price(stock_price, strike, 14, option_type=opt_type_str)
+            # Use 3-DTE pricing (short-dated options typical of day-trading)
+            raw_opt_px   = _estimate_option_price(stock_price, strike, 3, option_type=opt_type_str)
 
-            if raw_opt_px < MIN_CONTRACT_COST or raw_opt_px > MAX_CONTRACT_COST:
+            # Skip zero/negative pricing (data anomaly)
+            if raw_opt_px <= 0.0:
                 continue
 
-            # Spread gate: mirrors the pre-entry check in trading_logic.py.
-            # Simulate a 5% bid-ask spread on each side of the mid price (options
-            # on liquid ETFs/stocks typically trade at 3–8% spread).  Skip if the
-            # relative spread exceeds 10% — this prevents the backtester from
-            # counting entries on cheap contracts where slippage would dwarf the P&L.
-            _sim_bid = raw_opt_px * 0.95
-            _sim_ask = raw_opt_px * 1.05
-            _sim_mid = (_sim_bid + _sim_ask) / 2
-            _spread_pct = (_sim_ask - _sim_bid) / _sim_mid if _sim_mid > 0 else 1.0
-            if _spread_pct > 0.10:
-                logger.debug(
-                    "backtest_spread_blocked date=%s spread_pct=%.2f%%",
-                    day_str, _spread_pct * 100,
-                )
-                continue
-
-            # Apply slippage to entry (mirrors live: we pay 5% more than mid)
+            # Apply slippage to entry (we pay 5% above mid — mirrors live)
             entry_opt_px = round(raw_opt_px * (1.0 + self.SLIPPAGE_PCT), 4)
+            if entry_opt_px <= 0.0:
+                continue
 
             # ── R:R pre-flight check ──────────────────────────────────────────
-            # Mirrors live evaluate_rr(): slippage-adjusted entry + target + stop.
-            # target (slippage-adj exit) = entry × 1.50 × 0.95
-            # stop   (slippage-adj exit) = entry × 0.70 × 0.95
             _eff_target = entry_opt_px * (1.0 + self.ORB_STAGE1_GAIN) * (1.0 - self.SLIPPAGE_PCT)
             _eff_stop   = entry_opt_px * (1.0 - self.ORB_STOP_PCT)    * (1.0 - self.SLIPPAGE_PCT)
             _net_reward = _eff_target - entry_opt_px
             _net_risk   = entry_opt_px - _eff_stop
             _rr         = _net_reward / _net_risk if _net_risk > 0 else 0.0
 
-            # Same balance-dependent gate as live trading: 1.2 R:R for sub-$5k
-            # bootstrap accounts, 1.6 once graduated (or pinned via rr_ratio_mode).
             _min_rr = RiskManager(account_balance=balance).effective_min_rr()
             if _rr < _min_rr:
                 logger.debug(
                     "backtest_rr_blocked date=%s R:R=%.2f < %.1f",
                     day_str, _rr, _min_rr,
                 )
-                continue  # same gate as live trading
-
-            # ORB 1% risk sizing
-            total_risk_dollars = balance * self.ORB_RISK_PCT
-            risk_per_contract  = entry_opt_px * self.ORB_STOP_PCT * 100
-            if risk_per_contract <= 0:
-                continue
-            n_contracts = int(total_risk_dollars / risk_per_contract)
-            if n_contracts < 1:
-                # Can we afford even 1 contract within 1% risk budget?
-                if risk_per_contract <= total_risk_dollars:
-                    n_contracts = 1
-                else:
-                    continue
-
-            # Notional cap: never more than 20% of equity in premium
-            max_notional = balance * 0.20
-            while n_contracts > 1 and (entry_opt_px * 100 * n_contracts) > max_notional:
-                n_contracts -= 1
-
-            total_cost = entry_opt_px * 100 * n_contracts
-            if total_cost > balance:
                 continue
 
-            in_trade         = True
-            entry_price      = entry_opt_px
-            option_type      = opt_type_str
-            entry_bar_idx    = idx
-            entry_bar_time   = ts
-            n_contracts_full = n_contracts
-            n_remaining      = n_contracts
-            stage1_done      = False
+            # ── Dollar-based position sizing ──────────────────────────────────
+            # Works for any account size — no per-contract minimum.
+            # position_dollars = how much premium we're "buying" in dollar terms.
+            # risk budget / stop % → position such that a full stop costs 1% of equity.
+            risk_budget      = balance * self.ORB_RISK_PCT      # e.g. $1 on a $100 account
+            pos_dollars      = risk_budget / self.ORB_STOP_PCT  # e.g. $1/0.30 = $3.33
+            # Cap at 20% of equity so one trade can't wipe the account
+            max_pos_dollars  = balance * 0.20
+            pos_dollars      = min(pos_dollars, max_pos_dollars)
+
+            if pos_dollars <= 0.0:
+                continue
+
+            in_trade          = True
+            entry_price       = entry_opt_px
+            option_type       = opt_type_str
+            entry_bar_idx     = idx
+            entry_bar_time    = ts
+            position_dollars  = pos_dollars
+            remaining_dollars = pos_dollars
+            stage1_done       = False
 
         # End of session — force exit any open position (EOD close)
-        if in_trade and n_remaining > 0:
-            last_bar  = day_df.iloc[-1]
-            last_close= float(last_bar["close"])
-            strike    = _simulated_strike(last_close, "bullish" if option_type == "call" else "bearish")
-            eod_mid   = _estimate_option_price(last_close, strike, 14, option_type=option_type)
-            eod_price = round(eod_mid * (1.0 - self.SLIPPAGE_PCT), 4)   # exit slippage
+        if in_trade and remaining_dollars > 0:
+            last_bar   = day_df.iloc[-1]
+            last_close = float(last_bar["close"])
+            strike     = _simulated_strike(last_close, "bullish" if option_type == "call" else "bearish")
+            eod_mid    = _estimate_option_price(last_close, strike, 3, option_type=option_type)
+            eod_price  = round(eod_mid * (1.0 - self.SLIPPAGE_PCT), 4)
             pnl = self._close_bt_trade(
-                entry_price, eod_price, n_remaining, option_type, "eod",
+                entry_price, eod_price, remaining_dollars, option_type, "eod",
                 last_bar["time"].hour if not isinstance(last_bar["time"], float) else 15,
             )
             session_pnl += pnl
@@ -432,23 +406,30 @@ class Backtester:
         self,
         entry_price: float,
         exit_price: float,
-        n_contracts: int,
+        position_dollars: float,
         option_type: str,
         reason: str,
         entry_hour: int = 10,
         held_minutes: float = 0.0,
     ) -> float:
-        """Record a simulated trade and return its P&L."""
-        pnl = (exit_price - entry_price) * n_contracts * 100
+        """Record a simulated trade and return its P&L.
+
+        Dollar-based model: P&L = position_dollars × (exit/entry − 1).
+        Works for any account size without requiring per-contract sizing.
+        """
+        if entry_price <= 0.0:
+            return 0.0
+        pnl = position_dollars * ((exit_price / entry_price) - 1.0)
         self.trades.append({
-            "option_type":  option_type,
-            "entry_price":  entry_price,
-            "exit_price":   exit_price,
-            "pnl":          pnl,
-            "reason":       reason,
-            "exit_reason":  reason,
-            "entry_hour":   entry_hour,
-            "held_minutes": held_minutes,
+            "option_type":   option_type,
+            "entry_price":   entry_price,
+            "exit_price":    exit_price,
+            "position_dollars": position_dollars,
+            "pnl":           pnl,
+            "reason":        reason,
+            "exit_reason":   reason,
+            "entry_hour":    entry_hour,
+            "held_minutes":  held_minutes,
         })
         return pnl
 
