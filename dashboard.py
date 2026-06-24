@@ -1090,9 +1090,8 @@ def _load_sim_bars(ticker: str, timeframe: str = "5Min") -> tuple[pd.DataFrame, 
         import yfinance as _yf
         _yf_interval = "5m" if timeframe in ("5Min", "5m") else "1m"
         # "2d" gives today + yesterday so market-closed views still have data
-        # prepost=True fetches pre-market (04:00–09:30) and post-market bars.
         _yf_df = _yf.download(ticker, period="2d", interval=_yf_interval,
-                               progress=False, auto_adjust=True, prepost=True)
+                               progress=False, auto_adjust=True)
         if not _yf_df.empty:
             # Flatten MultiIndex columns if present (yfinance ≥0.2 wraps in ticker level)
             if isinstance(_yf_df.columns, pd.MultiIndex):
@@ -1108,11 +1107,12 @@ def _load_sim_bars(ticker: str, timeframe: str = "5Min") -> tuple[pd.DataFrame, 
                 _yf_df["time"] = (_yf_df["time"]
                                   .dt.tz_convert("America/New_York")
                                   .dt.tz_localize(None))
-            # Keep pre-market + regular session + post-market (04:00–20:00 ET).
-            # Do NOT filter to 09:30–16:00 — that was stripping pre-market candles.
+            # Keep only regular-session bars (09:29–16:01) and the last calendar day
             _yf_df = _yf_df[
-                (_yf_df["time"].dt.hour >= 4) & (_yf_df["time"].dt.hour < 20)
+                (_yf_df["time"].dt.hour > 9) |
+                ((_yf_df["time"].dt.hour == 9) & (_yf_df["time"].dt.minute >= 29))
             ]
+            _yf_df = _yf_df[_yf_df["time"].dt.hour < 16]
             if not _yf_df.empty:
                 _last_yf_date = _yf_df["time"].dt.date.max()
                 _yf_df = _yf_df[_yf_df["time"].dt.date == _last_yf_date].reset_index(drop=True)
@@ -1214,9 +1214,7 @@ except Exception:
 
 # ── Nav session state — initialise before sidebar renders ─────────────────────
 if "nav_page" not in st.session_state:
-    # Restore from URL query param on refresh so the page doesn't reset
-    _qp = st.query_params.get("page", "brief")
-    st.session_state["nav_page"] = _qp
+    st.session_state["nav_page"] = "live"
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -1237,11 +1235,10 @@ with st.sidebar:
 
     # ── Navigation — full text labels ────────────────────────────────────────
     _NAV = [
-        ("📋  Daily Brief",     "brief"),
         ("🖥  Live Trading",    "live"),
         ("📊  Performance",     "perf"),
+        ("📋  Daily Brief",     "brief"),
         ("📓  Trade Journal",   "journal"),
-        ("🔬  Session Audit",   "audit"),
         (None, None),           # section separator
         ("🗺  Income Roadmap",  "roadmap"),
         ("📐  Strategy Playbooks", "playbooks"),
@@ -1275,7 +1272,6 @@ with st.sidebar:
             use_container_width=True,
         ):
             st.session_state["nav_page"] = _nav_key
-            st.query_params["page"] = _nav_key
             st.rerun()
     st.markdown("<hr style='border-color:#cccccc;margin:10px 0'/>", unsafe_allow_html=True)
     # Live status
@@ -1313,11 +1309,9 @@ with st.sidebar:
         )
     st.markdown("---")
     # ── Bot start / stop ──────────────────────────────────────────────────────
-    # Use bot_state.json as source of truth — LIVE_STATE is only populated when
-    # the bot runs in the same process (not via systemd).
     if "bot_running" not in st.session_state:
-        st.session_state["bot_running"] = bool(_sidebar_bot.get("running", False))
-    _bot_running_now = bool(_sidebar_bot.get("running", False))
+        st.session_state["bot_running"] = bool(LIVE_STATE.get("running", False))
+    _bot_running_now = st.session_state.get("bot_running", False) or bool(LIVE_STATE.get("running", False))
     if _bot_running_now:
         st.markdown(
             "<style>"
@@ -1383,7 +1377,7 @@ with st.sidebar:
     st.caption("🟡 Paper Trading ON → routes to Alpaca paper account")
 
 # ── Read the active page AFTER the sidebar block ──────────────────────────────
-page = st.session_state.get("nav_page", "brief")
+page = st.session_state.get("nav_page", "live")
 # Convenience alias used throughout page bodies
 balance = LIVE_STATE.get("account_balance", STARTING_CAPITAL)
 
@@ -1800,12 +1794,7 @@ def _render_trade_plan_banner(plan: dict) -> None:
     )
 
     # ── Dismiss ───────────────────────────────────────────────────────────────
-    # FIX 2026-06-22: key was a hardcoded literal ("tp_dismiss"), so when the
-    # Daily Brief page renders more than one ticker's plan in the same run
-    # (the for-loop at the "brief" page call site), the second banner's
-    # button collided with the first → StreamlitDuplicateElementKey crash.
-    # Scoping the key to the ticker makes each banner's button unique.
-    if st.button("Dismiss brief", key=f"tp_dismiss_{ticker}", type="secondary"):
+    if st.button("Dismiss brief", key="tp_dismiss", type="secondary"):
         st.session_state["trade_plan_dismissed"] = True
         st.rerun()
 
@@ -2254,82 +2243,21 @@ if page == "live":
 
     if raw_bars:
         _df_raw = _b2d(raw_bars)
-        # Keep pre-market (04:00+) and regular session bars; strip post-market (>20:00)
-        # only to avoid runaway x-axis. Do NOT strip pre-market — the user wants it.
+        # Strip orphan pre/post-market bars — keep only if they're a small stub
+        # (< 10% of total or < 3 bars) so a single 08:30 candle doesn't break the scale.
         if not _df_raw.empty:
-            _session_mask = (
-                (_df_raw["time"].dt.hour >= 4) & (_df_raw["time"].dt.hour < 20)
+            _reg_mask = (_df_raw["time"].dt.hour > 9) | (
+                (_df_raw["time"].dt.hour == 9) & (_df_raw["time"].dt.minute >= 29)
             )
-            _filtered_raw = _df_raw[_session_mask].reset_index(drop=True)
-            if not _filtered_raw.empty:
-                _df_raw = _filtered_raw
-
-        # ── Prepend yfinance pre-market bars (IEX free tier = 9:30–16:00 only) ──
-        # Alpaca/IEX returns regular-session bars only on the free plan.  yfinance
-        # is always free, always has pre-market (04:00–09:29 ET) for all US symbols.
-        # Cache the fetch for 5 minutes in session_state to avoid rate-limiting
-        # the dashboard's auto-refresh cycle (which re-renders every 10–30 s).
-        try:
-            import yfinance as _yf_pm
-            _pm_cache_key = f"_pm_bars_{_fetch_sym}"
-            _pm_cache_ts_key = f"_pm_bars_ts_{_fetch_sym}"
-            _pm_ttl = 300   # seconds — pre-market bars don't change, so 5 min is safe
-            _now_ts = _chart_time.time()
-            _cached_pm = st.session_state.get(_pm_cache_key)
-            _cached_pm_ts = st.session_state.get(_pm_cache_ts_key, 0)
-            if _cached_pm is None or (_now_ts - _cached_pm_ts) > _pm_ttl:
-                # Fetch fresh pre-market bars from yfinance
-                _yf_pm_df = _yf_pm.download(
-                    _fetch_sym, period="2d", interval="5m",
-                    progress=False, auto_adjust=True, prepost=True,
-                )
-                if not _yf_pm_df.empty:
-                    if isinstance(_yf_pm_df.columns, pd.MultiIndex):
-                        _yf_pm_df.columns = _yf_pm_df.columns.get_level_values(0)
-                    _yf_pm_df = _yf_pm_df.rename(columns={
-                        "Open": "open", "High": "high", "Low": "low",
-                        "Close": "close", "Volume": "volume",
-                    })
-                    _yf_pm_df.index.name = "time"
-                    _yf_pm_df = _yf_pm_df.reset_index()
-                    if hasattr(_yf_pm_df["time"].dtype, "tz") and _yf_pm_df["time"].dt.tz is not None:
-                        _yf_pm_df["time"] = (
-                            _yf_pm_df["time"]
-                            .dt.tz_convert("America/New_York")
-                            .dt.tz_localize(None)
-                        )
-                    # Keep ONLY pre-market bars (04:00–09:29 ET) from the latest date
-                    _yf_latest = _yf_pm_df["time"].dt.date.max()
-                    _pm_only = _yf_pm_df[
-                        (_yf_pm_df["time"].dt.date == _yf_latest) &
-                        (
-                            (_yf_pm_df["time"].dt.hour < 9) |
-                            ((_yf_pm_df["time"].dt.hour == 9) &
-                             (_yf_pm_df["time"].dt.minute < 30))
-                        )
-                    ][["time", "open", "high", "low", "close", "volume"]].copy()
-                    st.session_state[_pm_cache_key]    = _pm_only
-                    st.session_state[_pm_cache_ts_key] = _now_ts
-                    _cached_pm = _pm_only
-                else:
-                    st.session_state[_pm_cache_ts_key] = _now_ts  # back-off even on empty
-
-            if _cached_pm is not None and not _cached_pm.empty and not _df_raw.empty:
-                _today_date = _df_raw["time"].dt.date.max()
-                _pm_today = _cached_pm[_cached_pm["time"].dt.date == _today_date]
-                if not _pm_today.empty:
-                    _df_raw = (
-                        pd.concat([_pm_today, _df_raw], ignore_index=True)
-                        .sort_values("time")
-                        .drop_duplicates("time")
-                        .reset_index(drop=True)
-                    )
-        except Exception as _pm_ex:
-            import logging as _pm_log
-            _pm_log.getLogger("celo_trader.dashboard").warning(
-                "Pre-market yfinance prepend failed for %s: %s", _fetch_sym, _pm_ex
-            )
-
+            _out_count = (~_reg_mask).sum()
+            if 0 < _out_count < max(3, int(len(_df_raw) * 0.10)):
+                _filtered_raw = _df_raw[_reg_mask].reset_index(drop=True)
+                # Only apply the filter if rows survive — an all-pre-market
+                # bar list (e.g. IEX free-tier returning a single early bar)
+                # must NOT collapse _df_raw to empty, or df_5m below ends up
+                # empty and the iloc[-1] reads after this block raise IndexError.
+                if not _filtered_raw.empty:
+                    _df_raw = _filtered_raw
         df_5m = _add_indicators(_df_raw)
     else:
         df_5m = pd.DataFrame()  # no bars at all — fall through to placeholder below
@@ -2371,89 +2299,17 @@ if page == "live":
             _raw1m, _ = _ac1m.get_bars(_sym1m, "1Min", limit=390)
         if _raw1m:
             _df1m_raw = _b2d(_raw1m)
-            # Strip post-market only (>20:00); keep pre-market bars if present
             if not _df1m_raw.empty:
-                _df1m_raw = _df1m_raw[
-                    (_df1m_raw["time"].dt.hour >= 4) & (_df1m_raw["time"].dt.hour < 20)
-                ].reset_index(drop=True)
-
-            # Prepend yfinance pre-market 1m bars (IEX free = regular session only).
-            # Cached for 5 minutes in session_state to avoid rate-limiting.
-            try:
-                import yfinance as _yf_pm1
-                import time as _chart_time1
-                _pm1_cache_key    = f"_pm1m_bars_{_sym1m}"
-                _pm1_cache_ts_key = f"_pm1m_bars_ts_{_sym1m}"
-                _pm1_ttl  = 300
-                _now_ts1  = _chart_time1.time()
-                _cached_pm1    = st.session_state.get(_pm1_cache_key)
-                _cached_pm1_ts = st.session_state.get(_pm1_cache_ts_key, 0)
-                if _cached_pm1 is None or (_now_ts1 - _cached_pm1_ts) > _pm1_ttl:
-                    _yf1m_df = _yf_pm1.download(
-                        _sym1m, period="2d", interval="1m",
-                        progress=False, auto_adjust=True, prepost=True,
-                    )
-                    if not _yf1m_df.empty:
-                        if isinstance(_yf1m_df.columns, pd.MultiIndex):
-                            _yf1m_df.columns = _yf1m_df.columns.get_level_values(0)
-                        _yf1m_df = _yf1m_df.rename(columns={
-                            "Open": "open", "High": "high", "Low": "low",
-                            "Close": "close", "Volume": "volume",
-                        })
-                        _yf1m_df.index.name = "time"
-                        _yf1m_df = _yf1m_df.reset_index()
-                        if hasattr(_yf1m_df["time"].dtype, "tz") and _yf1m_df["time"].dt.tz is not None:
-                            _yf1m_df["time"] = (
-                                _yf1m_df["time"]
-                                .dt.tz_convert("America/New_York")
-                                .dt.tz_localize(None)
-                            )
-                        _yf1m_latest = _yf1m_df["time"].dt.date.max()
-                        _pm1m_only = _yf1m_df[
-                            (_yf1m_df["time"].dt.date == _yf1m_latest) &
-                            (
-                                (_yf1m_df["time"].dt.hour < 9) |
-                                ((_yf1m_df["time"].dt.hour == 9) &
-                                 (_yf1m_df["time"].dt.minute < 30))
-                            )
-                        ][["time", "open", "high", "low", "close", "volume"]].copy()
-                        st.session_state[_pm1_cache_key]    = _pm1m_only
-                        st.session_state[_pm1_cache_ts_key] = _now_ts1
-                        _cached_pm1 = _pm1m_only
-                    else:
-                        st.session_state[_pm1_cache_ts_key] = _now_ts1
-
-                if _cached_pm1 is not None and not _cached_pm1.empty and not _df1m_raw.empty:
-                    _1m_date = _df1m_raw["time"].dt.date.max()
-                    _pm1m_today = _cached_pm1[_cached_pm1["time"].dt.date == _1m_date]
-                    if not _pm1m_today.empty:
-                        _df1m_raw = (
-                            pd.concat([_pm1m_today, _df1m_raw], ignore_index=True)
-                            .sort_values("time")
-                            .drop_duplicates("time")
-                            .reset_index(drop=True)
-                        )
-            except Exception as _pm1_ex:
-                import logging as _pm1_log
-                _pm1_log.getLogger("celo_trader.dashboard").warning(
-                    "1m pre-market yfinance prepend failed for %s: %s", _sym1m, _pm1_ex
+                _reg1m = (_df1m_raw["time"].dt.hour > 9) | (
+                    (_df1m_raw["time"].dt.hour == 9) & (_df1m_raw["time"].dt.minute >= 29)
                 )
-
+                _out1m = (~_reg1m).sum()
+                if 0 < _out1m < max(3, int(len(_df1m_raw) * 0.10)):
+                    _df1m_raw = _df1m_raw[_reg1m].reset_index(drop=True)
             df_1m = _add_indicators(_df1m_raw)
         else:
             df_1m = df_5m.copy()
     except Exception:
-        df_1m = df_5m.copy()
-
-    # FIX 2026-06-22: _raw1m can be truthy but parse to an EMPTY frame (e.g.
-    # malformed/zero-length bar payload from _b2d) — that path fell through
-    # both branches above with no safety net, unlike df_5m (which always
-    # gets the NaN-placeholder fallback a few lines up). An empty df_1m used
-    # to just render an empty/odd chart; now that the Live Trading chart's
-    # single-chart view is the default (Quad removed), this gap became the
-    # visible "No bar data" error instead of being masked by Quad's other
-    # tiles. Same fallback df_5m already uses elsewhere in this function.
-    if df_1m is None or df_1m.empty:
         df_1m = df_5m.copy()
 
     # ── Live signal overlay: ORB / VWAP / Volume / Structure ─────────────────────
@@ -2829,14 +2685,10 @@ div[data-testid="stSelectbox"].ct-ticker-pick svg {
     with col_chart:
         _tf_col, _ref_col = st.columns([5, 1], gap="small")
         with _tf_col:
-            # FIX 2026-06-21: "Quad (4 Charts)" removed per direct request —
-            # 4 small charts at once left no room for overlay detail, which
-            # was the biggest reason the live chart looked cramped next to
-            # TradingView. One big chart (below) now gets that room back.
             tf_sel = st.radio(
                 "Timeframe",
-                ["5m Chart", "1m Chart"],
-                index=0,
+                ["5m Chart", "1m Chart", "Quad (4 Charts)"],
+                index=2,          # Default to Quad — primary view per spec
                 horizontal=True, label_visibility="collapsed",
             )
         with _ref_col:
@@ -3769,195 +3621,95 @@ div[data-testid="stSelectbox"].ct-ticker-pick svg {
 
         _today_trades = _trades_for_ticker(_tk)
 
-        # ── Compose chart title — always embed the active ticker symbol ────
-        _chart_title = (
-            f"{_tk} · 5m{_session_tag}"
-            if tf_sel == "5m Chart" else
-            f"{_tk} · 1m{_session_tag}"
-        )
+        # ── Compose chart titles — always embed the active ticker symbol ────
 
-        # ── TradingView-engine live chart (2026-06-21) ──────────────────────
-        # Replaces the old Plotly single/Quad chart. One big chart + an
-        # overlay checklist (like TradingView's own indicator list) instead
-        # of 4 small charts with everything baked in. _render_orb_chart /
-        # _orb_live_fig are left defined above, unused, in case either chart
-        # is ever wanted back.
-        def _build_live_trade_markers(chart_df: pd.DataFrame, trades: list,
-                                       show_sim_trades: bool) -> list[dict]:
-            """
-            Plain-data version of the BUY/SELL marker math used by the old
-            Plotly chart (_orb_live_fig) — produces dicts the chart renderer
-            can draw directly, with zero trade math inside lightweight_chart.py
-            itself (same convention as render_strategy_chart's vwap/or_high
-            args). Real trades always show; SIM/ghost trades only show when
-            show_sim_trades (the old "Simulation Mode" checkbox) is on.
-            """
-            out: list[dict] = []
-            _today_s2 = date.today().isoformat()
-            for _t in (trades or []):
-                try:
-                    _et_raw = str(_t.get("entry_time") or "")
-                    _is_sim = str(_t.get("contract_symbol", "")).startswith("SIM_")
-                    if _is_sim and not show_sim_trades:
-                        continue
-                    if not _et_raw:
-                        continue
-                    _et_parsed = pd.to_datetime(_et_raw)
-                    if _et_parsed.tzinfo is not None:
-                        _et_parsed = _et_parsed.tz_convert("America/New_York").tz_localize(None)
-                    if not _is_sim and _et_parsed.date().isoformat() != _today_s2:
-                        continue
+        if tf_sel == "Quad (4 Charts)":
+            # ── 2×2 quad layout: top-4 Power-5 tickers, each showing 5m ─────
+            # Tickers are pulled LIVE from scanner_state.json so the quad always
+            # mirrors exactly what the bot's scanner is ranking right now.
+            # Falls back to the full TICKER_UNIVERSE (SPY→TSLA) if scanner hasn't
+            # run yet (e.g. pre-market before first scan completes).
+            try:
+                from scanner import get_watchlist as _get_scan_wl
+                _quad_wl = _get_scan_wl()   # reads scanner_state.json
+            except Exception:
+                _quad_wl = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA"]
+            # Fill to 4 slots; deduplicate while preserving order
+            _seen: set = set()
+            _quad_tickers: list = []
+            for _qt in _quad_wl:
+                if _qt not in _seen:
+                    _seen.add(_qt)
+                    _quad_tickers.append(_qt)
+                if len(_quad_tickers) == 4:
+                    break
+            # Pad with fallbacks if watchlist has fewer than 4 tickers
+            for _fb in ["SPY", "QQQ", "AAPL", "NVDA"]:
+                if len(_quad_tickers) < 4 and _fb not in _quad_tickers:
+                    _quad_tickers.append(_fb)
 
-                    _ep_t = float(_t.get("entry_price") or 0)
-                    if _ep_t <= 0:
-                        continue
-                    _strat_id  = str(_t.get("strategy_id") or "INST_ORB")
-                    _risk_cap  = 50.0
-                    _contracts = max(1, int(_risk_cap / max(_ep_t * 0.30, 0.01)))
-                    _opt_type  = str(_t.get("option_type") or "").upper() or "CALL"
-                    _strike    = float(_t.get("strike") or round(_ep_t))
-
-                    if _is_sim:
-                        _underlying_entry = _ep_t
-                        _cached_opt = _t.get("opt_entry_px")
-                        _opt_entry_px_v = float(_cached_opt) if _cached_opt else _bs_price(
-                            _ep_t, _strike, _et_parsed.to_pydatetime(), _opt_type == "CALL")
-                    else:
-                        _opt_entry_px_v = _ep_t
-                        _underlying_entry = _ep_t
-                        try:
-                            _idx_e = (chart_df["time"] - _et_parsed).abs().idxmin()
-                            _underlying_entry = float(chart_df.loc[_idx_e, "close"])
-                        except Exception:
-                            pass
-
-                    out.append({
-                        "time": int(_et_parsed.timestamp()),
-                        "side": "buy",
-                        "price": _underlying_entry,
-                        "color": "#3b82f6",
-                        "label": f"BUY ${_ep_t:.2f}",
-                        "tag": "● BUY",
-                        "lines": [
-                            f"Strategy: {_strat_id}",
-                            f"Contracts: {_contracts}",
-                            f"Underlying: ${_underlying_entry:.2f}",
-                            f"Option: {_opt_type} ${_strike:.0f} | ${_opt_entry_px_v:.2f}",
-                            f"Initial Risk: ~${_risk_cap:.0f}",
-                        ],
-                    })
-
-                    _xt_raw = str(_t.get("exit_time") or "")
-                    _xp_raw = _t.get("exit_price")
-                    _has_exit = (
-                        bool(_xt_raw) and len(_xt_raw) > 5
-                        and _xt_raw not in ("None", "nan", "")
-                        and _xp_raw not in (None, 0, 0.0, "0", "0.0", "None")
+            _qc1, _qc2 = st.columns(2, gap="small")
+            for _qi, _qtk in enumerate(_quad_tickers):
+                _col = _qc1 if _qi % 2 == 0 else _qc2
+                with _col:
+                    try:
+                        _qdf_raw, _ = _load_sim_bars(_qtk, "5Min")
+                        _qdf = _add_indicators(_qdf_raw.copy())
+                    except Exception:
+                        _qdf = df_5m   # fallback to active ticker on fetch error
+                    # Compute signal pill inline so it merges into the chart title row
+                    _q_trades = _trades_for_ticker(_qtk)
+                    _q_pill = ""
+                    try:
+                        _q_sigs, _q_bc, _q_ov = _compute_signals(_qdf)
+                        _q_ovc = (T["green"] if _q_bc >= 3 else
+                                  T["red"]   if _q_bc <= 1 else T["muted"])
+                        _q_label = ("CALL" if _q_bc >= 3 else
+                                    "PUT"  if _q_bc <= 1 else "NEUTRAL")
+                        # Per-signal colored chips with hover tooltips
+                        # title= gives native browser tooltip on hover with full detail
+                        _qsnames = ["ORB", "VW", "σ", "VOL", "EMA"]
+                        _qdots = ""
+                        for _qi, (_qico, _qnm, _qdt) in enumerate(_q_sigs):
+                            _qdc = ("#16a34a" if _qico == "🟢" else
+                                    "#dc2626" if _qico == "🔴" else "#9ca3af")
+                            _qsl  = _qsnames[_qi] if _qi < len(_qsnames) else _qnm[:3]
+                            # Tooltip: signal name + detail on hover
+                            _qtip = f"{_qnm}: {_qdt}".replace("'", "&#39;")
+                            _qdots += (
+                                f"<span title='{_qtip}' style='background:{_qdc};color:#fff;"
+                                f"font-size:.52rem;font-weight:600;padding:1px 5px;"
+                                f"border-radius:3px;letter-spacing:.05em;"
+                                f"margin-right:3px;display:inline-block;cursor:help'>{_qsl}</span>"
+                            )
+                        _q_bg = ("#16a34a" if _q_bc >= 3 else
+                                 "#dc2626" if _q_bc <= 1 else "#6b7280")
+                        _q_pill = (
+                            f"<span style='background:{_q_bg}22;color:{_q_ovc};"
+                            f"font-size:.52rem;font-weight:400;padding:1px 6px;"
+                            f"border-radius:4px;border:1px solid {_q_bg}55;"
+                            f"letter-spacing:.3em'>{_q_label}</span>"
+                            f"&ensp;{_qdots}"
+                        )
+                    except Exception:
+                        pass
+                    _render_orb_chart(
+                        _qdf, "5m", show_lvls=(_qtk.upper() == _tk.upper()),
+                        chart_title=f"{_qtk} · 5m{_session_tag}",
+                        today_trades=_q_trades,
+                        show_overlays=sim_mode, compact=True,
+                        signal_pill=_q_pill,
                     )
-                    if not _has_exit:
-                        continue
-
-                    _xt_parsed = pd.to_datetime(_xt_raw)
-                    if _xt_parsed.tzinfo is not None:
-                        _xt_parsed = _xt_parsed.tz_convert("America/New_York").tz_localize(None)
-                    _xp  = float(_xp_raw)
-                    _pnl = float(_t.get("realized_pnl") or 0.0)
-                    _exit_reason = str(
-                        _t.get("exit_reason") or _t.get("close_reason") or
-                        ("TP hit" if _pnl > 0 else "SL hit" if _pnl < 0 else "manual")
-                    )
-
-                    if _is_sim:
-                        _underlying_exit = _xp
-                        _cached_exit_opt = _t.get("opt_exit_px")
-                        _opt_exit_px_v = float(_cached_exit_opt) if _cached_exit_opt else _bs_price(
-                            _xp, _strike, _xt_parsed.to_pydatetime(), _opt_type == "CALL")
-                    else:
-                        _opt_exit_px_v = _xp
-                        _underlying_exit = _xp
-                        try:
-                            _idx_x = (chart_df["time"] - _xt_parsed).abs().idxmin()
-                            _underlying_exit = float(chart_df.loc[_idx_x, "close"])
-                        except Exception:
-                            pass
-
-                    _pnl_pct = (((_opt_exit_px_v - _opt_entry_px_v) / _opt_entry_px_v * 100)
-                                if _opt_entry_px_v > 0 else 0.0)
-                    _pnl_str = f"+${_pnl:.0f}" if _pnl >= 0 else f"-${abs(_pnl):.0f}"
-
-                    out.append({
-                        "time": int(_xt_parsed.timestamp()),
-                        "side": "sell",
-                        "price": _underlying_exit,
-                        "color": "#BB6BD9",
-                        "label": f"SELL {_pnl_str}",
-                        "tag": "● SELL",
-                        "lines": [
-                            f"Exit Type: {_exit_reason}",
-                            f"Underlying: ${_underlying_exit:.2f}",
-                            f"Option: ${_opt_entry_px_v:.2f} → ${_opt_exit_px_v:.2f}",
-                            f"P&L %: {_pnl_pct:+.1f}%",
-                            f"Net P&L: {_pnl_str}",
-                        ],
-                    })
-                except Exception as _me2:
-                    logger.debug("Live trade marker build error: %s", _me2)
-                    continue
-            return out
-
-        # ── Overlay checklist — TradingView-style on/off toggles ───────────
-        _ov1, _ov2, _ov3, _ov4, _ov5, _ov6 = st.columns(6)
-        _show_vwap_ov    = _ov1.checkbox("VWAP",           value=True,  key="ov_vwap")
-        _show_bands_ov   = _ov2.checkbox("VWAP σ Bands",   value=True,  key="ov_bands")
-        _show_or_ov      = _ov3.checkbox("OR Zone",        value=True,  key="ov_or")
-        _show_pos_ov     = _ov4.checkbox("Position Lines", value=True,  key="ov_pos")
-        _show_markers_ov = _ov5.checkbox("Trade Markers",  value=True,  key="ov_markers")
-        _show_swings_ov  = _ov6.checkbox("Swing Structure", value=False, key="ov_swings")
-
-        if df_display is None or df_display.empty or len(df_display) < 2:
-            st.error(
-                f"⚠️ No bar data for {_tk}. "
-                "IEX feed doesn't carry ETFs (SPY/QQQ) — yfinance fallback also "
-                "unavailable. Check internet connection or Alpaca API key."
-            )
         else:
-            _or_inf_live = _get_or(df_display)
-            _live_markers = _build_live_trade_markers(df_display, _today_trades, sim_mode)
-
-            _live_swings = None
-            if _show_swings_ov:
-                try:
-                    from strategy_router import _find_swings as _fs_live
-                    _sw_raw = _fs_live(df_display, pivot_bars=2)
-                    _live_swings = [{"idx": i, "price": float(p), "type": t} for i, p, t in _sw_raw]
-                except Exception:
-                    _live_swings = None
-
-            _live_position_levels = None
-            if _show_levels and _levels_on_chart_scale:
-                _live_position_levels = {
-                    "entry":  _ep_show,
-                    "stop":   _sl_show,
-                    "target": _tp_show,
-                    "trail":  _tr_show if (_tr_show and _tr_show > _sl_show) else None,
-                }
-
-            from lightweight_chart import render_live_chart as _render_live_tv_chart
-            _render_live_tv_chart(
-                df_display, _tk, chart_title=_chart_title, height=540,
-                or_high=(_or_inf_live["high"] if _or_inf_live else None),
-                or_low=(_or_inf_live["low"] if _or_inf_live else None),
-                position_levels=_live_position_levels,
-                trade_markers=_live_markers,
-                swing_points=_live_swings,
-                show_vwap=_show_vwap_ov,
-                show_vwap_bands=_show_bands_ov,
-                show_or_zone=_show_or_ov,
-                show_position_lines=_show_pos_ov,
-                show_trade_markers=_show_markers_ov,
-                show_swings=_show_swings_ov,
-                show_volume_gate=sim_mode,
+            _chart_title = (
+                f"{_tk} · 5m{_session_tag}"
+                if tf_sel == "5m Chart" else
+                f"{_tk} · 1m{_session_tag}"
             )
+            _render_orb_chart(df_display, tf_sel, show_lvls=_show_levels,
+                              chart_title=_chart_title,
+                              today_trades=_today_trades,
+                              show_overlays=sim_mode)
 
         # ── Audit log — collapsible expander + live fragment refresh ─────────
         # The function is defined with @st.fragment so it refreshes independently
@@ -5652,99 +5404,19 @@ elif page == "brief":
 </div>
 """, unsafe_allow_html=True)
 
-    # ── Today's Scanner Universe ────────────────────────────────────────────────
-    # Read from daily_universe.json (written by scanner after 9:30 full scan).
-    # Falls back to scanner_state.json watchlist if the full scan hasn't run yet.
-    try:
-        from scanner import get_today_universe, DAILY_UNIVERSE_PATH, ANCHOR_TICKERS as _ANCHORS
-        import json as _json
-        from pathlib import Path as _Path
-        from datetime import datetime as _dt_brief
-        import pytz as _pytz_brief
-
-        _et_brief   = _dt_brief.now(_pytz_brief.timezone("America/New_York"))
-        _today_str  = _et_brief.strftime("%Y-%m-%d")
-
-        # Try reading daily_universe.json directly for richest data
-        _du_path = Path(BASE_DIR) / "daily_universe.json" if "BASE_DIR" in dir() else _Path(__file__).parent / "daily_universe.json"
-        _du: dict = {}
-        try:
-            _du = _json.loads(_du_path.read_text())
-        except Exception:
-            pass
-
-        _du_universe  = _du.get("universe", [])
-        _du_date      = _du.get("date", "")
-        _du_scored    = _du.get("scored", [])          # list of {ticker, score, ...}
-        _scan_is_today = (_du_date == _today_str)
-        _scan_tickers  = _du_universe if _scan_is_today else []
-
-        # Fallback: scanner_state.json watchlist (rescored live)
-        if not _scan_tickers:
-            _ss_path = _Path(__file__).parent / "scanner_state.json"
-            try:
-                _ss = _json.loads(_ss_path.read_text())
-                _scan_tickers = _ss.get("watchlist", [])
-            except Exception:
-                pass
-
-        _score_map: dict = {}
-        for _row in _du_scored:
-            if isinstance(_row, dict) and "ticker" in _row:
-                _score_map[_row["ticker"]] = _row.get("score", 0.0)
-
-        if _scan_tickers:
-            _scan_label = f"{'✅ Full scan complete' if _scan_is_today else '⏳ Pre-market watchlist'} · {_et_brief.strftime('%b %d, %Y')}"
-            st.markdown(f"""
-<div style="margin-bottom:16px;padding:12px 16px;border-radius:8px;
-            background:{T['surface']};border:1px solid {T['border']}">
-  <div style="font-size:.72rem;font-weight:700;color:{T['muted']};
-              text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
-    🎯 Today's Universe — {_scan_label}
-  </div>
-  <div style="display:flex;flex-wrap:wrap;gap:8px">
-""", unsafe_allow_html=True)
-            _ticker_pills = ""
-            for _i, _t in enumerate(_scan_tickers):
-                _rank_color = "#1d4ed8" if _i == 0 else ("#0ea5e9" if _i < 3 else T['muted'])
-                _score_str  = f" · {_score_map[_t]:.3f}" if _t in _score_map else ""
-                _rank_badge = f"#{_i+1}"
-                _ticker_pills += f"""
-    <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;
-                 border-radius:20px;background:{_rank_color}18;
-                 border:1px solid {_rank_color}40;font-size:.82rem;font-weight:700;
-                 color:{_rank_color}">
-      <span style="font-size:.65rem;color:{_rank_color}99">{_rank_badge}</span>
-      {_t}{_score_str}
-    </span>"""
-            st.markdown(_ticker_pills + "\n  </div>\n</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-<div style="padding:12px 16px;border-radius:8px;background:{T['surface']};
-            border:1px solid {T['border']};margin-bottom:16px">
-  <div style="font-size:.82rem;color:{T['muted']}">
-    ⏳ <strong>Scanner hasn't run yet today.</strong>
-    The bot scans 140 stocks at 9:30 AM ET and picks the top movers with gap + RVOL.
-    Start the bot before market open to see today's universe here.
-  </div>
-</div>
-""", unsafe_allow_html=True)
-    except Exception as _brief_scan_ex:
-        st.caption(f"Scanner data unavailable: {_brief_scan_ex}")
-
-    # ── Trade Plan Cards ────────────────────────────────────────────────────────
     _bp_data = st.session_state.get("trade_plan_data")
     if isinstance(_bp_data, dict) and _bp_data:
+        # Render one card per ticker that has a plan
         for _bp_ticker, _bp_plan in _bp_data.items():
             if _bp_plan:
                 _render_trade_plan_banner(_bp_plan)
     else:
         st.markdown(f"""
-<div style="text-align:center;padding:40px 20px">
+<div style="text-align:center;padding:60px 20px">
   <div style="font-size:2.5rem;margin-bottom:10px">📰</div>
-  <div style="font-size:.95rem;font-weight:700;color:{T['text']}">No trade plans yet today</div>
+  <div style="font-size:.95rem;font-weight:700;color:{T['text']}">No brief yet today</div>
   <div style="font-size:.78rem;color:{T['muted']};margin-top:5px">
-    Detailed per-ticker plans are generated between 09:15–10:00 AM ET.<br>
+    The daily brief is generated between 09:15–10:00 AM ET.<br>
     Make sure the bot is running during pre-market.
   </div>
 </div>
@@ -6243,499 +5915,6 @@ elif page == "journal":
   Closed trades only.
 </div>
 """, unsafe_allow_html=True)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PAGE 6: SESSION AUDIT
-# ═══════════════════════════════════════════════════════════════════════════════
-elif page == "audit":
-    import math as _math
-    import sqlite3 as _sqlite3
-    from datetime import datetime as _dt, timedelta as _td
-
-    st.markdown("# 🔬  Session Audit")
-    st.caption(
-        "Runs the full signal replay across all 8 strategies and 5 tickers. "
-        "Shows what fired, what was traded, what was missed, and whether "
-        "anything in the bot's config is worth adjusting."
-    )
-
-    # ── Network gap warning ───────────────────────────────────────────────────
-    _bs_audit = _read_bot_state()
-    _gap_min  = _bs_audit.get("data_gap_minutes", 0)
-    _last_fetch = _bs_audit.get("last_successful_bar_fetch")
-    if _gap_min and _gap_min >= 5:
-        st.error(
-            f"⚠️ **Network gap detected:** the bot was without bar data for "
-            f"**{_gap_min} minutes** today (last clean fetch: "
-            f"{str(_last_fetch)[11:16] if _last_fetch else 'unknown'} ET). "
-            f"Entries made during this window used stale or missing data."
-        )
-
-    # ── Date selector + run button ────────────────────────────────────────────
-    _audit_col1, _audit_col2, _audit_col3 = st.columns([2, 1, 1])
-    with _audit_col1:
-        _audit_date = st.date_input(
-            "Session date",
-            value=_dt.now().date(),
-            key="audit_date_picker",
-        ).strftime("%Y-%m-%d")
-    with _audit_col2:
-        st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-        _run_audit = st.button("▶  Run Audit", type="primary", key="run_audit_btn")
-    with _audit_col3:
-        st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-        # Auto-trigger after 4pm ET if viewing today and no cached result yet
-        _now_et_audit = _dt.now()
-        _is_after_close = _now_et_audit.hour >= 16
-        _is_today = (_audit_date == _dt.now().strftime("%Y-%m-%d"))
-        if _is_today and _is_after_close:
-            st.caption("🟢 Auto-available after market close")
-
-    # Checkpoints used throughout the render — defined here so both the
-    # computation block and the render block can reference it.
-    CHKPTS = [20, 30, 45, 60]
-
-    # Cache key — invalidate if date changes
-    _cache_key = f"audit_result_{_audit_date}"
-    if _run_audit:
-        st.session_state.pop(_cache_key, None)
-
-    if _run_audit or (_is_today and _is_after_close and _cache_key not in st.session_state):
-        # ── Run the replay ────────────────────────────────────────────────────
-        with st.spinner("Fetching bars and replaying all 8 strategies…"):
-            try:
-                import risk as _risk_mod
-                _orig_kl = _risk_mod.check_kill_lock
-                _risk_mod.check_kill_lock = lambda: (False, "")  # replay mode
-
-                from broker import AlpacaClient as _AC
-                from signals import bars_to_df as _b2df
-                from strategy_router import route_signals as _rs
-                from config import TICKER_UNIVERSE as _TU
-
-                _ac_audit = _AC()
-
-                # Pull all trades for the day
-                _conn_a = _sqlite3.connect(str(DB_PATH_PAPER))
-                _conn_a.row_factory = _sqlite3.Row
-                _all_day_trades = [dict(r) for r in _conn_a.execute(
-                    "SELECT * FROM trades WHERE entry_time LIKE ? ORDER BY entry_time",
-                    [f"{_audit_date}%"]
-                ).fetchall()]
-                _closed_trades = [t for t in _all_day_trades if t.get("status") == "closed"]
-                _conn_a.close()
-
-                # Fetch bars + replay signals
-                _bars_map = {}
-                _all_sigs = []
-                for _tk in _TU:
-                    _raw, _err, _ = _ac_audit.get_session_bars(_tk, "1Min")
-                    if _err or not _raw:
-                        continue
-                    _df1m = _b2df(_raw)
-                    _df_day = _df1m[_df1m["time"].dt.date.astype(str) == _audit_date].copy()
-                    if _df_day.empty:
-                        continue
-                    _bars_map[_tk] = _df_day.reset_index(drop=True)
-                    _h5, _he = _ac_audit.get_bars(_tk, "5Min", limit=1500)
-                    if not _he and _h5:
-                        _dfh = _b2df(_h5)
-                        _dfh = _dfh[_dfh["time"].dt.date.astype(str) < _audit_date]
-                        _aug = pd.concat([_dfh, _df_day], ignore_index=True).sort_values("time").reset_index(drop=True)
-                    else:
-                        _aug = _df_day.copy()
-                    for _sig in _rs(_aug, _tk, enabled_strategies=None):
-                        _all_sigs.append({
-                            "ticker": _tk,
-                            "strategy_id": _sig.strategy_id,
-                            "direction": _sig.direction,
-                            "option_type": "call" if _sig.direction == "bullish" else "put",
-                            "confidence": _sig.confidence,
-                            "rvol": _sig.rvol,
-                            "trigger_bar": pd.to_datetime(_sig.trigger_bar),
-                        })
-                _all_sigs.sort(key=lambda s: s["trigger_bar"])
-                _risk_mod.check_kill_lock = _orig_kl  # restore
-
-                # Match signals to trades
-                _matched_ids = set()
-                _orb_taken   = set()
-                _sig_rows    = []
-                for _s in _all_sigs:
-                    _match = None
-                    for _t in _closed_trades:
-                        if (_t["id"] not in _matched_ids
-                                and _t["ticker"] == _s["ticker"]
-                                and _t["strategy_id"] == _s["strategy_id"]
-                                and (_t["option_type"] or "").lower() == _s["option_type"]):
-                            _match = _t
-                            _matched_ids.add(_t["id"])
-                            if _s["strategy_id"] == "INST_ORB":
-                                _orb_taken.add(_s["ticker"])
-                            break
-                    _open_at = [_t for _t in _all_day_trades
-                                if pd.to_datetime(_t["entry_time"]) <= _s["trigger_bar"]
-                                and (not _t.get("exit_time")
-                                     or pd.to_datetime(_t["exit_time"]) > _s["trigger_bar"])]
-                    _n_open = len(_open_at)
-                    if _match:
-                        _delay = (pd.to_datetime(_match["entry_time"]) - _s["trigger_bar"]).total_seconds() / 60
-                        _status = ("TAKEN" + (f" (+{_delay:.0f}min late)" if _delay > 5 else ""))
-                        _viable = False
-                    elif _s["strategy_id"] == "INST_ORB" and _s["ticker"] in _orb_taken:
-                        _status = "BLOCKED (ORB already traded)"
-                        _viable = False
-                    elif _n_open >= 2:
-                        _status = f"BLOCKED ({_n_open} positions open)"
-                        _viable = False
-                    else:
-                        _status = "MISSED ← viable"
-                        _viable = True
-                    _sig_rows.append({**_s, "match": _match, "n_open": _n_open,
-                                      "status": _status, "viable": _viable})
-
-                # BS helpers (inline, no import)
-                import math as _m2
-                def _bsp(S, K, now_dt, exp_dt, is_call, sigma=0.16, r=0.05):
-                    try:
-                        T = max((exp_dt - now_dt).total_seconds(), 60) / (365*24*3600)
-                        d1 = (_m2.log(S/K) + (r + .5*sigma**2)*T) / (sigma*_m2.sqrt(T))
-                        d2 = d1 - sigma*_m2.sqrt(T)
-                        N  = lambda x: .5*(1+_m2.erf(x/_m2.sqrt(2)))
-                        disc = _m2.exp(-r*T)
-                        return max(.01, S*N(d1)-K*disc*N(d2) if is_call else K*disc*N(-d2)-S*N(-d1))
-                    except Exception:
-                        return max(.01, S*.013)
-
-                def _iv(S, K, now_dt, exp_dt, is_call, target, r=0.05):
-                    lo, hi = .01, 5.0
-                    for _ in range(60):
-                        mid = (lo + hi) / 2
-                        if _bsp(S, K, now_dt, exp_dt, is_call, mid, r) < target:
-                            lo = mid
-                        else:
-                            hi = mid
-                    return (lo + hi) / 2
-
-                def _near(df, ts):
-                    e = df[df["time"] <= ts]
-                    return None if e.empty else e.iloc[-1]
-
-                # Expiry date (default to nearest Friday)
-                _exp_str = "2026-06-29"
-                if _closed_trades:
-                    _exp_str = _closed_trades[0].get("expiry", _exp_str) or _exp_str
-                _exp_dt = _dt.strptime(_exp_str, "%Y-%m-%d").replace(hour=16)
-
-                CHKPTS = [20, 30, 45, 60]
-
-                # Per-ticker avg IV from real trades
-                _ticker_ivs: dict = {}
-                for _t in _closed_trades:
-                    _df = _bars_map.get(_t["ticker"])
-                    if _df is None: continue
-                    _b0 = _near(_df, pd.to_datetime(_t["entry_time"]))
-                    if _b0 is None: continue
-                    _ic = (_t["option_type"] or "").lower() == "call"
-                    _iv_val = _iv(float(_b0["close"]), float(_t["strike"]),
-                                  pd.to_datetime(_t["entry_time"]).to_pydatetime(),
-                                  _exp_dt, _ic, float(_t["entry_price"]))
-                    _ticker_ivs.setdefault(_t["ticker"], []).append(_iv_val)
-                _avg_iv = {tk: sum(v)/len(v) for tk, v in _ticker_ivs.items()}
-                _DEFAULT_IV = {"SPY": .15, "QQQ": .18, "AAPL": .25, "NVDA": .40, "TSLA": .50}
-
-                # Compute P&L checkpoints for actual trades
-                _actual_rows = []
-                _actual_total = 0.0
-                _totals_a = {c: 0.0 for c in CHKPTS}
-                for _t in _closed_trades:
-                    _df = _bars_map.get(_t["ticker"])
-                    if _df is None: continue
-                    _edt = pd.to_datetime(_t["entry_time"])
-                    _b0 = _near(_df, _edt)
-                    if _b0 is None: continue
-                    _S0 = float(_b0["close"])
-                    _ic = (_t["option_type"] or "").lower() == "call"
-                    _iv_t = _iv(_S0, float(_t["strike"]), _edt.to_pydatetime(),
-                                 _exp_dt, _ic, float(_t["entry_price"]))
-                    _pnl_a = float(_t["realized_pnl"])
-                    _actual_total += _pnl_a
-                    _cp_map = {}
-                    for _c in CHKPTS:
-                        _bN = _near(_df, _edt + _td(minutes=_c))
-                        if _bN is None: continue
-                        _SN = float(_bN["close"])
-                        _cp = (_bsp(_SN, float(_t["strike"]),
-                                    (_edt + _td(minutes=_c)).to_pydatetime(),
-                                    _exp_dt, _ic, _iv_t) - float(_t["entry_price"])) * 100
-                        _cp_map[_c] = _cp
-                        _totals_a[_c] += _cp
-                    _actual_rows.append({
-                        "id": _t["id"], "ticker": _t["ticker"],
-                        "type": (_t["option_type"] or "").upper(),
-                        "strategy": _t["strategy_id"],
-                        "entry": _edt.strftime("%H:%M"),
-                        "exit_reason": (_t.get("exit_reason") or "")[:30],
-                        "actual_pnl": _pnl_a,
-                        "iv": _iv_t,
-                        **{f"+{c}m": _cp_map.get(c) for c in CHKPTS},
-                    })
-
-                # Compute P&L for viable missed signals
-                _missed_rows = []
-                _totals_m = {c: 0.0 for c in CHKPTS}
-                for _sr in _sig_rows:
-                    if not _sr["viable"]: continue
-                    _df = _bars_map.get(_sr["ticker"])
-                    if _df is None: continue
-                    _trig = _sr["trigger_bar"]
-                    _b0 = _near(_df, _trig)
-                    if _b0 is None: continue
-                    _S0 = float(_b0["close"])
-                    _ic = _sr["direction"] == "bullish"
-                    _step = 1.0 if _sr["ticker"] in ("SPY", "QQQ") else 2.5
-                    _K = round((_math.ceil(_S0/_step)*_step if _ic else _math.floor(_S0/_step)*_step), 2)
-                    _iv_m = _avg_iv.get(_sr["ticker"], _DEFAULT_IV.get(_sr["ticker"], .30))
-                    _entry_px = _bsp(_S0, _K, _trig.to_pydatetime(), _exp_dt, _ic, _iv_m)
-                    _cp_map = {}
-                    for _c in CHKPTS:
-                        _bN = _near(_df, _trig + _td(minutes=_c))
-                        if _bN is None: continue
-                        _SN = float(_bN["close"])
-                        _cp = (_bsp(_SN, _K, (_trig + _td(minutes=_c)).to_pydatetime(),
-                                    _exp_dt, _ic, _iv_m) - _entry_px) * 100
-                        _cp_map[_c] = _cp
-                        _totals_m[_c] += _cp
-                    _missed_rows.append({
-                        "ticker": _sr["ticker"], "strategy": _sr["strategy_id"],
-                        "direction": _sr["direction"], "trigger": _trig.strftime("%H:%M"),
-                        "strike": _K, "type": "CALL" if _ic else "PUT",
-                        "iv": _iv_m, "entry_px": _entry_px,
-                        **{f"+{c}m": _cp_map.get(c) for c in CHKPTS},
-                    })
-
-                st.session_state[_cache_key] = {
-                    "sig_rows": _sig_rows,
-                    "actual_rows": _actual_rows,
-                    "missed_rows": _missed_rows,
-                    "actual_total": _actual_total,
-                    "totals_a": _totals_a,
-                    "totals_m": _totals_m,
-                    "n_trades": len(_closed_trades),
-                    "n_signals": len(_all_sigs),
-                }
-
-            except Exception as _ae:
-                st.error(f"Audit failed: {_ae}")
-                import traceback
-                st.code(traceback.format_exc())
-
-    # ── Render cached results ─────────────────────────────────────────────────
-    if _cache_key in st.session_state:
-        _R = st.session_state[_cache_key]
-        _sig_rows    = _R["sig_rows"]
-        _actual_rows = _R["actual_rows"]
-        _missed_rows = _R["missed_rows"]
-        _actual_total = _R["actual_total"]
-        _totals_a    = _R["totals_a"]
-        _totals_m    = _R["totals_m"]
-
-        st.markdown(
-            f"**{_R['n_signals']} signal(s)** replayed across "
-            f"{len(set(s['ticker'] for s in _sig_rows))} ticker(s) · "
-            f"**{_R['n_trades']} trade(s)** in DB"
-        )
-
-        # ── Signal Timeline ───────────────────────────────────────────────────
-        with st.expander("📡  Signal Timeline — Every Strategy Signal Today", expanded=True):
-            if not _sig_rows:
-                st.info("No signals detected. Check that bars were fetched correctly.")
-            for _sr in _sig_rows:
-                _icon = "✅" if "TAKEN" in _sr["status"] else ("🚫" if "BLOCKED" in _sr["status"] else "⚠️")
-                _col_a, _col_b = st.columns([1, 3])
-                with _col_a:
-                    st.markdown(
-                        f"**{_sr['trigger_bar'].strftime('%H:%M')}** · "
-                        f"{_sr['ticker']} {_sr['option_type'].upper()} · "
-                        f"{_sr['strategy_id']}"
-                    )
-                with _col_b:
-                    _pnl_str = ""
-                    if _sr.get("match"):
-                        _pnl_str = f" · P&L **${float(_sr['match'].get('realized_pnl', 0)):+.2f}**"
-                    st.markdown(f"{_icon} {_sr['status']}{_pnl_str}")
-
-        # ── Section A: Hold-longer analysis ──────────────────────────────────
-        st.markdown("### 📈  Section A — Actual Trades: Hold Longer?")
-        st.caption(
-            "Modelled P&L if each trade was held to +20/30/45/60 min instead of "
-            "the 20-min timebox. Calibrated to your real entry fills."
-        )
-        if _actual_rows:
-            for _ar in _actual_rows:
-                with st.expander(
-                    f"Trade #{_ar['id']} · {_ar['ticker']} {_ar['type']} · "
-                    f"{_ar['strategy']} · entry {_ar['entry']} · "
-                    f"P&L ${_ar['actual_pnl']:+.2f}",
-                    expanded=False,
-                ):
-                    st.caption(f"Exit reason: {_ar['exit_reason']}  ·  Implied vol: {_ar['iv']:.0%}")
-                    _hl_cols = st.columns(4)
-                    for _ci, _c in enumerate(CHKPTS):
-                        _v = _ar.get(f"+{_c}m")
-                        with _hl_cols[_ci]:
-                            _delta = (_v - _ar["actual_pnl"]) if _v is not None else None
-                            st.metric(
-                                f"+{_c}min",
-                                f"${_v:+.2f}" if _v is not None else "—",
-                                delta=f"{_delta:+.2f} vs actual" if _delta is not None else None,
-                            )
-
-            st.markdown("**Totals if ALL trades held to each checkpoint:**")
-            _tot_cols = st.columns(4)
-            for _ci, _c in enumerate(CHKPTS):
-                with _tot_cols[_ci]:
-                    _delta = _totals_a[_c] - _actual_total
-                    st.metric(f"+{_c}min", f"${_totals_a[_c]:+.2f}",
-                              delta=f"{_delta:+.2f} vs actual")
-
-        # ── Section B: Viable missed signals ─────────────────────────────────
-        st.markdown("### 🕵️  Section B — Viable Missed Signals")
-        if not _missed_rows:
-            st.success("No viable missed signals — every qualified signal was taken or the concurrent-position cap explains all gaps.")
-        else:
-            st.caption("Hypothetical P&L using ATM strikes, implied vol from today's real fills.")
-            for _mr in _missed_rows:
-                with st.expander(
-                    f"{_mr['trigger']} · {_mr['ticker']} {_mr['type']} ${_mr['strike']:.2f} · "
-                    f"{_mr['strategy']} · IV {_mr['iv']:.0%}",
-                    expanded=True,
-                ):
-                    _m_cols = st.columns(4)
-                    for _ci, _c in enumerate(CHKPTS):
-                        _v = _mr.get(f"+{_c}m")
-                        with _m_cols[_ci]:
-                            st.metric(f"+{_c}min", f"${_v:+.2f}" if _v is not None else "—")
-
-            st.markdown("**Missed signals sub-total (hypothetical):**")
-            _ms_cols = st.columns(4)
-            for _ci, _c in enumerate(CHKPTS):
-                with _ms_cols[_ci]:
-                    st.metric(f"+{_c}min", f"${_totals_m[_c]:+.2f}")
-
-        # ── Grand total ───────────────────────────────────────────────────────
-        st.markdown("### 💰  Grand Total")
-        _gt_cols = st.columns(5)
-        with _gt_cols[0]:
-            st.metric("Actual (20-min timebox)", f"${_actual_total:+.2f}")
-        for _ci, _c in enumerate(CHKPTS):
-            with _gt_cols[_ci + 1]:
-                _combo = _totals_a[_c] + _totals_m[_c]
-                st.metric(f"Held +{_c}min + missed",
-                          f"${_combo:+.2f}",
-                          delta=f"{_combo - _actual_total:+.2f}")
-
-        # ── Tuning Recommendations ────────────────────────────────────────────
-        st.markdown("---")
-        st.markdown("### 🧠  Tuning Recommendations")
-        _recs = []
-
-        # 1. Timebox: did holding longer consistently help?
-        _better_at_45 = sum(
-            1 for _ar in _actual_rows
-            if _ar.get("+45m") is not None and _ar["+45m"] > _ar["actual_pnl"]
-        )
-        _n_actual = len(_actual_rows)
-        if _n_actual >= 4 and _better_at_45 >= int(_n_actual * 0.75):
-            _recs.append((
-                "⏱ Consider extending EARLY_TIMEBOX_MIN",
-                f"{_better_at_45}/{_n_actual} trades were more profitable at +45min. "
-                f"Holding an extra 25 minutes would have improved outcomes on "
-                f"{_better_at_45} of today's {_n_actual} trades. "
-                f"Run this audit for 5+ more sessions before changing the timebox — "
-                f"one day is not enough data to act on. "
-                f"**Current:** `EARLY_TIMEBOX_MIN = 20`  →  **Suggested to test:** `25` or `30`"
-            ))
-        elif _n_actual >= 4 and _better_at_45 <= int(_n_actual * 0.25):
-            _recs.append((
-                "⏱ Timebox looks correctly calibrated",
-                f"Only {_better_at_45}/{_n_actual} trades improved at +45min. "
-                f"The 20-minute cutoff is doing its job of killing theta decay. No change needed."
-            ))
-
-        # 2. Strategy diversity: only one strategy fired all day?
-        _strats_fired = set(s["strategy_id"] for s in _sig_rows)
-        if len(_strats_fired) == 1 and "INST_ORB" in _strats_fired:
-            _recs.append((
-                "📊 Only INST_ORB fired today — other 7 strategies are quiet",
-                "Today's signals were 100% INST_ORB. This is normal in a trending morning, "
-                "but if this pattern holds across multiple sessions it may indicate the other "
-                "strategy thresholds (BOS_MSS, VWAP_PB, FVG, MID_BRK, AFT_REV, TREND_CONT, "
-                "CHAN_BREAK) are too tight for current market conditions. "
-                "No action needed yet — track for 1–2 weeks."
-            ))
-
-        # 3. Network gap
-        if _gap_min and _gap_min >= 5:
-            _recs.append((
-                "🌐 Network watchdog triggered — reconnect logic is now active",
-                f"The bot was offline for {_gap_min}+ minutes today. "
-                f"The new watchdog (added today) will log a warning after 5 minutes and "
-                f"skip strategy evaluation during gaps so stale data can't drive a bad entry. "
-                f"**Action:** If outages keep happening, check your internet stability "
-                f"or run the bot on a cloud VM (e.g., an AWS t3.micro in us-east-1 which "
-                f"has sub-1ms latency to Alpaca's servers)."
-            ))
-
-        # 4. Viable missed signals
-        if _missed_rows:
-            _best_missed = max((_mr.get("+30m", 0) or 0) for _mr in _missed_rows)
-            _recs.append((
-                f"🎯 {len(_missed_rows)} viable signal(s) not traded today",
-                f"These signals fired with open position slots available but weren't executed. "
-                f"Best hypothetical P&L at +30min: ${_best_missed:+.2f}. "
-                f"Most common cause is the network outage preventing the bot from acting on "
-                f"the early-session ORB window. No strategy change needed — "
-                f"fixing the infrastructure (stable connection, reconnect watchdog) "
-                f"is the right fix here."
-            ))
-
-        # 5. Signal-replay gap (signals fired but can't be matched to DB trades)
-        _taken_count  = sum(1 for _sr in _sig_rows if "TAKEN" in _sr["status"])
-        _db_trade_count = _R["n_trades"]
-        if _db_trade_count > _taken_count and _taken_count > 0:
-            _gap_count = _db_trade_count - _taken_count
-            _recs.append((
-                f"🔍 {_gap_count} DB trade(s) can't be matched to a replayed signal",
-                f"The bot made {_db_trade_count} trades today but the offline signal replay "
-                f"only reproduces {_taken_count} of them. This means the live bot's signal "
-                f"evaluation (using truncated, in-session bar windows) produced different "
-                f"RVOL/MSA readings than the end-of-day replay. "
-                f"**Not a trading error** — the entries were valid at the time. "
-                f"But it does mean this audit tool underestimates what the bot actually saw. "
-                f"Worth investigating the RVOL calibration consistency between live and replay."
-            ))
-
-        if not _recs:
-            st.success("✅ Nothing obvious to tune. Keep running daily and watch for patterns over time.")
-        else:
-            for _title, _body in _recs:
-                st.warning(f"**{_title}**\n\n{_body}")
-
-        st.caption(
-            "⚠️ All option P&L figures are modelled (Black-Scholes), not real fills. "
-            "Treat as directional estimates. Do not change bot parameters based on a single session."
-        )
-
-    else:
-        _now_et_chk = _dt.now()
-        if _now_et_chk.hour < 16:
-            st.info(
-                "Click **▶ Run Audit** to replay today's session, or wait until after "
-                "4:00 PM ET when it becomes available automatically."
-            )
-        else:
-            st.info("Click **▶ Run Audit** to load today's session audit.")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE 6: INCOME ROADMAP
@@ -7398,34 +6577,754 @@ elif page == "playbooks":
         "(1.2 small account / 1.6 professional, balance-based — see Settings) after slippage."
     )
 
+    import random as _rng_pb
+
+    def _gen_orb_scenario(seed: int, scenario: str) -> dict:
+        """
+        Generate a synthetic 13-candle ORB session (09:30–11:00 ET, 5-min bars).
+        Returns all data needed to render the dual-panel chart.
+        scenario: "clean" | "flip" | "rejected"
+        """
+        r = _rng_pb.Random(seed)
+        times = pd.date_range("2026-06-06 09:30", periods=13, freq="5min")
+
+        # ── Opening Range candle ──────────────────────────────────────────────
+        or_open  = 450.0 + r.uniform(-5, 5)
+        or_close = or_open + r.uniform(-0.80, 0.80)
+        or_high  = max(or_open, or_close) + r.uniform(0.10, 0.40)
+        or_low   = min(or_open, or_close) - r.uniform(0.10, 0.40)
+        or_vol   = 1_200_000
+
+        bars = [{
+            "time":   times[0],
+            "open":   or_open,  "high": or_high,
+            "low":    or_low,   "close": or_close,
+            "volume": or_vol,
+        }]
+        avg_vol = or_vol * 0.7   # baseline for RVOL = vol / avg
+
+        # ── Subsequent candles ────────────────────────────────────────────────
+        price = or_close
+        for i in range(1, 13):
+            if scenario in ("clean", "flip") and i == 3:
+                # Breakout candle — strong directional move
+                direction_mult = 1 if scenario == "clean" else (-1 if scenario == "flip" else 1)
+                b_open  = price
+                b_close = price + direction_mult * (or_high - or_low) * r.uniform(1.05, 1.25)
+                b_high  = max(b_open, b_close) + r.uniform(0.05, 0.15)
+                b_low   = min(b_open, b_close) - r.uniform(0.05, 0.10)
+                b_vol   = int(avg_vol * r.uniform(2.3, 3.1))   # RVOL > 200%
+            elif scenario == "rejected" and i == 3:
+                # Breakout in price but LOW volume (rejected)
+                b_open  = price
+                b_close = price + (or_high - or_low) * r.uniform(1.05, 1.20)
+                b_high  = max(b_open, b_close) + r.uniform(0.05, 0.12)
+                b_low   = min(b_open, b_close) - r.uniform(0.05, 0.10)
+                b_vol   = int(avg_vol * r.uniform(0.9, 1.4))   # RVOL < 200%
+            elif scenario == "clean" and i == 7:
+                # Stage-1 target hit — large up candle
+                b_open  = price
+                b_close = price + r.uniform(0.30, 0.60)
+                b_high  = b_close + r.uniform(0.10, 0.20)
+                b_low   = b_open  - r.uniform(0.05, 0.10)
+                b_vol   = int(avg_vol * r.uniform(1.2, 1.8))
+            elif scenario == "flip" and i == 5:
+                # First trade stop — sharp reversal
+                b_open  = price
+                b_close = price - r.uniform(0.40, 0.70)
+                b_high  = b_open  + r.uniform(0.05, 0.12)
+                b_low   = b_close - r.uniform(0.10, 0.20)
+                b_vol   = int(avg_vol * r.uniform(1.5, 2.0))
+            elif scenario == "flip" and i == 6:
+                # Flip entry candle — breakout of OR low to downside
+                b_open  = price
+                b_close = price - (or_high - or_low) * r.uniform(1.1, 1.3)
+                b_high  = b_open  + r.uniform(0.05, 0.15)
+                b_low   = b_close - r.uniform(0.05, 0.10)
+                b_vol   = int(avg_vol * r.uniform(2.1, 2.8))   # RVOL > 200%
+            else:
+                drift   = r.uniform(-0.15, 0.15)
+                b_open  = price
+                b_close = price + drift
+                b_high  = max(b_open, b_close) + r.uniform(0.02, 0.12)
+                b_low   = min(b_open, b_close) - r.uniform(0.02, 0.10)
+                b_vol   = int(avg_vol * r.uniform(0.6, 1.3))
+
+            price = b_close
+            bars.append({
+                "time": times[i], "open": b_open, "high": b_high,
+                "low":  b_low,    "close": b_close, "volume": b_vol,
+            })
+
+        df = pd.DataFrame(bars)
+
+        # VWAP
+        df["_tp"]    = (df["high"] + df["low"] + df["close"]) / 3
+        df["_tpv"]   = df["_tp"] * df["volume"]
+        df["vwap"]   = df["_tpv"].cumsum() / df["volume"].cumsum()
+        df["rvol"]   = df["volume"] / avg_vol
+
+        # Key price points for annotations
+        signal_idx  = 3
+        entry_idx   = 4
+        if scenario == "clean":
+            exit_idx    = 7
+            exit_reason = "Stage-1 (+50%)"
+        elif scenario == "flip":
+            exit_idx    = 5   # first trade stop
+            flip_idx    = 6   # flip entry
+            flip_exit   = 10  # flip stage-1
+        else:
+            exit_idx    = 5   # rejected — no entry, show where signal was absent
+
+        result = {
+            "df":          df,
+            "or_high":     or_high,
+            "or_low":      or_low,
+            "signal_idx":  signal_idx,
+            "entry_idx":   entry_idx,
+            "avg_vol":     avg_vol,
+        }
+        if scenario == "flip":
+            result.update({"stop_idx": 5, "flip_idx": flip_idx, "flip_exit": flip_exit})
+        else:
+            result["exit_idx"] = exit_idx
+        return result
+
+    def _build_orb_fig(d: dict, title: str, scenario: str) -> "go.Figure":
+        """
+        Combined price + volume chart using make_subplots.
+        Row 1 (73%): candlestick + VWAP + ORB shading + A/B/C annotations
+        Row 2 (27%): volume bars + 10-day avg + 200% gate
+        All text #000000 for readability regardless of theme.
+        """
+        from plotly.subplots import make_subplots as _msp
+        df      = d["df"]
+        or_high = d["or_high"]
+        or_low  = d["or_low"]
+        avol    = d["avg_vol"]
+
+        fig = _msp(
+            rows=2, cols=1,
+            shared_xaxes=True,
+            row_heights=[0.73, 0.27],
+            vertical_spacing=0.03,
+        )
+
+        # ── Row 1: ORB shaded range ───────────────────────────────────────────
+        fig.add_hrect(y0=or_low, y1=or_high,
+                      fillcolor="rgba(255,215,64,0.12)",
+                      line_width=1, line_color="rgba(255,215,64,0.4)",
+                      annotation_text="Opening Range",
+                      annotation_position="right",
+                      annotation_font=dict(color="rgba(200,160,0,1)", size=8),
+                      row=1, col=1)
+        for lvl, lbl, col in [
+            (or_high, "OR High", "rgba(0,210,70,0.85)"),
+            (or_low,  "OR Low",  "rgba(220,60,60,0.85)"),
+        ]:
+            fig.add_hline(y=lvl, line_color=col, line_width=1.5, line_dash="dash",
+                          annotation_text=lbl, annotation_font_color=col,
+                          annotation_position="right", annotation_font_size=9,
+                          row=1, col=1)
+
+        # ── Row 1: Candlesticks ───────────────────────────────────────────────
+        for idx, row in df.iterrows():
+            if idx == d["signal_idx"]:
+                bc = ("#00c853" if scenario == "clean" else
+                      "#ff5252" if scenario == "flip" else "#ffd740")
+                alpha = 1.0
+            elif scenario == "flip" and idx == d.get("flip_idx"):
+                bc, alpha = "#a78bfa", 1.0
+            else:
+                bc    = "#00e676" if row["close"] >= row["open"] else "#ff5252"
+                alpha = 0.75
+            fig.add_shape(type="line",
+                x0=row["time"], x1=row["time"],
+                y0=row["low"],  y1=row["high"],
+                line=dict(color=bc, width=1.5), row=1, col=1)
+            fig.add_shape(type="rect",
+                x0=row["time"] - pd.Timedelta(minutes=2),
+                x1=row["time"] + pd.Timedelta(minutes=2),
+                y0=min(row["open"], row["close"]),
+                y1=max(row["open"], row["close"]),
+                fillcolor=bc, opacity=alpha, line_width=0, row=1, col=1)
+
+        # ── Row 1: VWAP (bold orange) ─────────────────────────────────────────
+        fig.add_trace(go.Scatter(
+            x=df["time"], y=df["vwap"],
+            mode="lines", name="VWAP",
+            line=dict(color="#ff9800", width=2.5),
+            hovertemplate="VWAP: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+
+        # ── Row 1: VWAP cross annotation ──────────────────────────────────────
+        for i in range(1, len(df)):
+            if (df.iloc[i-1]["close"] > df.iloc[i-1]["vwap"]) != (df.iloc[i]["close"] > df.iloc[i]["vwap"]):
+                fig.add_annotation(
+                    x=df.iloc[i]["time"], y=df.iloc[i]["close"],
+                    text="⚡ VWAP Cross", showarrow=True, arrowhead=2,
+                    ax=0, ay=-30, font=dict(color="#ff9800", size=8, family="Arial Black"),
+                    arrowcolor="#ff9800", arrowwidth=1.5,
+                    row=1, col=1,
+                )
+                break
+
+        # ── Row 1: A/B/C and scenario-specific annotations ───────────────────
+        _yd = float(df["high"].max() - df["low"].min()) * 0.08  # dynamic offset
+
+        def _marker(idx, label, color, above=True):
+            row_d = df.iloc[idx]
+            y = row_d["high"] + _yd if above else row_d["low"] - _yd
+            ay_v = -30 if above else 30
+            fig.add_annotation(
+                x=row_d["time"], y=y,
+                text=f"<b>{label}</b>",
+                showarrow=True, arrowhead=3, ax=0, ay=ay_v,
+                font=dict(color=color, size=9, family="Arial Black"),
+                arrowcolor=color, arrowwidth=2,
+                bgcolor="rgba(255,255,255,0.7)",
+                bordercolor=color, borderwidth=1, borderpad=3,
+                row=1, col=1,
+            )
+
+        if scenario == "clean":
+            # Stage-1 exit line
+            _s1_price = df.iloc[d["entry_idx"]]["close"] * 1.50
+            fig.add_hline(y=_s1_price, line_color="rgba(0,200,80,.80)",
+                          line_dash="dot", line_width=1.5,
+                          annotation_text="Stage-1 target +50%",
+                          annotation_font_color="rgba(0,160,70,1)",
+                          annotation_font_size=8, annotation_position="right",
+                          row=1, col=1)
+            # Stop-loss line
+            _sl_price = df.iloc[d["entry_idx"]]["close"] * 0.70
+            fig.add_hline(y=_sl_price, line_color="rgba(220,60,60,.70)",
+                          line_dash="dot", line_width=1.2,
+                          annotation_text="Hard stop −30%",
+                          annotation_font_color="rgba(180,40,40,1)",
+                          annotation_font_size=8, annotation_position="right",
+                          row=1, col=1)
+            _marker(d["signal_idx"], "A · Signal", "#ffd740")
+            _marker(d["entry_idx"],  "B · Entry",  "#00e5ff")
+            _marker(d["exit_idx"],   "C · Stage-1 Exit", "#00e676")
+            # Stage-2 BE annotation
+            fig.add_annotation(
+                x=df.iloc[d["exit_idx"]]["time"],
+                y=df.iloc[d["entry_idx"]]["close"],
+                text="<b>Stage-2: 50% rides<br>to break-even</b>",
+                showarrow=True, arrowhead=2,
+                ax=40, ay=0,
+                font=dict(color="#00bcd4", size=8),
+                arrowcolor="#00bcd4", arrowwidth=1.2,
+                bgcolor="rgba(255,255,255,0.8)", bordercolor="#00bcd4", borderpad=3,
+                row=1, col=1,
+            )
+
+        elif scenario == "flip":
+            _sl_price1 = df.iloc[d["entry_idx"]]["close"] * 0.70
+            fig.add_hline(y=_sl_price1, line_color="rgba(220,60,60,.70)",
+                          line_dash="dot", line_width=1.2,
+                          annotation_text="Stop −30% → Flip Armed",
+                          annotation_font_color="rgba(180,40,40,1)",
+                          annotation_font_size=8, annotation_position="right",
+                          row=1, col=1)
+            _marker(d["signal_idx"], "A · Signal",   "#ffd740")
+            _marker(d["entry_idx"],  "B · Entry",    "#00e5ff")
+            _marker(d["stop_idx"],   "✗ Stop-Loss",  "#ff5252")
+            _marker(d["flip_idx"],   "⚡ Flip Entry", "#a78bfa", above=False)
+            _fe = min(d["flip_exit"], len(df)-1)
+            _marker(_fe, "C · Flip Exit", "#00e676")
+            fig.add_annotation(
+                x=df.iloc[d["flip_idx"]]["time"],
+                y=df.iloc[d["flip_idx"]]["high"] + _yd * 2.5,
+                text="<b>Flip armed instantly<br>on 30% hard stop</b>",
+                showarrow=False,
+                font=dict(color="#a78bfa", size=8),
+                bgcolor="rgba(255,255,255,0.85)", bordercolor="#a78bfa", borderpad=3,
+                row=1, col=1,
+            )
+
+        elif scenario == "rejected":
+            _marker(d["signal_idx"], "A · Price ✓", "#ffd740")
+            fig.add_annotation(
+                x=df.iloc[d["signal_idx"]]["time"],
+                y=df.iloc[d["signal_idx"]]["low"] - _yd * 2.5,
+                text="<b>❌ RVOL < 200%<br>NO ENTRY — volume gate failed</b>",
+                showarrow=True, arrowhead=2,
+                ax=0, ay=28,
+                font=dict(color="#ff5252", size=9, family="Arial Black"),
+                arrowcolor="#ff5252", arrowwidth=1.5,
+                bgcolor="rgba(255,255,255,0.9)", bordercolor="#ff5252", borderpad=4,
+                row=1, col=1,
+            )
+            # Show where a phantom entry would have stopped out
+            fig.add_annotation(
+                x=df.iloc[min(d["signal_idx"]+2, len(df)-1)]["time"],
+                y=df.iloc[d["signal_idx"]]["close"] * 0.97,
+                text="Without volume → immediate reversal",
+                showarrow=False,
+                font=dict(color="#888", size=7),
+                row=1, col=1,
+            )
+
+        # ── Row 2: Volume bars ────────────────────────────────────────────────
+        vol_colors = []
+        for idx, row in df.iterrows():
+            if idx == d["signal_idx"]:
+                col = ("#00c853" if scenario == "clean" else
+                       "#ff5252" if scenario == "flip" else "#ffd740")
+            elif scenario == "flip" and idx == d.get("flip_idx"):
+                col = "#a78bfa"
+            else:
+                col = ("rgba(0,229,255,0.45)" if row["close"] >= row["open"]
+                       else "rgba(255,82,82,0.45)")
+            vol_colors.append(col)
+
+        fig.add_trace(go.Bar(
+            x=df["time"], y=df["volume"],
+            marker_color=vol_colors, marker_line_width=0,
+            hovertemplate="%{x|%H:%M}<br>Vol: %{y:,.0f}<extra></extra>",
+        ), row=2, col=1)
+        # 10-day avg line
+        fig.add_hline(y=avol, line_color="rgba(255,152,0,0.7)", line_dash="dot",
+                      line_width=1.5, annotation_text="10-day avg",
+                      annotation_font_color="rgba(200,120,0,0.9)",
+                      annotation_font_size=8, annotation_position="right",
+                      row=2, col=1)
+        # 200% gate
+        fig.add_hline(y=avol * 2.0, line_color="rgba(0,200,100,0.8)", line_dash="dot",
+                      line_width=2, annotation_text="200% gate",
+                      annotation_font_color="rgba(0,160,80,1)",
+                      annotation_font_size=9, annotation_position="right",
+                      row=2, col=1)
+
+        # ── Layout ────────────────────────────────────────────────────────────
+        fig.update_layout(
+            title=dict(text=title, font=dict(size=12, color="#000000", family="Arial Black"), x=0.01),
+            template="plotly_white",
+            paper_bgcolor=T["plot_paper"], plot_bgcolor=T["plot_bg"],
+            height=440,
+            margin=dict(l=8, r=110, t=38, b=8),
+            font=dict(color="#000000", size=8),
+            showlegend=False,
+            hovermode="x unified",
+            bargap=0.06,
+        )
+        fig.update_xaxes(type="date", tickformat="%H:%M",
+                         tickfont=dict(color="#000000", size=7),
+                         gridcolor="rgba(0,0,0,0.08)",
+                         showticklabels=False, row=1, col=1)
+        fig.update_xaxes(type="date", tickformat="%H:%M",
+                         tickfont=dict(color="#000000", size=7),
+                         gridcolor="rgba(0,0,0,0.08)",
+                         showticklabels=True, row=2, col=1)
+        fig.update_yaxes(tickprefix="$", tickfont=dict(color="#000000", size=7),
+                         gridcolor="rgba(0,0,0,0.08)", row=1, col=1)
+        fig.update_yaxes(tickformat=".2s", tickfont=dict(color="#000000", size=6),
+                         gridcolor="rgba(0,0,0,0.08)", row=2, col=1)
+        return fig
+
+    def _build_volume_fig(d: dict, scenario: str, rvol_threshold: float = 2.0) -> "go.Figure":
+        """DEPRECATED — volume is now combined into _build_orb_fig. Kept as no-op."""
+        return go.Figure()   # returns empty so existing calls don't break
+
+    def _build_strategy_fig(strategy: str, seed: int = 42) -> "go.Figure":
+        """
+        Synthetic dual-panel chart (price + volume) for strategies 2–8.
+        strategy: "bos_mss"|"vwap_pb"|"fvg"|"mid_brk"|"aft_rev"|"trend_cont"|"chan_break"
+        Visual style matches _build_orb_fig (plotly_white, #000 text, same palette).
+        """
+        from plotly.subplots import make_subplots as _msp
+        r = _rng_pb.Random(seed)
+        n = {"bos_mss":22,"vwap_pb":20,"fvg":22,"mid_brk":24,
+             "aft_rev":30,"trend_cont":20,"chan_break":25}.get(strategy, 20)
+        base     = 450.0 + r.uniform(-15, 15)
+        avg_vol  = 900_000
+
+        bars = []
+
+        def _b(p, od=0.0, cd=0.0, wh=0.12, wl=0.10, vm=1.0):
+            """One synthetic OHLCV bar centred near price p."""
+            _o = p + od;  _c = p + cd
+            return {"open":_o,"high":max(_o,_c)+wh,"low":min(_o,_c)-wl,
+                    "close":_c,"volume":int(avg_vol*vm*r.uniform(0.8,1.2))}
+
+        price       = base
+        signal_idx  = None
+        entry_idx   = None
+        exit_idx    = None
+        annotations = []   # {idx, label, color, above}
+        hlines      = []   # (y, color, dash, label)
+        hrects      = []   # {y0, y1, fillcolor, line_color, label}
+        channel_pts = []   # (idx, y) for chan_break trendline
+
+        # ── BOS_MSS ──────────────────────────────────────────────────────────
+        if strategy == "bos_mss":
+            sl_y = None
+            for i in range(n):
+                if   i == 0:  b = _b(price,-0.10, 0.35, 0.20, 0.12)
+                elif i == 1:  b = _b(price, 0.30,-0.45, 0.15, 0.20)
+                elif i == 2:  b = _b(price,-0.40,-0.50, 0.10, 0.20)
+                elif i == 3:  b = _b(price,-0.45,-0.35, 0.12, 0.18); sl_y = price - 0.35 - 0.18
+                elif i == 4:  b = _b(price,-0.30, 0.40, 0.15, 0.10)
+                elif i == 5:  b = _b(price, 0.35, 0.25, 0.18, 0.12)
+                elif i == 6:  b = _b(price, 0.20,-0.30, 0.12, 0.18)
+                elif i == 7:  b = _b(price,-0.25,-0.40, 0.10, 0.20)
+                elif i == 8:  b = _b(price,-0.35,-0.20, 0.12, 0.16)
+                elif i == 9:  b = _b(price,-0.20, 0.15, 0.14, 0.12)
+                elif i == 10: b = _b(price, 0.10,-0.10, 0.12, 0.10)
+                elif i == 11:
+                    b = _b(price,-0.15,-0.60, 0.08, 0.22, vm=2.4)
+                    signal_idx = i
+                elif i == 12:
+                    b = _b(price,-0.55,-0.45, 0.10, 0.20, vm=1.8)
+                    entry_idx = i
+                else:         b = _b(price,-0.10,-0.30+r.uniform(-0.10,0.05), 0.10, 0.18)
+                price = b["close"]; bars.append(b)
+            if sl_y:
+                hlines.append((sl_y,"rgba(255,82,82,0.8)","dash","Prior SL (BOS level)"))
+            annotations += [
+                {"idx":0,  "label":"SH",          "color":"#ff9800","above":True},
+                {"idx":5,  "label":"LH",          "color":"#ff9800","above":True},
+                {"idx":3,  "label":"SL",          "color":"#ff5252","above":False},
+                {"idx":11, "label":"A · Signal",  "color":"#ffd740","above":True},
+                {"idx":12, "label":"B · Entry",   "color":"#00e5ff","above":False},
+            ]
+
+        # ── VWAP_PB ──────────────────────────────────────────────────────────
+        elif strategy == "vwap_pb":
+            for i in range(n):
+                if   i <  6: b = _b(price, r.uniform(-0.05,0.10), r.uniform(0.20,0.45), 0.12, 0.08)
+                elif i <= 8: b = _b(price, r.uniform(0.05,0.12),  r.uniform(-0.18,-0.08),0.10, 0.16)
+                elif i == 9:
+                    b = _b(price, r.uniform(-0.05,0.05), r.uniform(0.15,0.30), 0.08, 0.22, vm=1.9)
+                    signal_idx = i
+                elif i == 10:
+                    b = _b(price, r.uniform(0.00,0.08),  r.uniform(0.20,0.35), 0.12, 0.08, vm=1.5)
+                    entry_idx = i
+                elif i == 15:
+                    b = _b(price, r.uniform(0.05,0.12),  r.uniform(0.25,0.40), 0.15, 0.08, vm=1.3)
+                    exit_idx = i
+                else:        b = _b(price, r.uniform(-0.05,0.10), r.uniform(0.10,0.30), 0.12, 0.08)
+                price = b["close"]; bars.append(b)
+            annotations += [
+                {"idx":signal_idx or 9,  "label":"A · VWAP Touch",   "color":"#ffd740","above":False},
+                {"idx":entry_idx  or 10, "label":"B · Entry",        "color":"#00e5ff","above":True},
+                {"idx":exit_idx   or 15, "label":"C · Stage-1 Exit", "color":"#00e676","above":True},
+            ]
+
+        # ── FVG ──────────────────────────────────────────────────────────────
+        elif strategy == "fvg":
+            fvg_top = fvg_bot = None
+            for i in range(n):
+                if   i <  4: b = _b(price, r.uniform(-0.05,0.08), r.uniform(0.15,0.30), 0.12, 0.08)
+                elif i == 4:
+                    b = _b(price, r.uniform(-0.05,0.10), r.uniform(0.10,0.20), 0.12, 0.08)
+                    fvg_top = price + 0.10 - 0.12   # bar4 low ≈ bottom of up-candle body
+                elif i == 5:
+                    b = _b(price, r.uniform(0.05,0.15), -r.uniform(1.0,1.4), 0.08, 0.25, vm=3.0)
+                elif i == 6:
+                    b = _b(price, r.uniform(-0.10,0.00), r.uniform(-0.25,-0.10), 0.08, 0.18)
+                    fvg_bot = price - 0.10 + 0.08   # bar6 high ≈ top of down-candle body
+                elif i <  10: b = _b(price, r.uniform(-0.12,0.00), r.uniform(-0.20,-0.05), 0.10, 0.16)
+                elif i == 10: b = _b(price, r.uniform(-0.10,0.00), r.uniform(0.15,0.30), 0.12, 0.10)
+                elif i <  14: b = _b(price, r.uniform(-0.05,0.08), r.uniform(0.10,0.25), 0.12, 0.08)
+                elif i == 14:
+                    b = _b(price, r.uniform(0.00,0.08), r.uniform(0.05,0.15), 0.10, 0.10, vm=1.8)
+                    signal_idx = i
+                elif i == 15:
+                    b = _b(price, r.uniform(0.00,0.08), r.uniform(-0.20,-0.08), 0.14, 0.12, vm=1.5)
+                    entry_idx = i
+                else:        b = _b(price, r.uniform(-0.08,0.05), r.uniform(-0.25,-0.05), 0.12, 0.18)
+                price = b["close"]; bars.append(b)
+            if fvg_top and fvg_bot:
+                y0, y1 = sorted([fvg_top, fvg_bot])
+                hrects.append({"y0":y0,"y1":y1,
+                                "fillcolor":"rgba(255,152,0,0.14)",
+                                "line_color":"rgba(255,152,0,0.4)","label":"FVG Zone"})
+            annotations += [
+                {"idx":5,  "label":"⚡ Impulse",      "color":"#ff5252","above":True},
+                {"idx":signal_idx or 14,"label":"A · Gap Fill","color":"#ffd740","above":True},
+                {"idx":entry_idx  or 15,"label":"B · Entry PUT","color":"#00e5ff","above":False},
+            ]
+
+        # ── MID_BRK ──────────────────────────────────────────────────────────
+        elif strategy == "mid_brk":
+            or_low_y = None
+            for i in range(n):
+                if   i == 0:
+                    b = _b(price,-0.10, 0.40, 0.20, 0.12)
+                    or_low_y = price - 0.12
+                elif i <  4:  b = _b(price, r.uniform(0.05,0.12),  r.uniform(-0.10,0.20), 0.14, 0.12)
+                elif i == 4:  b = _b(price, r.uniform(0.05,0.10),  r.uniform(-0.20,-0.05),0.10, 0.16)
+                elif i <  8:  b = _b(price, r.uniform(-0.05,0.08), r.uniform(-0.12,0.05), 0.10, 0.14)
+                elif i <  12: b = _b(price, r.uniform(-0.05,0.05), r.uniform(-0.08,0.08), 0.08, 0.10)
+                elif i == 12:
+                    b = _b(price, r.uniform(-0.08,0.02), -r.uniform(0.50,0.70), 0.08, 0.22, vm=2.5)
+                    signal_idx = i
+                elif i == 13:
+                    b = _b(price,-r.uniform(0.05,0.15),-r.uniform(0.25,0.40), 0.10, 0.18, vm=1.8)
+                    entry_idx = i
+                else:        b = _b(price, r.uniform(-0.12,0.00), r.uniform(-0.30,-0.05), 0.10, 0.20)
+                price = b["close"]; bars.append(b)
+            if or_low_y:
+                hlines.append((or_low_y,"rgba(255,82,82,0.8)","dash","OR Low"))
+            annotations += [
+                {"idx":4,            "label":"LH",            "color":"#ff9800","above":True},
+                {"idx":signal_idx or 12,"label":"A · Breakdown","color":"#ffd740","above":True},
+                {"idx":entry_idx  or 13,"label":"B · Entry PUT","color":"#00e5ff","above":False},
+            ]
+
+        # ── AFT_REV ──────────────────────────────────────────────────────────
+        elif strategy == "aft_rev":
+            lh_y = None
+            for i in range(n):
+                if   i == 0: b = _b(price,-0.10, 0.40, 0.22, 0.12)
+                elif i <  5: b = _b(price, r.uniform(0.05,0.12),  r.uniform(-0.20,-0.05),0.12, 0.18)
+                elif i == 5:
+                    b = _b(price, r.uniform(0.05,0.10), r.uniform(0.15,0.30), 0.14, 0.10)
+                    lh_y = price + 0.30 + 0.14
+                elif i <  9: b = _b(price, r.uniform(-0.05,0.08), r.uniform(-0.15,0.00), 0.10, 0.14)
+                elif i == 9:
+                    b = _b(price, r.uniform(0.05,0.10), r.uniform(0.20,0.35), 0.16, 0.10)
+                elif i < 14: b = _b(price, r.uniform(-0.05,0.08), r.uniform(-0.20,-0.05),0.10, 0.16)
+                elif i < 17: b = _b(price, r.uniform(-0.08,0.05), r.uniform(-0.05,0.15), 0.10, 0.08)
+                elif i == 17:
+                    b = _b(price, r.uniform(-0.05,0.05), r.uniform(0.25,0.40), 0.14, 0.08, vm=2.0)
+                    signal_idx = i
+                elif i == 18:
+                    b = _b(price, r.uniform(0.00,0.08), r.uniform(0.20,0.35), 0.12, 0.08, vm=1.7)
+                    entry_idx = i
+                else:        b = _b(price, r.uniform(0.00,0.10), r.uniform(0.10,0.30), 0.14, 0.08)
+                price = b["close"]; bars.append(b)
+            if lh_y:
+                hlines.append((lh_y,"rgba(255,152,0,0.8)","dash","Prior LH (BOS level)"))
+            annotations += [
+                {"idx":5,  "label":"LH",             "color":"#ff9800","above":True},
+                {"idx":9,  "label":"LH",             "color":"#ff9800","above":True},
+                {"idx":14, "label":"HL",             "color":"#00e676","above":False},
+                {"idx":signal_idx or 17,"label":"A · BOS Signal", "color":"#ffd740","above":True},
+                {"idx":entry_idx  or 18,"label":"B · Entry CALL","color":"#00e5ff","above":False},
+            ]
+
+        # ── TREND_CONT ────────────────────────────────────────────────────────
+        elif strategy == "trend_cont":
+            lh_close = None
+            for i in range(n):
+                if   i <  4:
+                    b = _b(price, r.uniform(0.05,0.12), r.uniform(-0.30,-0.15), 0.10, 0.22)
+                elif i == 4: b = _b(price, r.uniform(-0.15,-0.05), r.uniform(0.20,0.35), 0.16, 0.08)
+                elif i == 5: b = _b(price, r.uniform(-0.05,0.05),  r.uniform(0.15,0.25), 0.14, 0.08)
+                elif i == 6: b = _b(price, r.uniform(0.00,0.08),   r.uniform(0.05,0.15), 0.12, 0.08)
+                elif i == 7:
+                    b = _b(price, r.uniform(0.00,0.05), r.uniform(-0.05,0.08), 0.12, 0.10)
+                    lh_close = price + r.uniform(-0.05, 0.08)
+                elif i == 8: b = _b(price, r.uniform(-0.05,0.05), r.uniform(-0.10,0.05), 0.10, 0.10)
+                elif i == 9:
+                    drop = max(0.05, (lh_close or price) - price + r.uniform(0.02, 0.10))
+                    b = _b(price, r.uniform(-0.08,0.00), -drop, 0.08, 0.16, vm=1.8)
+                    signal_idx = i
+                elif i == 10:
+                    b = _b(price, r.uniform(-0.10,0.00), r.uniform(-0.25,-0.10), 0.10, 0.18, vm=1.5)
+                    entry_idx = i
+                else:        b = _b(price, r.uniform(-0.05,0.05), r.uniform(-0.25,-0.05), 0.10, 0.18)
+                price = b["close"]; bars.append(b)
+            if lh_close:
+                hlines.append((lh_close,"rgba(255,152,0,0.8)","dash","LH bar close (re-entry gate)"))
+            annotations += [
+                {"idx":7,            "label":"LH · Resistance",  "color":"#ff9800","above":True},
+                {"idx":signal_idx or 9, "label":"A · Rejection", "color":"#ffd740","above":False},
+                {"idx":entry_idx or 10, "label":"B · Re-entry PUT","color":"#00e5ff","above":False},
+            ]
+
+        # ── CHAN_BREAK ────────────────────────────────────────────────────────
+        else:
+            sh_pts = []   # (idx, high_y) for descending trendline
+            for i in range(n):
+                if   i == 0: b = _b(price,-0.10, 0.50, 0.25, 0.12)
+                elif i <  3: b = _b(price, r.uniform(0.05,0.12), r.uniform(-0.20,-0.05),0.10, 0.18)
+                elif i == 3:
+                    b = _b(price, r.uniform(0.05,0.10), r.uniform(0.20,0.35), 0.18, 0.10)
+                    sh_pts.append((3, price + 0.35 + 0.18))
+                elif i <  7: b = _b(price, r.uniform(-0.05,0.08), r.uniform(-0.20,-0.05),0.10, 0.18)
+                elif i == 7:
+                    b = _b(price, r.uniform(-0.08,0.05), r.uniform(0.15,0.28), 0.18, 0.10)
+                    sh_pts.append((7, price + 0.28 + 0.18))
+                elif i < 12: b = _b(price, r.uniform(-0.05,0.08), r.uniform(-0.20,-0.05),0.10, 0.18)
+                elif i == 12:
+                    b = _b(price, r.uniform(-0.08,0.05), r.uniform(0.10,0.22), 0.16, 0.10)
+                    sh_pts.append((12, price + 0.22 + 0.16))
+                elif i < 17: b = _b(price, r.uniform(-0.05,0.08), r.uniform(-0.18,-0.05),0.10, 0.16)
+                elif i == 17:
+                    if len(sh_pts) >= 2:
+                        x1,y1 = sh_pts[-2]; x2,y2 = sh_pts[-1]
+                        slope  = (y2-y1)/(x2-x1) if x2!=x1 else 0
+                        proj_y = y2 + slope*(17-x2)
+                        b = {"open":  price+r.uniform(0.00,0.05),
+                             "high":  proj_y+r.uniform(0.02,0.06),
+                             "close": proj_y-r.uniform(0.08,0.14),
+                             "volume":int(avg_vol*r.uniform(1.6,2.2))}
+                        b["low"] = b["close"]-r.uniform(0.05,0.10)
+                        channel_pts = sh_pts[:]
+                    else:
+                        b = _b(price, r.uniform(-0.08,0.00), r.uniform(-0.15,-0.05),0.16,0.12,vm=1.8)
+                    signal_idx = i
+                elif i == 18:
+                    b = _b(price, r.uniform(-0.10,0.00), r.uniform(-0.20,-0.05),0.10,0.18,vm=1.5)
+                    entry_idx = i
+                else: b = _b(price, r.uniform(-0.05,0.05), r.uniform(-0.20,-0.05),0.10,0.16)
+                price = b["close"]; bars.append(b)
+            annotations += [
+                {"idx":3,  "label":"SH 1",        "color":"#ff9800","above":True},
+                {"idx":7,  "label":"SH 2",        "color":"#ff9800","above":True},
+                {"idx":12, "label":"SH 3",        "color":"#ff9800","above":True},
+                {"idx":signal_idx or 17,"label":"A · Rejection","color":"#ffd740","above":True},
+                {"idx":entry_idx  or 18,"label":"B · Entry PUT","color":"#00e5ff","above":False},
+            ]
+
+        # ── Build DataFrame ───────────────────────────────────────────────────
+        times = pd.date_range("2026-06-06 09:30", periods=n, freq="5min")
+        df = pd.DataFrame(bars)
+        df["time"]  = times[:len(df)]
+        df["_tp"]   = (df["high"]+df["low"]+df["close"])/3
+        df["_tpv"]  = df["_tp"]*df["volume"]
+        df["vwap"]  = df["_tpv"].cumsum()/df["volume"].cumsum()
+
+        # ── Figure ────────────────────────────────────────────────────────────
+        fig = _msp(rows=2, cols=1, shared_xaxes=True,
+                   row_heights=[0.73,0.27], vertical_spacing=0.03)
+
+        # Horizontal rect bands (FVG zone etc.)
+        for hr in hrects:
+            fig.add_hrect(y0=hr["y0"], y1=hr["y1"],
+                          fillcolor=hr["fillcolor"],
+                          line_width=1, line_color=hr["line_color"],
+                          annotation_text=hr.get("label",""),
+                          annotation_position="right",
+                          annotation_font=dict(color="rgba(200,120,0,1)",size=8),
+                          row=1, col=1)
+
+        # Horizontal lines (key levels)
+        for hy, hc, hd, hl in hlines:
+            fig.add_hline(y=hy, line_color=hc, line_dash=hd, line_width=1.5,
+                          annotation_text=hl, annotation_font_color=hc,
+                          annotation_position="right", annotation_font_size=9,
+                          row=1, col=1)
+
+        # Candlesticks
+        _dy = float(df["high"].max()-df["low"].min())*0.07
+        for idx, row in df.iterrows():
+            if idx == signal_idx:
+                bc = "#ffd740"; alpha = 1.0
+            elif idx == entry_idx:
+                bc = "#00e5ff"; alpha = 1.0
+            else:
+                bc    = "#00e676" if row["close"] >= row["open"] else "#ff5252"
+                alpha = 0.75
+            fig.add_shape(type="line",
+                          x0=row["time"],x1=row["time"],y0=row["low"],y1=row["high"],
+                          line=dict(color=bc,width=1.5),row=1,col=1)
+            fig.add_shape(type="rect",
+                          x0=row["time"]-pd.Timedelta(minutes=2),
+                          x1=row["time"]+pd.Timedelta(minutes=2),
+                          y0=min(row["open"],row["close"]),
+                          y1=max(row["open"],row["close"]),
+                          fillcolor=bc,opacity=alpha,line_width=0,row=1,col=1)
+
+        # VWAP
+        fig.add_trace(go.Scatter(
+            x=df["time"],y=df["vwap"],mode="lines",name="VWAP",
+            line=dict(color="#ff9800",width=2.0),
+            hovertemplate="VWAP: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+
+        # Descending channel trendline (chan_break only)
+        if channel_pts and len(channel_pts) >= 2:
+            x1i,y1v = channel_pts[0]; x2i,y2v = channel_pts[-1]
+            slope = (y2v-y1v)/(x2i-x1i) if x2i!=x1i else 0
+            t_ext = [df["time"].iloc[max(0,x1i-1)], df["time"].iloc[min(n-1,x2i+7)]]
+            y_ext = [y1v+slope*(max(0,x1i-1)-x1i), y1v+slope*(min(n-1,x2i+7)-x1i)]
+            fig.add_trace(go.Scatter(
+                x=t_ext, y=y_ext, mode="lines", name="Channel",
+                line=dict(color="rgba(255,152,0,0.9)",width=2,dash="dash"),
+                hoverinfo="skip",
+            ), row=1, col=1)
+
+        # Annotations
+        for ann in annotations:
+            ai = ann["idx"]
+            if ai >= len(df): continue
+            row_d = df.iloc[ai]
+            yp  = row_d["high"]+_dy if ann["above"] else row_d["low"]-_dy
+            ayv = -28 if ann["above"] else 28
+            fig.add_annotation(
+                x=row_d["time"], y=yp,
+                text=f"<b>{ann['label']}</b>",
+                showarrow=True,arrowhead=3,ax=0,ay=ayv,
+                font=dict(color=ann["color"],size=9,family="Arial Black"),
+                arrowcolor=ann["color"],arrowwidth=2,
+                bgcolor="rgba(255,255,255,0.75)",
+                bordercolor=ann["color"],borderwidth=1,borderpad=3,
+                row=1, col=1,
+            )
+
+        # Volume bars
+        vol_colors = []
+        for idx, row in df.iterrows():
+            if   idx == signal_idx: vc = "#ffd740"
+            elif idx == entry_idx:  vc = "#00e5ff"
+            else: vc = "rgba(0,229,255,0.45)" if row["close"]>=row["open"] else "rgba(255,82,82,0.45)"
+            vol_colors.append(vc)
+        fig.add_trace(go.Bar(x=df["time"],y=df["volume"],
+                             marker_color=vol_colors,marker_line_width=0,
+                             hovertemplate="%{x|%H:%M}<br>Vol:%{y:,.0f}<extra></extra>"),
+                      row=2, col=1)
+        fig.add_hline(y=avg_vol,      line_color="rgba(255,152,0,0.7)",line_dash="dot",line_width=1.5,
+                      annotation_text="avg",annotation_font_color="rgba(200,120,0,0.9)",
+                      annotation_font_size=8,annotation_position="right",row=2,col=1)
+        fig.add_hline(y=avg_vol*1.5,  line_color="rgba(0,200,100,0.8)",line_dash="dot",line_width=1.8,
+                      annotation_text="150% gate",annotation_font_color="rgba(0,160,80,1)",
+                      annotation_font_size=9,annotation_position="right",row=2,col=1)
+
+        # Layout
+        _titles = {
+            "bos_mss":    "BOS_MSS — Break of Structure  |  PUT fires after SL break · RVOL ≥ 150%",
+            "vwap_pb":    "VWAP_PB — VWAP Pullback  |  HL touch + close above VWAP · RVOL ≥ 150%",
+            "fvg":        "FVG — Fair Value Gap  |  Price returns to fill 3-bar imbalance zone",
+            "mid_brk":    "MID_BRK — Midday Breakdown  |  OR Low breaks 11:00–13:30 · LH confirmed",
+            "aft_rev":    "AFT_REV — Afternoon Reversal  |  HL forms → BOS above LH · CALL",
+            "trend_cont": "TREND_CONT — Trend Continuation  |  LH re-entry on pullback failure · PUT",
+            "chan_break":  "CHAN_BREAK — Channel Rejection  |  Wick tags descending line · body rejects",
+        }
+        fig.update_layout(
+            title=dict(text=_titles.get(strategy, strategy),
+                       font=dict(size=11,color="#000000",family="Arial Black"),x=0.01),
+            template="plotly_white",
+            paper_bgcolor=T["plot_paper"],plot_bgcolor=T["plot_bg"],
+            height=420,margin=dict(l=8,r=120,t=38,b=8),
+            font=dict(color="#000000",size=8),
+            showlegend=False,hovermode="x unified",bargap=0.06,
+        )
+        fig.update_xaxes(type="date",tickformat="%H:%M",tickfont=dict(color="#000000",size=7),
+                         gridcolor="rgba(0,0,0,0.08)",showticklabels=False,row=1,col=1)
+        fig.update_xaxes(type="date",tickformat="%H:%M",tickfont=dict(color="#000000",size=7),
+                         gridcolor="rgba(0,0,0,0.08)",showticklabels=True,row=2,col=1)
+        fig.update_yaxes(tickprefix="$",tickfont=dict(color="#000000",size=7),
+                         gridcolor="rgba(0,0,0,0.08)",row=1,col=1)
+        fig.update_yaxes(tickformat=".2s",tickfont=dict(color="#000000",size=6),
+                         gridcolor="rgba(0,0,0,0.08)",row=2,col=1)
+        return fig
 
 
     # ── Per-scenario P&L math (balance-aware) ────────────────────────────────
-    # FIX 2026-06-20: this previously assumed "$0.50 premium = $50/contract"
-    # risk — that's the cost of the WHOLE contract, not what the bot actually
-    # risks on it. The bot's real position sizing (risk.py RiskManager.
-    # calculate_contracts) only risks ORB_STOP_PCT (20%) of the premium per
-    # contract, because the hard stop exits at -20%, not -100%. Using the
-    # wrong number here was telling the user they could afford 5x FEWER
-    # contracts than the bot's real math allows — corrected to mirror the
-    # actual production formula exactly (see risk.py calculate_contracts /
-    # max_affordable_premium docstrings — note even THOSE docstrings still
-    # say "30%" in their text; the live attribute is 20%, verified directly).
     from config import get_risk_tier as _pb_get_tier, get_settings as _pb_settings
-    _PB_ASSUMED_PREMIUM = 0.50      # illustrative — real premium varies by ticker/strike/day
-    _PB_STOP_PCT        = 0.20      # risk.py RiskManager.ORB_STOP_PCT (live value, not docstring)
-    _PB_STAGE1_GAIN     = 0.50      # risk.py RiskManager.ORB_STAGE1_GAIN
-    _PB_STAGE2_TRAIL    = 0.15      # config.py STAGE2_TRAIL_PCT
-    _PB_SLIPPAGE        = 0.05      # risk.py RiskManager.SLIPPAGE_PCT
-
     _pb_bal      = float(_pb_settings().get("last_known_balance", 5_000.0) or 5_000.0)
     _pb_risk_pct = _pb_get_tier(_pb_bal)
     _pb_risk_usd = _pb_bal * _pb_risk_pct
-    _pb_risk_per_contract = _PB_ASSUMED_PREMIUM * _PB_STOP_PCT * 100   # real formula
-    _pb_contracts  = max(1, int(_pb_risk_usd // _pb_risk_per_contract))
-    _pb_position_cost = _pb_contracts * _PB_ASSUMED_PREMIUM * 100      # total $ spent on contracts
-    _pb_max_loss   = _pb_contracts * _pb_risk_per_contract             # actual $ lost if stopped out
-    _pb_s1_profit  = (_pb_contracts / 2) * (_PB_ASSUMED_PREMIUM * _PB_STAGE1_GAIN) * 100
+    _pb_contracts = max(1, int(_pb_risk_usd // 50))   # assume $0.50 avg premium = $50/contract
+    _pb_s1_profit = _pb_risk_usd * 0.50 * 0.50        # +50% on 50% of position at Stage-1
+    _pb_max_loss  = _pb_risk_usd                       # 30% hard stop → full risk budget gone
     _pb_tier_name = (
         "Tier 4 — Bootstrap 5%" if _pb_risk_pct >= 0.05 else
         "Tier 3 — Growth 3%"    if _pb_risk_pct >= 0.03 else
@@ -7436,182 +7335,13 @@ elif page == "playbooks":
         f"<div style='background:rgba(0,180,80,0.08);border:1px solid rgba(0,150,70,0.35);"
         f"border-radius:6px;padding:8px 14px;font-size:0.75rem;color:#000000;margin-bottom:8px'>"
         f"<b>Your Account: ${_pb_bal:,.0f} · {_pb_tier_name}</b>"
-        f" &nbsp;·&nbsp; Risk budget this trade: <b>${_pb_risk_usd:,.0f}</b>"
-        f" &nbsp;·&nbsp; ~{_pb_contracts} contract(s) at an assumed $0.50 premium "
-        f"(cost ≈ ${_pb_position_cost:,.0f})"
-        f" &nbsp;·&nbsp; Stage-1 profit if hit: <b>+${_pb_s1_profit:,.0f}</b>"
-        f" &nbsp;·&nbsp; Max loss if stopped: <b>−${_pb_max_loss:,.0f}</b>"
+        f" &nbsp;·&nbsp; Risk/trade: <b>${_pb_risk_usd:,.0f}</b>"
+        f" &nbsp;·&nbsp; ~{_pb_contracts} contract(s) at $0.50 premium"
+        f" &nbsp;·&nbsp; Stage-1 profit: <b>+${_pb_s1_profit:,.0f}</b>"
+        f" &nbsp;·&nbsp; Max loss: <b>−${_pb_max_loss:,.0f}</b>"
         f"</div>",
         unsafe_allow_html=True,
     )
-
-    # ── "How This Becomes a Trade" — contract mechanics primer ───────────────
-    # Direct response to user feedback: "I have no clue the entry price exit
-    # price contract price strike price... how would I know the right
-    # contract to enter, strike price, date." Every number below is read
-    # directly from the bot's real selection/exit code (trading_logic.py
-    # select_contract(), risk.py RiskManager, config.py) — not invented.
-    # 2026-06-20 — direct user feedback: this block was "a massive block of
-    # text sitting above the lab... forces the user to read a manual before
-    # they can even look at the chart, which ruins the cockpit feel." Moved
-    # into a collapsed-by-default expander so the page opens straight onto
-    # the active strategy + the "Watch It Happen" lab — the reference
-    # material is one click away instead of blocking the view. (A true
-    # hover-triggered overlay isn't a robust native Streamlit pattern —
-    # st.expander is the equivalent "on demand, not in the way" affordance
-    # that doesn't depend on fragile custom CSS/JS.)
-    with st.expander("📋 How a Signal Becomes an Actual Trade — open for the contract-mechanics reference", expanded=False):
-        st.caption(
-            "This is the SAME process for all 8 strategies below — only the underlying "
-            "price signal changes tab to tab. This is what happens once any of them fires."
-        )
-
-        # ── Macro step-tracker — 2026-06-20, direct user feedback: treat this
-        # section "as a progress tracker rather than just a list of rules" so
-        # it reads as a pipeline (signal -> contract -> filters -> size ->
-        # exit) instead of four disconnected boxes, bridging into the
-        # "Watch It Happen" lab below.
-        _hbt_stages = [
-            ("1", "Pick the\nContract", "#3b82f6"),
-            ("2", "Clear 4\nFilters", "#f59e0b"),
-            ("3", "Position\nSize", "#22c55e"),
-            ("4", "Exit\nPlan", "#ef4444"),
-        ]
-        _stepper_parts = ["<div style='display:flex;align-items:center;margin:8px 0 18px 0'>"]
-        for _i, (_num, _stage_label, _color) in enumerate(_hbt_stages):
-            _stepper_parts.append(
-                "<div style='display:flex;flex-direction:column;align-items:center;min-width:80px'>"
-                f"<div style='width:36px;height:36px;border-radius:50%;background:{_color};"
-                "color:#ffffff;display:flex;align-items:center;justify-content:center;"
-                f"font-weight:800;font-size:1rem;box-shadow:0 0 0 4px {_color}22'>{_num}</div>"
-                "<div style='font-size:0.72rem;font-weight:700;margin-top:6px;text-align:center;"
-                f"color:#111827;white-space:pre-line'>{_stage_label}</div>"
-                "</div>"
-            )
-            if _i < len(_hbt_stages) - 1:
-                _stepper_parts.append(
-                    "<div style='flex:1;height:2px;background:#d1d5db;margin:0 4px;"
-                    "align-self:flex-start;margin-top:17px'></div>"
-                )
-        _stepper_parts.append("</div>")
-        st.markdown("".join(_stepper_parts), unsafe_allow_html=True)
-
-        _hbt_col1, _hbt_col2 = st.columns(2)
-        with _hbt_col1:
-            st.markdown(
-                "<div style='background:rgba(59,130,246,0.08);border-left:3px solid #3b82f6;"
-                "padding:10px 12px;border-radius:4px;font-size:0.85rem;height:100%'>"
-                "<b>① Pick the contract</b><br><br>"
-                "<b>Direction:</b> bullish signal → CALL · bearish signal → PUT<br><br>"
-                "<b>Expiration:</b> the nearest listed expiration date that's "
-                "<b>7–21 days out</b> — Tradier returns these sorted soonest-first, and the "
-                "bot tries them in that order, only skipping to a farther date if the "
-                "nearer one has no usable chain data.<br><br>"
-                "<b>Strike:</b> the <b>first strike price out-of-the-money</b> from the "
-                "current stock price — for a CALL, the cheapest strike just <i>above</i> "
-                "price; for a PUT, the cheapest strike just <i>below</i> it. "
-                "<b>Not at-the-money</b> — one step further out, because it's cheaper and "
-                "more liquid."
-                "</div>",
-                unsafe_allow_html=True,
-            )
-        with _hbt_col2:
-            # ── Filter pipeline — 2026-06-20: these four checks are run IN
-            # SEQUENCE on each candidate contract, so a horizontal row of
-            # connected checkpoints shows that "path from signal to entry"
-            # directly, instead of a flat bulleted list that reads as four
-            # unrelated facts.
-            _filter_chips = [
-                ("💲", "Price", "$0.05 – $10.00"),
-                ("💰", "Budget", "ask × 100 ≤ risk budget"),
-                ("↔️", "Spread", "≤ $0.50"),
-                ("💧", "Liquidity", "OI ≥ 150"),
-            ]
-            _chip_parts = ["<div style='display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:10px'>"]
-            for _ci, (_icon, _name, _detail) in enumerate(_filter_chips):
-                _chip_parts.append(
-                    "<div style='background:#ffffff;border:1.5px solid #f59e0b;border-radius:20px;"
-                    "padding:5px 11px;font-size:0.72rem;white-space:nowrap'>"
-                    f"<b>{_icon} {_name}</b><br><span style='color:#6b7280'>{_detail}</span></div>"
-                )
-                if _ci < len(_filter_chips) - 1:
-                    _chip_parts.append("<span style='color:#9ca3af;font-weight:700'>→</span>")
-            _chip_parts.append("</div>")
-
-            st.markdown(
-                "<div style='background:rgba(245,158,11,0.08);border-left:3px solid #f59e0b;"
-                "padding:10px 12px;border-radius:4px;font-size:0.85rem;height:100%'>"
-                "<b>② The contract has to clear 4 filters</b><br><br>"
-                + "".join(_chip_parts) +
-                "If nothing in the chain clears all four, the bot skips the trade — it "
-                "does not loosen the filters to force an entry."
-                "</div>",
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("")
-        st.markdown(
-            "<div style='background:rgba(34,197,94,0.08);border-left:3px solid #22c55e;"
-            "padding:10px 12px;border-radius:4px;font-size:0.85rem'>"
-            "<b>③ Position size</b> — how many contracts: "
-            f"<code>risk budget ÷ (premium × {_PB_STOP_PCT:.0%} × 100)</code>, rounded down, "
-            "minimum 1 if affordable. The 20% in that formula is the hard stop below — "
-            "you're never risking the full premium, only the slice you'd lose if the "
-            "stop fires."
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("")
-        st.markdown("**④ The exit plan — same for every contract, decided in advance:**")
-        st.markdown(
-            "<div style='display:flex;gap:10px;flex-wrap:wrap;font-size:0.82rem'>"
-            f"<div style='flex:1;min-width:140px;background:rgba(239,68,68,0.10);"
-            f"border-radius:6px;padding:8px 10px'><b>🛑 Hard Stop</b><br>"
-            f"−{_PB_STOP_PCT:.0%} of premium<br><span style='color:#9ca3af'>exits "
-            f"automatically, no exceptions</span></div>"
-            f"<div style='flex:1;min-width:140px;background:rgba(245,158,11,0.10);"
-            f"border-radius:6px;padding:8px 10px'><b>⏱️ Early Stop</b><br>"
-            f"−12% within first 20 min<br><span style='color:#9ca3af'>kills slow fails "
-            f"before they become full stops</span></div>"
-            f"<div style='flex:1;min-width:140px;background:rgba(34,197,94,0.10);"
-            f"border-radius:6px;padding:8px 10px'><b>✅ Stage 1</b><br>"
-            f"+{_PB_STAGE1_GAIN:.0%} → sell half<br><span style='color:#9ca3af'>locks in "
-            f"profit, lets the rest ride</span></div>"
-            f"<div style='flex:1;min-width:140px;background:rgba(59,130,246,0.10);"
-            f"border-radius:6px;padding:8px 10px'><b>📈 Stage 2 Trail</b><br>"
-            f"remaining half trails to +{_PB_STAGE2_TRAIL:.0%}<br><span style='color:#9ca3af'>"
-            f"floor moves up, never back to break-even</span></div>"
-            f"<div style='flex:1;min-width:140px;background:rgba(168,85,247,0.10);"
-            f"border-radius:6px;padding:8px 10px'><b>⏰ Time-Box</b><br>"
-            f"20 min if flat/losing<br>45 min if winning<br><span style='color:#9ca3af'>"
-            f"theta decay caps how long a stale trade gets held</span></div>"
-            f"<div style='flex:1;min-width:140px;background:rgba(107,114,128,0.10);"
-            f"border-radius:6px;padding:8px 10px'><b>🔚 3:55 PM Cutoff</b><br>"
-            f"everything closes<br><span style='color:#9ca3af'>no overnight risk, ever, "
-            f"on any position</span></div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        st.caption(
-            f"A {_PB_SLIPPAGE:.0%} slippage buffer is built into entry and profit-target "
-            f"math throughout — the bot assumes its fill will be slightly worse than the "
-            f"quoted price, rather than hoping for a perfect fill."
-        )
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # PLAYBOOKS LESSON SYSTEM (2026-06-20 redesign)
-    # ═══════════════════════════════════════════════════════════════════════
-    # Why this exists: the previous version was a flat stack of a markdown
-    # paragraph, a rules table, a chart, and a caption — repeated 8 times with
-    # no visual structure tying them together. Direct user feedback: "I'm not
-    # sure what I'm looking at... it doesn't tell me anything." This rebuilds
-    # every strategy tab as a consistent 4-part LESSON (Idea -> Rules -> Watch
-    # It Happen -> Common Mistake/Pro Tip) so it reads as a course module, not
-    # a chart dump — and the "Watch It Happen" examples now explicitly explain
-    # WHY the signal fired, WHY the entry is one bar later, and WHAT the real
-    # outcome was, using each example's actual stored numbers (RVOL,
-    # confidence, direction, outcome) rather than generic boilerplate.
 
     # ── Helper: render a strategy reference card ─────────────────────────────
     def _strat_card(rows: list[tuple], color: str = "#0969da") -> None:
@@ -7646,720 +7376,266 @@ elif page == "playbooks":
         "9 · Trading Log Explanations",
     ])
 
-    # ── Real-example rendering (2026-06-20 Playbooks overhaul) ───────────────
-    # Replaces _gen_orb_scenario()/_build_orb_fig()/_build_strategy_fig() —
-    # those generated FABRICATED random candles (see git history / audit notes
-    # if still present below). A paid education product showing made-up charts
-    # to "prove" a strategy works is a credibility problem, not a polish nit.
-    # playbook_examples.py mines genuine historical fires by running real bars
-    # through the actual production strategy-evaluation functions; this block
-    # renders whatever real examples exist via TradingView's own open-source
-    # Lightweight Charts library (lightweight_chart.py) instead of Plotly.
-    from playbook_examples import load_examples as _pb_load_examples
-    from lightweight_chart import render_strategy_chart as _pb_render_chart
-
-    _pb_examples = _pb_load_examples()
-
-    # ── Strategy metadata — single source of truth for all 8 lesson tabs ─────
-    # FIX 2026-06-20: every rules table here was re-verified line-by-line
-    # against the CURRENT code in strategy_router.py — not against this
-    # codebase's own docstrings, which have drifted from the real logic
-    # several times (e.g. CHAN_BREAK's docstring claims "RVOL >= 1.3x" but
-    # the code actually calls a dynamic-threshold function that resolves to
-    # 1.0x; MID_BRK's docstring window doesn't match its actual bar_min
-    # check; BOS_MSS's docstring never mentions its real FVG-confirmation
-    # requirement). User feedback that triggered this: a real example showed
-    # "RVOL hit 1.01x (needs >=1.3x)" passing anyway — that's not a fluke,
-    # it's this exact gap. gate_rvol below is now only a DISPLAY FALLBACK for
-    # cached examples that predate the rvol_gate field — the real per-example
-    # explanation panel uses the live re-derived value (see
-    # playbook_examples.py's _real_rvol_gate()).
-    #
-    # 4 of these 8 strategies (INST_ORB, VWAP_PB, MID_BRK, CHAN_BREAK) use a
-    # DYNAMIC gate, not a fixed percentage: it defaults to 1.2x RVOL, but
-    # drops to 1.0x the moment market structure already confirms the same
-    # direction — the reasoning being that confirmed structure IS the edge,
-    # so it needs less raw volume to trust. Their rules tables say "Dynamic"
-    # and explain this in one line rather than quoting a single fixed number
-    # that would be wrong roughly half the time.
-    _PB_STRATEGIES = [
-        {
-            "id": "INST_ORB", "icon": "🚀", "color": "#f59e0b",
-            "title": "Institutional Opening Range Breakout",
-            "hook": "The highest-confidence setup — fires earliest in the session.",
-            "concept": (
-                "The opening range (OR) is the first 5-minute candle. When price closes convincingly "
-                "above OR High with elevated volume and price is above VWAP, institutions are buying "
-                "the breakout. Below OR Low with the same criteria = PUT."
-            ),
-            "gate_rvol": 1.2, "max_examples": 3,
-            "rules": [
-                ("Trigger",          "Close above OR High (CALL) · close below OR Low (PUT)"),
-                ("Time Window",      "09:30 – 10:30 ET · first hour only"),
-                ("Volume Gate",      "Dynamic: 1.2× RVOL by default, drops to 1.0× if structure already confirms this direction · PLUS raw volume > 1.5× its 20-bar average"),
-                ("VWAP Gate",        "Price must be above VWAP for CALL · below VWAP for PUT"),
-                ("Confidence Range", "0.85 – 0.95 (highest of all 8 strategies)"),
-                ("Flip Trigger",     "Hard stop (−20%) only → arms an immediate opposite-direction entry if the other side of the range is breaking with volume still confirmed"),
-            ],
-            "common_mistake": "Entering the moment price pokes above the OR boundary. The bot waits for the candle to CLOSE above it with volume already confirmed — that patience is most of the edge.",
-            "pro_tip": "If price breaks the OR one way but the broader trend (MSA) already points the other way, the bot FLIPS direction on entry — that's a failed-breakout fade, not a mistake.",
-        },
-        {
-            "id": "BOS_MSS", "icon": "🔀", "color": "#818cf8",
-            "title": "Break of Structure / Market Structure Shift",
-            "hook": "Requires proof from two different angles at once — structure AND a real imbalance.",
-            "concept": (
-                "Price makes Lower Highs and Lower Lows (downtrend) or Higher Highs and Higher Lows "
-                "(uptrend). A Break of Structure (BOS) happens when price takes out the most recent swing "
-                "low in a downtrend — confirming the move. A Market Structure Shift (MSS) is the first BOS "
-                "after consolidation, signaling a new directional leg."
-            ),
-            "gate_rvol": 1.5, "max_examples": 2,
-            "rules": [
-                ("Trigger",       "Lower Low then close breaks above prior swing high (bullish) · Higher High then close breaks below prior swing low (bearish)"),
-                ("Time Window",   "No restriction — can fire any time there's enough data (≥6 bars)"),
-                ("Volume Gate",   "RVOL ≥ 150% on the break candle — fixed, not dynamic"),
-                ("Imbalance Gate","Requires a CONFIRMED Fair Value Gap in the same direction within the recent session — structure alone isn't enough"),
-                ("Trend Filter",  "Close must be on the correct side of EMA50"),
-                ("Confidence Range", "0.70 – 0.88"),
-            ],
-            "common_mistake": "Entering on the LL/HH label itself — the entry is when price BREAKS past the prior swing extreme, one bar later, not at the label. Also: structure alone never qualifies — without a confirmed FVG too, the bot skips it.",
-            "pro_tip": "When you see SH → LH → SL → LL annotations descending in a stair-step, the bot is tracking a confirmed downtrend — but it still needs the FVG before it acts on it.",
-        },
-        {
-            "id": "VWAP_PB", "icon": "🎯", "color": "#06b6d4",
-            "title": "VWAP Pullback",
-            "hook": "Buying value, not chasing momentum.",
-            "concept": (
-                "VWAP (Volume Weighted Average Price) is the average price paid all day, weighted by "
-                "volume. Institutions treat it as a fair-value line — buy below it, sell above it. In an "
-                "uptrend, when price dips back to VWAP and forms a Higher Low, that's the institutional "
-                "buy zone."
-            ),
-            "gate_rvol": 1.2, "max_examples": 2,
-            "rules": [
-                ("Trigger",       "Price touches VWAP from above (uptrend) or below (downtrend) and closes back in trend direction"),
-                ("Time Window",   "09:45 ET onward — no upper bound, can fire through the close"),
-                ("Volume Gate",   "Dynamic: 1.2× RVOL by default, drops to 1.0× if structure already confirms this direction"),
-                ("Trend Filter",  "Price AND VWAP both above EMA50 for bullish · both below for bearish"),
-                ("Confidence Range", "0.60 – 0.82"),
-            ],
-            "common_mistake": "Treating any touch of VWAP as a signal. If price CLOSES through VWAP on the touch candle (not just wicks it), the setup fails — the bot skips it.",
-            "pro_tip": "Best setups occur when price has been trending for 30+ minutes and this is the SECOND VWAP test, not the first.",
-        },
-        {
-            "id": "FVG", "icon": "🕳️", "color": "#ec4899",
-            "title": "Fair Value Gap",
-            "hook": "Price always seems to come back and fill the hole it left behind.",
-            "concept": (
-                "A Fair Value Gap is a 3-candle imbalance — candle 1's high sits below candle 3's low, "
-                "leaving a zone that was never properly traded. It's a magnet for price. When price "
-                "returns to fill the gap, institutions who missed the move are waiting there."
-            ),
-            "gate_rvol": 1.5, "max_examples": 2,
-            "rules": [
-                ("Trigger",       "Price re-enters a prior 3-bar imbalance zone (gap between candle 1 high and candle 3 low)"),
-                ("Time Window",   "No restriction — can fire any time there's enough data"),
-                ("Volume Gate",   "RVOL ≥ 150% on the candle entering the gap — fixed, not dynamic"),
-                ("Gap Size Gate", "Gap width must be ≥ 0.5× the 14-period ATR — too small a gap is noise, not structure"),
-                ("Confidence Range", "0.55 – 0.80"),
-            ],
-            "common_mistake": "Chasing price away from the gap. The bot doesn't — it waits for the gap to actually get revisited before entering.",
-            "pro_tip": None,
-        },
-        {
-            "id": "MID_BRK", "icon": "📉", "color": "#ef4444",
-            "title": "Midday Breakdown",
-            "hook": "A second-leg trade — using the morning's trend to set up an afternoon move.",
-            "concept": (
-                "Midday (10:30am–1:00pm) often just drifts. But if the morning already established a "
-                "downtrend with a confirmed Lower High, and price finally breaks the opening range low "
-                "during this window, that's a continuation — a second leg of the same idea, not a new one."
-            ),
-            "gate_rvol": 1.0, "max_examples": 2,
-            "rules": [
-                ("Trigger",       "Close breaks below OR Low · confirmed Lower High already on record"),
-                ("Time Window",   "10:30 – 13:00 ET only (mid-session window)"),
-                ("Volume Gate",   "Dynamic, but effectively 1.0× here — structure (Lower High) is already required, so it never needs the higher default"),
-                ("Raw Volume Gate", "Current bar's volume must also exceed 1.5× its 20-bar average — a SEPARATE check from the RVOL gate above"),
-                ("VWAP Gate",     "Price must be below VWAP at entry"),
-                ("Confidence Range", "0.65 – 0.86"),
-            ],
-            "common_mistake": "Trading this setup without a pre-existing morning downtrend. Without that confirmed Lower High first, this is exactly the kind of midday trap the gate exists to avoid.",
-            "pro_tip": None,
-        },
-        {
-            "id": "AFT_REV", "icon": "🔄", "color": "#22c55e",
-            "title": "Afternoon Reversal",
-            "hook": "Catching institutions repositioning late in the day.",
-            "concept": (
-                "After a morning downtrend, sellers eventually run out of steam — shown by a Higher Low "
-                "forming. When price then breaks above the most recent swing high, the downtrend "
-                "structure is broken and a reversal is underway."
-            ),
-            "gate_rvol": None, "max_examples": 2,
-            "rules": [
-                ("Trigger",       "Close breaks above the most recent swing high (CALL) — Break of Structure to upside"),
-                ("Time Window",   "13:00 – 15:30 ET only (afternoon window)"),
-                ("Volume Gate",   "No RVOL floor at all — instead, raw volume must exceed 1.2× its 20-bar average. RVOL still affects confidence, just doesn't block entry"),
-                ("Trend Context", "Must have a confirmed Higher Low before the break — proves sellers exhausted"),
-                ("Confidence Range", "0.62 – 0.84"),
-            ],
-            "common_mistake": "Entering at the Higher Low itself, anticipating the reversal. The bot waits for proof — the actual break above the prior swing high — before committing.",
-            "pro_tip": "This is the one strategy with no RVOL gate at all — don't assume every entry had 'high volume'; check the real RVOL shown per example, it's often just average.",
-        },
-        {
-            "id": "TREND_CONT", "icon": "➡️", "color": "#8b5cf6",
-            "title": "Trend Continuation",
-            "hook": "The professional re-entry — pulling back into a trend instead of chasing it.",
-            "concept": (
-                "Once a trend is established, the smart re-entry is on a pullback, not the initial move "
-                "everyone already saw. In a downtrend, price pulls back to form a Lower High, then "
-                "resumes lower — the bot enters when that pullback fails."
-            ),
-            "gate_rvol": 1.2, "max_examples": 2,
-            "rules": [
-                ("Trigger",       "Downtrend: close < LH bar close after confirmed LH (PUT) · Uptrend: close > HL bar close after confirmed HL (CALL)"),
-                ("Time Window",   "09:45 – 14:30 ET"),
-                ("Volume Gate",   "RVOL ≥ 120% — fixed, not dynamic (lower gate since the trend is already established)"),
-                ("Recency Gate",  "The Lower High / Higher Low being re-entered must be within the last 20 bars — older pullbacks are considered stale"),
-                ("VWAP Gate",     "Price below VWAP for PUT · above VWAP for CALL"),
-                ("Confidence Range", "0.65 – 0.82"),
-            ],
-            "common_mistake": "Chasing the initial breakout everyone else already saw. This setup specifically waits for the FIRST pullback to fail instead.",
-            "pro_tip": "The lower volume gate (1.2×) is intentional — the trend is already proven, so less new participation is needed to sustain it.",
-        },
-        {
-            "id": "CHAN_BREAK", "icon": "📐", "color": "#f97316",
-            "title": "Channel Trendline Rejection",
-            "hook": "The most precise setup in the system — and the highest confidence ceiling.",
-            "concept": (
-                "When price makes two or more Lower Highs, a descending trendline can be drawn through "
-                "them — dynamic resistance. Every time price tags it and rejects, that's a short "
-                "opportunity. The bot projects the line forward in real time."
-            ),
-            "gate_rvol": 1.0, "max_examples": 2,
-            "rules": [
-                ("Trigger",       "Current bar's high tags within 0.3% of the projected trendline · closes back below it"),
-                ("Time Window",   "09:45 – 14:00 ET"),
-                ("Volume Gate",   "Dynamic, but effectively 1.0× here — a verified 2-swing channel IS treated as confirmed structure"),
-                ("Channel Requirement", "≥ 2 confirmed swing highs forming the descending line · both within last 40 bars · slope steep enough to not be flat/choppy"),
-                ("Confidence Range", "0.75 – 0.90 (highest ceiling of all strategies)"),
-            ],
-            "common_mistake": None,
-            "pro_tip": "By the time price has rejected the same line two or three times, the pattern is about as proven as it gets intraday.",
-        },
-    ]
-
-    def _outcome_badge(outcome: str) -> tuple[str, str, str, str]:
-        """Returns (icon, label, accent_color, plain-language explanation)."""
-        return {
-            "clean_win": ("🟢", "Favorable follow-through", "#16a34a",
-                          "Price moved favorably after this signal — this is what a working setup looks like."),
-            "reversed":  ("🔴", "Reversed against the signal", "#dc2626",
-                          "Price moved against the signal — this is what getting stopped out looks like in real conditions."),
-            "chopped":   ("⚪", "Chopped — limited follow-through", "#6b7280",
-                          "Price didn't move much either way. A real, unexciting result — most signals look like this; "
-                          "the edge comes from cutting losers fast, not every trade being a big winner."),
-        }.get(outcome, ("⚪", "Outcome unclear", "#6b7280", ""))
-
-    def _step_slider(key: str, delta: int, lo: int, hi: int) -> None:
-        """Move a reveal-slider's value by delta, clamped to [lo, hi].
-        Button on_click callbacks run BEFORE the rest of the script reruns
-        and the slider widget redraws, so mutating session_state[key] here
-        is the standard, safe Streamlit pattern for buttons driving a keyed
-        slider's value (mutating it any other way/time is a no-op)."""
-        cur = st.session_state.get(key, hi)
-        st.session_state[key] = max(lo, min(hi, cur + delta))
-
-    def _toggle_play(play_key: str, slider_key: str, lo: int, hi: int) -> None:
-        """on_click callback for the Play/Pause button.
-
-        BUG FIX 2026-06-20: this used to be inline logic inside a plain
-        `if st.button(...):` check, placed in the transport bar's 4th
-        column — AFTER the slider widget (3rd column) had already been
-        instantiated in that same script pass. Streamlit raises
-        StreamlitAPIException if you mutate a widget's session_state value
-        after that widget has already been created in the current run.
-        on_click callbacks run BEFORE the script reruns and recreates the
-        slider, so mutating session_state[slider_key] here is the safe,
-        standard pattern — same reasoning as _step_slider above, just for
-        the "restart from the top when Play is pressed at the end" case.
-        """
-        now_playing = not st.session_state.get(play_key, False)
-        if now_playing and st.session_state.get(slider_key, hi) >= hi:
-            st.session_state[slider_key] = lo
-        st.session_state[play_key] = now_playing
-        _force_full_rerun()
-
-    def _force_full_rerun() -> None:
-        """Escalate a fragment-scoped rerun to a full app rerun.
-
-        2026-06-20 — needed for real autoplay: each example's cockpit lives
-        in an st.fragment whose run_every interval is only set when that
-        example is actively playing. Toggling Play/Pause changes whether
-        run_every should be active at all, but a normal click inside a
-        fragment only reruns the fragment, not the whole page — so the
-        fragment never gets re-decorated with the new interval. Forcing a
-        full rerun on every Play/Pause press (and when autoplay naturally
-        reaches the end) is what actually starts/stops the timer.
-        scope="app" requires a reasonably recent Streamlit; fall back to a
-        plain rerun on older versions rather than crashing the page.
-        """
-        try:
-            st.rerun(scope="app")
-        except TypeError:
-            st.rerun()
-
-    # Cockpit card chrome — white background, thick black border, sharp
-    # corners. Replaces the earlier soft colored-tint cards: direct mockup
-    # feedback asked for a "sleek, high-contrast, $500/month research
-    # terminal" feel, which reads as thick black borders on white, not
-    # pastel left-accent strips.
-    _CARD_BORDER = "#111827"
-
-    # ── "Lab" frame CSS — 2026-06-20, direct user feedback: "use a 2px solid
-    # black border around that central chart lab to give it the proprietary
-    # research terminal weight." Each example's transport bar + chart used to
-    # be two separately-bordered pieces stacked on top of each other; this
-    # wraps them in ONE st.container(key=...) per example and targets all of
-    # them at once with a single attribute-contains selector, so the whole
-    # center column reads as one unified terminal panel, not two stacked
-    # boxes. Injected once per script run, not per example — duplicate
-    # <style> tags are harmless, but there's no reason to repeat it ~20x.
-    st.markdown(
-        f"<style>div[class*='st-key-pb_lab_'] {{"
-        f"border:2px solid {_CARD_BORDER} !important;"
-        f"border-radius:10px !important;"
-        f"background:#fafafa !important;"
-        f"box-shadow:0 2px 10px rgba(0,0,0,0.10);"
-        f"padding:6px 6px 2px 6px !important;"
-        f"}}</style>",
-        unsafe_allow_html=True,
-    )
-
-    def _cockpit_card(header_icon: str, header_text: str, lines: list[str],
-                       accent_color: str | None = None, is_active: bool = False) -> str:
-        """Build one numbered cockpit card — white bg, 2px black border,
-        a bold header row, and plain numbered steps (mirrors the mockup's
-        '1. 2. 3.' reference-card style) instead of a wall of prose.
-
-        is_active (2026-06-20 — direct user feedback: "when the student
-        drags to frame 3, the right panel should ... highlight 'the
-        signal' logic specifically for that candle"): the card matching
-        wherever the transport bar currently sits gets a colored glow +
-        a "● LIVE" badge instead of the plain black border, so the right
-        panel visibly tracks the slider/autoplay instead of three
-        equal-weight boxes that all looked alike once revealed."""
-        items = "".join(f"<div style='margin-top:4px'>{i+1}. {line}</div>" for i, line in enumerate(lines))
-        border_color = accent_color if (is_active and accent_color) else _CARD_BORDER
-        glow = f"box-shadow:0 0 0 3px {accent_color}33;" if (is_active and accent_color) else ""
-        live_badge = (
-            f"<span style='background:{accent_color};color:#fff;font-size:0.6rem;font-weight:800;"
-            f"letter-spacing:0.04em;padding:1px 7px;border-radius:10px;margin-left:8px;"
-            f"vertical-align:middle'>● LIVE</span>"
-        ) if (is_active and accent_color) else ""
-        return (
-            f"<div style='background:#ffffff;border:2px solid {border_color};{glow}"
-            f"border-radius:6px;padding:10px 12px;margin-bottom:10px;"
-            f"font-size:0.82rem;color:#111827;transition:box-shadow 0.2s'>"
-            f"<div style='font-weight:800;letter-spacing:0.02em;margin-bottom:2px'>"
-            f"{header_icon} {header_text}{live_badge}</div>{items}</div>"
-        )
-
-    def _pending_card(header_icon: str, header_text: str, note: str) -> str:
-        """A 'not revealed yet' state for the Entry/Outcome cards — dashed
-        grey border instead of solid black, so the right panel visibly
-        reacts to where the transport bar actually is (added 2026-06-20:
-        previously these cards always showed the full answer regardless of
-        which candle was revealed, which defeats the point of a step-through
-        simulator)."""
-        return (
-            f"<div style='background:#f9fafb;border:2px dashed #9ca3af;"
-            f"border-radius:6px;padding:10px 12px;margin-bottom:10px;"
-            f"font-size:0.82rem;color:#6b7280'>"
-            f"<div style='font-weight:800;letter-spacing:0.02em;margin-bottom:2px'>"
-            f"{header_icon} {header_text}</div>⏳ {note}</div>"
-        )
-
-    def _render_example_block(meta: dict, ex: dict, ex_i: int) -> None:
-        """One real example: a 'cockpit' — chart + frame-step transport bar
-        on the left, white/black-bordered Signal/Entry/Outcome cards on the
-        right — built from this example's actual stored numbers, not
-        generic text.
-
-        2026-06-20 overhaul, direct user feedback:
-        - "if i click play it should play not go to the next bar" — Play
-          now drives a real timer (st.fragment(run_every=...)) instead of
-          stepping once. See _force_full_rerun()'s docstring for why the
-          whole cockpit has to live inside that fragment.
-        - "I need this ON the chart not on the side of it" — short
-          plain-language notes now render as floating callouts anchored to
-          the signal/entry/exit candles themselves (lightweight_chart.py),
-          in addition to the fuller side cards.
-        - "explanations are all tech jargon ... as if written by AI" — every
-          jargon term (RVOL, VWAP, confidence, swing pivot) in the side
-          cards now carries an inline plain-English gloss instead of being
-          dropped on the reader bare.
-        """
-        bars = ex["bars"]
-        icon, label, accent, _ = _outcome_badge(ex["outcome"])
-        st.markdown(f"**{ex['ticker']} · {ex['date']}** — {icon} {label}")
-
-        slider_key = f"pb_reveal_{meta['id']}_{ex_i}"
-        play_key = f"{slider_key}_playing"
-        lo = min(ex["signal_idx"] + 1, len(bars))
-        hi = len(bars)
-        if slider_key not in st.session_state:
-            st.session_state[slider_key] = hi
-        if play_key not in st.session_state:
-            st.session_state[play_key] = False
-
-        # run_every is only set to a real interval while THIS example is
-        # actively playing — computed here, in the OUTER (non-fragment)
-        # scope, so a full rerun (forced below whenever Play/Pause is
-        # pressed, or when autoplay naturally hits the end) always picks up
-        # the current state and (re)builds the fragment with the right
-        # timer. An idle example costs nothing extra: run_every=None means
-        # no periodic reruns at all.
-        _interval = "0.55s" if st.session_state.get(play_key, False) else None
-
-        # ── Plain-language notes, built once, shared by the on-chart
-        # callouts AND the side cards below. Computed from this example's
-        # real stored numbers — nothing here is invented per-example text.
-        direction_word = "Bullish (CALL)" if ex["direction"] == "bullish" else "Bearish (PUT)"
-        _gate = ex.get("rvol_gate", meta.get("gate_rvol"))
-        _gate_text = f"needs ≥{_gate:.1f}×" if _gate is not None else "no fixed RVOL floor on this setup"
-        _, _, _, outcome_text = _outcome_badge(ex["outcome"])
-
-        _vwap_series_ex = ex.get("vwap") or []
-        _sig_i = ex["signal_idx"]
-        _vwap_side, _vwap_val = None, None
-        if _sig_i < len(_vwap_series_ex) and _vwap_series_ex[_sig_i] is not None:
-            _sig_close = bars[_sig_i]["close"]
-            _vwap_val = _vwap_series_ex[_sig_i]
-            _vwap_side = "above" if _sig_close > _vwap_val else "below"
-
-        _signal_note = (
-            f"Trading was <b>{ex['rvol']:.1f}× busier</b> than a normal moment here"
-            + (f", while price sat <b>{_vwap_side} the day's average price</b>" if _vwap_side else "")
-            + " — that combination is what made the bot start watching this move."
-        )
-        _entry_word = "call" if ex["direction"] == "bullish" else "put"
-        _entry_note = (
-            f"The bot never buys on the signal candle — it waits one full candle to confirm the move is "
-            f"real, then buys a <b>{_entry_word}</b> at the very next open."
-        )
-        _exit_note = {
-            "clean_win": "Price kept moving the way the bot bet — a clean win.",
-            "reversed":  "Price turned around and went the other way — this trade got stopped out.",
-            "chopped":   "Price went sideways without real follow-through — a flat, unexciting result.",
-        }.get(ex["outcome"], outcome_text)
-
-        @st.fragment(run_every=_interval)
-        def _cockpit() -> None:
-            # ── Autoplay tick — only does anything while play_key is True.
-            # Reads/writes session_state[slider_key] BEFORE the slider
-            # widget below is created, which is the standard safe way to
-            # drive a keyed widget's value programmatically in Streamlit.
-            if st.session_state.get(play_key, False):
-                cur = st.session_state.get(slider_key, lo)
-                if cur >= hi:
-                    # Reached the end on its own — stop for real (force a
-                    # full rerun so the fragment gets rebuilt with
-                    # run_every=None, not just left ticking uselessly).
-                    st.session_state[play_key] = False
-                    _force_full_rerun()
-                else:
-                    st.session_state[slider_key] = cur + 1
-
-            chart_col, explain_col = st.columns([2, 1])
-
-            with chart_col:
-                # ── One unified "lab" frame — 2026-06-20, direct user
-                # feedback: "use a 2px solid black border around that
-                # central chart lab to give it the proprietary research
-                # terminal weight." Previously the transport bar and the
-                # chart were two separately-bordered pieces stacked on top
-                # of each other; wrapping both in ONE st.container(key=...)
-                # and targeting that key's class with scoped CSS (injected
-                # once, above) makes the whole center column read as one
-                # bordered terminal panel. Scoped to st-key-pb_lab_* only —
-                # deliberately NOT a bare `.stVerticalBlock` selector, which
-                # is shared by every vertical container in the whole app
-                # (sidebar included) and would slap a black border on
-                # things far outside this page.
-                with st.container(border=True, key=f"pb_lab_{slider_key}"):
-                    chart_slot = st.empty()
-
-                    _t1, _t2, _t3, _t4, _t5 = st.columns([1, 1, 7, 1, 1])
-                    with _t1:
-                        st.button("⏮", key=f"{slider_key}_first", help="Jump to start",
-                                  use_container_width=True,
-                                  on_click=_step_slider, args=(slider_key, -100_000, lo, hi))
-                    with _t2:
-                        st.button("◀", key=f"{slider_key}_prev", help="Step back one candle",
-                                  use_container_width=True,
-                                  on_click=_step_slider, args=(slider_key, -1, lo, hi))
-                    with _t3:
-                        reveal = st.slider(
-                            "Step through the candles", min_value=lo, max_value=hi,
-                            key=slider_key, label_visibility="collapsed",
-                        )
-                    with _t4:
-                        _playing_now = st.session_state.get(play_key, False)
-                        _play_label = "⏸" if _playing_now else "▶"
-                        _play_help = "Pause" if _playing_now else "Play — watch it build automatically"
-                        # on_click (not a plain `if st.button():`) — see
-                        # _toggle_play()'s docstring: this button sits AFTER
-                        # the slider in the same row, so any inline mutation
-                        # of session_state[slider_key] here would hit
-                        # Streamlit's "modified after instantiation" error.
-                        st.button(_play_label, key=f"{slider_key}_play", help=_play_help,
-                                  use_container_width=True,
-                                  on_click=_toggle_play, args=(play_key, slider_key, lo, hi))
-                    with _t5:
-                        st.button("⏭", key=f"{slider_key}_last", help="Jump to end",
-                                  use_container_width=True,
-                                  on_click=_step_slider, args=(slider_key, 100_000, lo, hi))
-                    _word = "Playing" if st.session_state.get(play_key, False) else "Frame"
-                    st.caption(
-                        f"{_word} {reveal - lo + 1} of {hi - lo + 1} — "
-                        f"press ▶ to watch it build automatically, or drag the bar"
-                    )
-
-                    with chart_slot.container():
-                        _pb_render_chart(
-                            bars=bars, signal_idx=ex["signal_idx"], entry_idx=ex["entry_idx"],
-                            exit_idx=ex["exit_idx"], outcome=ex["outcome"], ticker=ex["ticker"],
-                            date_str=ex["date"], direction=ex["direction"], reveal_count=reveal,
-                            # .get(...) — older cached examples (pre-overlay schema) just
-                            # omit these and the chart renders without them, no crash.
-                            vwap=ex.get("vwap"), or_high=ex.get("or_high"), or_low=ex.get("or_low"),
-                            swing_points=ex.get("swing_points"),
-                            # On-chart callouts only appear once the transport bar has
-                            # actually reached that candle — same progressive-reveal
-                            # logic as the side cards below, just rendered on the chart.
-                            signal_note=_signal_note if reveal >= ex["signal_idx"] + 1 else None,
-                            entry_note=_entry_note if reveal >= ex["entry_idx"] + 1 else None,
-                            exit_note=_exit_note if reveal >= ex["exit_idx"] + 1 else None,
-                        )
-
-            with explain_col:
-                signal_lines = [
-                    f"<b>Volume check (RVOL):</b> trading was <b>{ex['rvol']:.2f}× busier</b> than a normal "
-                    f"moment ({_gate_text}). High RVOL means real money is moving, not just noise — the bot "
-                    f"won't act on a quiet tape.",
-                    f"<b>Confidence score:</b> the bot rated this setup <b>{ex['confidence']:.2f} out of 1.00</b> "
-                    f"— a rough 'how cleanly did this match the pattern' score, not a guarantee of the outcome.",
-                    f"<b>Direction:</b> read as a <b>{direction_word}</b> setup, so the bot would buy a "
-                    f"{_entry_word} option — the kind that profits if price "
-                    f"{'rises' if ex['direction']=='bullish' else 'falls'}.",
-                ]
-                if _vwap_side:
-                    signal_lines.append(
-                        f"<b>VWAP check:</b> price was trading <b>{_vwap_side} VWAP</b> (${_vwap_val:.2f}) — "
-                        f"VWAP is the average price everyone has paid today, so this tells the bot which side "
-                        f"of 'fair value' the stock is leaning toward."
-                    )
-
-                if ex.get("or_high") is not None or ex.get("or_low") is not None:
-                    _parts = []
-                    if ex.get("or_high") is not None:
-                        _parts.append(f"High ${ex['or_high']:.2f}")
-                    if ex.get("or_low") is not None:
-                        _parts.append(f"Low ${ex['or_low']:.2f}")
-                    signal_lines.append(
-                        f"<b>Opening Range:</b> the first few minutes of trading set a "
-                        f"{' · '.join(_parts)} (blue dashed lines on the chart) — a break above or below that "
-                        f"range is one of the oldest day-trading signals there is."
-                    )
-
-                # FIX 2026-06-20: distinguish swings that EXISTED before the
-                # signal fired (the actual decision basis) from ones that only
-                # formed afterward (real, but couldn't have caused anything —
-                # a real example had a post-entry swing low sitting right next
-                # to a PUT entry, which read as "this caused the bearish call"
-                # when it's chronologically impossible).
-                _swing_pts = ex.get("swing_points") or []
-                _pre_swings  = [s for s in _swing_pts if s.get("before_signal", True)]
-                _post_swings = [s for s in _swing_pts if not s.get("before_signal", True)]
-                if _pre_swings:
-                    signal_lines.append(
-                        f"<b>Market structure:</b> {len(_pre_swings)} swing high/low point(s) — solid purple "
-                        f"▲/▼ markers — were already on the chart BEFORE this signal fired. A 'swing point' is "
-                        f"just a candle that's higher (or lower) than the candles right around it; these are "
-                        f"the actual pivots the bot's pattern detector is reacting to."
-                    )
-                if _post_swings:
-                    signal_lines.append(
-                        f"{len(_post_swings)} more swing pivot(s) formed AFTER the signal — the faint markers "
-                        f"labeled '(after)'. Shown for context only; they came too late to have caused anything."
-                    )
-
-                # Decision-basis values the live eval function actually used,
-                # straight from sig.meta — most useful when the justifying pivot
-                # is a price level from EARLIER in the session than this window
-                # covers, so the chart alone can't show it.
-                _meta = ex.get("signal_meta") or {}
-                _meta_labels = {
-                    "prior_swing_high": "The prior swing high it broke above",
-                    "prior_swing_low":  "The prior swing low it broke below",
-                    "last_high":        "The most recent swing high on record",
-                    "prev_high":        "The swing high before that",
-                    "last_low":         "The most recent swing low on record",
-                    "prev_low":         "The swing low before that",
-                    "fvg_confirmed":    "A confirmed 'Fair Value Gap' (a price jump with no trading in between) was required for this to fire",
-                }
-                for _mk, _mlabel in _meta_labels.items():
-                    if _mk in _meta and _meta[_mk] is not None:
-                        _mv = _meta[_mk]
-                        _mv_str = f"${_mv:.2f}" if isinstance(_mv, (int, float)) else str(_mv)
-                        signal_lines.append(
-                            f"{_mlabel}: <b>{_mv_str}</b> (this level may sit earlier in the session than "
-                            f"this window shows)"
-                        )
-
-                entry_lines = [
-                    "The bot never acts on the signal candle itself — it waits one full candle to confirm "
-                    "the move is real, not a one-bar fluke.",
-                    f"It then enters at the very next candle's <b>open</b>, buying a <b>{_entry_word}</b> "
-                    f"because the setup was {direction_word.split(' ')[0].lower()}.",
-                    "That one-candle delay is why the ② marker always sits one candle to the right of the "
-                    "① signal on the chart.",
-                ]
-                outcome_lines = [outcome_text]
-
-                # ── Progressive reveal — the panel reacts to the transport bar ──
-                # `reveal` is a 1-indexed bar COUNT (reveal=N means bars[0:N] are
-                # drawn, i.e. the bar at index N-1 is the last one visible). The
-                # Signal card is always live (the slider's own minimum already
-                # includes the signal bar — see lo above). Entry/Outcome stay in
-                # a dashed "not revealed yet" state until the transport bar
-                # actually reaches that candle, so stepping through (or playing)
-                # the sim means something instead of always showing the answer.
-                _revealed_entry = reveal >= ex["entry_idx"] + 1
-                _revealed_exit  = reveal >= ex["exit_idx"] + 1
-
-                # ── Which card is "live" right now — the frontier the
-                # transport bar has most recently reached. Everything before
-                # it is settled history (plain black border); everything
-                # after it hasn't happened yet (dashed pending card).
-                if not _revealed_entry:
-                    _active_stage = "signal"
-                elif not _revealed_exit:
-                    _active_stage = "entry"
-                else:
-                    _active_stage = "outcome"
-
-                st.markdown(
-                    _cockpit_card("🟡", "THE SIGNAL", signal_lines,
-                                  accent_color="#f59e0b", is_active=(_active_stage == "signal")),
-                    unsafe_allow_html=True,
-                )
-
-                if _revealed_entry:
-                    st.markdown(
-                        _cockpit_card("🔵", "THE ENTRY", entry_lines,
-                                      accent_color="#3b82f6", is_active=(_active_stage == "entry")),
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(
-                        _pending_card("🔵", "THE ENTRY", "Step forward (or press ▶) to see the entry trigger."),
-                        unsafe_allow_html=True,
-                    )
-
-                if _revealed_exit:
-                    st.markdown(
-                        _cockpit_card(icon, "WHAT HAPPENED", outcome_lines,
-                                      accent_color=accent, is_active=(_active_stage == "outcome")),
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(
-                        _pending_card("⏳", "WHAT HAPPENED", "Keep stepping forward (or pressing ▶) to watch how this one resolves."),
-                        unsafe_allow_html=True,
-                    )
-
-        _cockpit()
-
-    def _render_strategy_lesson(meta: dict) -> None:
-        """Render one strategy as a cockpit-first lesson: a compact header,
-        then the 'Watch It Happen' simulator (chart + transport bar + logic
-        cards) as the immediate focal point, with The Idea / The Rules /
-        Common Mistake / Pro Tip following below for reference.
-
-        Reordered 2026-06-20 per direct mockup feedback: the simulator is
-        the focal point a trader develops muscle memory from by stepping
-        through real setups frame by frame — it shouldn't be buried below
-        two cards of reading material first."""
-        sid = meta["id"]
-
+    # ── Tab 1: INST_ORB ───────────────────────────────────────────────────────
+    with _pb_tabs[0]:
+        st.markdown("**INST_ORB — Institutional Opening Range Breakout**")
         st.markdown(
-            f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:6px'>"
-            f"<span style='font-size:1.5rem'>{meta['icon']}</span>"
-            f"<div>"
-            f"<span style='font-size:1.05rem;font-weight:800;color:{meta['color']}'>{meta['title']}</span>"
-            f"<span style='font-size:0.82rem;color:#9ca3af;margin-left:8px'>{meta['hook']}</span>"
-            f"</div></div>",
-            unsafe_allow_html=True,
+            "The opening range (OR) is the first 5-minute candle. "
+            "When price closes convincingly above OR High with 2× normal volume and price is above VWAP, "
+            "institutions are buying the breakout. Below OR Low with same criteria = PUT. "
+            "This is the highest-confidence setup — fires earliest in the session."
+        )
+        _strat_card([
+            ("Trigger",          "Close above OR High (CALL) · close below OR Low (PUT)"),
+            ("Time Window",      "09:31 – 10:30 ET · first hour only"),
+            ("Volume Gate",      "RVOL ≥ 200% — double normal participation required"),
+            ("VWAP Gate",        "Price must be above VWAP for CALL · below VWAP for PUT"),
+            ("Confidence Range", "0.75 – 0.93 (highest of all 8 strategies)"),
+            ("Exit Rules",       "Stage-1: +50% profit → sell 50% · Stage-2: break-even stop · Time-box: 45 min"),
+            ("Flip Trigger",     "Hard stop only → arms immediate opposite-direction entry if RVOL still ≥ 200%"),
+            ("What to watch",    "Gold/breakout candle clears OR boundary · volume bar crosses green 200% gate line"),
+        ], color="#f59e0b")
+        _d0 = _gen_orb_scenario(seed=101, scenario="clean")
+        st.plotly_chart(
+            _build_orb_fig(_d0, "INST_ORB — Clean Breakout  |  RVOL 2.4× · R:R ≥ 1.6", "clean"),
+            use_container_width=True,
+        )
+        st.info(
+            "A = signal candle · B = entry (next bar open) · C = Stage-1 exit (+50% on option). "
+            "If the volume bar is below the green gate line at A, the bot does not enter — no exceptions."
         )
 
-        # ── Cockpit: the simulator, front and center ──────────────────────
-        st.markdown("##### 🎬 Watch It Happen — Real Examples")
-        st.caption(
-            "Real trading days, real prices — not illustrations. Step through the "
-            "transport bar to watch the setup build candle by candle."
-        )
-        examples = _pb_examples.get(sid, [])
-        if not examples:
-            st.info(
-                f"📭 No real example yet for **{sid}** — this strategy hasn't fired in any "
-                f"session covered by the example cache. Re-run `python playbook_examples.py` "
-                f"after it fires live to add a real instance here. This page deliberately "
-                f"won't show a made-up chart in the meantime."
-            )
-        else:
-            for ex_i, ex in enumerate(examples[: meta.get("max_examples", 2)]):
-                if ex_i > 0:
-                    st.markdown("---")
-                _render_example_block(meta, ex, ex_i)
-
+        # Flip example
         st.markdown("---")
+        st.markdown("**Flip Trade — same strategy, direction reverses after hard stop**")
+        st.markdown(
+            "When a hard 30% stop fires, the bot immediately checks whether the opposite OR extreme is breaking "
+            "with RVOL ≥ 200%. If yes, it re-enters in the opposite direction. No cooldown. Same risk rules apply."
+        )
+        _d1 = _gen_orb_scenario(seed=202, scenario="flip")
+        st.plotly_chart(
+            _build_orb_fig(_d1, "INST_ORB — Flip Trade  |  Stop → Instant Reversal", "flip"),
+            use_container_width=True,
+        )
+        st.info("Purple candle = flip entry. ⚡ marker = moment bot pivoted. Identical gates applied to the flip.")
 
-        # ── Reference material — scrolls below the cockpit ────────────────
-        with st.container(border=True):
-            st.markdown("##### 💡 The Idea")
-            st.markdown(meta["concept"])
+        # Rejected example
+        st.markdown("---")
+        st.markdown("**Rejected Setup — price breaks out, volume does not confirm**")
+        _d2 = _gen_orb_scenario(seed=303, scenario="rejected")
+        st.plotly_chart(
+            _build_orb_fig(_d2, "INST_ORB — Rejected  |  Price ✓  RVOL ✗", "rejected"),
+            use_container_width=True,
+        )
+        st.warning(
+            "Volume bar stays below the 200% gate. Price broke OR High but smart money wasn't in it. "
+            "This is the classic retail trap — the bot walks away and saves capital."
+        )
 
-        with st.container(border=True):
-            st.markdown("##### 📋 The Rules")
-            _strat_card(meta["rules"], color=meta["color"])
+    # ── Tab 2: BOS_MSS ────────────────────────────────────────────────────────
+    with _pb_tabs[1]:
+        st.markdown("**BOS_MSS — Break of Structure / Market Structure Shift**")
+        st.markdown(
+            "Price has been making Lower Highs and Lower Lows (downtrend) or Higher Highs and Higher Lows (uptrend). "
+            "A Break of Structure (BOS) happens when price takes out the most recent swing low in a downtrend — "
+            "confirming the move. A Market Structure Shift (MSS) is the first BOS after a period of consolidation, "
+            "signaling a new directional leg is beginning. This is the second-highest confidence setup."
+        )
+        _strat_card([
+            ("Trigger",          "Close breaks prior swing low (PUT) · prior swing high (CALL) with momentum candle"),
+            ("Time Window",      "09:45 – 14:30 ET"),
+            ("Volume Gate",      "RVOL ≥ 150% at the break candle"),
+            ("Trend Context",    "MSA must confirm: at least 1 confirmed Lower High before PUT entry"),
+            ("Confidence Range", "0.68 – 0.85"),
+            ("Chart DNA",        "Look for: SL annotation on chart → price consolidates → sharp BOS candle breaks below SL"),
+            ("Common Mistake",   "Entering on the LL label itself — the entry is when price BREAKS below that level, not at it"),
+            ("What to watch",    "Bot labels SH/SL pivots on chart. Entry fires 1 bar after the break closes."),
+        ], color="#818cf8")
+        st.plotly_chart(
+            _build_strategy_fig("bos_mss", seed=42),
+            use_container_width=True,
+        )
+        st.info(
+            "**Reading the chart:** When you see SH → LH → SL → LL annotations descending in a stair-step, "
+            "the bot is tracking a confirmed downtrend. The PUT fires the bar after price closes below the last SL. "
+            "The LL label is an observation — NOT the entry trigger."
+        )
 
-        if meta.get("common_mistake") or meta.get("pro_tip"):
-            cm_col, pt_col = st.columns(2)
-            with cm_col:
-                if meta.get("common_mistake"):
-                    st.markdown(
-                        f"<div style='background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.3);"
-                        f"border-radius:8px;padding:10px 14px;font-size:0.82rem;height:100%'>"
-                        f"<b>⚠️ Common Mistake</b><br>{meta['common_mistake']}</div>",
-                        unsafe_allow_html=True,
-                    )
-            with pt_col:
-                if meta.get("pro_tip"):
-                    st.markdown(
-                        f"<div style='background:rgba(22,163,74,0.08);border:1px solid rgba(22,163,74,0.3);"
-                        f"border-radius:8px;padding:10px 14px;font-size:0.82rem;height:100%'>"
-                        f"<b>💎 Pro Tip</b><br>{meta['pro_tip']}</div>",
-                        unsafe_allow_html=True,
-                    )
+    # ── Tab 3: VWAP_PB ───────────────────────────────────────────────────────
+    with _pb_tabs[2]:
+        st.markdown("**VWAP_PB — VWAP Pullback**")
+        st.markdown(
+            "VWAP (Volume Weighted Average Price) is the average price paid all day, weighted by volume. "
+            "Institutions use it as a benchmark — buying below it, selling above it. "
+            "In an uptrend, when price dips back to VWAP and forms a Higher Low (HL), that's an institutional "
+            "buy zone. The bot enters as price bounces off VWAP with volume. In a downtrend, the inverse applies."
+        )
+        _strat_card([
+            ("Trigger",          "Price touches VWAP from above (uptrend) or below (downtrend) and closes back in trend direction"),
+            ("Time Window",      "09:45 – 14:30 ET"),
+            ("Volume Gate",      "RVOL ≥ 150% on the bounce candle"),
+            ("Trend Context",    "MSA must confirm uptrend (HL pattern) for CALL · downtrend (LH pattern) for PUT"),
+            ("Confidence Range", "0.62 – 0.80"),
+            ("Chart DNA",        "Price 'kisses' VWAP (orange line), dips barely through, closes back above — that's the signal"),
+            ("What to watch",    "The bounce candle must close beyond VWAP in trend direction · volume bar above 150% gate"),
+            ("Pro tip",          "Best setups occur when price has been trending for 30+ min and this is the second VWAP test"),
+        ], color="#06b6d4")
+        st.plotly_chart(
+            _build_strategy_fig("vwap_pb", seed=43),
+            use_container_width=True,
+        )
+        st.info(
+            "**VWAP is the blue/orange line on the chart.** A clean pullback looks like: "
+            "price goes up → pulls back to touch VWAP → bounces with volume. "
+            "If price closes through VWAP on the touch candle (not just wicked), the setup fails — the bot skips it."
+        )
 
-    # ── Render all 8 strategy tabs from the metadata table ───────────────────
-    for _pb_idx, _pb_meta in enumerate(_PB_STRATEGIES):
-        with _pb_tabs[_pb_idx]:
-            _render_strategy_lesson(_pb_meta)
+    # ── Tab 4: FVG ────────────────────────────────────────────────────────────
+    with _pb_tabs[3]:
+        st.markdown("**FVG — Fair Value Gap**")
+        st.markdown(
+            "A Fair Value Gap is a 3-candle imbalance: candle 1 high, big gap candle 2 (body), candle 3 low. "
+            "When candle 3's low is above candle 1's high, the zone between them was never properly traded — "
+            "it's a magnet for price. When price returns to fill the gap, institutions who missed the move "
+            "are waiting there. The bot enters as price enters the gap zone with volume."
+        )
+        _strat_card([
+            ("Trigger",          "Price re-enters a prior 3-bar imbalance zone (gap between candle 1 high and candle 3 low)"),
+            ("Time Window",      "09:45 – 14:30 ET"),
+            ("Volume Gate",      "RVOL ≥ 150% on the candle entering the gap"),
+            ("Gap Freshness",    "FVG zone must have been created within the last 20 bars"),
+            ("Confidence Range", "0.63 – 0.81"),
+            ("Chart DNA",        "Look for: 3-bar imbalance zone → price drops away → returns to gap midpoint"),
+            ("Direction",        "Bullish FVG (gap above): PUT when price falls back into it. Bearish FVG (gap below): CALL when price rises to it."),
+            ("What to watch",    "The gap zone appears as shaded area if structure overlays are on · entry at zone midpoint"),
+        ], color="#ec4899")
+        st.plotly_chart(
+            _build_strategy_fig("fvg", seed=44),
+            use_container_width=True,
+        )
+        st.info(
+            "**Think of an FVG like a pothole in the road.** Price moved so fast it left a hole. "
+            "When it comes back, it fills the hole before continuing. "
+            "The bot doesn't chase price away from the gap — it waits for the return."
+        )
+
+    # ── Tab 5: MID_BRK ───────────────────────────────────────────────────────
+    with _pb_tabs[4]:
+        st.markdown("**MID_BRK — Midday Breakdown**")
+        st.markdown(
+            "After the morning session, price often consolidates or drifts. "
+            "A Midday Breakdown happens when price — already in a confirmed downtrend — finally breaks "
+            "below the OR Low in the 11:00–13:30 window. This is a continuation play: the morning "
+            "established the direction, midday adds another leg. Requires a confirmed Lower High before entry."
+        )
+        _strat_card([
+            ("Trigger",          "Close breaks below OR Low in confirmed downtrend · confirmed Lower High on record"),
+            ("Time Window",      "11:00 – 13:30 ET only (mid-session window)"),
+            ("Volume Gate",      "RVOL ≥ 150% on the breakdown candle"),
+            ("Trend Context",    "MSA must show downtrend + at least one confirmed LH before the break"),
+            ("VWAP Gate",        "Price must be below VWAP at entry"),
+            ("Confidence Range", "0.67 – 0.83"),
+            ("Chart DNA",        "Morning: SH → LH stair-step. Midday: price coils near OR Low → volume spike → clean break"),
+            ("What to watch",    "The OR Low is the red dashed line. Entry fires when a 5m candle closes below it with volume."),
+        ], color="#ef4444")
+        st.plotly_chart(
+            _build_strategy_fig("mid_brk", seed=45),
+            use_container_width=True,
+        )
+        st.info(
+            "**This is a second-leg trade.** The morning gave you the trend (LH pattern). "
+            "Midday gave you the re-test. The breakdown candle is your signal. "
+            "If RVOL is below 1.5× or the LH was not confirmed, the bot passes — midday traps are common."
+        )
+
+    # ── Tab 6: AFT_REV ───────────────────────────────────────────────────────
+    with _pb_tabs[5]:
+        st.markdown("**AFT_REV — Afternoon Reversal**")
+        st.markdown(
+            "The afternoon session (13:30–15:00) often sees institutions repositioning. "
+            "After a morning downtrend, a Higher Low forms — sellers are exhausted. "
+            "When price then breaks above the most recent Lower High, the downtrend structure is broken "
+            "and a reversal is underway. The bot buys the Break of Structure to the upside."
+        )
+        _strat_card([
+            ("Trigger",          "Close breaks above last confirmed Lower High (CALL) — Break of Structure to upside"),
+            ("Time Window",      "13:30 – 15:00 ET only (afternoon window)"),
+            ("Volume Gate",      "RVOL ≥ 150% on the break candle"),
+            ("Trend Context",    "Must have confirmed Higher Low (HL) before the break — proves sellers exhausted"),
+            ("Confidence Range", "0.65 – 0.82"),
+            ("Chart DNA",        "Morning: SH → LH → SL → LL. Afternoon: HL forms → price breaks above last LH"),
+            ("What to watch",    "The LH label on the chart is the resistance level. Entry fires when price closes above it."),
+            ("Pro tip",          "Best reversals have the HL near VWAP and the LH break on above-average volume"),
+        ], color="#22c55e")
+        st.plotly_chart(
+            _build_strategy_fig("aft_rev", seed=46),
+            use_container_width=True,
+        )
+        st.info(
+            "**The reversal is confirmed, not anticipated.** The bot does not enter at the HL. "
+            "It waits for price to actually break above the LH with volume. "
+            "That break is your signal that institutions are stepping in on the buy side."
+        )
+
+    # ── Tab 7: TREND_CONT ─────────────────────────────────────────────────────
+    with _pb_tabs[6]:
+        st.markdown("**TREND_CONT — Trend Continuation (Lower High / Higher Low Re-entry)**")
+        st.markdown(
+            "Once a trend is established, experienced traders re-enter on pullbacks rather than chasing. "
+            "In a downtrend, price pulls back to form a Lower High (LH) — resistance — then resumes lower. "
+            "The bot enters when the current bar closes below the LH bar's close, confirming the pullback failed "
+            "and the downtrend is resuming. In an uptrend, the inverse: enter when price bounces off a Higher Low."
+        )
+        _strat_card([
+            ("Trigger",          "Downtrend: close < LH bar close after confirmed LH (PUT) · Uptrend: close > HL bar close after confirmed HL (CALL)"),
+            ("Time Window",      "09:45 – 14:30 ET"),
+            ("Volume Gate",      "RVOL ≥ 120% (lower gate — trend already established)"),
+            ("Trend Context",    "MSA must confirm downtrend/uptrend · LH must be within last 10 bars"),
+            ("VWAP Gate",        "Price below VWAP for PUT · above VWAP for CALL"),
+            ("Confidence Range", "0.65 – 0.82"),
+            ("Chart DNA",        "Look for: clear LH/HL annotation within 10 bars · price pulling back into it · then rejection candle"),
+            ("What to watch",    "The rejection candle is the signal. Entry is the bar after it closes in trend direction."),
+        ], color="#8b5cf6")
+        st.plotly_chart(
+            _build_strategy_fig("trend_cont", seed=47),
+            use_container_width=True,
+        )
+        st.info(
+            "**This is an expert re-entry trade.** Amateurs chase the initial move. "
+            "Professionals wait for the first pullback to form a LH (in a downtrend) and enter when "
+            "the pullback fails. Lower RVOL gate (1.2×) is allowed because the trend is already confirmed — "
+            "you need less new participation to sustain an existing move."
+        )
+
+    # ── Tab 8: CHAN_BREAK ─────────────────────────────────────────────────────
+    with _pb_tabs[7]:
+        st.markdown("**CHAN_BREAK — Channel Trendline Rejection**")
+        st.markdown(
+            "When price makes two or more Lower Highs, a descending channel trendline can be drawn through them. "
+            "That line becomes dynamic resistance — every time price tags it and rejects, it's a short entry. "
+            "The bot projects the trendline forward in real-time. When the current bar's high tags the projected "
+            "line within 0.3% and the bar closes below it, a rejection is confirmed."
+        )
+        _strat_card([
+            ("Trigger",          "Current bar high within 0.3% of projected descending trendline · close below the line"),
+            ("Time Window",      "09:45 – 14:00 ET"),
+            ("Volume Gate",      "RVOL ≥ 130% on the rejection candle"),
+            ("Channel Requirement", "≥ 2 confirmed swing highs forming the descending line · both within last 40 bars"),
+            ("Slope Gate",       "Slope must exceed 0.002 (minimum angle — flat lines rejected)"),
+            ("Confidence Range", "0.75 – 0.90 (highest ceiling of all strategies)"),
+            ("Chart DNA",        "Descending dashed channel line on chart · rejection candle has a wick touching the line, body closes below"),
+            ("What to watch",    "Ascending channel = lower trendline is support → CALL when price bounces off it with volume"),
+        ], color="#f97316")
+        st.plotly_chart(
+            _build_strategy_fig("chan_break", seed=48),
+            use_container_width=True,
+        )
+        st.info(
+            "**This is precision trading.** The trendline is your edge. "
+            "When price taps the line for the third time and rejects, institutions have sold into that resistance "
+            "twice before and are doing it again. The wick above the line with a body close below = clean rejection. "
+            "This strategy has the highest confidence ceiling (0.90) because the setup is so specific."
+        )
 
     # ── Tab 9: Trading Log Explanations ──────────────────────────────────────
     with _pb_tabs[8]:
@@ -8443,6 +7719,48 @@ elif page == "playbooks":
                             for _m in _entry["match"]:
                                 st.code(_m, language=None)
 
+def render_income_roadmap():
+    st.markdown("<div class='ct-brand-wrap'><h1 class='ct-brand'>INCOME ROADMAP</h1><p class='ct-sub'>PREDICTIVE GROWTH ENGINE</p></div>", unsafe_allow_html=True)
+    
+    with st.sidebar:
+        st.subheader("Projection Settings")
+        daily_target = st.slider("Daily Growth Target (%)", 0.1, 5.0, 1.0, 0.1)
+        projection_days = st.slider("Projection Horizon (Days)", 30, 365, 90, 30)
+        st.info(f"Targeting {daily_target}% daily compounding over {projection_days} days.")
 
+    try:
+        data = {"Day": range(projection_days + 1)}
+        data["Balance"] = [STARTING_CAPITAL * ((1 + daily_target/100) ** i) for i in data["Day"]]
+        df = pd.DataFrame(data)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df["Day"], y=df["Balance"],
+            fill='tozeroy', mode='lines',
+            line=dict(color=T.get("accent", "#2563eb"), width=3),
+            fillcolor="rgba(37, 99, 235, 0.1)"
+        ))
+        
+        fig.update_layout(
+            plot_bgcolor='white', paper_bgcolor='white',
+            margin=dict(l=20, r=20, t=30, b=20),
+            xaxis=dict(showgrid=True, gridcolor=T.get("border", "#e5e7eb")),
+            yaxis=dict(showgrid=True, gridcolor=T.get("border", "#e5e7eb"), tickprefix="$")
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("### Growth Milestones")
+        cols = st.columns(3)
+        milestones = [1.5, 2.0, 5.0]
+        for i, m in enumerate(milestones):
+            val = STARTING_CAPITAL * m
+            cols[i].markdown(
+                f"<div class='mc'><div class='ml'>{int(m*100)}% GROWTH</div>"
+                f"<div class='mv'>${val:,.0f}</div></div>", 
+                unsafe_allow_html=True
+            )
+    except Exception as e:
+        st.error(f"Error rendering roadmap: {e}")
 # ── Price ticker bar — rendered on every page (position:fixed bottom) ─────────
 _price_ticker_bar()
