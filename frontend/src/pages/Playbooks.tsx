@@ -100,26 +100,83 @@ const TAG_COLORS: Record<string, string> = {
 
 // ── Log event code explanations ───────────────────────────────────────────
 const LOG_CODES: { code: string; plain: string; detail: string; tag: string }[] = [
-  { code: "logging_initialised",  tag: "system",  plain: "Bot started up",                      detail: "The bot just launched and its logging system is ready." },
-  { code: "Trade_Signal",         tag: "signal",  plain: "A valid trade setup was found",        detail: "All gates passed: RVOL, R:R, spread, and strategy rules. The bot is about to place an order." },
-  { code: "entry_placed",         tag: "order",   plain: "Order submitted to broker",            detail: "The buy/sell order was sent to Alpaca. Waiting for fill confirmation." },
-  { code: "entry_filled",         tag: "order",   plain: "Order filled — position is open",      detail: "Broker confirmed the order executed. The trade is now live." },
-  { code: "stage1_exit",          tag: "exit",    plain: "Took first half profit (Stage 1)",     detail: "Price hit the 1:1 R:R target. Half the position was closed to lock in gains." },
-  { code: "stage2_exit",          tag: "exit",    plain: "Closed remaining position (Stage 2)",  detail: "The trailing stop or time-box triggered on the remaining contracts." },
-  { code: "stop_hit",             tag: "exit",    plain: "Stop loss was triggered",              detail: "Price moved against the trade and hit the pre-set stop. Position closed to protect capital." },
-  { code: "time_box_exit",        tag: "exit",    plain: "Trade closed — time limit reached",    detail: "The trade exceeded its maximum hold time (45 min, or 90 min if Stage 1 was hit)." },
-  { code: "bar_evaluation",       tag: "think",   plain: "Bot checked the latest candle",        detail: "Every 1-minute close the bot runs all strategy checks and logs its decision." },
-  { code: "RVOL_gate_pass",       tag: "gate",    plain: "Volume check passed",                  detail: "Relative volume (today vs. average) was high enough to consider a trade." },
-  { code: "RVOL_gate_fail",       tag: "gate",    plain: "Volume too low — skipping",            detail: "Not enough trading volume. Low volume = unreliable breakouts. Bot waits." },
-  { code: "rr_gate_pass",         tag: "gate",    plain: "Risk:Reward ratio is good",            detail: "The potential profit is at least the minimum multiple of the potential loss." },
-  { code: "rr_gate_fail",         tag: "gate",    plain: "Risk:Reward too poor — skipping",      detail: "The reward wasn't worth the risk at current prices. Bot passes on the trade." },
-  { code: "spread_gate_fail",     tag: "gate",    plain: "Bid-ask spread too wide",              detail: "The gap between buy and sell price was >10%, eating too much of the trade's edge." },
-  { code: "orb_already_triggered",tag: "gate",    plain: "ORB already fired on this ticker today",detail: "The bot only takes one ORB trade per ticker per day to avoid overtrading." },
-  { code: "kill_lock_active",     tag: "risk",    plain: "Daily loss limit hit — bot locked",    detail: "Total losses for the day exceeded the max. Bot stops trading until tomorrow." },
-  { code: "flip_trade",           tag: "signal",  plain: "Bot flipped direction on a reversal",  detail: "A failed trade reversed hard. The bot flipped from long→short (or vice versa)." },
-  { code: "network_error",        tag: "system",  plain: "API connection problem",               detail: "The broker API returned an error or timed out. Bot will retry automatically." },
-  { code: "ghost_position_detected",tag:"risk",   plain: "Open position found without a DB record",detail: "Alpaca shows an open position the bot doesn't have in its trade journal. Needs review." },
-  { code: "balance_update",       tag: "system",  plain: "Account balance refreshed",            detail: "The bot fetched the latest account balance from Alpaca." },
+  // ── System events ─────────────────────────────────────────────────────
+  { code: "logging_initialised",   tag: "system",  plain: "Bot started up",
+    detail: "The bot just launched and its logging system is ready. Next step: scan for today's watchlist." },
+  { code: "balance_update",        tag: "system",  plain: "Account balance refreshed",
+    detail: "The bot fetched the latest account balance from Alpaca. Used to size every trade correctly." },
+  { code: "network_error",         tag: "system",  plain: "API connection problem",
+    detail: "The broker API returned an error or timed out. Bot will retry automatically on the next tick." },
+  { code: "reconnecting",          tag: "system",  plain: "Lost connection — trying to reconnect",
+    detail: "WebSocket or API link dropped. Bot pauses new entries until the connection is restored." },
+
+  // ── Scanning / thinking ───────────────────────────────────────────────
+  { code: "bar_eval",              tag: "think",   plain: "Per-candle bot narration",
+    detail: "Fires once per closed 1-minute candle. Shows exactly what the bot is watching: price vs. the Opening Range, volume level (RVOL), VWAP alignment, which gates pass/fail, and what would need to change for a trade to trigger. When a position is open, shows live P&L, stop cushion, Stage 1 distance, and time-box countdown instead." },
+  { code: "bar_evaluation",        tag: "think",   plain: "Per-candle strategy check (legacy label)",
+    detail: "Older label for the same per-candle evaluation. See bar_eval for the current format." },
+  { code: "scan_complete",         tag: "think",   plain: "Pre-market scan finished",
+    detail: "The bot scanned 9:00–9:25 ET for the top RVOL/momentum candidates. These become today's watchlist." },
+
+  // ── Gate checks ──────────────────────────────────────────────────────
+  { code: "RVOL_gate_pass",        tag: "gate",    plain: "Volume check passed ✅",
+    detail: "Relative volume (today vs. 10-day average at this time of day) is ≥ 1.5×. Elevated volume means the move is more likely real and not a fake-out." },
+  { code: "RVOL_gate_fail",        tag: "gate",    plain: "Volume too low — skipping ❌",
+    detail: "RVOL is below the 1.5× threshold. Low volume breakouts fail ~70% of the time. Bot waits for more participation before entering." },
+  { code: "rr_gate_pass",          tag: "gate",    plain: "Risk:Reward ratio is acceptable ✅",
+    detail: "The distance to the target is at least the minimum multiple of the distance to the stop. A good R:R means the math works even if you're right less than half the time." },
+  { code: "rr_gate_fail",          tag: "gate",    plain: "Risk:Reward too poor — skipping ❌",
+    detail: "At current prices, the potential gain doesn't justify the risk. Common when premiums are inflated or the stop is too far away." },
+  { code: "spread_gate_fail",      tag: "gate",    plain: "Bid-ask spread too wide ❌",
+    detail: "The gap between the option's buy price and sell price exceeds 10%. A wide spread means you instantly lose money the moment you enter. Bot skips." },
+  { code: "orb_already_triggered", tag: "gate",    plain: "ORB already used on this ticker today",
+    detail: "The bot only takes one Opening Range Breakout trade per ticker per session. This prevents chasing the same ticker repeatedly if it fails and re-tests." },
+  { code: "vwap_gate_fail",        tag: "gate",    plain: "VWAP alignment missing — skipping ❌",
+    detail: "For a CALL, price must be above VWAP (market buying pressure). For a PUT, below VWAP. Without this, you'd be fighting the macro trend." },
+  { code: "struct_stop_set",       tag: "gate",    plain: "Structural stop level established",
+    detail: "A key price level (swing low for longs, swing high for shorts) was identified as the hard stop anchor. If price closes below/above this, the setup is broken." },
+
+  // ── Trade signals & entries ───────────────────────────────────────────
+  { code: "Trade_Signal",          tag: "signal",  plain: "Valid trade setup — all gates passed 🔥",
+    detail: "Every required condition is met: RVOL ≥ threshold, VWAP aligned, R:R acceptable, spread OK, ORB/strategy trigger confirmed. The bot is about to submit an order." },
+  { code: "entry_placed",          tag: "order",   plain: "Order submitted to broker",
+    detail: "The option buy order was sent to Alpaca. The bot is now waiting for a fill confirmation. If the fill doesn't come back, it cancels to avoid orphaned orders." },
+  { code: "entry_filled",          tag: "order",   plain: "Order filled — position is live ✅",
+    detail: "Broker confirmed the trade executed at the listed price. Stop and Stage 1 target are now set. Time-box countdown begins." },
+  { code: "entry_rejected",        tag: "order",   plain: "Order rejected by broker",
+    detail: "Alpaca rejected the order — usually insufficient buying power or an invalid contract. The rejection reason is logged. No position opened." },
+  { code: "flip_trade",            tag: "signal",  plain: "Bot flipped direction on a reversal 🔄",
+    detail: "A trade failed and price reversed strongly through the original trigger level. The bot auto-flipped from CALL→PUT (or PUT→CALL) to ride the new direction. Only fires if flip trading is enabled in Settings." },
+
+  // ── Position management ───────────────────────────────────────────────
+  { code: "position_narration",    tag: "think",   plain: "Live position status update",
+    detail: "Emitted every minute while in a trade. Shows: current option price vs. entry, unrealized P&L in $ and %, cushion above the stop, distance to Stage 1 target, time-box countdown, and whether momentum (RVOL) is holding." },
+  { code: "stop_tightened",        tag: "risk",    plain: "Stop moved up to protect profits",
+    detail: "After Stage 1 hit or a strong momentum move, the stop was raised toward breakeven or above. This locks in gains even if the trade reverses." },
+  { code: "trailing_stop_update",  tag: "risk",    plain: "Trailing stop adjusted",
+    detail: "As price moved in our favor, the stop followed it upward (for longs) keeping pace with the move. This is how runners ride big moves while protecting gains." },
+
+  // ── Exits ─────────────────────────────────────────────────────────────
+  { code: "stage1_exit",           tag: "exit",    plain: "Took first-half profit (Stage 1) 🎯",
+    detail: "Price hit the Stage 1 target (~50–100% gain on the option). Half the contracts were sold to lock in profit. Remaining contracts run with a tighter trailing stop toward Stage 2." },
+  { code: "stage2_exit",           tag: "exit",    plain: "Closed remaining position (Stage 2)",
+    detail: "The trailing stop or time-box triggered on the remaining contracts. Full position is now flat." },
+  { code: "stop_hit",              tag: "exit",    plain: "Stop loss triggered — position closed 🔴",
+    detail: "Price hit the pre-set stop level. The position was closed to limit the loss. This is normal risk management — not every trade wins. Loss was limited to the pre-calculated amount." },
+  { code: "time_box_exit",         tag: "exit",    plain: "Time-box expired — trade closed ⏱️",
+    detail: "The trade ran out of time: 45 minutes (or 90 min if Stage 1 was already hit). Position closed regardless of P&L. Time-boxes prevent overnight holds and slow bleeders." },
+  { code: "manual_close",          tag: "exit",    plain: "Trade manually closed by user",
+    detail: "You clicked the Close button in the Trade Journal or Live Trading page. Position was closed at market." },
+  { code: "panic_close",           tag: "exit",    plain: "Panic Close — all positions closed 🚨",
+    detail: "Panic Close was triggered. All open option positions were closed at market immediately." },
+
+  // ── Risk controls ─────────────────────────────────────────────────────
+  { code: "kill_lock_active",      tag: "risk",    plain: "Daily loss limit hit — bot locked 🔒",
+    detail: "Total realized losses for the session hit the maximum allowed. Bot stops placing new trades until the next trading day. Existing positions are still managed." },
+  { code: "ghost_position_detected",tag:"risk",    plain: "Open position found without a DB record",
+    detail: "Alpaca shows an open option position that isn't in the bot's trade journal. Could be a leftover from a crash or manual trade. Bot flags it for review — it won't manage a ghost position automatically." },
+  { code: "affordability_block",   tag: "risk",    plain: "Premium too expensive for current buying power",
+    detail: "The cheapest contract for this signal costs more than the account's options buying power allows. Bot skips rather than over-leveraging." },
 ];
 
 const TAG_BADGE: Record<string, string> = {
@@ -130,6 +187,9 @@ const TAG_BADGE: Record<string, string> = {
   think:  "badge-yellow",
   gate:   "badge-yellow",
   risk:   "badge-red",
+  // aliases used in newer log entries
+  orders: "badge-blue",
+  exits:  "badge-red",
 };
 
 import { useState } from "react";
