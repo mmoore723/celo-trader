@@ -68,7 +68,14 @@ def get_bars(
                     .dt.tz_convert("America/New_York")
                     .dt.tz_localize(None)
                 )
-                df = raw_yf[["time","open","high","low","close","volume"]].tail(limit).reset_index(drop=True)
+                raw_yf = raw_yf[["time","open","high","low","close","volume"]].copy()
+                # Drop bad thin-market prints: bars where close moved >8% from
+                # the prior bar's close are almost always erroneous pre/post
+                # market data (single-trade bad prints in illiquid sessions).
+                prev_close = raw_yf["close"].shift(1)
+                pct_move   = (raw_yf["close"] - prev_close).abs() / prev_close
+                raw_yf     = raw_yf[(pct_move < 0.08) | pct_move.isna()].reset_index(drop=True)
+                df = raw_yf.tail(limit).reset_index(drop=True)
         except Exception:
             pass
 
