@@ -1,18 +1,62 @@
 /**
- * DailyBrief.tsx — Daily session summary: today's trades, P&L, scanner picks, key events.
+ * DailyBrief.tsx — Daily session summary with premarket scout report.
  */
 import { useQuery } from "@tanstack/react-query";
-import { api, type Trade } from "../lib/api";
+import { api, type Trade, type ScannerResult } from "../lib/api";
 import { useBotStore } from "../store/bot";
 
-function fmt(n: number, prefix = "$") {
-  return `${n >= 0 ? "+" : ""}${prefix}${Math.abs(n).toFixed(2)}`;
+function fmt(n: number) {
+  return `${n >= 0 ? "+" : ""}$${Math.abs(n).toFixed(2)}`;
 }
 
 function today() {
   return new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
+}
+
+/** Generate a plain-English "scout report" for each scanned ticker. */
+function scoutReport(s: ScannerResult, rank: number): { emoji: string; headline: string; detail: string } {
+  const rvol = s.rvol;
+  const chg  = s.change_pct;
+
+  // Direction read
+  const dirWord =
+    chg > 3   ? "sprinting upfield"  :
+    chg > 1   ? "running hard up"    :
+    chg > 0   ? "moving up slowly"   :
+    chg < -3  ? "falling off a cliff":
+    chg < -1  ? "dropping fast"      :
+                "treading water";
+
+  // Volume read
+  const volWord =
+    rvol >= 3  ? "the whole crowd is watching — insane volume" :
+    rvol >= 2  ? "big crowd, way more activity than usual"      :
+    rvol >= 1.5? "above-average buzz, good energy"              :
+                 "lighter volume, proceed with caution";
+
+  // Emoji
+  const emoji =
+    rank === 1 ? "🥇" :
+    rank === 2 ? "🥈" :
+    rank === 3 ? "🥉" :
+    chg > 2    ? "🔥" :
+    chg < -2   ? "📉" : "👀";
+
+  // Headline
+  const headline =
+    rank <= 3
+      ? `Draft Pick #${rank} — ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%, ${rvol.toFixed(1)}× volume`
+      : `On the bench — ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%, ${rvol.toFixed(1)}× volume`;
+
+  const detail = `This ticker is ${dirWord} premarket (${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%). ${volWord} (${rvol.toFixed(1)}× normal). ${
+    rvol >= 1.5 && Math.abs(chg) >= 1
+      ? "The bot flagged it because high relative volume + a clear gap = the conditions where ORB setups work best."
+      : "The bot is keeping an eye on it but needs stronger volume or a clearer move before treating it as a prime candidate."
+  }`;
+
+  return { emoji, headline, detail };
 }
 
 export function DailyBrief() {
@@ -30,31 +74,27 @@ export function DailyBrief() {
     refetchInterval: 60_000,
   });
 
-  // Filter to today's trades (by entry_time date)
+  // Today's trades
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayTrades: Trade[] = (tradesResp?.trades ?? []).filter(
     (t) => t.entry_time && t.entry_time.startsWith(todayStr)
   );
-
-  const wins  = todayTrades.filter((t) => (t.pnl ?? 0) > 0).length;
-  const losses = todayTrades.filter((t) => (t.pnl ?? 0) < 0).length;
+  const wins     = todayTrades.filter((t) => (t.pnl ?? 0) > 0).length;
+  const losses   = todayTrades.filter((t) => (t.pnl ?? 0) < 0).length;
   const totalPnl = todayTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
-  const winRate = todayTrades.length ? Math.round((wins / todayTrades.length) * 100) : 0;
-
-  // Key events from WS log stream (errors + signals)
-  const keyEvents = logs
-    .filter((l) =>
-      l.event === "Trade_Signal" ||
-      l.event === "entry_filled" ||
-      l.event === "stop_hit" ||
-      l.event === "stage1_exit" ||
-      l.event === "stage2_exit" ||
-      l.event === "time_box_exit" ||
-      (l.level ?? "").toUpperCase() === "ERROR"
-    )
-    .slice(0, 20);
-
+  const winRate  = todayTrades.length ? Math.round((wins / todayTrades.length) * 100) : 0;
   const pnlColor = totalPnl >= 0 ? "var(--positive)" : "var(--negative)";
+
+  // Signal events only (no heartbeat noise)
+  const signalEvents = logs.filter((l) =>
+    l.event === "Trade_Signal"   ||
+    l.event === "entry_filled"   ||
+    l.event === "stop_hit"       ||
+    l.event === "stage1_exit"    ||
+    l.event === "stage2_exit"    ||
+    l.event === "time_box_exit"  ||
+    l.event === "kill_lock_active"
+  ).slice(0, 15);
 
   return (
     <div className="p-4 flex flex-col gap-4 max-w-4xl">
@@ -64,13 +104,13 @@ export function DailyBrief() {
         <p className="text-sm mt-0.5" style={{ color: "var(--ink-muted)" }}>{today()}</p>
       </div>
 
-      {/* Summary stat cards */}
+      {/* Stat cards */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Session P&L",    value: fmt(status?.session_pnl ?? 0), color: (status?.session_pnl ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" },
-          { label: "Today's Trades", value: todayTrades.length,           color: "var(--ink)" },
-          { label: "Win Rate",       value: `${winRate}%`,                color: winRate >= 50 ? "var(--positive)" : "var(--negative)" },
-          { label: "Account Balance",value: `$${(status?.account_balance ?? 0).toFixed(2)}`, color: "var(--ink)" },
+          { label: "Session P&L",     value: fmt(status?.session_pnl ?? 0),                     color: (status?.session_pnl ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" },
+          { label: "Today's Trades",  value: String(todayTrades.length),                          color: "var(--ink)" },
+          { label: "Win Rate",        value: `${winRate}%`,                                       color: winRate >= 50 ? "var(--positive)" : winRate > 0 ? "var(--negative)" : "var(--ink-muted)" },
+          { label: "Account Balance", value: `$${(status?.account_balance ?? 0).toFixed(2)}`,     color: "var(--ink)" },
         ].map((s) => (
           <div key={s.label} className="card px-4 py-3 flex flex-col gap-0.5">
             <span className="text-xs" style={{ color: "var(--ink-muted)" }}>{s.label}</span>
@@ -79,28 +119,99 @@ export function DailyBrief() {
         ))}
       </div>
 
-      {/* Two-column layout */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+      {/* Premarket Scout Report — the main event */}
+      <div className="card p-4 flex flex-col gap-3">
+        <div>
+          <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+            🏟️ Premarket Scout Report
+          </h3>
+          <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>
+            Think of this as a sports draft. The bot scans the market every morning at 9:00–9:25 ET
+            and picks the loudest, fastest stocks on the playground — high relative volume and a clear
+            direction before the bell. Low-volume stocks sitting on the bench get skipped. Here's today's draft board:
+          </p>
+        </div>
 
-        {/* Today's trades */}
-        <div className="card flex flex-col">
+        {scanner.length === 0 ? (
           <div
-            className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
-            style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
+            className="rounded-lg px-4 py-5 text-sm text-center"
+            style={{ background: "var(--muted)", color: "var(--ink-muted)" }}
           >
-            Today's Trades ({todayTrades.length})
-            {todayTrades.length > 0 && (
-              <span className="ml-2" style={{ color: pnlColor }}>
-                {fmt(totalPnl)} total
-              </span>
-            )}
+            No scan results yet. The bot runs its draft pick at <strong>9:00–9:25 ET</strong> each morning.
+            Start the bot before market open to populate this section.
           </div>
-          <div className="overflow-x-auto">
-            {todayTrades.length === 0 ? (
-              <p className="p-4 text-sm" style={{ color: "var(--ink-muted)" }}>
-                No trades recorded today yet.
-              </p>
-            ) : (
+        ) : (
+          <div className="flex flex-col gap-3">
+            {scanner.map((s) => {
+              const { emoji, headline, detail } = scoutReport(s, s.rank);
+              const chgColor = s.change_pct >= 0 ? "var(--positive)" : "var(--negative)";
+              return (
+                <div
+                  key={s.ticker}
+                  className="flex gap-4 p-3 rounded-lg"
+                  style={{ background: "var(--muted)" }}
+                >
+                  <div className="text-2xl shrink-0 mt-0.5">{emoji}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="font-bold text-base" style={{ color: "var(--ink)" }}>
+                        {s.ticker}
+                      </span>
+                      <span className="text-xs num font-semibold" style={{ color: chgColor }}>
+                        {headline}
+                      </span>
+                    </div>
+                    <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+                      {detail}
+                    </p>
+                    {/* Mini stats row */}
+                    <div className="flex gap-4 mt-2">
+                      {[
+                        { label: "Price",  value: `$${s.price.toFixed(2)}` },
+                        { label: "RVOL",   value: `${s.rvol.toFixed(2)}×`, color: s.rvol >= 2 ? "var(--positive)" : "var(--ink)" },
+                        { label: "ATR",    value: `$${s.atr.toFixed(2)}` },
+                        { label: "Change", value: `${s.change_pct >= 0 ? "+" : ""}${s.change_pct.toFixed(2)}%`, color: chgColor },
+                      ].map((stat) => (
+                        <div key={stat.label} className="flex flex-col">
+                          <span className="text-[10px] uppercase tracking-wide" style={{ color: "var(--ink-faint)" }}>
+                            {stat.label}
+                          </span>
+                          <span className="text-xs num font-semibold" style={{ color: stat.color ?? "var(--ink)" }}>
+                            {stat.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <p className="text-xs px-1" style={{ color: "var(--ink-faint)" }}>
+              💡 Why these? The bot filters 150+ liquid stocks down to the ones with the highest relative volume
+              AND a meaningful pre-market gap. No gap + no crowd = no edge. The bot only plays when the odds are in its favor.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Today's trades */}
+      <div className="card flex flex-col">
+        <div
+          className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider flex items-center gap-2"
+          style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
+        >
+          Today's Trades ({todayTrades.length})
+          {todayTrades.length > 0 && (
+            <span style={{ color: pnlColor }}>{fmt(totalPnl)} total</span>
+          )}
+        </div>
+        {todayTrades.length === 0 ? (
+          <p className="p-4 text-sm" style={{ color: "var(--ink-muted)" }}>
+            No trades recorded today yet.
+          </p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr><th>Ticker</th><th>Strategy</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Reason</th></tr>
@@ -118,117 +229,48 @@ export function DailyBrief() {
                           {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
                         </td>
                         <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                          {t.exit_reason ?? (t.status === "open" ? <span className="badge badge-green">OPEN</span> : "—")}
+                          {t.exit_reason ?? (t.status === "open" ? "OPEN" : "—")}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-            )}
-          </div>
-        </div>
-
-        {/* Scanner picks + key events stacked */}
-        <div className="flex flex-col gap-4">
-          {/* Premarket scanner */}
-          <div className="card flex flex-col">
-            <div
-              className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
-              style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
-            >
-              Premarket Scanner Picks
             </div>
-            {scanner.length === 0 ? (
-              <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                No scan results — bot scans 9:00–9:25 ET
-              </p>
-            ) : (
-              <div>
-                {scanner.map((s, i) => (
-                  <div
-                    key={s.ticker}
-                    className="px-3 py-2 flex items-center justify-between text-sm border-b last:border-0"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="text-xs num font-semibold w-5 text-center"
-                        style={{ color: "var(--ink-faint)" }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span className="font-semibold" style={{ color: "var(--ink)" }}>{s.ticker}</span>
-                      <span className="text-xs num" style={{ color: "var(--ink-muted)" }}>
-                        {s.rvol.toFixed(1)}x RVOL
-                      </span>
-                    </div>
-                    <span
-                      className="text-xs num font-medium"
-                      style={{ color: s.change_pct >= 0 ? "var(--positive)" : "var(--negative)" }}
-                    >
-                      {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Key events */}
-          <div className="card flex flex-col" style={{ minHeight: 120 }}>
-            <div
-              className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
-              style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
-            >
-              Key Events
+            <div className="px-4 py-2 flex gap-6 text-sm border-t" style={{ borderColor: "var(--border)" }}>
+              <span style={{ color: "var(--ink-muted)" }}>Wins <strong style={{ color: "var(--positive)" }}>{wins}</strong></span>
+              <span style={{ color: "var(--ink-muted)" }}>Losses <strong style={{ color: "var(--negative)" }}>{losses}</strong></span>
+              <span style={{ color: "var(--ink-muted)" }}>Net <strong style={{ color: pnlColor }}>{fmt(totalPnl)}</strong></span>
+              <span style={{ color: "var(--ink-muted)" }}>Win Rate <strong>{winRate}%</strong></span>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs" style={{ maxHeight: 200 }}>
-              {keyEvents.length === 0 ? (
-                <p style={{ color: "var(--ink-muted)" }}>No key events yet — waiting for bot…</p>
-              ) : (
-                keyEvents.map((e, i) => {
-                  const isError   = (e.level ?? "").toUpperCase() === "ERROR";
-                  const isSignal  = e.event === "Trade_Signal" || e.event === "entry_filled";
-                  const isExit    = ["stop_hit","stage1_exit","stage2_exit","time_box_exit"].includes(e.event ?? "");
-                  const color = isError ? "var(--negative)" : isSignal ? "var(--positive)" : isExit ? "var(--warning)" : "var(--ink-muted)";
-                  return (
-                    <div key={i} style={{ color }}>
-                      <span className="opacity-60">{e.ts ?? ""}</span>{" "}
-                      {e.event && <span className="badge badge-blue mr-1">{e.event}</span>}
-                      {String(e.message ?? "")}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
 
-      {/* Win/Loss breakdown */}
-      {todayTrades.length > 0 && (
-        <div className="card p-4 flex gap-6 text-sm">
-          <div>
-            <span style={{ color: "var(--ink-muted)" }}>Wins</span>
-            <span className="ml-2 num font-semibold" style={{ color: "var(--positive)" }}>{wins}</span>
+      {/* Signal events — only meaningful trades, no system noise */}
+      {signalEvents.length > 0 && (
+        <div className="card flex flex-col">
+          <div
+            className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
+            style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
+          >
+            Trade Signals Today
           </div>
-          <div>
-            <span style={{ color: "var(--ink-muted)" }}>Losses</span>
-            <span className="ml-2 num font-semibold" style={{ color: "var(--negative)" }}>{losses}</span>
+          <div className="p-2 flex flex-col gap-1 font-mono text-xs" style={{ maxHeight: 200, overflowY: "auto" }}>
+            {signalEvents.map((e, i) => {
+              const isSignal = e.event === "Trade_Signal" || e.event === "entry_filled";
+              const isExit   = ["stop_hit","stage1_exit","stage2_exit","time_box_exit"].includes(e.event ?? "");
+              const isRisk   = e.event === "kill_lock_active";
+              const color    = isSignal ? "var(--positive)" : isExit ? "var(--warning)" : isRisk ? "var(--negative)" : "var(--ink-muted)";
+              return (
+                <div key={i} style={{ color }}>
+                  <span className="opacity-60">{e.ts ?? ""}</span>{" "}
+                  {e.event && <span className="badge badge-blue mr-1">{e.event}</span>}
+                  {String(e.message ?? "")}
+                </div>
+              );
+            })}
           </div>
-          <div>
-            <span style={{ color: "var(--ink-muted)" }}>Net P&L</span>
-            <span className="ml-2 num font-semibold" style={{ color: pnlColor }}>{fmt(totalPnl)}</span>
-          </div>
-          {scanner.length > 0 && (
-            <div>
-              <span style={{ color: "var(--ink-muted)" }}>Top Pick</span>
-              <span className="ml-2 font-semibold" style={{ color: "var(--ink)" }}>
-                {scanner[0].ticker} ({scanner[0].rvol.toFixed(1)}× RVOL)
-              </span>
-            </div>
-          )}
         </div>
       )}
     </div>
