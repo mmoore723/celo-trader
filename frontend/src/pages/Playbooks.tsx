@@ -179,14 +179,15 @@ export function Playbooks() {
       )}
 
       {tab === "playbooks" && (
-      <div>
-        <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Strategy Playbooks</h2>
-        <p className="text-sm mt-0.5" style={{ color: "var(--ink-muted)" }}>
-          Reference cards for every strategy the bot trades. All use the same 1% risk model and two-stage exit.
-        </p>
-      </div>
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Strategy Playbooks</h2>
+          <p className="text-sm mt-0.5" style={{ color: "var(--ink-muted)" }}>
+            Reference cards for every strategy the bot trades. All use the same 1% risk model and two-stage exit.
+          </p>
+        </div>
 
-      <div className="grid gap-4 mt-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
         {STRATEGIES.map((s) => (
           <div key={s.id} className="card p-4 flex flex-col gap-3">
             {/* Header */}
@@ -233,6 +234,7 @@ export function Playbooks() {
             </div>
           </div>
         ))}
+      </div>
       </div>
       )}
     </div>
