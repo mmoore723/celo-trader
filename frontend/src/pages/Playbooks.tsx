@@ -82,6 +82,28 @@ const STRATEGIES: Strategy[] = [
     notes:  "Avoid in the first 15 minutes (ORB window) and last 20 minutes of session.",
     tags:   ["breakout", "range"],
   },
+  {
+    id: "mid",
+    name: "Mid-Day Breakdown",
+    emoji: "📉",
+    setup:  "After the opening range plays out (10:30–13:00 ET), price collapses below OR Low with VWAP acting as resistance. Market structure has already printed a Lower High — the bullish thesis is broken.",
+    entry:  "Enter PUT when: price closes below OR Low AND below VWAP AND MSA confirms a Lower High AND volume > 1.5× its 20-bar average.",
+    stop:   "Above OR Low (the broken level). If price reclaims OR Low, setup is invalid.",
+    target: "Stage 1: 1:1 R:R below entry. Stage 2: trail to next swing low. Time-box 45 min.",
+    notes:  "Bearish-only strategy. Only triggers 10:30–13:00 ET — avoids the chaotic open and the dead midday grind. Requires both structure (Lower High) and volume to fire.",
+    tags:   ["secondary", "bearish"],
+  },
+  {
+    id: "trend",
+    name: "Trend Continuation",
+    emoji: "🌊",
+    setup:  "After a trend is already established, price pulls back to a key level (Higher Low for uptrends, Lower High for downtrends) and resumes. This is the 2nd or 3rd entry, not the first — the trend must already be proven.",
+    entry:  "Bullish: close above the Higher Low bar's close with RVOL ≥ 1.2× and price above VWAP. Bearish: close below the Lower High bar's close with RVOL ≥ 1.2× and price below VWAP. Pivot must be within last 20 bars (fresh, not stale).",
+    stop:   "Below the Higher Low (bullish) or above the Lower High (bearish). Structure is the anchor.",
+    target: "Previous swing high (bullish) or previous swing low (bearish). Stage 2 lets runners trail.",
+    notes:  "Lowest RVOL threshold (1.2×) because the trend does the heavy lifting. Active 9:45 AM–2:30 PM ET. Never take a TREND_CONT trade if the pivot is more than 20 bars old — momentum has faded.",
+    tags:   ["secondary", "momentum"],
+  },
 ];
 
 const TAG_COLORS: Record<string, string> = {
@@ -96,6 +118,7 @@ const TAG_COLORS: Record<string, string> = {
   breakout:      "badge-green",
   "mean-reversion": "badge-yellow",
   range:         "badge-yellow",
+  bearish:       "badge-red",
 };
 
 // ── Log event code explanations ───────────────────────────────────────────
