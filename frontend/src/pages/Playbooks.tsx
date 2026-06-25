@@ -215,10 +215,49 @@ const TAG_BADGE: Record<string, string> = {
   exits:  "badge-red",
 };
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { Search } from "lucide-react";
+
+// Category order + display names for the log guide
+const LOG_CATEGORIES: { key: string; label: string; emoji: string }[] = [
+  { key: "system",  label: "System",             emoji: "⚙️" },
+  { key: "think",   label: "Thinking / Scanning", emoji: "🧠" },
+  { key: "gate",    label: "Gate Checks",          emoji: "🚦" },
+  { key: "signal",  label: "Trade Signals",        emoji: "🔥" },
+  { key: "order",   label: "Order Lifecycle",      emoji: "📋" },
+  { key: "risk",    label: "Risk Controls",        emoji: "🛡️" },
+  { key: "exit",    label: "Exits",                emoji: "🏁" },
+];
 
 export function Playbooks() {
-  const [tab, setTab] = useState<"playbooks" | "log-guide">("playbooks");
+  const [tab,    setTab]    = useState<"playbooks" | "log-guide">("playbooks");
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  // Filter + group log codes by search query and active category
+  const filteredLogs = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return LOG_CODES.filter((item) => {
+      const matchSearch = !q || (
+        item.code.toLowerCase().includes(q) ||
+        item.plain.toLowerCase().includes(q) ||
+        item.detail.toLowerCase().includes(q) ||
+        item.tag.toLowerCase().includes(q)
+      );
+      const matchCat = !activeCategory || item.tag === activeCategory;
+      return matchSearch && matchCat;
+    });
+  }, [search, activeCategory]);
+
+  // Group filtered results by tag
+  const grouped = useMemo(() => {
+    const map: Record<string, typeof LOG_CODES> = {};
+    for (const item of filteredLogs) {
+      if (!map[item.tag]) map[item.tag] = [];
+      map[item.tag].push(item);
+    }
+    return map;
+  }, [filteredLogs]);
 
   return (
     <div className="p-4 flex flex-col gap-4">
@@ -230,34 +269,114 @@ export function Playbooks() {
             className={`btn btn-sm ${tab === t ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setTab(t)}
           >
-            {t === "playbooks" ? "Strategy Playbooks" : "How to Read the Log"}
+            {t === "playbooks" ? "Strategy Playbooks" : "Log Dictionary"}
           </button>
         ))}
       </div>
 
       {tab === "log-guide" && (
-        <div className="flex flex-col gap-3">
-          <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
-            Every line in "Bot Thinking" has an event code. Here's what each one means in plain English.
-          </p>
-          {LOG_CODES.map((item) => (
-            <div key={item.code} className="card px-4 py-3 flex gap-4 items-start">
-              <span className={`badge shrink-0 mt-0.5 ${TAG_BADGE[item.tag] ?? "badge-blue"}`}>
-                {item.tag}
-              </span>
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <span className="font-mono text-xs font-semibold" style={{ color: "var(--accent)" }}>
-                  {item.code}
-                </span>
-                <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
-                  {item.plain}
-                </span>
-                <span className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                  {item.detail}
-                </span>
-              </div>
+        <div className="flex flex-col gap-4">
+
+          {/* Search + category filters */}
+          <div className="flex flex-col gap-2">
+            <div className="relative">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2"
+                style={{ color: "var(--ink-muted)" }}
+              />
+              <input
+                type="text"
+                placeholder="Search event codes, descriptions…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input w-full pl-8 text-sm"
+                style={{ maxWidth: 480 }}
+              />
             </div>
-          ))}
+            {/* Category pills */}
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                className={`btn btn-sm ${activeCategory === null ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setActiveCategory(null)}
+              >
+                All
+              </button>
+              {LOG_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.key}
+                  className={`btn btn-sm ${activeCategory === cat.key ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setActiveCategory(activeCategory === cat.key ? null : cat.key)}
+                >
+                  {cat.emoji} {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Results count */}
+          <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+            {filteredLogs.length} {filteredLogs.length === 1 ? "entry" : "entries"}
+            {search ? ` matching "${search}"` : ""}
+            {activeCategory ? ` in "${LOG_CATEGORIES.find(c => c.key === activeCategory)?.label}"` : ""}
+          </p>
+
+          {/* Grouped results */}
+          {filteredLogs.length === 0 ? (
+            <div className="card px-4 py-8 text-center" style={{ color: "var(--ink-muted)" }}>
+              No log codes match your search.
+            </div>
+          ) : (
+            LOG_CATEGORIES
+              .filter(cat => grouped[cat.key]?.length)
+              .map((cat) => (
+                <div key={cat.key} className="flex flex-col gap-2">
+                  {/* Category header */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-base">{cat.emoji}</span>
+                    <span className="text-xs font-semibold uppercase tracking-widest"
+                          style={{ color: "var(--ink-muted)" }}>
+                      {cat.label}
+                    </span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-full"
+                          style={{ background: "var(--muted)", color: "var(--ink-muted)" }}>
+                      {grouped[cat.key].length}
+                    </span>
+                    <div className="flex-1 border-t" style={{ borderColor: "var(--border)" }} />
+                  </div>
+
+                  {/* Entries in this category */}
+                  {grouped[cat.key].map((item) => (
+                    <div key={item.code}
+                         className="card px-4 py-3 flex gap-4 items-start"
+                         style={{ borderLeft: `3px solid var(--accent)` }}>
+                      <div className="flex flex-col gap-1 min-w-0">
+                        {/* Code + badge on same row */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <code
+                            className="text-xs font-mono font-semibold px-1.5 py-0.5 rounded"
+                            style={{ background: "var(--muted)", color: "var(--accent)" }}
+                          >
+                            {item.code}
+                          </code>
+                          <span className={`badge ${TAG_BADGE[item.tag] ?? "badge-blue"}`}>
+                            {item.tag}
+                          </span>
+                        </div>
+                        {/* Plain-English title */}
+                        <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
+                          {item.plain}
+                        </span>
+                        {/* Detail */}
+                        <span className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+                          {item.detail}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))
+          )}
         </div>
       )}
 

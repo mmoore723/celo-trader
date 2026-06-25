@@ -182,26 +182,75 @@ class Backtester:
             },
         )
 
-        # Fetch historical 5-min bars (larger limit for multi-month history)
-        raw = self.alpaca.get_bars(self.ticker, "5Min", limit=10000)
-        if isinstance(raw, tuple):
-            bars_5m = raw[0]
-        else:
-            bars_5m = raw
+        # ── Fetch historical 5-min bars ───────────────────────────────────────
+        # Primary: yfinance — free, reliable, 60-day max for 5-min intervals.
+        # Fallback: Alpaca — IEX free tier has limited intraday history and is
+        #   subject to the circuit breaker; useful as a secondary source only.
+        #
+        # yfinance 5-min bar cap: ~59 days.  For requests beyond 2 months the
+        # backtest will use the available ~59-day window (still meaningful).
+        import datetime as _dt
+        _today   = _dt.date.today()
+        _max_days = min(self.months * 30, 59)   # yfinance 5m hard limit = 60 d
+        _start_d = (_today - _dt.timedelta(days=_max_days)).strftime("%Y-%m-%d")
+        _end_d   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
-        if not bars_5m:
+        df = pd.DataFrame()
+        try:
+            import yfinance as yf
+            _raw_yf = yf.download(
+                self.ticker,
+                start=_start_d,
+                end=_end_d,
+                interval="5m",
+                progress=False,
+                auto_adjust=True,
+            )
+            if not _raw_yf.empty:
+                # Flatten MultiIndex columns (yfinance ≥ 0.2)
+                if hasattr(_raw_yf.columns, "get_level_values"):
+                    _raw_yf.columns = _raw_yf.columns.get_level_values(0)
+                _raw_yf = _raw_yf.rename(columns={
+                    "Open": "open", "High": "high",
+                    "Low": "low", "Close": "close", "Volume": "volume",
+                })
+                _raw_yf.index.name = "time"
+                _raw_yf = _raw_yf.reset_index()
+                # Convert tz-aware timestamps → ET tz-naive (matches bar_to_df format)
+                _raw_yf["time"] = (
+                    pd.to_datetime(_raw_yf["time"], utc=True)
+                    .dt.tz_convert("America/New_York")
+                    .dt.tz_localize(None)
+                )
+                df = _raw_yf[["time", "open", "high", "low", "close", "volume"]].copy()
+                logger.info(
+                    "Backtest: yfinance returned %d 5m bars for %s (%s → %s)",
+                    len(df), self.ticker, _start_d, _end_d,
+                )
+        except Exception as _yf_ex:
+            logger.warning("Backtest: yfinance bars failed for %s: %s", self.ticker, _yf_ex)
+
+        # Alpaca fallback — only used if yfinance returned nothing
+        if df.empty:
+            raw = self.alpaca.get_bars(self.ticker, "5Min", limit=10000)
+            bars_5m = raw[0] if isinstance(raw, tuple) else raw
+            if not bars_5m:
+                return {"error": f"No historical data for {self.ticker}. "
+                        "yfinance returned no bars and Alpaca returned nothing."}
+            df = bars_to_df(bars_5m)
+
+        if df.empty:
             return {"error": f"No historical data for {self.ticker}"}
 
-        df = bars_to_df(bars_5m)
-
-        # Trim to requested look-back window
-        cutoff = pd.Timestamp.now(tz="UTC") - pd.DateOffset(months=self.months)
-        if df["time"].dt.tz is None:
-            cutoff = cutoff.tz_localize(None)
+        # Trim to requested look-back window.
+        # Note: yfinance 5m bars max out at ~59 days.  If self.months > 2, the
+        # backtest will cover ~59 days regardless of what was requested.
+        cutoff = pd.Timestamp.now() - pd.DateOffset(months=self.months)
         df = df[df["time"] >= cutoff].reset_index(drop=True)
 
         if df.empty:
-            return {"error": f"No bars within the last {self.months} months"}
+            return {"error": f"No bars within the last {self.months} months "
+                    f"(5-minute bars are limited to ~60 days; try 1–2 months)"}
 
         # Pre-compute RVOL for the full dataset (needs multi-day history).
         # Strategies read today["rvol"] from each bar's slice; we inject this
