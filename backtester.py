@@ -230,6 +230,12 @@ class Backtester:
         remaining_dollars  = 0.0      # dollars still open after stage-1 partial exit
         stage1_done        = False
         session_pnl        = 0.0
+        # Flip trading: track whether the first trade was closed at a loss so
+        # we can simulate one "flip" trade in the opposite direction — mirrors
+        # the live bot's flip_trading_enabled behaviour.
+        first_trade_direction: Optional[str] = None   # "bullish" or "bearish"
+        first_trade_closed    = False   # True once the first trade has exited
+        flip_done             = False   # only one flip trade per session
 
         for idx in range(1, len(day_df)):    # skip opening-range bar
             bar   = day_df.iloc[idx]
@@ -263,7 +269,14 @@ class Backtester:
                     )
                     session_pnl += pnl
                     in_trade = False
-                    break   # one trade per session
+                    # Auto mode: allow one flip trade after a stop-out.
+                    # Mirrors the live bot's flip_trading_enabled logic:
+                    # if we stopped out of a call and price reverses below OR
+                    # low, simulate taking the put (and vice versa).
+                    if self.direction == "both" and not flip_done:
+                        first_trade_closed = True
+                        continue   # keep scanning for opposite signal
+                    break   # calls_only / puts_only — done for the day
 
                 # Stage 1: sell 50% of position at +50% gain
                 if not stage1_done:
@@ -321,6 +334,15 @@ class Backtester:
                 direction = "bearish"
             else:
                 continue   # no breakout on this bar
+
+            # If this is a flip opportunity (first trade stopped out), the new
+            # signal MUST be in the OPPOSITE direction.  Same-direction
+            # re-entries are skipped — we've already lost on that side.
+            if first_trade_closed and not flip_done:
+                if direction == first_trade_direction:
+                    continue  # not a flip — wait for opposite signal
+                # Valid flip signal found — mark it so we only take one
+                flip_done = True
 
             # RVOL gate: breakout candle must have ≥ 150% average volume (aligned
             # with live strategy_router.py — lowered from 200% to capture more
@@ -394,6 +416,9 @@ class Backtester:
             position_dollars  = pos_dollars
             remaining_dollars = pos_dollars
             stage1_done       = False
+            # Record first-trade direction for flip detection
+            if not first_trade_closed:
+                first_trade_direction = direction
 
         # End of session — force exit any open position (EOD close)
         if in_trade and remaining_dollars > 0:

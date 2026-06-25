@@ -223,6 +223,11 @@ export function TradingChart({
         horzLines: { color: C.grid },
       },
       crosshair: { mode: CrosshairMode.Normal },
+      // Explicitly enable zoom + scroll so they work even inside a
+      // scrollable parent (the page's overflow-y:auto .app-main container
+      // would otherwise steal wheel events and scroll the page instead).
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
+      handleScale:  { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
       rightPriceScale: { borderColor: C.border },
       timeScale: {
         borderColor: C.border,
@@ -609,7 +614,11 @@ export function TradingChart({
   })();
 
   return (
-    <div className="relative w-full" style={{ height }}>
+    // onWheel stopPropagation: prevents the page's overflow-y:auto container
+    // from scrolling when the user wheel-zooms the chart.
+    <div className="relative w-full" style={{ height }}
+      onWheel={(e) => e.stopPropagation()}
+    >
       {/* Ticker label */}
       {ticker && (
         <div className="absolute top-2 left-3 z-10 text-xs font-mono font-semibold"

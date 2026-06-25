@@ -16,9 +16,9 @@ const TICKERS = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "COIN"];
 type Direction = "both" | "calls_only" | "puts_only";
 
 const DIRECTION_OPTS: { value: Direction; label: string; desc: string }[] = [
-  { value: "both",       label: "Both",       desc: "Calls on breakouts up, puts on breakouts down" },
-  { value: "calls_only", label: "Calls Only",  desc: "Only take bullish ORB breakouts (calls)" },
-  { value: "puts_only",  label: "Puts Only",   desc: "Only take bearish ORB breakouts (puts)" },
+  { value: "both",       label: "Auto",        desc: "Strategy decides: calls on bullish signals, puts on bearish. Simulates the live bot including flip trades." },
+  { value: "calls_only", label: "Calls Only",  desc: "Filter: only simulate bullish signals (calls)" },
+  { value: "puts_only",  label: "Puts Only",   desc: "Filter: only simulate bearish signals (puts)" },
 ];
 
 export function Backtest() {

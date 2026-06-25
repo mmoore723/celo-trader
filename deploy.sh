@@ -22,8 +22,11 @@ git push origin main
 echo "==> Pulling on EC2..."
 ssh "$EC2_HOST" "cd $EC2_DIR && git pull --rebase"
 
-echo "==> Installing Python deps on EC2..."
-ssh "$EC2_HOST" "pip install fastapi 'uvicorn[standard]' python-multipart --break-system-packages -q"
+echo "==> Installing Python deps on EC2 (full requirements.txt)..."
+# Use the venv pip so all packages land inside the venv that uvicorn runs from.
+# Previously only fastapi/uvicorn were installed, so yfinance and other deps
+# listed in requirements.txt were missing (causing 'No module named yfinance').
+ssh "$EC2_HOST" "cd $EC2_DIR && $EC2_DIR/venv/bin/pip install -r requirements.txt -q"
 
 echo "==> Restarting services on EC2..."
 ssh "$EC2_HOST" "sudo systemctl restart celo-dashboard && sudo systemctl status celo-dashboard --no-pager"
