@@ -603,6 +603,87 @@ class AlpacaClient:
 
         # ── Attempt 3: plain limit-based fetch (no date filter) ───────────────
         bars, err = self.get_bars(symbol, timeframe, limit=500)
+
+        # ── Attempt 4: yfinance — circuit breaker open OR bars don't cover 9:30 ──
+        # Alpaca IEX on the free plan sometimes returns only recent bars when the
+        # bot starts mid-session, leaving the 9:30–9:40 opening-range window empty.
+        # This causes "Opening range incomplete: 1/3 bars" on every tick and
+        # prevents the ORB strategy (and any other OR-dependent strategy) from
+        # evaluating correctly.  yfinance 1m bars always cover the full regular
+        # session from open to current time — use them as a reliable supplement.
+        _need_yf = err   # definitely needed if Alpaca failed entirely
+        if not err and bars:
+            # Check if the OR window (9:30–9:40 ET) is covered.  bars_to_df
+            # converts Alpaca's UTC timestamps → ET tz-naive, so .hour/.minute work.
+            try:
+                from signals import bars_to_df as _b2df
+                import pandas as _pd_chk
+                _tmp = _b2df(bars)
+                _need_yf = not any(
+                    (int(r["time"].hour) == 9 and int(r["time"].minute) in {30, 35, 40})
+                    for _, r in _tmp.iterrows()
+                )
+                if _need_yf:
+                    logger.info(
+                        "get_session_bars(%s): Alpaca bars don't cover 9:30 OR window "
+                        "(earliest bar: %s) — supplementing with yfinance",
+                        symbol,
+                        _tmp["time"].iloc[0] if not _tmp.empty else "N/A",
+                    )
+            except Exception:
+                pass  # if the check itself fails, skip yfinance
+
+        if _need_yf:
+            try:
+                import yfinance as _yf_gsb
+                import pandas as _pd_gsb
+                import pytz as _pytz_gsb
+                _ET_gsb = _pytz_gsb.timezone("America/New_York")
+                _yf_interval_map = {
+                    "1Min": "1m", "5Min": "5m", "15Min": "15m",
+                    "1Hour": "60m", "60Min": "60m",
+                }
+                _yf_iv    = _yf_interval_map.get(timeframe, "1m")
+                _yf_start = session_date.strftime("%Y-%m-%d")
+                _yf_end   = (_dt.date.today() + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+                _yf_raw   = _yf_gsb.download(
+                    symbol,
+                    start=_yf_start,
+                    end=_yf_end,
+                    interval=_yf_iv,
+                    prepost=False,          # regular session only — no pre/post noise
+                    progress=False,
+                    auto_adjust=True,
+                )
+                if not _yf_raw.empty:
+                    # Flatten MultiIndex columns (yfinance ≥ 0.2)
+                    if hasattr(_yf_raw.columns, "get_level_values"):
+                        _yf_raw.columns = _yf_raw.columns.get_level_values(0)
+                    _yf_raw = _yf_raw.rename(columns={
+                        "Open": "o", "High": "h", "Low": "l",
+                        "Close": "c", "Volume": "v",
+                    })
+                    _yf_raw.index.name = "t"
+                    _yf_raw = _yf_raw.reset_index()
+                    # Convert UTC-aware index → ET-offset ISO string (Alpaca bar format)
+                    _yf_raw["t"] = (
+                        _pd_gsb.to_datetime(_yf_raw["t"], utc=True)
+                        .dt.tz_convert(_ET_gsb)
+                        .dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    )
+                    _yf_bars = _yf_raw[["t", "o", "h", "l", "c", "v"]].to_dict("records")
+                    if _yf_bars:
+                        logger.info(
+                            "get_session_bars(%s, %s): yfinance fallback got %d bars "
+                            "(Alpaca CB open=%s, OR-missing=%s)",
+                            symbol, timeframe, len(_yf_bars), err, _need_yf and not err,
+                        )
+                        return _yf_bars, False, is_live
+            except Exception as _e_yf:
+                logger.warning(
+                    "get_session_bars(%s): yfinance fallback failed: %s", symbol, _e_yf
+                )
+
         return bars, err, is_live
 
     def get_latest_quote(self, symbol: str) -> Optional[dict]:
