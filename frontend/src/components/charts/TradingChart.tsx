@@ -31,6 +31,7 @@ import type {
   SeriesMarker,
   Time,
   IPriceLine,
+  AutoscaleInfo,
 } from "lightweight-charts";
 import type { Bar, Trade } from "../../lib/api";
 import { useThemeStore } from "../../store/theme";
@@ -267,7 +268,7 @@ export function TradingChart({
       // clipped to the top/bottom edge of the chart.  orRef is a mutable
       // ref (not state) so this closure always reads the latest values
       // without triggering a chart rebuild.
-      autoscaleInfoProvider: (original) => {
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const base = original();
         const { high: orHi, low: orLo } = orRef.current;
         if (!base || (orHi == null && orLo == null)) return base;
