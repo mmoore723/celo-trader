@@ -2,10 +2,27 @@
 api/routes/market.py — Market data: bars, quotes, scanner results.
 """
 from __future__ import annotations
+from datetime import datetime
+import pytz
 from fastapi import APIRouter, HTTPException, Query
 from api.models import Bar, Quote, ScannerResult
 
 router = APIRouter(prefix="/api/market", tags=["market"])
+
+_ET = pytz.timezone("America/New_York")
+
+
+def _market_is_open() -> bool:
+    """
+    True only during regular market hours (9:30–16:00 ET, Mon–Fri).
+    Alpaca's free IEX tier returns NO data outside this window, so
+    callers can skip the Alpaca call entirely when this is False.
+    """
+    now = datetime.now(_ET)
+    if now.weekday() >= 5:          # Saturday=5, Sunday=6
+        return False
+    hm = now.hour * 60 + now.minute
+    return 9 * 60 + 30 <= hm < 16 * 60
 
 
 @router.get("/bars/{ticker}", response_model=list[Bar])
@@ -16,25 +33,30 @@ def get_bars(
 ) -> list[Bar]:
     """
     Fetch OHLCV bars with pre/after-market data.
-    Attempt 1: Alpaca IEX (session=extended).
-    Attempt 2: yfinance with prepost=True — already installed, used by the
-               trading engine for the SPY VWAP gate. Covers 4 AM–8 PM ET.
+
+    Attempt 1: Alpaca IEX — ONLY during regular market hours (9:30–16:00 ET).
+               Alpaca's free IEX tier returns nothing outside that window, so
+               we skip it entirely when the market is closed to avoid noisy
+               failed-request logs in the Bot Thinking panel.
+    Attempt 2: yfinance with prepost=True — covers 4 AM–8 PM ET, always tried
+               when market is closed or Alpaca returns empty.
     """
     import pandas as pd
     from signals import bars_to_df, compute_vwap, compute_vwap_bands, compute_rvol, compute_atr
 
     df = pd.DataFrame()
 
-    # ── Attempt 1: Alpaca ─────────────────────────────────────────────────────
-    try:
-        from broker import get_clients
-        alpaca, _ = get_clients()
-        raw  = alpaca.get_bars(ticker, timeframe, limit=limit)
-        bars = raw[0] if isinstance(raw, tuple) else raw
-        if bars:
-            df = bars_to_df(bars)
-    except Exception:
-        pass  # fall through to yfinance
+    # ── Attempt 1: Alpaca — skip entirely when market is closed ──────────────
+    if _market_is_open():
+        try:
+            from broker import get_clients
+            alpaca, _ = get_clients()
+            raw  = alpaca.get_bars(ticker, timeframe, limit=limit)
+            bars = raw[0] if isinstance(raw, tuple) else raw
+            if bars:
+                df = bars_to_df(bars)
+        except Exception:
+            pass  # fall through to yfinance
 
     # ── Attempt 2: yfinance (pre/after-market, no quota) ─────────────────────
     if df.empty:

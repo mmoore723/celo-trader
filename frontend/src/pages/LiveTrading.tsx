@@ -55,6 +55,20 @@ function MiniSparkline({ bars, color }: { bars: Bar[]; color: string }) {
   );
 }
 
+// Classify a log entry as network-related (broker/API) vs a trading decision.
+// Network: module contains broker/alpaca/tradier keywords or message has API noise.
+function isNetworkLog(entry: { module?: string; message?: string; level?: string }): boolean {
+  const mod = (entry.module ?? "").toLowerCase();
+  const msg = (entry.message ?? "").toLowerCase();
+  if (mod.includes("broker") || mod.includes("alpaca") || mod.includes("tradier")) return true;
+  if (msg.includes("http") || msg.includes("timeout") || msg.includes("connection")
+    || msg.includes("socket") || msg.includes("request") || msg.includes("retry")
+    || msg.includes("yfinance") || msg.includes("ssl") || msg.includes("get_bars")
+    || msg.includes("get_account") || msg.includes("get_snapshot")
+    || msg.includes("circuit breaker") || msg.includes("network")) return true;
+  return false;
+}
+
 function PnlBadge({ value }: { value?: number }) {
   if (value == null) return <span className="text-ink-muted">—</span>;
   return (
@@ -78,6 +92,8 @@ export function LiveTrading() {
   // Bot thinking: pause log scroll when user hovers inside the panel
   const [logPaused,     setLogPaused]     = useState(false);
   const logSnapshotRef  = useRef<typeof logs>([]);
+  // Bot thinking: active sub-tab ("thinking" = trading decisions, "network" = broker/API)
+  const [logTab,        setLogTab]        = useState<"thinking" | "network">("thinking");
 
   const { status, logs } = useBotStore();
 
@@ -442,56 +458,101 @@ export function LiveTrading() {
 
         {/* Bot eval log */}
         <div className="card flex flex-col">
-          <div
-            className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider flex items-center justify-between"
-            style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
-          >
-            <span>Bot Thinking</span>
-            {logPaused && (
-              <span className="badge badge-blue text-[9px] animate-pulse">⏸ PAUSED</span>
-            )}
-          </div>
-          <div
-            className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs"
-            style={{ maxHeight: 280, cursor: logPaused ? "text" : "default" }}
-            onMouseEnter={() => {
-              // Snapshot current logs and freeze display
-              logSnapshotRef.current = [...logs];
-              setLogPaused(true);
-            }}
-            onMouseLeave={() => {
-              // Resume live feed — snapshot is cleared automatically
-              setLogPaused(false);
-            }}
-          >
-            {(logPaused ? logSnapshotRef.current : logs).slice(0, 80).map((entry, i) => {
-              const lvl = (entry.level ?? "INFO").toUpperCase();
-              const color =
-                lvl === "ERROR"   ? "var(--negative)" :
-                lvl === "WARNING" ? "var(--warning)"  :
-                entry.event?.includes("Trade_Signal") ? "var(--positive)" :
-                "var(--ink-muted)";
-              return (
-                <div key={i} style={{ color }}>
-                  {entry.ts && (
-                    <span
-                      className="opacity-60 mr-1 select-none"
-                      style={{ color: "var(--ink-muted)", minWidth: "5.5em", display: "inline-block" }}
-                    >
-                      {entry.ts}
-                    </span>
+          {/* Header with sub-tabs */}
+          {(() => {
+            const displayLogs = logPaused ? logSnapshotRef.current : logs;
+            const networkLogs  = displayLogs.filter((e) => isNetworkLog(e));
+            const thinkingLogs = displayLogs.filter((e) => !isNetworkLog(e));
+            const netHasError  = networkLogs.some((e) =>
+              (e.level ?? "").toUpperCase() === "ERROR"
+            );
+            const activeLogs = logTab === "network" ? networkLogs : thinkingLogs;
+            return (
+              <>
+                <div
+                  className="border-b flex items-center justify-between"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  {/* Sub-tabs */}
+                  <div className="flex">
+                    {(["thinking", "network"] as const).map((tab) => {
+                      const isNetwork = tab === "network";
+                      const isActive  = logTab === tab;
+                      const hasNetErr = isNetwork && netHasError;
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => setLogTab(tab)}
+                          className="px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors"
+                          style={{
+                            borderBottom: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                            color: hasNetErr
+                              ? "var(--negative)"          // network tab red on errors
+                              : isActive
+                                ? "var(--ink)"
+                                : "var(--ink-muted)",
+                            background: "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {tab === "thinking" ? "Thinking" : "Network"}
+                          {isNetwork && netHasError && (
+                            <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse align-middle" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {logPaused && (
+                    <span className="badge badge-blue text-[9px] animate-pulse mr-2">⏸ PAUSED</span>
                   )}
-                  {entry.event && (
-                    <span className="badge badge-blue mr-1">{entry.event}</span>
-                  )}
-                  {String(entry.message ?? "")}
                 </div>
-              );
-            })}
-            {logs.length === 0 && (
-              <p style={{ color: "var(--ink-muted)" }}>Waiting for bot…</p>
-            )}
-          </div>
+
+                {/* Log feed */}
+                <div
+                  className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs"
+                  style={{ maxHeight: 280, cursor: logPaused ? "text" : "default" }}
+                  onMouseEnter={() => {
+                    logSnapshotRef.current = [...logs];
+                    setLogPaused(true);
+                  }}
+                  onMouseLeave={() => {
+                    setLogPaused(false);
+                  }}
+                >
+                  {activeLogs.slice(0, 80).map((entry, i) => {
+                    const lvl = (entry.level ?? "INFO").toUpperCase();
+                    const color =
+                      lvl === "ERROR"   ? "var(--negative)" :
+                      lvl === "WARNING" ? "var(--warning)"  :
+                      entry.event?.includes("Trade_Signal") ? "var(--positive)" :
+                      "var(--ink-muted)";
+                    return (
+                      <div key={i} style={{ color }}>
+                        {entry.ts && (
+                          <span
+                            className="opacity-60 mr-1 select-none"
+                            style={{ color: "var(--ink-muted)", minWidth: "5.5em", display: "inline-block" }}
+                          >
+                            {entry.ts}
+                          </span>
+                        )}
+                        {entry.event && (
+                          <span className="badge badge-blue mr-1">{entry.event}</span>
+                        )}
+                        {String(entry.message ?? "")}
+                      </div>
+                    );
+                  })}
+                  {activeLogs.length === 0 && (
+                    <p style={{ color: "var(--ink-muted)" }}>
+                      {logs.length === 0 ? "Waiting for bot…" : `No ${logTab} logs yet`}
+                    </p>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

@@ -183,9 +183,9 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
                 logger.error("Panic close on kill lock failed: %s", _ce)
             logger.warning("kill_lock_sleep: trading halted for 24h")
             for _ in range(288):   # 288 × 5 min = 24 h
-                if _stop_event.is_set():
+                # _stop_event.wait() returns immediately when Stop Bot is pressed
+                if _stop_event.wait(timeout=300):
                     break
-                time.sleep(300)
         except KeyboardInterrupt:
             break
         except Exception as e:
@@ -207,9 +207,11 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
                 }, open(_BOT_ROOT / "bot_state.json", "w"))
             except Exception:
                 pass
-            time.sleep(30)
+            _stop_event.wait(timeout=30)
 
-        # Smart sleep: poll_interval inside window, 60s outside
+        # Smart sleep: poll_interval inside window, 60s outside.
+        # _stop_event.wait() returns immediately when Stop Bot is pressed,
+        # so the loop exits cleanly without waiting out the full sleep.
         _now_et_sl = _now_et()
         _hm        = _now_et_sl.hour * 60 + _now_et_sl.minute
         _balance   = LIVE_STATE.get("account_balance", 0)
@@ -219,7 +221,7 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
             int(e.split(":")[0]) * 60 + int(e.split(":")[1])
             for s, e in _windows
         )
-        time.sleep(poll_interval if _in_window else 60)
+        _stop_event.wait(timeout=poll_interval if _in_window else 60)
 
     logger.info("Trading loop stopped")
 
