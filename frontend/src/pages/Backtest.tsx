@@ -209,6 +209,56 @@ export function Backtest() {
             </div>
           )}
 
+          {/* Per-strategy breakdown */}
+          {Object.keys(result.strategy_breakdown ?? {}).length > 0 && (
+            <div className="card p-4">
+              <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
+                Strategy Breakdown
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Strategy</th>
+                      <th className="text-right">Trades</th>
+                      <th className="text-right">Win Rate</th>
+                      <th className="text-right">P&amp;L</th>
+                      <th className="text-right">Avg / Trade</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(result.strategy_breakdown ?? {})
+                      .sort(([, a], [, b]) =>
+                        (b as { pnl: number }).pnl - (a as { pnl: number }).pnl
+                      )
+                      .map(([sid, raw]) => {
+                        const s = raw as { trades: number; wins: number; win_rate: number; pnl: number };
+                        const avg = s.trades > 0 ? s.pnl / s.trades : 0;
+                        return (
+                          <tr key={sid}>
+                            <td className="font-medium text-xs">{sid}</td>
+                            <td className="num text-right text-xs">{s.trades}</td>
+                            <td className="num text-right text-xs"
+                                style={{ color: s.win_rate >= 50 ? posColor : negColor }}>
+                              {s.win_rate.toFixed(1)}%
+                            </td>
+                            <td className="num text-right text-xs font-semibold"
+                                style={{ color: s.pnl >= 0 ? posColor : negColor }}>
+                              {s.pnl >= 0 ? "+" : ""}${s.pnl.toFixed(2)}
+                            </td>
+                            <td className="num text-right text-xs"
+                                style={{ color: avg >= 0 ? posColor : negColor }}>
+                              {avg >= 0 ? "+" : ""}${avg.toFixed(2)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Exit reasons */}
           {Object.keys(result.exit_reasons).length > 0 && (
             <div className="card p-4">

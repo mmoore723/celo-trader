@@ -141,6 +141,7 @@ export interface BacktestResult {
   put_win_rate?: number;
   call_pnl?: number;
   put_pnl?: number;
+  strategy_breakdown?: Record<string, { trades: number; wins: number; win_rate: number; pnl: number }>;
   error?: string;
 }
 

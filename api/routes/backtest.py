@@ -52,8 +52,9 @@ def run_backtest(req: BacktestRequest) -> BacktestResult:
             put_trades       = int(res.get("put_trades", 0)),
             call_win_rate    = float(res.get("call_win_rate", 0)),
             put_win_rate     = float(res.get("put_win_rate", 0)),
-            call_pnl         = float(res.get("call_pnl", 0)),
-            put_pnl          = float(res.get("put_pnl", 0)),
+            call_pnl           = float(res.get("call_pnl", 0)),
+            put_pnl            = float(res.get("put_pnl", 0)),
+            strategy_breakdown = res.get("strategy_breakdown", {}),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

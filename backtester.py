@@ -1,56 +1,52 @@
 """
-backtester.py — ORB Historical Simulation Engine.
+backtester.py — Full-Strategy Historical Simulation Engine.
 
 Architecture
 ────────────
-Replays N months of historical 5-min OHLCV bars through the same ORB signal
-and risk logic used in live trading.  Faithfully mirrors every rule:
+Replays N months of historical 5-min OHLCV bars through ALL 8 live strategy
+modules — the same evaluate() functions the live bot uses — so backtest results
+reflect what the bot would actually do, not just one strategy in isolation.
 
-  Signal  : detect_orb_breakout()  (RVOL ≥ 120%, VWAP gate)
+Strategies simulated
+────────────────────
+  INST_ORB   — Opening Range Breakout
+  BOS_MSS    — Break of Structure / Market Structure Shift
+  VWAP_PB    — VWAP Pullback
+  FVG        — Fair Value Gap
+  MID_BRK    — Midday Breakout
+  AFT_REV    — After-hours Reversal
+  TREND_CONT — Trend Continuation
+  CHAN_BREAK  — Channel Breakout
+
+Trade mechanics
+────────────────
+  Signal  : All 8 evaluate() functions run bar-by-bar; highest-confidence fires
   Sizing  : Dollar-based 1% risk model — position_$ = equity × 0.01 / stop_pct
-            Works for any account size — no per-contract minimum required.
-  Stop    : 20% of option premium (hard, always active; tightens dynamically)
-  Stage 1 : sell 50% of position dollars when premium ≥ entry × 1.50
-  Stage 2 : hold remainder; exit at break-even (entry_price) or time-box
-  Time-box: 45 minutes from entry — hard exit regardless of price
+  Options : Weekly contracts (5 DTE), ticker-specific IV (not a fixed 0.60)
+  Stop    : 20% of option premium (hard, tightens dynamically every 15 min)
+  Stage 1 : Sell 50% of position when premium ≥ entry × 1.50
+  Stage 2 : Hold remainder; exit at break-even or time-box
+  Time-box: 45 minutes from entry
+  Fills   : Entry at ask (+5% slippage), exit at bid (−5% slippage)
 
-Key assumptions / limitations
-──────────────────────────────
-1. Options pricing uses a simplified Black-Scholes estimate (no free
-   historical options chain data available).
-2. Position sizing is dollar-based (not contract-count), so any account
-   size ≥ $100 can generate simulated trades on any ticker.
-3. Fill model: entry at ask estimate, exit at bid estimate (conservative).
-4. Commissions: $0 (Alpaca / Tradier are commission-free).
-5. RVOL uses bar-level compute_rvol() from signals.py — the same function
-   called in live trading, so no divergence between backtest and live logic.
-
-Output metrics
-──────────────
-- Total return (%)
-- Win rate (%)
-- Average win / average loss
-- Sharpe ratio (annualised, using daily P&L)
-- Max drawdown ($)
-- Exit reason breakdown
-- Stage-1 partial exit statistics
-- Trade log
+Output
+──────
+- Overall P&L / win rate / Sharpe / drawdown
+- Per-strategy breakdown: trades / win rate / P&L
+- Daily P&L / exit reason breakdown / trade log
 """
 
 import logging
 import math
-from datetime import datetime, timedelta, date, timezone
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from config import (
-    BACKTEST_MONTHS,
-    STARTING_CAPITAL,
-)
+from config import BACKTEST_MONTHS, STARTING_CAPITAL
 from signals import (
-    bars_to_df, detect_orb_breakout, compute_vwap, compute_rvol,
+    bars_to_df, compute_vwap_bands, compute_rvol,
     get_opening_range, ORB_RVOL_THRESHOLD,
 )
 from risk import RiskManager
@@ -58,18 +54,59 @@ from risk import RiskManager
 logger = logging.getLogger("celo_trader.backtester")
 
 
+# ── Per-ticker implied volatility lookup ──────────────────────────────────────
+# Approximate annualised IV for each ticker.  Weekly contracts are priced on
+# the market's expected move, not a fixed 0.60 that overstates SPY by 3-4×.
+# Values are conservative mid-range estimates; true IV fluctuates daily.
+
+_TICKER_IV: dict[str, float] = {
+    # Index ETFs — low IV
+    "SPY":  0.14,
+    "QQQ":  0.18,
+    "IWM":  0.22,
+    "DIA":  0.14,
+    # Mega-cap tech — moderate IV
+    "AAPL": 0.28,
+    "MSFT": 0.26,
+    "AMZN": 0.32,
+    "GOOGL":0.30,
+    "GOOG": 0.30,
+    "META": 0.38,
+    "NFLX": 0.42,
+    # High-volatility tech / growth
+    "NVDA": 0.60,
+    "AMD":  0.55,
+    "TSLA": 0.72,
+    "COIN": 0.85,
+    "MSTR": 0.90,
+    "PLTR": 0.65,
+    "HOOD": 0.75,
+    # Financials
+    "JPM":  0.24,
+    "GS":   0.28,
+    "BAC":  0.28,
+    # Default for unlisted tickers
+    "_default": 0.40,
+}
+
+
+def _get_iv(ticker: str) -> float:
+    return _TICKER_IV.get(ticker.upper(), _TICKER_IV["_default"])
+
+
 # ── Simplified option pricer ──────────────────────────────────────────────────
 
 def _estimate_option_price(
     stock_price: float,
     strike: float,
-    days_to_expiry: int = 14,
-    iv: float = 0.60,
+    days_to_expiry: int = 5,       # weekly contracts (default)
+    iv: float = 0.40,
     option_type: str = "call",
 ) -> float:
     """
-    Simplified Black-Scholes estimate for option mid price.
-    intrinsic + time_value  (time_value ≈ stock × iv × sqrt(dte/252) × 0.4)
+    Simplified Black-Scholes estimate (intrinsic + time value).
+    time_value ≈ stock × iv × sqrt(dte/252) × 0.4
+    Uses realistic per-ticker IV instead of a fixed 0.60 for all symbols.
     """
     if days_to_expiry <= 0:
         return max(0.0, stock_price - strike) if option_type == "call" \
@@ -92,7 +129,7 @@ def _simulated_strike(stock_price: float, direction: str) -> float:
 
 class Backtester:
     """
-    Runs the ORB strategy on historical 5-min bars.
+    Runs ALL 8 live strategy modules on historical 5-min bars.
 
     Parameters
     ----------
@@ -100,23 +137,18 @@ class Backtester:
     ticker           : stock symbol to test
     months           : look-back period in months
     starting_capital : initial simulated account balance
+    direction        : "both" | "calls_only" | "puts_only"
     """
 
     # Mirror the constants from RiskManager so they're always in sync
-    ORB_STOP_PCT          = RiskManager.ORB_STOP_PCT          # 0.20 (tightened from 0.30)
-    ORB_RISK_PCT          = RiskManager.ORB_RISK_PCT           # 0.01
-    ORB_STAGE1_GAIN       = RiskManager.ORB_STAGE1_GAIN       # 0.50
-    ORB_TIME_BOX          = RiskManager.ORB_TIME_BOX           # 45 minutes
-    SLIPPAGE_PCT          = RiskManager.SLIPPAGE_PCT           # 0.05
-    # NOTE: MIN_RR_RATIO is no longer a fixed class constant — the live R:R gate
-    # is now balance-dependent (see RiskManager.effective_min_rr / rr_ratio_mode:
-    # 1.2 for sub-$5k bootstrap accounts, 1.6 once graduated). The backtest's
-    # R:R pre-flight check below resolves this dynamically per simulated day
-    # via RiskManager(account_balance=balance).effective_min_rr() so it stays
-    # in sync with live behavior.
-    STOP_TIGHTEN_INTERVAL = RiskManager.STOP_TIGHTEN_INTERVAL  # 15 min
-    STOP_TIGHTEN_STEP     = RiskManager.STOP_TIGHTEN_STEP      # 0.05
-    STOP_FLOOR_PCT        = RiskManager.STOP_FLOOR_PCT         # 0.10
+    ORB_STOP_PCT          = RiskManager.ORB_STOP_PCT
+    ORB_RISK_PCT          = RiskManager.ORB_RISK_PCT
+    ORB_STAGE1_GAIN       = RiskManager.ORB_STAGE1_GAIN
+    ORB_TIME_BOX          = RiskManager.ORB_TIME_BOX
+    SLIPPAGE_PCT          = RiskManager.SLIPPAGE_PCT
+    STOP_TIGHTEN_INTERVAL = RiskManager.STOP_TIGHTEN_INTERVAL
+    STOP_TIGHTEN_STEP     = RiskManager.STOP_TIGHTEN_STEP
+    STOP_FLOOR_PCT        = RiskManager.STOP_FLOOR_PCT
 
     def __init__(
         self,
@@ -124,20 +156,21 @@ class Backtester:
         ticker: str,
         months: int = BACKTEST_MONTHS,
         starting_capital: float = STARTING_CAPITAL,
-        direction: str = "both",   # "both" | "calls_only" | "puts_only"
+        direction: str = "both",
     ):
         self.alpaca    = alpaca
         self.ticker    = ticker
         self.months    = months
         self.capital   = starting_capital
-        self.direction = direction   # direction filter applied at signal time
+        self.direction = direction
         self.trades: list[dict] = []
 
     # ── Public entry point ────────────────────────────────────────────────────
 
     def run(self) -> dict:
         """
-        Execute the backtest.  Returns a results dictionary consumed by the dashboard.
+        Execute the full multi-strategy backtest.
+        Returns a results dict consumed by the dashboard.
         """
         logger.info(
             "backtest_start",
@@ -149,10 +182,10 @@ class Backtester:
             },
         )
 
-        # Fetch historical 5-min bars
-        raw = self.alpaca.get_bars(self.ticker, "5Min", limit=5000)
+        # Fetch historical 5-min bars (larger limit for multi-month history)
+        raw = self.alpaca.get_bars(self.ticker, "5Min", limit=10000)
         if isinstance(raw, tuple):
-            bars_5m = raw[0]   # get_bars returns (bars, is_error)
+            bars_5m = raw[0]
         else:
             bars_5m = raw
 
@@ -170,17 +203,28 @@ class Backtester:
         if df.empty:
             return {"error": f"No bars within the last {self.months} months"}
 
-        # Pre-compute VWAP and RVOL for the entire dataset in one pass
-        # (same functions as live trading — no separate backtest-only logic)
-        df["vwap"] = compute_vwap(df)
-        df["rvol"] = compute_rvol(df)
+        # Pre-compute RVOL for the full dataset (needs multi-day history).
+        # Strategies read today["rvol"] from each bar's slice; we inject this
+        # column so it's available without re-running the 10-day rolling window
+        # on every single bar (which would be extremely slow).
+        df["rvol"] = compute_rvol(df, lookback_days=10)
+
+        # Pre-compute EMA50 across the full dataset (long-term trend filter).
+        # Session slices will have the correct historical EMA values.
+        df["ema50"] = df["close"].ewm(span=50, adjust=False).mean()
+
+        # Pre-compute ATR14 across the full dataset.
+        hl  = df["high"]  - df["low"]
+        hcp = (df["high"]  - df["close"].shift(1)).abs()
+        lcp = (df["low"]   - df["close"].shift(1)).abs()
+        tr  = pd.concat([hl, hcp, lcp], axis=1).max(axis=1)
+        df["atr"] = tr.ewm(span=14, adjust=False).mean()
 
         balance      = self.capital
         daily_pnl: dict[str, float] = {}
 
-        # Group bars by trading day so we can replay session by session
-        df["_date"] = df["time"].dt.date
-        unique_days = sorted(df["_date"].unique())
+        df["_date"]   = df["time"].dt.date
+        unique_days   = sorted(df["_date"].unique())
 
         for trade_date in unique_days:
             day_df  = df[df["_date"] == trade_date].reset_index(drop=True)
@@ -191,7 +235,6 @@ class Backtester:
             if pnl != 0:
                 daily_pnl[day_str] = pnl
 
-            # Daily loss circuit-breaker (mirrors live risk.py)
             if daily_pnl.get(day_str, 0) < -(balance * 0.12):
                 logger.debug("Backtest: daily loss limit hit on %s", day_str)
 
@@ -201,58 +244,73 @@ class Backtester:
 
     def _simulate_day(self, day_df: pd.DataFrame, balance: float, day_str: str) -> float:
         """
-        Simulate a single trading day.
+        Simulate a single trading day using all 8 strategy evaluators.
 
-        Rules applied in order:
-        1. Find the opening range (09:30 bar).
-        2. Scan subsequent bars for ORB breakout with RVOL ≥ 200% and VWAP gate.
-        3. Size via 1% risk model.
-        4. Manage position with two-stage exit + 45-min time-box.
-        5. At most ONE trade per session (no re-entry after ORB triggers).
+        For each bar, a slice of the current day's bars (up to that bar) is
+        enriched with session-VWAP and passed to every strategy's evaluate().
+        The highest-confidence signal fires; position management mirrors live
+        risk.py exactly (dynamic stop, stage 1/2 exits, 45-min time-box).
+
+        Multiple non-overlapping trades per day are allowed (once a trade
+        exits, the next signal can enter).
         """
-        if len(day_df) < 2:
+        # Import strategy modules here to avoid circular imports at module load
+        import strategies.inst_orb  as _inst_orb
+        import strategies.bos_mss   as _bos_mss
+        import strategies.vwap_pb   as _vwap_pb
+        import strategies.fvg       as _fvg
+        import strategies.mid_brk   as _mid_brk
+        import strategies.aft_rev   as _aft_rev
+        import strategies.trend_cont as _trend_cont
+        import strategies.chan_break as _chan_break
+        from strategies.base import _signal_cooldown
+
+        _EVALUATORS = [
+            ("INST_ORB",   _inst_orb.evaluate),
+            ("BOS_MSS",    _bos_mss.evaluate),
+            ("VWAP_PB",    _vwap_pb.evaluate),
+            ("FVG",        _fvg.evaluate),
+            ("MID_BRK",    _mid_brk.evaluate),
+            ("AFT_REV",    _aft_rev.evaluate),
+            ("TREND_CONT", _trend_cont.evaluate),
+            ("CHAN_BREAK",  _chan_break.evaluate),
+        ]
+
+        # Clear cooldowns at the start of each day so yesterday's cooldown
+        # windows don't bleed into today's simulation.
+        _signal_cooldown.clear()
+
+        if len(day_df) < 5:
             return 0.0
 
-        or_info = get_opening_range(day_df)
-        if or_info is None:
-            return 0.0   # no opening bar — holiday / half day / data gap
+        ticker_iv = _get_iv(self.ticker)
 
-        or_high = or_info["high"]
-        or_low  = or_info["low"]
-
-        in_trade           = False
-        entry_price        = 0.0       # simulated option premium per share at entry
-        entry_strike       = 0.0       # FIXED at entry — never recalculated during trade
-        entry_bar_idx      = 0
+        in_trade          = False
+        entry_price       = 0.0
+        entry_strike      = 0.0
         entry_bar_time: Optional[pd.Timestamp] = None
-        option_type        = "call"
-        position_dollars   = 0.0      # dollars allocated to this trade (full position)
-        remaining_dollars  = 0.0      # dollars still open after stage-1 partial exit
-        stage1_done        = False
-        session_pnl        = 0.0
-        # Flip trading: track whether the first trade was closed at a loss so
-        # we can simulate one "flip" trade in the opposite direction — mirrors
-        # the live bot's flip_trading_enabled behaviour.
-        first_trade_direction: Optional[str] = None   # "bullish" or "bearish"
-        first_trade_closed    = False   # True once the first trade has exited
-        flip_done             = False   # only one flip trade per session
+        option_type       = "call"
+        position_dollars  = 0.0
+        remaining_dollars = 0.0
+        stage1_done       = False
+        session_pnl       = 0.0
+        active_strategy   = "UNKNOWN"
 
-        for idx in range(1, len(day_df)):    # skip opening-range bar
+        for idx in range(4, len(day_df)):    # need ≥ 4 bars for indicator warmup
             bar   = day_df.iloc[idx]
             close = float(bar["close"])
             ts    = bar["time"]
-            rvol  = float(bar.get("rvol", 0.0)) if not pd.isna(bar.get("rvol", float("nan"))) else 0.0
-            vwap  = float(bar.get("vwap", float("nan")))
 
             # ── Manage open position ──────────────────────────────────────────
             if in_trade:
                 elapsed_min = (ts - entry_bar_time).total_seconds() / 60
 
-                # Reprice the SAME option contract we bought (fixed entry_strike)
-                # Using a floating strike re-anchors to ATM every bar and kills all gains
-                opt_price = _estimate_option_price(close, entry_strike, 3, option_type=option_type)
+                # Reprice the SAME contract (fixed entry_strike)
+                opt_price = _estimate_option_price(
+                    close, entry_strike, 5, iv=ticker_iv, option_type=option_type,
+                )
 
-                # Dynamic stop: tightens 5pp every 15 min (mirrors live logic)
+                # Dynamic stop: tightens 5pp every 15 min (mirrors live risk.py)
                 elapsed_steps  = int(elapsed_min / self.STOP_TIGHTEN_INTERVAL)
                 dynamic_sl_pct = max(
                     self.ORB_STOP_PCT - elapsed_steps * self.STOP_TIGHTEN_STEP,
@@ -260,104 +318,107 @@ class Backtester:
                 )
                 sl_price = entry_price * (1.0 - dynamic_sl_pct)
 
-                # Hard stop — dollar P&L on remaining position
+                # Hard stop
                 if opt_price <= sl_price:
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
                         entry_price, exit_px, remaining_dollars, option_type,
-                        "stop_loss", ts.hour,
+                        "stop_loss", ts.hour, round(elapsed_min, 1), active_strategy,
                     )
                     session_pnl += pnl
                     in_trade = False
-                    # Auto mode: allow one flip trade after a stop-out.
-                    # Mirrors the live bot's flip_trading_enabled logic:
-                    # if we stopped out of a call and price reverses below OR
-                    # low, simulate taking the put (and vice versa).
-                    if self.direction == "both" and not flip_done:
-                        first_trade_closed = True
-                        continue   # keep scanning for opposite signal
-                    break   # calls_only / puts_only — done for the day
+                    continue   # keep scanning for next signal
 
-                # Stage 1: sell 50% of position at +50% gain
+                # Stage 1: sell 50% at +50%
                 if not stage1_done:
                     s1_price = entry_price * (1.0 + self.ORB_STAGE1_GAIN)
                     if opt_price >= s1_price:
-                        s1_exit_px  = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
+                        s1_exit_px   = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                         half_dollars = position_dollars / 2.0
-                        # P&L on the half being closed now
                         s1_pnl = half_dollars * ((s1_exit_px / entry_price) - 1.0)
                         session_pnl += s1_pnl
                         self.trades.append({
-                            "option_type":  option_type,
-                            "entry_price":  entry_price,
-                            "exit_price":   s1_exit_px,
-                            "pnl":          s1_pnl,
-                            "reason":       "stage1_50pct",
-                            "exit_reason":  "stage1_50pct",
-                            "entry_hour":   entry_bar_time.hour if entry_bar_time else ts.hour,
-                            "held_minutes": round(elapsed_min, 1),
+                            "strategy_id":     active_strategy,
+                            "option_type":     option_type,
+                            "entry_price":     entry_price,
+                            "exit_price":      s1_exit_px,
+                            "position_dollars": half_dollars,
+                            "pnl":             s1_pnl,
+                            "exit_reason":     "stage1_50pct",
+                            "entry_hour":      entry_bar_time.hour,
+                            "held_minutes":    round(elapsed_min, 1),
                         })
                         remaining_dollars = half_dollars
                         stage1_done       = True
-                        continue   # break-even stop now in effect for the remainder
+                        continue
 
                 # Stage 2: break-even stop on remainder
                 if stage1_done and opt_price <= entry_price:
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
                         entry_price, exit_px, remaining_dollars, option_type,
-                        "stage2_break_even", ts.hour,
-                        held_minutes=round(elapsed_min, 1),
+                        "stage2_break_even", ts.hour, round(elapsed_min, 1), active_strategy,
                     )
                     session_pnl += pnl
                     in_trade = False
-                    break
+                    continue
 
                 # 45-minute time-box
                 if elapsed_min >= self.ORB_TIME_BOX:
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
                         entry_price, exit_px, remaining_dollars, option_type,
-                        "time_box_45m", ts.hour,
-                        held_minutes=round(elapsed_min, 1),
+                        "time_box_45m", ts.hour, round(elapsed_min, 1), active_strategy,
                     )
                     session_pnl += pnl
                     in_trade = False
-                    break
+                    continue
 
-                continue   # still holding — next bar
+                continue   # still holding
 
-            # ── Look for ORB breakout ─────────────────────────────────────────
-            if close > or_high:
-                direction = "bullish"
-            elif close < or_low:
-                direction = "bearish"
-            else:
-                continue   # no breakout on this bar
+            # ── Signal detection: run all 8 strategy evaluators ───────────────
+            # Build a slice of today's bars up to the current bar (no lookahead).
+            # RVOL, EMA50, ATR are pre-computed on the full dataset and already
+            # present as columns; we only need to compute session-VWAP here.
+            bar_slice = day_df.iloc[: idx + 1].copy()
 
-            # If this is a flip opportunity (first trade stopped out), the new
-            # signal MUST be in the OPPOSITE direction.  Same-direction
-            # re-entries are skipped — we've already lost on that side.
-            if first_trade_closed and not flip_done:
-                if direction == first_trade_direction:
-                    continue  # not a flip — wait for opposite signal
-                # Valid flip signal found — mark it so we only take one
-                flip_done = True
+            # Session VWAP (resets at market open, correct per-bar)
+            try:
+                vwap_frame = compute_vwap_bands(bar_slice, num_stds=(1, 2))
+                bar_slice["vwap"]        = vwap_frame["vwap"].ffill()
+                bar_slice["vwap_upper1"] = vwap_frame["vwap_upper1"].ffill()
+                bar_slice["vwap_lower1"] = vwap_frame["vwap_lower1"].ffill()
+                bar_slice["vwap_upper2"] = vwap_frame["vwap_upper2"].ffill()
+                bar_slice["vwap_lower2"] = vwap_frame["vwap_lower2"].ffill()
+            except Exception:
+                continue   # malformed bar data — skip
 
-            # RVOL gate: breakout candle must have ≥ 150% average volume (aligned
-            # with live strategy_router.py — lowered from 200% to capture more
-            # quality setups).
-            if rvol < ORB_RVOL_THRESHOLD:
+            # vol_sma20 (100-bar rolling volume mean)
+            bar_slice["vol_sma20"] = (
+                bar_slice["volume"].rolling(100, min_periods=5).mean()
+            )
+
+            signals = []
+            for strategy_id, fn in _EVALUATORS:
+                try:
+                    # Pass "BT" prefix so _audit_plain_english is still called
+                    # but cooldown keys are namespaced to the backtest run.
+                    sig = fn(bar_slice, ticker=self.ticker)
+                    if sig is not None:
+                        signals.append(sig)
+                except Exception:
+                    pass   # never let a strategy crash the whole backtest
+
+            if not signals:
                 continue
 
-            # VWAP gate
-            if not pd.isna(vwap):
-                if direction == "bullish" and close <= vwap:
-                    continue
-                if direction == "bearish" and close >= vwap:
-                    continue
+            # Take the highest-confidence signal
+            signals.sort(key=lambda s: s.confidence, reverse=True)
+            signal    = signals[0]
+            direction = signal.direction   # "bullish" or "bearish"
+            strat_id  = signal.strategy_id
 
-            # ── Direction filter (calls_only / puts_only / both) ─────────────
+            # Direction filter
             opt_type_str = "call" if direction == "bullish" else "put"
             if self.direction == "calls_only" and opt_type_str != "call":
                 continue
@@ -365,70 +426,47 @@ class Backtester:
                 continue
 
             # ── Simulate entry ────────────────────────────────────────────────
-            stock_price  = close
-            strike       = _simulated_strike(stock_price, direction)
-            # Use 3-DTE pricing (short-dated options typical of day-trading)
-            raw_opt_px   = _estimate_option_price(stock_price, strike, 3, option_type=opt_type_str)
-
-            # Skip zero/negative pricing (data anomaly)
+            strike      = _simulated_strike(close, direction)
+            raw_opt_px  = _estimate_option_price(
+                close, strike, 5, iv=ticker_iv, option_type=opt_type_str,
+            )
             if raw_opt_px <= 0.0:
                 continue
 
-            # Apply slippage to entry (we pay 5% above mid — mirrors live)
             entry_opt_px = round(raw_opt_px * (1.0 + self.SLIPPAGE_PCT), 4)
             if entry_opt_px <= 0.0:
                 continue
 
-            # ── R:R pre-flight check ──────────────────────────────────────────
-            _eff_target = entry_opt_px * (1.0 + self.ORB_STAGE1_GAIN) * (1.0 - self.SLIPPAGE_PCT)
-            _eff_stop   = entry_opt_px * (1.0 - self.ORB_STOP_PCT)    * (1.0 - self.SLIPPAGE_PCT)
-            _net_reward = _eff_target - entry_opt_px
-            _net_risk   = entry_opt_px - _eff_stop
-            _rr         = _net_reward / _net_risk if _net_risk > 0 else 0.0
-
-            _min_rr = RiskManager(account_balance=balance).effective_min_rr()
-            if _rr < _min_rr:
-                logger.debug(
-                    "backtest_rr_blocked date=%s R:R=%.2f < %.1f",
-                    day_str, _rr, _min_rr,
-                )
-                continue
-
             # ── Dollar-based position sizing ──────────────────────────────────
-            # Works for any account size — no per-contract minimum.
-            # position_dollars = how much premium we're "buying" in dollar terms.
-            # risk budget / stop % → position such that a full stop costs 1% of equity.
-            risk_budget      = balance * self.ORB_RISK_PCT      # e.g. $1 on a $100 account
-            pos_dollars      = risk_budget / self.ORB_STOP_PCT  # e.g. $1/0.30 = $3.33
-            # Cap at 20% of equity so one trade can't wipe the account
-            max_pos_dollars  = balance * 0.20
-            pos_dollars      = min(pos_dollars, max_pos_dollars)
-
+            risk_budget     = balance * self.ORB_RISK_PCT
+            pos_dollars     = min(risk_budget / self.ORB_STOP_PCT, balance * 0.20)
             if pos_dollars <= 0.0:
                 continue
 
             in_trade          = True
             entry_price       = entry_opt_px
-            entry_strike      = strike          # fixed for the life of this trade
+            entry_strike      = strike
             option_type       = opt_type_str
-            entry_bar_idx     = idx
             entry_bar_time    = ts
             position_dollars  = pos_dollars
             remaining_dollars = pos_dollars
             stage1_done       = False
-            # Record first-trade direction for flip detection
-            if not first_trade_closed:
-                first_trade_direction = direction
+            active_strategy   = strat_id
 
-        # End of session — force exit any open position (EOD close)
+        # ── EOD: force-close any open position ───────────────────────────────
         if in_trade and remaining_dollars > 0:
             last_bar   = day_df.iloc[-1]
             last_close = float(last_bar["close"])
-            eod_mid    = _estimate_option_price(last_close, entry_strike, 3, option_type=option_type)
-            eod_price  = round(eod_mid * (1.0 - self.SLIPPAGE_PCT), 4)
+            eod_mid    = _estimate_option_price(
+                last_close, entry_strike, 5, iv=ticker_iv, option_type=option_type,
+            )
+            eod_price = round(eod_mid * (1.0 - self.SLIPPAGE_PCT), 4)
+            eod_time  = last_bar["time"]
+            elapsed   = (eod_time - entry_bar_time).total_seconds() / 60 if entry_bar_time else 0
             pnl = self._close_bt_trade(
-                entry_price, eod_price, remaining_dollars, option_type, "eod",
-                last_bar["time"].hour if not isinstance(last_bar["time"], float) else 15,
+                entry_price, eod_price, remaining_dollars, option_type,
+                "eod", eod_time.hour if not isinstance(eod_time, float) else 15,
+                round(elapsed, 1), active_strategy,
             )
             session_pnl += pnl
 
@@ -445,25 +483,22 @@ class Backtester:
         reason: str,
         entry_hour: int = 10,
         held_minutes: float = 0.0,
+        strategy_id: str = "UNKNOWN",
     ) -> float:
-        """Record a simulated trade and return its P&L.
-
-        Dollar-based model: P&L = position_dollars × (exit/entry − 1).
-        Works for any account size without requiring per-contract sizing.
-        """
+        """Record a simulated trade and return its P&L."""
         if entry_price <= 0.0:
             return 0.0
         pnl = position_dollars * ((exit_price / entry_price) - 1.0)
         self.trades.append({
-            "option_type":   option_type,
-            "entry_price":   entry_price,
-            "exit_price":    exit_price,
+            "strategy_id":     strategy_id,
+            "option_type":     option_type,
+            "entry_price":     entry_price,
+            "exit_price":      exit_price,
             "position_dollars": position_dollars,
-            "pnl":           pnl,
-            "reason":        reason,
-            "exit_reason":   reason,
-            "entry_hour":    entry_hour,
-            "held_minutes":  held_minutes,
+            "pnl":             pnl,
+            "exit_reason":     reason,
+            "entry_hour":      entry_hour,
+            "held_minutes":    held_minutes,
         })
         return pnl
 
@@ -480,31 +515,37 @@ class Backtester:
         wins   = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p <= 0]
 
-        # Call vs Put breakdown
+        # ── Per-strategy breakdown ─────────────────────────────────────────
+        # Shows which strategies are actually profitable vs which are dragging
+        # down the overall result — the key insight the old ORB-only backtest
+        # couldn't provide.
+        strategy_stats: dict[str, dict] = {}
+        for t in trades:
+            sid = t.get("strategy_id", "UNKNOWN")
+            if sid not in strategy_stats:
+                strategy_stats[sid] = {"trades": 0, "wins": 0, "pnl": 0.0}
+            strategy_stats[sid]["trades"] += 1
+            strategy_stats[sid]["pnl"]    += t["pnl"]
+            if t["pnl"] > 0:
+                strategy_stats[sid]["wins"] += 1
+
+        strategy_breakdown = {}
+        for sid, s in strategy_stats.items():
+            wr = s["wins"] / s["trades"] * 100 if s["trades"] > 0 else 0.0
+            strategy_breakdown[sid] = {
+                "trades":   s["trades"],
+                "wins":     s["wins"],
+                "win_rate": round(wr, 1),
+                "pnl":      round(s["pnl"], 2),
+            }
+
+        # ── Call vs Put breakdown ──────────────────────────────────────────
         calls     = [t for t in trades if t.get("option_type") == "call"]
         puts      = [t for t in trades if t.get("option_type") == "put"]
         call_wins = [t for t in calls if t["pnl"] > 0]
         put_wins  = [t for t in puts  if t["pnl"] > 0]
-        call_wr   = len(call_wins) / max(len(calls), 1) * 100
-        put_wr    = len(put_wins)  / max(len(puts),  1) * 100
-        call_pnl  = sum(t["pnl"] for t in calls)
-        put_pnl   = sum(t["pnl"] for t in puts)
 
-        # Time-of-day analysis
-        hour_stats: dict = {}
-        for t in trades:
-            h = t.get("entry_hour", 10)
-            if h not in hour_stats:
-                hour_stats[h] = {"wins": 0, "losses": 0, "pnl": 0.0, "trades": 0}
-            hour_stats[h]["trades"] += 1
-            hour_stats[h]["pnl"]    += t["pnl"]
-            if t["pnl"] > 0:
-                hour_stats[h]["wins"] += 1
-            else:
-                hour_stats[h]["losses"] += 1
-        best_hour = max(hour_stats, key=lambda h: hour_stats[h]["pnl"]) if hour_stats else None
-
-        # Exit reason breakdown
+        # ── Exit reason breakdown ──────────────────────────────────────────
         exit_reasons: dict = {}
         for t in trades:
             r = t.get("exit_reason", "unknown")
@@ -513,15 +554,15 @@ class Backtester:
             exit_reasons[r]["count"] += 1
             exit_reasons[r]["pnl"]   += t["pnl"]
 
-        # Hold time statistics
+        # ── Hold time ─────────────────────────────────────────────────────
         held_times = [t.get("held_minutes", 0) for t in trades if t.get("held_minutes", 0) > 0]
         avg_hold   = round(sum(held_times) / len(held_times), 1) if held_times else 0.0
 
-        # Stage-1 hit rate
+        # ── Stage-1 hit rate ───────────────────────────────────────────────
         stage1_exits = [t for t in trades if t.get("exit_reason") == "stage1_50pct"]
         stage1_rate  = len(stage1_exits) / max(len(trades), 1) * 100
 
-        # Max consecutive losses
+        # ── Consecutive losses ─────────────────────────────────────────────
         max_consec, cur_consec = 0, 0
         for p in pnls:
             if p <= 0:
@@ -530,13 +571,13 @@ class Backtester:
             else:
                 cur_consec = 0
 
-        # Expectancy
+        # ── Core stats ────────────────────────────────────────────────────
         win_rate   = len(wins) / len(pnls) if pnls else 0
         avg_win    = sum(wins)   / len(wins)   if wins   else 0
         avg_loss   = sum(losses) / len(losses) if losses else 0
         expectancy = (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
 
-        # Sharpe ratio (annualised)
+        # Sharpe (annualised)
         daily_returns = list(daily_pnl.values())
         if len(daily_returns) > 1 and np.std(daily_returns) > 0:
             sharpe = (np.mean(daily_returns) / np.std(daily_returns)) * math.sqrt(252)
@@ -554,34 +595,32 @@ class Backtester:
                 max_dd = dd
 
         return {
-            "ticker":          self.ticker,
-            "months":          self.months,
-            "total_trades":    len(pnls),
-            "win_rate":        win_rate,
-            "avg_win":         avg_win,
-            "avg_loss":        avg_loss,
-            "total_pnl":       sum(pnls),
-            "final_balance":   final_balance,
-            "total_return":    (final_balance - self.capital) / self.capital * 100,
-            "max_drawdown":    max_dd,
-            "sharpe_ratio":    round(sharpe, 2),
-            "expectancy":      round(expectancy, 2),
-            "max_consec_loss": max_consec,
-            # ORB-specific metrics
-            "stage1_hit_rate": round(stage1_rate, 1),
+            "ticker":           self.ticker,
+            "months":           self.months,
+            "total_trades":     len(pnls),
+            "win_rate":         win_rate,
+            "avg_win":          avg_win,
+            "avg_loss":         avg_loss,
+            "total_pnl":        sum(pnls),
+            "final_balance":    final_balance,
+            "total_return":     (final_balance - self.capital) / self.capital * 100,
+            "max_drawdown":     max_dd,
+            "sharpe_ratio":     round(sharpe, 2),
+            "expectancy":       round(expectancy, 2),
+            "max_consec_loss":  max_consec,
+            "stage1_hit_rate":  round(stage1_rate, 1),
             "avg_hold_minutes": avg_hold,
             # Call vs Put
-            "call_trades":     len(calls),
-            "put_trades":      len(puts),
-            "call_win_rate":   round(call_wr, 1),
-            "put_win_rate":    round(put_wr, 1),
-            "call_pnl":        round(call_pnl, 2),
-            "put_pnl":         round(put_pnl, 2),
-            # Time analysis
-            "hour_stats":      hour_stats,
-            "best_hour":       best_hour,
-            # Exit analysis
-            "exit_reasons":    exit_reasons,
-            "daily_pnl":       daily_pnl,
-            "trades":          trades,
+            "call_trades":      len(calls),
+            "put_trades":       len(puts),
+            "call_win_rate":    round(len(call_wins) / max(len(calls), 1) * 100, 1),
+            "put_win_rate":     round(len(put_wins)  / max(len(puts),  1) * 100, 1),
+            "call_pnl":         round(sum(t["pnl"] for t in calls), 2),
+            "put_pnl":          round(sum(t["pnl"] for t in puts),  2),
+            # Per-strategy breakdown (the new key insight)
+            "strategy_breakdown": strategy_breakdown,
+            # Time / exit analysis
+            "exit_reasons":     exit_reasons,
+            "daily_pnl":        daily_pnl,
+            "trades":           trades,
         }

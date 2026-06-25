@@ -144,6 +144,8 @@ class BacktestResult(BaseModel):
     put_win_rate: float = 0.0
     call_pnl: float = 0.0
     put_pnl: float = 0.0
+    # Per-strategy breakdown: {strategy_id: {trades, wins, win_rate, pnl}}
+    strategy_breakdown: dict[str, Any] = {}
     error: Optional[str] = None
 
 
