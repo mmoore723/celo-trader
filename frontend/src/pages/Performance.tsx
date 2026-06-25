@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import { api } from "../lib/api";
 import { useThemeStore } from "../store/theme";
+import { PageLoader } from "../components/PageLoader";
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
@@ -31,13 +32,7 @@ export function Performance() {
     refetchInterval: 30_000,
   });
 
-  if (isLoading) {
-    return (
-      <div className="p-8 text-center" style={{ color: "var(--ink-muted)" }}>
-        Loading performance data…
-      </div>
-    );
-  }
+  if (isLoading) return <PageLoader label="Performance" />;
 
   const daily = perf?.daily_summaries ?? [];
 

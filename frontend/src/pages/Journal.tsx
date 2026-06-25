@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Trade } from "../lib/api";
+import { PageLoader } from "../components/PageLoader";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -73,9 +74,7 @@ export function Journal() {
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           {isLoading ? (
-            <div className="py-10 text-center text-sm" style={{ color: "var(--ink-muted)" }}>
-              Loading…
-            </div>
+            <PageLoader label="Trade Journal" />
           ) : (
             <table className="data-table">
               <thead>

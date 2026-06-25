@@ -235,3 +235,26 @@ html, body, #root {
   .chart-scanner-grid { grid-template-columns: 1fr; }
   .two-col-grid        { grid-template-columns: 1fr; }
 }
+
+/* ── Skeleton / loading ──────────────────────────────────────────────────── */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+.skeleton {
+  background: var(--muted);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* Page-level loading placeholder — distinct enough that users know navigation worked */
+.page-loading {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.page-loading .sk-title  { height: 22px; width: 200px; }
+.page-loading .sk-row    { height: 14px; width: 100%; max-width: 480px; }
+.page-loading .sk-card   { height: 120px; width: 100%; border-radius: 10px; }
+.page-loading .sk-chart  { height: 220px; width: 100%; border-radius: 10px; }

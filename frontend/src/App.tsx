@@ -1,7 +1,7 @@
 /**
  * App.tsx — Root component. Wires router, WebSocket, React Query, layout shell.
  */
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { Topbar }      from "./components/layout/Topbar";
@@ -18,8 +18,9 @@ import { DailyBrief }  from "./pages/DailyBrief";
 const qc = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5_000,
-      retry: 2,
+      staleTime: 30_000,          // treat data as fresh for 30s — reduces redundant fetches on tab switch
+      retry: 1,                   // one retry max; avoid 3s backoff delay on tab click
+      refetchOnWindowFocus: false, // clicking a tab re-focuses the window → was triggering mass refetch
     },
   },
 });
@@ -51,9 +52,11 @@ function AppShell() {
 export default function App() {
   return (
     <QueryClientProvider client={qc}>
-      <BrowserRouter>
+      {/* HashRouter: navigation is always client-side (URL becomes /#/page).
+          Eliminates any server-routing edge cases with the FastAPI catch-all. */}
+      <HashRouter>
         <AppShell />
-      </BrowserRouter>
+      </HashRouter>
     </QueryClientProvider>
   );
 }
