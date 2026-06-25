@@ -76,7 +76,7 @@ def _ts_to_et(entry: dict) -> str:
     return f"{h}:{now_et.minute:02d}:{now_et.second:02d} {ampm}"
 
 
-_HISTORY_WINDOW_MINUTES = 60   # only replay logs from the last hour on connect;
+_HISTORY_WINDOW_MINUTES = 480  # replay logs from the last 8 hours on connect;
                                # prevents showing 8-hour-old logs when the user
                                # opens the dashboard in the evening.
 
