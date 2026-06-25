@@ -22,7 +22,7 @@ _ET = ZoneInfo("America/New_York")
 router = APIRouter(tags=["websocket"])
 
 _BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "bot_state.json"
-_LOG_PATH       = Path(__file__).resolve().parents[2] / "bot.log"
+_LOG_PATH       = Path(__file__).resolve().parents[2] / "log" / "bot.log"
 
 # Track connected clients
 _clients: set[WebSocket] = set()
