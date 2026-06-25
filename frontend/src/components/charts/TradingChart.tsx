@@ -271,7 +271,8 @@ export function TradingChart({
       autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const base = original();
         const { high: orHi, low: orLo } = orRef.current;
-        if (!base || (orHi == null && orLo == null)) return base;
+        // priceRange can itself be null when no data is loaded yet
+        if (!base?.priceRange || (orHi == null && orLo == null)) return base;
         const minVal = orLo != null
           ? Math.min(base.priceRange.minValue, orLo)
           : base.priceRange.minValue;
