@@ -269,8 +269,22 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _hb = _pl.Path(__file__).parent / ".bot_heartbeat"
     _hb.write_text(str(_tm.time()))
 
-    market_open = alpaca.is_market_open()
-    LIVE_STATE["market_open"] = market_open
+    # Fast local time check BEFORE any Alpaca API call.
+    # If we're clearly outside extended hours (8 PM – 4 AM ET), skip the
+    # Alpaca is_market_open() call entirely — it's guaranteed False and
+    # making the request every 60 s all night generates spurious alpaca_get_failed
+    # errors that pollute the Bot Thinking / Network panel.
+    _now_local = _now_et()
+    _hm_local  = _now_local.hour * 60 + _now_local.minute
+    _is_weekend = _now_local.weekday() >= 5   # Saturday=5, Sunday=6
+    _extended_hours = 4 * 60 <= _hm_local < 20 * 60  # 4 AM – 8 PM ET
+    if _is_weekend or not _extended_hours:
+        # Definitely closed — no need to call Alpaca
+        market_open = False
+        LIVE_STATE["market_open"] = False
+    else:
+        market_open = alpaca.is_market_open()
+        LIVE_STATE["market_open"] = market_open
 
     # Always write state so dashboard knows bot is alive even when market closed
     import json as _json, time as _time

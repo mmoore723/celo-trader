@@ -57,15 +57,27 @@ function MiniSparkline({ bars, color }: { bars: Bar[]; color: string }) {
 
 // Classify a log entry as network-related (broker/API) vs a trading decision.
 // Network: module contains broker/alpaca/tradier keywords or message has API noise.
-function isNetworkLog(entry: { module?: string; message?: string; level?: string }): boolean {
-  const mod = (entry.module ?? "").toLowerCase();
-  const msg = (entry.message ?? "").toLowerCase();
+// Separator entries from the WebSocket (previous-session divider)
+function isSeparator(entry: Record<string, unknown>): boolean {
+  return !!entry["_separator"];
+}
+
+function isNetworkLog(entry: { module?: string; message?: string; level?: string; [key: string]: unknown }): boolean {
+  const mod = (entry.module_name ?? entry.module ?? "").toString().toLowerCase();
+  const msg = (entry.message ?? "").toString().toLowerCase();
+  // Module-based: broker / alpaca / tradier calls
   if (mod.includes("broker") || mod.includes("alpaca") || mod.includes("tradier")) return true;
+  // Message-based: bar fetching, database ops, network errors
   if (msg.includes("http") || msg.includes("timeout") || msg.includes("connection")
     || msg.includes("socket") || msg.includes("request") || msg.includes("retry")
-    || msg.includes("yfinance") || msg.includes("ssl") || msg.includes("get_bars")
+    || msg.includes("yfinance") || msg.includes("ssl")
+    || msg.includes("get_bars") || msg.includes("get_session_bars")
+    || msg.includes("session_bars") || msg.includes("bars for 20")   // "201 bars for 2026-..."
     || msg.includes("get_account") || msg.includes("get_snapshot")
-    || msg.includes("circuit breaker") || msg.includes("network")) return true;
+    || msg.includes("circuit breaker") || msg.includes("network")
+    || msg.includes("backfill") || msg.includes("database initialised")
+    || msg.includes("initialised at /") || msg.includes("synced")
+    || msg.includes("alpaca_get_failed") || msg.includes("extended_live")) return true;
   return false;
 }
 
@@ -521,6 +533,17 @@ export function LiveTrading() {
                   }}
                 >
                   {activeLogs.slice(0, 80).map((entry, i) => {
+                    // Visual separator between historical (replayed) and live logs
+                    if (isSeparator(entry)) {
+                      return (
+                        <div key={i} className="flex items-center gap-2 my-1 select-none"
+                          style={{ color: "var(--ink-faint)", fontSize: 10 }}>
+                          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                          <span>previous session</span>
+                          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                        </div>
+                      );
+                    }
                     const lvl = (entry.level ?? "INFO").toUpperCase();
                     const color =
                       lvl === "ERROR"   ? "var(--negative)" :
@@ -532,7 +555,7 @@ export function LiveTrading() {
                         {entry.ts && (
                           <span
                             className="opacity-60 mr-1 select-none"
-                            style={{ color: "var(--ink-muted)", minWidth: "5.5em", display: "inline-block" }}
+                            style={{ color: "var(--ink-muted)", minWidth: "6.5em", display: "inline-block" }}
                           >
                             {entry.ts}
                           </span>

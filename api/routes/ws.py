@@ -11,9 +11,13 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+_ET = ZoneInfo("America/New_York")
 
 router = APIRouter(tags=["websocket"])
 
@@ -43,8 +47,37 @@ def _read_state() -> dict:
     return {}
 
 
+def _ts_to_et(entry: dict) -> str:
+    """
+    Extract a display timestamp (HH:MM AM/PM ET) from a log entry.
+
+    The JSON logger writes:  "timestamp": "2026-06-24T00:58:44.123Z"  (UTC)
+    We parse that ISO string and convert to ET so timestamps in the
+    Bot Thinking panel always match the user's market session, not the
+    EC2 server's UTC clock.
+    """
+    ts_raw = entry.get("timestamp", "")
+    if ts_raw:
+        try:
+            # Strip trailing Z / offset so fromisoformat works on Py 3.10
+            clean = ts_raw.rstrip("Z").split("+")[0]
+            # The formatter appends milliseconds: "2026-06-24T00:58:44.123"
+            dt_utc = datetime.fromisoformat(clean).replace(tzinfo=ZoneInfo("UTC"))
+            dt_et  = dt_utc.astimezone(_ET)
+            h = dt_et.hour % 12 or 12
+            ampm = "AM" if dt_et.hour < 12 else "PM"
+            return f"{h}:{dt_et.minute:02d}:{dt_et.second:02d} {ampm}"
+        except Exception:
+            pass
+    # Fallback: current ET wall-clock (at least shows correct timezone)
+    now_et = datetime.now(_ET)
+    h = now_et.hour % 12 or 12
+    ampm = "AM" if now_et.hour < 12 else "PM"
+    return f"{h}:{now_et.minute:02d}:{now_et.second:02d} {ampm}"
+
+
 def _tail_log(n: int = 20) -> list[dict]:
-    """Return last n structured log lines from bot.log."""
+    """Return last n structured log lines from bot.log, with ET timestamps."""
     lines = []
     try:
         if not _LOG_PATH.exists():
@@ -57,9 +90,11 @@ def _tail_log(n: int = 20) -> list[dict]:
             raw = f.read().decode("utf-8", errors="replace")
         for line in raw.splitlines()[-n:]:
             try:
-                lines.append(json.loads(line))
+                entry = json.loads(line)
             except Exception:
-                lines.append({"message": line, "level": "INFO"})
+                entry = {"message": line, "level": "INFO"}
+            entry["ts"] = _ts_to_et(entry)
+            lines.append(entry)
     except Exception:
         pass
     return lines
@@ -70,9 +105,18 @@ async def websocket_live(ws: WebSocket) -> None:
     await ws.accept()
     _clients.add(ws)
 
-    # Send recent log lines on connect
-    for entry in _tail_log(30):
-        await ws.send_json({"type": "log", "data": entry})
+    # Send recent log lines on connect, prefixed with a visual separator so
+    # users can distinguish yesterday's session from live output.
+    history = _tail_log(30)
+    if history:
+        await ws.send_json({"type": "log", "data": {
+            "message": "── previous session ──",
+            "level":   "INFO",
+            "ts":      "",
+            "_separator": True,
+        }})
+        for entry in history:
+            await ws.send_json({"type": "log", "data": entry})
 
     last_state_hash = None
     last_log_pos    = 0
@@ -103,12 +147,9 @@ async def websocket_live(ws: WebSocket) -> None:
                                     entry = json.loads(line)
                                 except Exception:
                                     entry = {"message": line, "level": "INFO"}
-                                # Always ensure ts is present — pull from asctime
-                                # field written by the JSON logger, or use wall-clock
-                                if not entry.get("ts"):
-                                    asctime = entry.get("asctime", "")
-                                    # asctime format: "2026-06-24 09:30:01,123" → take HH:MM:SS
-                                    entry["ts"] = asctime[11:19] if len(asctime) >= 19 else time.strftime("%H:%M:%S")
+                                # Always stamp ts in ET (12h) — parsed from the
+                                # JSON logger's "timestamp" field (UTC ISO 8601).
+                                entry["ts"] = _ts_to_et(entry)
                                 await ws.send_json({"type": "log", "data": entry})
             except Exception:
                 pass
