@@ -281,11 +281,62 @@ def trigger_scan_now() -> dict:
 
 @router.get("/opening-range/{ticker}")
 def get_opening_range(ticker: str) -> dict:
+    """
+    Return the Opening Range (9:30–9:40 ET) for today's session.
+
+    Uses 5-minute bars (same source as the chart) so the result stays
+    consistent with what the chart is drawing.  Falls back to Alpaca 1Min
+    with limit=390 (full 6.5-hour session) if needed, so the 9:30 bars are
+    always included regardless of what time of day the request arrives.
+
+    The old approach of limit=50 1Min bars broke after 10:20 AM because the
+    50 most recent bars no longer contained the 9:30–9:40 opening window.
+    """
     try:
-        from broker import get_clients
+        import datetime as _dt
+        import pandas as pd
         from signals import bars_to_df, get_opening_range as _get_or
+
+        # ── Attempt 1: yfinance 5-minute bars (same as the chart) ────────────
+        try:
+            import yfinance as yf
+            _today      = _dt.date.today()
+            _start_date = _today.strftime("%Y-%m-%d")
+            _end_date   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+            raw_yf = yf.download(
+                ticker,
+                start=_start_date,
+                end=_end_date,
+                interval="5m",
+                prepost=False,  # regular session only for clean OR calculation
+                progress=False,
+                auto_adjust=True,
+            )
+            if not raw_yf.empty:
+                if hasattr(raw_yf.columns, "get_level_values"):
+                    raw_yf.columns = raw_yf.columns.get_level_values(0)
+                raw_yf = raw_yf.rename(columns={
+                    "Open": "open", "High": "high",
+                    "Low": "low",  "Close": "close", "Volume": "volume",
+                })
+                raw_yf.index.name = "time"
+                raw_yf = raw_yf.reset_index()
+                raw_yf["time"] = (
+                    pd.to_datetime(raw_yf["time"], utc=True)
+                    .dt.tz_convert("America/New_York")
+                    .dt.tz_localize(None)
+                )
+                df = raw_yf[["time", "open", "high", "low", "close", "volume"]].copy()
+                result = _get_or(df)
+                if result:
+                    return result
+        except Exception:
+            pass
+
+        # ── Attempt 2: Alpaca 1Min with full-session limit so 9:30 is included ─
+        from broker import get_clients
         alpaca, _ = get_clients()
-        raw = alpaca.get_bars(ticker, "1Min", limit=50)
+        raw = alpaca.get_bars(ticker, "1Min", limit=390)  # 390 = full 6.5h session
         bars = raw[0] if isinstance(raw, tuple) else raw
         if not bars:
             return {}

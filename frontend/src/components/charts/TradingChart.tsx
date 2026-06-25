@@ -264,19 +264,23 @@ export function TradingChart({
       borderDownColor: C.down,
       wickUpColor:     C.up,
       wickDownColor:   C.down,
-      // Extend auto-scale to include OR Hi/Lo so those lines are never
-      // clipped to the top/bottom edge of the chart.  orRef is a mutable
-      // ref (not state) so this closure always reads the latest values
-      // without triggering a chart rebuild.
+      // Extend auto-scale to include OR Hi/Lo — BUT only when OR is close
+      // to the current price action.  If price has moved far from OR (e.g.
+      // OR was at 744, price is now at 717) the unconditional expansion
+      // squishes all the candles into the bottom third of the chart.
+      // Threshold: only pull OR into view when it is within 2× the natural
+      // visible price range from the natural min/max.
       autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const base = original();
         const { high: orHi, low: orLo } = orRef.current;
         // priceRange can itself be null when no data is loaded yet
         if (!base?.priceRange || (orHi == null && orLo == null)) return base;
-        const minVal = orLo != null
+        const naturalRange = base.priceRange.maxValue - base.priceRange.minValue;
+        const margin      = naturalRange * 2; // allow up to 2× range expansion
+        const minVal = (orLo != null && orLo >= base.priceRange.minValue - margin)
           ? Math.min(base.priceRange.minValue, orLo)
           : base.priceRange.minValue;
-        const maxVal = orHi != null
+        const maxVal = (orHi != null && orHi <= base.priceRange.maxValue + margin)
           ? Math.max(base.priceRange.maxValue, orHi)
           : base.priceRange.maxValue;
         return {
