@@ -21,6 +21,7 @@ class BotStatus(BaseModel):
     current_stop_pct: Optional[float]
     last_signal: Optional[str]
     ghost_position_detected: bool
+    is_paper: bool = True            # True = paper-trading, False = live account
 
 
 class BotActionResponse(BaseModel):

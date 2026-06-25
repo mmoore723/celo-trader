@@ -58,6 +58,7 @@ def get_status() -> BotStatus:
         current_stop_pct=state.get("current_stop_pct"),
         last_signal=state.get("last_signal"),
         ghost_position_detected=bool(state.get("ghost_position_detected", False)),
+        is_paper=bool(settings.get("paper_trading", True)),
     )
 
 

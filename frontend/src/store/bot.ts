@@ -16,6 +16,7 @@ export interface BotStatus {
   current_stop_pct: number | null;
   last_signal: string | null;
   ghost_position_detected: boolean;
+  is_paper: boolean;               // true = paper account, false = live account
 }
 
 export interface LogEntry {

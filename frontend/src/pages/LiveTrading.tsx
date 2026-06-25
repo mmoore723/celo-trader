@@ -12,7 +12,10 @@ import { TradingChart } from "../components/charts/TradingChart";
 import { useBotStore } from "../store/bot";
 import { api, type Trade, type Bar } from "../lib/api";
 
-const TICKERS = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA", "AMD", "MSFT"];
+// Fallback ticker list — used only when the scanner hasn't run yet.
+// The live dropdown always prefers the scanner watchlist so the user
+// sees the same tickers the bot is actively evaluating.
+const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
 // ── Period helper ───────────────────────────────────────────────────────────
 type Period = "1D" | "5D" | "1M" | "3M";
@@ -160,6 +163,13 @@ export function LiveTrading() {
     refetchInterval: 60_000,
   });
 
+  // Dropdown options = scanner watchlist (what the bot actually evaluates),
+  // falling back to FALLBACK_TICKERS when the scanner hasn't run yet.
+  const dropdownTickers = useMemo(
+    () => scanner.length > 0 ? scanner.map((s: any) => s.ticker) : FALLBACK_TICKERS,
+    [scanner],
+  );
+
   // Trades for the current ticker
   const tickerTrades = openTrades.filter((t: Trade) => t.ticker === ticker);
 
@@ -184,14 +194,31 @@ export function LiveTrading() {
   return (
     <div className="p-4 flex flex-col gap-4">
       {/* Stat bar */}
-      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3 items-start">
         {[
-          { label: "Balance",    value: `$${(status?.account_balance ?? 0).toFixed(2)}` },
-          { label: "Session P&L",value: <PnlBadge value={status?.session_pnl} /> },
-          { label: "Opt BP",     value: `$${(status?.options_buying_power ?? 0).toFixed(2)}` },
-          { label: "Open",       value: openTrades.length },
-          { label: "Signal",     value: status?.last_strategy_id ?? "—" },
-          { label: "Mode",       value: (status?.mode ?? "—").toUpperCase() },
+          { label: "Balance",     value: `$${(status?.account_balance ?? 0).toFixed(2)}` },
+          { label: "Session P&L", value: (
+            <span className="flex items-center gap-1.5 flex-wrap">
+              <PnlBadge value={status?.session_pnl} />
+              {/* Paper / Live account badge */}
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
+                style={{
+                  background: status?.is_paper !== false
+                    ? "rgba(234, 148, 29, 0.15)"
+                    : "rgba(34, 197, 94, 0.15)",
+                  color: status?.is_paper !== false ? "#ea941d" : "#22c55e",
+                  border: `1px solid ${status?.is_paper !== false ? "#ea941d55" : "#22c55e55"}`,
+                }}
+              >
+                {status?.is_paper !== false ? "Paper" : "Live"}
+              </span>
+            </span>
+          )},
+          { label: "Opt BP",      value: `$${(status?.options_buying_power ?? 0).toFixed(2)}` },
+          { label: "Open",        value: openTrades.length },
+          { label: "Signal",      value: status?.last_strategy_id ?? "—" },
+          { label: "Mode",        value: (status?.mode ?? "—").toUpperCase() },
         ].map((s) => (
           <div key={s.label} className="card px-4 py-2.5 flex flex-col gap-0.5 min-w-[110px]">
             <span className="text-xs" style={{ color: "var(--ink-muted)" }}>{s.label}</span>
@@ -217,7 +244,7 @@ export function LiveTrading() {
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
             >
-              {TICKERS.map((t) => <option key={t}>{t}</option>)}
+              {dropdownTickers.map((t) => <option key={t}>{t}</option>)}
             </select>
 
             {/* Timeframe */}

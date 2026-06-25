@@ -368,11 +368,77 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
                 len(candidates))
 
     # ── Steps 3-6: Daily bars → avg vol, ATR, RVOL, score ────────────────────
+    #
+    # Probe Alpaca daily bars once before the per-ticker loop.
+    # When the circuit breaker is open, ALL individual get_bars("1Day") calls
+    # return ([], True) — causing 0 survivors even though snapshots succeeded.
+    # Fix: if the probe fails, batch-download daily bars for ALL candidates via
+    # yfinance in one shot (~1 s for 40 tickers) and use that as the source.
+    # ──────────────────────────────────────────────────────────────────────────
+    _yf_daily_cache: dict[str, list[dict]] = {}
+    _probe_bars, _probe_err = alpaca.get_bars("SPY", "1Day", limit=3)
+    if _probe_err or not _probe_bars:
+        logger.info(
+            "daily_premarket_scan: Alpaca daily bars unavailable (probe failed) "
+            "— batch-downloading daily OHLCV from yfinance for %d candidates",
+            len(candidates),
+        )
+        try:
+            import yfinance as yf
+            import datetime as _dt
+            _cand_tickers = [c["ticker"] for c in candidates]
+            _end_d   = _dt.date.today() + _dt.timedelta(days=1)
+            _start_d = _end_d - _dt.timedelta(days=40)
+            _yf_batch = yf.download(
+                _cand_tickers,
+                start=_start_d.strftime("%Y-%m-%d"),
+                end=_end_d.strftime("%Y-%m-%d"),
+                interval="1d",
+                progress=False,
+                auto_adjust=True,
+                group_by="ticker",
+            )
+            for _t in _cand_tickers:
+                try:
+                    # Multi-ticker download returns a MultiIndex DataFrame;
+                    # single-ticker returns a plain DataFrame.
+                    _df = _yf_batch if len(_cand_tickers) == 1 else _yf_batch[_t]
+                    if _df is None or _df.empty:
+                        continue
+                    # Flatten MultiIndex columns (yfinance ≥ 0.2)
+                    if hasattr(_df.columns, "get_level_values"):
+                        _df.columns = _df.columns.get_level_values(0)
+                    _yf_daily_cache[_t] = [
+                        {
+                            "o": float(r.get("Open",   0) or 0),
+                            "h": float(r.get("High",   0) or 0),
+                            "l": float(r.get("Low",    0) or 0),
+                            "c": float(r.get("Close",  0) or 0),
+                            "v": float(r.get("Volume", 0) or 0),
+                        }
+                        for _, r in _df.iterrows()
+                        if float(r.get("Close", 0) or 0) > 0
+                    ]
+                except Exception:
+                    pass
+            logger.info(
+                "daily_premarket_scan: yfinance batch loaded daily bars for %d/%d tickers",
+                len(_yf_daily_cache), len(_cand_tickers),
+            )
+        except Exception as _yf_ex:
+            logger.warning(
+                "daily_premarket_scan: yfinance batch daily download failed: %s", _yf_ex
+            )
+
     scored = []
     for c in candidates:
         ticker = c["ticker"]
         try:
             bars, err = alpaca.get_bars(ticker, "1Day", limit=22)
+            # If Alpaca failed, fall back to the yfinance batch cache
+            if err or len(bars) < 10:
+                bars = _yf_daily_cache.get(ticker, [])
+                err  = len(bars) < 10
             if err or len(bars) < 10:
                 logger.debug(
                     "daily_premarket_scan: %s — insufficient daily bars (%d) — skipped",
