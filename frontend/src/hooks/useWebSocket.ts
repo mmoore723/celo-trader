@@ -10,8 +10,12 @@ const WS_URL =
   `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/live`;
 
 export function useWebSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const { setStatus, addLog, setConnected } = useBotStore();
+  const wsRef      = useRef<WebSocket | null>(null);
+  // Track whether this is the initial connect vs a reconnect after a drop.
+  // On reconnect we clear the stale log list before the server sends history
+  // again, so the user doesn't see old CB-spam logs stacking on top of live ones.
+  const isFirstRef = useRef(true);
+  const { setStatus, addLog, clearLogs, setConnected } = useBotStore();
 
   useEffect(() => {
     let retryTimer: ReturnType<typeof setTimeout>;
@@ -20,7 +24,15 @@ export function useWebSocket() {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        if (!isFirstRef.current) {
+          // Reconnect after a drop: wipe the log panel so replayed history
+          // arrives into a clean slate rather than on top of stale entries.
+          clearLogs();
+        }
+        isFirstRef.current = false;
+        setConnected(true);
+      };
 
       ws.onmessage = (evt) => {
         try {
@@ -48,5 +60,5 @@ export function useWebSocket() {
       clearTimeout(retryTimer);
       wsRef.current?.close();
     };
-  }, [setStatus, addLog, setConnected]);
+  }, [setStatus, addLog, clearLogs, setConnected]);
 }

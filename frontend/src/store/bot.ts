@@ -33,6 +33,7 @@ interface BotStore {
   connected: boolean;
   setStatus: (s: BotStatus) => void;
   addLog: (e: LogEntry) => void;
+  clearLogs: () => void;
   setConnected: (v: boolean) => void;
 }
 
@@ -43,5 +44,6 @@ export const useBotStore = create<BotStore>((set) => ({
   setStatus: (s) => set({ status: s }),
   addLog: (e) =>
     set((st) => ({ logs: [e, ...st.logs].slice(0, 300) })), // keep last 300
+  clearLogs: () => set({ logs: [] }),
   setConnected: (v) => set({ connected: v }),
 }));

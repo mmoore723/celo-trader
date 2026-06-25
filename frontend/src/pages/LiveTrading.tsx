@@ -569,7 +569,11 @@ export function LiveTrading() {
                   })}
                   {activeLogs.length === 0 && (
                     <p style={{ color: "var(--ink-muted)" }}>
-                      {logs.length === 0 ? "Waiting for bot…" : `No ${logTab} logs yet`}
+                      {logs.length === 0
+                        ? "Waiting for bot…"
+                        : logTab === "thinking"
+                          ? "No bot activity yet — API/network events are in the Network tab"
+                          : "No network events yet"}
                     </p>
                   )}
                 </div>

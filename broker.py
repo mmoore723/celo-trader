@@ -27,6 +27,26 @@ from logger_config import _LatencyTimer
 
 logger = logging.getLogger("celo_trader.broker")
 
+# ── Local market-hours fallback ──────────────────────────────────────────────
+def _local_market_is_open() -> bool:
+    """
+    Pure local-time check — no network call.
+    Used as a fallback when the Alpaca circuit breaker is active so
+    is_market_open() doesn't incorrectly return False during regular hours.
+    Returns True Monday–Friday 9:30–16:00 ET.
+    """
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/New_York"))
+        if now.weekday() >= 5:
+            return False
+        hm = now.hour * 60 + now.minute
+        return 9 * 60 + 30 <= hm < 16 * 60
+    except Exception:
+        return False
+
+
 # ── Audit-log debounce ────────────────────────────────────────────────────────
 # Prevents the same API error flooding the system_events table on every
 # auto-refresh cycle.  Key = (event_type, module, url_base); value = epoch when
@@ -91,9 +111,19 @@ def _retry(fn, retries: int = 3, delay: float = 0.5):
 # outages.  State is module-level so it persists across AlpacaClient instances.
 
 _CB_THRESHOLD   = 3      # consecutive failures before opening the circuit
-_CB_COOLDOWN    = 60     # seconds to wait before probing again
+_CB_COOLDOWN    = 300    # seconds to wait before probing again (5 min — was 60s,
+                         # which caused a "try → fail → log ERROR → wait 60s" loop
+                         # every minute, flooding the Network tab all day)
 _cb_fail_count  = 0      # consecutive connection failure count
 _cb_open_until  = 0.0    # epoch time when circuit may close
+
+
+class _AlpacaCircuitOpenError(Exception):
+    """
+    Raised by _get() when the circuit breaker is active.
+    Callers catch this specifically so they can skip silently (the CB is
+    already doing its job — no need to log it as an error every 5 minutes).
+    """
 
 def _cb_record_success():
     global _cb_fail_count, _cb_open_until
@@ -137,10 +167,14 @@ class AlpacaClient:
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
     def _get(self, url: str, params: dict = None) -> dict:
-        # Circuit open — skip the network call entirely
+        # Circuit open — skip the network call entirely.
+        # Raise _AlpacaCircuitOpenError (not ConnectionError) so callers can
+        # distinguish "CB protecting us" from a real network failure and skip
+        # silently instead of logging an ERROR every 5 minutes.
         if _cb_is_open():
-            raise requests.exceptions.ConnectionError(
-                f"alpaca circuit open until {_cb_open_until:.0f} — skipping {url}"
+            logger.debug("alpaca_cb_skip url=%s reset_at=%.0f", url, _cb_open_until)
+            raise _AlpacaCircuitOpenError(
+                f"circuit open until {_cb_open_until:.0f} — skipping {url}"
             )
         def call():
             with _LatencyTimer(logger, "alpaca_http_get", url=url):
@@ -253,13 +287,19 @@ class AlpacaClient:
     def is_market_open(self) -> bool:
         """
         Ask Alpaca whether the market is currently open.
-        Returns False on API error (safe default — don't trade if unsure).
+        Falls back to local ET time check when the circuit breaker is active
+        (avoids showing MARKET CLOSED all day just because Alpaca is unreachable).
+        Returns False on unknown API error (safe default — don't trade if unsure).
         """
         if not ALPACA_API_KEY:
-            return False
+            return _local_market_is_open()
         try:
             data = self._get(f"{self.base}/v2/clock")
             return bool(data.get("is_open", False))
+        except _AlpacaCircuitOpenError:
+            # CB is protecting us — use local time as fallback so the UI
+            # doesn't incorrectly show MARKET CLOSED during trading hours.
+            return _local_market_is_open()
         except Exception as e:
             logger.warning("is_market_open check failed: %s — assuming closed", e)
             return False
@@ -319,6 +359,10 @@ class AlpacaClient:
             bars = resp.get("bars") or []
             logger.debug("Got %d bars for %s %s", len(bars), symbol, timeframe)
             return bars, False          # success — possibly empty list
+        except _AlpacaCircuitOpenError:
+            # Circuit is protecting us — silent skip, no error log
+            logger.debug("get_bars(%s, %s) skipped — CB active", symbol, timeframe)
+            return [], True
         except Exception as e:
             logger.error("get_bars(%s, %s) failed: %s", symbol, timeframe, e)
             return [], True             # API error — caller should skip this TF
@@ -436,6 +480,10 @@ class AlpacaClient:
                 "get_session_bars: no bars for %s on %s — trying 2-day window",
                 symbol, session_date,
             )
+        except _AlpacaCircuitOpenError:
+            # Circuit breaker active — skip silently, no error log
+            logger.debug("get_session_bars(%s, %s) skipped — CB active", symbol, timeframe)
+            return [], True, False
         except Exception as e:
             _e_str = str(e)
             # 403 on SIP feed = free-tier key; retry immediately with IEX feed
