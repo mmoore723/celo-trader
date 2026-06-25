@@ -1,15 +1,17 @@
 /**
  * TradingChart.tsx — TradingView Lightweight Charts v5 wrapper.
  *
- * Overlays ported from lightweight_chart.py (Streamlit version):
+ * Overlays:
  *   - Candlesticks with gold highlight on breakout-volume bars (RVOL ≥ 2×)
- *   - Volume histogram with rolling-average line + 200% gate level
- *   - VWAP line (blue)
- *   - VWAP ±1σ / ±2σ bands (lighter fills)
- *   - Opening Range high/low dashed lines
- *   - Swing structure markers: SH / SL computed from local pivots
- *   - Open position price lines: Entry (yellow) / Stop (red) / Target (green) / Trail (purple)
- *   - Trade entry/exit markers with floating tooltip on hover
+ *   - Volume histogram with rolling-average line
+ *   - VWAP line + ±1σ / ±2σ bands
+ *   - Opening Range high/low as price lines (labeled on axis: "OR Hi" / "OR Lo")
+ *   - Swing structure markers: HH / HL / LH / LL from consecutive pivot comparison
+ *   - Open position price lines: Entry / Stop / Target / Trail
+ *   - Position indicator card (TradingView-style) — toggleable
+ *   - Trade entry/exit markers with crosshair tooltip
+ *
+ * Chart axis shows 12h AM/PM time (not military).
  */
 import { useEffect, useRef } from "react";
 import {
@@ -21,6 +23,7 @@ import {
   CrosshairMode,
   ColorType,
   LineStyle,
+  TickMarkType,
 } from "lightweight-charts";
 import type {
   IChartApi,
@@ -61,7 +64,6 @@ interface Props {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toTime(iso: string): Time {
-  // LWC expects epoch seconds for intraday data
   return (new Date(iso).getTime() / 1000) as Time;
 }
 
@@ -74,36 +76,38 @@ function colors(dark: boolean) {
     up:           dark ? "#3fb950" : "#16a34a",
     down:         dark ? "#f85149" : "#dc2626",
     vwap:         dark ? "#58a6ff" : "#2563eb",
-    vwapBand1:    dark ? "#58a6ffaa" : "#2563eb77",  // ±1σ — more visible
-    vwapBand2:    dark ? "#58a6ff55" : "#2563eb44",  // ±2σ
-    orHigh:       dark ? "#4ade80" : "#16a34a",      // bright green
-    orLow:        dark ? "#f87171" : "#dc2626",      // bright red
+    vwapBand1:    dark ? "#58a6ffcc" : "#2563eb99",   // ±1σ — solid, visible
+    vwapBand2:    dark ? "#58a6ff66" : "#2563eb55",   // ±2σ — lighter
+    orHigh:       dark ? "#4ade80" : "#16a34a",       // bright green
+    orLow:        dark ? "#f87171" : "#dc2626",       // bright red
     volAvg:       dark ? "#9ca3af" : "#6b7280",
-    volGate:      dark ? "#f59e0b55" : "#d9770644",  // 200% gate — amber
-    swingH:       dark ? "#f85149" : "#dc2626",      // SH / LH — red
-    swingL:       dark ? "#3fb950" : "#16a34a",      // SL / HL — green
-    breakout:     "#f59e0b",                          // gold candle border
-    entry:        "#eab308",                          // yellow
-    stop:         "#dc2626",                          // red
-    target:       "#16a34a",                          // green
-    trail:        "#9333ea",                          // purple
-    buyMarker:    "#38bdf8",                          // sky blue
-    sellMarker:   "#e879f9",                          // pink/purple
+    breakout:     "#f59e0b",                           // gold
+    entry:        "#eab308",                           // yellow
+    stop:         "#dc2626",                           // red
+    target:       "#16a34a",                           // green
+    trail:        "#9333ea",                           // purple
+    buyMarker:    "#38bdf8",                           // sky blue
+    sellMarker:   "#e879f9",                           // pink/purple
+    swingHH:      dark ? "#f85149" : "#dc2626",       // HH/LH — red family
+    swingHL:      dark ? "#3fb950" : "#16a34a",       // HL/LL — green family
   };
 }
 
-// ─── Pivot swing detection ─────────────────────────────────────────────────
-// Returns simple SH/SL: a bar is an SH if its high is higher than the
-// `lookback` bars on each side, SL if its low is lower.
+// ─── Swing detection with HH / HL / LH / LL classification ───────────────────
+
 interface SwingPoint {
   idx: number;
   time: Time;
   price: number;
   kind: "SH" | "SL";
+  label: string;   // HH | LH | HL | LL (or SH/SL for first occurrence)
 }
 
 function detectSwings(bars: Bar[], lookback = 3): SwingPoint[] {
-  const out: SwingPoint[] = [];
+  // 1. Find raw pivots
+  const rawHighs: { idx: number; time: Time; price: number }[] = [];
+  const rawLows:  { idx: number; time: Time; price: number }[] = [];
+
   for (let i = lookback; i < bars.length - lookback; i++) {
     const b = bars[i];
     let isHigh = true, isLow = true;
@@ -112,13 +116,47 @@ function detectSwings(bars: Bar[], lookback = 3): SwingPoint[] {
       if (bars[j].high >= b.high) isHigh = false;
       if (bars[j].low  <= b.low)  isLow  = false;
     }
-    if (isHigh) out.push({ idx: i, time: toTime(b.time), price: b.high, kind: "SH" });
-    if (isLow)  out.push({ idx: i, time: toTime(b.time), price: b.low,  kind: "SL" });
+    if (isHigh) rawHighs.push({ idx: i, time: toTime(b.time), price: b.high });
+    if (isLow)  rawLows.push( { idx: i, time: toTime(b.time), price: b.low  });
   }
+
+  // 2. Classify consecutive highs: compare each to the one before it
+  const out: SwingPoint[] = [];
+
+  let prevHighPrice: number | null = null;
+  for (const h of rawHighs) {
+    let label: string;
+    if (prevHighPrice === null) {
+      label = "SH";            // first pivot — no comparison yet
+    } else if (h.price > prevHighPrice) {
+      label = "HH";            // higher high → bullish structure
+    } else {
+      label = "LH";            // lower high → bearish pressure
+    }
+    prevHighPrice = h.price;
+    out.push({ ...h, kind: "SH", label });
+  }
+
+  let prevLowPrice: number | null = null;
+  for (const l of rawLows) {
+    let label: string;
+    if (prevLowPrice === null) {
+      label = "SL";            // first pivot
+    } else if (l.price > prevLowPrice) {
+      label = "HL";            // higher low → bullish structure
+    } else {
+      label = "LL";            // lower low → bearish
+    }
+    prevLowPrice = l.price;
+    out.push({ ...l, kind: "SL", label });
+  }
+
+  // Sort by bar index so markers are in chronological order
+  out.sort((a, b) => a.idx - b.idx);
   return out;
 }
 
-// ─── Rolling mean ─────────────────────────────────────────────────────────
+// ─── Rolling mean ─────────────────────────────────────────────────────────────
 function rollingMean(arr: number[], n: number): (number | null)[] {
   return arr.map((_, i) => {
     if (i < n - 1) return null;
@@ -154,11 +192,11 @@ export function TradingChart({
   const vwapL1Ref    = useRef<ISeriesApi<"Line"> | null>(null);
   const vwapU2Ref    = useRef<ISeriesApi<"Line"> | null>(null);
   const vwapL2Ref    = useRef<ISeriesApi<"Line"> | null>(null);
-  const orHighRef    = useRef<ISeriesApi<"Line"> | null>(null);
-  const orLowRef     = useRef<ISeriesApi<"Line"> | null>(null);
 
-  // price-line refs (position levels)
-  const priceLineRefs = useRef<IPriceLine[]>([]);
+  // price-line refs: position levels (entry/stop/target/trail)
+  const priceLineRefs    = useRef<IPriceLine[]>([]);
+  // price-line refs: OR hi/lo (replaced from LineSeries → label shows on axis)
+  const orPriceLineRefs  = useRef<IPriceLine[]>([]);
 
   // tooltip div ref
   const tooltipRef = useRef<HTMLDivElement | null>(null);
@@ -167,7 +205,7 @@ export function TradingChart({
   const dark = theme === "dark";
   const C = colors(dark);
 
-  // ── Build chart on mount / theme change ─────────────────────────────────
+  // ── Build chart on mount / theme change ──────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -190,32 +228,35 @@ export function TradingChart({
         borderColor: C.border,
         timeVisible: true,
         secondsVisible: false,
-      },
-      localization: {
-        // Convert 24h epoch seconds to 12h AM/PM format
-        timeFormatter: (epochSec: number) => {
+        // 12-hour AM/PM axis labels — override the default 24h display
+        tickMarkFormatter: (time: Time, tickMarkType: TickMarkType) => {
+          const epochSec = time as number;
           const d = new Date(epochSec * 1000);
-          let h = d.getHours();
-          const m = String(d.getMinutes()).padStart(2, "0");
-          const ampm = h >= 12 ? "PM" : "AM";
-          h = h % 12 || 12;
-          return `${h}:${m} ${ampm}`;
+          if (tickMarkType === TickMarkType.Time) {
+            let h = d.getHours();
+            const m = String(d.getMinutes()).padStart(2, "0");
+            const ampm = h >= 12 ? "PM" : "AM";
+            h = h % 12 || 12;
+            return `${h}:${m} ${ampm}`;
+          }
+          // Day / Month / Year marks → show as M/D
+          return `${d.getMonth() + 1}/${d.getDate()}`;
         },
       },
     });
     chartRef.current = chart;
 
-    // ── Candles ───────────────────────────────────────────────────────────
+    // ── Candles ─────────────────────────────────────────────────────────────
     candleRef.current = chart.addSeries(CandlestickSeries, {
-      upColor:        C.up,
-      downColor:      C.down,
-      borderUpColor:  C.up,
+      upColor:         C.up,
+      downColor:       C.down,
+      borderUpColor:   C.up,
       borderDownColor: C.down,
-      wickUpColor:    C.up,
-      wickDownColor:  C.down,
+      wickUpColor:     C.up,
+      wickDownColor:   C.down,
     }) as unknown as ISeriesApi<"Candlestick">;
 
-    // ── Volume histogram ───────────────────────────────────────────────────
+    // ── Volume histogram ─────────────────────────────────────────────────────
     volRef.current = chart.addSeries(HistogramSeries, {
       color: C.grid,
       priceFormat: { type: "volume" },
@@ -223,7 +264,6 @@ export function TradingChart({
     }) as unknown as ISeriesApi<"Histogram">;
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
 
-    // Volume rolling average on its own overlay scale
     volAvgRef.current = chart.addSeries(LineSeries, {
       color: C.volAvg, lineWidth: 1, lineStyle: LineStyle.Dashed,
       priceFormat: { type: "volume" },
@@ -231,13 +271,13 @@ export function TradingChart({
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
-    // ── VWAP ──────────────────────────────────────────────────────────────
+    // ── VWAP ────────────────────────────────────────────────────────────────
     vwapRef.current = chart.addSeries(LineSeries, {
       color: C.vwap, lineWidth: 2,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
-    // ── VWAP bands (±2σ outer, ±1σ inner) ────────────────────────────────
+    // ── VWAP bands (±2σ outer, ±1σ inner) ───────────────────────────────────
     vwapU2Ref.current = chart.addSeries(LineSeries, {
       color: C.vwapBand2, lineWidth: 1, lineStyle: LineStyle.Dashed,
       priceLineVisible: false, crosshairMarkerVisible: false,
@@ -249,27 +289,16 @@ export function TradingChart({
     }) as unknown as ISeriesApi<"Line">;
 
     vwapU1Ref.current = chart.addSeries(LineSeries, {
-      color: C.vwapBand1, lineWidth: 2, lineStyle: LineStyle.Dashed,
+      color: C.vwapBand1, lineWidth: 2, lineStyle: LineStyle.Solid,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
     vwapL1Ref.current = chart.addSeries(LineSeries, {
-      color: C.vwapBand1, lineWidth: 2, lineStyle: LineStyle.Dashed,
+      color: C.vwapBand1, lineWidth: 2, lineStyle: LineStyle.Solid,
       priceLineVisible: false, crosshairMarkerVisible: false,
     }) as unknown as ISeriesApi<"Line">;
 
-    // ── Opening Range — solid + thick so they're clearly visible ──────────
-    orHighRef.current = chart.addSeries(LineSeries, {
-      color: C.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid,
-      priceLineVisible: false, crosshairMarkerVisible: false,
-    }) as unknown as ISeriesApi<"Line">;
-
-    orLowRef.current = chart.addSeries(LineSeries, {
-      color: C.orLow, lineWidth: 2, lineStyle: LineStyle.Solid,
-      priceLineVisible: false, crosshairMarkerVisible: false,
-    }) as unknown as ISeriesApi<"Line">;
-
-    // ── Resize observer ───────────────────────────────────────────────────
+    // ── Resize observer ──────────────────────────────────────────────────────
     const ro = new ResizeObserver(() => {
       containerRef.current &&
         chart.applyOptions({ width: containerRef.current.clientWidth });
@@ -288,21 +317,19 @@ export function TradingChart({
       vwapL1Ref.current   = null;
       vwapU2Ref.current   = null;
       vwapL2Ref.current   = null;
-      orHighRef.current   = null;
-      orLowRef.current    = null;
-      priceLineRefs.current = [];
+      priceLineRefs.current   = [];
+      orPriceLineRefs.current = [];
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [height, dark]);
 
-  // ── Feed data & overlays on bars / props change ────────────────────────
+  // ── Feed data & overlays on bars / props change ───────────────────────────
   useEffect(() => {
     if (!candleRef.current || !bars.length) return;
 
-    // Compute per-bar breakout flag (RVOL ≥ 2.0 = gold candle)
     const breakoutThreshold = 2.0;
 
-    // ── Candles ───────────────────────────────────────────────────────────
+    // ── Candles ──────────────────────────────────────────────────────────────
     candleRef.current.setData(
       bars.map((b) => {
         const isBreakout = (b.rvol ?? 0) >= breakoutThreshold;
@@ -312,7 +339,6 @@ export function TradingChart({
           high:             b.high,
           low:              b.low,
           close:            b.close,
-          // Gold border on breakout-volume bars
           borderUpColor:    isBreakout ? C.breakout : C.up,
           borderDownColor:  isBreakout ? C.breakout : C.down,
           wickUpColor:      isBreakout ? C.breakout : C.up,
@@ -321,18 +347,16 @@ export function TradingChart({
       })
     );
 
-    // ── Volume + rolling average ──────────────────────────────────────────
+    // ── Volume + rolling average ─────────────────────────────────────────────
     const vols = bars.map((b) => b.volume);
     const avgWindow = Math.min(20, bars.length);
     const avgVol = rollingMean(vols, avgWindow);
 
     volRef.current?.setData(
       bars.map((b) => {
-        // Gold tint on breakout bars, else standard up/down colour
         const isBreakout = (b.rvol ?? 0) >= breakoutThreshold;
         const base = b.close >= b.open ? C.up : C.down;
-        const color = isBreakout ? C.breakout + "bb" : base + "55";
-        return { time: toTime(b.time), value: b.volume, color };
+        return { time: toTime(b.time), value: b.volume, color: isBreakout ? C.breakout + "bb" : base + "55" };
       })
     );
 
@@ -342,27 +366,19 @@ export function TradingChart({
         .filter(Boolean) as { time: Time; value: number }[]
     );
 
-    // ── VWAP line ─────────────────────────────────────────────────────────
+    // ── VWAP line ────────────────────────────────────────────────────────────
     vwapRef.current?.setData(
       showVwap
         ? bars.filter((b) => b.vwap != null).map((b) => ({ time: toTime(b.time), value: b.vwap! }))
         : []
     );
 
-    // ── VWAP bands ────────────────────────────────────────────────────────
+    // ── VWAP bands ───────────────────────────────────────────────────────────
     if (showVwap && showVwapBands) {
-      vwapU1Ref.current?.setData(
-        bars.filter((b) => b.vwap_upper1 != null).map((b) => ({ time: toTime(b.time), value: b.vwap_upper1! }))
-      );
-      vwapL1Ref.current?.setData(
-        bars.filter((b) => b.vwap_lower1 != null).map((b) => ({ time: toTime(b.time), value: b.vwap_lower1! }))
-      );
-      vwapU2Ref.current?.setData(
-        bars.filter((b) => b.vwap_upper2 != null).map((b) => ({ time: toTime(b.time), value: b.vwap_upper2! }))
-      );
-      vwapL2Ref.current?.setData(
-        bars.filter((b) => b.vwap_lower2 != null).map((b) => ({ time: toTime(b.time), value: b.vwap_lower2! }))
-      );
+      vwapU1Ref.current?.setData(bars.filter((b) => b.vwap_upper1 != null).map((b) => ({ time: toTime(b.time), value: b.vwap_upper1! })));
+      vwapL1Ref.current?.setData(bars.filter((b) => b.vwap_lower1 != null).map((b) => ({ time: toTime(b.time), value: b.vwap_lower1! })));
+      vwapU2Ref.current?.setData(bars.filter((b) => b.vwap_upper2 != null).map((b) => ({ time: toTime(b.time), value: b.vwap_upper2! })));
+      vwapL2Ref.current?.setData(bars.filter((b) => b.vwap_lower2 != null).map((b) => ({ time: toTime(b.time), value: b.vwap_lower2! })));
     } else {
       vwapU1Ref.current?.setData([]);
       vwapL1Ref.current?.setData([]);
@@ -370,18 +386,39 @@ export function TradingChart({
       vwapL2Ref.current?.setData([]);
     }
 
-    // ── Opening Range ─────────────────────────────────────────────────────
-    if (showOR && orHigh != null && orLow != null && bars.length) {
-      const first = toTime(bars[0].time);
-      const last  = toTime(bars[bars.length - 1].time);
-      orHighRef.current?.setData([{ time: first, value: orHigh }, { time: last, value: orHigh }]);
-      orLowRef.current?.setData( [{ time: first, value: orLow  }, { time: last, value: orLow  }]);
-    } else {
-      orHighRef.current?.setData([]);
-      orLowRef.current?.setData([]);
+    // ── Opening Range — now as price lines (gives labeled axis + full-width line)
+    // Remove old OR price lines first
+    for (const pl of orPriceLineRefs.current) {
+      try { candleRef.current?.removePriceLine(pl); } catch (_) { /* already gone */ }
+    }
+    orPriceLineRefs.current = [];
+
+    if (showOR && candleRef.current) {
+      if (orHigh != null) {
+        const pl = candleRef.current.createPriceLine({
+          price:            orHigh,
+          color:            C.orHigh,
+          lineWidth:        2,
+          lineStyle:        LineStyle.Solid,
+          axisLabelVisible: true,
+          title:            "OR Hi",
+        });
+        orPriceLineRefs.current.push(pl);
+      }
+      if (orLow != null) {
+        const pl = candleRef.current.createPriceLine({
+          price:            orLow,
+          color:            C.orLow,
+          lineWidth:        2,
+          lineStyle:        LineStyle.Solid,
+          axisLabelVisible: true,
+          title:            "OR Lo",
+        });
+        orPriceLineRefs.current.push(pl);
+      }
     }
 
-    // ── Swing structure markers ────────────────────────────────────────────
+    // ── Swing structure + trade markers ─────────────────────────────────────
     const tradeMarkers: SeriesMarker<Time>[] = [];
 
     // Trade BUY/SELL markers
@@ -398,17 +435,24 @@ export function TradingChart({
       });
     }
 
-    // Swing SH / SL markers (if enabled)
+    // Swing HH / HL / LH / LL markers
     if (showSwings) {
       const swings = detectSwings(bars, 3);
       for (const sw of swings) {
+        const isHigh = sw.kind === "SH";
+        // Color: HH/HL get their structural color; LH/LL get inverted
+        let color: string;
+        if (sw.label === "HH" || sw.label === "HL") color = C.swingHL;
+        else if (sw.label === "LH" || sw.label === "LL") color = C.swingHH;
+        else color = isHigh ? C.swingHH : C.swingHL;   // SH/SL (first)
+
         tradeMarkers.push({
           time:     sw.time,
-          position: sw.kind === "SH" ? "aboveBar" : "belowBar",
-          color:    sw.kind === "SH" ? C.swingH : C.swingL,
-          shape:    sw.kind === "SH" ? "arrowDown" : "arrowUp",
-          text:     sw.kind,
-          size:     0,   // tiny — doesn't compete with trade markers
+          position: isHigh ? "aboveBar" : "belowBar",
+          color,
+          shape:    isHigh ? "arrowDown" : "arrowUp",
+          text:     sw.label,
+          size:     0,
         });
       }
     }
@@ -416,8 +460,7 @@ export function TradingChart({
     tradeMarkers.sort((a, b) => (a.time as number) - (b.time as number));
     createSeriesMarkers(candleRef.current, tradeMarkers);
 
-    // ── Position price lines ──────────────────────────────────────────────
-    // Remove old lines first
+    // ── Position price lines (entry/stop/target/trail) ───────────────────────
     if (candleRef.current) {
       for (const pl of priceLineRefs.current) {
         try { candleRef.current.removePriceLine(pl); } catch (_) { /* already removed */ }
@@ -425,7 +468,6 @@ export function TradingChart({
       priceLineRefs.current = [];
 
       if (positionLevels) {
-        // Only iterate the numeric price keys — not direction/contracts
         type PriceKey = "entry" | "stop" | "target" | "trail";
         const defs: { key: PriceKey; color: string; label: string; dash: boolean }[] = [
           { key: "entry",  color: C.entry,  label: "Entry",  dash: false },
@@ -459,7 +501,6 @@ export function TradingChart({
     const candle = candleRef.current;
     if (!chart || !candle || !trades.length) return;
 
-    // Build a lookup of timestamp → trade info
     const lookup = new Map<number, string>();
     for (const t of trades) {
       if (t.entry_time) {
@@ -476,8 +517,7 @@ export function TradingChart({
       const tt = tooltipRef.current;
       if (!tt) return;
       if (!param.time) { tt.style.display = "none"; return; }
-      const ts = param.time as number;
-      const label = lookup.get(ts);
+      const label = lookup.get(param.time as number);
       if (!label) { tt.style.display = "none"; return; }
       tt.textContent = label;
       tt.style.display = "block";
@@ -488,7 +528,6 @@ export function TradingChart({
   }, [trades]);
 
   // ── Position overlay card ─────────────────────────────────────────────────
-  // Shown when an open trade is active — mirrors TradingView's Long/Short tool
   const posCard = (() => {
     const pl = positionLevels;
     if (!pl?.entry) return null;
@@ -509,8 +548,7 @@ export function TradingChart({
       <div
         style={{
           position: "absolute",
-          top: 36,
-          left: 8,
+          top: 36, left: 8,
           zIndex: 20,
           pointerEvents: "none",
           fontFamily: "JetBrains Mono, monospace",
@@ -523,17 +561,12 @@ export function TradingChart({
       >
         {/* Direction badge */}
         <div style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
+          display: "inline-flex", alignItems: "center", gap: 6,
           background: isLong ? "rgba(63,185,80,0.18)" : "rgba(248,81,73,0.18)",
           border: `1px solid ${isLong ? C.target : C.stop}`,
-          borderRadius: 4,
-          padding: "2px 8px",
+          borderRadius: 4, padding: "2px 8px",
           color: isLong ? C.target : C.stop,
-          fontWeight: 700,
-          fontSize: 10,
-          letterSpacing: "0.08em",
+          fontWeight: 700, fontSize: 10, letterSpacing: "0.08em",
         }}>
           {isLong ? "▲ LONG" : "▼ SHORT"}
           {pl.contracts ? ` · ${pl.contracts} contract${pl.contracts > 1 ? "s" : ""}` : ""}
@@ -541,64 +574,34 @@ export function TradingChart({
 
         {/* Stop row */}
         {pl.stop && (
-          <div style={{
-            background: "rgba(248,81,73,0.12)",
-            border: "1px solid rgba(248,81,73,0.40)",
-            borderRadius: 3,
-            padding: "3px 8px",
-          }}>
+          <div style={{ background: "rgba(248,81,73,0.12)", border: "1px solid rgba(248,81,73,0.40)", borderRadius: 3, padding: "3px 8px" }}>
             <span style={{ color: C.stop, fontWeight: 600 }}>STP</span>
-            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}>
-              {" "}{fmt(pl.stop)} ({fmtPct(stopPct)})
-            </span>
-            {riskDol != null && (
-              <span style={{ color: C.stop }}> · -${fmt(riskDol)}</span>
-            )}
+            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.stop)} ({fmtPct(stopPct)})</span>
+            {riskDol != null && <span style={{ color: C.stop }}> · -${fmt(riskDol)}</span>}
           </div>
         )}
 
         {/* Entry row */}
-        <div style={{
-          background: "rgba(234,179,8,0.10)",
-          border: "1px solid rgba(234,179,8,0.35)",
-          borderRadius: 3,
-          padding: "3px 8px",
-        }}>
+        <div style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.35)", borderRadius: 3, padding: "3px 8px" }}>
           <span style={{ color: C.entry, fontWeight: 600 }}>ENT</span>
-          <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}>{" "}{fmt(pl.entry)}</span>
-          {rr != null && (
-            <span style={{ color: "var(--ink-muted)" }}> · R:R {rr.toFixed(2)}</span>
-          )}
+          <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.entry)}</span>
+          {rr != null && <span style={{ color: "var(--ink-muted)" }}> · R:R {rr.toFixed(2)}</span>}
         </div>
 
         {/* Target row */}
         {pl.target && (
-          <div style={{
-            background: "rgba(63,185,80,0.10)",
-            border: "1px solid rgba(63,185,80,0.35)",
-            borderRadius: 3,
-            padding: "3px 8px",
-          }}>
+          <div style={{ background: "rgba(63,185,80,0.10)", border: "1px solid rgba(63,185,80,0.35)", borderRadius: 3, padding: "3px 8px" }}>
             <span style={{ color: C.target, fontWeight: 600 }}>TGT</span>
-            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}>
-              {" "}{fmt(pl.target)} ({fmtPct(tgtPct)})
-            </span>
-            {rewDol != null && (
-              <span style={{ color: C.target }}> · +${fmt(rewDol)}</span>
-            )}
+            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.target)} ({fmtPct(tgtPct)})</span>
+            {rewDol != null && <span style={{ color: C.target }}> · +${fmt(rewDol)}</span>}
           </div>
         )}
 
         {/* Trail row */}
         {pl.trail && (
-          <div style={{
-            background: "rgba(147,51,234,0.10)",
-            border: "1px solid rgba(147,51,234,0.35)",
-            borderRadius: 3,
-            padding: "3px 8px",
-          }}>
+          <div style={{ background: "rgba(147,51,234,0.10)", border: "1px solid rgba(147,51,234,0.35)", borderRadius: 3, padding: "3px 8px" }}>
             <span style={{ color: C.trail, fontWeight: 600 }}>TRL</span>
-            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}>{" "}{fmt(pl.trail)}</span>
+            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.trail)}</span>
           </div>
         )}
       </div>
@@ -619,8 +622,10 @@ export function TradingChart({
       <div className="absolute top-2 right-3 z-10 flex gap-2 text-[10px] font-mono select-none pointer-events-none"
            style={{ color: "var(--ink-muted)" }}>
         {showVwap && <span style={{ color: C.vwap }}>VWAP</span>}
-        {showOR   && <span style={{ color: C.orHigh }}>OR▲</span>}
-        {showOR   && <span style={{ color: C.orLow  }}>OR▼</span>}
+        {showVwap && showVwapBands && <span style={{ color: C.vwapBand1 }}>±1σ</span>}
+        {showVwap && showVwapBands && <span style={{ color: C.vwapBand2 }}>±2σ</span>}
+        {showOR   && orHigh != null && <span style={{ color: C.orHigh }}>OR Hi</span>}
+        {showOR   && orLow  != null && <span style={{ color: C.orLow  }}>OR Lo</span>}
       </div>
 
       {/* Position indicator card — appears when a trade is open and toggle is on */}
@@ -633,19 +638,13 @@ export function TradingChart({
       <div
         ref={tooltipRef}
         style={{
-          display:    "none",
-          position:   "absolute",
-          bottom:     40,
-          left:       60,
+          display: "none", position: "absolute",
+          bottom: 40, left: 60,
           background: dark ? "#1c2128" : "#f6f8fa",
-          border:     `1px solid ${C.border}`,
-          borderRadius: 4,
-          padding:    "4px 8px",
-          fontSize:   11,
-          fontFamily: "JetBrains Mono, monospace",
-          color:      C.text,
-          pointerEvents: "none",
-          zIndex:     20,
+          border: `1px solid ${C.border}`,
+          borderRadius: 4, padding: "4px 8px",
+          fontSize: 11, fontFamily: "JetBrains Mono, monospace",
+          color: C.text, pointerEvents: "none", zIndex: 20,
         }}
       />
     </div>

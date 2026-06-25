@@ -2,7 +2,7 @@
  * LiveTrading.tsx — Main trading cockpit.
  * Real-time chart, open positions, bot eval log, scanner with mini sparklines.
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import {
@@ -75,6 +75,9 @@ export function LiveTrading() {
   const [showPositionCard,setShowPositionCard]= useState(true);
   // Which scanner ticker is expanded (shows mini charts)
   const [expandedScanner, setExpandedScanner] = useState<string | null>(null);
+  // Bot thinking: pause log scroll when user hovers inside the panel
+  const [logPaused,     setLogPaused]     = useState(false);
+  const logSnapshotRef  = useRef<typeof logs>([]);
 
   const { status, logs } = useBotStore();
 
@@ -440,16 +443,28 @@ export function LiveTrading() {
         {/* Bot eval log */}
         <div className="card flex flex-col">
           <div
-            className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
+            className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider flex items-center justify-between"
             style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
           >
-            Bot Thinking
+            <span>Bot Thinking</span>
+            {logPaused && (
+              <span className="badge badge-blue text-[9px] animate-pulse">⏸ PAUSED</span>
+            )}
           </div>
           <div
             className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs"
-            style={{ maxHeight: 280 }}
+            style={{ maxHeight: 280, cursor: logPaused ? "text" : "default" }}
+            onMouseEnter={() => {
+              // Snapshot current logs and freeze display
+              logSnapshotRef.current = [...logs];
+              setLogPaused(true);
+            }}
+            onMouseLeave={() => {
+              // Resume live feed — snapshot is cleared automatically
+              setLogPaused(false);
+            }}
           >
-            {logs.slice(0, 80).map((entry, i) => {
+            {(logPaused ? logSnapshotRef.current : logs).slice(0, 80).map((entry, i) => {
               const lvl = (entry.level ?? "INFO").toUpperCase();
               const color =
                 lvl === "ERROR"   ? "var(--negative)" :

@@ -34,7 +34,17 @@ const DEFAULT: AppSettings = {
   chan_break_enabled: true,
   mid_brk_enabled: true,
   trend_cont_enabled: true,
+  display_timezone: "America/New_York",
 };
+
+const TIMEZONES = [
+  { value: "America/New_York",    label: "Eastern (ET) — NYSE hours" },
+  { value: "America/Chicago",     label: "Central (CT)" },
+  { value: "America/Denver",      label: "Mountain (MT)" },
+  { value: "America/Los_Angeles", label: "Pacific (PT)" },
+  { value: "America/Phoenix",     label: "Arizona (MST, no DST)" },
+  { value: "UTC",                 label: "UTC" },
+];
 
 export function Settings() {
   const [form, setForm] = useState<AppSettings>(DEFAULT);
@@ -147,6 +157,28 @@ export function Settings() {
                 onChange={(v) => set("mid_brk_enabled", v)} />
         <Toggle label="Trend Continuation / TREND_CONT (9:45 AM – 2:30 PM)" checked={form.trend_cont_enabled}
                 onChange={(v) => set("trend_cont_enabled", v)} />
+      </div>
+
+      {/* Display */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Display</h3>
+        <div className="flex items-center justify-between gap-4">
+          <label className="text-sm" style={{ color: "var(--ink)" }}>
+            Timezone
+            <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+              Used for chart timestamps and log times
+            </span>
+          </label>
+          <select
+            className="select w-56"
+            value={form.display_timezone ?? "America/New_York"}
+            onChange={(e) => set("display_timezone", e.target.value)}
+          >
+            {TIMEZONES.map((tz) => (
+              <option key={tz.value} value={tz.value}>{tz.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Watchlist */}

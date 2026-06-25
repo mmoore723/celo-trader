@@ -107,6 +107,7 @@ export interface AppSettings {
   chan_break_enabled: boolean;
   mid_brk_enabled: boolean;
   trend_cont_enabled: boolean;
+  display_timezone?: string;   // e.g. "America/New_York" | "America/Chicago" | "America/Los_Angeles"
 }
 
 export interface PerformanceStats {
