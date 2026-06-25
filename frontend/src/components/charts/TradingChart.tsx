@@ -198,6 +198,10 @@ export function TradingChart({
   // price-line refs: OR hi/lo (replaced from LineSeries → label shows on axis)
   const orPriceLineRefs  = useRef<IPriceLine[]>([]);
 
+  // Mutable ref so the autoscaleInfoProvider closure always reads the latest
+  // OR values without requiring the chart to be recreated when they change.
+  const orRef = useRef<{ high: number | null; low: number | null }>({ high: null, low: null });
+
   // tooltip div ref
   const tooltipRef = useRef<HTMLDivElement | null>(null);
 
@@ -259,6 +263,25 @@ export function TradingChart({
       borderDownColor: C.down,
       wickUpColor:     C.up,
       wickDownColor:   C.down,
+      // Extend auto-scale to include OR Hi/Lo so those lines are never
+      // clipped to the top/bottom edge of the chart.  orRef is a mutable
+      // ref (not state) so this closure always reads the latest values
+      // without triggering a chart rebuild.
+      autoscaleInfoProvider: (original) => {
+        const base = original();
+        const { high: orHi, low: orLo } = orRef.current;
+        if (!base || (orHi == null && orLo == null)) return base;
+        const minVal = orLo != null
+          ? Math.min(base.priceRange.minValue, orLo)
+          : base.priceRange.minValue;
+        const maxVal = orHi != null
+          ? Math.max(base.priceRange.maxValue, orHi)
+          : base.priceRange.maxValue;
+        return {
+          priceRange: { minValue: minVal, maxValue: maxVal },
+          margins: base.margins,
+        };
+      },
     }) as unknown as ISeriesApi<"Candlestick">;
 
     // ── Volume histogram ─────────────────────────────────────────────────────
@@ -392,6 +415,11 @@ export function TradingChart({
     }
 
     // ── Opening Range — now as price lines (gives labeled axis + full-width line)
+    // Update the mutable ref so autoscaleInfoProvider always has current values.
+    // This is what keeps OR Hi/Lo inside the visible chart area instead of being
+    // clipped to the top/bottom edge when price has moved away from the OR.
+    orRef.current = { high: orHigh ?? null, low: orLow ?? null };
+
     // Remove old OR price lines first
     for (const pl of orPriceLineRefs.current) {
       try { candleRef.current?.removePriceLine(pl); } catch (_) { /* already gone */ }
