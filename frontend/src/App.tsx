@@ -18,9 +18,14 @@ import { DailyBrief }  from "./pages/DailyBrief";
 const qc = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,          // treat data as fresh for 30s — reduces redundant fetches on tab switch
+      staleTime: 5 * 60_000,      // data is fresh for 5 min — switching tabs within 5 min
+                                  // always uses the cache instantly with no loading state
+      gcTime:    10 * 60_000,     // keep unused cache for 10 min so back-nav is instant
       retry: 1,                   // one retry max; avoid 3s backoff delay on tab click
       refetchOnWindowFocus: false, // clicking a tab re-focuses the window → was triggering mass refetch
+      // Keep showing previous data while a background refetch runs.
+      // Without this, every tab switch after staleTime shows a blank skeleton.
+      placeholderData: (prev: unknown) => prev,
     },
   },
 });

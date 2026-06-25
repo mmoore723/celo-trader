@@ -26,13 +26,16 @@ export function Performance() {
   const { theme } = useThemeStore();
   const dark = theme === "dark";
 
-  const { data: perf, isLoading } = useQuery({
+  const { data: perf, isLoading, isFetching } = useQuery({
     queryKey: ["performance", mode],
     queryFn: () => api.trades.performance(mode),
     refetchInterval: 30_000,
   });
 
-  if (isLoading) return <PageLoader label="Performance" />;
+  // Only block the full page on the very first load (no cached data at all).
+  // Subsequent refreshes show stale data while fetching — no skeleton flash.
+  if (isLoading && !perf) return <PageLoader label="Performance" />;
+  void isFetching; // available if we want a subtle refresh indicator later
 
   const daily = perf?.daily_summaries ?? [];
 

@@ -226,9 +226,9 @@ export function TradingChart({
       // Explicitly enable zoom + scroll so they work even inside a
       // scrollable parent (the page's overflow-y:auto .app-main container
       // would otherwise steal wheel events and scroll the page instead).
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
-      handleScale:  { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
-      rightPriceScale: { borderColor: C.border },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
+      handleScale:  { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true } },
+      rightPriceScale: { borderColor: C.border, autoScale: true },
       timeScale: {
         borderColor: C.border,
         timeVisible: true,
@@ -627,14 +627,38 @@ export function TradingChart({
         </div>
       )}
 
-      {/* Overlay legend */}
-      <div className="absolute top-2 right-3 z-10 flex gap-2 text-[10px] font-mono select-none pointer-events-none"
+      {/* Overlay legend + Fit button */}
+      <div className="absolute top-2 right-3 z-10 flex items-center gap-2 text-[10px] font-mono select-none"
            style={{ color: "var(--ink-muted)" }}>
-        {showVwap && <span style={{ color: C.vwap }}>VWAP</span>}
-        {showVwap && showVwapBands && <span style={{ color: C.vwapBand1 }}>±1σ</span>}
-        {showVwap && showVwapBands && <span style={{ color: C.vwapBand2 }}>±2σ</span>}
-        {showOR   && orHigh != null && <span style={{ color: C.orHigh }}>OR Hi</span>}
-        {showOR   && orLow  != null && <span style={{ color: C.orLow  }}>OR Lo</span>}
+        {/* Fit-to-content button — centers & scales all visible bars */}
+        <button
+          title="Fit chart to data (reset zoom & center)"
+          onClick={() => {
+            if (!chartRef.current) return;
+            chartRef.current.timeScale().fitContent();
+            // Reset price scale auto-scaling so the full price range is visible
+            chartRef.current.priceScale("right").applyOptions({ autoScale: true });
+          }}
+          style={{
+            background: "transparent",
+            border: `1px solid var(--border)`,
+            borderRadius: 3,
+            padding: "1px 5px",
+            cursor: "pointer",
+            color: "var(--ink-muted)",
+            fontSize: 11,
+            lineHeight: 1.4,
+          }}
+        >
+          ⊡
+        </button>
+        <span className="pointer-events-none">
+          {showVwap && <span style={{ color: C.vwap }}>VWAP </span>}
+          {showVwap && showVwapBands && <span style={{ color: C.vwapBand1 }}>±1σ </span>}
+          {showVwap && showVwapBands && <span style={{ color: C.vwapBand2 }}>±2σ </span>}
+          {showOR   && orHigh != null && <span style={{ color: C.orHigh }}>OR Hi </span>}
+          {showOR   && orLow  != null && <span style={{ color: C.orLow  }}>OR Lo</span>}
+        </span>
       </div>
 
       {/* Position indicator card — appears when a trade is open and toggle is on */}

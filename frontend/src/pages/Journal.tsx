@@ -25,6 +25,8 @@ export function Journal() {
     refetchInterval: 10_000,
   });
 
+  // Only show full-page skeleton on the very first load (no cache).
+  // With placeholderData in QueryClient, isLoading is false if stale data exists.
   const trades: Trade[] = data?.trades ?? [];
 
   async function close(id: number) {

@@ -76,8 +76,18 @@ def _ts_to_et(entry: dict) -> str:
     return f"{h}:{now_et.minute:02d}:{now_et.second:02d} {ampm}"
 
 
-def _tail_log(n: int = 20) -> list[dict]:
-    """Return last n structured log lines from bot.log, with ET timestamps."""
+_HISTORY_WINDOW_MINUTES = 60   # only replay logs from the last hour on connect;
+                               # prevents showing 8-hour-old logs when the user
+                               # opens the dashboard in the evening.
+
+
+def _tail_log(n: int = 30) -> list[dict]:
+    """
+    Return the last *n* structured log lines from bot.log that fall within
+    _HISTORY_WINDOW_MINUTES of now (ET).  Lines older than the window are
+    silently dropped so the Thinking panel always shows recent activity,
+    not hours-old circuit-breaker spam from the morning session.
+    """
     lines = []
     try:
         if not _LOG_PATH.exists():
@@ -85,16 +95,37 @@ def _tail_log(n: int = 20) -> list[dict]:
         with open(_LOG_PATH, "rb") as f:
             f.seek(0, 2)
             size = f.tell()
-            chunk = min(size, 32_768)
+            # Read a larger chunk so we have enough raw lines after filtering
+            chunk = min(size, 65_536)
             f.seek(-chunk, 2)
             raw = f.read().decode("utf-8", errors="replace")
-        for line in raw.splitlines()[-n:]:
+
+        cutoff_utc = datetime.now(ZoneInfo("UTC")).timestamp() - _HISTORY_WINDOW_MINUTES * 60
+
+        for line in raw.splitlines()[-(n * 4):]:   # oversample before filtering
             try:
                 entry = json.loads(line)
             except Exception:
                 entry = {"message": line, "level": "INFO"}
+
+            # Drop entries older than the replay window
+            ts_raw = entry.get("timestamp", "")
+            if ts_raw:
+                try:
+                    clean  = ts_raw.rstrip("Z").split("+")[0]
+                    ts_utc = datetime.fromisoformat(clean).replace(
+                        tzinfo=ZoneInfo("UTC")
+                    ).timestamp()
+                    if ts_utc < cutoff_utc:
+                        continue
+                except Exception:
+                    pass   # unparseable timestamp — include it anyway
+
             entry["ts"] = _ts_to_et(entry)
             lines.append(entry)
+            if len(lines) >= n:
+                break
+
     except Exception:
         pass
     return lines
