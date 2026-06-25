@@ -102,8 +102,13 @@ async def websocket_live(ws: WebSocket) -> None:
                                 try:
                                     entry = json.loads(line)
                                 except Exception:
-                                    entry = {"message": line, "level": "INFO",
-                                             "ts": time.strftime("%H:%M:%S")}
+                                    entry = {"message": line, "level": "INFO"}
+                                # Always ensure ts is present — pull from asctime
+                                # field written by the JSON logger, or use wall-clock
+                                if not entry.get("ts"):
+                                    asctime = entry.get("asctime", "")
+                                    # asctime format: "2026-06-24 09:30:01,123" → take HH:MM:SS
+                                    entry["ts"] = asctime[11:19] if len(asctime) >= 19 else time.strftime("%H:%M:%S")
                                 await ws.send_json({"type": "log", "data": entry})
             except Exception:
                 pass

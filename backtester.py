@@ -124,11 +124,13 @@ class Backtester:
         ticker: str,
         months: int = BACKTEST_MONTHS,
         starting_capital: float = STARTING_CAPITAL,
+        direction: str = "both",   # "both" | "calls_only" | "puts_only"
     ):
-        self.alpaca   = alpaca
-        self.ticker   = ticker
-        self.months   = months
-        self.capital  = starting_capital
+        self.alpaca    = alpaca
+        self.ticker    = ticker
+        self.months    = months
+        self.capital   = starting_capital
+        self.direction = direction   # direction filter applied at signal time
         self.trades: list[dict] = []
 
     # ── Public entry point ────────────────────────────────────────────────────
@@ -333,9 +335,15 @@ class Backtester:
                 if direction == "bearish" and close >= vwap:
                     continue
 
+            # ── Direction filter (calls_only / puts_only / both) ─────────────
+            opt_type_str = "call" if direction == "bullish" else "put"
+            if self.direction == "calls_only" and opt_type_str != "call":
+                continue
+            if self.direction == "puts_only"  and opt_type_str != "put":
+                continue
+
             # ── Simulate entry ────────────────────────────────────────────────
             stock_price  = close
-            opt_type_str = "call" if direction == "bullish" else "put"
             strike       = _simulated_strike(stock_price, direction)
             # Use 3-DTE pricing (short-dated options typical of day-trading)
             raw_opt_px   = _estimate_option_price(stock_price, strike, 3, option_type=opt_type_str)

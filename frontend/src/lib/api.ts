@@ -134,6 +134,12 @@ export interface BacktestResult {
   daily_pnl: Record<string, number>;
   exit_reasons: Record<string, unknown>;
   trades: Record<string, unknown>[];
+  call_trades?: number;
+  put_trades?: number;
+  call_win_rate?: number;
+  put_win_rate?: number;
+  call_pnl?: number;
+  put_pnl?: number;
   error?: string;
 }
 
@@ -164,10 +170,10 @@ export const api = {
     save: (s: AppSettings) => request<AppSettings>("/api/settings", { method: "POST", body: JSON.stringify(s) }),
   },
   backtest: {
-    run: (ticker: string, months: number, capital: number) =>
+    run: (ticker: string, months: number, capital: number, direction: string) =>
       request<BacktestResult>("/api/backtest", {
         method: "POST",
-        body: JSON.stringify({ ticker, months, starting_capital: capital }),
+        body: JSON.stringify({ ticker, months, starting_capital: capital, direction }),
       }),
   },
 };

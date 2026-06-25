@@ -50,6 +50,7 @@ interface Props {
   showVwapBands?: boolean;
   showOR?: boolean;
   showSwings?: boolean;
+  showPositionCard?: boolean;   // toggle the TradingView-style position overlay card
   orHigh?: number;
   orLow?: number;
   positionLevels?: PositionLevels;
@@ -134,6 +135,7 @@ export function TradingChart({
   showVwapBands = true,
   showOR = true,
   showSwings = true,
+  showPositionCard = true,
   orHigh,
   orLow,
   positionLevels,
@@ -188,6 +190,17 @@ export function TradingChart({
         borderColor: C.border,
         timeVisible: true,
         secondsVisible: false,
+      },
+      localization: {
+        // Convert 24h epoch seconds to 12h AM/PM format
+        timeFormatter: (epochSec: number) => {
+          const d = new Date(epochSec * 1000);
+          let h = d.getHours();
+          const m = String(d.getMinutes()).padStart(2, "0");
+          const ampm = h >= 12 ? "PM" : "AM";
+          h = h % 12 || 12;
+          return `${h}:${m} ${ampm}`;
+        },
       },
     });
     chartRef.current = chart;
@@ -610,8 +623,8 @@ export function TradingChart({
         {showOR   && <span style={{ color: C.orLow  }}>OR▼</span>}
       </div>
 
-      {/* Position indicator card — appears when a trade is open */}
-      {posCard}
+      {/* Position indicator card — appears when a trade is open and toggle is on */}
+      {showPositionCard && posCard}
 
       {/* Chart canvas */}
       <div ref={containerRef} className="w-full h-full" />

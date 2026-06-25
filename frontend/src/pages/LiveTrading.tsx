@@ -1,15 +1,59 @@
 /**
  * LiveTrading.tsx — Main trading cockpit.
- * Real-time chart, open positions, bot eval log, scanner.
+ * Real-time chart, open positions, bot eval log, scanner with mini sparklines.
  */
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
+import {
+  AreaChart, Area, ResponsiveContainer, YAxis,
+} from "recharts";
 import { TradingChart } from "../components/charts/TradingChart";
 import { useBotStore } from "../store/bot";
-import { api, type Trade } from "../lib/api";
+import { api, type Trade, type Bar } from "../lib/api";
 
 const TICKERS = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA", "AMD", "MSFT"];
+
+// ── Period helper ───────────────────────────────────────────────────────────
+type Period = "1D" | "5D" | "1M" | "3M";
+
+function filterByPeriod(bars: Bar[], period: Period): Bar[] {
+  if (!bars.length) return bars;
+  const now = new Date();
+  const ms: Record<Period, number> = {
+    "1D":  1  * 24 * 60 * 60 * 1000,
+    "5D":  5  * 24 * 60 * 60 * 1000,
+    "1M":  30 * 24 * 60 * 60 * 1000,
+    "3M":  90 * 24 * 60 * 60 * 1000,
+  };
+  const cutoff = new Date(now.getTime() - ms[period]);
+  return bars.filter((b) => new Date(b.time) >= cutoff);
+}
+
+// ── Mini sparkline for scanner ──────────────────────────────────────────────
+function MiniSparkline({ bars, color }: { bars: Bar[]; color: string }) {
+  if (!bars.length) return <div style={{ height: 40, width: "100%" }} />;
+  const data = bars.slice(-30).map((b) => ({ v: b.close }));
+  return (
+    <ResponsiveContainer width="100%" height={40}>
+      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
+        <defs>
+          <linearGradient id={`sg-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor={color} stopOpacity={0.25} />
+            <stop offset="95%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <YAxis domain={["auto", "auto"]} hide />
+        <Area
+          type="monotone" dataKey="v"
+          stroke={color} strokeWidth={1.5}
+          fill={`url(#sg-${color.replace("#", "")})`}
+          dot={false} isAnimationActive={false}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
 
 function PnlBadge({ value }: { value?: number }) {
   if (value == null) return <span className="text-ink-muted">—</span>;
@@ -21,17 +65,22 @@ function PnlBadge({ value }: { value?: number }) {
 }
 
 export function LiveTrading() {
-  const [ticker, setTicker] = useState("SPY");
-  const [tf, setTf] = useState("5Min");
-  const [showVwap, setShowVwap] = useState(true);
-  const [showVwapBands, setShowVwapBands] = useState(true);
-  const [showOR, setShowOR] = useState(true);
-  const [showSwings, setShowSwings] = useState(true);
+  const [ticker,          setTicker]          = useState("SPY");
+  const [tf,              setTf]              = useState("5Min");
+  const [period,          setPeriod]          = useState<Period>("1D");
+  const [showVwap,        setShowVwap]        = useState(true);
+  const [showVwapBands,   setShowVwapBands]   = useState(true);
+  const [showOR,          setShowOR]          = useState(true);
+  const [showSwings,      setShowSwings]      = useState(true);
+  const [showPositionCard,setShowPositionCard]= useState(true);
+  // Which scanner ticker is expanded (shows mini charts)
+  const [expandedScanner, setExpandedScanner] = useState<string | null>(null);
+
   const { status, logs } = useBotStore();
 
   const { data: bars = [], isLoading: barsLoading } = useQuery({
     queryKey: ["bars", ticker, tf],
-    queryFn: () => api.market.bars(ticker, tf, 200),
+    queryFn: () => api.market.bars(ticker, tf, 500),
     refetchInterval: 60_000,
   });
 
@@ -54,6 +103,32 @@ export function LiveTrading() {
     refetchInterval: 300_000,
   });
 
+  // Mini chart bars for the expanded scanner ticker (4 timeframes)
+  const { data: mini1m  = [] } = useQuery({
+    queryKey: ["bars", expandedScanner, "1Min"],
+    queryFn:  () => api.market.bars(expandedScanner!, "1Min", 60),
+    enabled:  !!expandedScanner,
+    refetchInterval: 60_000,
+  });
+  const { data: mini5m  = [] } = useQuery({
+    queryKey: ["bars", expandedScanner, "5Min"],
+    queryFn:  () => api.market.bars(expandedScanner!, "5Min", 60),
+    enabled:  !!expandedScanner,
+    refetchInterval: 60_000,
+  });
+  const { data: mini15m = [] } = useQuery({
+    queryKey: ["bars", expandedScanner, "15Min"],
+    queryFn:  () => api.market.bars(expandedScanner!, "15Min", 60),
+    enabled:  !!expandedScanner,
+    refetchInterval: 60_000,
+  });
+  const { data: mini1h  = [] } = useQuery({
+    queryKey: ["bars", expandedScanner, "1Hour"],
+    queryFn:  () => api.market.bars(expandedScanner!, "1Hour", 40),
+    enabled:  !!expandedScanner,
+    refetchInterval: 60_000,
+  });
+
   // Trades for the current ticker
   const tickerTrades = openTrades.filter((t: Trade) => t.ticker === ticker);
 
@@ -67,6 +142,13 @@ export function LiveTrading() {
     direction: (openTickerTrade.direction === "short" ? "short" : "long") as "long" | "short",
     contracts: openTickerTrade.contracts    ?? undefined,
   } : undefined;
+
+  // Filter bars by selected period
+  const visibleBars = useMemo(() => filterByPeriod(bars, period), [bars, period]);
+
+  // Determine sparkline color for scanner ticker (green if positive change, red otherwise)
+  const scannerColor = (changePct: number) =>
+    changePct >= 0 ? "var(--positive)" : "var(--negative)";
 
   return (
     <div className="p-4 flex flex-col gap-4">
@@ -95,7 +177,7 @@ export function LiveTrading() {
         <div className="card overflow-hidden">
           {/* Chart toolbar */}
           <div
-            className="flex items-center gap-3 px-3 py-2 border-b text-sm"
+            className="flex items-center gap-3 px-3 py-2 border-b text-sm flex-wrap"
             style={{ borderColor: "var(--border)" }}
           >
             {/* Ticker selector */}
@@ -120,15 +202,29 @@ export function LiveTrading() {
               ))}
             </div>
 
+            {/* Period selector */}
+            <div className="flex gap-1">
+              {(["1D","5D","1M","3M"] as const).map((p) => (
+                <button
+                  key={p}
+                  className={`btn btn-sm ${period === p ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setPeriod(p)}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
             {/* Overlay toggles */}
             {([
-              ["VWAP",    showVwap,      setShowVwap],
-              ["Bands",   showVwapBands, setShowVwapBands],
-              ["OR",      showOR,        setShowOR],
-              ["Swings",  showSwings,    setShowSwings],
+              ["VWAP",  showVwap,       setShowVwap],
+              ["Bands", showVwapBands,  setShowVwapBands],
+              ["OR",    showOR,         setShowOR],
+              ["Swings",showSwings,     setShowSwings],
+              ["Pos",   showPositionCard, setShowPositionCard],
             ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
               <label key={label} className="flex items-center gap-1 cursor-pointer text-xs"
-                     style={{ color: "var(--ink-muted)" }}>
+                     style={{ color: val ? "var(--ink)" : "var(--ink-muted)" }}>
                 <input type="checkbox" checked={val}
                        onChange={(e) => setter(e.target.checked)} />
                 {label}
@@ -140,12 +236,13 @@ export function LiveTrading() {
           </div>
 
           <TradingChart
-            bars={bars}
+            bars={visibleBars}
             trades={tickerTrades}
             showVwap={showVwap}
             showVwapBands={showVwapBands}
             showOR={showOR}
             showSwings={showSwings}
+            showPositionCard={showPositionCard}
             orHigh={or?.high}
             orLow={or?.low}
             positionLevels={positionLevels}
@@ -162,38 +259,92 @@ export function LiveTrading() {
           >
             Premarket Scanner
           </div>
-          <div className="overflow-y-auto">
+          <div className="overflow-y-auto flex-1">
             {scanner.length === 0 ? (
               <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
                 No scan results yet — bot scans 9:00–9:25 ET
               </p>
             ) : (
-              scanner.map((s) => (
-                <button
-                  key={s.ticker}
-                  className="w-full px-3 py-2.5 flex items-center justify-between hover:bg-muted transition-colors text-left"
-                  onClick={() => setTicker(s.ticker)}
-                >
-                  <div>
-                    <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                      {s.ticker}
-                    </div>
-                    <div className="text-xs num" style={{ color: "var(--ink-muted)" }}>
-                      ${s.price.toFixed(2)} · {s.rvol.toFixed(1)}x RVOL
-                    </div>
+              scanner.map((s) => {
+                const isExpanded = expandedScanner === s.ticker;
+                const sparkColor = scannerColor(s.change_pct);
+                return (
+                  <div key={s.ticker}>
+                    {/* Ticker row */}
+                    <button
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-muted transition-colors text-left border-b"
+                      style={{ borderColor: "var(--border)" }}
+                      onClick={() => {
+                        setTicker(s.ticker);
+                        setExpandedScanner(isExpanded ? null : s.ticker);
+                      }}
+                    >
+                      <div>
+                        <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                          {s.ticker}
+                        </div>
+                        <div className="text-xs num" style={{ color: "var(--ink-muted)" }}>
+                          ${s.price.toFixed(2)} · {s.rvol.toFixed(1)}x RVOL
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span
+                          className="text-xs num font-medium"
+                          style={{ color: sparkColor }}
+                        >
+                          {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
+                        </span>
+                        <span className="text-[10px]" style={{ color: "var(--ink-muted)" }}>
+                          {isExpanded ? "▲" : "▼"} charts
+                        </span>
+                      </div>
+                    </button>
+
+                    {/* Expanded mini charts — 4 timeframes */}
+                    {isExpanded && (
+                      <div
+                        className="px-2 py-2 grid grid-cols-2 gap-2 border-b"
+                        style={{ borderColor: "var(--border)", background: "var(--surface-raised)" }}
+                      >
+                        {[
+                          { label: "1m",  data: mini1m },
+                          { label: "5m",  data: mini5m },
+                          { label: "15m", data: mini15m },
+                          { label: "1h",  data: mini1h },
+                        ].map(({ label, data }) => {
+                          const lastClose = data.length ? data[data.length - 1].close : null;
+                          const firstClose = data.length ? data[0].close : null;
+                          const change = (lastClose && firstClose) ? ((lastClose - firstClose) / firstClose * 100) : null;
+                          const c = change != null && change >= 0 ? "var(--positive)" : "var(--negative)";
+                          return (
+                            <div
+                              key={label}
+                              className="rounded p-1"
+                              style={{ border: "1px solid var(--border)" }}
+                            >
+                              <div className="flex justify-between items-center mb-0.5">
+                                <span className="text-[10px] font-semibold" style={{ color: "var(--ink-muted)" }}>
+                                  {label}
+                                </span>
+                                {change != null && (
+                                  <span className="text-[10px] num" style={{ color: c }}>
+                                    {change >= 0 ? "+" : ""}{change.toFixed(2)}%
+                                  </span>
+                                )}
+                              </div>
+                              <MiniSparkline bars={data} color={change != null && change >= 0 ? "#3fb950" : "#f85149"} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <span
-                    className="text-xs num font-medium"
-                    style={{ color: s.change_pct >= 0 ? "var(--positive)" : "var(--negative)" }}
-                  >
-                    {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
-                  </span>
-                </button>
-              ))
+                );
+              })
             )}
           </div>
 
-          {/* Pending signal — what the bot is looking to enter */}
+          {/* Bot Focus */}
           <div
             className="border-t px-3 py-2 text-xs font-semibold uppercase tracking-wider"
             style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
@@ -307,7 +458,14 @@ export function LiveTrading() {
                 "var(--ink-muted)";
               return (
                 <div key={i} style={{ color }}>
-                  <span className="opacity-60">{entry.ts ?? ""}</span>{" "}
+                  {entry.ts && (
+                    <span
+                      className="opacity-60 mr-1 select-none"
+                      style={{ color: "var(--ink-muted)", minWidth: "5.5em", display: "inline-block" }}
+                    >
+                      {entry.ts}
+                    </span>
+                  )}
                   {entry.event && (
                     <span className="badge badge-blue mr-1">{entry.event}</span>
                   )}

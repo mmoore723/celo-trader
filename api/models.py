@@ -121,6 +121,7 @@ class BacktestRequest(BaseModel):
     ticker: str
     months: int = 3
     starting_capital: float = 1000.0
+    direction: str = "both"   # "both" | "calls_only" | "puts_only"
 
 
 class BacktestResult(BaseModel):
@@ -136,6 +137,13 @@ class BacktestResult(BaseModel):
     daily_pnl: dict[str, float]
     exit_reasons: dict[str, Any]
     trades: list[dict]
+    # Call vs Put breakdown
+    call_trades: int = 0
+    put_trades: int = 0
+    call_win_rate: float = 0.0
+    put_win_rate: float = 0.0
+    call_pnl: float = 0.0
+    put_pnl: float = 0.0
     error: Optional[str] = None
 
 
