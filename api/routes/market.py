@@ -62,13 +62,21 @@ def get_bars(
     if df.empty:
         try:
             import yfinance as yf
+            import datetime as _dt
             # Map our timeframe strings to yfinance intervals
             _yf_interval = {"1Min": "1m", "5Min": "5m", "15Min": "15m", "1Hour": "60m"}.get(timeframe, "5m")
-            # yfinance 1m limited to 7 days; 5m/15m up to 60 days
-            _period = "7d" if _yf_interval == "1m" else "60d"
+            # Use explicit start/end dates instead of period= to bypass yfinance's
+            # filesystem cache, which can return stale data from a prior session.
+            # 1m bars: yfinance max is 7 days; 5m/15m/60m: use 30 days (enough for
+            # 500 bars and avoids the 60-day stale-cache issue we've seen in prod).
+            _today      = _dt.date.today()
+            _lookback   = 6 if _yf_interval == "1m" else 30
+            _start_date = (_today - _dt.timedelta(days=_lookback)).strftime("%Y-%m-%d")
+            _end_date   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
             raw_yf = yf.download(
                 ticker,
-                period=_period,
+                start=_start_date,
+                end=_end_date,
                 interval=_yf_interval,
                 prepost=True,       # include pre-market 4 AM and after-hours to 8 PM
                 progress=False,
@@ -162,6 +170,22 @@ def get_quotes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _fetch_live_prices(tickers: list[str]) -> dict[str, float]:
+    """
+    Fetch current prices from Alpaca snapshots for a list of tickers.
+    Returns a dict {ticker: price}.  Safe to call with an empty list.
+    """
+    if not tickers:
+        return {}
+    try:
+        from broker import get_clients
+        alpaca, _ = get_clients()
+        snaps = alpaca.get_snapshots(tickers) or {}
+        return {sym: float(snap.get("price", 0) or 0) for sym, snap in snaps.items()}
+    except Exception:
+        return {}
+
+
 @router.get("/scanner", response_model=list[ScannerResult])
 def get_scanner() -> list[ScannerResult]:
     """
@@ -171,14 +195,19 @@ def get_scanner() -> list[ScannerResult]:
     metrics (rvol, price, atr, gap_pct, score).  Falls back to scanner_state.json
     if daily_universe.json is missing or stale.  scanner_state.json watchlist is a
     plain list of strings — never call .get() on the items directly.
+
+    If scan data is from a prior session (date mismatch) or prices are zero,
+    live prices are fetched from Alpaca snapshots before returning.
     """
     try:
         import json
+        import datetime as _dt
         from pathlib import Path
 
-        base = Path(__file__).resolve().parents[2]
+        base          = Path(__file__).resolve().parents[2]
         universe_path = base / "daily_universe.json"
         state_path    = base / "scanner_state.json"
+        today_str     = _dt.date.today().isoformat()
         results: list[ScannerResult] = []
 
         # ── Preferred source: daily_universe.json has rich per-ticker dicts ──
@@ -196,11 +225,9 @@ def get_scanner() -> list[ScannerResult]:
                     change_pct=float(d.get("gap_pct") or d.get("change_pct") or 0),
                     rank=i + 1,
                 ))
-            if results:
-                return results
 
         # ── Fallback: scanner_state.json (watchlist is a list of plain strings) ──
-        if state_path.exists():
+        if not results and state_path.exists():
             s = json.loads(state_path.read_text())
             watchlist = s.get("watchlist", [])
             scores    = s.get("scores", {})
@@ -215,7 +242,39 @@ def get_scanner() -> list[ScannerResult]:
                     change_pct=0.0,
                     rank=i + 1,
                 ))
+
+        # ── Live-price refresh: if scan is stale or prices are 0, hit Alpaca ──
+        # This keeps the scanner useful throughout the trading day even when the
+        # premarket scan file is from a prior session (happens after restarts or
+        # when yfinance wasn't installed during the original scan run).
+        scan_date = u.get("date", "") if universe_path.exists() else ""
+        prices_missing = any(r.price == 0.0 for r in results)
+        if results and (scan_date != today_str or prices_missing):
+            live = _fetch_live_prices([r.ticker for r in results])
+            for r in results:
+                if live.get(r.ticker, 0) > 0:
+                    r.price = live[r.ticker]
+
         return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scan-now")
+def trigger_scan_now() -> dict:
+    """
+    Manually trigger a fresh premarket scan outside the normal 9:00–11:30 ET
+    window.  Useful after a restart when daily_universe.json is stale.
+
+    Runs synchronously in the API worker — takes ~5–15 seconds.
+    Returns {"ok": true, "universe": [...], "count": n} on success.
+    """
+    try:
+        from broker import get_clients
+        from scanner import daily_premarket_scan
+        alpaca, _ = get_clients()
+        universe = daily_premarket_scan(alpaca, force=True)
+        return {"ok": True, "universe": universe, "count": len(universe)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

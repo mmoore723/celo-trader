@@ -10,9 +10,15 @@ Growth Mode additions:
 import json
 import logging
 import threading
+import time as _time
 from datetime import datetime, time as dtime, date, timedelta
 from pathlib import Path
 from typing import Optional
+
+# Rate-limit the HIGH RISK WARNING so it fires at most once every 5 minutes
+# instead of on every single tick (which floods both log files and stdout).
+_last_bootstrap_warn_ts: float = 0.0
+_BOOTSTRAP_WARN_INTERVAL_S: float = 300.0  # 5 minutes
 
 from config import (
     get_settings, get_risk_tier,
@@ -307,12 +313,18 @@ class RiskManager:
         risk_pct = get_risk_tier(bal)   # reads user_settings.json on every call
 
         if risk_pct >= BOOTSTRAP_RISK_PCT:
-            _warn_msg = (
-                "WARNING: HIGH RISK MODE ENABLED: 5% RISK PER TRADE — "
-                f"balance=${bal:,.2f} risk_budget=${bal * risk_pct:,.2f}"
-            )
-            logger.warning(_warn_msg)
-            print(_warn_msg)   # also echoed to stdout / Streamlit console
+            # Rate-limited: log at most once per _BOOTSTRAP_WARN_INTERVAL_S seconds
+            # to avoid flooding the log with the same line on every tick.
+            global _last_bootstrap_warn_ts
+            _now_ts = _time.monotonic()
+            if _now_ts - _last_bootstrap_warn_ts >= _BOOTSTRAP_WARN_INTERVAL_S:
+                _last_bootstrap_warn_ts = _now_ts
+                _warn_msg = (
+                    "WARNING: HIGH RISK MODE ENABLED: 5% RISK PER TRADE — "
+                    f"balance=${bal:,.2f} risk_budget=${bal * risk_pct:,.2f}"
+                )
+                logger.warning(_warn_msg)
+                print(_warn_msg)   # also echoed to stdout / Streamlit console
 
         return risk_pct
 

@@ -274,7 +274,7 @@ def run_scan(alpaca, max_tickers: int = 10) -> list[str]:
     return watchlist
 
 
-def daily_premarket_scan(alpaca, max_tickers: int = 10) -> list[str]:
+def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> list[str]:
     """
     Full dynamic universe scan — runs once each trading day at/after 9:30 ET.
 
@@ -295,10 +295,11 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10) -> list[str]:
     et_now = _et_now()
     today_str = et_now.strftime("%Y-%m-%d")
 
-    # Guard: need the open bar for reliable gap calculation
+    # Guard: need the open bar for reliable gap calculation.
+    # Pass force=True to bypass this guard (e.g. manual /api/market/scan-now trigger).
     session_open_min = 9 * 60 + 30
     current_min      = et_now.hour * 60 + et_now.minute
-    if current_min < session_open_min:
+    if current_min < session_open_min and not force:
         logger.info(
             "daily_premarket_scan: pre-market (%02d:%02d ET) — "
             "skipping until session open", et_now.hour, et_now.minute,
