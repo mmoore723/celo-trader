@@ -16,21 +16,25 @@ from jose import jwt, JWTError
 
 logger = logging.getLogger(__name__)
 
-JWT_SECRET    = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
 JWT_ALGORITHM = "HS256"
 COOKIE_NAME   = "celo_session"
 
+# DO NOT read JWT_SECRET at module level — config.py calls load_dotenv() which
+# runs AFTER this module is first imported (main.py imports middleware before
+# logger_config, which triggers load_dotenv via config.py). Reading the secret
+# at module level captures the pre-dotenv default instead of the real .env value.
+# Read it lazily inside the function so it's always the post-dotenv value.
+
 
 # ── FastAPI dependency (replaces BaseHTTPMiddleware) ──────────────────────────
-# BaseHTTPMiddleware has a known Starlette bug where cookie parsing can differ
-# from route-handler cookie parsing in certain proxy/ASGI configurations.
-# Using a dependency instead guarantees the same Request path as route handlers.
-
 async def require_auth(request: Request) -> None:
     """
     FastAPI dependency: validates the session cookie on every protected route.
     Add via  dependencies=[Depends(require_auth)]  on each router that needs auth.
     """
+    # Read secret lazily so load_dotenv() has already run before we access it.
+    JWT_SECRET = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
+
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         raise HTTPException(
