@@ -20,46 +20,35 @@ JWT_SECRET    = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
 JWT_ALGORITHM = "HS256"
 COOKIE_NAME   = "celo_session"
 
-# Path prefixes that skip authentication entirely
-_PUBLIC_PREFIXES = (
-    "/api/auth/",   # login / logout / me
-    "/api/auth",    # handles exact /api/auth without trailing slash
-)
+
+# ── FastAPI dependency (replaces BaseHTTPMiddleware) ──────────────────────────
+# BaseHTTPMiddleware has a known Starlette bug where cookie parsing can differ
+# from route-handler cookie parsing in certain proxy/ASGI configurations.
+# Using a dependency instead guarantees the same Request path as route handlers.
+
+async def require_auth(request: Request) -> None:
+    """
+    FastAPI dependency: validates the session cookie on every protected route.
+    Add via  dependencies=[Depends(require_auth)]  on each router that needs auth.
+    """
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+            headers={"X-Auth-Code": "no_session"},
+        )
+    try:
+        jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        raise HTTPException(
+            status_code=401,
+            detail="Session expired — please sign in again",
+            headers={"X-Auth-Code": "expired"},
+        )
 
 
+# Keep the class for backwards-compat import but it is no longer registered.
 class AuthMiddleware(BaseHTTPMiddleware):
-    """
-    Starlette middleware that rejects unauthenticated requests to /api/* endpoints.
-
-    Non-API paths (the React SPA) pass through without any check — the frontend
-    uses its own AuthContext to decide whether to show Login.tsx or AppShell.
-    """
-
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-
-        # Non-API traffic (React SPA, static files) → always pass through
-        if not path.startswith("/api/"):
-            return await call_next(request)
-
-        # Auth endpoints are always public
-        if path.startswith(_PUBLIC_PREFIXES):
-            return await call_next(request)
-
-        # All other /api/* endpoints require a valid session cookie
-        token = request.cookies.get(COOKIE_NAME)
-        if not token:
-            return JSONResponse(
-                {"detail": "Not authenticated", "code": "no_session"},
-                status_code=401,
-            )
-
-        try:
-            jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except JWTError:
-            return JSONResponse(
-                {"detail": "Session expired — please sign in again", "code": "expired"},
-                status_code=401,
-            )
-
         return await call_next(request)

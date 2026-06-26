@@ -13,11 +13,11 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from api.middleware.auth import AuthMiddleware
+from api.middleware.auth import require_auth
 
 # ── Boot bot modules ──────────────────────────────────────────────────────────
 try:
@@ -45,20 +45,21 @@ app.add_middleware(
     allow_credentials=True,  # required for session cookies
 )
 
-# Auth middleware: protects all /api/* routes except /api/auth/*
-app.add_middleware(AuthMiddleware)
-
 # ── Register API routes ───────────────────────────────────────────────────────
+# Auth is enforced via Depends(require_auth) on each protected router.
+# /api/auth/* routes have no dependency — they are always public.
 from api.routes import bot, market, trades, settings, ws, backtest
 import api.routes.auth as auth_routes
 
-app.include_router(auth_routes.router)  # /api/auth/* — always public
-app.include_router(bot.router)
-app.include_router(market.router)
-app.include_router(trades.router)
-app.include_router(settings.router)
-app.include_router(ws.router)
-app.include_router(backtest.router)
+_auth = [Depends(require_auth)]
+
+app.include_router(auth_routes.router)                              # public
+app.include_router(bot.router,      dependencies=_auth)
+app.include_router(market.router,   dependencies=_auth)
+app.include_router(trades.router,   dependencies=_auth)
+app.include_router(settings.router, dependencies=_auth)
+app.include_router(ws.router)                                       # WebSocket — no cookie auth
+app.include_router(backtest.router, dependencies=_auth)
 
 # ── Serve built React frontend ────────────────────────────────────────────────
 _DIST = _ROOT / "frontend" / "dist"
