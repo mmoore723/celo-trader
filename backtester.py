@@ -287,11 +287,55 @@ class Backtester:
         df["_date"]   = df["time"].dt.date
         unique_days   = sorted(df["_date"].unique())
 
+        # ── Import strategy modules ONCE (not inside each day loop) ──────────
+        import strategies.inst_orb  as _inst_orb
+        import strategies.bos_mss   as _bos_mss
+        import strategies.vwap_pb   as _vwap_pb
+        import strategies.fvg       as _fvg
+        import strategies.mid_brk   as _mid_brk
+        import strategies.aft_rev   as _aft_rev
+        import strategies.trend_cont as _trend_cont
+        import strategies.chan_break as _chan_break
+
+        _EVALUATORS_CACHED = [
+            ("INST_ORB",   _inst_orb.evaluate),
+            ("BOS_MSS",    _bos_mss.evaluate),
+            ("VWAP_PB",    _vwap_pb.evaluate),
+            ("FVG",        _fvg.evaluate),
+            ("MID_BRK",    _mid_brk.evaluate),
+            ("AFT_REV",    _aft_rev.evaluate),
+            ("TREND_CONT", _trend_cont.evaluate),
+            ("CHAN_BREAK",  _chan_break.evaluate),
+        ]
+
         for trade_date in unique_days:
-            day_df  = df[df["_date"] == trade_date].reset_index(drop=True)
+            # Filter to regular session hours only (9:30–16:00 ET).
+            # Pre/after-market bars cannot trigger entries and only waste CPU.
+            day_all = df[df["_date"] == trade_date].reset_index(drop=True)
+            session_mask = (
+                (day_all["time"].dt.hour > 9) |
+                ((day_all["time"].dt.hour == 9) & (day_all["time"].dt.minute >= 30))
+            ) & (day_all["time"].dt.hour < 16)
+            day_df  = day_all[session_mask].reset_index(drop=True)
             day_str = trade_date.isoformat()
 
-            pnl = self._simulate_day(day_df, balance, day_str)
+            # ── Precompute VWAP bands for the FULL day once ───────────────────
+            # Previously called per-bar on a growing slice = O(n²) per day.
+            # Now O(n): inject columns, bar loop just reads the already-computed
+            # values for the current bar position.
+            try:
+                _vb = compute_vwap_bands(day_df, num_stds=(1, 2))
+                day_df = day_df.copy()
+                day_df["vwap"]        = _vb["vwap"].ffill()
+                day_df["vwap_upper1"] = _vb["vwap_upper1"].ffill()
+                day_df["vwap_lower1"] = _vb["vwap_lower1"].ffill()
+                day_df["vwap_upper2"] = _vb["vwap_upper2"].ffill()
+                day_df["vwap_lower2"] = _vb["vwap_lower2"].ffill()
+                day_df["vol_sma20"]   = day_df["volume"].rolling(100, min_periods=5).mean()
+            except Exception:
+                pass  # proceed without VWAP if computation fails
+
+            pnl = self._simulate_day(day_df, balance, day_str, _EVALUATORS_CACHED)
             balance += pnl
             if pnl != 0:
                 daily_pnl[day_str] = pnl
@@ -303,43 +347,25 @@ class Backtester:
 
     # ── Day simulation ────────────────────────────────────────────────────────
 
-    def _simulate_day(self, day_df: pd.DataFrame, balance: float, day_str: str) -> float:
+    def _simulate_day(
+        self,
+        day_df: pd.DataFrame,
+        balance: float,
+        day_str: str,
+        evaluators: list,
+    ) -> float:
         """
         Simulate a single trading day using all 8 strategy evaluators.
 
-        For each bar, a slice of the current day's bars (up to that bar) is
-        enriched with session-VWAP and passed to every strategy's evaluate().
-        The highest-confidence signal fires; position management mirrors live
-        risk.py exactly (dynamic stop, stage 1/2 exits, 45-min time-box).
-
-        Multiple non-overlapping trades per day are allowed (once a trade
-        exits, the next signal can enter).
+        VWAP bands, vol_sma20, RVOL, ATR are all pre-injected as columns in
+        day_df by the caller (run()) — no per-bar recomputation needed.
         """
-        # Import strategy modules here to avoid circular imports at module load
-        import strategies.inst_orb  as _inst_orb
-        import strategies.bos_mss   as _bos_mss
-        import strategies.vwap_pb   as _vwap_pb
-        import strategies.fvg       as _fvg
-        import strategies.mid_brk   as _mid_brk
-        import strategies.aft_rev   as _aft_rev
-        import strategies.trend_cont as _trend_cont
-        import strategies.chan_break as _chan_break
         from strategies.base import _signal_cooldown
-
-        _EVALUATORS = [
-            ("INST_ORB",   _inst_orb.evaluate),
-            ("BOS_MSS",    _bos_mss.evaluate),
-            ("VWAP_PB",    _vwap_pb.evaluate),
-            ("FVG",        _fvg.evaluate),
-            ("MID_BRK",    _mid_brk.evaluate),
-            ("AFT_REV",    _aft_rev.evaluate),
-            ("TREND_CONT", _trend_cont.evaluate),
-            ("CHAN_BREAK",  _chan_break.evaluate),
-        ]
 
         # Clear cooldowns at the start of each day so yesterday's cooldown
         # windows don't bleed into today's simulation.
         _signal_cooldown.clear()
+        _EVALUATORS = evaluators
 
         if len(day_df) < 5:
             return 0.0
@@ -438,26 +464,9 @@ class Backtester:
                 continue   # still holding
 
             # ── Signal detection: run all 8 strategy evaluators ───────────────
-            # Build a slice of today's bars up to the current bar (no lookahead).
-            # RVOL, EMA50, ATR are pre-computed on the full dataset and already
-            # present as columns; we only need to compute session-VWAP here.
-            bar_slice = day_df.iloc[: idx + 1].copy()
-
-            # Session VWAP (resets at market open, correct per-bar)
-            try:
-                vwap_frame = compute_vwap_bands(bar_slice, num_stds=(1, 2))
-                bar_slice["vwap"]        = vwap_frame["vwap"].ffill()
-                bar_slice["vwap_upper1"] = vwap_frame["vwap_upper1"].ffill()
-                bar_slice["vwap_lower1"] = vwap_frame["vwap_lower1"].ffill()
-                bar_slice["vwap_upper2"] = vwap_frame["vwap_upper2"].ffill()
-                bar_slice["vwap_lower2"] = vwap_frame["vwap_lower2"].ffill()
-            except Exception:
-                continue   # malformed bar data — skip
-
-            # vol_sma20 (100-bar rolling volume mean)
-            bar_slice["vol_sma20"] = (
-                bar_slice["volume"].rolling(100, min_periods=5).mean()
-            )
+            # VWAP bands, vol_sma20, RVOL, ATR are all pre-injected as columns
+            # by run() — no recomputation needed here (was the O(n²) hot path).
+            bar_slice = day_df.iloc[: idx + 1]
 
             signals = []
             for strategy_id, fn in _EVALUATORS:
