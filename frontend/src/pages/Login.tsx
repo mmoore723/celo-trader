@@ -4,7 +4,7 @@
  * Posts to POST /api/auth/login with { password, stay_signed_in }.
  * On success the backend sets a session cookie and AuthContext picks it up.
  */
-import { useState, FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useAuth }             from "../contexts/AuthContext";
 
 export function Login() {

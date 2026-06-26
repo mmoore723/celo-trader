@@ -7,7 +7,7 @@
  *
  * Also exposed: logout() which calls /api/auth/logout and clears state.
  */
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export interface AuthUser {
   email: string;
