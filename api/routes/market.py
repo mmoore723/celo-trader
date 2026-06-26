@@ -63,6 +63,7 @@ def get_bars(
         try:
             import yfinance as yf
             import datetime as _dt
+            import concurrent.futures
             # Map our timeframe strings to yfinance intervals
             _yf_interval = {"1Min": "1m", "5Min": "5m", "15Min": "15m", "1Hour": "60m"}.get(timeframe, "5m")
             # Use explicit start/end dates instead of period= to bypass yfinance's
@@ -73,15 +74,25 @@ def get_bars(
             _lookback   = 6 if _yf_interval == "1m" else 30
             _start_date = (_today - _dt.timedelta(days=_lookback)).strftime("%Y-%m-%d")
             _end_date   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
-            raw_yf = yf.download(
-                ticker,
-                start=_start_date,
-                end=_end_date,
-                interval=_yf_interval,
-                prepost=True,       # include pre-market 4 AM and after-hours to 8 PM
-                progress=False,
-                auto_adjust=True,
-            )
+            # Wrap yf.download in a thread with a 15-second timeout.
+            # Without this, Yahoo Finance network hangs block the FastAPI thread
+            # indefinitely → the browser spins forever and the chart stays blank.
+            def _yf_fetch():
+                return yf.download(
+                    ticker,
+                    start=_start_date,
+                    end=_end_date,
+                    interval=_yf_interval,
+                    prepost=True,
+                    progress=False,
+                    auto_adjust=True,
+                )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(_yf_fetch)
+                try:
+                    raw_yf = _fut.result(timeout=15)
+                except concurrent.futures.TimeoutError:
+                    raw_yf = pd.DataFrame()
             if not raw_yf.empty:
                 # Flatten MultiIndex columns produced by yfinance ≥ 0.2
                 if hasattr(raw_yf.columns, "get_level_values"):
