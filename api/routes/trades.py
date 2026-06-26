@@ -46,12 +46,7 @@ def list_trades(
     status: str = Query("all", enum=["all", "open", "closed"]),
 ) -> TradeListResponse:
     from database import get_all_trades
-    rows = get_all_trades(limit=limit, mode=mode) or []
-
-    if status == "open":
-        rows = [r for r in rows if r.get("status") == "open"]
-    elif status == "closed":
-        rows = [r for r in rows if r.get("status") != "open"]
+    rows = get_all_trades(limit=limit, mode=mode, status_filter=status) or []
 
     trades = [_row_to_trade(r) for r in rows]
     closed = [t for t in trades if t.pnl is not None]
@@ -88,7 +83,7 @@ def get_performance(mode: str = Query("paper")) -> PerformanceStats:
     daily = []
     for d in daily_raw:
         daily.append(DailySummary(
-            date=str(d.get("date", "")),
+            date=str(d.get("trade_date") or d.get("date", "")),
             pnl=float(d.get("pnl", 0)),
             trades=int(d.get("trades", 0)),
             win_rate=float(d.get("win_rate", 0)),

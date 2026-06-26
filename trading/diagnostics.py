@@ -56,10 +56,13 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
         last_bar     = today_1m.iloc[-1]
         bar_time_str = str(last_bar["time"])
 
-        # Guard: already emitted this exact 1-min bar
-        if LIVE_STATE.get("last_logged_1m_bar_time") == bar_time_str:
+        # Guard: already emitted this exact 1-min bar FOR THIS TICKER.
+        # Per-ticker key so NVDA and SPY each get one log per bar close, even
+        # when both are in the watchlist and processed on the same tick cycle.
+        _guard_key = f"last_1m_bar_time_{ticker}"
+        if LIVE_STATE.get(_guard_key) == bar_time_str:
             return
-        LIVE_STATE["last_logged_1m_bar_time"] = bar_time_str
+        LIVE_STATE[_guard_key] = bar_time_str
 
         close = float(last_bar["close"])
         bar_t = bar_time_str[11:16]   # "HH:MM"

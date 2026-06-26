@@ -658,9 +658,17 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # -$63 combined; NVDA 115+116 cost -$23 combined.
     _open_tickers = {t.get("ticker", "") for t in LIVE_STATE.get("open_trades", [])}
     if ticker in _open_tickers:
-        log_event("INFO", "bar_eval",
-                  f"🔷 [{ticker}] Skipping — already holding an open position on this ticker. "
-                  f"Bot won't open a second concurrent position on the same stock.")
+        # Still narrate the open position every bar so the THINKING panel shows
+        # live position status for NVDA/SPY even though no new entry is taken.
+        # Fetch 1-min bars here — the position narration branch in
+        # _log_bar_thinking uses them for price, RVOL, and stop distance.
+        try:
+            _pos_bars, _pos_err, _ = alpaca.get_session_bars(ticker, "1Min")
+            if _pos_bars and not _pos_err:
+                _df_pos = bars_to_df(_pos_bars)
+                _log_bar_thinking(_df_pos, _df_pos, ticker)
+        except Exception as _lbt_ex:
+            logger.debug("_log_bar_thinking (in-trade) failed for %s: %s", ticker, _lbt_ex)
         return
 
     # ── Fix 3 (new): Post-win cooling period ─────────────────────────────────

@@ -377,13 +377,41 @@ def get_open_trade() -> Optional[dict]:
     return trades[0] if trades else None
 
 
-def get_all_trades(limit: int = 500) -> list[dict]:
-    """Return closed trades newest-first, for the trade journal page."""
+def get_all_trades(limit: int = 500, mode: str = "paper", status_filter: str = "all") -> list[dict]:
+    """
+    Return trades for the journal page.
+
+    mode          — "paper" (paper=1) or "live" (paper=0). Defaults to paper.
+    status_filter — "all" | "open" | "closed". Defaults to all.
+    limit         — max rows returned.
+
+    Returns both open and closed trades so the Journal's All/Open/Closed tabs
+    all work correctly. Ordered newest-first (exit_time for closed, entry_time
+    for still-open).
+    """
+    paper_flag = 1 if mode == "paper" else 0
+
+    if status_filter == "open":
+        sql = (
+            "SELECT * FROM trades WHERE paper = ? AND status = 'open' "
+            "ORDER BY entry_time DESC LIMIT ?"
+        )
+        params = (paper_flag, limit)
+    elif status_filter == "closed":
+        sql = (
+            "SELECT * FROM trades WHERE paper = ? AND status = 'closed' "
+            "ORDER BY exit_time DESC LIMIT ?"
+        )
+        params = (paper_flag, limit)
+    else:  # "all"
+        sql = (
+            "SELECT * FROM trades WHERE paper = ? "
+            "ORDER BY COALESCE(exit_time, entry_time) DESC LIMIT ?"
+        )
+        params = (paper_flag, limit)
+
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM trades WHERE status = 'closed' ORDER BY exit_time DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -415,11 +443,31 @@ def _upsert_daily_summary(trade_date: date, pnl: float) -> None:
             )
 
 
-def get_daily_summaries() -> list[dict]:
-    """Return all daily summary rows for the calendar heatmap."""
+def get_daily_summaries(mode: str = "paper") -> list[dict]:
+    """
+    Return daily summary rows for the calendar heatmap.
+    Derives daily P&L from the trades table filtered by paper/live flag so the
+    Performance page stays in sync with the Journal's mode toggle.
+    The legacy daily_summary table is not filtered by mode, so we recompute
+    from trades directly to avoid cross-contamination.
+    """
+    paper_flag = 1 if mode == "paper" else 0
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM daily_summary ORDER BY trade_date"
+            """
+            SELECT date(COALESCE(exit_time, entry_time)) AS trade_date,
+                   SUM(COALESCE(realized_pnl, 0))        AS pnl,
+                   COUNT(*)                              AS trades,
+                   ROUND(
+                     100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END)
+                     / NULLIF(COUNT(*), 0), 1
+                   )                                     AS win_rate
+            FROM trades
+            WHERE paper = ? AND status = 'closed'
+            GROUP BY trade_date
+            ORDER BY trade_date
+            """,
+            (paper_flag,),
         ).fetchall()
     return [dict(r) for r in rows]
 
