@@ -42,7 +42,7 @@ PASSWORD_HASH = os.getenv("DASHBOARD_PASSWORD_HASH", "")
 # Fallback plaintext password for first-time setup only (not recommended for prod)
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
 
-SESSION_SHORT = timedelta(hours=24)   # without "stay signed in"
+SESSION_SHORT = timedelta(days=7)     # without "stay signed in"
 SESSION_LONG  = timedelta(days=30)    # with "stay signed in"
 
 
