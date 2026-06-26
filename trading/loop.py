@@ -127,8 +127,15 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
             _du = _read_daily_universe()
             _today_str = _scanner_et().strftime("%Y-%m-%d")
             if _du.get("date") == _today_str and _du.get("universe"):
-                # Today's scan already ran — restore it
-                _restored_wl = _du["universe"]
+                # Today's scan already ran — restore it, prepending settings
+                # watchlist pins so user-pinned tickers (e.g. AMZN, TSLA) are
+                # ALWAYS included even if they didn't rank in the morning scan.
+                _pins_r = [
+                    t.upper().strip()
+                    for t in (_get_s_wl().get("watchlist") or [])
+                    if t.strip()
+                ]
+                _restored_wl = list(dict.fromkeys(_pins_r + _du["universe"]))
                 LIVE_STATE["scan_watchlist"]    = _restored_wl
                 LIVE_STATE["scanner_ran_today"] = True
                 LIVE_STATE["current_ticker"]    = _restored_wl[0]

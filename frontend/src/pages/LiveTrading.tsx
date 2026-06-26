@@ -124,6 +124,20 @@ export function LiveTrading() {
     refetchInterval: 5_000,
   });
 
+  // Today's trades (open + closed) — used for persistent chart markers so
+  // entry/exit arrows survive after a position closes.
+  const { data: todayTradesRaw = [] } = useQuery({
+    queryKey: ["today-trades"],
+    queryFn: () => api.trades.list("paper", "all"),
+    refetchInterval: 10_000,
+    select: (res: any) => {
+      const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+      return (res?.trades ?? []).filter((t: Trade) =>
+        (t.entry_time ?? "").startsWith(today)
+      );
+    },
+  });
+
   const { data: scanner = [] } = useQuery({
     queryKey: ["scanner"],
     queryFn: api.market.scanner,
@@ -173,8 +187,9 @@ export function LiveTrading() {
     return [...new Set([...base, ...extra])];
   }, [scanner, openTrades]);
 
-  // Trades for the current ticker
-  const tickerTrades = openTrades.filter((t: Trade) => t.ticker === ticker);
+  // All of today's trades for the current ticker (open + closed).
+  // Used for persistent chart markers — closed trades stay on the chart.
+  const tickerTrades = (todayTradesRaw as Trade[]).filter((t: Trade) => t.ticker === ticker);
 
   // Build position levels from first open trade on this ticker (if any)
   const openTickerTrade = tickerTrades.find((t: Trade) => !t.exit_time);
@@ -529,62 +544,69 @@ export function LiveTrading() {
                 );
               }
 
-              // ── SCANNING: show current scanner focus ──────────────────────
-              if (status?.ticker) {
+              // ── SCANNING: show full watchlist with current ticker highlighted ──
+              if (status?.ticker || (status?.scan_watchlist ?? []).length > 0) {
+                const watchlist: string[] = status?.scan_watchlist ?? (status?.ticker ? [status.ticker] : []);
+                const activeTicker = status?.ticker ?? "";
                 return (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{
-                      width: "100%", borderCollapse: "collapse",
-                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
-                    }}>
-                      <thead>
-                        <tr>
-                          {["Ticker","Contract","Exp","Entry"].map((h) => (
-                            <th key={h} style={{
-                              padding: "2px 5px", textAlign: "left",
-                              color: "var(--ink-faint)", fontWeight: 500,
-                              borderBottom: "1px solid var(--border)",
-                              whiteSpace: "nowrap", letterSpacing: "0.03em",
-                            }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td
+                  <div>
+                    {/* Watchlist grid — all tickers, current one highlighted */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "2px 0 6px" }}>
+                      {watchlist.map((t) => {
+                        const isCurrent = t === activeTicker;
+                        return (
+                          <button
+                            key={t}
+                            onClick={() => setTicker(t)}
+                            title={`View ${t} chart`}
                             style={{
-                              padding: "3px 5px", color: "var(--accent)", fontWeight: 700,
-                              cursor: "pointer", textDecoration: "underline dotted",
-                            }}
-                            title={`View ${status.ticker} chart`}
-                            onClick={() => status.ticker && setTicker(status.ticker)}
-                          >
-                            {status.ticker}
-                          </td>
-                          <td
-                            title={status.last_eval_contract_symbol ?? ""}
-                            style={{
-                              padding: "3px 5px", color: "var(--ink-muted)",
-                              maxWidth: 110, overflow: "hidden",
-                              textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              padding: "2px 7px",
+                              borderRadius: 4,
+                              border: `1px solid ${isCurrent ? "var(--accent)" : "var(--border)"}`,
+                              background: isCurrent ? "var(--accent)" : "transparent",
+                              color: isCurrent ? "#fff" : "var(--ink-muted)",
+                              fontFamily: "JetBrains Mono, monospace",
+                              fontSize: 10, fontWeight: isCurrent ? 700 : 500,
+                              cursor: "pointer",
+                              transition: "all 0.15s",
                             }}
                           >
-                            {status.last_eval_contract_symbol ?? "—"}
-                          </td>
-                          <td style={{ padding: "3px 5px", color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
-                            {status.last_eval_expiry?.length === 10
+                            {t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Current eval details for active ticker */}
+                    {status?.last_eval_contract_symbol && (
+                      <div style={{
+                        borderTop: "1px solid var(--border)", paddingTop: 5, marginTop: 2,
+                        fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                        display: "flex", flexWrap: "wrap", gap: "4px 12px",
+                        color: "var(--ink-muted)",
+                      }}>
+                        <span title={status.last_eval_contract_symbol}>
+                          <span style={{ color: "var(--ink-faint)" }}>Contract </span>
+                          <span style={{ color: "var(--ink)", maxWidth: 120, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "bottom", whiteSpace: "nowrap" }}>
+                            {status.last_eval_contract_symbol}
+                          </span>
+                        </span>
+                        {status.last_eval_expiry && (
+                          <span>
+                            <span style={{ color: "var(--ink-faint)" }}>Exp </span>
+                            {status.last_eval_expiry.length === 10
                               ? `${status.last_eval_expiry.slice(5,7)}/${status.last_eval_expiry.slice(8,10)}/${status.last_eval_expiry.slice(2,4)}`
-                              : (status.last_eval_expiry ?? "—")}
-                          </td>
-                          <td style={{ padding: "3px 5px", color: "var(--positive)", fontWeight: 600, whiteSpace: "nowrap" }}>
-                            {status.last_eval_eff_entry != null ? `$${status.last_eval_eff_entry.toFixed(2)}` : "—"}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                    {status.last_strategy_id && (
-                      <div className="mt-1 pl-1">
-                        <span className="badge badge-blue" style={{ fontSize: 9 }}>{status.last_strategy_id}</span>
+                              : status.last_eval_expiry}
+                          </span>
+                        )}
+                        {status.last_eval_eff_entry != null && (
+                          <span>
+                            <span style={{ color: "var(--ink-faint)" }}>Ask </span>
+                            <span style={{ color: "var(--positive)", fontWeight: 600 }}>${status.last_eval_eff_entry.toFixed(2)}</span>
+                          </span>
+                        )}
+                        {status.last_strategy_id && (
+                          <span className="badge badge-blue" style={{ fontSize: 9 }}>{status.last_strategy_id}</span>
+                        )}
                       </div>
                     )}
                   </div>
