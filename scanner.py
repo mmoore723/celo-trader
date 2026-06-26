@@ -245,7 +245,19 @@ def run_scan(alpaca, max_tickers: int = 10) -> list[str]:
         return daily_premarket_scan(alpaca, max_tickers)
 
     # ── Phase 2: rescore existing dynamic universe ────────────────────────────
-    current_universe = daily["universe"]
+    # Always include user-pinned tickers even if they weren't in today's scan.
+    try:
+        from config import get_settings as _get_s2
+        _pins2 = [
+            t.upper().strip()
+            for t in (_get_s2().get("watchlist") or [])
+            if t.strip() and t.strip().upper() not in TICKER_BLACKLIST
+        ]
+    except Exception:
+        _pins2 = []
+
+    current_universe = list(dict.fromkeys(_pins2 + daily["universe"]))
+
     scores: dict[str, float] = {}
     for ticker in current_universe:
         try:
@@ -258,8 +270,9 @@ def run_scan(alpaca, max_tickers: int = 10) -> list[str]:
             logger.warning("Scanner rescore error for %s: %s", ticker, ex)
             scores[ticker] = 0.0
 
-    ranked    = sorted(scores, key=lambda t: scores[t], reverse=True)
-    watchlist = [t for t in ranked if t not in TICKER_BLACKLIST]
+    ranked = sorted(scores, key=lambda t: scores[t], reverse=True)
+    # Pinned tickers always lead the list regardless of their score
+    watchlist = _pins2 + [t for t in ranked if t not in TICKER_BLACKLIST and t not in _pins2]
     if not watchlist:
         watchlist = [t for t in current_universe if t not in TICKER_BLACKLIST]
     if not watchlist:
@@ -316,8 +329,26 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
         len(LIQUID_POOL), int(elapsed_min),
     )
 
+    # ── Inject user-pinned tickers from Settings watchlist ───────────────────
+    # Tickers the user pinned in Settings > Watchlist are always evaluated and
+    # always appear in the final list — they bypass the gap/RVOL filters so a
+    # slower mover the user wants tracked doesn't get silently dropped.
+    try:
+        from config import get_settings as _get_s
+        _user_pins = [
+            t.upper().strip()
+            for t in (_get_s().get("watchlist") or [])
+            if t.strip() and t.strip().upper() not in TICKER_BLACKLIST
+        ]
+    except Exception:
+        _user_pins = []
+
     # ── Step 1: Batch snapshots ───────────────────────────────────────────────
-    pool = [t for t in LIQUID_POOL if t not in TICKER_BLACKLIST]
+    # Merge user-pinned tickers into the pool so they get snapshot data too.
+    pool = list(dict.fromkeys(                          # deduplicate, preserve order
+        [t for t in LIQUID_POOL if t not in TICKER_BLACKLIST]
+        + _user_pins
+    ))
     all_snaps: dict[str, dict] = {}
     batch_size = 50
     for i in range(0, len(pool), batch_size):
@@ -520,6 +551,20 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
             if len(top) < 2:
                 top.append(anchor)
                 logger.info("daily_premarket_scan: padded with anchor %s", anchor)
+
+    # ── Pin user watchlist tickers — always include, front of list ────────────
+    # These bypass the gap/RVOL filter. They are prepended so the bot evaluates
+    # them every tick regardless of whether the dynamic scan picked them today.
+    if _user_pins:
+        pinned_new = [t for t in _user_pins if t not in top]
+        top = _user_pins + [t for t in top if t not in _user_pins]
+        # Respect max_tickers cap: trim from the tail (lowest-scoring dynamic names)
+        top = top[:max(max_tickers, len(_user_pins))]
+        if pinned_new:
+            logger.info(
+                "daily_premarket_scan: pinned %d user watchlist ticker(s) into result: %s",
+                len(pinned_new), pinned_new,
+            )
 
     # ── Persist results ───────────────────────────────────────────────────────
     _write_daily_universe(today_str, top, scored[:max_tickers])

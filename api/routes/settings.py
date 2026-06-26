@@ -45,4 +45,25 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_tcont_enabled"]  = data.pop("trend_cont_enabled", True)
     current.update(data)
     save_settings(current)
+
+    # ── Hot-reload watchlist into the running bot ─────────────────────────────
+    # Inject new pinned tickers into LIVE_STATE immediately so the bot picks
+    # them up on the next tick without waiting for tomorrow's pre-market scan.
+    try:
+        from scanner import TICKER_BLACKLIST
+        new_pins = [
+            t.upper().strip()
+            for t in (data.get("watchlist") or [])
+            if t.strip() and t.strip().upper() not in TICKER_BLACKLIST
+        ]
+        if new_pins:
+            from trading.state import LIVE_STATE
+            existing = list(LIVE_STATE.get("scan_watchlist") or [])
+            merged   = list(dict.fromkeys(new_pins + existing))  # pins first, deduped
+            LIVE_STATE["scan_watchlist"] = merged
+            # Invalidate today's cached scan so the next full rescore includes the new tickers
+            LIVE_STATE["scanner_ran_today"] = False
+    except Exception:
+        pass  # bot may not be running — non-fatal
+
     return payload
