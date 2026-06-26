@@ -68,6 +68,21 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     rvol_min = _get_dynamic_rvol_threshold(
         bar_min, close, None, vwap, STRATEGY_ID, msa_confirmed=True)
 
+    # 14-period ATR — used as minimum stop width floor so that if the previous
+    # bar is a tiny doji, the stop still has at least 0.5× ATR of breathing room.
+    # We exclude the current (last) bar and take the 14 bars before it.
+    _atr_slice = today.iloc[-15:-1] if len(today) >= 15 else today.iloc[:-1]
+    if len(_atr_slice) > 1:
+        _prev_close = _atr_slice["close"].shift(1)
+        _tr = pd.concat([
+            _atr_slice["high"] - _atr_slice["low"],
+            (_atr_slice["high"] - _prev_close).abs(),
+            (_atr_slice["low"]  - _prev_close).abs(),
+        ], axis=1).max(axis=1)
+        _atr = float(_tr.mean())
+    else:
+        _atr = 0.0
+
     msa   = MarketStructureAnalyzer(today)
     highs = msa._highs()
     lows  = msa._lows()
@@ -129,7 +144,12 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             # only needs to move ~0.1% against us before we're stopped.
             # The previous bar's high gives a full bar of breathing room and
             # ties the stop to actual chart structure rather than a point-in-time touch.
+            # Stop for PUTS: prev bar's high, floored at current high + 0.5×ATR.
+            # The floor prevents a doji prev-bar from producing a zero-width stop —
+            # if prev bar's high is barely above current bar's high, we use
+            # the ATR-based floor instead so there's always meaningful room.
             _prev_bar_high = float(today.iloc[-2]["high"]) if len(today) >= 2 else high
+            _prev_bar_high = max(_prev_bar_high, high + 0.5 * _atr)
             return Signal(
                 strategy_id = STRATEGY_ID,
                 direction   = "bearish",
@@ -144,7 +164,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                     "projected":        round(projected, 2),
                     "touch_pct":        round(touch_pct * 100, 3),
                     "rejection_body":   round(rejection_body, 2),
-                    "entry_bar_high":   round(_prev_bar_high, 4),   # prev bar's high — wider, structure-based stop
+                    "entry_bar_high":   round(_prev_bar_high, 4),   # prev bar's high (floored at high + 0.5×ATR)
                     "rvol_gate":        round(rvol_min, 2),
                     "rvol_gate_reason": _rvol_threshold_reason(
                         bar_min, close, None, vwap, STRATEGY_ID, msa_confirmed=True),
@@ -212,7 +232,12 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             # (within 0.3% by definition), making the old stop essentially
             # zero-width.  Previous bar's low is a real prior structure low
             # that gives the trade room to prove itself without being noise-stopped.
+            # Stop for CALLS: prev bar's low, floored at current low - 0.5×ATR.
+            # Same doji guard as the bearish side: if prev bar's low is barely
+            # below current bar's low, we use the ATR-based floor so there's
+            # always at least half a bar's worth of noise tolerance.
             _prev_bar_low = float(today.iloc[-2]["low"]) if len(today) >= 2 else low_
+            _prev_bar_low = min(_prev_bar_low, low_ - 0.5 * _atr)
             return Signal(
                 strategy_id = STRATEGY_ID,
                 direction   = "bullish",
@@ -227,7 +252,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                     "projected":        round(projected, 2),
                     "touch_pct":        round(touch_pct * 100, 3),
                     "bounce_body":      round(bounce_body, 2),
-                    "entry_bar_low":    round(_prev_bar_low, 4),   # prev bar's low — wider, structure-based stop
+                    "entry_bar_low":    round(_prev_bar_low, 4),   # prev bar's low (floored at low - 0.5×ATR)
                     "rvol_gate":        round(rvol_min, 2),
                     "rvol_gate_reason": _rvol_threshold_reason(
                         bar_min, close, None, vwap, STRATEGY_ID, msa_confirmed=True),
