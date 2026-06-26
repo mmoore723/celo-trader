@@ -1162,7 +1162,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         )
         return
 
-    confirmed_price = order.get("confirmed_fill_price", ask_price)
+    # Use `or ask_price` (not dict.get default) so that a None confirmed_fill_price
+    # (returned by paper_assumed_fill path in _wait_for_fill) also falls back to ask.
+    confirmed_price = order.get("confirmed_fill_price") or ask_price
     entry_utc       = _now_et()   # tz-aware ET — stored as ET ISO in DB
 
     # ── Record to database ────────────────────────────────────────────────────

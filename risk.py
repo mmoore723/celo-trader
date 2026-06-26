@@ -15,10 +15,10 @@ from datetime import datetime, time as dtime, date, timedelta
 from pathlib import Path
 from typing import Optional
 
-# Rate-limit the HIGH RISK WARNING so it fires at most once every 5 minutes
-# instead of on every single tick (which floods both log files and stdout).
-_last_bootstrap_warn_ts: float = 0.0
-_BOOTSTRAP_WARN_INTERVAL_S: float = 300.0  # 5 minutes
+# HIGH RISK WARNING fires at most ONCE PER SESSION (per service start).
+# Previously capped at 5 minutes — still noisy for a user who checks the
+# dashboard periodically. Session-scoped flag is reset when the service restarts.
+_bootstrap_warn_shown: bool = False
 
 from config import (
     get_settings, get_risk_tier,
@@ -313,12 +313,11 @@ class RiskManager:
         risk_pct = get_risk_tier(bal)   # reads user_settings.json on every call
 
         if risk_pct >= BOOTSTRAP_RISK_PCT:
-            # Rate-limited: log at most once per _BOOTSTRAP_WARN_INTERVAL_S seconds
-            # to avoid flooding the log with the same line on every tick.
-            global _last_bootstrap_warn_ts
-            _now_ts = _time.monotonic()
-            if _now_ts - _last_bootstrap_warn_ts >= _BOOTSTRAP_WARN_INTERVAL_S:
-                _last_bootstrap_warn_ts = _now_ts
+            # Fire at most ONCE per session (per service start). Previously
+            # capped at 5 min which still flooded the Thinking panel hourly.
+            global _bootstrap_warn_shown
+            if not _bootstrap_warn_shown:
+                _bootstrap_warn_shown = True
                 _warn_msg = (
                     "WARNING: HIGH RISK MODE ENABLED: 5% RISK PER TRADE — "
                     f"balance=${bal:,.2f} risk_budget=${bal * risk_pct:,.2f}"

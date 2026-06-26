@@ -156,6 +156,12 @@ async def websocket_live(ws: WebSocket) -> None:
         while True:
             # 1. Bot state update
             state = _read_state()
+            # Remap current_ticker → ticker so BotStatus.ticker populates Bot Focus.
+            # bot_state.json writes "current_ticker"; the TypeScript BotStatus interface
+            # and LiveTrading.tsx both read status.ticker — without this remap Bot Focus
+            # always showed "Waiting for bot to start scanning..." even when scanning.
+            if "current_ticker" in state:
+                state["ticker"] = state["current_ticker"]
             state_hash = json.dumps(state, sort_keys=True)
             if state_hash != last_state_hash:
                 await ws.send_json({"type": "status", "data": state})

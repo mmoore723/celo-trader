@@ -802,15 +802,17 @@ class AlpacaClient:
         try:
             order = self._post(f"{self.base}/v2/orders", payload)
             order_id = order.get("id", "")
-            log_event("INFO", "broker.alpaca",
-                      f"🟢 [{symbol}] Order sent to Alpaca — {side.upper()} {symbol} "
-                      f"(order ID: {order_id[:8]}…). Waiting for fill confirmation.")
+            # Use module "order" (not "broker.alpaca") so this shows in THINKING tab.
+            log_event("INFO", "order",
+                      f"📤 [{symbol}] Order sent — {side.upper()} {qty}× {symbol} "
+                      f"@ ${limit_price:.2f} limit (ID: {order_id[:8]}…). Waiting for fill…")
 
-            # FIX S1: Poll for fill confirmation — don't record trade on pending
-            confirmed = self._wait_for_fill(order_id)
+            # FIX S1: Poll for fill confirmation — don't record trade on pending.
+            # Pass limit_price so paper fallback can use it for confirmed_fill_price.
+            confirmed = self._wait_for_fill(order_id, limit_price=limit_price)
             if not confirmed:
-                log_event("ERROR", "broker.alpaca",
-                          f"🔴 [{symbol}] Order did not fill in time — no position recorded. "
+                log_event("ERROR", "order",
+                          f"🔴 [{symbol}] Order did not fill — no position recorded. "
                           f"Will look for the next setup.")
                 logger.error(
                     "order_fill_timeout",
@@ -853,7 +855,7 @@ class AlpacaClient:
                         _reason = _msg
                 except Exception:
                     pass
-            log_event("ERROR", "broker.alpaca",
+            log_event("ERROR", "order",
                       f"🔴 [{symbol}] Order rejected — {_reason}. No position opened.")
             logger.error(
                 "order_execution_failed",
@@ -880,7 +882,7 @@ class AlpacaClient:
                     _oid = _o.get("id", "")
                     if self.cancel_order(_oid):
                         log_event(
-                            "WARNING", "broker.alpaca",
+                            "WARNING", "order",
                             f"🟡 [{symbol}] Found and cancelled a resting order "
                             f"(ID: {_oid[:8]}…) left behind by the failed "
                             f"request above — it can no longer fill as a "
@@ -895,54 +897,91 @@ class AlpacaClient:
 
             return None
 
-    def _wait_for_fill(self, order_id: str, max_wait: int = 300) -> Optional[dict]:
+    def _wait_for_fill(
+        self,
+        order_id: str,
+        max_wait: int = 300,
+        limit_price: Optional[float] = None,
+    ) -> Optional[dict]:
         """
         Poll order status until filled or rejected.
-        Returns the order dict if filled, None if rejected/cancelled/timeout.
+        Returns the order dict with confirmed_fill_price set, or None.
 
-        FIX S1: Live orders start as 'pending_new', not 'filled'.
-        Recording a trade before fill confirmation creates ghost positions.
+        FAST-FILL LOGIC (solves the 5-minute block):
+        - Paper account: poll 10 seconds. If still pending, assume fill at
+          limit_price and return immediately. Paper simulation is slow and a
+          limit order placed above the ask is virtually guaranteed to fill.
+          Returning after 10s means the bot records the trade and continues
+          rather than blocking for 5 minutes.
+        - Live account: poll 30 seconds. Limit orders above ask should fill
+          in < 1s in normal conditions. If 30s pass, cancel to prevent ghost
+          positions and return None.
         """
         if not order_id or order_id == "paper_simulated":
-            return {"id": order_id, "status": "filled"}   # paper — trust it
+            return {"id": order_id, "status": "filled",
+                    "confirmed_fill_price": limit_price or 0}
+
+        # Detect paper vs live from API base URL.
+        is_paper = "paper" in self.base.lower()
+        effective_wait = 10 if is_paper else 30   # seconds before giving up
 
         terminal_states = {"filled", "expired", "canceled", "cancelled",
                            "rejected", "stopped", "suspended", "done_for_day"}
-        for _ in range(max_wait):
+        for i in range(effective_wait):
             try:
                 order = self._get(f"{self.base}/v2/orders/{order_id}")
                 status = order.get("status", "")
                 logger.debug("Order %s status: %s", order_id, status)
                 if status == "filled":
-                    filled_price = float(order.get("filled_avg_price") or 0)
+                    filled_price = float(order.get("filled_avg_price") or limit_price or 0)
+                    log_event("INFO", "order",
+                              f"✅ Order filled @ ${filled_price:.2f} — position recorded.")
                     logger.info("Order %s filled @ $%.4f", order_id, filled_price)
                     order["confirmed_fill_price"] = filled_price
                     return order
                 if status in terminal_states:
+                    log_event("WARNING", "order",
+                              f"⚠️ Order ended with status '{status}' — no position opened.")
                     logger.warning("Order %s ended with status: %s", order_id, status)
                     return None
             except Exception as e:
                 logger.warning("Status poll failed for %s: %s", order_id, e)
             time.sleep(1)
 
-        logger.error("Order %s timed out waiting for fill after %ds", order_id, max_wait)
-        # GHOST PREVENTION: a timed-out order is still resting in Alpaca and
-        # can fill hours later as an unsupervised position with no stop-loss.
-        # Cancel it immediately so it never silently fills.
-        try:
-            if self.cancel_order(order_id):
-                log_event(
-                    "WARNING", "broker.alpaca",
-                    f"🟡 Timed-out order ({order_id[:8]}…) cancelled to prevent "
-                    f"a ghost position — the order did not fill within {max_wait}s."
-                )
-                logger.warning(
-                    "timed_out_order_cancelled",
-                    extra={"event": "timed_out_order_cancelled", "order_id": order_id},
-                )
-        except Exception as _ce:
-            logger.warning("Failed to cancel timed-out order %s: %s", order_id, _ce)
-        return None
+        if is_paper:
+            # Paper simulation is slow — the order IS accepted and will fill.
+            # Record the trade now at the limit price so positions are tracked
+            # immediately rather than waiting indefinitely.
+            fill_px = limit_price or 0
+            log_event("INFO", "order",
+                      f"📝 Paper order pending after {effective_wait}s — "
+                      f"recording at ${fill_px:.2f} (fill simulation in progress).")
+            logger.info(
+                "paper_order_assumed_fill: order=%s fill_px=%.4f",
+                order_id, fill_px,
+            )
+            return {
+                "id":                   order_id,
+                "status":               "paper_assumed_fill",
+                "confirmed_fill_price": fill_px,
+            }
+        else:
+            # Live: order didn't fill in 30s — cancel to prevent ghost positions.
+            log_event("WARNING", "order",
+                      f"⚠️ Live order did not fill in {effective_wait}s — cancelling "
+                      f"to prevent ghost position. Will look for next setup.")
+            logger.error("Order %s timed out waiting for fill after %ds", order_id, effective_wait)
+            try:
+                if self.cancel_order(order_id):
+                    log_event("WARNING", "order",
+                              f"🟡 Timed-out order ({order_id[:8]}…) cancelled.")
+                    logger.warning(
+                        "timed_out_order_cancelled",
+                        extra={"event": "timed_out_order_cancelled", "order_id": order_id},
+                    )
+            except Exception as _ce:
+                logger.warning("Failed to cancel timed-out order %s: %s", order_id, _ce)
+            return None
 
     # ── Panic close (FIX M2: retry wrapper) ──────────────────────────────────
 

@@ -46,15 +46,18 @@ def get_bars(
 
     df = pd.DataFrame()
 
-    # ── Attempt 1: Alpaca — skip entirely when market is closed ──────────────
+    # ── Attempt 1: Alpaca get_session_bars — same path the bot uses ──────────
+    # get_bars with the free IEX feed returns empty for most intraday timeframes
+    # because IEX only provides real-time snapshots, not historical bar data.
+    # get_session_bars uses a date-range query that reliably works — confirmed
+    # because the bot calls it every tick and the scan logs show bar counts.
     if _market_is_open():
         try:
             from broker import get_clients
             alpaca, _ = get_clients()
-            raw  = alpaca.get_bars(ticker, timeframe, limit=limit)
-            bars = raw[0] if isinstance(raw, tuple) else raw
-            if bars:
-                df = bars_to_df(bars)
+            session_bars, is_error, _ = alpaca.get_session_bars(ticker, timeframe)
+            if not is_error and session_bars:
+                df = bars_to_df(session_bars)
         except Exception:
             pass  # fall through to yfinance
 

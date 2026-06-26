@@ -44,7 +44,7 @@ def get_status() -> BotStatus:
     return BotStatus(
         running=actually_running,
         mode=str(state.get("mode", LIVE_STATE.get("mode", "stopped"))),
-        ticker=state.get("ticker") or LIVE_STATE.get("ticker"),
+        ticker=state.get("current_ticker") or state.get("ticker") or LIVE_STATE.get("current_ticker") or LIVE_STATE.get("ticker"),
         account_balance=float(
             state.get("account_balance")
             or LIVE_STATE.get("account_balance")
