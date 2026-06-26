@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import pytz
 from fastapi import APIRouter, HTTPException, Query
-from api.models import Bar, Quote, ScannerResult
+from api.models import Bar, Quote, ScannerResult, OptionsChainRow
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -270,6 +270,68 @@ def get_scanner() -> list[ScannerResult]:
                     r.price = live[r.ticker]
 
         return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/chain/{ticker}", response_model=list[OptionsChainRow])
+def get_options_chain(ticker: str) -> list[OptionsChainRow]:
+    """
+    Return the near-term options chain for a ticker, combining calls and puts
+    into a single per-strike table.  Uses Tradier's live chain endpoint.
+    Only returns the nearest 7–21 DTE expiry (same window the bot trades).
+
+    Result is a list of OptionsChainRow sorted by strike ascending.  Strikes
+    that have only calls or only puts still appear — the other side is null.
+    """
+    try:
+        from broker import get_clients
+        _, tradier = get_clients()
+
+        # Get the nearest expiry in our trading window (7–21 DTE)
+        expirations = tradier.get_expirations(ticker)
+        if not expirations:
+            return []
+
+        expiry = expirations[0]
+
+        # Fetch both sides.  The broker method filters by spread / OI so we see
+        # only the liquid strikes — fine for a trading dashboard.
+        calls = tradier.get_option_chain(ticker, expiry, option_type="call")
+        puts  = tradier.get_option_chain(ticker, expiry, option_type="put")
+
+        # Build strike → {call, put} merged dict
+        strikes: dict[float, dict] = {}
+        for c in calls:
+            s = float(c.get("strike", 0))
+            if s:
+                strikes.setdefault(s, {})["call"] = c
+        for p in puts:
+            s = float(p.get("strike", 0))
+            if s:
+                strikes.setdefault(s, {})["put"] = p
+
+        result = []
+        for strike in sorted(strikes.keys()):
+            row  = strikes[strike]
+            call = row.get("call", {})
+            put  = row.get("put",  {})
+            result.append(OptionsChainRow(
+                strike     = strike,
+                call_bid   = call.get("bid"),
+                call_ask   = call.get("ask"),
+                call_mid   = call.get("mid"),
+                call_delta = call.get("delta"),
+                call_iv    = call.get("iv"),
+                call_oi    = call.get("open_interest"),
+                put_bid    = put.get("bid"),
+                put_ask    = put.get("ask"),
+                put_mid    = put.get("mid"),
+                put_delta  = put.get("delta"),
+                put_iv     = put.get("iv"),
+                put_oi     = put.get("open_interest"),
+            ))
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

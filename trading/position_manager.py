@@ -248,7 +248,8 @@ def _manage_open_position(
 
         # ── Per-position state ────────────────────────────────────────────────
         ps = LIVE_STATE["positions"].setdefault(trade_id, {
-            "peak_price":                None,
+            "peak_price":                None,   # MFE: highest option price seen
+            "min_price":                 None,   # MAE: lowest  option price seen (adverse)
             "entry_time":                trade.get("entry_time"),
             "stage1_done":               False,
             "stage1_be_price":           None,
@@ -277,13 +278,21 @@ def _manage_open_position(
         except Exception:
             entry_time = None
 
-        # ── Peak option price tracking ────────────────────────────────────────
+        # ── Peak option price tracking (MFE) ─────────────────────────────────
         from risk import persist_peak_price, recover_peak_price
         if ps.get("peak_price") is None:
             ps["peak_price"] = recover_peak_price(trade_id) or entry_price
         if current_price > ps["peak_price"]:
             ps["peak_price"] = current_price
             persist_peak_price(trade_id, current_price)
+
+        # ── Minimum option price tracking (MAE) ───────────────────────────────
+        # MAE = max adverse excursion: how far the option price fell below entry.
+        # Initialise to entry_price so we only record genuine adverse moves.
+        if ps.get("min_price") is None:
+            ps["min_price"] = entry_price
+        if current_price < ps["min_price"]:
+            ps["min_price"] = current_price
 
         stage1_done     = bool(ps.get("stage1_done"))
         stage1_be_price = ps.get("stage1_be_price")
@@ -413,6 +422,7 @@ def _manage_open_position(
                 "current_option_price_time": ps["current_option_price_time"],
                 "stage1_done":               stage1_done,
                 "peak_price":                ps["peak_price"],
+                "min_price":                 ps.get("min_price"),  # MAE tracking
                 "entry_time":                entry_time_iso,
                 "atr_trail_stop":            atr_trail_stop,
                 "vwap_breached_bars":        ps.get("vwap_breached_bars", 0),
@@ -610,12 +620,20 @@ def _close_position(
     if fill and fill.get("filled_avg_price"):
         fill_price = float(fill["filled_avg_price"])
 
+    # Pull MFE (peak_price) and MAE (min_price) from live position state so they
+    # get saved to the DB and appear in the Journal's efficiency columns.
+    _trade_ps = LIVE_STATE["positions"].get(trade["id"], {})
+    _peak_px  = _trade_ps.get("peak_price")   # MFE: highest option mid-price seen
+    _min_px   = _trade_ps.get("min_price")    # MAE: lowest  option mid-price seen
+
     pnl = close_trade(
         trade_id             = trade["id"],
         exit_price           = exit_price,
         exit_time            = _now_et(),
         exit_reason          = reason,
         confirmed_fill_price = fill_price,
+        peak_price           = _peak_px,
+        mae_price            = _min_px,
     )
 
     # Human-readable close narrative

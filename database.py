@@ -144,6 +144,16 @@ def init_db() -> None:
         if "target_price" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN target_price REAL")
             logger.info("Migration: added target_price column to trades table")
+        # MFE / MAE columns — highest and lowest option price seen during the trade.
+        # peak_price is the MFE (max favorable excursion): highest option mid-price.
+        # mae_price  is the MAE (max adverse excursion): lowest option mid-price.
+        # Both are tracked live in position_manager.py and saved at close.
+        if "peak_price" not in _cols:
+            conn.execute("ALTER TABLE trades ADD COLUMN peak_price REAL")
+            logger.info("Migration: added peak_price (MFE) column to trades table")
+        if "mae_price" not in _cols:
+            conn.execute("ALTER TABLE trades ADD COLUMN mae_price REAL")
+            logger.info("Migration: added mae_price (MAE) column to trades table")
     logger.info("Database initialised at %s", _active_path)
     # Rebuild daily_summary from any closed trades that slipped through
     # (e.g. trades closed before this function existed, or after a transient error).
@@ -274,11 +284,14 @@ def close_trade(
     exit_time: datetime,
     exit_reason: str,
     confirmed_fill_price: Optional[float] = None,
+    peak_price: Optional[float] = None,   # MFE: highest option mid-price seen during trade
+    mae_price: Optional[float] = None,    # MAE: lowest  option mid-price seen during trade
 ) -> float:
     """
     Mark a trade closed and compute realised P&L.
     FIX N2: If confirmed_fill_price is provided (from broker fill confirmation),
     use that for P&L calculation instead of intended exit_price.
+    peak_price / mae_price are the MFE and MAE values tracked live by position_manager.
     Returns the realised P&L in dollars.
     """
     actual_exit = confirmed_fill_price if confirmed_fill_price else exit_price
@@ -298,10 +311,12 @@ def close_trade(
             """
             UPDATE trades
             SET exit_price = ?, exit_time = ?, exit_reason = ?,
-                realized_pnl = ?, status = 'closed'
+                realized_pnl = ?, status = 'closed',
+                peak_price = ?, mae_price = ?
             WHERE id = ?
             """,
-            (actual_exit, _to_et_isoformat(exit_time), exit_reason, realized_pnl, trade_id),
+            (actual_exit, _to_et_isoformat(exit_time), exit_reason,
+             realized_pnl, peak_price, mae_price, trade_id),
         )
 
     logger.info(

@@ -50,13 +50,13 @@ function AppShell() {
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>
         <Routes>
-          <Route path="/"            element={<LiveTrading />} />
+          <Route path="/"            element={<DailyBrief />} />
+          <Route path="/trading"     element={<LiveTrading />} />
           <Route path="/performance" element={<Performance />} />
           <Route path="/journal"     element={<Journal />} />
           <Route path="/backtest"    element={<Backtest />} />
           <Route path="/playbooks"   element={<Playbooks />} />
           <Route path="/settings"    element={<Settings />} />
-          <Route path="/daily-brief" element={<DailyBrief />} />
         </Routes>
       </main>
       <TickerBar />

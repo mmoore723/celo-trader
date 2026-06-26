@@ -51,6 +51,12 @@ class Trade(BaseModel):
     exit_price: Optional[float]
     stop_price: Optional[float]   # option premium stop-loss level at entry
     target_price: Optional[float] # Stage-1 target at entry
+    # ── MFE / MAE ─────────────────────────────────────────────────────────────
+    peak_price: Optional[float] = None   # highest option mid-price seen (MFE raw)
+    mae_price: Optional[float] = None    # lowest  option mid-price seen (MAE raw)
+    mfe_pct: Optional[float] = None      # (peak - entry) / entry * 100
+    mae_pct: Optional[float] = None      # (mae  - entry) / entry * 100  (negative = adverse)
+    exit_efficiency_pct: Optional[float] = None  # (exit - entry) / (peak - entry) * 100
     # ── Size / P&L ────────────────────────────────────────────────────────────
     contracts: int
     pnl: Optional[float]          # realized_pnl from DB
@@ -121,11 +127,72 @@ class Settings(BaseModel):
     trend_cont_enabled: bool = True
 
 
+# ── Analytics ─────────────────────────────────────────────────────────────────
+
+class StrategyRow(BaseModel):
+    strategy_id: str
+    trades: int
+    wins: int
+    win_rate: float
+    total_pnl: float
+    avg_mfe_pct: float
+
+class HourRow(BaseModel):
+    hour: int
+    label: str      # e.g. "9:30", "10:00"
+    trades: int
+    wins: int
+    win_rate: float
+    avg_pnl: float
+
+class TickerRow(BaseModel):
+    ticker: str
+    trades: int
+    wins: int
+    win_rate: float
+    total_pnl: float
+
+class ExitReasonRow(BaseModel):
+    reason: str
+    trades: int
+    total_pnl: float
+    avg_pnl: float
+
+class TradeAnalytics(BaseModel):
+    by_strategy: list[StrategyRow]
+    by_hour: list[HourRow]
+    by_ticker: list[TickerRow]
+    by_exit_reason: list[ExitReasonRow]
+    avg_mfe_pct: float
+    avg_exit_pct: float
+    avg_exit_efficiency_pct: float
+
+
+# ── Options chain ──────────────────────────────────────────────────────────────
+
+class OptionsChainRow(BaseModel):
+    strike: float
+    call_bid: Optional[float] = None
+    call_ask: Optional[float] = None
+    call_mid: Optional[float] = None
+    call_delta: Optional[float] = None
+    call_iv: Optional[float] = None
+    call_oi: Optional[int] = None
+    put_bid: Optional[float] = None
+    put_ask: Optional[float] = None
+    put_mid: Optional[float] = None
+    put_delta: Optional[float] = None
+    put_iv: Optional[float] = None
+    put_oi: Optional[int] = None
+
+
 # ── Backtest ──────────────────────────────────────────────────────────────────
 
 class BacktestRequest(BaseModel):
     ticker: str
     months: int = 3
+    start_date: Optional[str] = None  # YYYY-MM-DD; if provided with end_date, overrides months
+    end_date: Optional[str] = None    # YYYY-MM-DD
     starting_capital: float = 1000.0
     direction: str = "both"   # "both" | "calls_only" | "puts_only"
 

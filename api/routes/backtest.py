@@ -11,13 +11,27 @@ router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 @router.post("", response_model=BacktestResult)
 def run_backtest(req: BacktestRequest) -> BacktestResult:
     try:
+        import math
+        from datetime import date as _date
         from broker import get_clients
         from backtester import Backtester
         alpaca, _ = get_clients()
+
+        # If start_date + end_date provided, derive months from the date range so the
+        # frontend can send date-picker values rather than a raw month count.
+        months = req.months
+        if req.start_date and req.end_date:
+            try:
+                _start = _date.fromisoformat(req.start_date)
+                _end   = _date.fromisoformat(req.end_date)
+                months = max(1, math.ceil((_end - _start).days / 30))
+            except Exception:
+                pass  # bad date strings → fall through to req.months
+
         bt = Backtester(
             alpaca=alpaca,
             ticker=req.ticker,
-            months=req.months,
+            months=months,
             starting_capital=req.starting_capital,
             direction=req.direction,
         )

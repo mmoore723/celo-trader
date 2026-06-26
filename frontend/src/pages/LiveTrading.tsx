@@ -6,11 +6,12 @@ import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import {
-  AreaChart, Area, ResponsiveContainer, YAxis,
+  ResponsiveContainer, YAxis,
+  LineChart, Line, XAxis, Tooltip, CartesianGrid,
 } from "recharts";
 import { TradingChart } from "../components/charts/TradingChart";
 import { useBotStore, type LivePosition } from "../store/bot";
-import { api, type Trade, type Bar } from "../lib/api";
+import { api, type Trade, type Bar, type OptionsChainRow } from "../lib/api";
 
 // Fallback ticker list — used only when the scanner hasn't run yet.
 // The live dropdown always prefers the scanner watchlist so the user
@@ -33,30 +34,6 @@ function filterByPeriod(bars: Bar[], period: Period): Bar[] {
   return bars.filter((b) => new Date(b.time) >= cutoff);
 }
 
-// ── Mini sparkline for scanner ──────────────────────────────────────────────
-function MiniSparkline({ bars, color }: { bars: Bar[]; color: string }) {
-  if (!bars.length) return <div style={{ height: 40, width: "100%" }} />;
-  const data = bars.slice(-30).map((b) => ({ v: b.close }));
-  return (
-    <ResponsiveContainer width="100%" height={40}>
-      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
-        <defs>
-          <linearGradient id={`sg-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={color} stopOpacity={0.25} />
-            <stop offset="95%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <YAxis domain={["auto", "auto"]} hide />
-        <Area
-          type="monotone" dataKey="v"
-          stroke={color} strokeWidth={1.5}
-          fill={`url(#sg-${color.replace("#", "")})`}
-          dot={false} isAnimationActive={false}
-        />
-      </AreaChart>
-    </ResponsiveContainer>
-  );
-}
 
 // Classify a log entry as network-related (broker/API) vs a trading decision.
 // Network: module contains broker/alpaca/tradier keywords or message has API noise.
@@ -102,8 +79,10 @@ export function LiveTrading() {
   const [showOR,          setShowOR]          = useState(true);
   const [showSwings,      setShowSwings]      = useState(true);
   const [showPositionCard,setShowPositionCard]= useState(true);
-  // Which scanner ticker is expanded (shows mini charts)
-  const [expandedScanner, setExpandedScanner] = useState<string | null>(null);
+  // 5-min chart overlay (toggleable second chart below main)
+  const [show5m,          setShow5m]          = useState(false);
+  // Scanner panel tab: "scanner" list or live options "chain"
+  const [scannerTab,      setScannerTab]      = useState<"scanner" | "chain">("scanner");
   // Bot thinking: pause log scroll when user hovers inside the panel
   const [logPaused,     setLogPaused]     = useState(false);
   const logSnapshotRef  = useRef<typeof logs>([]);
@@ -151,30 +130,22 @@ export function LiveTrading() {
     refetchInterval: 300_000,
   });
 
-  // Mini chart bars for the expanded scanner ticker (4 timeframes)
-  const { data: mini1m  = [] } = useQuery({
-    queryKey: ["bars", expandedScanner, "1Min"],
-    queryFn:  () => api.market.bars(expandedScanner!, "1Min", 60),
-    enabled:  !!expandedScanner,
+  // 5-min bars for the second chart overlay (only fetched when toggle is on and
+  // the main chart is not already 5-min — avoids a redundant second fetch).
+  const { data: bars5m = [] } = useQuery({
+    queryKey: ["bars", ticker, "5Min"],
+    queryFn:  () => api.market.bars(ticker, "5Min", 200),
+    enabled:  show5m && tf !== "5Min",
     refetchInterval: 60_000,
   });
-  const { data: mini5m  = [] } = useQuery({
-    queryKey: ["bars", expandedScanner, "5Min"],
-    queryFn:  () => api.market.bars(expandedScanner!, "5Min", 60),
-    enabled:  !!expandedScanner,
+
+  // Live options chain for the "Chain" tab in the scanner panel
+  const { data: chain = [] } = useQuery({
+    queryKey: ["chain", ticker],
+    queryFn:  () => api.market.chain(ticker),
+    enabled:  scannerTab === "chain",
     refetchInterval: 60_000,
-  });
-  const { data: mini15m = [] } = useQuery({
-    queryKey: ["bars", expandedScanner, "15Min"],
-    queryFn:  () => api.market.bars(expandedScanner!, "15Min", 60),
-    enabled:  !!expandedScanner,
-    refetchInterval: 60_000,
-  });
-  const { data: mini1h  = [] } = useQuery({
-    queryKey: ["bars", expandedScanner, "1Hour"],
-    queryFn:  () => api.market.bars(expandedScanner!, "1Hour", 40),
-    enabled:  !!expandedScanner,
-    refetchInterval: 60_000,
+    retry: false,  // Tradier may not have a chain for non-optionable tickers
   });
 
   // Dropdown options = scanner watchlist + open position tickers + SPY/QQQ anchors.
@@ -293,11 +264,12 @@ export function LiveTrading() {
 
             {/* Overlay toggles */}
             {([
-              ["VWAP",  showVwap,       setShowVwap],
-              ["Bands", showVwapBands,  setShowVwapBands],
-              ["OR",    showOR,         setShowOR],
-              ["Swings",showSwings,     setShowSwings],
-              ["Pos",   showPositionCard, setShowPositionCard],
+              ["VWAP",  showVwap,         setShowVwap],
+              ["Bands", showVwapBands,     setShowVwapBands],
+              ["OR",    showOR,            setShowOR],
+              ["Swings",showSwings,        setShowSwings],
+              ["Pos",   showPositionCard,  setShowPositionCard],
+              ["5m",    show5m,            setShow5m],
             ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
               <label key={label} className="flex items-center gap-1 cursor-pointer text-xs"
                      style={{ color: val ? "var(--ink)" : "var(--ink-muted)" }}>
@@ -325,35 +297,91 @@ export function LiveTrading() {
             ticker={ticker}
             height={420}
           />
+
+          {/* 5-min chart overlay — shown when "5m" toggle is on and main tf ≠ 5Min */}
+          {show5m && tf !== "5Min" && (
+            <div style={{ borderTop: "1px solid var(--border)", padding: "8px 12px" }}>
+              <div className="text-xs font-semibold mb-1" style={{ color: "var(--ink-muted)" }}>
+                {ticker} · 5-minute
+              </div>
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart
+                  data={(bars5m as Bar[]).slice(-100).map((b) => ({
+                    t: b.time.slice(11, 16),  // "HH:MM"
+                    c: b.close,
+                    v: b.vwap,
+                  }))}
+                  margin={{ top: 2, right: 8, left: -10, bottom: 0 }}
+                >
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                  <XAxis dataKey="t" tick={{ fontSize: 9, fill: "var(--ink-faint)" }} interval={9} />
+                  <YAxis
+                    domain={["auto", "auto"]}
+                    tick={{ fontSize: 9, fill: "var(--ink-faint)" }}
+                    tickFormatter={(v) => `$${v.toFixed(0)}`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--card-bg)", border: "1px solid var(--border)",
+                      borderRadius: 6, fontSize: 11,
+                    }}
+                    formatter={(v: unknown, name: unknown) => [
+                      `$${(v as number).toFixed(2)}`,
+                      name === "c" ? "Close" : "VWAP",
+                    ]}
+                  />
+                  <Line type="monotone" dataKey="c" stroke="var(--accent)"
+                        strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                  {bars5m.some((b: Bar) => b.vwap != null) && (
+                    <Line type="monotone" dataKey="v" stroke="var(--positive)"
+                          strokeWidth={1} strokeDasharray="4 3"
+                          dot={false} isAnimationActive={false} />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
 
-        {/* Scanner panel */}
+        {/* Scanner / Chain panel */}
         <div className="card flex flex-col">
+          {/* Tab header */}
           <div
-            className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
-            style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
+            className="flex border-b text-xs font-semibold uppercase tracking-wider"
+            style={{ borderColor: "var(--border)" }}
           >
-            Premarket Scanner
+            {(["scanner", "chain"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setScannerTab(tab)}
+                className="px-3 py-2 transition-colors"
+                style={{
+                  color: scannerTab === tab ? "var(--ink)" : "var(--ink-muted)",
+                  borderBottom: scannerTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
+                  background: "none",
+                }}
+              >
+                {tab === "scanner" ? "Premarket Scanner" : `${ticker} Chain`}
+              </button>
+            ))}
           </div>
-          <div className="overflow-y-auto flex-1">
-            {scanner.length === 0 ? (
-              <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                No scan results yet — bot scans 9:00–9:25 ET
-              </p>
-            ) : (
-              scanner.map((s) => {
-                const isExpanded = expandedScanner === s.ticker;
-                const sparkColor = scannerColor(s.change_pct);
-                return (
-                  <div key={s.ticker}>
-                    {/* Ticker row */}
+
+          {/* Scanner list */}
+          {scannerTab === "scanner" && (
+            <div className="overflow-y-auto flex-1">
+              {scanner.length === 0 ? (
+                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+                  No scan results yet — bot scans 9:00–9:25 ET
+                </p>
+              ) : (
+                scanner.map((s) => {
+                  const sparkColor = scannerColor(s.change_pct);
+                  return (
                     <button
+                      key={s.ticker}
                       className="w-full px-3 py-2 flex items-center justify-between hover:bg-muted transition-colors text-left border-b"
                       style={{ borderColor: "var(--border)" }}
-                      onClick={() => {
-                        setTicker(s.ticker);
-                        setExpandedScanner(isExpanded ? null : s.ticker);
-                      }}
+                      onClick={() => setTicker(s.ticker)}
                     >
                       <div>
                         <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
@@ -363,62 +391,84 @@ export function LiveTrading() {
                           ${s.price.toFixed(2)} · {s.rvol.toFixed(1)}x RVOL
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-0.5">
-                        <span
-                          className="text-xs num font-medium"
-                          style={{ color: sparkColor }}
-                        >
-                          {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
-                        </span>
-                        <span className="text-[10px]" style={{ color: "var(--ink-muted)" }}>
-                          {isExpanded ? "▲" : "▼"} charts
-                        </span>
-                      </div>
+                      <span className="text-xs num font-medium" style={{ color: sparkColor }}>
+                        {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
+                      </span>
                     </button>
+                  );
+                })
+              )}
+            </div>
+          )}
 
-                    {/* Expanded mini charts — 4 timeframes */}
-                    {isExpanded && (
-                      <div
-                        className="px-2 py-2 grid grid-cols-2 gap-2 border-b"
-                        style={{ borderColor: "var(--border)", background: "var(--surface-raised)" }}
-                      >
-                        {[
-                          { label: "1m",  data: mini1m },
-                          { label: "5m",  data: mini5m },
-                          { label: "15m", data: mini15m },
-                          { label: "1h",  data: mini1h },
-                        ].map(({ label, data }) => {
-                          const lastClose = data.length ? data[data.length - 1].close : null;
-                          const firstClose = data.length ? data[0].close : null;
-                          const change = (lastClose && firstClose) ? ((lastClose - firstClose) / firstClose * 100) : null;
-                          const c = change != null && change >= 0 ? "var(--positive)" : "var(--negative)";
-                          return (
-                            <div
-                              key={label}
-                              className="rounded p-1"
-                              style={{ border: "1px solid var(--border)" }}
-                            >
-                              <div className="flex justify-between items-center mb-0.5">
-                                <span className="text-[10px] font-semibold" style={{ color: "var(--ink-muted)" }}>
-                                  {label}
-                                </span>
-                                {change != null && (
-                                  <span className="text-[10px] num" style={{ color: c }}>
-                                    {change >= 0 ? "+" : ""}{change.toFixed(2)}%
-                                  </span>
-                                )}
-                              </div>
-                              <MiniSparkline bars={data} color={change != null && change >= 0 ? "#3fb950" : "#f85149"} />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
+          {/* Options chain */}
+          {scannerTab === "chain" && (
+            <div className="overflow-y-auto flex-1">
+              {chain.length === 0 ? (
+                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+                  {chain.length === 0
+                    ? "No chain data — Tradier key required, or no liquid contracts 7–21 DTE"
+                    : "Loading…"}
+                </p>
+              ) : (
+                <table style={{
+                  width: "100%", borderCollapse: "collapse",
+                  fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                }}>
+                  <thead>
+                    <tr style={{ background: "var(--surface-raised)" }}>
+                      <th colSpan={3} style={{ padding: "4px 6px", color: "var(--positive)", textAlign: "center",
+                        borderBottom: "1px solid var(--border)" }}>CALLS</th>
+                      <th style={{ padding: "4px 6px", color: "var(--ink-muted)", textAlign: "center",
+                        borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
+                        borderRight: "1px solid var(--border)" }}>Strike</th>
+                      <th colSpan={3} style={{ padding: "4px 6px", color: "var(--negative)", textAlign: "center",
+                        borderBottom: "1px solid var(--border)" }}>PUTS</th>
+                    </tr>
+                    <tr style={{ background: "var(--surface-raised)" }}>
+                      {["Bid","Mid","Ask"].map((h) => (
+                        <th key={`c-${h}`} style={{ padding: "3px 5px", color: "var(--ink-faint)",
+                          fontWeight: 500, borderBottom: "1px solid var(--border)", textAlign: "right" }}>{h}</th>
+                      ))}
+                      <th style={{ padding: "3px 5px", color: "var(--ink-muted)", fontWeight: 700,
+                        borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
+                        borderRight: "1px solid var(--border)", textAlign: "center" }}>—</th>
+                      {["Bid","Mid","Ask"].map((h) => (
+                        <th key={`p-${h}`} style={{ padding: "3px 5px", color: "var(--ink-faint)",
+                          fontWeight: 500, borderBottom: "1px solid var(--border)", textAlign: "right" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(chain as OptionsChainRow[]).map((row) => (
+                      <tr key={row.strike} style={{ borderBottom: "1px solid var(--border)" }}>
+                        {[row.call_bid, row.call_mid, row.call_ask].map((v, i) => (
+                          <td key={i} style={{ padding: "3px 5px", textAlign: "right",
+                            color: "var(--positive)" }}>
+                            {v != null ? v.toFixed(2) : "—"}
+                          </td>
+                        ))}
+                        <td style={{
+                          padding: "3px 5px", textAlign: "center", fontWeight: 700,
+                          color: "var(--ink)", borderLeft: "1px solid var(--border)",
+                          borderRight: "1px solid var(--border)",
+                          background: "var(--surface-raised)",
+                        }}>
+                          {row.strike.toFixed(0)}
+                        </td>
+                        {[row.put_bid, row.put_mid, row.put_ask].map((v, i) => (
+                          <td key={i} style={{ padding: "3px 5px", textAlign: "right",
+                            color: "var(--negative)" }}>
+                            {v != null ? v.toFixed(2) : "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
 
           {/* Bot Focus */}
           <div
@@ -443,7 +493,7 @@ export function LiveTrading() {
                     }}>
                       <thead>
                         <tr>
-                          {["Ticker","Type","Entry","Now","P&L","Stop","Stage"].map((h) => (
+                          {["Ticker","Type","Entry","Now","P&L","MAE","Stop","Stage"].map((h) => (
                             <th key={h} style={{
                               padding: "2px 5px", textAlign: "left",
                               color: "var(--ink-faint)", fontWeight: 500,
@@ -511,6 +561,19 @@ export function LiveTrading() {
                                     </span>
                                   </span>
                                 ) : "—"}
+                              </td>
+                              {/* MAE — max adverse excursion: lowest option price seen */}
+                              <td style={{ padding: "4px 5px", whiteSpace: "nowrap" }}>
+                                {(() => {
+                                  const minPx = (pos as any).min_price;
+                                  if (minPx == null || minPx >= entry) return <span style={{ color: "var(--ink-faint)" }}>—</span>;
+                                  const maePct = ((minPx - entry) / entry * 100).toFixed(1);
+                                  return (
+                                    <span style={{ color: "var(--negative)", fontSize: 9 }}>
+                                      ${minPx.toFixed(2)} ({maePct}%)
+                                    </span>
+                                  );
+                                })()}
                               </td>
                               {/* Trail stop */}
                               <td style={{ padding: "4px 5px", color: "var(--negative)", whiteSpace: "nowrap" }}>

@@ -18,12 +18,12 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { label: "Live Trading",  to: "/",           icon: <Activity size={16} /> },
+  { label: "Daily Brief",   to: "/",            icon: <CalendarDays size={16} /> },
+  { label: "Live Trading",  to: "/trading",     icon: <Activity size={16} /> },
   { label: "Performance",   to: "/performance", icon: <BarChart2 size={16} /> },
   { label: "Trade Journal", to: "/journal",     icon: <BookOpen size={16} /> },
   { label: "Backtest",      to: "/backtest",    icon: <FlaskConical size={16} /> },
   { label: "Playbooks",     to: "/playbooks",   icon: <Newspaper size={16} /> },
-  { label: "Daily Brief",   to: "/daily-brief", icon: <CalendarDays size={16} /> },
   { label: "Settings",      to: "/settings",    icon: <Settings size={16} /> },
 ];
 

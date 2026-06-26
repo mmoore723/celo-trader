@@ -21,16 +21,28 @@ const DIRECTION_OPTS: { value: Direction; label: string; desc: string }[] = [
   { value: "puts_only",  label: "Puts Only",   desc: "Filter: only simulate bearish signals (puts)" },
 ];
 
+// Default date range: last 3 months
+function defaultStart() {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 3);
+  return d.toISOString().slice(0, 10);
+}
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function Backtest() {
   const [ticker,    setTicker]    = useState("SPY");
-  const [months,    setMonths]    = useState(3);
+  const [startDate, setStartDate] = useState(defaultStart());
+  const [endDate,   setEndDate]   = useState(todayStr());
   const [capital,   setCapital]   = useState(1000);
   const [direction, setDirection] = useState<Direction>("both");
+  const [showTrades, setShowTrades] = useState(true);
   const { theme } = useThemeStore();
   const dark = theme === "dark";
 
   const { mutate, data: result, isPending, isError, error } = useMutation({
-    mutationFn: () => api.backtest.run(ticker, months, capital, direction),
+    mutationFn: () => api.backtest.run(ticker, 3, capital, direction, startDate, endDate),
   });
 
   const gridColor = dark ? "#21262d" : "#f0f2f7";
@@ -62,11 +74,21 @@ export function Backtest() {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Look-back (months)</label>
+            <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Start Date</label>
             <input
-              type="number" min={1} max={24} value={months}
-              onChange={(e) => setMonths(parseInt(e.target.value))}
-              className="input w-28"
+              type="date" value={startDate}
+              max={endDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="input w-36"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>End Date</label>
+            <input
+              type="date" value={endDate}
+              min={startDate} max={todayStr()}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="input w-36"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -185,7 +207,7 @@ export function Backtest() {
           {equity.length > 1 && (
             <div className="card p-4">
               <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
-                Equity Curve — {ticker} ({months}mo)
+                Equity Curve — {ticker} ({startDate} → {endDate})
               </h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={equity}>
@@ -286,6 +308,78 @@ export function Backtest() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Trade-by-trade table */}
+          {result.trades.length > 0 && (
+            <div className="card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                  Trade-by-Trade ({result.trades.length} trades)
+                </h3>
+                <button
+                  className="btn btn-ghost btn-sm text-xs"
+                  onClick={() => setShowTrades((v) => !v)}
+                >
+                  {showTrades ? "Hide" : "Show"}
+                </button>
+              </div>
+              {showTrades && (
+                <div className="overflow-x-auto" style={{ maxHeight: 420 }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Date</th>
+                        <th>Dir</th>
+                        <th>Strategy</th>
+                        <th className="text-right">Entry $</th>
+                        <th className="text-right">Exit $</th>
+                        <th className="text-right">P&L</th>
+                        <th>Exit Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.trades.map((t, i) => {
+                        // Backtester returns plain dicts — field names may vary slightly
+                        const raw = t as Record<string, unknown>;
+                        const entry  = raw.entry_price as number ?? raw.entry as number ?? 0;
+                        const exit_p = raw.exit_price  as number ?? raw.exit  as number ?? 0;
+                        const pnl    = raw.pnl         as number ?? raw.realized_pnl as number ?? 0;
+                        const dir    = (raw.direction  as string ?? raw.option_type as string ?? "").toLowerCase();
+                        const strat  = raw.strategy_id as string ?? raw.strategy as string ?? "—";
+                        const reason = raw.exit_reason as string ?? "—";
+                        const date   = (raw.entry_time as string ?? raw.date as string ?? "").slice(0, 10);
+                        const isLong = dir === "long" || dir === "call";
+                        return (
+                          <tr key={i}>
+                            <td className="num text-xs" style={{ color: "var(--ink-muted)" }}>{i + 1}</td>
+                            <td className="text-xs num" style={{ color: "var(--ink-muted)" }}>{date}</td>
+                            <td>
+                              <span style={{
+                                fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3,
+                                background: isLong ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
+                                color: isLong ? posColor : negColor,
+                              }}>
+                                {(dir || "?").toUpperCase().slice(0, 4)}
+                              </span>
+                            </td>
+                            <td className="text-xs" style={{ color: "var(--ink-muted)" }}>{strat}</td>
+                            <td className="num text-right text-xs">${entry.toFixed(2)}</td>
+                            <td className="num text-right text-xs">${exit_p.toFixed(2)}</td>
+                            <td className="num text-right text-xs font-semibold"
+                                style={{ color: pnl >= 0 ? posColor : negColor }}>
+                              {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                            </td>
+                            <td className="text-xs" style={{ color: "var(--ink-muted)" }}>{reason}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </>

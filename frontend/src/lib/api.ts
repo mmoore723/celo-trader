@@ -50,6 +50,12 @@ export interface Trade {
   stop_price?: number;
   target_price?: number;
   trail_price?: number;
+  // MFE / MAE — populated once the trade closes (position_manager saves at close)
+  peak_price?: number;            // highest option price seen during trade
+  mae_price?: number;             // lowest  option price seen during trade
+  mfe_pct?: number;               // (peak - entry) / entry * 100
+  mae_pct?: number;               // (mae  - entry) / entry * 100  (negative = adverse)
+  exit_efficiency_pct?: number;   // (exit - entry) / (peak - entry) * 100
   contracts: number;
   pnl?: number;
   status: string;
@@ -58,6 +64,61 @@ export interface Trade {
   exit_reason?: string;
   stage1_done?: boolean;
   mode?: string;
+}
+
+// ── Analytics ──────────────────────────────────────────────────────────────
+
+export interface StrategyRow {
+  strategy_id: string;
+  trades: number;
+  wins: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_mfe_pct: number;
+}
+
+export interface HourRow {
+  hour: number;
+  label: string;
+  trades: number;
+  wins: number;
+  win_rate: number;
+  avg_pnl: number;
+}
+
+export interface TickerRow {
+  ticker: string;
+  trades: number;
+  wins: number;
+  win_rate: number;
+  total_pnl: number;
+}
+
+export interface ExitReasonRow {
+  reason: string;
+  trades: number;
+  total_pnl: number;
+  avg_pnl: number;
+}
+
+export interface TradeAnalytics {
+  by_strategy: StrategyRow[];
+  by_hour: HourRow[];
+  by_ticker: TickerRow[];
+  by_exit_reason: ExitReasonRow[];
+  avg_mfe_pct: number;
+  avg_exit_pct: number;
+  avg_exit_efficiency_pct: number;
+}
+
+// ── Options chain ──────────────────────────────────────────────────────────
+
+export interface OptionsChainRow {
+  strike: number;
+  call_bid?: number; call_ask?: number; call_mid?: number;
+  call_delta?: number; call_iv?: number; call_oi?: number;
+  put_bid?: number; put_ask?: number; put_mid?: number;
+  put_delta?: number; put_iv?: number; put_oi?: number;
 }
 
 export interface TradeListResponse {
@@ -166,22 +227,38 @@ export const api = {
     list:        (mode="paper", status="all") => request<TradeListResponse>(`/api/trades?mode=${mode}&status=${status}`),
     open:        () => request<Trade[]>("/api/trades/open"),
     performance: (mode="paper") => request<PerformanceStats>(`/api/trades/performance?mode=${mode}`),
+    analytics:   (mode="paper") => request<TradeAnalytics>(`/api/trades/analytics?mode=${mode}`),
   },
   market: {
     bars:    (ticker: string, tf="5Min", limit=200) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}`),
     quotes:  (tickers: string) => request<Quote[]>(`/api/market/quotes?tickers=${tickers}`),
     scanner: () => request<ScannerResult[]>("/api/market/scanner"),
     or:      (ticker: string) => request<Record<string,number>>(`/api/market/opening-range/${ticker}`),
+    chain:   (ticker: string) => request<OptionsChainRow[]>(`/api/market/chain/${ticker}`),
   },
   settings: {
     get:  () => request<AppSettings>("/api/settings"),
     save: (s: AppSettings) => request<AppSettings>("/api/settings", { method: "POST", body: JSON.stringify(s) }),
   },
   backtest: {
-    run: (ticker: string, months: number, capital: number, direction: string) =>
+    run: (
+      ticker: string,
+      months: number,
+      capital: number,
+      direction: string,
+      startDate?: string,
+      endDate?: string,
+    ) =>
       request<BacktestResult>("/api/backtest", {
         method: "POST",
-        body: JSON.stringify({ ticker, months, starting_capital: capital, direction }),
+        body: JSON.stringify({
+          ticker,
+          months,
+          starting_capital: capital,
+          direction,
+          ...(startDate ? { start_date: startDate } : {}),
+          ...(endDate   ? { end_date:   endDate   } : {}),
+        }),
       }),
   },
 };
