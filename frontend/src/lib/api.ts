@@ -6,6 +6,7 @@ const BASE = import.meta.env.VITE_API_URL ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
+    credentials: "include",   // send session cookie with every API call
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
