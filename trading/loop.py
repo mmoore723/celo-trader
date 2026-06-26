@@ -114,6 +114,42 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     except Exception as _sg_err:
         logger.warning("startup_reconciliation_failed: %s", _sg_err)
 
+    # ── Watchlist restoration on mid-session restart ──────────────────────────
+    # If the bot restarts after the 9:00–11:30 scan window, is_scan_window()
+    # returns False and the scan block in the main loop never runs, leaving
+    # scan_watchlist empty and _tick() with nothing to evaluate.
+    # Fix: on startup, check daily_universe.json — if today's scan already ran,
+    # restore it immediately so the bot can resume trading without a full rescan.
+    if not LIVE_STATE.get("scan_watchlist"):
+        try:
+            from scanner import _read_daily_universe, _et_now as _scanner_et
+            from config import get_settings as _get_s_wl
+            _du = _read_daily_universe()
+            _today_str = _scanner_et().strftime("%Y-%m-%d")
+            if _du.get("date") == _today_str and _du.get("universe"):
+                # Today's scan already ran — restore it
+                _restored_wl = _du["universe"]
+                LIVE_STATE["scan_watchlist"]    = _restored_wl
+                LIVE_STATE["scanner_ran_today"] = True
+                LIVE_STATE["current_ticker"]    = _restored_wl[0]
+                log_event("INFO", "scanner",
+                          f"🔄 Restored today's scan watchlist after restart: "
+                          f"{', '.join(_restored_wl)}")
+            else:
+                # No daily universe yet — seed from settings watchlist + anchors
+                _pins = [t.upper().strip() for t in (_get_s_wl().get("watchlist") or []) if t.strip()]
+                _seed = list(dict.fromkeys(_pins + ["SPY", "QQQ"]))[:10]
+                LIVE_STATE["scan_watchlist"]    = _seed
+                LIVE_STATE["scanner_ran_today"] = False   # force rescan when window opens
+                LIVE_STATE["current_ticker"]    = _seed[0]
+                log_event("INFO", "scanner",
+                          f"🔄 No daily universe yet — seeding watchlist: {', '.join(_seed)}")
+        except Exception as _wl_err:
+            logger.warning("Watchlist restore failed: %s — using anchors", _wl_err)
+            LIVE_STATE["scan_watchlist"]    = ["SPY", "QQQ"]
+            LIVE_STATE["current_ticker"]    = "SPY"
+            LIVE_STATE["scanner_ran_today"] = False
+
     # Write initial bot_state.json, carrying forward last-known option price.
     _prev_opt_px      = None
     _prev_opt_px_time = None
@@ -149,7 +185,13 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     while not _stop_event.is_set():
         try:
             # ── Daily scan ───────────────────────────────────────────────────
-            if not LIVE_STATE.get("scanner_ran_today") and is_scan_window():
+            # Run if: scan hasn't run today AND we're in the scan window.
+            # Also run if scan_watchlist is empty regardless of time — this
+            # catches the edge case where the restore above produced no results.
+            _needs_scan = (
+                not LIVE_STATE.get("scanner_ran_today") and is_scan_window()
+            ) or not LIVE_STATE.get("scan_watchlist")
+            if _needs_scan:
                 try:
                     wl = run_scan(alpaca, max_tickers=10)
                     LIVE_STATE["scan_watchlist"] = wl
