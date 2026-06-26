@@ -163,12 +163,15 @@ export function LiveTrading() {
     refetchInterval: 60_000,
   });
 
-  // Dropdown options = scanner watchlist (what the bot actually evaluates),
-  // falling back to FALLBACK_TICKERS when the scanner hasn't run yet.
-  const dropdownTickers = useMemo(
-    () => scanner.length > 0 ? scanner.map((s: any) => s.ticker) : FALLBACK_TICKERS,
-    [scanner],
-  );
+  // Dropdown options = scanner watchlist + open position tickers + SPY/QQQ anchors.
+  // Open position tickers are always included so the user can view the chart for
+  // a trade even if that ticker wasn't in today's premarket scan (e.g. SPY entered
+  // via CHAN_BREAK after the scan window closed).
+  const dropdownTickers = useMemo(() => {
+    const base   = scanner.length > 0 ? scanner.map((s: any) => s.ticker) : FALLBACK_TICKERS;
+    const extra  = ["SPY", "QQQ", ...openTrades.map((t: Trade) => t.ticker)];
+    return [...new Set([...base, ...extra])];
+  }, [scanner, openTrades]);
 
   // Trades for the current ticker
   const tickerTrades = openTrades.filter((t: Trade) => t.ticker === ticker);
@@ -409,75 +412,88 @@ export function LiveTrading() {
           >
             Bot Focus
           </div>
-          <div className="px-3 pb-3 flex flex-col gap-1.5">
+          <div className="px-2 pb-3">
             {status?.ticker ? (
-              <>
-                {/* Row 1: Strike · Ticker · Strategy badge */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {status.last_eval_strike != null && (
-                      <span className="num font-bold text-sm" style={{ color: "var(--ink)" }}>
-                        ${status.last_eval_strike.toFixed(0)}
-                      </span>
-                    )}
-                    {status.last_eval_strike != null && (
-                      <span style={{ color: "var(--ink-faint)" }}>·</span>
-                    )}
-                    <span className="font-bold text-sm" style={{ color: "var(--ink)" }}>
-                      {status.ticker}
-                    </span>
-                  </div>
-                  {status.last_strategy_id && (
-                    <span className="badge badge-blue flex-shrink-0">{status.last_strategy_id}</span>
-                  )}
-                </div>
-
-                {/* Row 2: Contract symbol */}
-                {status.last_eval_contract_symbol && (
-                  <div
-                    className="num text-xs truncate"
-                    style={{ color: "var(--ink-muted)", letterSpacing: "0.01em" }}
-                    title={status.last_eval_contract_symbol}
-                  >
-                    {status.last_eval_contract_symbol}
+              // Compact 6-column table: Strike | Ticker | Contract | Exp | Entry | Stop
+              <div style={{ overflowX: "auto" }}>
+                <table style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 10,
+                }}>
+                  <thead>
+                    <tr>
+                      {["Strike","Ticker","Contract","Exp","Entry","Stop"].map((h) => (
+                        <th key={h} style={{
+                          padding: "2px 5px",
+                          textAlign: "left",
+                          color: "var(--ink-faint)",
+                          fontWeight: 500,
+                          borderBottom: "1px solid var(--border)",
+                          whiteSpace: "nowrap",
+                          letterSpacing: "0.03em",
+                        }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      {/* Strike */}
+                      <td style={{ padding: "3px 5px", color: "var(--ink)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {status.last_eval_strike != null ? `$${status.last_eval_strike.toFixed(0)}` : "—"}
+                      </td>
+                      {/* Ticker — click to load that ticker's chart */}
+                      <td
+                        style={{
+                          padding: "3px 5px", color: "var(--accent)", fontWeight: 700,
+                          cursor: "pointer", textDecoration: "underline dotted",
+                        }}
+                        title={`View ${status.ticker} chart`}
+                        onClick={() => status.ticker && setTicker(status.ticker)}
+                      >
+                        {status.ticker}
+                      </td>
+                      {/* Contract # — truncated, full on hover */}
+                      <td
+                        title={status.last_eval_contract_symbol ?? ""}
+                        style={{
+                          padding: "3px 5px",
+                          color: "var(--ink-muted)",
+                          maxWidth: 110,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {status.last_eval_contract_symbol ?? "—"}
+                      </td>
+                      {/* Exp date — YYYY-MM-DD → MM/DD/YY */}
+                      <td style={{ padding: "3px 5px", color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
+                        {status.last_eval_expiry?.length === 10
+                          ? `${status.last_eval_expiry.slice(5,7)}/${status.last_eval_expiry.slice(8,10)}/${status.last_eval_expiry.slice(2,4)}`
+                          : (status.last_eval_expiry ?? "—")}
+                      </td>
+                      {/* Target entry */}
+                      <td style={{ padding: "3px 5px", color: "var(--positive)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        {status.last_eval_eff_entry != null ? `$${status.last_eval_eff_entry.toFixed(2)}` : "—"}
+                      </td>
+                      {/* Stop % */}
+                      <td style={{ padding: "3px 5px", color: "var(--negative)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        {status.current_stop_pct != null ? `${(status.current_stop_pct * 100).toFixed(0)}%` : "—"}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                {/* Strategy badge below table */}
+                {status.last_strategy_id && (
+                  <div className="mt-1 pl-1">
+                    <span className="badge badge-blue" style={{ fontSize: 9 }}>{status.last_strategy_id}</span>
                   </div>
                 )}
-
-                {/* Row 3: Expiry */}
-                {status.last_eval_expiry && (
-                  <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                    Exp&nbsp;
-                    <span className="num" style={{ color: "var(--ink)" }}>
-                      {/* Format YYYY-MM-DD → MM/DD/YY */}
-                      {status.last_eval_expiry.length === 10
-                        ? `${status.last_eval_expiry.slice(5, 7)}/${status.last_eval_expiry.slice(8, 10)}/${status.last_eval_expiry.slice(2, 4)}`
-                        : status.last_eval_expiry}
-                    </span>
-                  </div>
-                )}
-
-                {/* Row 4: Target entry · Stop % */}
-                <div className="flex items-center gap-3 text-xs flex-wrap">
-                  {status.last_eval_eff_entry != null && (
-                    <span>
-                      <span style={{ color: "var(--ink-muted)" }}>Entry&nbsp;</span>
-                      <span className="num font-semibold" style={{ color: "var(--positive)" }}>
-                        ${status.last_eval_eff_entry.toFixed(2)}
-                      </span>
-                    </span>
-                  )}
-                  {status.current_stop_pct != null && (
-                    <span>
-                      <span style={{ color: "var(--ink-muted)" }}>Stop&nbsp;</span>
-                      <span className="num font-semibold" style={{ color: "var(--negative)" }}>
-                        {(status.current_stop_pct * 100).toFixed(1)}%
-                      </span>
-                    </span>
-                  )}
-                </div>
-              </>
+              </div>
             ) : (
-              <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+              <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
                 Waiting for bot to start scanning…
               </p>
             )}

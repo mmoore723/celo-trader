@@ -82,10 +82,12 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     LIVE_STATE["account_balance"] = balance
 
     # FIX: seed LIVE_STATE["session_pnl"] from DB at startup to survive restarts.
+    # Use (val or 0) guards so None values from nullable DB columns don't crash
+    # the sum (t.get("exit_time", "") returns None when the column is NULL).
     try:
         LIVE_STATE["session_pnl"] = sum(
-            t.get("realized_pnl", 0) for t in get_all_trades(limit=100)
-            if t.get("exit_time", "")[:10] == date.today().isoformat()
+            (t.get("realized_pnl") or 0) for t in get_all_trades(limit=100)
+            if (t.get("exit_time") or "")[:10] == date.today().isoformat()
         )
     except Exception as e:
         logger.error("Could not recompute session_pnl from DB at startup: %s", e)

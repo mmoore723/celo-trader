@@ -392,11 +392,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     LIVE_STATE["ghost_position_alert"] = _check_ghost_positions(alpaca)
 
     # ── Write shared state file so dashboard reads live bot state ─────────────
-    from config import get_risk_tier as _grt, DAILY_LOSS_HARD_CAP_PCT as _DLHCP
+    from config import get_risk_tier as _grt, DAILY_LOSS_HARD_CAP_PCT as _DLHCP, get_settings as _gs
     _kill_locked, _kill_reason = check_kill_lock()
+    _is_paper = _gs().get("paper_trading", True)
     try:
         _json.dump({
             "running":                True,
+            "mode":                   "paper" if _is_paper else "live",
             "account_balance":        LIVE_STATE.get("account_balance", 0),
             "options_buying_power":   LIVE_STATE.get("options_buying_power", 0),
             "ghost_position_alert":   LIVE_STATE.get("ghost_position_alert"),
@@ -404,6 +406,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "status":                 LIVE_STATE.get("status", "idle"),
             "current_ticker":         LIVE_STATE.get("current_ticker"),
             "last_signal":            LIVE_STATE.get("last_signal"),
+            "last_strategy_id":       LIVE_STATE.get("last_strategy_id"),
             "market_open":            LIVE_STATE.get("market_open", False),
             "last_update":            _time.strftime("%H:%M:%S"),
             # ORB-specific fields — dashboard 45-min countdown & stop display
