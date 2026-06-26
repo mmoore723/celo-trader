@@ -10,12 +10,49 @@ Functions:
 
 from __future__ import annotations
 
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, date
 
 from trading.state import LIVE_STATE, _now_et, _BOT_ROOT
 
 logger = logging.getLogger("celo_trader.trading_logic")
+
+
+def _refresh_session_pnl() -> float:
+    """
+    Recompute LIVE_STATE["session_pnl"] from the DB and immediately flush it
+    to bot_state.json so the WebSocket picks up the correct value.
+
+    Called by every close path that doesn't go through _close_position
+    (panic_close_all, close_trade_by_id, _panic_close_all_positions).
+    """
+    from database import get_all_trades
+    try:
+        pnl = sum(
+            (t.get("realized_pnl") or 0)
+            for t in get_all_trades(limit=200)
+            if (t.get("exit_time") or "")[:10] == date.today().isoformat()
+        )
+        LIVE_STATE["session_pnl"] = pnl
+    except Exception as e:
+        logger.warning("_refresh_session_pnl: DB query failed: %s", e)
+        pnl = LIVE_STATE.get("session_pnl", 0.0)
+
+    # Flush to bot_state.json so the WebSocket doesn't read a stale value
+    try:
+        _path = _BOT_ROOT / "bot_state.json"
+        _state = {}
+        if _path.exists():
+            with open(_path) as _f:
+                _state = json.load(_f)
+        _state["session_pnl"] = pnl
+        with open(_path, "w") as _f:
+            json.dump(_state, _f)
+    except Exception as e:
+        logger.warning("_refresh_session_pnl: bot_state.json write failed: %s", e)
+
+    return pnl
 
 
 def close_trade_by_id(trade_id: int) -> dict:
@@ -98,6 +135,9 @@ def close_trade_by_id(trade_id: int) -> dict:
         f"@ ${exit_price:.2f}. P&L: {'+' if pnl >= 0 else ''}${pnl:.2f}.",
     )
 
+    # ── Update session P&L ────────────────────────────────────────────────────
+    _refresh_session_pnl()
+
     # ── Clear per-position state ───────────────────────────────────────────────
     LIVE_STATE["positions"].pop(trade_id, None)
     _remaining_open            = get_open_trades()
@@ -176,6 +216,11 @@ def panic_close_all() -> None:
         close_trade(trade["id"], exit_price=exit_px,
                     exit_time=_now_et(), exit_reason="panic")
     LIVE_STATE["status"] = "halted"
+    LIVE_STATE["open_trades"] = []
+    LIVE_STATE["open_trade"]  = None
+    LIVE_STATE["positions"]   = {}
+    # Recompute and flush session_pnl — panic bypasses _close_position
+    _refresh_session_pnl()
     log_event("WARNING", "trading_logic",
               "🔴 Emergency close triggered — all positions have been closed.")
 
@@ -208,6 +253,8 @@ def _panic_close_all_positions(alpaca: "AlpacaClient", tradier: "TradierClient")
     LIVE_STATE["open_trade"]   = None
     LIVE_STATE["open_trades"]  = []
     LIVE_STATE["positions"]    = {}
+    # Recompute and flush session_pnl — kill-lock bypasses _close_position
+    _refresh_session_pnl()
     log_event("CRITICAL", "trading_logic",
               "🔴 Daily loss limit hit — all positions closed. "
               "Trading is frozen for 24 hours to protect your account.")

@@ -401,6 +401,8 @@ def _manage_open_position(
             _existing["current_stop_pct"]           = _current_stop_pct_display
             _existing["current_option_price"]       = current_price
             _existing["current_option_price_time"]  = ps["current_option_price_time"]
+            # Always carry the latest session_pnl so the WebSocket never reads a stale value
+            _existing["session_pnl"]                = LIVE_STATE.get("session_pnl", 0.0)
             with open(_state_path_m, "w") as _f:
                 _json_m.dump(_existing, _f)
         except Exception:
