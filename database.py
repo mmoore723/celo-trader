@@ -490,15 +490,35 @@ def get_cumulative_pnl() -> list[dict]:
 
 def log_event(level: str, component: str, message: str) -> None:
     """
-    Persist a system event (error, alert, etc.) to the audit trail.
-    Timestamps are stored in US/Eastern so all audit rows align with
-    market session times and are human-readable without offset conversion.
+    Persist a system event to both:
+      1. SQLite system_events table  (audit trail, Trade Journal)
+      2. bot.log via Python logger   (THINKING panel in the dashboard)
+
+    Previously log_event only wrote to SQLite, so all strategy decision
+    messages ("No trade setup found", "Outside trading hours", entry/exit
+    narratives, etc.) were invisible to the THINKING panel which reads bot.log.
+    The dual-write here fixes that without changing any call sites.
     """
+    # 1. Persist to SQLite
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO system_events (ts, level, component, message) VALUES (?, ?, ?, ?)",
             (_now_et().isoformat(), level, component, message),
         )
+
+    # 2. Mirror to bot.log so WebSocket → THINKING panel can display it.
+    # Use component as the logger name (e.g. "celo_trader.bar_eval") so the
+    # frontend's network/thinking tab split works correctly — bar_eval and
+    # trading_logic messages land in THINKING, not Network.
+    import logging as _logging
+    _evt_logger = _logging.getLogger(f"celo_trader.{component}")
+    _lvl = level.upper()
+    if _lvl == "ERROR":
+        _evt_logger.error(message)
+    elif _lvl in ("WARNING", "WARN"):
+        _evt_logger.warning(message)
+    else:
+        _evt_logger.info(message)
 
 
 # ── Aggregate statistics ───────────────────────────────────────────────────────
