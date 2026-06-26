@@ -87,9 +87,18 @@ if _DIST.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str) -> FileResponse:
-        """Catch-all: serve index.html for all non-API routes (React Router)."""
+        """Catch-all: serve index.html for all non-API routes (React Router).
+        Cache-Control: no-cache forces browsers to always revalidate index.html.
+        JS/CSS assets have content-hashed filenames so they stay cached correctly.
+        Without this, a browser caches the old index.html and keeps loading the
+        old JS bundle even after a deploy — causing auth failures and blank charts.
+        """
         index = _DIST / "index.html"
-        return FileResponse(str(index))
+        return FileResponse(str(index), headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        })
 else:
     @app.get("/", include_in_schema=False)
     async def dev_root() -> dict:
