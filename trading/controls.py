@@ -57,16 +57,27 @@ def _refresh_session_pnl() -> float:
 
 def close_trade_by_id(trade_id: int) -> dict:
     """
-    Close ONE specific open trade by its database id, without touching any
-    other open positions.  Used by the Trade Journal per-row "Close Position"
-    button.
+    Close ONE specific open trade by its database id.
+
+    Used by:
+      - Trade Journal per-row "Close" button
+      - Open Positions table "Close" button
+
+    Strategy: use place_option_order(sell) — the same path the trading loop
+    uses for all exits — instead of the DELETE /v2/positions endpoint, which
+    fails silently for paper-trading options accounts. If the broker sell
+    order fails we still close the DB record (with a warning) so the dashboard
+    doesn't get stuck showing a phantom position.
 
     Returns: {"ok": bool, "message": str, "pnl": float | None}
     """
     from broker import get_clients
+    from config import get_settings
     from database import log_event, close_trade, get_open_trades
 
     alpaca, tradier = get_clients()
+    settings = get_settings()
+    paper    = settings.get("paper_trading", True)
 
     trade = next((t for t in get_open_trades() if t["id"] == trade_id), None)
     if trade is None:
@@ -74,96 +85,99 @@ def close_trade_by_id(trade_id: int) -> dict:
         logger.warning("close_trade_by_id: %s", msg)
         return {"ok": False, "message": msg, "pnl": None}
 
-    # ── Get a live price for the exit record ──────────────────────────────────
+    # ── Fetch a live exit price ───────────────────────────────────────────────
+    exit_price = trade["entry_price"]
     try:
         quote = tradier.get_option_quote(trade["contract_symbol"])
         if quote and quote.get("mid", 0) > 0:
-            exit_price = quote["mid"]
-            logger.info("close_trade_by_id [trade %s]: live mid price = $%.4f",
-                         trade_id, exit_price)
-        else:
-            exit_price = trade["entry_price"]
-            logger.warning("close_trade_by_id [trade %s]: could not fetch live "
-                            "price — using entry price as exit price", trade_id)
+            exit_price = float(quote["mid"])
     except Exception as e:
-        exit_price = trade["entry_price"]
-        logger.error("close_trade_by_id [trade %s]: quote fetch failed (%s) — "
-                      "using entry price as exit price", trade_id, e)
+        logger.warning("close_trade_by_id [%s]: quote fetch failed (%s) — "
+                        "using entry price", trade_id, e)
 
-    # ── Liquidate at the broker ────────────────────────────────────────────────
-    closed_at_broker = False
+    # ── Place a market sell order (same as _close_position) ───────────────────
+    # This works for both paper and live accounts. The old DELETE-endpoint path
+    # failed silently on paper trading options and blocked the DB close.
+    fill_price = exit_price
+    broker_ok  = False
     try:
-        closed_at_broker = alpaca.close_position(trade["contract_symbol"])
+        fill = alpaca.place_option_order(
+            symbol     = trade["contract_symbol"],
+            qty        = trade["contracts"],
+            side       = "sell",
+            order_type = "market",
+        )
+        broker_ok = True
+        if fill and fill.get("filled_avg_price"):
+            fill_price = float(fill["filled_avg_price"])
     except Exception as e:
-        logger.error("close_trade_by_id [trade %s]: broker close_position raised %s",
-                      trade_id, e)
+        logger.warning(
+            "close_trade_by_id [%s]: broker sell order failed (%s) — "
+            "closing DB record anyway (paper=%s)", trade_id, e, paper
+        )
+        # In paper trading the position state is local; we still want the DB
+        # record closed even if the broker call didn't confirm.
+        broker_ok = paper   # treat as OK in paper mode so we don't leave it stuck
 
-    if not closed_at_broker:
-        msg = (f"Could not close {trade['contract_symbol']} at the broker — "
-               f"the journal entry was NOT marked closed. Check the audit log "
-               f"and try again.")
+    if not broker_ok:
+        msg = (f"Could not place sell order for {trade['contract_symbol']} "
+               f"at the broker — DB record NOT closed. Check the audit log.")
         log_event("ERROR", "trading_logic",
-                  f"🔴 Trade Journal close failed for trade #{trade_id} "
-                  f"({trade['contract_symbol']}) — position left open.")
+                  f"🔴 Manual close failed for trade #{trade_id}: broker sell order rejected.")
         return {"ok": False, "message": msg, "pnl": None}
 
-    # ── Update the database row ────────────────────────────────────────────────
+    # ── Mark the DB row closed ────────────────────────────────────────────────
     try:
         pnl = close_trade(
-            trade_id    = trade["id"],
-            exit_price  = exit_price,
-            exit_time   = _now_et(),
-            exit_reason = "manual_journal",
+            trade_id             = trade["id"],
+            exit_price           = exit_price,
+            exit_time            = _now_et(),
+            exit_reason          = "manual_journal",
+            confirmed_fill_price = fill_price,
         )
     except Exception as e:
-        logger.error("close_trade_by_id [trade %s]: close_trade() DB update "
-                      "failed after broker close succeeded — manual DB fix "
-                      "may be needed (%s)", trade_id, e)
+        logger.error("close_trade_by_id [%s]: DB close_trade() failed: %s", trade_id, e)
         return {
             "ok": False,
-            "message": (f"Closed {trade['contract_symbol']} at the broker, but "
-                         f"FAILED to update the journal record (#{trade_id}). "
-                         f"The position is closed at Alpaca — please refresh "
-                         f"and check the journal manually."),
+            "message": (f"Sell order placed, but DB update failed for trade #{trade_id}. "
+                        f"Check the journal manually."),
             "pnl": None,
         }
 
     log_event(
         "INFO", "trading_logic",
-        f"🟡 Trade Journal — manually closed {trade.get('ticker', '?')} "
-        f"{trade.get('option_type', 'option').upper()} (trade #{trade_id}) "
-        f"@ ${exit_price:.2f}. P&L: {'+' if pnl >= 0 else ''}${pnl:.2f}.",
+        f"🟡 {'[PAPER] ' if paper else ''}Manually closed {trade.get('ticker','?')} "
+        f"{trade.get('option_type','option').upper()} (trade #{trade_id}) "
+        f"@ ${fill_price:.2f}. P&L: {'+' if pnl >= 0 else ''}${pnl:.2f}.",
     )
 
-    # ── Update session P&L ────────────────────────────────────────────────────
+    # ── Refresh session P&L + LIVE_STATE ─────────────────────────────────────
     _refresh_session_pnl()
-
-    # ── Clear per-position state ───────────────────────────────────────────────
     LIVE_STATE["positions"].pop(trade_id, None)
-    _remaining_open            = get_open_trades()
-    LIVE_STATE["open_trades"]  = _remaining_open
-    LIVE_STATE["open_trade"]   = _remaining_open[0] if _remaining_open else None
-    LIVE_STATE["status"]       = "in_trade" if _remaining_open else "scanning"
+    _remaining_open           = get_open_trades()
+    LIVE_STATE["open_trades"] = _remaining_open
+    LIVE_STATE["open_trade"]  = _remaining_open[0] if _remaining_open else None
+    LIVE_STATE["status"]      = "in_trade" if _remaining_open else "scanning"
 
     # Remove from bot_state.json open_positions
     try:
-        import json as _json_cb
         _state_path_cb = _BOT_ROOT / "bot_state.json"
         if _state_path_cb.exists():
             with open(_state_path_cb) as _f:
-                _existing_cb = _json_cb.load(_f)
+                _existing_cb = json.load(_f)
             _open_positions_cb = _existing_cb.get("open_positions") or {}
             _open_positions_cb.pop(str(trade_id), None)
             _existing_cb["open_positions"] = _open_positions_cb
+            _existing_cb["session_pnl"]    = LIVE_STATE.get("session_pnl", 0.0)
             with open(_state_path_cb, "w") as _f:
-                _json_cb.dump(_existing_cb, _f)
+                json.dump(_existing_cb, _f)
     except Exception:
         pass
 
     return {
         "ok": True,
-        "message": (f"Closed {trade.get('ticker', '?')} {trade.get('option_type','')} "
-                     f"@ ${exit_price:.2f}. P&L: {'+' if pnl >= 0 else ''}${pnl:.2f}."),
+        "message": (f"Closed {trade.get('ticker','?')} {trade.get('option_type','')} "
+                    f"@ ${fill_price:.2f}. P&L: {'+' if pnl >= 0 else ''}${pnl:.2f}."),
         "pnl": pnl,
     }
 
