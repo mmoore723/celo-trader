@@ -3,6 +3,25 @@
  */
 import { create } from "zustand";
 
+/** Live per-position data written to bot_state.json every tick. */
+export interface LivePosition {
+  trade_id: number;
+  contract_symbol: string;
+  ticker: string;
+  option_type: string;       // "call" | "put"
+  entry_price: number;
+  contracts: number;
+  current_option_price: number | null;
+  current_option_price_time: string | null;
+  stage1_done: boolean;
+  peak_price: number | null;
+  entry_time: string | null;
+  atr_trail_stop: number | null;
+  current_stop_pct: number | null;
+  vwap_breached_bars: number;
+  trend_dead: boolean;
+}
+
 export interface BotStatus {
   running: boolean;
   mode: string;
@@ -16,7 +35,9 @@ export interface BotStatus {
   current_stop_pct: number | null;
   last_signal: string | null;
   ghost_position_detected: boolean;
-  is_paper: boolean;               // true = paper account, false = live account
+  is_paper: boolean;
+  // Live open positions — keyed by trade_id string
+  open_positions: Record<string, LivePosition> | null;
   // Contract eval snapshot — populated after each signal evaluation
   last_eval_strike: number | null;
   last_eval_expiry: string | null;

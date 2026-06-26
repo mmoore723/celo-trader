@@ -1,15 +1,31 @@
 """
-trading/position_manager.py — Open-position management and close logic.
+trading/position_manager.py — Adaptive position management with structure-aware exits.
 
-Functions:
-  _manage_open_position — ORB two-stage exit manager (called every tick)
-  _close_position       — full-close helper (stop-loss, time-box, manual, etc.)
+REFACTOR (2026-06-26):
+  Replaced the old 45-minute time-box exit with an adaptive state machine that
+  exits on MARKET STRUCTURE events, not a countdown clock.
 
-NOTE on _risk and _trade_log:
-  Both live as module-level variables in trading/entry.py because _tick()
-  declares them with `global` there.  We access them through the entry module
-  object at runtime (deferred import inside each function) to avoid the circular
-  import that would result from a top-level cross-import.
+Exit hierarchy (checked in order each tick):
+  1. Hard structural stop  — entry_bar_high/low-derived option stop (always on)
+  2. ATR / swing trailing stop — tighter of (peak − 1.5×ATR) or last swing low/high
+  3. VWAP breach + trend breakdown — only exits when ADX<20 OR EMA stack is misaligned
+     (not on every dip below VWAP)
+  4. Stage-1 profit target — +50% option gain → sell 50%, arm trailing stop
+  5. Stage-2 trail floor  — remainder stops at entry×1.15 (locked-profit floor)
+  6. Hard stop safety net — 20% below entry (tightens from 30 to 20%)
+  7. Time cap of last resort — 90 min for winners, 20 min for flat/losing
+     (safety net only; structure-based exits should fire first)
+
+Per-position state machine keys (stored in LIVE_STATE["positions"][trade_id]):
+  stage             : "s1" | "s2"
+  phase             : "trending" | "vwap_watch" | "exit_pending"
+  peak_price_opt    : highest option mid-price seen since entry
+  peak_price_under  : highest (or lowest for puts) underlying close since entry
+  atr_trail_stop    : current ATR/swing option-space trailing stop
+  vwap_breached_at  : timestamp when VWAP breach first detected (or None)
+  struct_stop_price : entry_bar_high/low-derived option stop (set at entry)
+  stage1_done       : bool — True once 50% partial exit has been executed
+  stage1_be_price   : trail floor option price locked after stage1 fires
 """
 
 from __future__ import annotations
@@ -19,10 +35,177 @@ from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+import numpy as np
+
 from trading.state import LIVE_STATE, _now_et, _ET_TZ, _BOT_ROOT
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
+# ── ATR / swing trailing stop constants ──────────────────────────────────────
+_ATR_TRAIL_MULTIPLIER = 1.5   # stop = peak − 1.5 × ATR (underlying space)
+_DELTA_APPROX         = 0.40  # approximate option delta for underlying→option conversion
+_SWING_LOOKBACK       = 20    # bars to look back for swing high/low
+
+# ── VWAP breach + trend breakdown constants ───────────────────────────────────
+_ADX_WEAK_THRESHOLD   = 20    # ADX < 20 → trend has no directional strength
+_EMA_FAST             = 8
+_EMA_MID              = 21
+_EMA_SLOW             = 50
+_VWAP_BREACH_BARS     = 2     # VWAP must be breached for ≥ 2 consecutive bars before
+                               # we check trend — filters single-bar wicks
+# ── Time cap of last resort (safety net only) ─────────────────────────────────
+_TIME_CAP_WINNER_MIN  = 90    # stage1 done  → 90 min max
+_TIME_CAP_LOSER_MIN   = 20    # flat/losing  → 20 min max
+
+
+# ── Indicator helpers ─────────────────────────────────────────────────────────
+
+def _compute_atr(df: pd.DataFrame, period: int = 14) -> Optional[float]:
+    """14-bar ATR on 1-min underlying bars."""
+    try:
+        if len(df) < period + 1:
+            return None
+        hl  = df["high"]  - df["low"]
+        hpc = (df["high"]  - df["close"].shift(1)).abs()
+        lpc = (df["low"]   - df["close"].shift(1)).abs()
+        tr  = pd.concat([hl, hpc, lpc], axis=1).max(axis=1)
+        atr = float(tr.ewm(span=period, adjust=False).mean().iloc[-1])
+        return atr if atr > 0 else None
+    except Exception:
+        return None
+
+
+def _compute_adx(df: pd.DataFrame, period: int = 14) -> Optional[float]:
+    """
+    Wilder's ADX on 1-min bars.
+    ADX < 20 = no directional trend (choppy / ranging).
+    """
+    try:
+        if len(df) < period * 2:
+            return None
+        high  = df["high"].values.astype(float)
+        low   = df["low"].values.astype(float)
+        close = df["close"].values.astype(float)
+
+        # True Range
+        tr = np.maximum(
+            high[1:] - low[1:],
+            np.maximum(np.abs(high[1:] - close[:-1]), np.abs(low[1:] - close[:-1]))
+        )
+
+        # Directional movement
+        plus_dm  = np.where((high[1:] - high[:-1]) > (low[:-1] - low[1:]),
+                             np.maximum(high[1:] - high[:-1], 0), 0)
+        minus_dm = np.where((low[:-1] - low[1:]) > (high[1:] - high[:-1]),
+                             np.maximum(low[:-1] - low[1:], 0), 0)
+
+        # Wilder smoothing (EMA with alpha = 1/period)
+        def wilder_smooth(arr, n):
+            out = np.zeros(len(arr))
+            out[0] = arr[:n].sum()
+            for i in range(1, len(arr)):
+                out[i] = out[i-1] - out[i-1] / n + arr[i]
+            return out
+
+        atr_w  = wilder_smooth(tr, period)
+        pdm_w  = wilder_smooth(plus_dm, period)
+        mdm_w  = wilder_smooth(minus_dm, period)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            pdi    = np.where(atr_w > 0, 100 * pdm_w / atr_w, 0)
+            mdi    = np.where(atr_w > 0, 100 * mdm_w / atr_w, 0)
+            dx_den = pdi + mdi
+            dx     = np.where(dx_den > 0, 100 * np.abs(pdi - mdi) / dx_den, 0)
+
+        adx_w  = wilder_smooth(dx[period:], period)
+        return float(adx_w[-1]) if len(adx_w) > 0 else None
+    except Exception as ex:
+        logger.debug("ADX computation failed: %s", ex)
+        return None
+
+
+def _ema_stack_aligned(df: pd.DataFrame, direction: str) -> bool:
+    """
+    True if the EMA stack is aligned in the trade direction.
+
+    Bullish (CALL): EMA8 > EMA21 > EMA50 — all stacked up
+    Bearish (PUT) : EMA8 < EMA21 < EMA50 — all stacked down
+
+    Misalignment means the trend is breaking down and VWAP breach is meaningful.
+    """
+    try:
+        if len(df) < _EMA_SLOW + 5:
+            return True   # insufficient data → assume aligned (don't exit prematurely)
+        close = df["close"]
+        ema8  = float(close.ewm(span=_EMA_FAST, adjust=False).mean().iloc[-1])
+        ema21 = float(close.ewm(span=_EMA_MID,  adjust=False).mean().iloc[-1])
+        ema50 = float(close.ewm(span=_EMA_SLOW, adjust=False).mean().iloc[-1])
+        if direction == "bullish":
+            return ema8 > ema21 > ema50
+        else:
+            return ema8 < ema21 < ema50
+    except Exception:
+        return True
+
+
+def _compute_vwap(df: pd.DataFrame) -> Optional[float]:
+    """Session VWAP from 1-min bars (cumulative typical price × volume)."""
+    try:
+        if df.empty:
+            return None
+        tp  = (df["high"] + df["low"] + df["close"]) / 3.0
+        cum_tpv = (tp * df["volume"]).cumsum()
+        cum_vol = df["volume"].cumsum()
+        vwap_series = cum_tpv / cum_vol.replace(0, np.nan)
+        val = float(vwap_series.iloc[-1])
+        return val if not np.isnan(val) else None
+    except Exception:
+        return None
+
+
+def _structural_swing_stop(df: pd.DataFrame, direction: str, lookback: int = _SWING_LOOKBACK) -> Optional[float]:
+    """
+    Most recent confirmed swing low (for calls) or swing high (for puts)
+    on the underlying, looked back `lookback` bars from the current bar.
+    Uses a 3-bar pivot: bar whose low < both neighbors (or high > both neighbors).
+    """
+    try:
+        if len(df) < lookback + 2:
+            return None
+        window = df.iloc[-lookback:].reset_index(drop=True)
+        pivots = []
+        for i in range(1, len(window) - 1):
+            if direction == "bullish":
+                if window.iloc[i]["low"] < window.iloc[i-1]["low"] and \
+                   window.iloc[i]["low"] < window.iloc[i+1]["low"]:
+                    pivots.append(float(window.iloc[i]["low"]))
+            else:
+                if window.iloc[i]["high"] > window.iloc[i-1]["high"] and \
+                   window.iloc[i]["high"] > window.iloc[i+1]["high"]:
+                    pivots.append(float(window.iloc[i]["high"]))
+        return pivots[-1] if pivots else None
+    except Exception:
+        return None
+
+
+def _underlying_stop_to_option(
+    entry_option: float,
+    underlying_current: float,
+    underlying_stop: float,
+) -> float:
+    """
+    Convert an underlying stop level to an option stop price using delta.
+    Option stop = entry_option − |move| × DELTA_APPROX
+    Floored at 20% below entry (hard safety net).
+    """
+    move         = abs(underlying_current - underlying_stop)
+    option_stop  = entry_option - move * _DELTA_APPROX
+    hard_floor   = entry_option * 0.80  # 20% hard floor
+    return round(max(option_stop, hard_floor, 0.01), 4)
+
+
+# ── Main position manager ─────────────────────────────────────────────────────
 
 def _manage_open_position(
     alpaca: "AlpacaClient",
@@ -31,20 +214,16 @@ def _manage_open_position(
     balance: float,
 ) -> None:
     """
-    ORB two-stage exit manager.
+    Adaptive position manager — structure-driven exits, not time-driven.
 
-    Stage 1: sell 50% of contracts when current_price ≥ entry × 1.50.
-             Remainder's stop moves to break-even (entry_price).
-
-    Stage 2: hold remainder until:
-      a) Price falls to break-even (entry_price) → exit remainder.
-      b) 45-minute time-box from entry_time → exit remainder.
-      c) Hard stop (30% below entry) triggers before stage 1 → exit all.
+    Called every tick for each open trade. Fetches both an option quote (for
+    current P&L) and the underlying's 1-min bars (for structural analysis).
+    All exit decisions are made against chart structure, not a clock.
     """
-    # Deferred import to access _risk and _trade_log from entry without circular dep
     from trading import entry as _em
 
     try:
+        # ── Option quote ──────────────────────────────────────────────────────
         quote = tradier.get_option_quote(trade["contract_symbol"])
         if quote is None:
             logger.warning("Cannot price %s — holding", trade["contract_symbol"])
@@ -53,58 +232,146 @@ def _manage_open_position(
         current_price = quote["mid"]
         entry_price   = trade["entry_price"]
         trade_id      = trade["id"]
+        ticker        = trade.get("ticker", "")
+        option_type   = (trade.get("option_type") or "call").lower()
+        direction     = "bullish" if option_type == "call" else "bearish"
 
-        # ── Per-position state (MAX_CONCURRENT_POSITIONS) ─────────────────────
+        # ── Per-position state ────────────────────────────────────────────────
         ps = LIVE_STATE["positions"].setdefault(trade_id, {
             "peak_price":                None,
             "entry_time":                trade.get("entry_time"),
             "stage1_done":               False,
             "stage1_be_price":           None,
-            "current_stop_pct":          _em._risk.ORB_STOP_PCT if _em._risk else 0.30,
+            "current_stop_pct":          _em._risk.ORB_STOP_PCT if _em._risk else 0.20,
             "struct_stop_price":         None,
             "current_option_price":      None,
             "current_option_price_time": None,
             "last_position_narration_minute": None,
+            # Adaptive state machine
+            "atr_trail_stop":            None,
+            "vwap_breached_bars":        0,     # consecutive bars below/above VWAP
+            "peak_underlying":           None,  # highest underlying close for trail calc
+            "last_bar_fetch_minute":     None,  # throttle: fetch bars max once/minute
+            "cached_underlying_df":      None,  # cache to avoid refetching every tick
         })
 
         ps["current_option_price"]      = current_price
         ps["current_option_price_time"] = _now_et().strftime("%H:%M:%S")
 
-        # Recover entry_time from per-position state (may be missing after restart)
+        # ── Entry time recovery ───────────────────────────────────────────────
         entry_time_iso = ps.get("entry_time") or trade.get("entry_time")
         try:
             entry_time = datetime.fromisoformat(entry_time_iso) if entry_time_iso else None
-            # FIX: trade["entry_time"] comes from the DB via
-            # database._to_et_isoformat(), which stores tz-NAIVE ET strings
-            # (so chart timestamps line up). _now_et() below is tz-AWARE ET.
-            # Subtracting naive - aware raises TypeError, which was firing on
-            # every tick for any position carried across a restart. Localize
-            # naive timestamps to ET so they match now_utc.
             if entry_time is not None and entry_time.tzinfo is None:
                 entry_time = _ET_TZ.localize(entry_time)
         except Exception:
             entry_time = None
 
-        # Recover peak for DB compatibility
+        # ── Peak option price tracking ────────────────────────────────────────
         from risk import persist_peak_price, recover_peak_price
         if ps.get("peak_price") is None:
-            recovered = recover_peak_price(trade_id)
-            ps["peak_price"] = recovered or entry_price
-
-        peak_price = max(ps["peak_price"], current_price)
-        if peak_price > ps["peak_price"]:
-            ps["peak_price"] = peak_price
-            persist_peak_price(trade_id, peak_price)
+            ps["peak_price"] = recover_peak_price(trade_id) or entry_price
+        if current_price > ps["peak_price"]:
+            ps["peak_price"] = current_price
+            persist_peak_price(trade_id, current_price)
 
         stage1_done     = bool(ps.get("stage1_done"))
         stage1_be_price = ps.get("stage1_be_price")
-        now_utc         = _now_et()   # tz-aware ET (variable name kept for minimal diff)
+        now_et          = _now_et()
 
-        # ── Recompute dynamic stop each tick ──────────────────────────────────
-        current_stop_pct = _em._risk.dynamic_stop_pct(entry_time, now_utc)
-        ps["current_stop_pct"] = current_stop_pct
+        # ── Fetch underlying bars (throttled to once per minute) ──────────────
+        _minute_key = now_et.strftime("%Y-%m-%d %H:%M")
+        df_under: Optional[pd.DataFrame] = ps.get("cached_underlying_df")
 
-        # Persist to bot_state.json so the dashboard can see it.
+        if ps.get("last_bar_fetch_minute") != _minute_key:
+            try:
+                from signals import bars_to_df
+                _bars, _err, _ = alpaca.get_session_bars(ticker, "1Min")
+                if _bars and not _err:
+                    df_under = bars_to_df(_bars)
+                    ps["cached_underlying_df"] = df_under
+                    ps["last_bar_fetch_minute"] = _minute_key
+
+                    # Update peak underlying price
+                    _last_close = float(df_under["close"].iloc[-1])
+                    if direction == "bullish":
+                        ps["peak_underlying"] = max(ps.get("peak_underlying") or _last_close, _last_close)
+                    else:
+                        # For puts: track the minimum underlying (we want price to fall)
+                        ps["peak_underlying"] = min(ps.get("peak_underlying") or _last_close, _last_close)
+            except Exception as _be:
+                logger.debug("Bar fetch for position management failed (%s): %s", ticker, _be)
+
+        # ── Compute adaptive trailing stop from bars ───────────────────────────
+        atr_trail_stop: Optional[float]  = ps.get("atr_trail_stop")
+        vwap: Optional[float]            = None
+        trend_dead: bool                 = False
+
+        if df_under is not None and not df_under.empty:
+            _underlying_now = float(df_under["close"].iloc[-1])
+
+            # ATR-based trailing stop in underlying space
+            _atr = _compute_atr(df_under)
+            if _atr is not None and ps.get("peak_underlying") is not None:
+                _peak_u = float(ps["peak_underlying"])
+                if direction == "bullish":
+                    _atr_stop_u = _peak_u - _ATR_TRAIL_MULTIPLIER * _atr
+                else:
+                    _atr_stop_u = _peak_u + _ATR_TRAIL_MULTIPLIER * _atr
+
+                _atr_stop_opt = _underlying_stop_to_option(
+                    entry_price, _underlying_now, _atr_stop_u
+                )
+
+                # Structural swing stop in underlying space
+                _swing_u = _structural_swing_stop(df_under, direction)
+                if _swing_u is not None:
+                    _swing_opt = _underlying_stop_to_option(
+                        entry_price, _underlying_now, _swing_u
+                    )
+                    # Use tighter of ATR trail and swing level
+                    if direction == "bullish":
+                        _new_trail = max(_atr_stop_opt, _swing_opt)
+                    else:
+                        _new_trail = max(_atr_stop_opt, _swing_opt)
+                else:
+                    _new_trail = _atr_stop_opt
+
+                # Trail stop can only TIGHTEN (ratchet up), never loosen
+                if atr_trail_stop is None or _new_trail > atr_trail_stop:
+                    atr_trail_stop = _new_trail
+                    ps["atr_trail_stop"] = atr_trail_stop
+
+            # VWAP
+            vwap = _compute_vwap(df_under)
+
+            # VWAP breach tracking (consecutive bars below/above VWAP)
+            if vwap is not None:
+                _vwap_breached_now = (
+                    (direction == "bullish" and _underlying_now < vwap) or
+                    (direction == "bearish" and _underlying_now > vwap)
+                )
+                if _vwap_breached_now:
+                    ps["vwap_breached_bars"] = ps.get("vwap_breached_bars", 0) + 1
+                else:
+                    ps["vwap_breached_bars"] = 0   # reset on any bar back through VWAP
+
+            # Trend breakdown check — only when VWAP breach is sustained
+            if ps.get("vwap_breached_bars", 0) >= _VWAP_BREACH_BARS:
+                _adx   = _compute_adx(df_under)
+                _ema_ok = _ema_stack_aligned(df_under, direction)
+                adx_weak    = (_adx is not None and _adx < _ADX_WEAK_THRESHOLD)
+                ema_broken  = not _ema_ok
+                trend_dead  = adx_weak or ema_broken
+
+        # Persist current stop for dashboard visibility
+        _current_stop_pct_display = (
+            round(1.0 - atr_trail_stop / entry_price, 4) if atr_trail_stop else
+            (_em._risk.ORB_STOP_PCT if _em._risk else 0.20)
+        )
+        ps["current_stop_pct"] = _current_stop_pct_display
+
+        # ── Write to bot_state.json ───────────────────────────────────────────
         import json as _json_m
         _state_path_m = _BOT_ROOT / "bot_state.json"
         try:
@@ -116,21 +383,24 @@ def _manage_open_position(
             _open_positions[str(trade_id)] = {
                 "trade_id":                  trade_id,
                 "contract_symbol":           trade.get("contract_symbol"),
-                "ticker":                    trade.get("ticker"),
-                "option_type":               trade.get("option_type"),
+                "ticker":                    ticker,
+                "option_type":               option_type,
                 "entry_price":               entry_price,
                 "contracts":                 trade.get("contracts"),
-                "current_stop_pct":          current_stop_pct,
+                "current_stop_pct":          _current_stop_pct_display,
                 "current_option_price":      current_price,
                 "current_option_price_time": ps["current_option_price_time"],
                 "stage1_done":               stage1_done,
                 "peak_price":                ps["peak_price"],
                 "entry_time":                entry_time_iso,
+                "atr_trail_stop":            atr_trail_stop,
+                "vwap_breached_bars":        ps.get("vwap_breached_bars", 0),
+                "trend_dead":                trend_dead,
             }
-            _existing["open_positions"] = _open_positions
-            _existing["current_stop_pct"]          = current_stop_pct
-            _existing["current_option_price"]      = current_price
-            _existing["current_option_price_time"] = ps["current_option_price_time"]
+            _existing["open_positions"]             = _open_positions
+            _existing["current_stop_pct"]           = _current_stop_pct_display
+            _existing["current_option_price"]       = current_price
+            _existing["current_option_price_time"]  = ps["current_option_price_time"]
             with open(_state_path_m, "w") as _f:
                 _json_m.dump(_existing, _f)
         except Exception:
@@ -138,55 +408,54 @@ def _manage_open_position(
 
         _struct_stop = ps.get("struct_stop_price")
 
-        # ── Per-minute "still in trade" narration ─────────────────────────────
-        _minute_key = now_utc.strftime("%Y-%m-%d %H:%M")
+        # ── Per-minute narration ──────────────────────────────────────────────
         if ps.get("last_position_narration_minute") != _minute_key:
             from database import log_event
             ps["last_position_narration_minute"] = _minute_key
-            _contracts = trade.get("contracts", 1)
-            _pnl_now   = (current_price - entry_price) * _contracts * 100
-            _pnl_pct   = (current_price - entry_price) / entry_price * 100 if entry_price else 0.0
-            _stop_px   = entry_price * (1 - current_stop_pct)
-            if entry_time is not None:
-                _elapsed_min = (now_utc - entry_time).total_seconds() / 60
-                _remain_min  = max(0, 45 - _elapsed_min)
-                _time_desc   = f"{_remain_min:.0f} min left in the 45-min window"
-            else:
-                _time_desc = "time-box unknown (entry time missing)"
-            _stage_desc = "Stage 2 — runner, stop at break-even" if stage1_done else "Stage 1 — full size"
+            _contracts  = trade.get("contracts", 1)
+            _pnl_now    = (current_price - entry_price) * _contracts * 100
+            _pnl_pct    = (current_price - entry_price) / entry_price * 100 if entry_price else 0.0
+            _stop_desc  = f"${atr_trail_stop:.2f} (ATR/swing trail)" if atr_trail_stop else f"{_current_stop_pct_display*100:.0f}% below entry"
+            _stage_desc = "Stage 2 — runner, trail active" if stage1_done else "Stage 1 — full size"
+            _vwap_desc  = ""
+            if ps.get("vwap_breached_bars", 0) >= _VWAP_BREACH_BARS:
+                _vwap_desc = f" ⚠️ VWAP breach {ps['vwap_breached_bars']}bar — trend_dead={trend_dead}."
             log_event(
                 "INFO", "position_update",
-                f"🟡 [{trade['contract_symbol']}] Holding — option @ ${current_price:.2f} "
-                f"(entry ${entry_price:.2f}, peak ${ps['peak_price']:.2f}). "
+                f"🟡 [{trade['contract_symbol']}] Holding — "
+                f"option @ ${current_price:.2f} (entry ${entry_price:.2f}, peak ${ps['peak_price']:.2f}). "
                 f"P&L {'+' if _pnl_now >= 0 else ''}${_pnl_now:.2f} ({_pnl_pct:+.1f}%). "
-                f"Stop ${_stop_px:.2f} ({current_stop_pct*100:.0f}% below entry). "
-                f"{_stage_desc}. {_time_desc}."
+                f"Stop {_stop_desc}. {_stage_desc}.{_vwap_desc}"
             )
 
+        # ── Exit decision ─────────────────────────────────────────────────────
         should_exit, reason = _em._risk.should_exit(
             entry_price, current_price,
-            entry_time=entry_time,
-            now=now_utc,
-            stage1_done=stage1_done,
-            stage1_be_price=stage1_be_price,
-            struct_stop_price=_struct_stop,
+            entry_time      = entry_time,
+            now             = now_et,
+            stage1_done     = stage1_done,
+            stage1_be_price = stage1_be_price,
+            struct_stop_price = _struct_stop,
+            atr_trail_stop  = atr_trail_stop,
+            vwap            = vwap,
+            trend_dead      = trend_dead,
+            direction       = direction,
         )
 
         if not should_exit:
             return
 
+        # ── Stage 1: sell 50%, arm trailing stop on remainder ────────────────
         if reason.startswith("stage1"):
-            # ── Stage 1: sell half, lock in trail stop on remainder ───────────
             half_contracts = max(1, trade["contracts"] // 2)
-
-            # Single-contract guard: can't sell half of 1 → full exit
             from database import log_event
+
             if half_contracts >= trade["contracts"]:
                 log_event(
                     "INFO", "trading_logic",
                     f"🟢 [{trade['ticker']}] +50% target hit — only "
                     f"{trade['contracts']} contract(s) held, taking full exit "
-                    f"(partial exit impossible on single contract). Closing now.",
+                    f"(can't split a single contract). Closing now.",
                 )
                 _close_position(alpaca, trade, current_price,
                                 "stage1_50pct_full_exit_single_contract")
@@ -200,27 +469,24 @@ def _manage_open_position(
                 _em._trade_log.info(
                     "stage1_partial_exit",
                     extra={
-                        "event":        "stage1_partial_exit",
+                        "event":          "stage1_partial_exit",
                         "contracts_sold": half_contracts,
-                        "exit_price":   round(current_price, 4),
-                        "entry_price":  round(entry_price, 4),
+                        "exit_price":     round(current_price, 4),
+                        "entry_price":    round(entry_price, 4),
                     },
                 )
             fill = alpaca.place_option_order(
-                symbol      = trade["contract_symbol"],
-                qty         = half_contracts,
-                side        = "sell",
-                order_type  = "market",
+                symbol     = trade["contract_symbol"],
+                qty        = half_contracts,
+                side       = "sell",
+                order_type = "market",
             )
 
-            # FIX 2026-06-15: if the order didn't fill, leave stage1_done False
-            # and retry next tick — exactly like a normal failed entry order.
             if fill is None:
                 log_event(
                     "WARNING", "trading_logic",
                     f"🟡 [{trade['contract_symbol']}] Stage-1 profit-take order "
-                    f"did not fill — position left at full size, will retry "
-                    f"next tick.",
+                    f"did not fill — leaving at full size, will retry next tick.",
                 )
                 return
 
@@ -241,11 +507,11 @@ def _manage_open_position(
                 strategy_id     = trade.get("strategy_id", "INST_ORB"),
             )
             partial_pnl = close_trade(
-                trade_id            = partial_id,
-                exit_price          = fill_price,
-                exit_time           = _now_et().replace(tzinfo=None),
-                exit_reason         = "stage1_50pct_profit_take",
-                confirmed_fill_price= fill_price,
+                trade_id             = partial_id,
+                exit_price           = fill_price,
+                exit_time            = _now_et().replace(tzinfo=None),
+                exit_reason          = "stage1_50pct_profit_take",
+                confirmed_fill_price = fill_price,
             )
 
             with get_conn() as _conn:
@@ -258,7 +524,7 @@ def _manage_open_position(
                 "INFO", "trading_logic",
                 f"🟢 Took 50% profit — sold {half_contracts} contract"
                 f"{'s' if half_contracts > 1 else ''} at ${fill_price:.2f} "
-                f"(+${partial_pnl:.2f}). Stop moved to break-even on the remainder.",
+                f"(+${partial_pnl:.2f}). ATR/swing trailing stop now active on remainder.",
             )
 
             from config import STAGE2_TRAIL_PCT
@@ -266,14 +532,14 @@ def _manage_open_position(
             ps["stage1_be_price"] = round(entry_price * (1.0 + STAGE2_TRAIL_PCT), 4)
 
         else:
-            # ── Full exit (stop_loss, time_box, stage2 BE, or stage2 stop) ────
+            # Full exit for all other reasons
             _close_position(alpaca, trade, current_price, reason)
 
     except Exception as e:
         from database import log_event
-        logger.error("Error managing ORB position: %s", e)
+        logger.error("Error managing position: %s", e)
         log_event("ERROR", "trading_logic",
-                  f"🔴 Error while monitoring open position: {type(e).__name__}. "
+                  f"🔴 Error monitoring position: {type(e).__name__}. "
                   f"Will retry next tick. ({e})")
 
 
@@ -283,7 +549,6 @@ def _close_position(
     exit_price: float,
     reason: str,
 ) -> None:
-    # Deferred import to access _trade_log and set it back to logger after close
     from trading import entry as _em
 
     from config import (
@@ -312,10 +577,10 @@ def _close_position(
     if paper:
         logger.info("[PAPER] SELL %s @ $%.4f (%s)", trade["contract_symbol"], exit_price, reason)
     fill = alpaca.place_option_order(
-        symbol      = trade["contract_symbol"],
-        qty         = trade["contracts"],
-        side        = "sell",
-        order_type  = "market",
+        symbol     = trade["contract_symbol"],
+        qty        = trade["contracts"],
+        side       = "sell",
+        order_type = "market",
     )
 
     fill_price = exit_price
@@ -330,18 +595,21 @@ def _close_position(
         confirmed_fill_price = fill_price,
     )
 
-    # ── Human-readable close narrative ────────────────────────────────────────
+    # Human-readable close narrative
     try:
         _ticker_close = trade.get("ticker", "?")
         _opt_close    = trade.get("option_type", "option").upper()
         _entry_px     = trade.get("entry_price", 0)
         _pnl_sign     = "+" if pnl >= 0 else ""
         _reason_map   = {
-            "time_box_45m":              "45-minute time limit reached",
             "stage1_50pct":              "first profit target hit (+50%)",
             "stage2_break_even":         "remainder hit break-even stop",
-            "stage2_stop_be":            "break-even stop triggered",
+            "stage2_trail_stop":         "trail stop triggered (locked profit floor)",
+            "atr_trail_stop":            "ATR/swing trailing stop hit",
+            "vwap_trend_dead":           "VWAP breach + trend breakdown confirmed",
             "structural_stop_bar_high":  "structural stop (rejection level) hit",
+            "time_cap_loser":            "20-min cap (flat/losing — no setup confirmation)",
+            "time_cap_winner":           "90-min cap (maximum hold for winners)",
             "manual":                    "manually closed by user",
             "panic":                     "emergency close triggered",
             "kill_lock_force_close":     "daily loss limit — force closed",
@@ -372,16 +640,21 @@ def _close_position(
     except DailyLossLimitReached:
         raise
 
-    LIVE_STATE["session_pnl"] = sum(
-        t.get("realized_pnl", 0) for t in
-        __import__("database").get_all_trades(limit=100)
-        if t.get("exit_time", "")[:10] == date.today().isoformat()
-    )
+    # Recompute session P&L from DB
+    try:
+        LIVE_STATE["session_pnl"] = sum(
+            (t.get("realized_pnl") or 0)
+            for t in get_all_trades(limit=100)
+            if (t.get("exit_time") or "")[:10] == date.today().isoformat()
+        )
+    except Exception:
+        pass
+
     closed_utc = _now_et()
     _closed_opt_type  = trade.get("option_type", "")
     _closed_direction = "bullish" if _closed_opt_type == "call" else "bearish"
 
-    # Clear this position's per-trade state
+    # Clear per-trade state
     LIVE_STATE["positions"].pop(trade["id"], None)
 
     _remaining_open               = get_open_trades()
@@ -392,15 +665,13 @@ def _close_position(
     LIVE_STATE["last_trade_closed_time"]= closed_utc.isoformat()
 
     _closed_ticker = trade.get("ticker", "")
-    if pnl > 0:
-        if _closed_ticker:
-            _WIN_COOLDOWN_MIN = 10
-            _win_expires = _now_et() + timedelta(minutes=_WIN_COOLDOWN_MIN)
-            LIVE_STATE.setdefault("ticker_win_cooldown", {})[_closed_ticker] = _win_expires
-            log_event("INFO", "trading_logic",
-                      f"⏱ [{_closed_ticker}] Post-win cooldown set for {_WIN_COOLDOWN_MIN} min "
-                      f"(pnl=${pnl:+.2f}). No re-entry until "
-                      f"{_win_expires.strftime('%H:%M')} ET.")
+    if pnl > 0 and _closed_ticker:
+        _WIN_COOLDOWN_MIN = 10
+        _win_expires = _now_et() + timedelta(minutes=_WIN_COOLDOWN_MIN)
+        LIVE_STATE.setdefault("ticker_win_cooldown", {})[_closed_ticker] = _win_expires
+        log_event("INFO", "trading_logic",
+                  f"⏱ [{_closed_ticker}] Post-win cooldown {_WIN_COOLDOWN_MIN} min "
+                  f"(pnl=${pnl:+.2f}). No re-entry until {_win_expires.strftime('%H:%M')} ET.")
 
     # Remove from bot_state.json open_positions
     try:
@@ -417,31 +688,18 @@ def _close_position(
     except Exception:
         pass
 
-    # ── Flip-trade arming ─────────────────────────────────────────────────────
+    # Flip-trade arming
     from config import get_settings as _gs
-    _is_hard_stop         = reason == "dynamic_stop_30pct"
+    _is_hard_stop         = "stop" in (reason or "")
     _flip_setting_enabled = bool(_gs().get("flip_trading_enabled", True))
     if _is_hard_stop and _flip_setting_enabled:
         _flip_dir = "bearish" if _closed_direction == "bullish" else "bullish"
-        _closed_ticker = trade.get("ticker", "")
         LIVE_STATE["flip_eligible"]  = True
         LIVE_STATE["flip_direction"] = _flip_dir
         LIVE_STATE["flip_ticker"]    = _closed_ticker
-        logger.info(
-            "flip_armed",
-            extra={
-                "event":           "flip_armed",
-                "stopped_direction": _closed_direction,
-                "flip_direction":  _flip_dir,
-                "stop_reason":     reason,
-                "trade_id":        trade["id"],
-            },
-        )
-        log_event(
-            "INFO", "trading_logic",
-            f"🟡 Flip armed — previous {_closed_direction} trade stopped out. "
-            f"Watching for a {_flip_dir} breakout to re-enter with the trend reversal.",
-        )
+        log_event("INFO", "trading_logic",
+                  f"🟡 Flip armed — stopped out {_closed_direction}. "
+                  f"Watching for {_flip_dir} retest entry.")
     else:
         LIVE_STATE["flip_eligible"]  = False
         LIVE_STATE["flip_direction"] = None

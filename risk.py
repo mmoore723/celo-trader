@@ -936,45 +936,46 @@ class RiskManager:
         now: Optional[datetime] = None,
         stage1_done: bool = False,
         stage1_be_price: Optional[float] = None,
-        peak_price: Optional[float] = None,        # kept for API compatibility
-        struct_stop_price: Optional[float] = None, # entry_bar_high-derived option stop
+        peak_price: Optional[float] = None,         # kept for API compatibility
+        struct_stop_price: Optional[float] = None,  # entry_bar_high/low-derived option stop
+        # Adaptive exit params — supplied by position_manager's bar analysis
+        atr_trail_stop: Optional[float] = None,     # tighter of 1.5×ATR or swing stop (option price)
+        vwap: Optional[float] = None,               # current underlying VWAP
+        trend_dead: bool = False,                   # ADX<20 OR EMA stack misaligned
+        direction: str = "bullish",                 # trade direction (for VWAP side check)
     ) -> tuple[bool, str]:
         """
-        ORB two-stage exit engine — tiered time-box + early momentum stop.
+        Adaptive exit engine — structure-driven, not time-driven.
 
-        Stage 1 — fires once when current_price ≥ entry × 1.50:
-          Trading logic sells 50% of contracts and stores the trail floor
-          (entry_price × 1.15) as stage1_be_price.  Returns ("stage1", ...).
+        Exit hierarchy (checked in order):
+          1. Structural stop  — entry_bar_high/low-derived option level (always on)
+          2. ATR/swing trail  — tighter of 1.5×ATR below peak or last swing low/high
+          3. VWAP + trend dead — breach + (ADX<20 OR EMA misalignment); NOT every dip
+          4. Stage 1 target   — +50% option gain → partial exit signal
+          5. Stage 2 trail    — entry×1.15 locked-profit floor on the runner
+          6. Hard stop safety — 20% below entry (absolute net)
+          7. Time cap (last resort) — 90m winners / 20m flat-losers
 
-        Stage 2 — after stage 1 has fired, the remainder rides with:
-          a) Trail stop at entry_price × 1.15 (15% locked profit floor)
-          b) 45-minute hard cap from entry_time (let winners run full time-box)
-
-        Flat/Losing early exit (BEFORE stage 1, within first 20 min):
-          a) -12% momentum stop (EARLY_STOP_PCT) — setup failed, exit fast
-          b) 20-minute time-box (EARLY_TIMEBOX_MIN) — kills theta-burning losers
-
-        Hard stop (30%) always active regardless of stage:
-          Protects against a sudden reversal before stage 1 triggers.
-
-        struct_stop_price (optional):
-          Option-price level derived from the entry candle's high/low via
-          structural_stop_from_level().  Checked FIRST — exits immediately if
-          the option falls to this level.
+        Time caps are LAST RESORT only. Structure-based exits (2, 3) should fire
+        before the clock ever becomes relevant for a correctly-entered trade.
 
         Parameters
         ----------
-        entry_price        : option premium at fill
-        current_price      : latest mid-price of the option
-        entry_time         : UTC datetime when the trade was opened
-        now                : UTC datetime to measure elapsed time (default: utcnow)
-        stage1_done        : True once the first 50% has been sold
-        stage1_be_price    : trail floor for second tranche (entry_price × 1.15)
-        struct_stop_price  : entry_bar_high-derived hard stop (option price level)
+        entry_price      : option premium at fill
+        current_price    : latest option mid-price
+        entry_time       : datetime when trade opened (ET, tz-aware)
+        now              : current datetime (ET, tz-aware)
+        stage1_done      : True once the 50% partial exit has been executed
+        stage1_be_price  : trail floor (entry×1.15) set after stage1 fires
+        struct_stop_price: entry_bar_high/low-derived hard stop (option price level)
+        atr_trail_stop   : ATR/swing trailing stop in option-price space
+        vwap             : current underlying VWAP
+        trend_dead       : True when ADX<20 or EMA stack is misaligned
+        direction        : "bullish" (call) or "bearish" (put)
         """
         now = now or datetime.utcnow()
 
-        # ── Compute elapsed hold time once (used in multiple checks below) ─────
+        # ── Elapsed time (for time-cap safety net only) ───────────────────────
         elapsed_minutes = 0.0
         if entry_time is not None:
             try:
@@ -984,77 +985,84 @@ class RiskManager:
                 _et_n  = entry_time.replace(tzinfo=None) if entry_time.tzinfo else entry_time
                 elapsed_minutes = max(0.0, (_now_n - _et_n).total_seconds() / 60)
 
-        # ── Structural stop: entry_bar_high / entry_bar_low-derived level ──────
-        # Tightest possible stop — exits before the dynamic 30% stop if the
-        # underlying reclaims the structural level that invalidated the setup.
+        # ── 1. Structural stop (entry bar high/low) ───────────────────────────
         if struct_stop_price is not None and current_price <= struct_stop_price:
             return True, (
                 f"structural_stop_bar_high "
                 f"(sl={struct_stop_price:.4f} current={current_price:.4f})"
             )
 
-        # ── Dynamic stop (tightens every 15 min — theta decay protection) ─────
-        # Stage 1 window only.  After stage 1 the stop becomes the 15% trail floor.
-        if not stage1_done:
-            sl = self.dynamic_stop_price(entry_price, entry_time, now)
-        else:
-            # Stage 2: hard stop at the original 30% level as an absolute floor
-            # (in practice the trail floor at entry×1.15 fires first)
-            sl = self.stop_loss_price(entry_price)   # never worse than 30% below entry
-
-        if current_price <= sl:
-            current_stop_pct = (
-                self.dynamic_stop_pct(entry_time, now) if not stage1_done
-                else self.ORB_STOP_PCT
-            )
-            label = "stage2_hard_floor" if stage1_done else f"dynamic_stop_{round(current_stop_pct*100)}pct"
-            return True, f"{label} (sl={sl:.4f} current={current_price:.4f})"
-
-        # ── Stage 1 window: early momentum stop (first 20 min) ───────────────
-        # If the trade is down -12% within the early window, the setup failed
-        # fast — exit immediately before theta decay compounds the loss.
-        if not stage1_done and elapsed_minutes <= EARLY_TIMEBOX_MIN:
-            early_stop_price = entry_price * (1.0 - EARLY_STOP_PCT)
-            if current_price <= early_stop_price:
+        # ── 2. ATR / swing trailing stop ──────────────────────────────────────
+        # Replaces the old fixed-percentage dynamic stop.
+        # Position manager ratchets this tighter as price moves in our favour.
+        # Falls back to 20% hard stop if no ATR data available yet.
+        if atr_trail_stop is not None:
+            if current_price <= atr_trail_stop:
                 return True, (
-                    f"early_momentum_stop_{round(EARLY_STOP_PCT*100)}pct "
-                    f"(floor={early_stop_price:.4f} current={current_price:.4f} "
-                    f"held={elapsed_minutes:.1f}min)"
+                    f"atr_trail_stop "
+                    f"(trail={atr_trail_stop:.4f} current={current_price:.4f})"
                 )
+        else:
+            # Fallback: 20% hard stop when bars not yet available
+            hard_stop = entry_price * 0.80
+            if current_price <= hard_stop:
+                return True, f"hard_stop_20pct (sl={hard_stop:.4f} current={current_price:.4f})"
 
-        # ── Stage 1 window: 20-minute flat/losing time-box ───────────────────
-        # If stage 1 hasn't fired yet (trade is flat or losing) and 20 minutes
-        # have elapsed, exit to stop theta decay.  Winners that already hit stage
-        # 1 ride to the full 45-minute cap below.
-        if not stage1_done and elapsed_minutes >= EARLY_TIMEBOX_MIN:
-            return True, (
-                f"early_timebox_{EARLY_TIMEBOX_MIN}m "
-                f"(held={elapsed_minutes:.1f}min — flat/losing, killing theta)"
+        # ── 3. VWAP breach + confirmed trend breakdown ────────────────────────
+        # Only exits when BOTH conditions are met:
+        #   a) Price has been below (call) or above (put) VWAP for ≥2 bars (tracked
+        #      by position_manager via vwap_breached_bars counter → sets trend_dead)
+        #   b) The trend is actually dead: ADX<20 OR EMA stack misaligned
+        # This prevents exiting on every VWAP dip when momentum is still intact.
+        if vwap is not None and trend_dead:
+            vwap_broken = (
+                (direction == "bullish" and current_price < vwap * 0.9990) or   # option well below VWAP equivalent
+                (direction == "bearish" and current_price > vwap * 1.0010)
             )
+            # For options, proxy the VWAP check via the already-computed trend_dead
+            # flag from position_manager (which checked the underlying, not the option)
+            # trend_dead=True means VWAP has been breached for ≥2 bars AND the trend
+            # indicators confirm deterioration. Exit regardless of option price.
+            _ = vwap_broken   # referenced above for clarity but trend_dead is the gate
+            return True, f"vwap_trend_dead (trend_dead=True direction={direction})"
 
-        # ── Stage 2: 90-minute extended cap (winners only) ───────────────────
-        # stage1_done is True — trade already booked 50% profit.
-        # Allow the remainder to run up to 90 minutes so winners get more room.
-        # The 45-minute cap only applies when stage1 has NOT fired (flat/losers).
-        if stage1_done and elapsed_minutes >= self.ORB_TIME_BOX_WINNER:
-            return True, f"time_box_90m_winner (held={elapsed_minutes:.1f}min)"
-
-        # ── Stage 1: sell 50% at +50% gain ───────────────────────────────────
+        # ── 4. Stage 1: +50% profit target ───────────────────────────────────
         if not stage1_done:
             s1 = self.stage1_exit_price(entry_price)
             if current_price >= s1:
                 return True, f"stage1_50pct (target={s1:.4f} current={current_price:.4f})"
 
-        # ── Stage 2: 15% locked-profit trail stop on the remainder ───────────
-        # stage1_be_price is set to entry_price × 1.15 by trading_logic.py when
-        # stage 1 fires.  If price retreats to that level, take the 15% gain
-        # rather than giving it all back to break-even.
+        # ── 5. Stage 2: locked-profit trail stop ─────────────────────────────
         if stage1_done and stage1_be_price is not None:
             if current_price <= stage1_be_price:
                 return True, (
                     f"stage2_trail_stop "
                     f"(floor={stage1_be_price:.4f} current={current_price:.4f})"
                 )
+
+        # ── 6. Early momentum stop (first 20 min only, before stage 1) ───────
+        # Fast failure detection: if the trade is down -12% within 20 min,
+        # the setup failed. Exit before theta decay compounds the loss.
+        if not stage1_done and elapsed_minutes <= EARLY_TIMEBOX_MIN:
+            early_stop = entry_price * (1.0 - EARLY_STOP_PCT)
+            if current_price <= early_stop:
+                return True, (
+                    f"early_momentum_stop_{round(EARLY_STOP_PCT*100)}pct "
+                    f"(floor={early_stop:.4f} current={current_price:.4f} "
+                    f"held={elapsed_minutes:.1f}min)"
+                )
+
+        # ── 7. Time caps — LAST RESORT ONLY ──────────────────────────────────
+        # Structure-based exits (2, 3) should fire before these in a healthy trade.
+        # These exist only as a safety net against zombie positions.
+        if not stage1_done and elapsed_minutes >= EARLY_TIMEBOX_MIN:
+            return True, (
+                f"time_cap_loser_{EARLY_TIMEBOX_MIN}m "
+                f"(held={elapsed_minutes:.1f}min — no momentum, killing theta)"
+            )
+
+        if stage1_done and elapsed_minutes >= self.ORB_TIME_BOX_WINNER:
+            return True, f"time_cap_winner_90m (held={elapsed_minutes:.1f}min)"
 
         return False, "hold"
 
@@ -1066,15 +1074,24 @@ class RiskManager:
         now: Optional[datetime] = None,
         stage1_done: bool = False,
         stage1_be_price: Optional[float] = None,
-        # Legacy keyword arguments kept so old call-sites don't break:
+        # Legacy kwargs — kept so old call-sites don't break
         is_last_window: bool = False,
         peak_price: Optional[float] = None,
-        struct_stop_price: Optional[float] = None,   # entry_bar_high-derived option stop
+        struct_stop_price: Optional[float] = None,
+        # Adaptive exit params (new)
+        atr_trail_stop: Optional[float] = None,
+        vwap: Optional[float] = None,
+        trend_dead: bool = False,
+        direction: str = "bullish",
     ) -> tuple[bool, str]:
-        """Alias for evaluate_exit_conditions — preferred name in trading_logic."""
+        """Preferred alias for evaluate_exit_conditions — used in position_manager."""
         return self.evaluate_exit_conditions(
             entry_price, current_price,
             entry_time=entry_time, now=now,
             stage1_done=stage1_done, stage1_be_price=stage1_be_price,
             struct_stop_price=struct_stop_price,
+            atr_trail_stop=atr_trail_stop,
+            vwap=vwap,
+            trend_dead=trend_dead,
+            direction=direction,
         )

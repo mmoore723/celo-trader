@@ -9,7 +9,7 @@ import {
   AreaChart, Area, ResponsiveContainer, YAxis,
 } from "recharts";
 import { TradingChart } from "../components/charts/TradingChart";
-import { useBotStore } from "../store/bot";
+import { useBotStore, type LivePosition } from "../store/bot";
 import { api, type Trade, type Bar } from "../lib/api";
 
 // Fallback ticker list — used only when the scanner hasn't run yet.
@@ -413,90 +413,190 @@ export function LiveTrading() {
             Bot Focus
           </div>
           <div className="px-2 pb-3">
-            {status?.ticker ? (
-              // Compact 6-column table: Strike | Ticker | Contract | Exp | Entry | Stop
-              <div style={{ overflowX: "auto" }}>
-                <table style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: 10,
-                }}>
-                  <thead>
-                    <tr>
-                      {["Strike","Ticker","Contract","Exp","Entry","Stop"].map((h) => (
-                        <th key={h} style={{
-                          padding: "2px 5px",
-                          textAlign: "left",
-                          color: "var(--ink-faint)",
-                          fontWeight: 500,
-                          borderBottom: "1px solid var(--border)",
-                          whiteSpace: "nowrap",
-                          letterSpacing: "0.03em",
-                        }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      {/* Strike */}
-                      <td style={{ padding: "3px 5px", color: "var(--ink)", fontWeight: 700, whiteSpace: "nowrap" }}>
-                        {status.last_eval_strike != null ? `$${status.last_eval_strike.toFixed(0)}` : "—"}
-                      </td>
-                      {/* Ticker — click to load that ticker's chart */}
-                      <td
-                        style={{
-                          padding: "3px 5px", color: "var(--accent)", fontWeight: 700,
-                          cursor: "pointer", textDecoration: "underline dotted",
-                        }}
-                        title={`View ${status.ticker} chart`}
-                        onClick={() => status.ticker && setTicker(status.ticker)}
-                      >
-                        {status.ticker}
-                      </td>
-                      {/* Contract # — truncated, full on hover */}
-                      <td
-                        title={status.last_eval_contract_symbol ?? ""}
-                        style={{
-                          padding: "3px 5px",
-                          color: "var(--ink-muted)",
-                          maxWidth: 110,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {status.last_eval_contract_symbol ?? "—"}
-                      </td>
-                      {/* Exp date — YYYY-MM-DD → MM/DD/YY */}
-                      <td style={{ padding: "3px 5px", color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
-                        {status.last_eval_expiry?.length === 10
-                          ? `${status.last_eval_expiry.slice(5,7)}/${status.last_eval_expiry.slice(8,10)}/${status.last_eval_expiry.slice(2,4)}`
-                          : (status.last_eval_expiry ?? "—")}
-                      </td>
-                      {/* Target entry */}
-                      <td style={{ padding: "3px 5px", color: "var(--positive)", fontWeight: 600, whiteSpace: "nowrap" }}>
-                        {status.last_eval_eff_entry != null ? `$${status.last_eval_eff_entry.toFixed(2)}` : "—"}
-                      </td>
-                      {/* Stop % */}
-                      <td style={{ padding: "3px 5px", color: "var(--negative)", fontWeight: 600, whiteSpace: "nowrap" }}>
-                        {status.current_stop_pct != null ? `${(status.current_stop_pct * 100).toFixed(0)}%` : "—"}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                {/* Strategy badge below table */}
-                {status.last_strategy_id && (
-                  <div className="mt-1 pl-1">
-                    <span className="badge badge-blue" style={{ fontSize: 9 }}>{status.last_strategy_id}</span>
+            {(() => {
+              const livePositions = status?.open_positions
+                ? Object.values(status.open_positions)
+                : [];
+
+              if (livePositions.length > 0) {
+                // ── IN TRADE: show all open positions with live P&L ──────────
+                return (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{
+                      width: "100%", borderCollapse: "collapse",
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                    }}>
+                      <thead>
+                        <tr>
+                          {["Ticker","Type","Entry","Now","P&L","Stop","Stage"].map((h) => (
+                            <th key={h} style={{
+                              padding: "2px 5px", textAlign: "left",
+                              color: "var(--ink-faint)", fontWeight: 500,
+                              borderBottom: "1px solid var(--border)",
+                              whiteSpace: "nowrap", letterSpacing: "0.03em",
+                            }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {livePositions.map((pos: LivePosition) => {
+                          const curPx   = pos.current_option_price;
+                          const entry   = pos.entry_price;
+                          const qty     = pos.contracts ?? 1;
+                          const unreal  = curPx != null ? (curPx - entry) * qty * 100 : null;
+                          const pnlPct  = curPx != null ? ((curPx - entry) / entry * 100) : null;
+                          const isCall  = (pos.option_type ?? "").toLowerCase() === "call";
+                          const stopPx  = pos.atr_trail_stop;
+                          const stopPct = pos.current_stop_pct;
+                          return (
+                            <tr key={pos.trade_id} style={{ borderBottom: "1px solid var(--border)" }}>
+                              {/* Ticker — click to switch chart */}
+                              <td
+                                style={{
+                                  padding: "4px 5px", color: "var(--accent)",
+                                  fontWeight: 700, cursor: "pointer",
+                                  textDecoration: "underline dotted",
+                                }}
+                                title={`View ${pos.ticker} chart`}
+                                onClick={() => setTicker(pos.ticker)}
+                              >
+                                {pos.ticker}
+                              </td>
+                              {/* Option type badge */}
+                              <td style={{ padding: "4px 5px" }}>
+                                <span style={{
+                                  fontSize: 9, fontWeight: 700, padding: "1px 4px",
+                                  borderRadius: 3,
+                                  background: isCall ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
+                                  color: isCall ? "var(--positive)" : "var(--negative)",
+                                }}>
+                                  {pos.option_type?.toUpperCase() ?? "—"}
+                                </span>
+                              </td>
+                              {/* Entry */}
+                              <td style={{ padding: "4px 5px", color: "var(--ink)", whiteSpace: "nowrap" }}>
+                                ${entry.toFixed(2)}
+                              </td>
+                              {/* Current option price — live */}
+                              <td style={{ padding: "4px 5px", color: "var(--ink)", whiteSpace: "nowrap" }}>
+                                {curPx != null ? `$${curPx.toFixed(2)}` : "—"}
+                                {pos.current_option_price_time && (
+                                  <span style={{ color: "var(--ink-faint)", marginLeft: 3, fontSize: 9 }}>
+                                    {pos.current_option_price_time}
+                                  </span>
+                                )}
+                              </td>
+                              {/* Live unrealized P&L */}
+                              <td style={{ padding: "4px 5px", whiteSpace: "nowrap", fontWeight: 700 }}>
+                                {unreal != null ? (
+                                  <span style={{ color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                                    {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
+                                    <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.8 }}>
+                                      ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
+                                    </span>
+                                  </span>
+                                ) : "—"}
+                              </td>
+                              {/* Trail stop */}
+                              <td style={{ padding: "4px 5px", color: "var(--negative)", whiteSpace: "nowrap" }}>
+                                {stopPx != null
+                                  ? `$${stopPx.toFixed(2)}`
+                                  : stopPct != null
+                                    ? `${(stopPct * 100).toFixed(0)}%`
+                                    : "—"}
+                              </td>
+                              {/* Stage badge */}
+                              <td style={{ padding: "4px 5px" }}>
+                                <span style={{
+                                  fontSize: 9, padding: "1px 4px", borderRadius: 3,
+                                  background: pos.stage1_done
+                                    ? "rgba(0,180,255,0.15)" : "rgba(255,180,0,0.15)",
+                                  color: pos.stage1_done ? "#0af" : "#fa0",
+                                  fontWeight: 600,
+                                }}>
+                                  {pos.stage1_done ? "S2" : "S1"}
+                                </span>
+                                {pos.trend_dead && (
+                                  <span style={{ marginLeft: 3, color: "var(--negative)", fontSize: 9 }}>⚠️</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
-                Waiting for bot to start scanning…
-              </p>
-            )}
+                );
+              }
+
+              // ── SCANNING: show current scanner focus ──────────────────────
+              if (status?.ticker) {
+                return (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{
+                      width: "100%", borderCollapse: "collapse",
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                    }}>
+                      <thead>
+                        <tr>
+                          {["Ticker","Contract","Exp","Entry"].map((h) => (
+                            <th key={h} style={{
+                              padding: "2px 5px", textAlign: "left",
+                              color: "var(--ink-faint)", fontWeight: 500,
+                              borderBottom: "1px solid var(--border)",
+                              whiteSpace: "nowrap", letterSpacing: "0.03em",
+                            }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td
+                            style={{
+                              padding: "3px 5px", color: "var(--accent)", fontWeight: 700,
+                              cursor: "pointer", textDecoration: "underline dotted",
+                            }}
+                            title={`View ${status.ticker} chart`}
+                            onClick={() => status.ticker && setTicker(status.ticker)}
+                          >
+                            {status.ticker}
+                          </td>
+                          <td
+                            title={status.last_eval_contract_symbol ?? ""}
+                            style={{
+                              padding: "3px 5px", color: "var(--ink-muted)",
+                              maxWidth: 110, overflow: "hidden",
+                              textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}
+                          >
+                            {status.last_eval_contract_symbol ?? "—"}
+                          </td>
+                          <td style={{ padding: "3px 5px", color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
+                            {status.last_eval_expiry?.length === 10
+                              ? `${status.last_eval_expiry.slice(5,7)}/${status.last_eval_expiry.slice(8,10)}/${status.last_eval_expiry.slice(2,4)}`
+                              : (status.last_eval_expiry ?? "—")}
+                          </td>
+                          <td style={{ padding: "3px 5px", color: "var(--positive)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                            {status.last_eval_eff_entry != null ? `$${status.last_eval_eff_entry.toFixed(2)}` : "—"}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    {status.last_strategy_id && (
+                      <div className="mt-1 pl-1">
+                        <span className="badge badge-blue" style={{ fontSize: 9 }}>{status.last_strategy_id}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
+                  Waiting for bot to start scanning…
+                </p>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -516,40 +616,91 @@ export function LiveTrading() {
               <thead>
                 <tr>
                   <th>Ticker</th><th>Dir</th><th>Entry</th>
-                  <th>Strategy</th><th>P&L</th><th></th>
+                  <th>Now</th><th>Strategy</th><th>P&L (live)</th><th></th>
                 </tr>
               </thead>
               <tbody>
                 {openTrades.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
+                    <td colSpan={7} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
                       No open positions
                     </td>
                   </tr>
                 ) : (
-                  openTrades.map((t: Trade) => (
-                    <tr key={t.id}>
-                      <td className="font-semibold">{t.ticker}</td>
-                      <td>
-                        <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
-                          {t.direction?.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="num">${t.entry_price.toFixed(2)}</td>
-                      <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                        {t.strategy_id ?? "—"}
-                      </td>
-                      <td><PnlBadge value={t.pnl} /></td>
-                      <td>
-                        <button
-                          className="btn btn-ghost btn-sm text-xs"
-                          onClick={() => api.bot.closeTrade(t.id)}
+                  openTrades.map((t: Trade) => {
+                    // Pull live option price from the WebSocket open_positions object.
+                    // Key is trade_id as a string (backend uses str(trade_id)).
+                    const livePos = status?.open_positions?.[String(t.id)];
+                    const curPx   = livePos?.current_option_price ?? null;
+                    const qty     = livePos?.contracts ?? t.contracts ?? 1;
+                    // Unrealized P&L = (current − entry) × contracts × 100
+                    const unreal  = curPx != null
+                      ? (curPx - t.entry_price) * qty * 100
+                      : null;
+                    const pnlPct  = curPx != null
+                      ? (curPx - t.entry_price) / t.entry_price * 100
+                      : null;
+                    const updTime = livePos?.current_option_price_time;
+
+                    return (
+                      <tr key={t.id}>
+                        <td className="font-semibold"
+                          style={{ cursor: "pointer", color: "var(--accent)" }}
+                          onClick={() => setTicker(t.ticker)}
+                          title={`View ${t.ticker} chart`}
                         >
-                          Close
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                          {t.ticker}
+                        </td>
+                        <td>
+                          <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
+                            {t.direction?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="num">${t.entry_price.toFixed(2)}</td>
+                        {/* Live current price */}
+                        <td className="num" style={{ whiteSpace: "nowrap" }}>
+                          {curPx != null ? (
+                            <>
+                              <span style={{ fontWeight: 600 }}>${curPx.toFixed(2)}</span>
+                              {updTime && (
+                                <span style={{ color: "var(--ink-faint)", fontSize: 9, marginLeft: 3 }}>
+                                  {updTime}
+                                </span>
+                              )}
+                            </>
+                          ) : "—"}
+                        </td>
+                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                          {t.strategy_id ?? "—"}
+                        </td>
+                        {/* Live unrealized P&L — replaces the static DB value */}
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {unreal != null ? (
+                            <span style={{
+                              fontWeight: 700,
+                              color: unreal >= 0 ? "var(--positive)" : "var(--negative)",
+                            }}>
+                              {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
+                              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
+                                ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
+                              </span>
+                            </span>
+                          ) : (
+                            // Fall back to DB realized P&L if no live price yet
+                            <PnlBadge value={t.pnl} />
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-ghost btn-sm text-xs"
+                            onClick={() => api.bot.closeTrade(t.id)}
+                          >
+                            Close
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
