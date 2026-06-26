@@ -829,6 +829,93 @@ class RiskManager:
         )
         return round(result, 4)
 
+    def structural_target_price(
+        self,
+        entry_price: float,
+        underlying_current: float,
+        direction: str,
+        or_high: Optional[float] = None,
+        or_low: Optional[float] = None,
+        prev_day_high: Optional[float] = None,
+        prev_day_low: Optional[float] = None,
+        vwap_upper2: Optional[float] = None,
+        vwap_lower2: Optional[float] = None,
+    ) -> float:
+        """
+        Dynamic profit target derived from chart structure, not a fixed +50%.
+
+        Priority order for CALL (bullish) targets:
+          1. Previous day high  — clean resistance, oft tested on gap days
+          2. OR high × 2        — OR double-extension (institutional level)
+          3. VWAP +2σ band      — mean-reversion resistance
+          4. Static +50%        — fallback if no levels available
+
+        Priority order for PUT (bearish) targets:
+          1. Previous day low
+          2. OR low − (OR range)
+          3. VWAP −2σ band
+          4. Static +50% fallback
+
+        The chosen target must produce at least the minimum R:R ratio
+        (effective_min_rr()) vs the structural stop. If it doesn't, falls back
+        to the next candidate. If none qualify, returns the static +50%.
+
+        Conversion from underlying target to option target:
+          Same delta approximation (0.40) used in structural_stop_price.
+        """
+        DELTA_APPROX = 0.40
+
+        def underlying_to_option_target(underlying_target: float) -> float:
+            move = abs(underlying_target - underlying_current)
+            return round(entry_price + move * DELTA_APPROX, 4)
+
+        candidates: list[float] = []
+
+        if direction == "bullish":
+            # 1. Previous day high
+            if prev_day_high and prev_day_high > underlying_current:
+                candidates.append(prev_day_high)
+            # 2. OR double extension
+            if or_high and or_low:
+                or_range   = or_high - or_low
+                or_double  = or_high + or_range
+                if or_double > underlying_current:
+                    candidates.append(or_double)
+            # 3. VWAP +2σ
+            if vwap_upper2 and vwap_upper2 > underlying_current:
+                candidates.append(vwap_upper2)
+        else:  # bearish / PUT
+            if prev_day_low and prev_day_low < underlying_current:
+                candidates.append(prev_day_low)
+            if or_high and or_low:
+                or_range  = or_high - or_low
+                or_double = or_low - or_range
+                if or_double < underlying_current:
+                    candidates.append(or_double)
+            if vwap_lower2 and vwap_lower2 < underlying_current:
+                candidates.append(vwap_lower2)
+
+        # Sort candidates by proximity (nearest first — most achievable)
+        candidates.sort(key=lambda c: abs(c - underlying_current))
+
+        _min_rr    = self.effective_min_rr()
+        static_sl  = self.stop_loss_price(entry_price)
+        net_risk   = entry_price - static_sl
+
+        for underlying_tgt in candidates:
+            opt_tgt  = underlying_to_option_target(underlying_tgt)
+            net_rew  = opt_tgt - entry_price
+            rr       = net_rew / net_risk if net_risk > 0 else 0
+            if rr >= _min_rr and opt_tgt > entry_price:
+                logger.debug(
+                    "structural_target: using %.4f (underlying %.4f) R:R=%.2f",
+                    opt_tgt, underlying_tgt, rr,
+                )
+                return opt_tgt
+
+        # No structural level qualified — fall back to static +50%
+        return self.stage1_exit_price(entry_price)
+
     def stage1_exit_price(self, entry_price: float) -> float:
         """Price at which to sell the first 50% tranche (+50% gain)."""
         return round(entry_price * (1.0 + self.ORB_STAGE1_GAIN), 4)

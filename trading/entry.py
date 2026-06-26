@@ -813,6 +813,18 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     LIVE_STATE["last_signal"]     = direction
     LIVE_STATE["last_strategy_id"]= strategy_id
 
+    # ── Minimum confidence gate ───────────────────────────────────────────────
+    # Blocks low-conviction signals (e.g. a single weak strategy with <55%
+    # confidence while all others returned nothing). This is a hard quality
+    # floor — even a passing R:R ratio can be noise on a sub-threshold signal.
+    _MIN_CONFIDENCE = 0.55
+    if _top.confidence < _MIN_CONFIDENCE:
+        log_event("INFO", "bar_eval",
+                  f"⚪ [{ticker}] Signal from {strategy_id} skipped — "
+                  f"confidence {_top.confidence:.0%} below minimum {_MIN_CONFIDENCE:.0%}. "
+                  f"Waiting for a higher-conviction setup.")
+        return
+
     # ── Flip-direction enforcement ────────────────────────────────────────────
     # When flip_eligible, we prefer the OPPOSITE direction of the stopped trade
     # but we do NOT hard-block a valid signal — market structure always wins.

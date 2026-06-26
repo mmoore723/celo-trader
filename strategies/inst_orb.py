@@ -1,28 +1,42 @@
 """
 strategies/inst_orb.py — Institutional Opening Range Breakout (INST_ORB)
 
-Session window : 09:45 – 10:30 ET
-Direction logic:
-  • Bullish  — close > OR High and trend is uptrend/consolidation
-  • Bearish  — close < OR Low  and trend is downtrend/consolidation
-  • Flipped  — failed-breakout fade:
-                 bearish-flip  = close > OR High but trend = downtrend
-                 bullish-flip  = close < OR Low  but trend = uptrend
+Session window : 09:45 – 10:30 ET (extended to 10:45 for retest entries)
 
-Fixes vs. original strategy_router.py
-──────────────────────────────────────
-1. Per-ticker cooldown  — 20-min window blocks re-entry spam (base.check_cooldown)
-2. MFE early-exit gate  — skips signals when price is already overextended:
-     non-flip: > 2× ATR past the OR boundary
-     flip:     > 1× ATR past the OR boundary (tighter — confirms failed move)
-3. VWAP direction fix for flipped signals — the standard "bearish requires close < VWAP"
-   gate incorrectly blocks failed-breakout-fade entries (price is above VWAP by design).
-   Replaced with a proximity check: price must be within max(ATR, 0.5% of VWAP) of VWAP.
+Entry logic — RETEST SEQUENCE (not raw breakout):
+  Phase 1 — BREAKOUT DETECTED: first bar that closes outside the OR boundary.
+             We do NOT enter here. We wait.
+  Phase 2 — RETEST IN PROGRESS: price pulls back and the candle's low (bullish)
+             or high (bearish) touches the OR boundary ± tolerance. The option
+             premium has also pulled back from its peak, giving a better fill.
+  Phase 3 — BOUNCE CONFIRMED: after touching the OR level, price closes back
+             through it. This bar is the entry — direction is structurally
+             confirmed, stop is just below the OR level, entry is tighter.
+
+Why retest entry vs raw breakout:
+  • Raw breakout entry is at the top of the initial surge — option premium peak.
+  • Retest entry is at the OR level itself — cheaper premium, tighter stop.
+  • The bounce bar confirms the OR flipped from resistance → support (or vice
+    versa). That structural confirmation is the edge.
+
+State machine (per ticker per day):
+  idle → breakout_seen → retesting → (entry fires) → idle
+  Resets daily. Failed retest (close back through in wrong direction) → idle.
+
+Fixes vs. original raw-breakout INST_ORB
+──────────────────────────────────────────
+1. Retest state machine replaces immediate breakout entry
+2. Per-ticker cooldown  — 20-min window blocks re-entry spam
+3. MFE overextension gate still applies to the RETEST bar (not the breakout bar)
+4. VWAP direction gate applies at the retest entry bar
+5. Flip/fade signals: still supported — the breakout bar is the fade trigger;
+   the retest is price coming back to test the failed level
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import date as _date
 from typing import Optional
 
 import numpy as np
@@ -42,234 +56,279 @@ logger = logging.getLogger("celo_trader.strategies.inst_orb")
 
 STRATEGY_ID = "INST_ORB"
 
-# Session window (minutes since midnight ET)
-_SESSION_START = 9 * 60 + 45    # 09:45
-_SESSION_END   = 10 * 60 + 30   # 10:30
+# Session window — breakout must be detected by 10:30; retest can complete by 10:45
+_SESSION_START      = 9  * 60 + 45   # 09:45 — breakout detection window start
+_BREAKOUT_DEADLINE  = 10 * 60 + 30   # 10:30 — breakout must be seen before this
+_SESSION_END        = 10 * 60 + 45   # 10:45 — retest entry deadline
+
+# Retest tolerance: how close price must come to the OR boundary to count as a retest.
+# 0.15% of the boundary price, minimum $0.05. On SPY (~$730) this is ~$1.10.
+# Prevents a "close enough" touch on a fast move from triggering too early.
+_RETEST_TOLERANCE_PCT = 0.0015   # 0.15% of boundary price
+_RETEST_TOLERANCE_MIN = 0.05     # absolute floor
+
+# Per-ticker, per-day retest state machine.
+# Key: (ticker, date_str)  Value: phase dict
+_retest_state: dict[tuple[str, str], dict] = {}
+
+
+def _get_state(ticker: str, today_date: _date) -> dict:
+    """Return (and lazily initialize) the retest state for ticker+date."""
+    key = (ticker, today_date.isoformat())
+    if key not in _retest_state:
+        _retest_state[key] = {
+            "phase":       "idle",      # idle | breakout_seen | retesting
+            "direction":   None,        # "bullish" | "bearish"
+            "or_boundary": None,        # the OR level price must retest
+            "breakout_bar":None,        # timestamp of the breakout bar (for logging)
+            "retest_bar":  None,        # timestamp of the retest touch bar
+        }
+    # Prune stale state from prior days (keep only today + yesterday)
+    stale = [k for k in _retest_state if k[1] < today_date.isoformat()]
+    for k in stale:
+        del _retest_state[k]
+    return _retest_state[key]
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     """
-    Evaluate INST_ORB signals on the current session's bar data.
+    Evaluate INST_ORB signals via the retest entry state machine.
+
+    Called once per tick with today's 1-min bars. Processes all bars in
+    chronological order and advances the state machine. Returns a Signal
+    only on the BOUNCE CONFIRMED bar (Phase 3).
 
     Parameters
     ----------
-    today  : DataFrame with columns time, open, high, low, close, volume, rvol, vwap
-    ticker : ticker symbol — used for cooldown keying and log context
-
-    Returns
-    -------
-    Signal if a qualifying setup is found, else None.
+    today  : DataFrame with columns time, open, high, low, close, volume, rvol, vwap, atr
+    ticker : symbol — cooldown keying and log context
     """
     if len(today) < 2:
         return None
 
-    # ── Pre-compute indicators ────────────────────────────────────────────────
-    # OR boundaries from signals.get_opening_range(); ATR/VWAP are already
-    # columns in today (built by strategy_router._build_indicator_frame).
     or_data = get_opening_range(today)
     if or_data is None:
-        return None          # OR not yet formed
+        return None
     or_high = or_data.get("high")
     or_low  = or_data.get("low")
     if or_high is None or or_low is None:
         return None
 
-    # ── Build market structure once — shared across bar loop ─────────────────
-    msa = MarketStructureAnalyzer(today)
+    today_date = today["time"].iloc[-1].date()
+    state      = _get_state(ticker, today_date)
+
+    msa   = MarketStructureAnalyzer(today)
     trend = msa.classify_trend()
 
-    # Evaluate on every bar in the session window (most recent qualifying bar wins)
     result: Optional[Signal] = None
 
     for _, bar in today.iterrows():
         bar_time = bar["time"]
         if not isinstance(bar_time, pd.Timestamp):
             bar_time = pd.Timestamp(bar_time)
-
         bar_min = bar_time.hour * 60 + bar_time.minute
 
-        # ── Gate 0: session window ────────────────────────────────────────────
+        # Gate: only evaluate inside the combined session window
         if not (_SESSION_START <= bar_min <= _SESSION_END):
             continue
 
         close  = float(bar["close"])
+        low    = float(bar["low"])
+        high   = float(bar["high"])
         volume = float(bar.get("volume", 0))
         rvol   = float(bar.get("rvol", 0.0))
         _vwap  = bar.get("vwap")
         vwap   = float(_vwap) if (_vwap is not None and not (isinstance(_vwap, float) and np.isnan(_vwap))) else None
         _atr   = bar.get("atr")
-        atr    = float(_atr)  if (_atr  is not None and not (isinstance(_atr,  float) and np.isnan(_atr)))  else None
+        atr    = float(_atr) if (_atr is not None and not (isinstance(_atr, float) and np.isnan(_atr))) else None
 
         if atr is None or atr <= 0:
             continue
 
-        # ── Gate 0b: cooldown ─────────────────────────────────────────────────
-        if check_cooldown(STRATEGY_ID, ticker, bar_time):
-            logger.debug("[%s] %s INST_ORB: cooldown active, skip bar %s", ticker, STRATEGY_ID, bar_time)
-            continue
+        # ── PHASE TRANSITIONS ────────────────────────────────────────────────
 
-        # ── Determine direction ───────────────────────────────────────────────
-        broke_high = close > or_high
-        broke_low  = close < or_low
+        if state["phase"] == "idle":
+            # Can only detect a new breakout before the deadline
+            if bar_min > _BREAKOUT_DEADLINE:
+                continue
 
-        if not broke_high and not broke_low:
-            continue        # price still inside OR — no signal
+            broke_high = close > or_high
+            broke_low  = close < or_low
+            if not broke_high and not broke_low:
+                continue
 
-        direction_flipped = False
-
-        if broke_high:
-            if trend in ("uptrend", "consolidation"):
-                direction = "bullish"
+            # Determine direction (with flip logic)
+            if broke_high:
+                direction = "bullish" if trend in ("uptrend", "consolidation") else "bearish"
             else:
-                # Price broke above OR High but the trend is down —
-                # likely a failed breakout; we fade the move (sell the rejection).
-                direction        = "bearish"
-                direction_flipped = True
-        else:  # broke_low
-            if trend in ("downtrend", "consolidation"):
-                direction = "bearish"
+                direction = "bearish" if trend in ("downtrend", "consolidation") else "bullish"
+
+            # Record the breakout; do NOT enter — advance state to "wait for retest"
+            state["phase"]        = "breakout_seen"
+            state["direction"]    = direction
+            state["or_boundary"]  = or_high if broke_high else or_low
+            state["breakout_bar"] = bar_time
+            state["retest_bar"]   = None
+            logger.info(
+                "[%s] INST_ORB breakout detected at %s — direction=%s boundary=%.2f. "
+                "Waiting for retest before entry.",
+                ticker, bar_time.strftime("%H:%M"), direction, state["or_boundary"],
+            )
+            continue  # don't enter on the breakout bar itself
+
+        elif state["phase"] == "breakout_seen":
+            # Look for the retest: price must come back and TOUCH the OR boundary.
+            # For bullish: the candle's LOW must dip to/below the OR high (now support).
+            # For bearish: the candle's HIGH must rise to/above the OR low (now resistance).
+            boundary  = state["or_boundary"]
+            tolerance = max(_RETEST_TOLERANCE_MIN, boundary * _RETEST_TOLERANCE_PCT)
+
+            if state["direction"] == "bullish":
+                touched = low <= boundary + tolerance
             else:
-                # Price broke below OR Low but trend is up — bullish fakeout fade.
-                direction        = "bullish"
-                direction_flipped = True
+                touched = high >= boundary - tolerance
 
-        # ── Gate 1: MFE / overextension ──────────────────────────────────────
-        # Skip bars where price has already run too far from the OR boundary.
-        # Non-flip: allow up to 2× ATR of extension (catching the initial thrust).
-        # Flip:     allow only 1× ATR (failed move should still be near the OR).
-        mfe_multiplier = 1.0 if direction_flipped else 2.0
-
-        if direction == "bullish" and not direction_flipped:
-            if close > or_high + mfe_multiplier * atr:
-                logger.debug(
-                    "[%s] INST_ORB bullish MFE gate: close %.2f > or_high %.2f + %.1f×ATR %.2f — overextended, skip",
-                    ticker, close, or_high, mfe_multiplier, atr,
+            if touched:
+                state["phase"]     = "retesting"
+                state["retest_bar"] = bar_time
+                logger.info(
+                    "[%s] INST_ORB retest touch at %s — low=%.2f high=%.2f boundary=%.2f. "
+                    "Waiting for bounce confirmation.",
+                    ticker, bar_time.strftime("%H:%M"), low, high, boundary,
                 )
+            else:
+                # If price broke hard in the original direction with no retest
+                # (e.g., close moved 2+ ATRs past the level), the retest window expired.
+                boundary  = state["or_boundary"]
+                if state["direction"] == "bullish" and close < boundary - atr:
+                    logger.info("[%s] INST_ORB retest window failed — price broke back below OR. Resetting.", ticker)
+                    state["phase"] = "idle"
+                elif state["direction"] == "bearish" and close > boundary + atr:
+                    logger.info("[%s] INST_ORB retest window failed — price broke back above OR. Resetting.", ticker)
+                    state["phase"] = "idle"
+            continue
+
+        elif state["phase"] == "retesting":
+            # Look for the bounce: after touching the OR boundary, price closes
+            # back through it. THIS is the entry bar.
+            boundary  = state["or_boundary"]
+            direction = state["direction"]
+
+            bounce_confirmed = (
+                (direction == "bullish" and close > boundary) or
+                (direction == "bearish" and close < boundary)
+            )
+
+            if not bounce_confirmed:
+                # Still testing — if price closes firmly the wrong way, reset
+                if direction == "bullish" and close < boundary - atr:
+                    logger.info("[%s] INST_ORB bounce failed (close %.2f < boundary %.2f - ATR %.2f). Resetting.", ticker, close, boundary, atr)
+                    state["phase"] = "idle"
+                elif direction == "bearish" and close > boundary + atr:
+                    logger.info("[%s] INST_ORB bounce failed (close %.2f > boundary %.2f + ATR %.2f). Resetting.", ticker, close, boundary, atr)
+                    state["phase"] = "idle"
                 continue
-        elif direction == "bearish" and not direction_flipped:
-            if close < or_low - mfe_multiplier * atr:
-                logger.debug(
-                    "[%s] INST_ORB bearish MFE gate: close %.2f < or_low %.2f - %.1f×ATR %.2f — overextended, skip",
-                    ticker, close, or_low, mfe_multiplier, atr,
+
+            # Bounce confirmed — apply entry gates before building signal
+
+            # Gate: cooldown
+            if check_cooldown(STRATEGY_ID, ticker, bar_time):
+                logger.debug("[%s] INST_ORB retest entry skipped — cooldown active", ticker)
+                state["phase"] = "idle"
+                continue
+
+            # Gate: don't enter if price is now overextended past the boundary
+            # (retest happened but the bounce already ran > 1× ATR)
+            dist_from_boundary = abs(close - boundary)
+            if dist_from_boundary > 1.5 * atr:
+                logger.info(
+                    "[%s] INST_ORB retest entry skipped — bounce ran too far "
+                    "(%.2f ATRs from boundary). Skip this bar.",
+                    ticker, dist_from_boundary / atr,
                 )
-                continue
-        elif direction_flipped:
-            # Flip: price must be within 1× ATR of the OR boundary it broke
-            boundary = or_high if broke_high else or_low
-            if abs(close - boundary) > mfe_multiplier * atr:
-                logger.debug(
-                    "[%s] INST_ORB flip MFE gate: close %.2f too far from boundary %.2f (>%.1f×ATR %.2f), skip",
-                    ticker, close, boundary, mfe_multiplier, atr,
-                )
+                state["phase"] = "idle"
                 continue
 
-        # ── Gate 2: dynamic RVOL ─────────────────────────────────────────────
-        rvol_threshold = _get_dynamic_rvol_threshold(
-            bar_min   = bar_min,
-            close     = close,
-            or_low    = or_low,
-            vwap      = vwap,
-            strategy_id = STRATEGY_ID,
-        )
-        rvol_reason = _rvol_threshold_reason(
-            bar_min   = bar_min,
-            close     = close,
-            or_low    = or_low,
-            vwap      = vwap,
-            strategy_id = STRATEGY_ID,
-        )
-        if rvol < rvol_threshold:
-            logger.debug(
-                "[%s] INST_ORB RVOL gate: %.2f < %.2f (%s), skip",
-                ticker, rvol, rvol_threshold, rvol_reason,
+            # Gate: RVOL
+            rvol_threshold = _get_dynamic_rvol_threshold(
+                bar_min=bar_min, close=close, or_low=or_low, vwap=vwap, strategy_id=STRATEGY_ID,
             )
-            continue
+            rvol_reason = _rvol_threshold_reason(
+                bar_min=bar_min, close=close, or_low=or_low, vwap=vwap, strategy_id=STRATEGY_ID,
+            )
+            if rvol < rvol_threshold:
+                logger.debug("[%s] INST_ORB retest RVOL gate: %.2f < %.2f (%s)", ticker, rvol, rvol_threshold, rvol_reason)
+                state["phase"] = "idle"
+                continue
 
-        # ── Gate 3: volume spike vs. vol_sma ────────────────────────────────
-        vol_sma = today["volume"].mean()
-        if vol_sma > 0 and volume < vol_sma * 1.5:
-            logger.debug(
-                "[%s] INST_ORB vol_sma gate: %.0f < 1.5× sma %.0f, skip",
-                ticker, volume, vol_sma,
-            )
-            continue
-
-        # ── Gate 4: MSA overextension guard ──────────────────────────────────
-        # Don't enter if price is already beyond the last confirmed swing high/low
-        # in the signal direction — that's chasing a trend that started long ago.
-        last_sh = msa.last_swing_high()
-        last_sl = msa.last_swing_low()
-        if direction == "bullish" and last_sh is not None and close > last_sh:
-            logger.debug(
-                "[%s] INST_ORB MSA guard: close %.2f > last swing high %.2f, skip",
-                ticker, close, last_sh,
-            )
-            continue
-        if direction == "bearish" and last_sl is not None and close < last_sl:
-            logger.debug(
-                "[%s] INST_ORB MSA guard: close %.2f < last swing low %.2f, skip",
-                ticker, close, last_sl,
-            )
-            continue
-
-        # ── Gate 5: VWAP direction ────────────────────────────────────────────
-        # Standard (non-flipped) signals: price must be on the correct side of VWAP.
-        # Flipped signals: the standard gate is incorrect because:
-        #   • bearish-flip = close > OR High > VWAP  → close >= VWAP is expected
-        #   • bullish-flip = close < OR Low < VWAP   → close <= VWAP is expected
-        # For flipped signals we instead require price is within max(ATR, 0.5% VWAP)
-        # of VWAP — confirming the failed move hasn't screamed too far from value.
-        if vwap is not None:
-            if not direction_flipped:
-                # Standard VWAP side gate
+            # Gate: VWAP direction (standard — not overridden for retest)
+            if vwap is not None:
                 if direction == "bullish" and close <= vwap:
-                    logger.debug("[%s] INST_ORB VWAP gate: bullish but close %.2f <= vwap %.2f, skip", ticker, close, vwap)
+                    logger.debug("[%s] INST_ORB retest VWAP gate: bullish close %.2f <= vwap %.2f, skip", ticker, close, vwap)
+                    state["phase"] = "idle"
                     continue
                 if direction == "bearish" and close >= vwap:
-                    logger.debug("[%s] INST_ORB VWAP gate: bearish but close %.2f >= vwap %.2f, skip", ticker, close, vwap)
+                    logger.debug("[%s] INST_ORB retest VWAP gate: bearish close %.2f >= vwap %.2f, skip", ticker, close, vwap)
+                    state["phase"] = "idle"
                     continue
-            # Flipped/fade entries: skip the VWAP proximity check entirely.
-            # On large gap-down days price breaks the OR Low well below VWAP —
-            # the proximity gate was incorrectly blocking the highest-probability
-            # snapback setups. OR-level rejection + MSA trend validation are
-            # sufficient for flipped entries; VWAP distance is irrelevant.
 
-        # ── All gates passed — build signal ───────────────────────────────────
-        confidence = _compute_confidence(
-            rvol             = rvol,
-            rvol_threshold   = rvol_threshold,
-            atr              = atr,
-            close            = close,
-            or_high          = or_high,
-            or_low           = or_low,
-            direction        = direction,
-            direction_flipped = direction_flipped,
-            trend            = trend,
-        )
+            # All gates passed — build signal
+            confidence = _compute_confidence(
+                rvol=rvol, rvol_threshold=rvol_threshold, atr=atr, close=close,
+                or_high=or_high, or_low=or_low, direction=direction,
+                direction_flipped=(
+                    (direction == "bearish" and close > or_high) or
+                    (direction == "bullish" and close < or_low)
+                ),
+                trend=trend,
+                is_retest=True,   # retest entries get a confidence bonus
+            )
 
-        register_cooldown(STRATEGY_ID, ticker, bar_time)
+            register_cooldown(STRATEGY_ID, ticker, bar_time)
+            state["phase"] = "idle"  # reset so we don't fire twice
 
-        result = Signal(
-            confidence  = confidence,
-            strategy_id = STRATEGY_ID,
-            direction   = direction,
-            rvol        = rvol,
-            trigger_bar = bar_time,
-            meta        = {
-                "or_high"          : or_high,
-                "or_low"           : or_low,
-                "atr"              : atr,
-                "vwap"             : vwap,
-                "trend"            : trend,
-                "direction_flipped": direction_flipped,
-                "rvol_threshold"   : rvol_threshold,
-                "rvol_reason"      : rvol_reason,
-            },
-        )
-        logger.info(
-            "[%s] INST_ORB signal: direction=%s flipped=%s confidence=%.2f rvol=%.2f trend=%s",
-            ticker, direction, direction_flipped, confidence, rvol, trend,
-        )
+            logger.info(
+                "[%s] INST_ORB RETEST ENTRY at %s — direction=%s boundary=%.2f "
+                "close=%.2f confidence=%.2f rvol=%.2f trend=%s "
+                "(breakout at %s, retest touch at %s)",
+                ticker, bar_time.strftime("%H:%M"), direction, boundary, close,
+                confidence, rvol, trend,
+                state["breakout_bar"].strftime("%H:%M") if state["breakout_bar"] else "?",
+                state["retest_bar"].strftime("%H:%M")   if state["retest_bar"]   else "?",
+            )
+
+            # For structural stop calculation at entry:
+            # CALL (bullish): structural stop on the underlying = the retest low
+            #   (if price breaks back below the OR level, the thesis is wrong)
+            # PUT (bearish): structural stop on the underlying = the retest high
+            _entry_bar_low  = float(bar["low"])  if direction == "bullish" else None
+            _entry_bar_high = float(bar["high"]) if direction == "bearish" else None
+
+            result = Signal(
+                confidence  = confidence,
+                strategy_id = STRATEGY_ID,
+                direction   = direction,
+                rvol        = rvol,
+                trigger_bar = bar_time,
+                meta        = {
+                    "or_high"          : or_high,
+                    "or_low"           : or_low,
+                    "or_boundary"      : boundary,
+                    "atr"              : atr,
+                    "vwap"             : vwap,
+                    "trend"            : trend,
+                    "entry_type"       : "retest",
+                    "breakout_bar"     : str(state["breakout_bar"]),
+                    "retest_bar"       : str(state["retest_bar"]),
+                    "rvol_threshold"   : rvol_threshold,
+                    "rvol_reason"      : rvol_reason,
+                    # Structural stop levels — passed to risk.structural_stop_from_level()
+                    # at entry so the position is protected by chart structure, not %
+                    "entry_bar_low"    : _entry_bar_low,
+                    "entry_bar_high"   : _entry_bar_high,
+                },
+            )
+            # Don't break — keep iterating; the last qualifying signal wins (most recent bar)
 
     return result
 
@@ -286,32 +345,32 @@ def _compute_confidence(
     direction: str,
     direction_flipped: bool,
     trend: str,
+    is_retest: bool = False,
 ) -> float:
     """
     0–1 confidence score.
     Components:
-      40% — RVOL strength relative to threshold
-      30% — proximity to OR boundary (closer = higher quality entry)
+      35% — RVOL strength relative to threshold
+      25% — proximity to OR boundary (retest entries start closer → higher score)
       20% — trend alignment (confirmed > consolidation > counter-trend)
       10% — flip quality penalty (flipped signals get a haircut)
+      10% — retest bonus (retest entries are higher probability than raw breakouts)
     """
-    # RVOL component (capped at 3× threshold for scoring)
     rvol_score = min((rvol / max(rvol_threshold, 0.01)) / 3.0, 1.0)
 
-    # Proximity: how many ATRs past the OR boundary is close?
-    # 0 ATRs = 1.0, 2 ATRs = 0.0  (linear interpolation)
-    boundary = or_high if direction == "bullish" else or_low
-    dist_atrs = abs(close - boundary) / atr
-    prox_score = max(0.0, 1.0 - dist_atrs / 2.0)
+    boundary   = or_high if direction == "bullish" else or_low
+    dist_atrs  = abs(close - boundary) / atr
+    # Retest entries should be very close to the boundary (0–0.5 ATR)
+    # Raw breakout entries were 0–2 ATR. Tighter scale for retest.
+    prox_score = max(0.0, 1.0 - dist_atrs / (1.0 if is_retest else 2.0))
 
-    # Trend alignment
     if direction == "bullish":
         trend_score = 1.0 if trend == "uptrend" else (0.6 if trend == "consolidation" else 0.3)
     else:
         trend_score = 1.0 if trend == "downtrend" else (0.6 if trend == "consolidation" else 0.3)
 
-    # Flip penalty: failed-breakout setups are lower probability
-    flip_multiplier = 0.85 if direction_flipped else 1.0
+    flip_multiplier  = 0.85 if direction_flipped else 1.0
+    retest_bonus     = 0.10 if is_retest else 0.0
 
-    confidence = (0.40 * rvol_score + 0.30 * prox_score + 0.20 * trend_score + 0.10) * flip_multiplier
+    confidence = (0.35 * rvol_score + 0.25 * prox_score + 0.20 * trend_score + 0.10 + retest_bonus) * flip_multiplier
     return round(min(confidence, 1.0), 4)
