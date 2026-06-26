@@ -291,14 +291,27 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _state_path = Path(__file__).resolve().parent / "bot_state.json"
 
     if not market_open:
-        LIVE_STATE["status"] = "market_closed"
-        # Only wipe the scan watchlist when we're GENUINELY past market close
-        # (after 4:00 PM ET or before 9:30 AM).  If the Alpaca /v2/clock call
-        # fails and returns False mid-session, we must NOT clear the watchlist —
-        # that would freeze the bot for the rest of the day with nothing to scan.
+        # Check whether the market is GENUINELY closed vs. an API glitch.
+        # Alpaca's /v2/clock endpoint occasionally returns False during live
+        # hours (network blip, 403, timeout).  If local ET time says we're
+        # mid-session (9:30–16:00), override the API result and continue — a
+        # false "market closed" response used to wipe scan_watchlist and return
+        # early, freezing the bot for the rest of the day.
         _now_hm_tick = _now_et().hour * 60 + _now_et().minute
         _genuinely_closed = _now_hm_tick >= 16 * 60 or _now_hm_tick < 9 * 60 + 30
-        if _genuinely_closed:
+
+        if not _genuinely_closed:
+            # API says closed but local clock says we're mid-session.
+            # Override market_open and fall through to normal tick processing.
+            market_open = True
+            LIVE_STATE["market_open"] = True
+            logger.debug("is_market_open()=False overridden — local ET %02d:%02d is "
+                         "within session (9:30–16:00); API glitch assumed",
+                         _now_hm_tick // 60, _now_hm_tick % 60)
+        else:
+            # Genuinely outside market hours — do the full closed-session write
+            # and return early so no trading logic runs overnight / pre-market.
+            LIVE_STATE["status"] = "market_closed"
             LIVE_STATE["orb_triggered"]     = False
             LIVE_STATE["flip_eligible"]     = False
             LIVE_STATE["flip_direction"]    = None
@@ -306,68 +319,46 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             LIVE_STATE["scanner_ran_today"] = False   # allow fresh scan tomorrow
             LIVE_STATE["scan_watchlist"]    = []
             LIVE_STATE["scan_idx"]          = 0
-            logger.debug("Market genuinely closed — session flags reset for tomorrow")
-        else:
-            # API says closed but local time says open — preserve watchlist
-            logger.debug("is_market_open()=False but local time says open — "
-                         "preserving scan_watchlist (API glitch)")
-            LIVE_STATE["status"] = "scanning"   # don't show "market_closed" mid-day
-        try:
-            # FIX: "or" instead of dict.get(key, fallback) — the fallback only
-            # fires when the key is ABSENT, but LIVE_STATE["account_balance"]
-            # is always present (initialized to 0.0 at module load). A stale/
-            # zero balance (e.g. before the first market-open tick has ever
-            # run) would otherwise be written to bot_state.json verbatim as
-            # 0.0 instead of falling back to last_known_balance.
-            _mc_balance = (LIVE_STATE.get("account_balance") or
-                           get_settings().get("last_known_balance", STARTING_CAPITAL))
-            _json.dump({
-                "running":                True,
-                "account_balance":        _mc_balance,
-                # Preserve last-known buying power / ghost-position alert
-                # across the market-closed overwrite — same reasoning as
-                # current_option_price below.
-                "options_buying_power":   LIVE_STATE.get("options_buying_power", 0),
-                "ghost_position_alert":   LIVE_STATE.get("ghost_position_alert"),
-                "session_pnl":            LIVE_STATE.get("session_pnl", 0),
-                "status":                 "market_closed",
-                "current_ticker":         None,
-                "last_signal":            None,
-                "market_open":            False,
-                "last_update":            _time.strftime("%H:%M:%S"),
-                "entry_time":             None,
-                "stage1_done":            False,
-                "orb_triggered":          False,
-                "current_stop_pct":       _risk.ORB_STOP_PCT if _risk else 0.30,
-                "flip_eligible":          False,
-                "flip_direction":         None,
-                "flip_ticker":            None,
-                "last_direction":         LIVE_STATE.get("last_direction"),
-                "last_trade_closed_time": LIVE_STATE.get("last_trade_closed_time"),
-                # Network health persisted so dashboard shows correct banner at close
-                "network_ok":             LIVE_STATE.get("network_ok", True),
-                # Risk-sizing info — kept visible after-hours so the user can
-                # plan for tomorrow's session without having to ask.
-                "risk_budget_usd":        round(_mc_balance * _risk.effective_risk_pct(_mc_balance), 2) if _risk else 0.0,
-                "max_affordable_premium": _risk.max_affordable_premium(_mc_balance) if _risk else 0.0,
-                "last_eval_ticker":       LIVE_STATE.get("last_eval_ticker"),
-                "last_eval_opt_type":     LIVE_STATE.get("last_eval_opt_type"),
-                "last_eval_premium":      LIVE_STATE.get("last_eval_premium"),
-                "last_eval_eff_entry":    LIVE_STATE.get("last_eval_eff_entry"),
-                "last_eval_time":         LIVE_STATE.get("last_eval_time"),
-                "last_eval_expiry":       LIVE_STATE.get("last_eval_expiry"),
-                "last_eval_strike":       LIVE_STATE.get("last_eval_strike"),
-                # Preserve the last live option premium across the
-                # market-closed write — this dict is otherwise a full
-                # overwrite of bot_state.json and would silently erase it,
-                # making the dashboard's "Current"/"Unrealised P&L" for any
-                # position held overnight revert to "–".
-                "current_option_price":      LIVE_STATE.get("current_option_price"),
-                "current_option_price_time": LIVE_STATE.get("current_option_price_time"),
-            }, open(_state_path, "w"))
-        except Exception:
-            pass
-        return
+            logger.debug("Market closed — session flags reset for tomorrow")
+            try:
+                _mc_balance = (LIVE_STATE.get("account_balance") or
+                               get_settings().get("last_known_balance", STARTING_CAPITAL))
+                _json.dump({
+                    "running":                True,
+                    "account_balance":        _mc_balance,
+                    "options_buying_power":   LIVE_STATE.get("options_buying_power", 0),
+                    "ghost_position_alert":   LIVE_STATE.get("ghost_position_alert"),
+                    "session_pnl":            LIVE_STATE.get("session_pnl", 0),
+                    "status":                 "market_closed",
+                    "current_ticker":         None,
+                    "last_signal":            None,
+                    "market_open":            False,
+                    "last_update":            _time.strftime("%H:%M:%S"),
+                    "entry_time":             None,
+                    "stage1_done":            False,
+                    "orb_triggered":          False,
+                    "current_stop_pct":       _risk.ORB_STOP_PCT if _risk else 0.30,
+                    "flip_eligible":          False,
+                    "flip_direction":         None,
+                    "flip_ticker":            None,
+                    "last_direction":         LIVE_STATE.get("last_direction"),
+                    "last_trade_closed_time": LIVE_STATE.get("last_trade_closed_time"),
+                    "network_ok":             LIVE_STATE.get("network_ok", True),
+                    "risk_budget_usd":        round(_mc_balance * _risk.effective_risk_pct(_mc_balance), 2) if _risk else 0.0,
+                    "max_affordable_premium": _risk.max_affordable_premium(_mc_balance) if _risk else 0.0,
+                    "last_eval_ticker":       LIVE_STATE.get("last_eval_ticker"),
+                    "last_eval_opt_type":     LIVE_STATE.get("last_eval_opt_type"),
+                    "last_eval_premium":      LIVE_STATE.get("last_eval_premium"),
+                    "last_eval_eff_entry":    LIVE_STATE.get("last_eval_eff_entry"),
+                    "last_eval_time":         LIVE_STATE.get("last_eval_time"),
+                    "last_eval_expiry":       LIVE_STATE.get("last_eval_expiry"),
+                    "last_eval_strike":       LIVE_STATE.get("last_eval_strike"),
+                    "current_option_price":      LIVE_STATE.get("current_option_price"),
+                    "current_option_price_time": LIVE_STATE.get("current_option_price_time"),
+                }, open(_state_path, "w"))
+            except Exception:
+                pass
+            return   # ← only exits here when GENUINELY closed
 
     # ── Account balance ───────────────────────────────────────────────────────
     from broker import _cb_is_open as _alpaca_circuit_open
