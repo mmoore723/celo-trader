@@ -17,6 +17,11 @@ export interface BotStatus {
   last_signal: string | null;
   ghost_position_detected: boolean;
   is_paper: boolean;               // true = paper account, false = live account
+  // Contract eval snapshot — populated after each signal evaluation
+  last_eval_strike: number | null;
+  last_eval_expiry: string | null;
+  last_eval_contract_symbol: string | null;
+  last_eval_eff_entry: number | null;
 }
 
 export interface LogEntry {

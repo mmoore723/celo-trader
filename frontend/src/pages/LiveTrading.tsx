@@ -412,24 +412,69 @@ export function LiveTrading() {
           <div className="px-3 pb-3 flex flex-col gap-1.5">
             {status?.ticker ? (
               <>
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-sm" style={{ color: "var(--ink)" }}>
-                    {status.ticker}
-                  </span>
+                {/* Row 1: Strike · Ticker · Strategy badge */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {status.last_eval_strike != null && (
+                      <span className="num font-bold text-sm" style={{ color: "var(--ink)" }}>
+                        ${status.last_eval_strike.toFixed(0)}
+                      </span>
+                    )}
+                    {status.last_eval_strike != null && (
+                      <span style={{ color: "var(--ink-faint)" }}>·</span>
+                    )}
+                    <span className="font-bold text-sm" style={{ color: "var(--ink)" }}>
+                      {status.ticker}
+                    </span>
+                  </div>
                   {status.last_strategy_id && (
-                    <span className="badge badge-blue">{status.last_strategy_id}</span>
+                    <span className="badge badge-blue flex-shrink-0">{status.last_strategy_id}</span>
                   )}
                 </div>
-                {status.last_signal && (
-                  <p className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
-                    {status.last_signal}
-                  </p>
-                )}
-                {status.current_stop_pct != null && (
-                  <div className="text-xs num" style={{ color: "var(--negative)" }}>
-                    Stop: {(status.current_stop_pct * 100).toFixed(1)}% from entry
+
+                {/* Row 2: Contract symbol */}
+                {status.last_eval_contract_symbol && (
+                  <div
+                    className="num text-xs truncate"
+                    style={{ color: "var(--ink-muted)", letterSpacing: "0.01em" }}
+                    title={status.last_eval_contract_symbol}
+                  >
+                    {status.last_eval_contract_symbol}
                   </div>
                 )}
+
+                {/* Row 3: Expiry */}
+                {status.last_eval_expiry && (
+                  <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                    Exp&nbsp;
+                    <span className="num" style={{ color: "var(--ink)" }}>
+                      {/* Format YYYY-MM-DD → MM/DD/YY */}
+                      {status.last_eval_expiry.length === 10
+                        ? `${status.last_eval_expiry.slice(5, 7)}/${status.last_eval_expiry.slice(8, 10)}/${status.last_eval_expiry.slice(2, 4)}`
+                        : status.last_eval_expiry}
+                    </span>
+                  </div>
+                )}
+
+                {/* Row 4: Target entry · Stop % */}
+                <div className="flex items-center gap-3 text-xs flex-wrap">
+                  {status.last_eval_eff_entry != null && (
+                    <span>
+                      <span style={{ color: "var(--ink-muted)" }}>Entry&nbsp;</span>
+                      <span className="num font-semibold" style={{ color: "var(--positive)" }}>
+                        ${status.last_eval_eff_entry.toFixed(2)}
+                      </span>
+                    </span>
+                  )}
+                  {status.current_stop_pct != null && (
+                    <span>
+                      <span style={{ color: "var(--ink-muted)" }}>Stop&nbsp;</span>
+                      <span className="num font-semibold" style={{ color: "var(--negative)" }}>
+                        {(status.current_stop_pct * 100).toFixed(1)}%
+                      </span>
+                    </span>
+                  )}
+                </div>
               </>
             ) : (
               <p className="text-xs" style={{ color: "var(--ink-muted)" }}>

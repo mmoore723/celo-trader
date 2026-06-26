@@ -59,6 +59,10 @@ def get_status() -> BotStatus:
         last_signal=state.get("last_signal"),
         ghost_position_detected=bool(state.get("ghost_position_detected", False)),
         is_paper=bool(settings.get("paper_trading", True)),
+        last_eval_strike=state.get("last_eval_strike") or LIVE_STATE.get("last_eval_strike"),
+        last_eval_expiry=state.get("last_eval_expiry") or LIVE_STATE.get("last_eval_expiry"),
+        last_eval_contract_symbol=state.get("last_eval_contract_symbol") or LIVE_STATE.get("last_eval_contract_symbol"),
+        last_eval_eff_entry=state.get("last_eval_eff_entry") or LIVE_STATE.get("last_eval_eff_entry"),
     )
 
 

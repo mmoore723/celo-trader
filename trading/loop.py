@@ -230,6 +230,13 @@ def stop_loop() -> None:
     """Signal the loop to exit and persist the stopped state to bot_state.json."""
     _stop_event.set()
     LIVE_STATE["running"] = False
+    # Log to the database so the THINKING panel shows confirmation that the bot
+    # actually received the stop signal (not just a network disconnect).
+    try:
+        from database import log_event
+        log_event("INFO", "trading_logic", "🔴 Bot stopped.")
+    except Exception:
+        pass
     try:
         _state_path = _BOT_ROOT / "bot_state.json"
         if _state_path.exists():

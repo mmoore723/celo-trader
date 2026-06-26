@@ -988,25 +988,27 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Surfaces the live contract premium + affordability ceiling proactively
     # (without the user having to ask) by writing them into LIVE_STATE and
     # patching bot_state.json immediately, instead of waiting for next tick.
-    LIVE_STATE["last_eval_ticker"]    = ticker
-    LIVE_STATE["last_eval_opt_type"]  = opt_type
-    LIVE_STATE["last_eval_premium"]   = ask_price
-    LIVE_STATE["last_eval_eff_entry"] = eff_entry
-    LIVE_STATE["last_eval_time"]      = _time.strftime("%H:%M:%S")
-    LIVE_STATE["last_eval_expiry"]    = contract.get("expiry")
-    LIVE_STATE["last_eval_strike"]    = contract.get("strike")
+    LIVE_STATE["last_eval_ticker"]           = ticker
+    LIVE_STATE["last_eval_opt_type"]         = opt_type
+    LIVE_STATE["last_eval_premium"]          = ask_price
+    LIVE_STATE["last_eval_eff_entry"]        = eff_entry
+    LIVE_STATE["last_eval_time"]             = _time.strftime("%H:%M:%S")
+    LIVE_STATE["last_eval_expiry"]           = contract.get("expiry")
+    LIVE_STATE["last_eval_strike"]           = contract.get("strike")
+    LIVE_STATE["last_eval_contract_symbol"]  = contract.get("symbol")
     try:
         with open(_state_path) as _f:
             _bs = _json.load(_f)
-        _bs["last_eval_ticker"]       = ticker
-        _bs["last_eval_opt_type"]     = opt_type
-        _bs["last_eval_premium"]      = ask_price
-        _bs["last_eval_eff_entry"]    = eff_entry
-        _bs["last_eval_time"]         = LIVE_STATE["last_eval_time"]
-        _bs["last_eval_expiry"]       = LIVE_STATE["last_eval_expiry"]
-        _bs["last_eval_strike"]       = LIVE_STATE["last_eval_strike"]
-        _bs["risk_budget_usd"]        = round(balance * _risk.effective_risk_pct(balance), 2)
-        _bs["max_affordable_premium"] = _risk.max_affordable_premium(balance)
+        _bs["last_eval_ticker"]              = ticker
+        _bs["last_eval_opt_type"]            = opt_type
+        _bs["last_eval_premium"]             = ask_price
+        _bs["last_eval_eff_entry"]           = eff_entry
+        _bs["last_eval_time"]                = LIVE_STATE["last_eval_time"]
+        _bs["last_eval_expiry"]              = LIVE_STATE["last_eval_expiry"]
+        _bs["last_eval_strike"]              = LIVE_STATE["last_eval_strike"]
+        _bs["last_eval_contract_symbol"]     = LIVE_STATE["last_eval_contract_symbol"]
+        _bs["risk_budget_usd"]               = round(balance * _risk.effective_risk_pct(balance), 2)
+        _bs["max_affordable_premium"]        = _risk.max_affordable_premium(balance)
         _json.dump(_bs, open(_state_path, "w"))
     except Exception:
         pass   # non-critical — next full tick write will catch up regardless

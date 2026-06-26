@@ -22,6 +22,11 @@ class BotStatus(BaseModel):
     last_signal: Optional[str]
     ghost_position_detected: bool
     is_paper: bool = True            # True = paper-trading, False = live account
+    # ── Contract eval snapshot (written by entry.py after each signal eval) ────
+    last_eval_strike: Optional[float] = None
+    last_eval_expiry: Optional[str]   = None
+    last_eval_contract_symbol: Optional[str] = None
+    last_eval_eff_entry: Optional[float] = None
 
 
 class BotActionResponse(BaseModel):

@@ -28,9 +28,13 @@ const NAV: NavItem[] = [
 ];
 
 export function Sidebar() {
-  const { status } = useBotStore();
+  const { status, connected } = useBotStore();
   const { mobileSidebarOpen, closeMobileSidebar } = useUIStore();
   const running = status?.running ?? false;
+  // True once we've received the first WS status message (status transitions
+  // from null → object).  Until then the button is disabled so a reload can't
+  // accidentally show "Start Bot" and tempt the user to double-start the bot.
+  const statusKnown = status !== null;
   const [busy, setBusy] = useState(false);
 
   async function startBot() {
@@ -93,7 +97,14 @@ export function Sidebar() {
            style={{ color: "var(--ink-faint)" }}>
           Bot Controls
         </p>
-        {!running ? (
+        {!statusKnown ? (
+          /* WS hasn't sent the first status yet — don't show Start or Stop
+             until we know the real bot state to avoid accidental double-starts */
+          <button className="btn btn-ghost w-full justify-center" disabled>
+            <Power size={14} />
+            {connected ? "Loading…" : "Connecting…"}
+          </button>
+        ) : !running ? (
           <button
             className="btn btn-primary w-full justify-center"
             onClick={startBot}
