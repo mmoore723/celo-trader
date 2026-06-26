@@ -301,8 +301,10 @@ class AlpacaClient:
             # doesn't incorrectly show MARKET CLOSED during trading hours.
             return _local_market_is_open()
         except Exception as e:
-            logger.warning("is_market_open check failed: %s — assuming closed", e)
-            return False
+            # Fall back to local ET clock — don't return False, which would
+            # wipe scan_watchlist and freeze the bot for the entire session.
+            logger.warning("is_market_open check failed: %s — falling back to local time", e)
+            return _local_market_is_open()
 
     # ── Market data ───────────────────────────────────────────────────────────
 

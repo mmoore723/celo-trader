@@ -292,15 +292,26 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     if not market_open:
         LIVE_STATE["status"] = "market_closed"
-        # Reset all session flags at market close so tomorrow starts fresh
-        LIVE_STATE["orb_triggered"]    = False
-        LIVE_STATE["flip_eligible"]    = False
-        LIVE_STATE["flip_direction"]   = None
-        LIVE_STATE["flip_ticker"]      = None
-        LIVE_STATE["scanner_ran_today"]= False   # allow fresh scan tomorrow
-        LIVE_STATE["scan_watchlist"]   = []
-        LIVE_STATE["scan_idx"]         = 0
-        logger.debug("Market closed — skipping tick, session flags reset")
+        # Only wipe the scan watchlist when we're GENUINELY past market close
+        # (after 4:00 PM ET or before 9:30 AM).  If the Alpaca /v2/clock call
+        # fails and returns False mid-session, we must NOT clear the watchlist —
+        # that would freeze the bot for the rest of the day with nothing to scan.
+        _now_hm_tick = _now_et().hour * 60 + _now_et().minute
+        _genuinely_closed = _now_hm_tick >= 16 * 60 or _now_hm_tick < 9 * 60 + 30
+        if _genuinely_closed:
+            LIVE_STATE["orb_triggered"]     = False
+            LIVE_STATE["flip_eligible"]     = False
+            LIVE_STATE["flip_direction"]    = None
+            LIVE_STATE["flip_ticker"]       = None
+            LIVE_STATE["scanner_ran_today"] = False   # allow fresh scan tomorrow
+            LIVE_STATE["scan_watchlist"]    = []
+            LIVE_STATE["scan_idx"]          = 0
+            logger.debug("Market genuinely closed — session flags reset for tomorrow")
+        else:
+            # API says closed but local time says open — preserve watchlist
+            logger.debug("is_market_open()=False but local time says open — "
+                         "preserving scan_watchlist (API glitch)")
+            LIVE_STATE["status"] = "scanning"   # don't show "market_closed" mid-day
         try:
             # FIX: "or" instead of dict.get(key, fallback) — the fallback only
             # fires when the key is ABSENT, but LIVE_STATE["account_balance"]

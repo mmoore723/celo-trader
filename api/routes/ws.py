@@ -76,12 +76,13 @@ def _ts_to_et(entry: dict) -> str:
     return f"{h}:{now_et.minute:02d}:{now_et.second:02d} {ampm}"
 
 
-_HISTORY_WINDOW_MINUTES = 480  # replay logs from the last 8 hours on connect;
-                               # prevents showing 8-hour-old logs when the user
-                               # opens the dashboard in the evening.
+_HISTORY_WINDOW_MINUTES = 15   # replay only the last 15 minutes on reconnect.
+                               # 8 hours caused restart-spam (bot_started ×5,
+                               # HIGH RISK MODE ×5, logging_initialised ×5)
+                               # flooding the THINKING panel on every page refresh.
 
 
-def _tail_log(n: int = 30) -> list[dict]:
+def _tail_log(n: int = 10) -> list[dict]:  # was 30 — 10 is enough context
     """
     Return the last *n* structured log lines from bot.log that fall within
     _HISTORY_WINDOW_MINUTES of now (ET).  Lines older than the window are
@@ -138,7 +139,7 @@ async def websocket_live(ws: WebSocket) -> None:
 
     # Send recent log lines on connect, prefixed with a visual separator so
     # users can distinguish yesterday's session from live output.
-    history = _tail_log(30)
+    history = _tail_log(10)
     if history:
         await ws.send_json({"type": "log", "data": {
             "message": "── previous session ──",
