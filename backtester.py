@@ -198,14 +198,26 @@ class Backtester:
         df = pd.DataFrame()
         try:
             import yfinance as yf
-            _raw_yf = yf.download(
-                self.ticker,
-                start=_start_d,
-                end=_end_d,
-                interval="5m",
-                progress=False,
-                auto_adjust=True,
-            )
+            import concurrent.futures as _cf
+            # Wrap yf.download in a thread with a 30-second timeout.
+            # Without this, Yahoo Finance network hangs block the API thread
+            # indefinitely — the browser spinner never resolves.
+            def _do_download():
+                return yf.download(
+                    self.ticker,
+                    start=_start_d,
+                    end=_end_d,
+                    interval="5m",
+                    progress=False,
+                    auto_adjust=True,
+                )
+            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(_do_download)
+                try:
+                    _raw_yf = _fut.result(timeout=30)
+                except _cf.TimeoutError:
+                    logger.warning("Backtest: yfinance download timed out after 30s for %s", self.ticker)
+                    _raw_yf = pd.DataFrame()
             if not _raw_yf.empty:
                 # Flatten MultiIndex columns (yfinance ≥ 0.2)
                 if hasattr(_raw_yf.columns, "get_level_values"):

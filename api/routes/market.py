@@ -309,6 +309,11 @@ def get_opening_range(ticker: str) -> dict:
         from signals import bars_to_df, get_opening_range as _get_or
 
         # ── Attempt 1: yfinance 5-minute bars (same as the chart) ────────────
+        # Use prepost=True (same as main chart) — prepost=False can return
+        # timezone-naive timestamps that the utc=True conversion misinterprets,
+        # causing the 9:30 UTC bar (= 5:30 AM ET premarket) to match the
+        # get_opening_range filter instead of the real 9:30 AM ET bar.
+        # We filter to regular session hours explicitly after conversion.
         try:
             import yfinance as yf
             _today      = _dt.date.today()
@@ -319,7 +324,7 @@ def get_opening_range(ticker: str) -> dict:
                 start=_start_date,
                 end=_end_date,
                 interval="5m",
-                prepost=False,  # regular session only for clean OR calculation
+                prepost=True,   # same as main chart — we filter to session below
                 progress=False,
                 auto_adjust=True,
             )
@@ -338,6 +343,14 @@ def get_opening_range(ticker: str) -> dict:
                     .dt.tz_localize(None)
                 )
                 df = raw_yf[["time", "open", "high", "low", "close", "volume"]].copy()
+                # Explicit regular-session filter: 9:30 AM – 4:00 PM ET.
+                # This is the fix: excludes premarket bars regardless of
+                # what yfinance returns with the prepost setting.
+                session_mask = (
+                    (df["time"].dt.hour > 9) |
+                    ((df["time"].dt.hour == 9) & (df["time"].dt.minute >= 30))
+                ) & (df["time"].dt.hour < 16)
+                df = df[session_mask].copy()
                 result = _get_or(df)
                 if result:
                     return result
