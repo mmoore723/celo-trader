@@ -10,7 +10,7 @@ import os
 import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi import Request
+from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from jose import jwt, JWTError
 
