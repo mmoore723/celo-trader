@@ -34,6 +34,7 @@ def run_backtest(req: BacktestRequest) -> BacktestResult:
             months=months,
             starting_capital=req.starting_capital,
             direction=req.direction,
+            risk_pct=req.risk_pct,
         )
         res = bt.run()
         if "error" in res:

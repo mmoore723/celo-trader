@@ -31,18 +31,32 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Live bot tier ladder for display hint
+function liveTierLabel(capital: number): string {
+  if (capital < 5000)  return `~5% (Tier 4 bootstrap, balance < $5k)`;
+  if (capital < 25000) return `~3% (Tier 3 growth, $5k–$25k)`;
+  if (capital < 50000) return `~2% (Tier 2 transition, $25k–$50k)`;
+  return `~1% (Tier 1 conservative, ≥ $50k)`;
+}
+
 export function Backtest() {
   const [ticker,    setTicker]    = useState("SPY");
   const [startDate, setStartDate] = useState(defaultStart());
   const [endDate,   setEndDate]   = useState(todayStr());
   const [capital,   setCapital]   = useState(1000);
   const [direction, setDirection] = useState<Direction>("both");
+  // risk_pct: "" means "use live tier ladder"; a number string overrides it
+  const [riskPctStr, setRiskPctStr] = useState<string>("");
   const [showTrades, setShowTrades] = useState(true);
   const { theme } = useThemeStore();
   const dark = theme === "dark";
 
+  const riskPctOverride = riskPctStr !== "" ? parseFloat(riskPctStr) / 100 : undefined;
+
   const { mutate, data: result, isPending, isError, error } = useMutation({
-    mutationFn: () => api.backtest.run(ticker, 3, capital, direction, startDate, endDate),
+    mutationFn: () => api.backtest.run(
+      ticker, 3, capital, direction, startDate, endDate, riskPctOverride,
+    ),
   });
 
   const gridColor = dark ? "#21262d" : "#f0f2f7";
@@ -98,6 +112,30 @@ export function Backtest() {
               onChange={(e) => setCapital(parseFloat(e.target.value))}
               className="input w-32"
             />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>
+              Risk % per trade
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={0.5} max={10} step={0.5}
+                placeholder="auto"
+                value={riskPctStr}
+                onChange={(e) => setRiskPctStr(e.target.value)}
+                className="input w-24"
+              />
+              <span className="text-xs" style={{ color: "var(--ink-faint)" }}>
+                {riskPctStr !== ""
+                  ? `flat ${riskPctStr}%`
+                  : liveTierLabel(capital)}
+              </span>
+            </div>
+            {riskPctStr === "" && (
+              <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+                blank = live bot tier ladder (auto by balance)
+              </span>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Direction</label>
@@ -336,21 +374,22 @@ export function Backtest() {
                         <th>Strategy</th>
                         <th className="text-right">Entry $</th>
                         <th className="text-right">Exit $</th>
+                        <th className="text-right">Qty</th>
                         <th className="text-right">P&L</th>
                         <th>Exit Reason</th>
                       </tr>
                     </thead>
                     <tbody>
                       {result.trades.map((t, i) => {
-                        // Backtester returns plain dicts — field names may vary slightly
-                        const raw = t as Record<string, unknown>;
-                        const entry  = raw.entry_price as number ?? raw.entry as number ?? 0;
-                        const exit_p = raw.exit_price  as number ?? raw.exit  as number ?? 0;
-                        const pnl    = raw.pnl         as number ?? raw.realized_pnl as number ?? 0;
+                        const raw    = t as Record<string, unknown>;
+                        const entry  = raw.entry_price as number ?? 0;
+                        const exit_p = raw.exit_price  as number ?? 0;
+                        const pnl    = raw.pnl         as number ?? 0;
+                        const qty    = raw.contracts   as number ?? 1;
                         const dir    = (raw.direction  as string ?? raw.option_type as string ?? "").toLowerCase();
-                        const strat  = raw.strategy_id as string ?? raw.strategy as string ?? "—";
+                        const strat  = raw.strategy_id as string ?? "—";
                         const reason = raw.exit_reason as string ?? "—";
-                        const date   = (raw.entry_time as string ?? raw.date as string ?? "").slice(0, 10);
+                        const date   = (raw.date as string ?? raw.entry_time as string ?? "").slice(0, 10);
                         const isLong = dir === "long" || dir === "call";
                         return (
                           <tr key={i}>
@@ -368,6 +407,9 @@ export function Backtest() {
                             <td className="text-xs" style={{ color: "var(--ink-muted)" }}>{strat}</td>
                             <td className="num text-right text-xs">${entry.toFixed(2)}</td>
                             <td className="num text-right text-xs">${exit_p.toFixed(2)}</td>
+                            <td className="num text-right text-xs" style={{ color: "var(--ink-muted)" }}>
+                              {qty}
+                            </td>
                             <td className="num text-right text-xs font-semibold"
                                 style={{ color: pnl >= 0 ? posColor : negColor }}>
                               {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}

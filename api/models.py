@@ -191,10 +191,11 @@ class OptionsChainRow(BaseModel):
 class BacktestRequest(BaseModel):
     ticker: str
     months: int = 3
-    start_date: Optional[str] = None  # YYYY-MM-DD; if provided with end_date, overrides months
-    end_date: Optional[str] = None    # YYYY-MM-DD
+    start_date: Optional[str] = None   # YYYY-MM-DD; if provided with end_date, overrides months
+    end_date: Optional[str] = None     # YYYY-MM-DD
     starting_capital: float = 1000.0
-    direction: str = "both"   # "both" | "calls_only" | "puts_only"
+    direction: str = "both"            # "both" | "calls_only" | "puts_only"
+    risk_pct: Optional[float] = None   # flat override e.g. 0.05 = 5%; None = live 4-tier ladder
 
 
 class BacktestResult(BaseModel):

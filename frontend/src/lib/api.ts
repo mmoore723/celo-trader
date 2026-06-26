@@ -248,6 +248,7 @@ export const api = {
       direction: string,
       startDate?: string,
       endDate?: string,
+      riskPct?: number,       // flat override e.g. 0.05; undefined = live tier ladder
     ) =>
       request<BacktestResult>("/api/backtest", {
         method: "POST",
@@ -256,8 +257,9 @@ export const api = {
           months,
           starting_capital: capital,
           direction,
-          ...(startDate ? { start_date: startDate } : {}),
-          ...(endDate   ? { end_date:   endDate   } : {}),
+          ...(startDate !== undefined ? { start_date: startDate } : {}),
+          ...(endDate   !== undefined ? { end_date:   endDate   } : {}),
+          ...(riskPct   !== undefined ? { risk_pct:   riskPct   } : {}),
         }),
       }),
   },
