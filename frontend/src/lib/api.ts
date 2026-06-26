@@ -11,6 +11,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      // Session expired mid-session — fire an event so AuthContext can
+      // redirect to Login without requiring a full page reload.
+      window.dispatchEvent(new CustomEvent("celo:session-expired"));
+    }
     const detail = await res.text().catch(() => res.statusText);
     throw new Error(`API ${res.status}: ${detail}`);
   }

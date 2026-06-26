@@ -52,6 +52,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  // ── Handle mid-session 401s from any API call ──────────────────────────────
+  // api.ts dispatches "celo:session-expired" whenever a protected route returns
+  // 401. This catches the case where the session expires AFTER the initial
+  // /api/auth/me check passes (e.g. tab left open overnight).
+  useEffect(() => {
+    const handler = () => {
+      setUser(null);
+      // Best-effort cookie clear; the real clear happens on the next login.
+      fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
+    };
+    window.addEventListener("celo:session-expired", handler);
+    return () => window.removeEventListener("celo:session-expired", handler);
+  }, []);
+
   const login = (u: AuthUser) => setUser(u);
 
   const logout = async () => {
