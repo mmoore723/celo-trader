@@ -43,7 +43,10 @@ from trading.state import LIVE_STATE, _now_et, _ET_TZ, _BOT_ROOT
 logger = logging.getLogger("celo_trader.trading_logic")
 
 # ── ATR / swing trailing stop constants ──────────────────────────────────────
-_ATR_TRAIL_MULTIPLIER = 1.5   # stop = peak − 1.5 × ATR (underlying space)
+_ATR_TRAIL_MULTIPLIER = 2.0   # stop = peak − 2.0 × ATR (underlying space)
+                               # Widened from 1.5: 7–21 DTE options need room for
+                               # intraday wicks without getting chopped off healthy
+                               # pullbacks before the daily trend can develop.
 _DELTA_APPROX         = 0.40  # approximate option delta for underlying→option conversion
 _SWING_LOOKBACK       = 20    # bars to look back for swing high/low
 

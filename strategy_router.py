@@ -49,6 +49,16 @@ from strategies import inst_orb, bos_mss, vwap_pb, fvg, mid_brk, aft_rev, trend_
 
 logger = logging.getLogger("celo_trader.strategy_router")
 
+# ── Router quality gates ───────────────────────────────────────────────────────
+# Confidence floor: strategies score 0.75 at baseline with zero bonuses.
+# Anything ≤ 0.77 is a marginal signal with no meaningful RVOL/body/recency edge —
+# drop it rather than picking "best of weak."
+_MIN_CONFIDENCE = 0.78
+
+# Conflict veto window: if the top two signals disagree on direction AND their
+# confidence scores are within this band, the router is ambiguous — return nothing.
+_CONFLICT_VETO_BAND = 0.05
+
 # ── Audit state — tracks last-logged structure so we don't spam the DB ────────
 _last_audit_state: dict = {}
 
@@ -177,6 +187,37 @@ def route_signals(
             logger.warning("Strategy %s raised: %s", strategy_id, exc, exc_info=True)
 
     signals.sort(key=lambda s: s.confidence, reverse=True)
+
+    # ── Quality gate 1: confidence floor ─────────────────────────────────────
+    # Drop signals that barely clear the baseline (no meaningful edge).
+    _before_floor = len(signals)
+    signals = [s for s in signals if s.confidence >= _MIN_CONFIDENCE]
+    if len(signals) < _before_floor:
+        _dropped = _before_floor - len(signals)
+        logger.info(
+            "router: dropped %d low-confidence signal(s) for %s (floor=%.0f%%)",
+            _dropped, ticker, _MIN_CONFIDENCE * 100,
+        )
+
+    # ── Quality gate 2: conflict veto ─────────────────────────────────────────
+    # If the top two signals disagree on direction and their confidence gap is
+    # within _CONFLICT_VETO_BAND, the market is sending mixed signals — skip.
+    if len(signals) >= 2:
+        _top, _second = signals[0], signals[1]
+        if (_top.direction != _second.direction and
+                (_top.confidence - _second.confidence) <= _CONFLICT_VETO_BAND):
+            _db_log(
+                "INFO", "scan",
+                f"{ticker} — Conflict veto: {_top.strategy_id} {_top.direction} "
+                f"({_top.confidence:.0%}) vs {_second.strategy_id} {_second.direction} "
+                f"({_second.confidence:.0%}) within {_CONFLICT_VETO_BAND:.0%} band — "
+                f"market is ambiguous, skipping both.",
+            )
+            logger.info(
+                "router: conflict veto fired for %s (%s vs %s)",
+                ticker, _top.strategy_id, _second.strategy_id,
+            )
+            return []
 
     if signals:
         logger.info(
