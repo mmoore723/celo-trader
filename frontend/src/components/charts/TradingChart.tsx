@@ -13,7 +13,7 @@
  *
  * Chart axis shows 12h AM/PM time (not military).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   createSeriesMarkers,
@@ -89,8 +89,8 @@ function colors(dark: boolean) {
     trail:        "#9333ea",                           // purple
     buyMarker:    "#38bdf8",                           // sky blue
     sellMarker:   "#e879f9",                           // pink/purple
-    swingHH:      dark ? "#f85149" : "#dc2626",       // HH/LH — red family
-    swingHL:      dark ? "#3fb950" : "#16a34a",       // HL/LL — green family
+    swingHH:      dark ? "#ff6b6b" : "#cc0000",       // HH/LH — bright red, high contrast
+    swingHL:      dark ? "#4ade80" : "#15803d",       // HL/LL — bright green, high contrast
   };
 }
 
@@ -491,7 +491,7 @@ export function TradingChart({
           color,
           shape:    isHigh ? "arrowDown" : "arrowUp",
           text:     sw.label,
-          size:     0,
+          size:     1,    // was 0 (barely visible); 1 = clearly readable
         });
       }
     }
@@ -567,6 +567,9 @@ export function TradingChart({
   }, [trades]);
 
   // ── Position overlay card ─────────────────────────────────────────────────
+  // Direction badge is always visible; STP/ENT/TGT detail rows appear on hover.
+  const [cardHovered, setCardHovered] = useState(false);
+
   const posCard = (() => {
     const pl = positionLevels;
     if (!pl?.entry) return null;
@@ -585,62 +588,74 @@ export function TradingChart({
 
     return (
       <div
+        onMouseEnter={() => setCardHovered(true)}
+        onMouseLeave={() => setCardHovered(false)}
         style={{
           position: "absolute",
           top: 36, left: 8,
           zIndex: 20,
-          pointerEvents: "none",
+          pointerEvents: "auto",   // must be auto so hover works
           fontFamily: "JetBrains Mono, monospace",
           fontSize: 11,
           display: "flex",
           flexDirection: "column",
           gap: 2,
-          minWidth: 200,
+          minWidth: 180,
+          cursor: "default",
         }}
       >
-        {/* Direction badge */}
+        {/* Direction badge — always visible */}
         <div style={{
           display: "inline-flex", alignItems: "center", gap: 6,
           background: isLong ? "rgba(63,185,80,0.18)" : "rgba(248,81,73,0.18)",
           border: `1px solid ${isLong ? C.target : C.stop}`,
-          borderRadius: 4, padding: "2px 8px",
+          borderRadius: 4, padding: "3px 8px",
           color: isLong ? C.target : C.stop,
           fontWeight: 700, fontSize: 10, letterSpacing: "0.08em",
+          width: "fit-content",
         }}>
           {isLong ? "▲ LONG" : "▼ SHORT"}
-          {pl.contracts ? ` · ${pl.contracts} contract${pl.contracts > 1 ? "s" : ""}` : ""}
+          {pl.contracts ? ` · ${pl.contracts}×` : ""}
+          <span style={{ opacity: 0.6, fontWeight: 400, fontSize: 9 }}>
+            {cardHovered ? " ▲" : " ▼"}
+          </span>
         </div>
 
-        {/* Stop row */}
-        {pl.stop && (
-          <div style={{ background: "rgba(248,81,73,0.12)", border: "1px solid rgba(248,81,73,0.40)", borderRadius: 3, padding: "3px 8px" }}>
-            <span style={{ color: C.stop, fontWeight: 600 }}>STP</span>
-            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.stop)} ({fmtPct(stopPct)})</span>
-            {riskDol != null && <span style={{ color: C.stop }}> · -${fmt(riskDol)}</span>}
-          </div>
-        )}
+        {/* Detail rows — only on hover */}
+        {cardHovered && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {/* Stop row */}
+            {pl.stop && (
+              <div style={{ background: "rgba(248,81,73,0.12)", border: "1px solid rgba(248,81,73,0.40)", borderRadius: 3, padding: "3px 8px" }}>
+                <span style={{ color: C.stop, fontWeight: 600 }}>STP</span>
+                <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.stop)} ({fmtPct(stopPct)})</span>
+                {riskDol != null && <span style={{ color: C.stop }}> · -${fmt(riskDol)}</span>}
+              </div>
+            )}
 
-        {/* Entry row */}
-        <div style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.35)", borderRadius: 3, padding: "3px 8px" }}>
-          <span style={{ color: C.entry, fontWeight: 600 }}>ENT</span>
-          <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.entry)}</span>
-          {rr != null && <span style={{ color: "var(--ink-muted)" }}> · R:R {rr.toFixed(2)}</span>}
-        </div>
+            {/* Entry row */}
+            <div style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.35)", borderRadius: 3, padding: "3px 8px" }}>
+              <span style={{ color: C.entry, fontWeight: 600 }}>ENT</span>
+              <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.entry)}</span>
+              {rr != null && <span style={{ color: "var(--ink-muted)" }}> · R:R {rr.toFixed(2)}</span>}
+            </div>
 
-        {/* Target row */}
-        {pl.target && (
-          <div style={{ background: "rgba(63,185,80,0.10)", border: "1px solid rgba(63,185,80,0.35)", borderRadius: 3, padding: "3px 8px" }}>
-            <span style={{ color: C.target, fontWeight: 600 }}>TGT</span>
-            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.target)} ({fmtPct(tgtPct)})</span>
-            {rewDol != null && <span style={{ color: C.target }}> · +${fmt(rewDol)}</span>}
-          </div>
-        )}
+            {/* Target row */}
+            {pl.target && (
+              <div style={{ background: "rgba(63,185,80,0.10)", border: "1px solid rgba(63,185,80,0.35)", borderRadius: 3, padding: "3px 8px" }}>
+                <span style={{ color: C.target, fontWeight: 600 }}>TGT</span>
+                <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.target)} ({fmtPct(tgtPct)})</span>
+                {rewDol != null && <span style={{ color: C.target }}> · +${fmt(rewDol)}</span>}
+              </div>
+            )}
 
-        {/* Trail row */}
-        {pl.trail && (
-          <div style={{ background: "rgba(147,51,234,0.10)", border: "1px solid rgba(147,51,234,0.35)", borderRadius: 3, padding: "3px 8px" }}>
-            <span style={{ color: C.trail, fontWeight: 600 }}>TRL</span>
-            <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.trail)}</span>
+            {/* Trail row */}
+            {pl.trail && (
+              <div style={{ background: "rgba(147,51,234,0.10)", border: "1px solid rgba(147,51,234,0.35)", borderRadius: 3, padding: "3px 8px" }}>
+                <span style={{ color: C.trail, fontWeight: 600 }}>TRL</span>
+                <span style={{ color: dark ? "#cdd9e5" : "#24292f" }}> {fmt(pl.trail)}</span>
+              </div>
+            )}
           </div>
         )}
       </div>

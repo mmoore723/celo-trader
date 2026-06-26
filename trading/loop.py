@@ -131,14 +131,15 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     try:
         _state_path_start = _BOT_ROOT / "bot_state.json"
         json.dump({
-            "running":         True,
-            "account_balance": float(balance),
-            "session_pnl":     LIVE_STATE.get("session_pnl", 0.0),
-            "status":          "starting",
-            "current_ticker":  None,
-            "last_signal":     None,
-            "market_open":     False,
-            "last_update":     time.strftime("%H:%M:%S"),
+            "running":              True,
+            "auto_start_disabled":  False,   # clear explicit-stop flag on fresh start
+            "account_balance":      float(balance),
+            "session_pnl":          LIVE_STATE.get("session_pnl", 0.0),
+            "status":               "starting",
+            "current_ticker":       None,
+            "last_signal":          None,
+            "market_open":          False,
+            "last_update":          time.strftime("%H:%M:%S"),
             "current_option_price":      _prev_opt_px,
             "current_option_price_time": _prev_opt_px_time,
         }, open(_state_path_start, "w"))
@@ -211,21 +212,32 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
                 pass
             _stop_event.wait(timeout=30)
 
-        # Smart sleep: poll_interval inside window, 60s outside.
-        # _stop_event.wait() returns immediately when Stop Bot is pressed,
-        # so the loop exits cleanly without waiting out the full sleep.
-        _now_et_sl = _now_et()
-        _hm        = _now_et_sl.hour * 60 + _now_et_sl.minute
-        _balance   = LIVE_STATE.get("account_balance", 0)
-        _windows   = _gtw(_balance)
-        _in_window = any(
-            int(s.split(":")[0]) * 60 + int(s.split(":")[1]) <= _hm <=
-            int(e.split(":")[0]) * 60 + int(e.split(":")[1])
-            for s, e in _windows
-        )
-        _stop_event.wait(timeout=poll_interval if _in_window else 60)
+        # Smart sleep: poll_interval inside trading window, 60s outside.
+        # Wrapped in try/except — any exception here used to silently exit
+        # the while loop (it was outside the inner try/except), causing the
+        # "Trading loop stopped" log with no error message.
+        try:
+            _now_et_sl = _now_et()
+            _hm        = _now_et_sl.hour * 60 + _now_et_sl.minute
+            _balance   = LIVE_STATE.get("account_balance", 0)
+            _windows   = _gtw(_balance)
+            _in_window = any(
+                int(s.split(":")[0]) * 60 + int(s.split(":")[1]) <= _hm <=
+                int(e.split(":")[0]) * 60 + int(e.split(":")[1])
+                for s, e in _windows
+            )
+            _stop_event.wait(timeout=poll_interval if _in_window else 60)
+        except Exception as _sleep_err:
+            logger.warning("Smart sleep error (non-fatal): %s", _sleep_err)
+            _stop_event.wait(timeout=poll_interval)
 
-    logger.info("Trading loop stopped")
+    # Only log "stopped" when the stop was intentional (_stop_event was set).
+    # Unexpected exits (exceptions escaping the loop body) are already logged
+    # as errors above — an extra "Trading loop stopped" would be misleading.
+    if _stop_event.is_set():
+        logger.info("Trading loop stopped")
+    else:
+        logger.warning("Trading loop exited unexpectedly — will be restarted by auto-start")
 
 
 def stop_loop() -> None:
@@ -244,6 +256,9 @@ def stop_loop() -> None:
         if _state_path.exists():
             _st = json.loads(_state_path.read_text())
             _st["running"] = False
+            # auto_start_disabled = True tells the service-restart auto-start
+            # logic NOT to resume the bot — the user explicitly pressed Stop.
+            _st["auto_start_disabled"] = True
             _state_path.write_text(json.dumps(_st, indent=2, default=str))
     except Exception as _se:
         logger.warning("stop_loop: failed to update bot_state.json: %s", _se)

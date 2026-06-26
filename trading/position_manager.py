@@ -58,6 +58,13 @@ _VWAP_BREACH_BARS     = 2     # VWAP must be breached for ≥ 2 consecutive bars
 _TIME_CAP_WINNER_MIN  = 90    # stage1 done  → 90 min max
 _TIME_CAP_LOSER_MIN   = 20    # flat/losing  → 20 min max
 
+# ── ATR trail warmup ──────────────────────────────────────────────────────────
+# Don't arm the ATR trailing stop until the trade is at least this many minutes
+# old. On 1-min bars, the entry-bar ATR and swing levels are right at current
+# price, so the stop fires almost immediately on any noise. A 5-min warmup gives
+# the trade room to breathe before the structural trail kicks in.
+_MIN_TRAIL_WARMUP_MIN = 5
+
 
 # ── Indicator helpers ─────────────────────────────────────────────────────────
 
@@ -307,12 +314,23 @@ def _manage_open_position(
         vwap: Optional[float]            = None
         trend_dead: bool                 = False
 
+        # Trade age in minutes — used to gate the ATR trail warmup
+        _trade_age_min = (
+            (now_et - entry_time).total_seconds() / 60
+            if entry_time else 999.0
+        )
+
         if df_under is not None and not df_under.empty:
             _underlying_now = float(df_under["close"].iloc[-1])
 
-            # ATR-based trailing stop in underlying space
+            # ATR-based trailing stop in underlying space.
+            # WARMUP GUARD: don't arm until _MIN_TRAIL_WARMUP_MIN minutes have
+            # elapsed.  On 1-min bars the entry-bar ATR/swing is essentially at
+            # current price, so the stop fires on first-minute noise otherwise.
             _atr = _compute_atr(df_under)
-            if _atr is not None and ps.get("peak_underlying") is not None:
+            if (_atr is not None
+                    and ps.get("peak_underlying") is not None
+                    and _trade_age_min >= _MIN_TRAIL_WARMUP_MIN):
                 _peak_u = float(ps["peak_underlying"])
                 if direction == "bullish":
                     _atr_stop_u = _peak_u - _ATR_TRAIL_MULTIPLIER * _atr

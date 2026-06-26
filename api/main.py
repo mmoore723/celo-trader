@@ -13,10 +13,13 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+import json
+import threading
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from contextlib import asynccontextmanager
 from api.middleware.auth import require_auth
 
 # ── Boot bot modules ──────────────────────────────────────────────────────────
@@ -29,8 +32,54 @@ except Exception:
 from database import init_db
 init_db()
 
+
+def _auto_start_bot_if_needed() -> None:
+    """
+    If the service was restarted (crash, deploy, systemd restart) and the bot
+    was running before, auto-start it in a background thread so the user doesn't
+    have to manually press Start Bot every time.
+
+    Reads bot_state.json: if "running" == True and "auto_start_disabled" != True,
+    spawns the trading loop as a daemon thread.  Any exception is logged and
+    swallowed so a broken environment never prevents the API from booting.
+    """
+    try:
+        _state_file = _ROOT / "bot_state.json"
+        if not _state_file.exists():
+            return
+        state = json.loads(_state_file.read_text())
+        if not state.get("running", False):
+            return
+        if state.get("auto_start_disabled", False):
+            return
+        # Bot was running before the restart — resume it
+        from trading.loop import run_trading_loop
+        t = threading.Thread(target=run_trading_loop, daemon=True, name="trading-loop")
+        t.start()
+        # Log to DB so the THINKING panel shows the auto-resume event
+        try:
+            from database import log_event
+            log_event("INFO", "trading_logic",
+                      "🔄 Service restarted — bot auto-resumed from previous running state.")
+        except Exception:
+            pass
+    except Exception as _e:
+        import logging
+        logging.getLogger("celo_trader").warning(
+            "auto_start_bot_if_needed failed (non-fatal): %s", _e
+        )
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """FastAPI lifespan hook — runs auto-start on service boot."""
+    _auto_start_bot_if_needed()
+    yield
+
+
 # ── Create app ────────────────────────────────────────────────────────────────
 app = FastAPI(
+    lifespan=_lifespan,
     title="Celo Trader API",
     description="FastAPI backend for Celo Trader algorithmic options bot",
     version="2.0.0",
