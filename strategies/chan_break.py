@@ -123,6 +123,13 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 ticker, sh1["price"], sh2["price"], slope,
                 projected, high, close, rvol, rvol_min, confidence,
             )
+            # Structural stop for PUTS: use the PREVIOUS bar's high, not the
+            # entry bar's own high.  The entry bar's high ≈ the channel trendline
+            # (within 0.3% by definition), so using it as the stop means price
+            # only needs to move ~0.1% against us before we're stopped.
+            # The previous bar's high gives a full bar of breathing room and
+            # ties the stop to actual chart structure rather than a point-in-time touch.
+            _prev_bar_high = float(today.iloc[-2]["high"]) if len(today) >= 2 else high
             return Signal(
                 strategy_id = STRATEGY_ID,
                 direction   = "bearish",
@@ -137,7 +144,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                     "projected":        round(projected, 2),
                     "touch_pct":        round(touch_pct * 100, 3),
                     "rejection_body":   round(rejection_body, 2),
-                    "entry_bar_high":   round(high, 4),
+                    "entry_bar_high":   round(_prev_bar_high, 4),   # prev bar's high — wider, structure-based stop
                     "rvol_gate":        round(rvol_min, 2),
                     "rvol_gate_reason": _rvol_threshold_reason(
                         bar_min, close, None, vwap, STRATEGY_ID, msa_confirmed=True),
@@ -200,6 +207,12 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 ticker, sl1["price"], sl2["price"], slope,
                 projected, low_, close, rvol, rvol_min, confidence,
             )
+            # Structural stop for CALLS: use the PREVIOUS bar's low, not the
+            # entry bar's own low.  The entry bar's low ≈ channel trendline
+            # (within 0.3% by definition), making the old stop essentially
+            # zero-width.  Previous bar's low is a real prior structure low
+            # that gives the trade room to prove itself without being noise-stopped.
+            _prev_bar_low = float(today.iloc[-2]["low"]) if len(today) >= 2 else low_
             return Signal(
                 strategy_id = STRATEGY_ID,
                 direction   = "bullish",
@@ -214,7 +227,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                     "projected":        round(projected, 2),
                     "touch_pct":        round(touch_pct * 100, 3),
                     "bounce_body":      round(bounce_body, 2),
-                    "entry_bar_low":    round(low_, 4),
+                    "entry_bar_low":    round(_prev_bar_low, 4),   # prev bar's low — wider, structure-based stop
                     "rvol_gate":        round(rvol_min, 2),
                     "rvol_gate_reason": _rvol_threshold_reason(
                         bar_min, close, None, vwap, STRATEGY_ID, msa_confirmed=True),

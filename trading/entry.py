@@ -894,6 +894,38 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # hands, we flip the trade to a PUT — the macro tailwind is bearish and
     # we should align with it.  Symmetric: if signal is bearish but SPY is
     # ABOVE VWAP (bullish macro), flip to CALL.
+    # For SPY/QQQ (Phase 1 tickers): apply the same VWAP flip using the
+    # ticker's OWN bars — we already fetched them above as _df_today_1m.
+    # Previously this block was skipped entirely for SPY/QQQ, so the bot
+    # never took puts on bearish days when only trading these two tickers.
+    if ticker.upper() in ("SPY", "QQQ"):
+        try:
+            from signals import compute_vwap_bands as _cvwap_self
+            _self_vwap_data = _cvwap_self(_df_today_1m)
+            _self_vwap  = float(_self_vwap_data["vwap"].iloc[-1]) if "vwap" in _self_vwap_data.columns else 0.0
+            _self_close = float(_df_today_1m["close"].iloc[-1]) if not _df_today_1m.empty else 0.0
+            if _self_vwap > 0:
+                if direction == "bullish" and _self_close < _self_vwap:
+                    log_event("INFO", "bar_eval",
+                              f"🔄 [{ticker}] CALL → PUT flip — {ticker} (${_self_close:.2f}) "
+                              f"is BELOW its own VWAP (${_self_vwap:.2f}). "
+                              f"Macro is bearish; trading PUT.")
+                    direction = "bearish"
+                elif direction == "bearish" and _self_close > _self_vwap:
+                    log_event("INFO", "bar_eval",
+                              f"🔄 [{ticker}] PUT → CALL flip — {ticker} (${_self_close:.2f}) "
+                              f"is ABOVE its own VWAP (${_self_vwap:.2f}). "
+                              f"Macro is bullish; trading CALL.")
+                    direction = "bullish"
+                else:
+                    logger.debug(
+                        "self_vwap_aligned ticker=%s direction=%s close=%.2f vwap=%.2f",
+                        ticker, direction, _self_close, _self_vwap,
+                    )
+        except Exception as _self_vwap_ex:
+            logger.debug("SPY/QQQ own VWAP gate failed (%s): %s", ticker, _self_vwap_ex)
+
+    # For non-SPY/QQQ tickers: use SPY as the macro VWAP proxy.
     # Exception: skip the flip when ticker IS SPY — no circular self-check.
     if ticker.upper() not in ("SPY", "QQQ"):
         _spy_df    = None
