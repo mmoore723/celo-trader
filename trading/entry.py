@@ -585,7 +585,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # the free slot below.
     LIVE_STATE["status"] = "in_trade" if _bot_trades else "scanning"
     settings = get_settings()
-    allowed, reason = _risk.can_trade(balance, has_open_position=False)
+    # Pass ET time explicitly — risk.py's is_trading_window() defaults to
+    # datetime.now() which is UTC on EC2, making the 9:30–16:00 ET window
+    # appear expired at 1 PM ET (= 5 PM UTC > 16:00). This caused the bot to
+    # block all trades during market hours with "Outside trading window".
+    allowed, reason = _risk.can_trade(balance, has_open_position=False, now=_now_et())
     if not allowed:
         logger.debug("Trading blocked: %s", reason)
         if "limit" in reason.lower() or "kill" in reason.lower():
