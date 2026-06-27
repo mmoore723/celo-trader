@@ -368,7 +368,8 @@ class RiskManager:
 
         RISK_PCT is 3% when growth_mode is ON and balance < $50k, else 1%.
         A single contract risks: premium × 0.30 × 100 dollars.
-        Minimum 1 contract; 0 only when even 1 contract exceeds the risk budget.
+        Minimum 1 contract if the premium fits within the notional cap (30% growth / 20% conservative).
+        Returns 0 only when the single-contract premium exceeds the notional cap.
         """
         balance = account_balance or self.account_balance
         if option_ask <= 0 or balance <= 0:
@@ -383,14 +384,19 @@ class RiskManager:
 
         contracts = int(total_risk_dollars / risk_per_contract)
 
-        # Enforce minimum: enter with 1 contract if the budget allows it
-        if contracts == 0 and risk_per_contract <= total_risk_dollars:
-            contracts = 1
-
-        # Safety cap: never spend more than 30% of equity on option premium in
-        # growth mode (20% in conservative mode) — prevents outsized notional exposure
+        # Notional cap: never spend more than 30% of equity on premium in
+        # growth mode (20% in conservative mode) — prevents outsized exposure.
+        # Computed here so the 1-contract minimum check can reference it.
         max_notional_pct = 0.30 if risk_pct > 0.01 else 0.20
         max_notional     = balance * max_notional_pct
+
+        # Enforce minimum: allow 1 contract if the premium fits within the
+        # notional cap (not the risk budget). Risk-budget floor was too strict —
+        # e.g. SPY at $5.78/contract → $115 risk > $101 budget → always 0
+        # even though $578 notional fits within a $609 cap at $2,030 balance.
+        if contracts == 0 and (option_ask * 100) <= max_notional:
+            contracts = 1
+
         while contracts > 1 and (option_ask * 100 * contracts) > max_notional:
             contracts -= 1
 
