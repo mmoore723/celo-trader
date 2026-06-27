@@ -301,6 +301,20 @@ class Backtester:
         df["_date"] = df["time"].dt.date
         unique_days = sorted(df["_date"].unique())
 
+        # Diagnostic counters — returned in error message when no trades fire
+        self._diag = {
+            "data_source":    "yfinance" if not df.empty else "alpaca",
+            "total_bars":     len(df),
+            "trading_days":   len(unique_days),
+            "raw_signals":    0,   # bars where at least one strategy returned a Signal
+            "below_floor":    0,   # signals filtered by 0.78 confidence floor
+            "conflict_veto":  0,   # killed by conflict veto
+            "direction_skip": 0,   # wrong direction (calls_only / puts_only)
+            "no_contracts":   0,   # sized to 0 contracts
+            "max_confidence": 0.0, # highest confidence seen (key: are we near the 0.78 floor?)
+            "rvol_samples":   [],  # small sample of RVOL values for debugging
+        }
+
         # Import strategy modules ONCE
         import strategies.inst_orb   as _inst_orb
         import strategies.bos_mss    as _bos_mss
@@ -518,8 +532,6 @@ class Backtester:
                     if sig is not None:
                         raw_signals.append(sig)
                 except Exception as _strat_ex:
-                    # Log strategy exceptions at DEBUG so they're visible in
-                    # the bot log without flooding the screen each bar.
                     logger.debug(
                         "BT strategy %s raised exception on bar %s: %s",
                         strategy_id, bar.get("time", idx), _strat_ex,
@@ -528,33 +540,43 @@ class Backtester:
             if not raw_signals:
                 continue
 
+            # Track diagnostics
+            self._diag["raw_signals"] += 1
+            for _s in raw_signals:
+                if _s.confidence > self._diag["max_confidence"]:
+                    self._diag["max_confidence"] = round(_s.confidence, 4)
+            # Sample a few RVOL values
+            _bar_rvol = float(bar.get("rvol", 0) or 0)
+            if len(self._diag["rvol_samples"]) < 20 and _bar_rvol > 0:
+                self._diag["rvol_samples"].append(round(_bar_rvol, 2))
+
             raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
             # ── Quality gate 1: confidence floor ─────────────────────────────
-            # Same floor as strategy_router: drop anything < 78% confidence.
-            # Old backtester skipped this — fired on ANY non-None signal.
             signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]
             if not signals:
+                self._diag["below_floor"] += 1
                 continue
 
             # ── Quality gate 2: conflict veto ─────────────────────────────────
-            # If top two signals disagree on direction within the veto band,
-            # the market is ambiguous — skip, same as the live router.
             if len(signals) >= 2:
                 _top, _second = signals[0], signals[1]
                 if (_top.direction != _second.direction and
                         (_top.confidence - _second.confidence) <= _CONFLICT_VETO_BAND):
-                    continue   # conflict veto: mixed signals, no trade
+                    self._diag["conflict_veto"] += 1
+                    continue
 
             signal    = signals[0]
-            direction = signal.direction   # "bullish" | "bearish"
+            direction = signal.direction
             strat_id  = signal.strategy_id
 
             # Direction filter
             opt_type_str = "call" if direction == "bullish" else "put"
             if self.direction == "calls_only" and opt_type_str != "call":
+                self._diag["direction_skip"] += 1
                 continue
             if self.direction == "puts_only"  and opt_type_str != "put":
+                self._diag["direction_skip"] += 1
                 continue
 
             # ── Simulate entry ────────────────────────────────────────────────
@@ -573,6 +595,7 @@ class Backtester:
             # ── Contract sizing — same 4-tier risk ladder as live bot ─────────
             n_contracts = self._size_contracts(balance, entry_opt_px)
             if n_contracts <= 0:
+                self._diag["no_contracts"] += 1
                 continue   # can't afford even 1 contract
 
             in_trade            = True
@@ -651,9 +674,22 @@ class Backtester:
         pnls   = [t["pnl"] for t in trades]
 
         if not pnls:
-            return {"error": "No trades generated — confidence floor or conflict veto "
-                    "may have filtered all signals. Try a longer date range or check "
-                    "that strategies are firing (lower IV / more volatile period)."}
+            diag = getattr(self, "_diag", {})
+            _rvol_str = str(diag.get("rvol_samples", [])[:10])
+            return {
+                "error": (
+                    f"No trades generated. "
+                    f"Bars={diag.get('total_bars',0)} "
+                    f"Days={diag.get('trading_days',0)} "
+                    f"RawSignalBars={diag.get('raw_signals',0)} "
+                    f"BelowFloor={diag.get('below_floor',0)} "
+                    f"ConflictVeto={diag.get('conflict_veto',0)} "
+                    f"DirSkip={diag.get('direction_skip',0)} "
+                    f"NoContracts={diag.get('no_contracts',0)} "
+                    f"MaxConf={diag.get('max_confidence',0.0):.4f} "
+                    f"RVOLsamples={_rvol_str}"
+                )
+            }
 
         wins   = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p <= 0]
