@@ -191,6 +191,41 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
 
     while not _stop_event.is_set():
         try:
+            # ── After-hours deep sleep: 5:00 PM – 8:00 AM ET ─────────────────
+            # No scan, no tick, no API calls. Wakes at 8:00 AM on the next
+            # weekday. Sleeps in 5-minute chunks so Stop Bot still responds.
+            _now_et_ah = _now_et()
+            _hm_ah     = _now_et_ah.hour * 60 + _now_et_ah.minute
+            _AFTER_HOURS = _hm_ah >= 17 * 60 or _hm_ah < 8 * 60
+
+            if _AFTER_HOURS:
+                # Compute next 8:00 AM ET, skipping weekends.
+                _wake = _now_et_ah.replace(hour=8, minute=0, second=0, microsecond=0)
+                if _now_et_ah >= _wake:
+                    _wake += timedelta(days=1)
+                while _wake.weekday() >= 5:          # 5=Sat, 6=Sun
+                    _wake += timedelta(days=1)
+                _secs_until_wake = max(60, (_wake - _now_et()).total_seconds())
+
+                # Log once when we first enter after-hours.
+                if not LIVE_STATE.get("_after_hours_sleeping"):
+                    LIVE_STATE["_after_hours_sleeping"] = True
+                    log_event(
+                        "INFO", "trading_logic",
+                        f"🌙 Markets closed — bot resting until 8:00 AM ET "
+                        f"({_wake.strftime('%a %b %d')}). No API calls during this window.",
+                    )
+
+                # Sleep up to 5 min at a time so Stop Bot stays responsive.
+                _stop_event.wait(timeout=min(300, _secs_until_wake))
+                continue   # skip scan + _tick entirely
+
+            # Waking up from after-hours — log once.
+            if LIVE_STATE.get("_after_hours_sleeping"):
+                LIVE_STATE["_after_hours_sleeping"] = False
+                log_event("INFO", "trading_logic",
+                          "🌅 Good morning — resuming pre-market watch.")
+
             # ── Daily scan ───────────────────────────────────────────────────
             # Run if: scan hasn't run today AND we're in the scan window.
             # Also run if scan_watchlist is empty regardless of time — this
