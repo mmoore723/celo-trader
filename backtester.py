@@ -517,8 +517,13 @@ class Backtester:
                     sig = fn(bar_slice, ticker=self.ticker)
                     if sig is not None:
                         raw_signals.append(sig)
-                except Exception:
-                    pass
+                except Exception as _strat_ex:
+                    # Log strategy exceptions at DEBUG so they're visible in
+                    # the bot log without flooding the screen each bar.
+                    logger.debug(
+                        "BT strategy %s raised exception on bar %s: %s",
+                        strategy_id, bar.get("time", idx), _strat_ex,
+                    )
 
             if not raw_signals:
                 continue

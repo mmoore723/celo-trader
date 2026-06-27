@@ -94,9 +94,16 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     """
     Evaluate INST_ORB signals via the retest entry state machine.
 
-    Called once per tick with today's 1-min bars. Processes all bars in
-    chronological order and advances the state machine. Returns a Signal
-    only on the BOUNCE CONFIRMED bar (Phase 3).
+    Called once per tick with today's bars up to the current bar. Processes
+    all bars in chronological order and advances the state machine. Returns
+    a Signal only on the BOUNCE CONFIRMED bar (Phase 3).
+
+    IMPORTANT — stateless-per-call design:
+      The state machine is RESET at the start of every call and re-derived
+      from scratch by replaying the bar slice in order. This is required for
+      correct backtester behavior (called with growing slices on every bar).
+      In live trading it is equivalent — the replay is cheap (< 78 5-min bars
+      per session day) and produces identical results to accumulated state.
 
     Parameters
     ----------
@@ -115,7 +122,25 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         return None
 
     today_date = today["time"].iloc[-1].date()
-    state      = _get_state(ticker, today_date)
+
+    # Reset state to idle on EVERY call so the state machine is re-derived
+    # cleanly from the full bar slice. This prevents stale phase leftovers
+    # from a prior call (same bar position, different slice length) corrupting
+    # the phase transitions — the root cause of the backtester "no trades" bug.
+    key = (ticker, today_date.isoformat())
+    _retest_state[key] = {
+        "phase":        "idle",
+        "direction":    None,
+        "or_boundary":  None,
+        "breakout_bar": None,
+        "retest_bar":   None,
+    }
+    # Prune stale state from prior days (cosmetic — prevents unbounded dict growth)
+    stale = [k for k in list(_retest_state) if k[1] < today_date.isoformat()]
+    for k in stale:
+        del _retest_state[k]
+
+    state = _retest_state[key]
 
     msa   = MarketStructureAnalyzer(today)
     trend = msa.classify_trend()
