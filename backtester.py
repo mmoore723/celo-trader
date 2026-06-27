@@ -95,23 +95,50 @@ def _estimate_option_price(
     option_type: str = "call",
 ) -> float:
     """
-    Simplified Black-Scholes estimate (intrinsic + time value).
-    time_value ≈ stock × iv × sqrt(dte/252) × 0.4
+    Simplified Black-Scholes estimate with OTM moneyness discount.
+
+    For ATM options: time_value ≈ stock × iv × sqrt(dte/252) × 0.4
+    For OTM options: time_value decays via erfc as the strike moves away from
+    the stock price, normalized by the 1-sigma expected move.  This reflects
+    that a $3 OTM weekly costs less than a $6 ATM weekly even though both have
+    zero intrinsic value — the ATM-only formula was overstating option costs
+    by 2-3× and blocking valid contract sizing at small account balances.
     """
     if days_to_expiry <= 0:
         return max(0.0, stock_price - strike) if option_type == "call" \
                else max(0.0, strike - stock_price)
+
     intrinsic = (max(0.0, stock_price - strike) if option_type == "call"
                  else max(0.0, strike - stock_price))
-    time_val  = stock_price * iv * math.sqrt(days_to_expiry / 252) * 0.4
+
+    sqrt_t        = math.sqrt(days_to_expiry / 252)
+    expected_move = stock_price * iv * sqrt_t            # 1-sigma expected move
+
+    # Distance the strike sits OTM (0 for ITM/ATM options)
+    otm_dist = (max(0.0, strike - stock_price) if option_type == "call"
+                else max(0.0, stock_price - strike))
+
+    # Normalize by expected move; erfc gives 1.0 at-the-money, decays to 0 deep OTM.
+    # erfc(x * 1/√2) approximates 2·N(-x) which is the standard moneyness decay.
+    otm_z            = otm_dist / max(expected_move, 0.01)
+    moneyness_factor = math.erfc(otm_z * 0.7071)        # 0.7071 = 1/√2
+
+    time_val = stock_price * iv * sqrt_t * 0.4 * moneyness_factor
     return round(max(intrinsic + time_val, 0.01), 2)
 
 
+# OTM offset used when simulating strikes — 1.5% from the current stock price.
+# The live bot buys weekly OTM options in the $2–4 range; the old "first $0.50
+# above stock" was essentially ATM on high-price tickers (SPY $732 → $732.50),
+# which inflated the model price to ~$5.78 and blocked sizing at small balances.
+_SIMULATED_OTM_PCT: float = 0.015   # 1.5% OTM
+
+
 def _simulated_strike(stock_price: float, direction: str) -> float:
-    """First OTM strike, rounded to nearest $0.50 increment."""
+    """Strike 1.5% OTM, rounded to the nearest $0.50 increment."""
     if direction == "bullish":
-        return math.ceil(stock_price * 2) / 2
-    return math.floor(stock_price * 2) / 2
+        return math.ceil(stock_price * (1 + _SIMULATED_OTM_PCT) * 2) / 2
+    return math.floor(stock_price * (1 - _SIMULATED_OTM_PCT) * 2) / 2
 
 
 # ── Backtest engine ───────────────────────────────────────────────────────────
