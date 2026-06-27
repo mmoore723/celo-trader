@@ -188,13 +188,19 @@ class Backtester:
 
         contracts = int(total_risk / risk_per_contract)
 
-        # Floor to 1 if budget allows at least 1 contract
-        if contracts == 0 and risk_per_contract <= total_risk:
-            contracts = 1
-
         # Notional cap: 30% of balance in high-risk tiers, 20% in conservative
         max_notional_pct = 0.30 if risk_pct > 0.01 else 0.20
         max_notional     = balance * max_notional_pct
+
+        # Floor to 1 contract if we can afford the PREMIUM (notional check).
+        # The risk-based floor (risk_per_contract <= total_risk) is too strict
+        # for small accounts trading expensive underlyings like SPY — the live
+        # bot uses real broker prices which are often cheaper than the BS model,
+        # so it can enter where the model says 0.  Match that behavior here by
+        # allowing 1 contract whenever 1 contract's notional fits the cap.
+        if contracts == 0 and (entry_px * 100) <= max_notional:
+            contracts = 1
+
         while contracts > 1 and (entry_px * 100 * contracts) > max_notional:
             contracts -= 1
 

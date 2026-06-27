@@ -1,8 +1,8 @@
 /**
  * Backtest.tsx — Run historical strategy backtests.
  */
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Play } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -50,6 +50,18 @@ export function Backtest() {
   const [showTrades, setShowTrades] = useState(true);
   const { theme } = useThemeStore();
   const dark = theme === "dark";
+
+  // Seed capital field with the actual account balance on first load
+  const { data: botStatus } = useQuery({
+    queryKey: ["bot-status-bt"],
+    queryFn:  api.bot.status,
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (botStatus?.account_balance && botStatus.account_balance > 0) {
+      setCapital(Math.floor(botStatus.account_balance));
+    }
+  }, [botStatus?.account_balance]);
 
   const riskPctOverride = riskPctStr !== "" ? parseFloat(riskPctStr) / 100 : undefined;
 
