@@ -13,7 +13,7 @@ Detection (descending channel — bearish):
   3. Bar HIGH tags within 0.3% of the projected level
   4. Bar CLOSE is below the projected level (rejection)
   5. VWAP alignment (close < VWAP for bearish)
-  6. RVOL ≥ dynamic threshold (msa_confirmed=True → 0.75× floor)
+  6. RVOL ≥ 1.0× (CHAN_BREAK threshold — 0.75× was too permissive)
 
 Mirror logic for ascending channel (bullish).
 """
@@ -37,9 +37,11 @@ logger = logging.getLogger("celo_trader.strategies.chan_break")
 
 STRATEGY_ID = "CHAN_BREAK"
 
-_MIN_SLOPE   = 0.002   # per-bar slope below this = flat channel = noise
+_MIN_SLOPE   = 0.008   # per-bar slope below this = flat channel = noise (raised from 0.002)
 _MAX_AGE     = 40      # bars; older pivots = stale channel
 _TOUCH_TOL   = 0.003   # 0.3% touch tolerance
+_DEAD_ZONE_START = 12 * 60        # 12:00 ET — volume dries up, fake bounces dominate
+_DEAD_ZONE_END   = 13 * 60 + 30  # 13:30 ET — resume after lunch
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
@@ -52,8 +54,11 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         bar_time = pd.Timestamp(bar_time)
     bar_min = bar_time.hour * 60 + bar_time.minute
 
-    # Gate 1: session window 09:45–14:00
+    # Gate 1: session window 09:45–14:00, excluding 12:00–13:30 dead zone.
+    # Mid-day volume dries up and trendline touches produce fake bounces.
     if not (9 * 60 + 45 <= bar_min <= 14 * 60):
+        return None
+    if _DEAD_ZONE_START <= bar_min <= _DEAD_ZONE_END:
         return None
 
     rvol     = float(last_bar["rvol"])  if not pd.isna(last_bar.get("rvol",  np.nan)) else 0.0
@@ -63,10 +68,11 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     low_     = float(last_bar["low"])
     curr_idx = len(today) - 1
 
-    # Compute dynamic RVOL threshold — structure-confirmed since a verified
-    # channel (descending SH pair) IS MSA confirmation.
+    # RVOL threshold: use CHAN_BREAK's own 1.0× floor rather than the relaxed
+    # msa_confirmed=True 0.75× path.  A trendline tag with weak volume is noise
+    # — it needs real participation to confirm the rejection/bounce.
     rvol_min = _get_dynamic_rvol_threshold(
-        bar_min, close, None, vwap, STRATEGY_ID, msa_confirmed=True)
+        bar_min, close, None, vwap, STRATEGY_ID, msa_confirmed=False)
 
     # 14-period ATR — used as minimum stop width floor so that if the previous
     # bar is a tiny doji, the stop still has at least 0.5× ATR of breathing room.
@@ -119,6 +125,12 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
 
             if vwap is not None and close >= vwap:
                 logger.debug("[%s] CHAN_BREAK bearish: close %.2f >= vwap %.2f", ticker, close, vwap)
+                break
+
+            # Block bearish rejections in confirmed uptrends — counter-trend shorts
+            # at the trendline are the #1 cause of losses on this strategy.
+            if msa.classify_trend() == "uptrend":
+                logger.debug("[%s] CHAN_BREAK bearish: MSA=uptrend — blocked (counter-trend)", ticker)
                 break
 
             if rvol < rvol_min:
