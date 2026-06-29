@@ -151,7 +151,14 @@ async def websocket_live(ws: WebSocket) -> None:
             await ws.send_json({"type": "log", "data": entry})
 
     last_state_hash = None
-    last_log_pos    = 0
+    # Seek to the current end of the log file so the live loop only tails
+    # NEW lines written after this connection.  History is already sent above
+    # via _tail_log(10) — starting from 0 was replaying the entire file on
+    # every connect, flooding the frontend with hundreds of stale log lines.
+    try:
+        last_log_pos = _LOG_PATH.stat().st_size if _LOG_PATH.exists() else 0
+    except Exception:
+        last_log_pos = 0
 
     try:
         while True:
