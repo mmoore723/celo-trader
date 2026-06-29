@@ -203,7 +203,7 @@ When a trend is already clearly established — a confirmed sequence of lower hi
 ---
 
 ### 8. Channel Trendline Rejection (CHAN_BREAK)
-**Active window:** 9:45 AM – 2:00 PM ET | Both directions
+**Active window:** 9:45 AM – 12:00 PM and 1:30 PM – 2:00 PM ET | Both directions
 
 **What it's looking for:**
 When price makes a sequence of lower highs, a line drawn through those highs is a descending resistance trendline. When price makes a sequence of higher lows, a line through those is an ascending support trendline. These lines project forward, and when price approaches them, there's often a reaction.
@@ -212,15 +212,20 @@ This strategy draws the trendline from the last two swing highs (or lows), proje
 
 **Bearish (descending channel) setup:**
 - The last two swing highs are both declining — a true downtrend channel.
-- The channel's slope must be meaningful. A nearly flat line isn't a real channel.
+- The channel's slope must be meaningful — nearly flat lines are excluded.
 - The current candle's high must tag within 0.3% of where the trendline projects right now.
 - The current candle must close below the trendline — rejection, not a breakout through it.
 - Price must be below VWAP.
+- The broader market structure must not be in a confirmed uptrend. Shorting a trendline tag while price is making higher highs and higher lows is counter-trend and loses.
 - Channel pivots can't be older than 40 candles. Old channels have lost their authority.
 
-**Bullish (ascending channel) setup:** Mirror logic — two rising swing lows, projected trendline, bar low tags within 0.3%, close is above the line (bounce off support), price above VWAP.
+**Bullish (ascending channel) setup:** Mirror logic — two rising swing lows, projected trendline, bar low tags within 0.3%, close is above the line (bounce off support), price above VWAP. Blocked in confirmed downtrends.
 
-**The edge:** Trendlines are predictable reaction zones that market participants actively watch. When price touches and rejects cleanly with volume, it's the highest-probability moment to trade against the touch rather than with it.
+**What else has to be true:**
+- RVOL must be at least 1.0×. A trendline touch with weak volume is noise, not a signal.
+- The 12:00–1:30 PM window is excluded. Mid-day trendline touches produce fake bounces because there's no real participation behind them.
+
+**The edge:** Trendlines are predictable reaction zones that market participants actively watch. When price touches and rejects cleanly with real volume, and the broader trend isn't fighting your direction, it's the highest-probability moment to trade the rejection.
 
 ---
 
