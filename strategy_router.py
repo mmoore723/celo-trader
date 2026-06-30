@@ -59,7 +59,7 @@ logger = logging.getLogger("celo_trader.strategy_router")
 # Confidence floor: strategies score 0.75 at baseline with zero bonuses.
 # Anything ≤ 0.77 is a marginal signal with no meaningful RVOL/body/recency edge —
 # drop it rather than picking "best of weak."
-_MIN_CONFIDENCE = 0.78
+_MIN_CONFIDENCE = 0.74
 
 # Conflict veto window: if the top two signals disagree on direction AND their
 # confidence scores are within this band, the router is ambiguous — return nothing.
@@ -72,13 +72,6 @@ _CONFLICT_VETO_BAND = 0.05
 # penalty; marginal counter-session signals get naturally filtered out.
 _SESSION_BIAS_PENALTY = 0.05
 
-# 5-day macro trend block: hard block (not a penalty) for counter-trend signals
-# when the underlying has moved directionally over the past 5 trading days.
-# Session bias checks a single day's open vs close — a bounce within a downtrend
-# can still look "bullish" intraday. This gate checks whether price is lower/higher
-# than it was an entire week ago, catching sustained directional moves the
-# intraday bias penalty misses.
-_MACRO_TREND_DAYS = 5
 
 # ── Audit state — tracks last-logged structure so we don't spam the DB ────────
 _last_audit_state: dict = {}
@@ -257,45 +250,6 @@ def route_signals(
                 )
         # Re-sort after penalty adjustments
         signals.sort(key=lambda s: s.confidence, reverse=True)
-
-    # ── 5-day macro trend block ───────────────────────────────────────────────
-    # Hard-block counter-trend signals when the tape has moved directionally
-    # over the past 5 trading days. The session bias penalty (-0.05) only
-    # removes marginal signals; a 0.85-confidence setup still fires at 0.80.
-    # This block catches signals that look clean intraday but are swimming
-    # against a week-long trend — the root cause of calls going 0% WR in
-    # a bearish macro period (May 2026 post-tariff selloff).
-    _all_dates = sorted(df["time"].dt.date.unique())
-    if signals and len(_all_dates) >= _MACRO_TREND_DAYS + 1:
-        _ref_date  = _all_dates[-(_MACRO_TREND_DAYS + 1)]
-        _ref_bars  = df[df["time"].dt.date == _ref_date]
-        _now_close = float(today.iloc[-1]["close"])
-        if len(_ref_bars) > 0:
-            _ref_close  = float(_ref_bars.iloc[-1]["close"])
-            _macro_bear = _now_close < _ref_close
-            _macro_bull = _now_close > _ref_close
-            if _macro_bear or _macro_bull:
-                _macro_label  = "bearish" if _macro_bear else "bullish"
-                _before_block = len(signals)
-                signals = [
-                    s for s in signals
-                    if not (
-                        (_macro_bear and s.direction == "bullish") or
-                        (_macro_bull and s.direction == "bearish")
-                    )
-                ]
-                _n_blocked = _before_block - len(signals)
-                if _n_blocked:
-                    logger.info(
-                        "router: 5d macro=%s (%.2f vs 5d-ago %.2f) — blocked %d counter-trend signal(s) for %s",
-                        _macro_label, _now_close, _ref_close, _n_blocked, ticker,
-                    )
-                    _db_log(
-                        "INFO", "scan",
-                        f"{ticker} — 5d macro={_macro_label} "
-                        f"(close={_now_close:.2f} vs 5d={_ref_close:.2f}): "
-                        f"blocked {_n_blocked} counter-trend signal(s)",
-                    )
 
     # ── Quality gate 1: confidence floor ─────────────────────────────────────
     # Drop signals that barely clear the baseline (no meaningful edge).

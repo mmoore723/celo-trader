@@ -64,26 +64,26 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     # BELOW VWAP (bearish) for the majority of recent bars before the touch.
     # Without this, the strategy fires when price is crashing THROUGH VWAP
     # (a continuation move, not a pullback), which produces losing entries.
-    # We require ≥ 4 of the last 5 bars (excluding current) on the correct side.
+    # We require ≥ 3 of the last 5 bars (loosened from 4) on the correct side.
     _lookback_bars = today.iloc[-6:-1] if len(today) >= 6 else today.iloc[:-1]
 
     def _was_above_vwap(bars: pd.DataFrame) -> bool:
-        """True if ≥ 4 of the last 5 bars had close > vwap (price was trending above)."""
+        """True if ≥ 3 of the last 5 bars had close > vwap (price was trending above)."""
         if len(bars) < 3:
             return False
         _closes = bars["close"].values
         _vwaps  = bars["vwap"].values if "vwap" in bars.columns else [c_vwap] * len(bars)
         _above  = sum(float(c) > float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
-        return _above >= min(4, max(3, len(bars) - 1))
+        return _above >= 3
 
     def _was_below_vwap(bars: pd.DataFrame) -> bool:
-        """True if ≥ 4 of the last 5 bars had close < vwap (price was trending below)."""
+        """True if ≥ 3 of the last 5 bars had close < vwap (price was trending below)."""
         if len(bars) < 3:
             return False
         _closes = bars["close"].values
         _vwaps  = bars["vwap"].values if "vwap" in bars.columns else [c_vwap] * len(bars)
         _below  = sum(float(c) < float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
-        return _below >= min(4, max(3, len(bars) - 1))
+        return _below >= 3
 
     # ── Bullish pullback ──────────────────────────────────────────────────────
     rvol_min_bull = _get_dynamic_rvol_threshold(

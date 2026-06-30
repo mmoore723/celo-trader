@@ -371,15 +371,6 @@ class Backtester:
             ("CHAN_BREAK",  _chan_break.evaluate),
         ]
 
-        # Build a map: trade_date → close price 5 trading days prior.
-        # Used by _simulate_day() to hard-block counter-trend signals when the
-        # macro tape is directionally opposed over the past week.
-        _day_close_map: dict = {}
-        for _d in unique_days:
-            _last_bar = df[df["_date"] == _d]
-            if len(_last_bar) > 0:
-                _day_close_map[_d] = float(_last_bar.iloc[-1]["close"])
-
         for trade_date in unique_days:
             day_all = df[df["_date"] == trade_date].reset_index(drop=True)
             session_mask = (
@@ -388,11 +379,6 @@ class Backtester:
             ) & (day_all["time"].dt.hour < 16)
             day_df  = day_all[session_mask].reset_index(drop=True)
             day_str = trade_date.isoformat()
-
-            # Compute 5-day-ago close for macro trend block
-            _today_idx       = unique_days.index(trade_date)
-            _ref_idx         = _today_idx - 5
-            _prior_close_5d  = _day_close_map.get(unique_days[_ref_idx]) if _ref_idx >= 0 else None
 
             # Pre-compute VWAP bands for the full day once (O(n), not O(n²))
             try:
@@ -407,7 +393,7 @@ class Backtester:
             except Exception:
                 pass
 
-            pnl = self._simulate_day(day_df, balance, day_str, _EVALUATORS_CACHED, _prior_close_5d)
+            pnl = self._simulate_day(day_df, balance, day_str, _EVALUATORS_CACHED)
             balance += pnl
             if pnl != 0:
                 daily_pnl[day_str] = pnl
@@ -422,7 +408,6 @@ class Backtester:
         balance: float,
         day_str: str,
         evaluators: list,
-        prior_close_5d: "float | None" = None,
     ) -> float:
         """
         Simulate a single trading day using all 8 strategy evaluators with the
@@ -640,22 +625,6 @@ class Backtester:
                         if _counter:
                             _sig.confidence = max(0.0, _sig.confidence - _SESSION_BIAS_PENALTY)
                     raw_signals.sort(key=lambda s: s.confidence, reverse=True)
-
-            # ── 5-day macro trend block ───────────────────────────────────────
-            # Hard-block counter-trend signals when price is below (above) where
-            # it was 5 trading days ago. Mirrors the logic in strategy_router.
-            if raw_signals and prior_close_5d is not None:
-                _bt_now_close = float(day_df.iloc[-1]["close"])
-                _macro_bear   = _bt_now_close < prior_close_5d
-                _macro_bull   = _bt_now_close > prior_close_5d
-                if _macro_bear or _macro_bull:
-                    raw_signals = [
-                        s for s in raw_signals
-                        if not (
-                            (_macro_bear and s.direction == "bullish") or
-                            (_macro_bull and s.direction == "bearish")
-                        )
-                    ]
 
             # ── Quality gate 1: confidence floor ─────────────────────────────
             signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]

@@ -205,8 +205,10 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 ticker, direction, gap_low, gap_high, c_rvol, confidence,
             )
         else:
-            # Standard FVG without sweep — slight confidence penalty
-            confidence = min(0.75, base_conf - 0.05)
+            # Standard FVG without sweep — slight confidence penalty.
+            # Cap raised from 0.75 → 0.79 so clean FVG setups can clear the
+            # 0.74 confidence floor without requiring a confirmed sweep.
+            confidence = min(0.79, base_conf - 0.05)
             sweep_note = "no_sweep"
             logger.info(
                 "[%s] FVG %s signal gap=[%.4f–%.4f] RVOL=%.2f conf=%.2f "

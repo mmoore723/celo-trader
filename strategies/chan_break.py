@@ -39,9 +39,7 @@ STRATEGY_ID = "CHAN_BREAK"
 
 _MIN_SLOPE   = 0.008   # per-bar slope below this = flat channel = noise (raised from 0.002)
 _MAX_AGE     = 40      # bars; older pivots = stale channel
-_TOUCH_TOL   = 0.003   # 0.3% touch tolerance
-_DEAD_ZONE_START = 12 * 60        # 12:00 ET — volume dries up, fake bounces dominate
-_DEAD_ZONE_END   = 13 * 60 + 30  # 13:30 ET — resume after lunch
+_TOUCH_TOL   = 0.0015  # 0.15% touch tolerance (loosened from 0.3% — too many near-misses)
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
@@ -54,11 +52,10 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         bar_time = pd.Timestamp(bar_time)
     bar_min = bar_time.hour * 60 + bar_time.minute
 
-    # Gate 1: session window 09:45–14:00, excluding 12:00–13:30 dead zone.
-    # Mid-day volume dries up and trendline touches produce fake bounces.
+    # Gate 1: session window 09:45–14:00.
+    # Dead zone (12:00–13:30) removed — RVOL gate already filters low-participation
+    # mid-day bars. The dead zone was blocking 1.5h of valid channel touches.
     if not (9 * 60 + 45 <= bar_min <= 14 * 60):
-        return None
-    if _DEAD_ZONE_START <= bar_min <= _DEAD_ZONE_END:
         return None
 
     rvol     = float(last_bar["rvol"])  if not pd.isna(last_bar.get("rvol",  np.nan)) else 0.0
@@ -126,7 +123,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             # Minimum rejection distance — close must be ≥ 0.3% below the trendline.
             # "Barely below" is noise; real rejections leave clear distance.
             _reject_pct = (projected - close) / max(projected, 1.0)
-            if _reject_pct < 0.003:
+            if _reject_pct < 0.0015:
                 logger.debug("[%s] CHAN_BREAK bearish: rejection %.3f%% < 0.3%% — too shallow",
                              ticker, _reject_pct * 100)
                 break
@@ -136,7 +133,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             # happens to close below the line is indecision, not confirmed rejection.
             _bar_range  = high - low_
             _upper_wick = high - close
-            if _bar_range > 0 and _upper_wick / _bar_range < 0.40:
+            if _bar_range > 0 and _upper_wick / _bar_range < 0.25:
                 logger.debug("[%s] CHAN_BREAK bearish: upper wick %.0f%% < 40%% — weak rejection body",
                              ticker, _upper_wick / _bar_range * 100)
                 break
@@ -241,7 +238,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
 
             # Minimum bounce distance — close must be ≥ 0.3% above the trendline.
             _bounce_pct = (close - projected) / max(projected, 1.0)
-            if _bounce_pct < 0.003:
+            if _bounce_pct < 0.0015:
                 logger.debug("[%s] CHAN_BREAK bullish: bounce %.3f%% < 0.3%% — too shallow",
                              ticker, _bounce_pct * 100)
                 break
@@ -251,7 +248,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             # that happens to close above the line is indecision, not a confirmed bounce.
             _bar_range  = high - low_
             _lower_wick = close - low_
-            if _bar_range > 0 and _lower_wick / _bar_range < 0.40:
+            if _bar_range > 0 and _lower_wick / _bar_range < 0.25:
                 logger.debug("[%s] CHAN_BREAK bullish: lower wick %.0f%% < 40%% — weak bounce body",
                              ticker, _lower_wick / _bar_range * 100)
                 break

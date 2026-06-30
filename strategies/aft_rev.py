@@ -55,10 +55,10 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         logger.debug("[%s] AFT_REV: RVOL %.2f < 1.0 — no institutional participation", ticker, rvol)
         return None
 
-    # Gate 3: volume vs SMA
-    if vol_sma > 0 and vol < vol_sma * 1.2:
-        logger.debug("[%s] AFT_REV: vol %.0f < sma×1.2 (%.0f) — skipped", ticker, vol, vol_sma * 1.2)
-        return None
+    # Gate 3: REMOVED — intraday vol_sma inflated by opening spike bar (same issue
+    # as MID_BRK Gate 5). RVOL gate (Gate 2) already handles participation using
+    # a proper 10-day baseline. Redundant vol_sma check was blocking valid afternoon
+    # reversal setups when session opened with high volume.
 
     msa = MarketStructureAnalyzer(today)
 
