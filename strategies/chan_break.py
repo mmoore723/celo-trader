@@ -128,14 +128,21 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                              ticker, _reject_pct * 100)
                 break
 
-            # Rejection wick — upper wick must be ≥ 40% of bar range.
-            # A real trendline rejection leaves a pin wick. A small body that
-            # happens to close below the line is indecision, not confirmed rejection.
+            # Rejection wick — requirement scales with channel width.
+            # Wide channels already provide structural security via the two swing
+            # highs; a large wick isn't as critical. Tight channels need a strong
+            # pin to confirm the rejection isn't noise.
+            #   channel width < 0.5%  → require ≥ 40% wick (tight channel, pin required)
+            #   channel width > 1.5%  → require ≥ 25% wick (wide channel, structure sufficient)
+            #   in between → linear interpolation
+            _channel_width_pct = (sh1["price"] - sh2["price"]) / max(sh1["price"], 1.0)
+            _wick_req = 0.40 - (0.40 - 0.25) * max(0.0, min(1.0,
+                (_channel_width_pct - 0.005) / (0.015 - 0.005)))
             _bar_range  = high - low_
             _upper_wick = high - close
-            if _bar_range > 0 and _upper_wick / _bar_range < 0.25:
-                logger.debug("[%s] CHAN_BREAK bearish: upper wick %.0f%% < 40%% — weak rejection body",
-                             ticker, _upper_wick / _bar_range * 100)
+            if _bar_range > 0 and _upper_wick / _bar_range < _wick_req:
+                logger.debug("[%s] CHAN_BREAK bearish: upper wick %.0f%% < %.0f%% (channel_width=%.2f%%) — weak rejection",
+                             ticker, _upper_wick / _bar_range * 100, _wick_req * 100, _channel_width_pct * 100)
                 break
 
             # Price momentum — price must be moving away from the line.
@@ -243,14 +250,18 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                              ticker, _bounce_pct * 100)
                 break
 
-            # Bounce wick — lower wick must be ≥ 40% of bar range.
-            # A real trendline bounce leaves a rejection wick below. A narrow body
-            # that happens to close above the line is indecision, not a confirmed bounce.
+            # Bounce wick — requirement scales with channel width (same logic as bearish path).
+            #   channel width < 0.5%  → require ≥ 40% wick
+            #   channel width > 1.5%  → require ≥ 25% wick
+            #   in between → linear interpolation
+            _channel_width_pct = (sl2["price"] - sl1["price"]) / max(sl1["price"], 1.0)
+            _wick_req = 0.40 - (0.40 - 0.25) * max(0.0, min(1.0,
+                (_channel_width_pct - 0.005) / (0.015 - 0.005)))
             _bar_range  = high - low_
             _lower_wick = close - low_
-            if _bar_range > 0 and _lower_wick / _bar_range < 0.25:
-                logger.debug("[%s] CHAN_BREAK bullish: lower wick %.0f%% < 40%% — weak bounce body",
-                             ticker, _lower_wick / _bar_range * 100)
+            if _bar_range > 0 and _lower_wick / _bar_range < _wick_req:
+                logger.debug("[%s] CHAN_BREAK bullish: lower wick %.0f%% < %.0f%% (channel_width=%.2f%%) — weak bounce",
+                             ticker, _lower_wick / _bar_range * 100, _wick_req * 100, _channel_width_pct * 100)
                 break
 
             # Price momentum — price must be moving away from the trendline.

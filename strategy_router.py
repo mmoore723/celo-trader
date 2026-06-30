@@ -66,11 +66,14 @@ _MIN_CONFIDENCE = 0.74
 _CONFLICT_VETO_BAND = 0.05
 
 # Session bias penalty: applied when a signal goes against the session's own
-# price action (close is BOTH below the open AND below VWAP for bearish session,
-# or BOTH above open AND VWAP for bullish session). This is not a direction block
-# — it's a confidence tax. Strong setups still clear the 0.78 floor after the
-# penalty; marginal counter-session signals get naturally filtered out.
-_SESSION_BIAS_PENALTY = 0.05
+# price action. This is a confidence tax, not a direction block.
+# The penalty is DYNAMIC based on current RVOL:
+#   RVOL > 1.5 → -0.02  (high-volume days support counter-trend V-reversals)
+#   RVOL 1.0–1.5 → -0.05 (normal days, standard penalty)
+#   RVOL < 1.0  → -0.10  (low-volume days chop you to death counter-trend)
+# Strong setups with real volume still clear the floor; weak counter-session
+# signals on quiet days get filtered out aggressively.
+_SESSION_BIAS_PENALTY = 0.05  # fallback default (overridden dynamically below)
 
 
 # ── Audit state — tracks last-logged structure so we don't spam the DB ────────
@@ -227,6 +230,17 @@ def route_signals(
         if _session_bearish or _session_bullish:
             _bias_label  = "bearish" if _session_bearish else "bullish"
             _penalized   = 0
+
+            # Dynamic penalty: scale with current RVOL so high-volume days
+            # allow more counter-session latitude, and quiet days penalize hard.
+            _last_rvol = float(_last_bar.get("rvol", 1.0) or 1.0)
+            if _last_rvol > 1.5:
+                _dynamic_penalty = 0.02   # high volume — V-reversals are real
+            elif _last_rvol < 1.0:
+                _dynamic_penalty = 0.10   # low volume — counter-trend = chop
+            else:
+                _dynamic_penalty = 0.05   # normal days
+
             for _sig in signals:
                 _counter = (
                     (_session_bearish and _sig.direction == "bullish") or
@@ -234,19 +248,19 @@ def route_signals(
                 )
                 if _counter:
                     _old_conf       = _sig.confidence
-                    _sig.confidence = max(0.0, _sig.confidence - _SESSION_BIAS_PENALTY)
+                    _sig.confidence = max(0.0, _sig.confidence - _dynamic_penalty)
                     _penalized     += 1
                     logger.debug(
-                        "router: session_bias=%s penalized %s %s conf %.2f→%.2f",
+                        "router: session_bias=%s penalized %s %s conf %.2f→%.2f (rvol=%.2f penalty=%.0f%%)",
                         _bias_label, _sig.strategy_id, _sig.direction,
-                        _old_conf, _sig.confidence,
+                        _old_conf, _sig.confidence, _last_rvol, _dynamic_penalty * 100,
                     )
             if _penalized:
                 _db_log(
                     "INFO", "scan",
                     f"{ticker} — Session bias={_bias_label}: "
-                    f"{_penalized} counter-session signal(s) penalized -{_SESSION_BIAS_PENALTY:.0%} "
-                    f"(close={_curr_close:.2f} vs session_open={_session_open:.2f})",
+                    f"{_penalized} counter-session signal(s) penalized -{_dynamic_penalty:.0%} "
+                    f"(RVOL={_last_rvol:.1f}× | close={_curr_close:.2f} vs session_open={_session_open:.2f})",
                 )
         # Re-sort after penalty adjustments
         signals.sort(key=lambda s: s.confidence, reverse=True)

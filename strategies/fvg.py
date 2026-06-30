@@ -205,15 +205,22 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 ticker, direction, gap_low, gap_high, c_rvol, confidence,
             )
         else:
-            # Standard FVG without sweep — slight confidence penalty.
-            # Cap raised from 0.75 → 0.79 so clean FVG setups can clear the
-            # 0.74 confidence floor without requiring a confirmed sweep.
-            confidence = min(0.79, base_conf - 0.05)
-            sweep_note = "no_sweep"
+            # Standard FVG without sweep — confidence capped based on EMA50 proximity.
+            # EMA50 acts as structural support/resistance. A FVG that forms NEAR EMA50
+            # (within 0.1%) has a structural anchor; one far from EMA50 is overextended.
+            #   Near EMA50 (≤0.1%): cap = 0.78 — clean structural FVG, allows entry
+            #   Far from EMA50 (>0.1%): cap = 0.75 — overextended, lower conviction
+            _gap_mid          = (gap_low + gap_high) / 2.0
+            _ema_dist_pct     = abs(_gap_mid - ema50) / max(ema50, 1.0) if ema50 else 1.0
+            _near_ema         = _ema_dist_pct <= 0.001  # within 0.1%
+            _no_sweep_cap     = 0.78 if _near_ema else 0.75
+            confidence        = min(_no_sweep_cap, base_conf - 0.05)
+            sweep_note        = f"no_sweep_ema_{'near' if _near_ema else 'far'}"
             logger.info(
                 "[%s] FVG %s signal gap=[%.4f–%.4f] RVOL=%.2f conf=%.2f "
-                "(no liquidity sweep — standard entry)",
+                "(no sweep — EMA50 dist=%.2f%% cap=%.2f)",
                 ticker, direction, gap_low, gap_high, c_rvol, confidence,
+                _ema_dist_pct * 100, _no_sweep_cap,
             )
 
         # Mark gap consumed before returning
