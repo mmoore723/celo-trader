@@ -286,16 +286,14 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 state["phase"] = "idle"
                 continue
 
-            # Gate: VWAP direction (standard — not overridden for retest)
+            # Gate: VWAP direction — intentionally SKIPPED for retest entries.
+            # During an ORB retest, price has pulled back to the OR boundary which
+            # is often below VWAP (early session VWAP inflated by the breakout bar's
+            # high-volume surge). Requiring close > vwap would block every clean
+            # retest of a bullish ORB. The bounce confirmation (close > boundary)
+            # is already structural direction proof — VWAP is redundant here.
             if vwap is not None:
-                if direction == "bullish" and close <= vwap:
-                    logger.debug("[%s] INST_ORB retest VWAP gate: bullish close %.2f <= vwap %.2f, skip", ticker, close, vwap)
-                    state["phase"] = "idle"
-                    continue
-                if direction == "bearish" and close >= vwap:
-                    logger.debug("[%s] INST_ORB retest VWAP gate: bearish close %.2f >= vwap %.2f, skip", ticker, close, vwap)
-                    state["phase"] = "idle"
-                    continue
+                logger.debug("[%s] INST_ORB retest — VWAP gate bypassed (close=%.2f vwap=%.2f boundary=%.2f)", ticker, close, vwap, boundary)
 
             # All gates passed — build signal
             confidence = _compute_confidence(
@@ -381,7 +379,11 @@ def _compute_confidence(
       10% — flip quality penalty (flipped signals get a haircut)
       10% — retest bonus (retest entries are higher probability than raw breakouts)
     """
-    rvol_score = min((rvol / max(rvol_threshold, 0.01)) / 3.0, 1.0)
+    # Score RVOL as excess above threshold, scaled so 2× threshold = full score.
+    # Previous /3.0 divisor made rvol_score=0.42 even at 1.5× — too stingy.
+    # New formula: threshold = 0, 2× threshold = 1.0. Linear in between.
+    rvol_excess = max(rvol - rvol_threshold, 0.0)
+    rvol_score  = min(rvol_excess / max(rvol_threshold, 0.01), 1.0)
 
     boundary   = or_high if direction == "bullish" else or_low
     dist_atrs  = abs(close - boundary) / atr
