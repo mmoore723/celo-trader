@@ -79,10 +79,11 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         logger.debug("[%s] MID_BRK: no confirmed LH — skipped", ticker)
         return None
 
-    # Gate 5: volume confirms the selling
-    if vol_sma > 0 and vol < vol_sma * 1.5:
-        logger.debug("[%s] MID_BRK: vol %.0f < sma×1.5 (%.0f) — skipped", ticker, vol, vol_sma * 1.5)
-        return None
+    # Gate 5: REMOVED — the intraday rolling vol_sma is inflated by the opening
+    # spike bar, making it impossible to clear 1.5× on stocks with high-volume
+    # opens (e.g. NFLX gap down with 20x RVOL). Gate 6 (dynamic RVOL) already
+    # handles volume confirmation using a proper 10-day baseline — Gate 5 was
+    # redundant and actively blocking valid setups.
 
     # Gate 6: dynamic RVOL (msa confirmed above)
     rvol_min = _get_dynamic_rvol_threshold(

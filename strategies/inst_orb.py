@@ -262,10 +262,13 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 state["phase"] = "idle"
                 continue
 
-            # Gate: don't enter if price is now overextended past the boundary
-            # (retest happened but the bounce already ran > 1× ATR)
+            # Gate: don't enter if price is now overextended past the boundary.
+            # Raised from 1.5 → 3.0 ATR: a bounce of 2-3 ATRs from the OR level
+            # is momentum confirmation, not overextension. The old threshold was
+            # blocking clean ORB trades (e.g. SPY 2.35 ATR bounce → skipped, then
+            # ran +$7). Overextension only becomes a concern at 3+ ATRs out.
             dist_from_boundary = abs(close - boundary)
-            if dist_from_boundary > 1.5 * atr:
+            if dist_from_boundary > 3.0 * atr:
                 logger.info(
                     "[%s] INST_ORB retest entry skipped — bounce ran too far "
                     "(%.2f ATRs from boundary). Skip this bar.",
