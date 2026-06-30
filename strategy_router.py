@@ -5,15 +5,21 @@ Thin orchestrator: builds the indicator frame once per tick, calls each
 strategy module's evaluate() function, and returns signals ranked by
 confidence.  All evaluation logic lives in strategies/.
 
-Strategy IDs (eight total):
+Strategy IDs (seven active):
   INST_ORB    — strategies/inst_orb.py   (09:45–10:30)
-  BOS_MSS     — strategies/bos_mss.py   (session, last bar only)
   VWAP_PB     — strategies/vwap_pb.py   (09:45–EOD)
-  FVG         — strategies/fvg.py        (09:45–EOD)
+  FVG         — strategies/fvg.py        (09:45–EOD)  ← absorbs BOS_MSS sweep logic
   MID_BRK     — strategies/mid_brk.py   (10:30–13:00)
   AFT_REV     — strategies/aft_rev.py   (13:00–15:30)
   TREND_CONT  — strategies/trend_cont.py (09:45–14:30)
   CHAN_BREAK  — strategies/chan_break.py (09:45–14:00)
+
+  BOS_MSS (strategies/bos_mss.py) — DISABLED.
+  Liquidity sweep detection (the core BOS_MSS gate) was merged into FVG as a
+  soft confidence modifier. FVG with a confirmed prior-swing sweep fires at up
+  to 0.90 confidence; without a sweep it fires at up to 0.75. Running both as
+  separate evaluators was redundant — a BOS creates the FVG, so they were
+  double-voting on the same institutional move.
 
 All signals pass through RiskManager gates in risk.py before entry:
   • 1% risk rule  • 1.6 R:R minimum  • 20% hard stop  • time-box exit
@@ -150,9 +156,12 @@ def route_signals(
 
     # Evaluator table — (strategy_id, module.evaluate)
     # Each module's evaluate() self-gates on its own session window.
+    # NOTE: BOS_MSS is intentionally absent. Its liquidity sweep detection was
+    # merged into FVG as a confidence modifier (see strategies/fvg.py). Keeping
+    # both active caused double-voting on the same institutional move — a break
+    # of structure IS what creates the fair value gap.
     _all_evaluators = [
         ("INST_ORB",   inst_orb.evaluate),
-        ("BOS_MSS",    bos_mss.evaluate),
         ("VWAP_PB",    vwap_pb.evaluate),
         ("FVG",        fvg.evaluate),
         ("MID_BRK",    mid_brk.evaluate),
