@@ -123,6 +123,32 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                              ticker, close, projected)
                 break
 
+            # Minimum rejection distance — close must be ≥ 0.3% below the trendline.
+            # "Barely below" is noise; real rejections leave clear distance.
+            _reject_pct = (projected - close) / max(projected, 1.0)
+            if _reject_pct < 0.003:
+                logger.debug("[%s] CHAN_BREAK bearish: rejection %.3f%% < 0.3%% — too shallow",
+                             ticker, _reject_pct * 100)
+                break
+
+            # Rejection wick — upper wick must be ≥ 40% of bar range.
+            # A real trendline rejection leaves a pin wick. A small body that
+            # happens to close below the line is indecision, not confirmed rejection.
+            _bar_range  = high - low_
+            _upper_wick = high - close
+            if _bar_range > 0 and _upper_wick / _bar_range < 0.40:
+                logger.debug("[%s] CHAN_BREAK bearish: upper wick %.0f%% < 40%% — weak rejection body",
+                             ticker, _upper_wick / _bar_range * 100)
+                break
+
+            # Price momentum — price must be moving away from the line.
+            # If close ≥ prev close the bar is still rising into resistance.
+            _prev_close_bar = float(today.iloc[-2]["close"]) if len(today) >= 2 else close
+            if close >= _prev_close_bar:
+                logger.debug("[%s] CHAN_BREAK bearish: close %.2f >= prev_close %.2f — no bearish momentum",
+                             ticker, close, _prev_close_bar)
+                break
+
             if vwap is not None and close >= vwap:
                 logger.debug("[%s] CHAN_BREAK bearish: close %.2f >= vwap %.2f", ticker, close, vwap)
                 break
@@ -211,6 +237,31 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             if close <= projected:
                 logger.debug("[%s] CHAN_BREAK bullish: close %.2f <= projected %.2f — no bounce",
                              ticker, close, projected)
+                break
+
+            # Minimum bounce distance — close must be ≥ 0.3% above the trendline.
+            _bounce_pct = (close - projected) / max(projected, 1.0)
+            if _bounce_pct < 0.003:
+                logger.debug("[%s] CHAN_BREAK bullish: bounce %.3f%% < 0.3%% — too shallow",
+                             ticker, _bounce_pct * 100)
+                break
+
+            # Bounce wick — lower wick must be ≥ 40% of bar range.
+            # A real trendline bounce leaves a rejection wick below. A narrow body
+            # that happens to close above the line is indecision, not a confirmed bounce.
+            _bar_range  = high - low_
+            _lower_wick = close - low_
+            if _bar_range > 0 and _lower_wick / _bar_range < 0.40:
+                logger.debug("[%s] CHAN_BREAK bullish: lower wick %.0f%% < 40%% — weak bounce body",
+                             ticker, _lower_wick / _bar_range * 100)
+                break
+
+            # Price momentum — price must be moving away from the trendline.
+            # If close ≤ prev close price is still falling into support.
+            _prev_close_bar = float(today.iloc[-2]["close"]) if len(today) >= 2 else close
+            if close <= _prev_close_bar:
+                logger.debug("[%s] CHAN_BREAK bullish: close %.2f <= prev_close %.2f — no bullish momentum",
+                             ticker, close, _prev_close_bar)
                 break
 
             if vwap is not None and close <= vwap:

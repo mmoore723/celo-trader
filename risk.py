@@ -26,6 +26,7 @@ from config import (
     BOOTSTRAP_RISK_PCT, GROWTH_MODE_RISK_PCT, MID_TIER_RISK_PCT, CONSERVATIVE_RISK_PCT,
     GROWTH_RISK_BOUNDARY_BOOT, MIN_RR_RATIO_SMALL_ACCOUNT, MIN_RR_RATIO_PROFESSIONAL,
     EARLY_TIMEBOX_MIN, EARLY_STOP_PCT, STAGE2_TRAIL_PCT,
+    MOMENTUM_DEAD_RVOL, MOMENTUM_DEAD_MIN,
 )
 from database import log_event, get_conn
 
@@ -949,6 +950,7 @@ class RiskManager:
         vwap: Optional[float] = None,               # current underlying VWAP
         trend_dead: bool = False,                   # ADX<20 OR EMA stack misaligned
         direction: str = "bullish",                 # trade direction (for VWAP side check)
+        rvol: float = 0.0,                          # current bar RVOL (for momentum-death check)
     ) -> tuple[bool, str]:
         """
         Adaptive exit engine — structure-driven, not time-driven.
@@ -1061,6 +1063,23 @@ class RiskManager:
         # ── 7. Time caps — LAST RESORT ONLY ──────────────────────────────────
         # Structure-based exits (2, 3) should fire before these in a healthy trade.
         # These exist only as a safety net against zombie positions.
+
+        # Momentum-death early exit: if RVOL has dropped below threshold AND
+        # the trade is losing, institutional participation is gone. Exit before
+        # the 60-min hard cap to stop theta decay on dead setups.
+        # Both conditions required — dead RVOL alone doesn't kill a working trade.
+        if (not stage1_done
+                and rvol > 0.0
+                and rvol < MOMENTUM_DEAD_RVOL
+                and elapsed_minutes >= MOMENTUM_DEAD_MIN
+                and current_price < entry_price):
+            return True, (
+                f"momentum_dead_exit "
+                f"(rvol={rvol:.2f}<{MOMENTUM_DEAD_RVOL:.1f} losing held={elapsed_minutes:.1f}min)"
+            )
+
+        # Hard cap: 60 min for flat/losing trades (extended from 30 — momentum-death
+        # check above kills dead weight before this fires for truly dead trades).
         if not stage1_done and elapsed_minutes >= EARLY_TIMEBOX_MIN:
             return True, (
                 f"time_cap_loser_{EARLY_TIMEBOX_MIN}m "
@@ -1089,6 +1108,7 @@ class RiskManager:
         vwap: Optional[float] = None,
         trend_dead: bool = False,
         direction: str = "bullish",
+        rvol: float = 0.0,
     ) -> tuple[bool, str]:
         """Preferred alias for evaluate_exit_conditions — used in position_manager."""
         return self.evaluate_exit_conditions(
@@ -1100,4 +1120,5 @@ class RiskManager:
             vwap=vwap,
             trend_dead=trend_dead,
             direction=direction,
+            rvol=rvol,
         )

@@ -28,10 +28,11 @@ Trade mechanics (now mirroring live bot)
             Optional risk_pct override lets you test any flat rate
   Options : Weekly contracts (5 DTE), ticker-specific IV
   Stop    : 20% hard stop, tightened dynamically every 15 min (floor 10%)
-  Early   : −EARLY_STOP_PCT (12%) within first EARLY_TIMEBOX_MIN (30 min)
+  Early   : −EARLY_STOP_PCT (12%) within first EARLY_TIMEBOX_MIN window
   Stage 1 : Sell 50% of contracts at +50% premium gain
   Stage 2 : Trailing stop floor at entry × (1 + STAGE2_TRAIL_PCT = 1.15)
-  Time-box: 30 min for flat/losing (stage1 NOT done)
+  Time-box: momentum_dead_exit fires early if RVOL < 1.0 AND losing AND ≥ 15 min
+            60 min hard cap for flat/losing (extended from 30 min)
             90 min for winners (stage1 IS done) — ORB_TIME_BOX_WINNER
   Fills   : Entry at ask (+5% slippage), exit at bid (−5% slippage)
 
@@ -53,6 +54,7 @@ import pandas as pd
 from config import (
     BACKTEST_MONTHS, STARTING_CAPITAL,
     EARLY_TIMEBOX_MIN, EARLY_STOP_PCT, STAGE2_TRAIL_PCT,
+    MOMENTUM_DEAD_RVOL, MOMENTUM_DEAD_MIN,
 )
 from signals import (
     bars_to_df, compute_vwap_bands, compute_rvol,
@@ -526,14 +528,34 @@ class Backtester:
                         in_trade = False
                         continue
 
-                # ── Exit 5a: Time-box — losers (stage1 NOT done) ──────────────
-                # Kill flat/losing trades at EARLY_TIMEBOX_MIN (30 min) to stop
-                # theta decay. Live bot uses 30 min, old backtester used 45 min.
+                # ── Exit 5a: Momentum-death early exit ───────────────────────
+                # If RVOL has dropped below MOMENTUM_DEAD_RVOL AND the trade
+                # is losing AND ≥ MOMENTUM_DEAD_MIN minutes have elapsed, exit
+                # before the hard cap — institutional participation is gone.
+                _bar_rvol = float(day_df.iloc[idx].get("rvol", 0.0)) if "rvol" in day_df.columns else 0.0
+                if (not stage1_done
+                        and _bar_rvol > 0.0
+                        and _bar_rvol < MOMENTUM_DEAD_RVOL
+                        and elapsed_min >= MOMENTUM_DEAD_MIN
+                        and opt_price < entry_price):
+                    exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
+                    pnl = self._close_bt_trade(
+                        entry_price, exit_px, remaining_contracts, option_type,
+                        f"momentum_dead_exit (rvol={_bar_rvol:.2f})", ts.hour, round(elapsed_min, 1),
+                        active_strategy, entry_date_str,
+                    )
+                    session_pnl += pnl
+                    in_trade = False
+                    continue
+
+                # ── Exit 5b: Time-box — losers hard cap (60 min) ─────────────
+                # Extended from 30 → 60 min; momentum-death check above kills
+                # dead trades faster than the clock for most cases.
                 if not stage1_done and elapsed_min >= EARLY_TIMEBOX_MIN:
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
                         entry_price, exit_px, remaining_contracts, option_type,
-                        "time_box_30m", ts.hour, round(elapsed_min, 1),
+                        f"time_box_{EARLY_TIMEBOX_MIN}m", ts.hour, round(elapsed_min, 1),
                         active_strategy, entry_date_str,
                     )
                     session_pnl += pnl

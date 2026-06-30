@@ -165,12 +165,16 @@ LARGE_CAP_TICKERS = LIQUID_TICKERS
 # No dynamic RVOL-ranked universe — keeps the bot focused and reduces noise.
 TICKER_UNIVERSE = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA"]
 
-# ── Tiered time-box constants (refactor 2026-06-16) ──────────────────────────
+# ── Tiered time-box constants ────────────────────────────────────────────────
 # Flat/losing trades are killed at EARLY_TIMEBOX_MIN to stop theta decay.
-# Winning/trailing trades (stage1 done) ride up to ORB_TIME_BOX (45 min).
-EARLY_TIMEBOX_MIN = 30           # hard exit for flat/losing trades at 30 minutes
+# MOMENTUM_DEAD_RVOL: if RVOL drops below this threshold AND the trade is
+# losing, exit early — momentum has died and holding only burns theta.
+# Both checks must pass: dead RVOL alone doesn't kill a trade that's working.
+EARLY_TIMEBOX_MIN    = 60        # hard cap for flat/losing trades (extended from 30)
+MOMENTUM_DEAD_RVOL   = 1.0       # RVOL floor — below this = institutional participation gone
+MOMENTUM_DEAD_MIN    = 15        # earliest bar at which momentum-death check fires (min)
 
-# ── Early momentum stop (refactor 2026-06-16) ────────────────────────────────
+# ── Early momentum stop ───────────────────────────────────────────────────────
 # If a trade is down -12% within the first EARLY_TIMEBOX_MIN window, exit
 # immediately — the setup failed fast and continued holding burns theta.
 EARLY_STOP_PCT    = 0.12         # -12% momentum stop in first 20 min

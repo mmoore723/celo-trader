@@ -59,15 +59,48 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     msa_ok_bull  = msa.confirmed_higher_low()
     msa_ok_bear  = msa.confirmed_lower_high()
 
+    # ── Blowthrough guard ─────────────────────────────────────────────────────
+    # A true VWAP pullback requires price to have been ABOVE VWAP (bullish) or
+    # BELOW VWAP (bearish) for the majority of recent bars before the touch.
+    # Without this, the strategy fires when price is crashing THROUGH VWAP
+    # (a continuation move, not a pullback), which produces losing entries.
+    # We require ≥ 4 of the last 5 bars (excluding current) on the correct side.
+    _lookback_bars = today.iloc[-6:-1] if len(today) >= 6 else today.iloc[:-1]
+
+    def _was_above_vwap(bars: pd.DataFrame) -> bool:
+        """True if ≥ 4 of the last 5 bars had close > vwap (price was trending above)."""
+        if len(bars) < 3:
+            return False
+        _closes = bars["close"].values
+        _vwaps  = bars["vwap"].values if "vwap" in bars.columns else [c_vwap] * len(bars)
+        _above  = sum(float(c) > float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
+        return _above >= min(4, max(3, len(bars) - 1))
+
+    def _was_below_vwap(bars: pd.DataFrame) -> bool:
+        """True if ≥ 4 of the last 5 bars had close < vwap (price was trending below)."""
+        if len(bars) < 3:
+            return False
+        _closes = bars["close"].values
+        _vwaps  = bars["vwap"].values if "vwap" in bars.columns else [c_vwap] * len(bars)
+        _below  = sum(float(c) < float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
+        return _below >= min(4, max(3, len(bars) - 1))
+
     # ── Bullish pullback ──────────────────────────────────────────────────────
     rvol_min_bull = _get_dynamic_rvol_threshold(
         bar_min, c_close, None, c_vwap, STRATEGY_ID, msa_confirmed=msa_ok_bull)
 
-    if (c_close > c_ema50 and
-            c_vwap  > c_ema50 and
-            p_low  <= p_vwap and
-            c_close > c_vwap and
-            c_rvol >= rvol_min_bull):
+    _bull_conditions = (
+        c_close > c_ema50 and
+        c_vwap  > c_ema50 and
+        p_low  <= p_vwap and
+        c_close > c_vwap and
+        c_rvol >= rvol_min_bull
+    )
+    if _bull_conditions and not _was_above_vwap(_lookback_bars):
+        logger.debug("[%s] VWAP_PB bullish: blowthrough detected — price crashed through VWAP, not a pullback",
+                     ticker)
+
+    if _bull_conditions and _was_above_vwap(_lookback_bars):
         proximity  = max(0.0, 1.0 - abs(p_low - p_vwap) / max(p_vwap * 0.005, 0.01))
         confidence = min(0.82, 0.60 + proximity * 0.15 + min(c_rvol - rvol_min_bull, 1.0) * 0.07)
         logger.info("[%s] VWAP_PB bullish RVOL=%.2f (min=%.2f msa=%s) conf=%.2f",
@@ -95,11 +128,18 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     rvol_min_bear = _get_dynamic_rvol_threshold(
         bar_min, c_close, None, c_vwap, STRATEGY_ID, msa_confirmed=msa_ok_bear)
 
-    if (c_close < c_ema50 and
-            c_vwap  < c_ema50 and
-            p_high >= p_vwap and
-            c_close < c_vwap and
-            c_rvol >= rvol_min_bear):
+    _bear_conditions = (
+        c_close < c_ema50 and
+        c_vwap  < c_ema50 and
+        p_high >= p_vwap and
+        c_close < c_vwap and
+        c_rvol >= rvol_min_bear
+    )
+    if _bear_conditions and not _was_below_vwap(_lookback_bars):
+        logger.debug("[%s] VWAP_PB bearish: blowthrough detected — price crashed through VWAP, not a pullback",
+                     ticker)
+
+    if _bear_conditions and _was_below_vwap(_lookback_bars):
         proximity  = max(0.0, 1.0 - abs(p_high - p_vwap) / max(p_vwap * 0.005, 0.01))
         confidence = min(0.82, 0.60 + proximity * 0.15 + min(c_rvol - rvol_min_bear, 1.0) * 0.07)
         logger.info("[%s] VWAP_PB bearish RVOL=%.2f (min=%.2f msa=%s) conf=%.2f",

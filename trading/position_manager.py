@@ -325,6 +325,7 @@ def _manage_open_position(
         atr_trail_stop: Optional[float]  = ps.get("atr_trail_stop")
         vwap: Optional[float]            = None
         trend_dead: bool                 = False
+        _rvol_for_exit: float            = 0.0   # passed to momentum-death check in risk.py
 
         # Trade age in minutes — used to gate the ATR trail warmup
         _trade_age_min = (
@@ -340,9 +341,16 @@ def _manage_open_position(
             # elapsed.  On 1-min bars the entry-bar ATR/swing is essentially at
             # current price, so the stop fires on first-minute noise otherwise.
             _atr = _compute_atr(df_under)
+            # PROFIT GATE: only arm the ATR trail once the option is at least
+            # 15% above entry.  Before that threshold the underlying has barely
+            # moved, so the ATR stop sits essentially at entry price — any normal
+            # wiggle fires the trail at break-even or a loss despite positive MFE.
+            _opt_gain_pct = (current_price - entry_price) / entry_price if entry_price else 0.0
+            _trail_profit_gate = _opt_gain_pct >= 0.15
             if (_atr is not None
                     and ps.get("peak_underlying") is not None
-                    and _trade_age_min >= _MIN_TRAIL_WARMUP_MIN):
+                    and _trade_age_min >= _MIN_TRAIL_WARMUP_MIN
+                    and _trail_profit_gate):
                 _peak_u = float(ps["peak_underlying"])
                 if direction == "bullish":
                     _atr_stop_u = _peak_u - _ATR_TRAIL_MULTIPLIER * _atr
@@ -371,6 +379,15 @@ def _manage_open_position(
                 if atr_trail_stop is None or _new_trail > atr_trail_stop:
                     atr_trail_stop = _new_trail
                     ps["atr_trail_stop"] = atr_trail_stop
+
+            # RVOL proxy for momentum-death exit check in risk.py
+            # Raw current/avg volume from the underlying bars (no indicators needed).
+            try:
+                _curr_vol = float(df_under["volume"].iloc[-1])
+                _avg_vol  = float(df_under["volume"].iloc[-20:].mean()) if len(df_under) >= 5 else _curr_vol
+                _rvol_for_exit = _curr_vol / _avg_vol if _avg_vol > 0 else 0.0
+            except Exception:
+                _rvol_for_exit = 0.0
 
             # VWAP
             vwap = _compute_vwap(df_under)
@@ -473,6 +490,7 @@ def _manage_open_position(
             vwap            = vwap,
             trend_dead      = trend_dead,
             direction       = direction,
+            rvol            = _rvol_for_exit,
         )
 
         if not should_exit:
@@ -713,6 +731,21 @@ def _close_position(
         log_event("INFO", "trading_logic",
                   f"⏱ [{_closed_ticker}] Post-win cooldown {_WIN_COOLDOWN_MIN} min "
                   f"(pnl=${pnl:+.2f}). No re-entry until {_win_expires.strftime('%H:%M')} ET.")
+
+    # ── Per-ticker post-loss quality gate ────────────────────────────────────
+    # After a loss, record exit price/direction for the 0.3% displacement check
+    # in entry.py.  Also set a STRUCTURAL cooldown keyed by ticker:strategy_id
+    # so re-entry requires actual market conditions to reset, not just a timer.
+    _strat_id = trade.get("strategy_id", "")
+    if pnl < 0 and _closed_ticker:
+        LIVE_STATE.setdefault("ticker_loss_context", {})[_closed_ticker] = {
+            "exit_price":   exit_price,
+            "direction":    _closed_direction,
+            "strategy_id":  _strat_id,
+            "loss_count":   LIVE_STATE.get("ticker_loss_context", {}).get(
+                                _closed_ticker, {}).get("loss_count", 0) + 1,
+        }
+
 
     # Remove from bot_state.json open_positions
     try:
