@@ -831,6 +831,26 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"Waiting for a higher-conviction setup.")
         return
 
+    # ── Post-loss price displacement gate ────────────────────────────────────
+    # ── 0.3% price displacement gate (all strategies) ────────────────────────
+    # After any loss, price must move at least 0.3% from the exit level before
+    # the same ticker can be re-entered.  Ensures the failed setup has resolved.
+    _loss_ctx = (LIVE_STATE.get("ticker_loss_context") or {}).get(ticker)
+    if _loss_ctx:
+        _last_exit_price = _loss_ctx.get("exit_price", 0)
+        try:
+            _current_price   = float(df5["close"].iloc[-1])
+            _price_moved_pct = abs(_current_price - _last_exit_price) / _last_exit_price if _last_exit_price else 1.0
+        except Exception:
+            _price_moved_pct = 1.0
+        if _price_moved_pct < 0.003:
+            log_event("INFO", "bar_eval",
+                      f"⚪ [{ticker}] Post-loss skip — price {_current_price:.2f} is within "
+                      f"{_price_moved_pct:.2%} of last loss exit {_last_exit_price:.2f}. "
+                      f"Waiting for price to move to a new level.")
+            return
+
+
     # ── Flip-direction enforcement ────────────────────────────────────────────
     # When flip_eligible, we prefer the OPPOSITE direction of the stopped trade
     # but we do NOT hard-block a valid signal — market structure always wins.

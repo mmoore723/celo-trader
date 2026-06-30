@@ -63,7 +63,11 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     highs = msa._highs()
     lows  = msa._lows()
 
+    ema50 = float(last_bar["ema50"]) if not pd.isna(last_bar.get("ema50", np.nan)) else None
+
     # ── BEARISH: downtrend + LH re-entry ─────────────────────────────────────
+    # EMA50 gate: price must be below the session EMA50 for bearish entries.
+    # Blocks counter-trend shorts on bounces above the moving average.
     if trend == "downtrend" and msa.confirmed_lower_high() and len(highs) >= 2:
         lh       = highs[-1]
         prior_sh = highs[-2]
@@ -74,7 +78,9 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         else:
             lh_bar_close = float(today.iloc[lh["idx"]]["close"])
             if close < lh_bar_close:
-                if vwap is None or close < vwap:
+                if ema50 is not None and close > ema50:
+                    logger.debug("[%s] TREND_CONT bearish: close %.2f > EMA50 %.2f — micro-trend bounce, skipped", ticker, close, ema50)
+                elif vwap is None or close < vwap:
                     lh_depth_pct = (prior_sh["price"] - lh["price"]) / prior_sh["price"]
                     depth_bonus  = min(0.06, lh_depth_pct * 20)
                     rvol_bonus   = min(0.08, (rvol - _RVOL_MIN) * 0.06)
@@ -107,6 +113,8 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 )
 
     # ── BULLISH: uptrend + HL re-entry ───────────────────────────────────────
+    # EMA50 gate: price must be above the session EMA50 for bullish entries.
+    # A "higher low" below EMA50 is a relief bounce inside a downtrend — not a real HL.
     if trend == "uptrend" and msa.confirmed_higher_low() and len(lows) >= 2:
         hl       = lows[-1]
         prior_sl = lows[-2]
@@ -117,7 +125,9 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         else:
             hl_bar_close = float(today.iloc[hl["idx"]]["close"])
             if close > hl_bar_close:
-                if vwap is None or close > vwap:
+                if ema50 is not None and close < ema50:
+                    logger.debug("[%s] TREND_CONT bullish: close %.2f < EMA50 %.2f — bounce below MA, skipped", ticker, close, ema50)
+                elif vwap is None or close > vwap:
                     hl_rise_pct = (hl["price"] - prior_sl["price"]) / prior_sl["price"]
                     rise_bonus  = min(0.06, hl_rise_pct * 20)
                     rvol_bonus  = min(0.08, (rvol - _RVOL_MIN) * 0.06)

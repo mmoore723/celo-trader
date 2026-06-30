@@ -64,7 +64,7 @@ from risk import RiskManager
 
 # Router quality-gate constants — import directly so the backtester
 # always stays in sync when these values are tuned in strategy_router.py
-from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND
+from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY
 
 logger = logging.getLogger("celo_trader.backtester")
 
@@ -606,6 +606,25 @@ class Backtester:
                 self._diag["rvol_samples"].append(round(_bar_rvol, 2))
 
             raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+
+            # ── Session bias penalty (mirrors strategy_router logic) ───────────
+            # Use session open only — VWAP excluded (redundant with strategy gates).
+            if raw_signals and idx >= 1:
+                _bt_first   = day_df.iloc[0]
+                _bt_last    = bar_slice.iloc[-1]
+                _bt_open    = float(_bt_first.get("open", _bt_first["close"]))
+                _bt_close   = float(_bt_last["close"])
+                _bt_bearish = _bt_close < _bt_open
+                _bt_bullish = _bt_close > _bt_open
+                if _bt_bearish or _bt_bullish:
+                    for _sig in raw_signals:
+                        _counter = (
+                            (_bt_bearish and _sig.direction == "bullish") or
+                            (_bt_bullish and _sig.direction == "bearish")
+                        )
+                        if _counter:
+                            _sig.confidence = max(0.0, _sig.confidence - _SESSION_BIAS_PENALTY)
+                    raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
             # ── Quality gate 1: confidence floor ─────────────────────────────
             signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]

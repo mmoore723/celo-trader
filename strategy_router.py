@@ -65,6 +65,13 @@ _MIN_CONFIDENCE = 0.78
 # confidence scores are within this band, the router is ambiguous — return nothing.
 _CONFLICT_VETO_BAND = 0.05
 
+# Session bias penalty: applied when a signal goes against the session's own
+# price action (close is BOTH below the open AND below VWAP for bearish session,
+# or BOTH above open AND VWAP for bullish session). This is not a direction block
+# — it's a confidence tax. Strong setups still clear the 0.78 floor after the
+# penalty; marginal counter-session signals get naturally filtered out.
+_SESSION_BIAS_PENALTY = 0.05
+
 # ── Audit state — tracks last-logged structure so we don't spam the DB ────────
 _last_audit_state: dict = {}
 
@@ -196,6 +203,52 @@ def route_signals(
             logger.warning("Strategy %s raised: %s", strategy_id, exc, exc_info=True)
 
     signals.sort(key=lambda s: s.confidence, reverse=True)
+
+    # ── Session bias penalty ──────────────────────────────────────────────────
+    # Compare current price to the session open price only.
+    # VWAP is intentionally excluded — individual strategies already gate on VWAP,
+    # so using it here is redundant and creates a no-op for strategies that require
+    # close > vwap (VWAP_PB bullish can never also have close < vwap).
+    # Session open is new information: none of the strategies check whether price
+    # is above or below where the day STARTED. If we've given up the opening level,
+    # the session character is bearish regardless of short-term VWAP positioning.
+    #   Bearish session: close < session_open → bullish signals penalized
+    #   Bullish session: close > session_open → bearish signals penalized
+    if signals and len(today) >= 2:
+        _first_bar    = today.iloc[0]
+        _last_bar     = today.iloc[-1]
+        _session_open = float(_first_bar.get("open", _first_bar["close"]))
+        _curr_close   = float(_last_bar["close"])
+
+        _session_bearish = _curr_close < _session_open
+        _session_bullish = _curr_close > _session_open
+
+        if _session_bearish or _session_bullish:
+            _bias_label  = "bearish" if _session_bearish else "bullish"
+            _penalized   = 0
+            for _sig in signals:
+                _counter = (
+                    (_session_bearish and _sig.direction == "bullish") or
+                    (_session_bullish and _sig.direction == "bearish")
+                )
+                if _counter:
+                    _old_conf       = _sig.confidence
+                    _sig.confidence = max(0.0, _sig.confidence - _SESSION_BIAS_PENALTY)
+                    _penalized     += 1
+                    logger.debug(
+                        "router: session_bias=%s penalized %s %s conf %.2f→%.2f",
+                        _bias_label, _sig.strategy_id, _sig.direction,
+                        _old_conf, _sig.confidence,
+                    )
+            if _penalized:
+                _db_log(
+                    "INFO", "scan",
+                    f"{ticker} — Session bias={_bias_label}: "
+                    f"{_penalized} counter-session signal(s) penalized -{_SESSION_BIAS_PENALTY:.0%} "
+                    f"(close={_curr_close:.2f} vs session_open={_session_open:.2f})",
+                )
+        # Re-sort after penalty adjustments
+        signals.sort(key=lambda s: s.confidence, reverse=True)
 
     # ── Quality gate 1: confidence floor ─────────────────────────────────────
     # Drop signals that barely clear the baseline (no meaningful edge).
