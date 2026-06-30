@@ -30,7 +30,7 @@ const DEFAULT: AppSettings = {
   orb_enabled: true,
   vwap_pullback_enabled: true,
   fvg_enabled: true,
-  bos_mss_enabled: true,
+  bos_mss_enabled: true,   // kept for API compatibility; strategy is disabled in router
   chan_break_enabled: true,
   mid_brk_enabled: true,
   trend_cont_enabled: true,
@@ -149,8 +149,6 @@ export function Settings() {
                 onChange={(v) => set("vwap_pullback_enabled", v)} />
         <Toggle label="Fair Value Gap / FVG (all session)" checked={form.fvg_enabled}
                 onChange={(v) => set("fvg_enabled", v)} />
-        <Toggle label="BOS / MSS — Break of Structure (all session)" checked={form.bos_mss_enabled}
-                onChange={(v) => set("bos_mss_enabled", v)} />
         <Toggle label="Channel Breakout (9:45 AM – 3:45 PM)" checked={form.chan_break_enabled}
                 onChange={(v) => set("chan_break_enabled", v)} />
         <Toggle label="Mid-Day Breakdown / MID_BRK (10:30 AM – 1:00 PM)" checked={form.mid_brk_enabled}
