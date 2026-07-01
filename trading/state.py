@@ -99,6 +99,8 @@ LIVE_STATE: dict = {
     "last_eval_time":        None,
     "last_eval_expiry":      None,
     "last_eval_strike":      None,
+    "last_eval_contract_symbol": None,
+    "last_eval_contracts":   None,   # number of contracts sized for this eval
     "risk_budget_usd":       0.0,
     "max_affordable_premium": 0.0,
     # ── Network health watchdog ───────────────────────────────────────────────

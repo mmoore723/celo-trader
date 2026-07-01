@@ -1096,6 +1096,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # ── ORB 1% risk sizing (uses slippage-adjusted price) ─────────────────────
     n_contracts = _risk.calculate_contracts(eff_entry, balance)
+    # Persist contract count so the dashboard can show it in the Bot Focus panel
+    LIVE_STATE["last_eval_contracts"] = n_contracts
+    try:
+        with open(_state_path) as _f:
+            _bs_c = _json.load(_f)
+        _bs_c["last_eval_contracts"] = n_contracts
+        _json.dump(_bs_c, open(_state_path, "w"))
+    except Exception:
+        pass  # non-critical — next full tick write will catch up
+
     if n_contracts < 1:
         logger.warning(
             "ORB sizing returned 0 contracts",

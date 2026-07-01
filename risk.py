@@ -395,25 +395,39 @@ class RiskManager:
 
         contracts = int(total_risk_dollars / risk_per_contract)
 
-        # Notional cap: never spend more than 30% of equity on premium in
-        # growth mode (20% in conservative mode) — prevents outsized exposure.
-        # Computed here so the 1-contract minimum check can reference it.
-        max_notional_pct = 0.30 if risk_pct > 0.01 else 0.20
-        max_notional     = balance * max_notional_pct
+        # Bootstrap detection is based on account STATE (growth_mode ON + balance < $5k),
+        # NOT on the risk_pct value — so manual risk overrides don't disable bootstrap behaviour.
+        _s = get_settings()
+        _in_bootstrap = bool(_s.get("growth_mode", False)) and balance < GROWTH_RISK_BOUNDARY_BOOT
 
-        # Enforce minimum: allow 1 contract if the premium fits within the
-        # notional cap (not the risk budget). Risk-budget floor was too strict —
-        # e.g. SPY at $5.78/contract → $115 risk > $101 budget → always 0
-        # even though $578 notional fits within a $609 cap at $2,030 balance.
-        if contracts == 0 and (option_ask * 100) <= max_notional:
-            contracts = 1
+        # Notional cap: bootstrap gets 45% to allow 2 contracts on standard options;
+        # growth/mid tiers get 30%; conservative (growth_mode OFF) gets 20%.
+        if _in_bootstrap:
+            max_notional_pct = 0.45
+        elif risk_pct > CONSERVATIVE_RISK_PCT:
+            max_notional_pct = 0.30
+        else:
+            max_notional_pct = 0.20
+        max_notional = balance * max_notional_pct
 
+        # Scale down if notional exceeds cap
         while contracts > 1 and (option_ask * 100 * contracts) > max_notional:
             contracts -= 1
 
+        # Bootstrap floors at 2 contracts if the premium fits within the notional cap.
+        # Applies regardless of manual risk_per_trade override.
+        # Falls back to 1 contract if 2 don't fit (e.g. $5+ premium).
+        if _in_bootstrap:
+            if contracts < 2 and (option_ask * 100 * 2) <= max_notional:
+                contracts = 2
+            elif contracts == 0 and (option_ask * 100) <= max_notional:
+                contracts = 1   # 2 don't fit notional; allow 1 rather than skip entirely
+        elif contracts == 0 and (option_ask * 100) <= max_notional:
+            contracts = 1
+
         # Determine human-readable tier label for audit log
-        if risk_pct >= BOOTSTRAP_RISK_PCT:
-            _tier_label = "Tier4_5pct"
+        if _in_bootstrap:
+            _tier_label = "Tier4_bootstrap"
         elif risk_pct >= GROWTH_MODE_RISK_PCT:
             _tier_label = "Tier3_3pct"
         elif risk_pct >= MID_TIER_RISK_PCT:

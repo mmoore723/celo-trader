@@ -43,6 +43,9 @@ export interface BotStatus {
   last_eval_expiry: string | null;
   last_eval_contract_symbol: string | null;
   last_eval_eff_entry: number | null;
+  last_eval_contracts: number | null;
+  last_eval_opt_type: string | null;
+  last_eval_ticker: string | null;
   // Scanner watchlist — full list of tickers the bot is cycling through
   scan_watchlist: string[] | null;
   current_scan_idx: number | null;

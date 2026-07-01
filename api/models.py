@@ -27,6 +27,9 @@ class BotStatus(BaseModel):
     last_eval_expiry: Optional[str]   = None
     last_eval_contract_symbol: Optional[str] = None
     last_eval_eff_entry: Optional[float] = None
+    last_eval_contracts: Optional[int] = None
+    last_eval_opt_type: Optional[str] = None
+    last_eval_ticker: Optional[str] = None
 
 
 class BotActionResponse(BaseModel):

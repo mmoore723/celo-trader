@@ -63,6 +63,9 @@ def get_status() -> BotStatus:
         last_eval_expiry=state.get("last_eval_expiry") or LIVE_STATE.get("last_eval_expiry"),
         last_eval_contract_symbol=state.get("last_eval_contract_symbol") or LIVE_STATE.get("last_eval_contract_symbol"),
         last_eval_eff_entry=state.get("last_eval_eff_entry") or LIVE_STATE.get("last_eval_eff_entry"),
+        last_eval_contracts=state.get("last_eval_contracts") if state.get("last_eval_contracts") is not None else LIVE_STATE.get("last_eval_contracts"),
+        last_eval_opt_type=state.get("last_eval_opt_type") or LIVE_STATE.get("last_eval_opt_type"),
+        last_eval_ticker=state.get("last_eval_ticker") or LIVE_STATE.get("last_eval_ticker"),
     )
 
 

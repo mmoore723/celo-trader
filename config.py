@@ -65,16 +65,16 @@ MAX_CONCURRENT_POSITIONS = 2
 
 # ── 4-Tier Risk System ────────────────────────────────────────────────────────
 # Growth mode ON:
-#   balance < $5k   → Tier 4: 5%  (bootstrap — max compounding on tiny account)
+#   balance < $5k   → Tier 4: 5%  (bootstrap — floors at 2 contracts when in this zone)
 #   $5k–$25k        → Tier 3: 3%  (aggressive growth)
 #   $25k–$50k       → Tier 2: 2%  (moderate transition)
 #   balance ≥ $50k  → Tier 1: 1%  (auto-downgrade to preservation)
 # Growth mode OFF (any balance) → Tier 1: 1%
 # Daily loss hard cap is ALWAYS 10% — never overridden.
-# At 5% on $5k: $250 risk/trade · 2 full stops fires the 10% kill lock.
+# At 5% on $2k: ~$109 risk/trade · ~2 full stops fires the 10% kill lock.
 
 DAILY_LOSS_HARD_CAP_PCT   = 0.10   # 10% hard cap — non-negotiable, always enforced
-BOOTSTRAP_RISK_PCT        = 0.05   # Tier 4: bootstrap 5% sub-$5k
+BOOTSTRAP_RISK_PCT        = 0.05   # Tier 4: bootstrap 5% sub-$5k (reference constant)
 GROWTH_MODE_RISK_PCT      = 0.03   # Tier 3: aggressive growth $5k–$25k
 MID_TIER_RISK_PCT         = 0.02   # Tier 2: transition $25k–$50k
 CONSERVATIVE_RISK_PCT     = 0.01   # Tier 1: capital preservation ≥$50k / growth OFF

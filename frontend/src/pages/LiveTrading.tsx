@@ -10,7 +10,7 @@ import {
   LineChart, Line, XAxis, Tooltip, CartesianGrid,
 } from "recharts";
 import { TradingChart } from "../components/charts/TradingChart";
-import { useBotStore, type LivePosition } from "../store/bot";
+import { useBotStore } from "../store/bot";
 import { api, type Trade, type Bar, type OptionsChainRow } from "../lib/api";
 
 // Fallback ticker list — used only when the scanner hasn't run yet.
@@ -479,220 +479,123 @@ export function LiveTrading() {
           </div>
           <div className="px-2 pb-3">
             {(() => {
-              // Build a set of tickers already in an open position so we can
-              // badge them in the watchlist (not filter them — user wants ALL tickers visible).
-              const openTickerSet = new Set<string>(
-                status?.open_positions
-                  ? Object.values(status.open_positions as Record<string, LivePosition>).map((p) => p.ticker)
-                  : []
-              );
+              // ── Trade setup card — shows the specific contract the bot is evaluating ──
+              // Fields: ticker, CALL/PUT, strike, expiry, #contracts, entry price, S1 target
+              const evalTicker    = status?.last_eval_ticker ?? status?.ticker ?? null;
+              const evalOpt       = status?.last_eval_opt_type ?? null;
+              const evalStrike    = status?.last_eval_strike ?? null;
+              const evalExpiry    = status?.last_eval_expiry ?? null;
+              const evalContracts = status?.last_eval_contracts ?? null;
+              const evalEntry     = status?.last_eval_eff_entry ?? null;
+              const isCall        = (evalOpt ?? "").toLowerCase() === "call";
+              const hasEval       = !!(evalTicker || evalEntry || evalStrike);
 
-              if (false) {
-                // dead branch — kept to satisfy TypeScript variable references below
+              // Format "2026-07-07" → "Jul 07"
+              const fmtExpiry = (e: string) => {
+                const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun",
+                                "Jul","Aug","Sep","Oct","Nov","Dec"];
+                const p = e.split("-");
+                if (p.length < 3) return e;
+                const mo  = parseInt(p[1], 10) - 1;
+                const day = parseInt(p[2], 10);
+                return `${MONTHS[mo] ?? p[1]} ${day < 10 ? "0" : ""}${day}`;
+              };
+
+              if (!hasEval) {
                 return (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{
-                      width: "100%", borderCollapse: "collapse",
-                      fontFamily: "JetBrains Mono, monospace", fontSize: 10,
-                    }}>
-                      <thead>
-                        <tr>
-                          {["Ticker","Type","Entry","Now","P&L","MAE","Stop","Stage"].map((h) => (
-                            <th key={h} style={{
-                              padding: "2px 5px", textAlign: "left",
-                              color: "var(--ink-faint)", fontWeight: 500,
-                              borderBottom: "1px solid var(--border)",
-                              whiteSpace: "nowrap", letterSpacing: "0.03em",
-                            }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[].map((pos: LivePosition) => {
-                          const curPx   = pos.current_option_price;
-                          const entry   = pos.entry_price;
-                          const qty     = pos.contracts ?? 1;
-                          const unreal  = curPx != null ? (curPx - entry) * qty * 100 : null;
-                          const pnlPct  = curPx != null ? ((curPx - entry) / entry * 100) : null;
-                          const isCall  = (pos.option_type ?? "").toLowerCase() === "call";
-                          const stopPx  = pos.atr_trail_stop;
-                          const stopPct = pos.current_stop_pct;
-                          return (
-                            <tr key={pos.trade_id} style={{ borderBottom: "1px solid var(--border)" }}>
-                              <td
-                                style={{
-                                  padding: "4px 5px", color: "var(--accent)",
-                                  fontWeight: 700, cursor: "pointer",
-                                  textDecoration: "underline dotted",
-                                }}
-                                title={`View ${pos.ticker} chart`}
-                                onClick={() => setTicker(pos.ticker)}
-                              >
-                                {pos.ticker}
-                              </td>
-                              <td style={{ padding: "4px 5px" }}>
-                                <span style={{
-                                  fontSize: 9, fontWeight: 700, padding: "1px 4px",
-                                  borderRadius: 3,
-                                  background: isCall ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
-                                  color: isCall ? "var(--positive)" : "var(--negative)",
-                                }}>
-                                  {pos.option_type?.toUpperCase() ?? "—"}
-                                </span>
-                              </td>
-                              <td style={{ padding: "4px 5px", color: "var(--ink)", whiteSpace: "nowrap" }}>
-                                ${entry.toFixed(2)}
-                              </td>
-                              <td style={{ padding: "4px 5px", color: "var(--ink)", whiteSpace: "nowrap" }}>
-                                {curPx != null ? `$${curPx.toFixed(2)}` : "—"}
-                                {pos.current_option_price_time && (
-                                  <span style={{ color: "var(--ink-faint)", marginLeft: 3, fontSize: 9 }}>
-                                    {pos.current_option_price_time}
-                                  </span>
-                                )}
-                              </td>
-                              <td style={{ padding: "4px 5px", whiteSpace: "nowrap", fontWeight: 700 }}>
-                                {unreal != null ? (
-                                  <span style={{ color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
-                                    {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
-                                    <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.8 }}>
-                                      ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
-                                    </span>
-                                  </span>
-                                ) : "—"}
-                              </td>
-                              {/* MAE — max adverse excursion: lowest option price seen */}
-                              <td style={{ padding: "4px 5px", whiteSpace: "nowrap" }}>
-                                {(() => {
-                                  const minPx = (pos as any).min_price;
-                                  if (minPx == null || minPx >= entry) return <span style={{ color: "var(--ink-faint)" }}>—</span>;
-                                  const maePct = ((minPx - entry) / entry * 100).toFixed(1);
-                                  return (
-                                    <span style={{ color: "var(--negative)", fontSize: 9 }}>
-                                      ${minPx.toFixed(2)} ({maePct}%)
-                                    </span>
-                                  );
-                                })()}
-                              </td>
-                              {/* Trail stop */}
-                              <td style={{ padding: "4px 5px", color: "var(--negative)", whiteSpace: "nowrap" }}>
-                                {stopPx != null
-                                  ? `$${stopPx.toFixed(2)}`
-                                  : stopPct != null
-                                    ? `${(stopPct * 100).toFixed(0)}%`
-                                    : "—"}
-                              </td>
-                              {/* Stage badge */}
-                              <td style={{ padding: "4px 5px" }}>
-                                <span style={{
-                                  fontSize: 9, padding: "1px 4px", borderRadius: 3,
-                                  background: pos.stage1_done
-                                    ? "rgba(0,180,255,0.15)" : "rgba(255,180,0,0.15)",
-                                  color: pos.stage1_done ? "#0af" : "#fa0",
-                                  fontWeight: 600,
-                                }}>
-                                  {pos.stage1_done ? "S2" : "S1"}
-                                </span>
-                                {pos.trend_dead && (
-                                  <span style={{ marginLeft: 3, color: "var(--negative)", fontSize: 9 }}>⚠️</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
+                    {status?.running
+                      ? "Scanning… waiting for first signal evaluation"
+                      : "Waiting for bot to start scanning…"}
+                  </p>
                 );
               }
 
-              // ── ALL WATCHED TICKERS (full scan watchlist, nothing filtered out) ──
-              // Tickers with open positions get a small "IN" badge so the user can
-              // see the complete picture at a glance.
-              if (status?.ticker || (status?.scan_watchlist ?? []).length > 0) {
-                const watchlist: string[] = status?.scan_watchlist ?? (status?.ticker ? [status.ticker] : []);
-                const activeTicker = status?.ticker ?? "";
-                return (
-                  <div>
-                    {/* Full scan watchlist — current eval ticker highlighted, in-trade ones badged */}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "2px 0 6px" }}>
-                      {watchlist.map((t) => {
-                        const isCurrent = t === activeTicker;
-                        const inTrade   = openTickerSet.has(t);
-                        return (
-                          <button
-                            key={t}
-                            onClick={() => setTicker(t)}
-                            title={`View ${t} chart${inTrade ? " · position open" : ""}`}
-                            style={{
-                              position: "relative",
-                              padding: "2px 7px",
-                              borderRadius: 4,
-                              border: `1px solid ${isCurrent ? "var(--accent)" : inTrade ? "var(--positive)" : "var(--border)"}`,
-                              background: isCurrent ? "var(--accent)" : "transparent",
-                              color: isCurrent ? "#fff" : inTrade ? "var(--positive)" : "var(--ink-muted)",
-                              fontFamily: "JetBrains Mono, monospace",
-                              fontSize: 10, fontWeight: isCurrent || inTrade ? 700 : 500,
-                              cursor: "pointer",
-                              transition: "all 0.15s",
-                            }}
-                          >
-                            {t}
-                            {/* "IN" badge for tickers currently in a trade */}
-                            {inTrade && (
-                              <span style={{
-                                position: "absolute", top: -5, right: -5,
-                                background: "var(--positive)", color: "#fff",
-                                fontSize: 7, fontWeight: 700, lineHeight: 1,
-                                padding: "1px 3px", borderRadius: 3,
-                                letterSpacing: "0.04em",
-                              }}>IN</span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {/* Current eval details for active ticker */}
-                    {status?.last_eval_contract_symbol && (
-                      <div style={{
-                        borderTop: "1px solid var(--border)", paddingTop: 5, marginTop: 2,
-                        fontFamily: "JetBrains Mono, monospace", fontSize: 10,
-                        display: "flex", flexWrap: "wrap", gap: "4px 12px",
-                        color: "var(--ink-muted)",
-                      }}>
-                        <span title={status.last_eval_contract_symbol}>
-                          <span style={{ color: "var(--ink-faint)" }}>Contract </span>
-                          <span style={{ color: "var(--ink)", maxWidth: 120, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "bottom", whiteSpace: "nowrap" }}>
-                            {status.last_eval_contract_symbol}
-                          </span>
-                        </span>
-                        {status.last_eval_expiry && (
-                          <span>
-                            <span style={{ color: "var(--ink-faint)" }}>Exp </span>
-                            {status.last_eval_expiry.length === 10
-                              ? `${status.last_eval_expiry.slice(5,7)}/${status.last_eval_expiry.slice(8,10)}/${status.last_eval_expiry.slice(2,4)}`
-                              : status.last_eval_expiry}
-                          </span>
-                        )}
-                        {status.last_eval_eff_entry != null && (
-                          <span>
-                            <span style={{ color: "var(--ink-faint)" }}>Ask </span>
-                            <span style={{ color: "var(--positive)", fontWeight: 600 }}>${status.last_eval_eff_entry.toFixed(2)}</span>
-                          </span>
-                        )}
-                        {status.last_strategy_id && (
-                          <span className="badge badge-blue" style={{ fontSize: 9 }}>{status.last_strategy_id}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
+              // Stage-1 target = +50% on the option premium
+              const targetPremium = evalEntry != null ? evalEntry * 1.5 : null;
+              const totalProfit   = evalEntry != null && evalContracts != null
+                ? evalEntry * 0.5 * evalContracts * 100
+                : null;
 
               return (
-                <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
-                  Waiting for bot to start scanning…
-                </p>
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, lineHeight: 1.6 }}>
+
+                  {/* Row 1: [CALL] AMZN  $240 strike  Jul 07 */}
+                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 8px", marginBottom: 4 }}>
+                    {evalOpt ? (
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 3,
+                        background: isCall ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
+                        color: isCall ? "var(--positive)" : "var(--negative)",
+                        letterSpacing: "0.05em",
+                      }}>
+                        {evalOpt.toUpperCase()}
+                      </span>
+                    ) : null}
+                    {evalTicker && (
+                      <span
+                        style={{ color: "var(--accent)", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                        title={`View ${evalTicker} chart`}
+                        onClick={() => setTicker(evalTicker)}
+                      >
+                        {evalTicker}
+                      </span>
+                    )}
+                    {evalStrike != null && (
+                      <>
+                        <span style={{ color: "var(--ink-faint)", fontSize: 10 }}>@</span>
+                        <span style={{ color: "var(--ink)", fontWeight: 600 }}>
+                          ${evalStrike % 1 === 0 ? evalStrike.toFixed(0) : evalStrike.toFixed(2)}
+                        </span>
+                        <span style={{ color: "var(--ink-faint)", fontSize: 9 }}>strike</span>
+                      </>
+                    )}
+                    {evalExpiry && (
+                      <span style={{ color: "var(--ink-muted)" }}>{fmtExpiry(evalExpiry)}</span>
+                    )}
+                  </div>
+
+                  {/* Row 2: 2 contracts  @ $2.36 entry */}
+                  {(evalContracts != null || evalEntry != null) && (
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 8px", marginBottom: 4 }}>
+                      {evalContracts != null && (
+                        <span style={{ color: "var(--ink)", fontWeight: 600 }}>
+                          {evalContracts} contract{evalContracts !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                      {evalEntry != null && (
+                        <>
+                          <span style={{ color: "var(--ink-faint)", fontSize: 10 }}>@</span>
+                          <span style={{ color: "var(--ink)", fontWeight: 600 }}>
+                            ${evalEntry.toFixed(2)}
+                          </span>
+                          <span style={{ color: "var(--ink-faint)", fontSize: 9 }}>entry</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Row 3: S1 target  $3.54  (+$118.00)  [TREND_CONT] */}
+                  {targetPremium != null && (
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 8px" }}>
+                      <span style={{ color: "var(--ink-faint)", fontSize: 9 }}>S1 target</span>
+                      <span style={{ color: "var(--positive)", fontWeight: 700 }}>
+                        ${targetPremium.toFixed(2)}
+                      </span>
+                      {totalProfit != null && (
+                        <span style={{ fontSize: 9, color: "var(--positive)", opacity: 0.8 }}>
+                          (+${totalProfit.toFixed(2)})
+                        </span>
+                      )}
+                      {status?.last_strategy_id && (
+                        <span className="badge badge-blue" style={{ fontSize: 8, letterSpacing: "0.04em" }}>
+                          {status.last_strategy_id}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                </div>
               );
             })()}
           </div>
