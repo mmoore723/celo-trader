@@ -547,7 +547,9 @@ export function TradingChart({
     // with fewer data points (MACD starts at bar 34; RSI at bar 14) still
     // show the correct timestamps regardless of their own bar-index offsets.
     const syncHandler = (timeRange: { from: Time; to: Time } | null) => {
-      if (!timeRange) return;
+      // `from` or `to` can be null when no data is loaded yet — setVisibleRange
+      // throws "Value is null" in that case, so guard against it explicitly.
+      if (!timeRange || timeRange.from == null || timeRange.to == null) return;
       rsiChartRef.current?.timeScale().setVisibleRange(timeRange);
       macdChartRef.current?.timeScale().setVisibleRange(timeRange);
     };
