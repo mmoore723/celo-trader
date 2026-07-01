@@ -499,31 +499,46 @@ export function TradingChart({
       });
       macdChartRef.current = macdChart;
 
-      // Histogram: green bars above zero, red below
+      // ── MACD line + Signal share the right price scale ────────────────────
+      // They auto-scale to each other → both lines fill the panel and are
+      // clearly distinct. The zero price line is NOT anchored here so it
+      // doesn't force the scale to include 0 (which would squash both lines
+      // to the top 10% of the chart when MACD values are 1-2 for SPY).
+
+      // MACD line (gold) on main right scale
+      macdLineRef.current = macdChart.addSeries(LineSeries, {
+        color: C.macdLine, lineWidth: 2,
+        priceScaleId: "right",
+        priceLineVisible: false, crosshairMarkerVisible: false,
+        priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
+      }) as unknown as ISeriesApi<"Line">;
+
+      // Signal line (purple) — same scale as MACD, clearly visible at width 2
+      macdSignalRef.current = macdChart.addSeries(LineSeries, {
+        color: C.macdSignal, lineWidth: 2,
+        priceScaleId: "right",
+        priceLineVisible: false, crosshairMarkerVisible: false,
+        priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
+      }) as unknown as ISeriesApi<"Line">;
+
+      // ── Histogram on its own sub-scale (bottom 35% of panel) ─────────────
+      // Separate scale prevents it from forcing MACD/signal to the chart top.
+      // The hist scale is hidden; zero reference line shows divergence direction.
       macdHistRef.current = macdChart.addSeries(HistogramSeries, {
+        priceScaleId: "hist",
         priceLineVisible: false,
         priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
       }) as unknown as ISeriesApi<"Histogram">;
+      macdChart.priceScale("hist").applyOptions({
+        scaleMargins: { top: 0.65, bottom: 0 },   // bottom 35% of panel
+        visible: false,                             // hide the hist axis numbers
+      });
 
-      // Zero line anchored on the histogram series
+      // Zero reference line on histogram (shows whether histogram is + or -)
       macdHistRef.current.createPriceLine({
         price: 0, color: C.border, lineWidth: 1, lineStyle: LineStyle.Solid,
         axisLabelVisible: false, title: "",
       });
-
-      // MACD line (gold)
-      macdLineRef.current = macdChart.addSeries(LineSeries, {
-        color: C.macdLine, lineWidth: 2,
-        priceLineVisible: false, crosshairMarkerVisible: false,
-        priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
-      }) as unknown as ISeriesApi<"Line">;
-
-      // Signal line (purple)
-      macdSignalRef.current = macdChart.addSeries(LineSeries, {
-        color: C.macdSignal, lineWidth: 1,
-        priceLineVisible: false, crosshairMarkerVisible: false,
-        priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
-      }) as unknown as ISeriesApi<"Line">;
     }
 
     // ── Time-scale sync: main chart → sub-panels ──────────────────────────
