@@ -289,14 +289,42 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 state["phase"] = "idle"
                 continue
 
-            # Gate: VWAP direction — intentionally SKIPPED for retest entries.
-            # During an ORB retest, price has pulled back to the OR boundary which
-            # is often below VWAP (early session VWAP inflated by the breakout bar's
-            # high-volume surge). Requiring close > vwap would block every clean
-            # retest of a bullish ORB. The bounce confirmation (close > boundary)
-            # is already structural direction proof — VWAP is redundant here.
-            if vwap is not None:
-                logger.debug("[%s] INST_ORB retest — VWAP gate bypassed (close=%.2f vwap=%.2f boundary=%.2f)", ticker, close, vwap, boundary)
+            # Gate: VWAP trend direction (dead-cat-bounce protection)
+            # The static VWAP level gate is bypassed — during a retest, price
+            # is naturally at the OR boundary which is often below VWAP. But the
+            # VWAP SLOPE since the breakout is the real signal: if VWAP is declining
+            # since the breakout bar, institutional order flow is bearish and a
+            # bullish ORB call is a dead-cat bounce. Vice versa for bearish fades.
+            if vwap is not None and state["breakout_bar"] is not None:
+                # Find VWAP value at the time of the breakout bar
+                _bb_rows = today[today["time"] == state["breakout_bar"]]
+                _vwap_at_breakout = float(_bb_rows.iloc[0].get("vwap", vwap)) if not _bb_rows.empty else vwap
+
+                # 0.03% VWAP change since breakout = institutional flow direction
+                _vwap_drift = (vwap - _vwap_at_breakout) / max(_vwap_at_breakout, 1.0)
+
+                if direction == "bullish" and _vwap_drift < -0.0003:
+                    logger.info(
+                        "[%s] INST_ORB: bullish entry blocked — VWAP declined %.3f%% since breakout "
+                        "(%.2f→%.2f) — dead-cat-bounce pattern, skipping call.",
+                        ticker, _vwap_drift * 100, _vwap_at_breakout, vwap,
+                    )
+                    state["phase"] = "idle"
+                    continue
+
+                if direction == "bearish" and _vwap_drift > 0.0003:
+                    logger.info(
+                        "[%s] INST_ORB: bearish entry blocked — VWAP rose %.3f%% since breakout "
+                        "(%.2f→%.2f) — breakout is real, not a fade opportunity.",
+                        ticker, _vwap_drift * 100, _vwap_at_breakout, vwap,
+                    )
+                    state["phase"] = "idle"
+                    continue
+
+                logger.debug(
+                    "[%s] INST_ORB retest — VWAP drift since breakout: %.3f%% (breakout=%.2f now=%.2f) — OK",
+                    ticker, _vwap_drift * 100, _vwap_at_breakout, vwap,
+                )
 
             # All gates passed — build signal
             confidence = _compute_confidence(

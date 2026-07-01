@@ -607,15 +607,26 @@ class Backtester:
 
             raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
-            # ── Session bias penalty (mirrors strategy_router logic) ───────────
-            # Use session open only — VWAP excluded (redundant with strategy gates).
+            # ── Session bias penalty — RVOL-dynamic (mirrors strategy_router) ──
+            # Penalty scales with RVOL: high-volume days allow more counter-session
+            # latitude; low-volume days get penalized harder.
             if raw_signals and idx >= 1:
                 _bt_first   = day_df.iloc[0]
                 _bt_last    = bar_slice.iloc[-1]
                 _bt_open    = float(_bt_first.get("open", _bt_first["close"]))
                 _bt_close   = float(_bt_last["close"])
+                _bt_rvol    = float(_bt_last.get("rvol", 1.0) or 1.0)
                 _bt_bearish = _bt_close < _bt_open
                 _bt_bullish = _bt_close > _bt_open
+
+                # Dynamic penalty: matches live strategy_router logic
+                if _bt_rvol > 1.5:
+                    _bt_bias_penalty = 0.02   # high-vol: V-reversals are real
+                elif _bt_rvol < 1.0:
+                    _bt_bias_penalty = 0.10   # low-vol: counter-trend = chop
+                else:
+                    _bt_bias_penalty = 0.05   # normal days
+
                 if _bt_bearish or _bt_bullish:
                     for _sig in raw_signals:
                         _counter = (
@@ -623,8 +634,36 @@ class Backtester:
                             (_bt_bullish and _sig.direction == "bearish")
                         )
                         if _counter:
-                            _sig.confidence = max(0.0, _sig.confidence - _SESSION_BIAS_PENALTY)
+                            _sig.confidence = max(0.0, _sig.confidence - _bt_bias_penalty)
                     raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+
+            # ── Intraday VWAP slope penalty (mirrors strategy_router logic) ──
+            # If VWAP has been declining for 10 bars, bullish signals get penalized.
+            # Dead-cat-bounce protection — the #1 cause of losing call entries.
+            if raw_signals and len(bar_slice) >= 12 and "vwap" in bar_slice.columns:
+                _bt_vwap_now = float(bar_slice.iloc[-1].get("vwap", 0) or 0)
+                _bt_vwap_10  = float(bar_slice.iloc[-10].get("vwap", _bt_vwap_now) or _bt_vwap_now)
+                _bt_vwap_slope = (_bt_vwap_now - _bt_vwap_10) / max(_bt_vwap_10, 1.0)
+                _BT_VWAP_THRESH  = 0.0005
+                _BT_VWAP_PENALTY = 0.04
+                for _sig in raw_signals:
+                    _against_flow = (
+                        (_bt_vwap_slope < -_BT_VWAP_THRESH and _sig.direction == "bullish") or
+                        (_bt_vwap_slope >  _BT_VWAP_THRESH and _sig.direction == "bearish")
+                    )
+                    if _against_flow:
+                        _sig.confidence = max(0.0, _sig.confidence - _BT_VWAP_PENALTY)
+                raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+
+            # ── Confluence bonus (mirrors strategy_router logic) ───────────────
+            # 2+ strategies agree on direction → boost top signal's confidence.
+            if raw_signals:
+                _bt_top_dir   = raw_signals[0].direction
+                _bt_agree_cnt = sum(1 for _s in raw_signals if _s.direction == _bt_top_dir)
+                if _bt_agree_cnt >= 2:
+                    _bt_bonus = min(0.05, (_bt_agree_cnt - 1) * 0.03)
+                    raw_signals[0].confidence = min(0.95, raw_signals[0].confidence + _bt_bonus)
+                raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
             # ── Quality gate 1: confidence floor ─────────────────────────────
             signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]
