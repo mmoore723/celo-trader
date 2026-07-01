@@ -450,18 +450,41 @@ class Backtester:
                     close, entry_strike, 5, iv=ticker_iv, option_type=option_type,
                 )
 
-                # Track peak option price (for volatility-adjusted profit lock below)
-                if opt_price > peak_opt_price:
-                    peak_opt_price = opt_price
+                # ── Intrabar price simulation ─────────────────────────────────
+                # Checking only the bar CLOSE misses what happened on the HIGH/LOW.
+                # A stop hit on the candle low gets skipped; a target hit on the
+                # candle high gets missed. Use bar extremes for realistic fills.
+                #
+                #   CALL: underlying high  → option best (profits)
+                #         underlying low   → option worst (stop risk)
+                #   PUT:  underlying low   → option best (profits — put goes up)
+                #         underlying high  → option worst (stop risk — put goes down)
+                _bar_high_px = float(bar.get("high", close))
+                _bar_low_px  = float(bar.get("low",  close))
 
-                # ── Exit 1: Early momentum stop ───────────────────────────────
-                # If the trade is down > EARLY_STOP_PCT (12%) in first
-                # EARLY_TIMEBOX_MIN (30 min), the setup failed — exit immediately.
-                # Prevents deep theta burns on fast-moving false breakouts.
+                if option_type == "call":
+                    _opt_bar_best  = _estimate_option_price(
+                        _bar_high_px, entry_strike, 5, iv=ticker_iv, option_type=option_type)
+                    _opt_bar_worst = _estimate_option_price(
+                        _bar_low_px,  entry_strike, 5, iv=ticker_iv, option_type=option_type)
+                else:  # put gains when underlying falls
+                    _opt_bar_best  = _estimate_option_price(
+                        _bar_low_px,  entry_strike, 5, iv=ticker_iv, option_type=option_type)
+                    _opt_bar_worst = _estimate_option_price(
+                        _bar_high_px, entry_strike, 5, iv=ticker_iv, option_type=option_type)
+
+                # Track peak using the best intrabar price (not just close)
+                if _opt_bar_best > peak_opt_price:
+                    peak_opt_price = _opt_bar_best
+
+                # ── Exit 1: Early momentum stop (uses bar WORST — realistic fill) ─
+                # If the worst intrabar option price is down > EARLY_STOP_PCT (12%)
+                # within the first EARLY_TIMEBOX_MIN, the setup failed — exit
+                # at worst price (what the stop would realistically fill at).
                 if (not stage1_done
                         and elapsed_min <= EARLY_TIMEBOX_MIN
-                        and opt_price <= entry_price * (1.0 - EARLY_STOP_PCT)):
-                    exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
+                        and _opt_bar_worst <= entry_price * (1.0 - EARLY_STOP_PCT)):
+                    exit_px = round(_opt_bar_worst * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
                         entry_price, exit_px, remaining_contracts, option_type,
                         "early_momentum_stop", ts.hour, round(elapsed_min, 1),
@@ -471,7 +494,7 @@ class Backtester:
                     in_trade = False
                     continue
 
-                # ── Exit 2: Dynamic hard stop ─────────────────────────────────
+                # ── Exit 2: Dynamic hard stop (uses bar WORST — realistic fill) ──
                 # Tightens 5pp every 15 min (theta decay protection):
                 #   0–14 min  → 20% stop
                 #   15–29 min → 15% stop
@@ -483,8 +506,8 @@ class Backtester:
                 )
                 sl_price = entry_price * (1.0 - dynamic_sl_pct)
 
-                if opt_price <= sl_price:
-                    exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
+                if _opt_bar_worst <= sl_price:
+                    exit_px = round(_opt_bar_worst * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
                         entry_price, exit_px, remaining_contracts, option_type,
                         "stop_loss", ts.hour, round(elapsed_min, 1),
@@ -512,11 +535,13 @@ class Backtester:
                         in_trade = False
                         continue
 
-                # ── Exit 3: Stage 1 — sell 50% at +50% ───────────────────────
+                # ── Exit 3: Stage 1 — sell 50% at +50% (uses bar BEST) ───────
+                # Check if the option's best intrabar price hit the target.
+                # Exit at best price × (1 - slippage) for realistic fill.
                 if not stage1_done:
                     s1_price = entry_price * (1.0 + self.ORB_STAGE1_GAIN)
-                    if opt_price >= s1_price:
-                        s1_exit_px    = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
+                    if _opt_bar_best >= s1_price:
+                        s1_exit_px    = round(_opt_bar_best * (1.0 - self.SLIPPAGE_PCT), 4)
                         s1_contracts  = max(1, contracts // 2)
                         s1_pnl        = (s1_exit_px - entry_price) * s1_contracts * 100
                         session_pnl  += s1_pnl
@@ -554,15 +579,22 @@ class Backtester:
                         continue
 
                 # ── Exit 5a: Momentum-death early exit ───────────────────────
-                # If RVOL has dropped below MOMENTUM_DEAD_RVOL AND the trade
-                # is losing AND ≥ MOMENTUM_DEAD_MIN minutes have elapsed, exit
-                # before the hard cap — institutional participation is gone.
+                # Fires when RVOL is genuinely dead (< 0.70 = 30%+ below avg),
+                # the trade is losing, and the CANDLE ITSELF shows no momentum
+                # (small body = doji/spinning top confirms dead price action).
+                # Previously fired at RVOL < 1.0 which hit 0.95+ RVOL bars —
+                # nearly normal volume. Also had no candle structure check,
+                # so it exited on valid setups that just had a weak-volume bar.
                 _bar_rvol = float(day_df.iloc[idx].get("rvol", 0.0)) if "rvol" in day_df.columns else 0.0
+                _bar_range  = max(_bar_high_px - _bar_low_px, 0.0001)
+                _bar_body   = abs(close - float(bar.get("open", close)))
+                _candle_has_momentum = (_bar_body / _bar_range) > 0.40  # >40% body = directional move
                 if (not stage1_done
                         and _bar_rvol > 0.0
-                        and _bar_rvol < MOMENTUM_DEAD_RVOL
+                        and _bar_rvol < MOMENTUM_DEAD_RVOL      # 0.70 — truly dead volume
                         and elapsed_min >= MOMENTUM_DEAD_MIN
-                        and opt_price < entry_price):
+                        and opt_price < entry_price
+                        and not _candle_has_momentum):           # candle confirms dead action
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
                         entry_price, exit_px, remaining_contracts, option_type,

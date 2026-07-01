@@ -171,7 +171,9 @@ TICKER_UNIVERSE = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA"]
 # losing, exit early — momentum has died and holding only burns theta.
 # Both checks must pass: dead RVOL alone doesn't kill a trade that's working.
 EARLY_TIMEBOX_MIN    = 60        # hard cap for flat/losing trades (extended from 30)
-MOMENTUM_DEAD_RVOL   = 1.0       # RVOL floor — below this = institutional participation gone
+MOMENTUM_DEAD_RVOL   = 0.70      # RVOL floor — below this = institutional participation gone
+                                 # 0.70 = 30% below average. Previous 1.0 fired on RVOL 0.95+
+                                 # which is nearly normal volume — premature exits on valid setups.
 MOMENTUM_DEAD_MIN    = 15        # earliest bar at which momentum-death check fires (min)
 
 # ── Early momentum stop ───────────────────────────────────────────────────────

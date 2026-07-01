@@ -306,7 +306,9 @@ class RiskManager:
     # that move 12–30% and reverse give back ALL profit. The lock captures
     # consistent smaller wins that compound favourably on a small account.
     PROFIT_LOCK_PCT       = 0.12   # +12% gain triggers profit protection
-    PROFIT_LOCK_TRAIL_PCT = 0.03   # minimum profit to lock in (entry + 3%)
+    PROFIT_LOCK_TRAIL_PCT = 0.10   # lock floor: entry + 10%
+                                   # Must exceed exit slippage (5%) to guarantee a profitable exit.
+                                   # Old 3% floor − 5% exit slippage = −2% actual loss on "locked" trades.
 
     def effective_risk_pct(self, balance: Optional[float] = None) -> float:
         """
