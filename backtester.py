@@ -364,6 +364,10 @@ class Backtester:
         # NOTE: BOS_MSS intentionally excluded — matches live strategy_router.py.
         # Liquidity sweep detection was merged into FVG as a confidence modifier;
         # keeping both causes double-voting on the same institutional move.
+        #
+        # CHAN_BREAK temporarily disabled: 0% WR on 7 trades (-$383.60) in
+        # Apr–Jun 2026 backtest. Strategy is catching false breakouts in volatile
+        # trending markets. Re-enable once root cause is diagnosed.
         _EVALUATORS_CACHED = [
             ("INST_ORB",   _inst_orb.evaluate),
             ("VWAP_PB",    _vwap_pb.evaluate),
@@ -371,7 +375,7 @@ class Backtester:
             ("MID_BRK",    _mid_brk.evaluate),
             ("AFT_REV",    _aft_rev.evaluate),
             ("TREND_CONT", _trend_cont.evaluate),
-            ("CHAN_BREAK",  _chan_break.evaluate),
+            # ("CHAN_BREAK", _chan_break.evaluate),  # disabled — 0% WR, needs root-cause fix
         ]
 
         for trade_date in unique_days:
@@ -516,24 +520,6 @@ class Backtester:
                     session_pnl += pnl
                     in_trade = False
                     continue
-
-                # ── Exit 2b: Volatility-adjusted profit lock ──────────────────
-                # Mirrors risk.py PROFIT_LOCK_PCT / PROFIT_LOCK_TRAIL_PCT logic.
-                # Once the trade has been up 12%+, exit if it falls back to entry+3%.
-                # Captures 12–40% winning moves rather than waiting for +50%.
-                _profit_lock_trigger = entry_price * (1.0 + RiskManager.PROFIT_LOCK_PCT)
-                if not stage1_done and peak_opt_price >= _profit_lock_trigger:
-                    _lock_floor = entry_price * (1.0 + RiskManager.PROFIT_LOCK_TRAIL_PCT)
-                    if opt_price <= _lock_floor:
-                        exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
-                        pnl = self._close_bt_trade(
-                            entry_price, exit_px, remaining_contracts, option_type,
-                            "vol_adj_profit_lock", ts.hour, round(elapsed_min, 1),
-                            active_strategy, entry_date_str,
-                        )
-                        session_pnl += pnl
-                        in_trade = False
-                        continue
 
                 # ── Exit 3: Stage 1 — sell 50% at +50% (uses bar BEST) ───────
                 # Check if the option's best intrabar price hit the target.
@@ -767,13 +753,30 @@ class Backtester:
                     _dc_trend == "downtrend",
                 ])
 
-                if _dc_rvol >= 1.5:
-                    if _dc_bull == 3:
-                        raw_signals = [s for s in raw_signals if s.direction == "bullish"]
-                    elif _dc_bear == 3:
-                        raw_signals = [s for s in raw_signals if s.direction == "bearish"]
-                    if raw_signals:
-                        raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+                # Hard block: 3/3 agree = established trend, always block counter direction.
+                # No RVOL requirement — unanimous agreement is sufficient.
+                # Hard block: 2/3 agree + any above-normal volume also blocks.
+                # Soft penalty: 2/3 agree on quiet days → ×0.80 on counter signals.
+                if _dc_bull == 3:
+                    raw_signals = [s for s in raw_signals if s.direction == "bullish"]
+                elif _dc_bear == 3:
+                    raw_signals = [s for s in raw_signals if s.direction == "bearish"]
+                elif _dc_rvol >= 1.2 and _dc_bull == 2:
+                    raw_signals = [s for s in raw_signals if s.direction == "bullish"]
+                elif _dc_rvol >= 1.2 and _dc_bear == 2:
+                    raw_signals = [s for s in raw_signals if s.direction == "bearish"]
+                else:
+                    # Soft penalty: 2/3 against — reduce confidence but don't block entirely
+                    if _dc_bull == 2:
+                        for _s in raw_signals:
+                            if _s.direction == "bearish":
+                                _s.confidence = round(max(0.0, _s.confidence * 0.80), 4)
+                    elif _dc_bear == 2:
+                        for _s in raw_signals:
+                            if _s.direction == "bullish":
+                                _s.confidence = round(max(0.0, _s.confidence * 0.80), 4)
+                if raw_signals:
+                    raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
             # ── Quality gate 1: confidence floor ─────────────────────────────
             signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]
