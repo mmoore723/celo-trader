@@ -752,9 +752,7 @@ export function TradingChart({
       }
     }
 
-    chartRef.current?.timeScale().fitContent();
-
-    // ── RSI data ──────────────────────────────────────────────────────────────
+    // ── RSI data (must be set BEFORE main fitContent so syncHandler finds data) ─
     if (showRsi && rsiSeriesRef.current) {
       const rsiValues = calcRSI(closes, 14);
       rsiSeriesRef.current.setData(
@@ -762,11 +760,9 @@ export function TradingChart({
           .map((b, i) => rsiValues[i] != null ? { time: toTime(b.time), value: rsiValues[i]! } : null)
           .filter(Boolean) as { time: Time; value: number }[]
       );
-      // Mirror the main chart's current viewport into the RSI panel
-      rsiChartRef.current?.timeScale().fitContent();
     }
 
-    // ── MACD data ─────────────────────────────────────────────────────────────
+    // ── MACD data (must be set BEFORE main fitContent so syncHandler finds data)
     if (showMacd && macdHistRef.current && macdLineRef.current && macdSignalRef.current) {
       const { macd, signal, hist } = calcMACD(closes);
 
@@ -788,8 +784,14 @@ export function TradingChart({
           .map((b, i) => signal[i] != null ? { time: toTime(b.time), value: signal[i]! } : null)
           .filter(Boolean) as { time: Time; value: number }[]
       );
-      macdChartRef.current?.timeScale().fitContent();
     }
+
+    // fitContent AFTER RSI+MACD data is loaded — this fires subscribeVisibleTimeRangeChange
+    // which syncs sub-panel viewports. If called before setData, sub-charts have no data
+    // and setVisibleRange throws "Value is null" internally.
+    chartRef.current?.timeScale().fitContent();
+    rsiChartRef.current?.timeScale().fitContent();
+    macdChartRef.current?.timeScale().fitContent();
 
   }, [bars, trades, showVwap, showVwapBands, showOR, showSwings, orHigh, orLow, positionLevels, showRsi, showMacd]);
   // NOTE: C (color object) intentionally not in deps — color changes trigger a full
