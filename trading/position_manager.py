@@ -55,8 +55,10 @@ _ADX_WEAK_THRESHOLD   = 20    # ADX < 20 → trend has no directional strength
 _EMA_FAST             = 8
 _EMA_MID              = 21
 _EMA_SLOW             = 50
-_VWAP_BREACH_BARS     = 2     # VWAP must be breached for ≥ 2 consecutive bars before
-                               # we check trend — filters single-bar wicks
+_VWAP_BREACH_BARS     = 5     # VWAP must be breached for ≥ 5 consecutive 1-min bars
+                               # (= 5 minutes) before we check trend. 2 was too fast —
+                               # a 2-minute dip below VWAP during normal chop triggered
+                               # the exit before the trade had any chance to develop.
 # ── Time cap of last resort (safety net only) ─────────────────────────────────
 _TIME_CAP_WINNER_MIN  = 90    # stage1 done  → 90 min max
 _TIME_CAP_LOSER_MIN   = 20    # flat/losing  → 20 min max
@@ -409,7 +411,10 @@ def _manage_open_position(
                 _ema_ok = _ema_stack_aligned(df_under, direction)
                 adx_weak    = (_adx is not None and _adx < _ADX_WEAK_THRESHOLD)
                 ema_broken  = not _ema_ok
-                trend_dead  = adx_weak or ema_broken
+                # Require BOTH conditions — ADX<20 alone is common during normal
+                # mid-morning consolidation and should not terminate a live trade.
+                # EMA misalignment alone can be transient. Both together = confirmed dead.
+                trend_dead  = adx_weak and ema_broken
 
         # Persist current stop for dashboard visibility
         _current_stop_pct_display = (

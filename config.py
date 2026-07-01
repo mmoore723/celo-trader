@@ -177,9 +177,12 @@ MOMENTUM_DEAD_RVOL   = 0.70      # RVOL floor — below this = institutional par
 MOMENTUM_DEAD_MIN    = 15        # earliest bar at which momentum-death check fires (min)
 
 # ── Early momentum stop ───────────────────────────────────────────────────────
-# If a trade is down -12% within the first EARLY_TIMEBOX_MIN window, exit
-# immediately — the setup failed fast and continued holding burns theta.
-EARLY_STOP_PCT    = 0.12         # -12% momentum stop in first 20 min
+# If a trade is down within the first EARLY_TIMEBOX_MIN window, exit.
+# Was 12% — but 5 DTE 1.5% OTM options with ~0.20 delta lose 12% from only
+# a 0.22% adverse underlying move (SPY normal noise). Raised to 20% to match
+# the hard stop floor so the early stop no longer creates a tighter-than-stop
+# hair-trigger within the first hour. The dynamic hard stop (Exit 2) handles it.
+EARLY_STOP_PCT    = 0.20         # -20% momentum stop (matches hard stop floor)
 
 # ── Stage 2 trailing stop floor (refactor 2026-06-16) ────────────────────────
 # After Stage 1 (+50% on 50%), the remainder's stop moves from break-even
