@@ -64,7 +64,7 @@ from risk import RiskManager
 
 # Router quality-gate constants — import directly so the backtester
 # always stays in sync when these values are tuned in strategy_router.py
-from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY, _CONFLUENCE_FLOOR
+from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY
 
 logger = logging.getLogger("celo_trader.backtester")
 
@@ -360,9 +360,11 @@ class Backtester:
         import strategies.trend_cont as _trend_cont
         import strategies.chan_break  as _chan_break
 
+        # NOTE: BOS_MSS intentionally excluded — matches live strategy_router.py.
+        # Liquidity sweep detection was merged into FVG as a confidence modifier;
+        # keeping both causes double-voting on the same institutional move.
         _EVALUATORS_CACHED = [
             ("INST_ORB",   _inst_orb.evaluate),
-            ("BOS_MSS",    _bos_mss.evaluate),
             ("VWAP_PB",    _vwap_pb.evaluate),
             ("FVG",        _fvg.evaluate),
             ("MID_BRK",    _mid_brk.evaluate),
@@ -690,11 +692,27 @@ class Backtester:
                     raw_signals[0].confidence = min(0.95, raw_signals[0].confidence + _bt_bonus)
                 raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
-            # ── Quality gate 1: confidence floor (confluence-aware) ──────────
-            # 2+ agree → 0.65 (_CONFLUENCE_FLOOR); single signal → 0.74 (_MIN_CONFIDENCE)
-            # _bt_agree_cnt was computed in the confluence bonus block above.
-            _bt_effective_floor = _CONFLUENCE_FLOOR if _bt_agree_cnt >= 2 else _MIN_CONFIDENCE
-            signals = [s for s in raw_signals if s.confidence >= _bt_effective_floor]
+            # ── Large-session-move gate (gap/momentum-day filter) ────────────
+            # Mirrors strategy_router: counter-trend signals before 13:00 ET
+            # are capped when session has moved ±1.5%+ from the open.
+            if raw_signals and idx >= 1:
+                _bt_so    = float(day_df.iloc[0].get("open", day_df.iloc[0]["close"]))
+                _bt_sc    = float(bar_slice.iloc[-1]["close"])
+                _bt_sm    = (_bt_sc - _bt_so) / max(_bt_so, 1.0)
+                _bt_btime = bar_slice.iloc[-1].get("time", ts)
+                _bt_bmin  = (
+                    (_bt_btime.hour * 60 + _bt_btime.minute)
+                    if hasattr(_bt_btime, "hour") else 600
+                )
+                if abs(_bt_sm) > 0.015 and _bt_bmin < 13 * 60:
+                    _bt_tdir = "bullish" if _bt_sm > 0 else "bearish"
+                    for _sig in raw_signals:
+                        if _sig.direction != _bt_tdir:
+                            _sig.confidence = min(_sig.confidence, 0.70)
+                    raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+
+            # ── Quality gate 1: confidence floor ─────────────────────────────
+            signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]
             if not signals:
                 self._diag["below_floor"] += 1
                 continue

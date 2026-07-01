@@ -59,12 +59,7 @@ logger = logging.getLogger("celo_trader.strategy_router")
 # Confidence floor: strategies score 0.75 at baseline with zero bonuses.
 # Anything ≤ 0.77 is a marginal signal with no meaningful RVOL/body/recency edge —
 # drop it rather than picking "best of weak."
-_MIN_CONFIDENCE = 0.74   # single-strategy floor — high bar, no external confirmation
-
-# Confluence floor: when 2+ independent strategies agree on direction, the multi-
-# confirmation itself IS the edge. Lower bar is justified and backtest-verified.
-# 2-strategy agree → 0.65 floor; 3+ → same floor + confluence bonus already applied.
-_CONFLUENCE_FLOOR = 0.65
+_MIN_CONFIDENCE = 0.74   # confidence floor — below this is noise, not edge
 
 # Conflict veto window: if the top two signals disagree on direction AND their
 # confidence scores are within this band, the router is ambiguous — return nothing.
@@ -338,22 +333,49 @@ def route_signals(
             )
             signals.sort(key=lambda s: s.confidence, reverse=True)
 
-    # ── Quality gate 1: confidence floor (confluence-aware) ─────────────────
-    # Single strategy: 0.74 floor (no external confirmation — high bar required).
-    # 2+ strategies agree: 0.65 floor (multi-strategy confirmation IS the edge;
-    # lower bar is earned). Backtested: confluence trades at 0.65–0.73 show
-    # 58%+ win rate because the strategy agreement itself filters noise.
-    _before_floor  = len(signals)
-    _top_dir       = signals[0].direction if signals else None
-    _agree_count   = sum(1 for _s in signals if _s.direction == _top_dir) if signals else 0
-    _effective_floor = _CONFLUENCE_FLOOR if _agree_count >= 2 else _MIN_CONFIDENCE
+    # ── Large-session-move gate (gap / momentum-day filter) ──────────────────
+    # If the session has already moved ±1.5%+ from the opening bar, it is a
+    # gap or momentum day. Counter-trend entries before 13:00 ET are high-risk:
+    # institutional order flow is committed to the direction, options are priced
+    # for continuation, and mean-reversion fades typically get run over.
+    # Cap those signals below the confidence floor so they cannot execute.
+    # Exception: after 13:00 ET, AFT_REV is DESIGNED to catch reversals on
+    # big-move days — the filter stops before the afternoon window.
+    if signals and len(today) >= 2:
+        _so        = float(today.iloc[0].get("open", today.iloc[0]["close"]))
+        _sc        = float(today.iloc[-1]["close"])
+        _sm_pct    = (_sc - _so) / max(_so, 1.0)
+        _btime     = today.iloc[-1]["time"]
+        _bmin      = (_btime.hour * 60 + _btime.minute) if hasattr(_btime, "hour") else 600
 
-    signals = [s for s in signals if s.confidence >= _effective_floor]
+        _LARGE_MOVE = 0.015   # 1.5% from open = gap/momentum day
+        if abs(_sm_pct) > _LARGE_MOVE and _bmin < 13 * 60:
+            _trend_dir = "bullish" if _sm_pct > 0 else "bearish"
+            _capped    = 0
+            for _sig in signals:
+                if _sig.direction != _trend_dir:
+                    _sig.confidence = min(_sig.confidence, 0.70)   # below 0.74 floor
+                    _capped += 1
+            if _capped:
+                logger.info(
+                    "router: large_session_move=%.1f%% before 13:00 — "
+                    "%d counter-trend signal(s) capped (trend=%s)",
+                    _sm_pct * 100, _capped, _trend_dir,
+                )
+                signals.sort(key=lambda s: s.confidence, reverse=True)
+
+    # ── Quality gate 1: confidence floor ─────────────────────────────────────
+    # Confluence BONUS (+0.03–0.05) is already applied above when strategies agree.
+    # The floor itself does not change with confluence — weak signals (0.65–0.73)
+    # have always been filtered and confluence doesn't earn them a lower bar.
+    # Confluence rewards strong signals becoming stronger, not noise becoming tradeable.
+    _before_floor = len(signals)
+    signals = [s for s in signals if s.confidence >= _MIN_CONFIDENCE]
     if len(signals) < _before_floor:
         _dropped = _before_floor - len(signals)
         logger.info(
-            "router: dropped %d low-confidence signal(s) for %s (floor=%.0f%% agree=%d)",
-            _dropped, ticker, _effective_floor * 100, _agree_count,
+            "router: dropped %d low-confidence signal(s) for %s (floor=%.0f%%)",
+            _dropped, ticker, _MIN_CONFIDENCE * 100,
         )
 
     # ── Quality gate 2: conflict veto ─────────────────────────────────────────
