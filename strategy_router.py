@@ -405,48 +405,37 @@ def route_signals(
         _bull_score = sum([_dc_price_bull, _dc_slope_bull, _dc_struct_bull])
         _bear_score = sum([_dc_price_bear, _dc_slope_bear, _dc_struct_bear])
 
-        # Hard block: 3/3 unanimous → always block counter direction (no RVOL gate).
-        # In a confirmed crash (price<VWAP + slope negative + LH/LL structure),
-        # the bot should NEVER enter a call regardless of volume.
-        # Hard block: 2/3 agree + RVOL ≥ 1.2 (slightly elevated) → block counter.
-        # Soft penalty: 2/3 agree on quiet days → ×0.80 counter confidence.
+        # Hard block ONLY on unanimous 3/3 — all three must agree before we fully
+        # block the opposite direction. 2/3 agreement is too common on normal days
+        # (price>VWAP + positive slope = 2/3 bullish almost constantly) and was
+        # wiping out valid counter-trend signals (AFT_REV, MID_BRK) while also
+        # leaving no valid same-direction signals after other filters fired.
+        # Rule: 3/3 → hard block. 2/3 → soft ×0.80 penalty only.
         _dc_before = len(signals)
         if _bull_score == 3:
             signals = [s for s in signals if s.direction == "bullish"]
-            logger.info(
-                "router: dir_consensus=BULLISH 3/3 (slope+%.3f%% %s RVOL=%.1f×) — %d PUT(s) blocked",
-                _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
-            )
             if _dc_before > len(signals):
+                logger.info(
+                    "router: dir_consensus=BULLISH 3/3 (slope+%.3f%% %s RVOL=%.1f×) — %d PUT(s) blocked",
+                    _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
+                )
                 _db_log("INFO", "scan",
                     f"{ticker} — Directional consensus BULLISH 3/3 "
                     f"(price>VWAP slope+{_dc_slope_pct*100:.2f}% {_dc_trend} RVOL {_dc_rvol:.1f}×) "
                     f"— PUT entries blocked.")
         elif _bear_score == 3:
             signals = [s for s in signals if s.direction == "bearish"]
-            logger.info(
-                "router: dir_consensus=BEARISH 3/3 (slope%.3f%% %s RVOL=%.1f×) — %d CALL(s) blocked",
-                _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
-            )
             if _dc_before > len(signals):
+                logger.info(
+                    "router: dir_consensus=BEARISH 3/3 (slope%.3f%% %s RVOL=%.1f×) — %d CALL(s) blocked",
+                    _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
+                )
                 _db_log("INFO", "scan",
                     f"{ticker} — Directional consensus BEARISH 3/3 "
                     f"(price<VWAP slope{_dc_slope_pct*100:.2f}% {_dc_trend} RVOL {_dc_rvol:.1f}×) "
                     f"— CALL entries blocked.")
-        elif _dc_rvol >= 1.2 and _bull_score == 2:
-            signals = [s for s in signals if s.direction == "bullish"]
-            logger.info(
-                "router: dir_consensus=BULLISH 2/3+RVOL (RVOL=%.1f×) — %d counter signal(s) blocked",
-                _dc_rvol, _dc_before - len(signals),
-            )
-        elif _dc_rvol >= 1.2 and _bear_score == 2:
-            signals = [s for s in signals if s.direction == "bearish"]
-            logger.info(
-                "router: dir_consensus=BEARISH 2/3+RVOL (RVOL=%.1f×) — %d counter signal(s) blocked",
-                _dc_rvol, _dc_before - len(signals),
-            )
         else:
-            # Soft penalty: 2/3 lean in one direction on low-volume day
+            # Soft penalty only: 2/3 lean → reduce counter-direction by 20%
             if _bull_score == 2:
                 for _s in signals:
                     if _s.direction == "bearish":

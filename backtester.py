@@ -753,20 +753,13 @@ class Backtester:
                     _dc_trend == "downtrend",
                 ])
 
-                # Hard block: 3/3 agree = established trend, always block counter direction.
-                # No RVOL requirement — unanimous agreement is sufficient.
-                # Hard block: 2/3 agree + any above-normal volume also blocks.
-                # Soft penalty: 2/3 agree on quiet days → ×0.80 on counter signals.
+                # Hard block only on unanimous 3/3 — mirrors strategy_router.py.
+                # 2/3 agreement → soft ×0.80 penalty only, never a hard block.
                 if _dc_bull == 3:
                     raw_signals = [s for s in raw_signals if s.direction == "bullish"]
                 elif _dc_bear == 3:
                     raw_signals = [s for s in raw_signals if s.direction == "bearish"]
-                elif _dc_rvol >= 1.2 and _dc_bull == 2:
-                    raw_signals = [s for s in raw_signals if s.direction == "bullish"]
-                elif _dc_rvol >= 1.2 and _dc_bear == 2:
-                    raw_signals = [s for s in raw_signals if s.direction == "bearish"]
                 else:
-                    # Soft penalty: 2/3 against — reduce confidence but don't block entirely
                     if _dc_bull == 2:
                         for _s in raw_signals:
                             if _s.direction == "bearish":
