@@ -479,12 +479,17 @@ export function LiveTrading() {
           </div>
           <div className="px-2 pb-3">
             {(() => {
-              const livePositions = status?.open_positions
-                ? Object.values(status.open_positions)
-                : [];
+              // Tickers already in an open position — exclude these from the watch list
+              // so BOT FOCUS only shows candidates the bot is evaluating for ENTRY.
+              // Open positions are already fully visible in the Open Positions table below.
+              const openTickerSet = new Set<string>(
+                status?.open_positions
+                  ? Object.values(status.open_positions as Record<string, LivePosition>).map((p) => p.ticker)
+                  : []
+              );
 
-              if (livePositions.length > 0) {
-                // ── IN TRADE: show all open positions with live P&L ──────────
+              if (false) {
+                // ── removed: open-position display moved to Open Positions table ──────────
                 return (
                   <div style={{ overflowX: "auto" }}>
                     <table style={{
@@ -504,7 +509,7 @@ export function LiveTrading() {
                         </tr>
                       </thead>
                       <tbody>
-                        {livePositions.map((pos: LivePosition) => {
+                        {[].map((pos: LivePosition) => {
                           const curPx   = pos.current_option_price;
                           const entry   = pos.entry_price;
                           const qty     = pos.contracts ?? 1;
@@ -607,13 +612,25 @@ export function LiveTrading() {
                 );
               }
 
-              // ── SCANNING: show full watchlist with current ticker highlighted ──
+              // ── ENTRY CANDIDATES: watchlist minus any tickers already in a position ──
+              // Always show this view — even when in a trade — because the user needs
+              // to see what the bot is watching next, not a duplicate of Open Positions.
               if (status?.ticker || (status?.scan_watchlist ?? []).length > 0) {
-                const watchlist: string[] = status?.scan_watchlist ?? (status?.ticker ? [status.ticker] : []);
-                const activeTicker = status?.ticker ?? "";
+                const rawList: string[] = status?.scan_watchlist ?? (status?.ticker ? [status.ticker] : []);
+                // Filter out tickers that already have an open position — they're shown above
+                const watchlist = rawList.filter((t) => !openTickerSet.has(t));
+                const activeTicker = !openTickerSet.has(status?.ticker ?? "") ? (status?.ticker ?? "") : "";
+                // All candidates already in open positions
+                if (watchlist.length === 0) {
+                  return (
+                    <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
+                      All watched tickers have open positions — bot monitoring exits.
+                    </p>
+                  );
+                }
                 return (
                   <div>
-                    {/* Watchlist grid — all tickers, current one highlighted */}
+                    {/* Watchlist grid — entry candidates only (open-position tickers excluded) */}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "2px 0 6px" }}>
                       {watchlist.map((t) => {
                         const isCurrent = t === activeTicker;
