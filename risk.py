@@ -298,6 +298,16 @@ class RiskManager:
     STOP_TIGHTEN_STEP     = 0.05 # 5pp reduction per step
     STOP_FLOOR_PCT        = 0.10 # never tighten below 10% (avoid noise-triggered exits)
 
+    # ── Volatility-adjusted profit lock ──────────────────────────────────────
+    # Once the trade has been up PROFIT_LOCK_PCT (12%), protect the gain:
+    #   Primary:  ATR-based trail (position_manager keeps it current)
+    #   Fallback: hard floor at entry + PROFIT_LOCK_TRAIL_PCT (3%)
+    # Rationale: waiting for +50% (old Stage-1) means most winning setups
+    # that move 12–30% and reverse give back ALL profit. The lock captures
+    # consistent smaller wins that compound favourably on a small account.
+    PROFIT_LOCK_PCT       = 0.12   # +12% gain triggers profit protection
+    PROFIT_LOCK_TRAIL_PCT = 0.03   # minimum profit to lock in (entry + 3%)
+
     def effective_risk_pct(self, balance: Optional[float] = None) -> float:
         """
         Return the active risk % for the given balance.
@@ -1015,6 +1025,32 @@ class RiskManager:
             hard_stop = entry_price * 0.80
             if current_price <= hard_stop:
                 return True, f"hard_stop_20pct (sl={hard_stop:.4f} current={current_price:.4f})"
+
+        # ── 2b. Volatility-adjusted profit lock (activates at +12% gain) ──────
+        # Once the trade has ever been up 12% (tracked via peak_price from
+        # position_manager), switch to tighter profit protection:
+        #   - Use ATR trail if available (dynamic, wider on volatile days)
+        #   - Hard fallback: entry + PROFIT_LOCK_TRAIL_PCT (3%) — never give
+        #     back a +12% winner entirely, regardless of volatility.
+        # This replaces waiting for a fixed +50% Stage-1 target with a dynamic
+        # lock that captures 12–40% moves consistently.
+        if not stage1_done and peak_price is not None:
+            _profit_lock_trigger = entry_price * (1.0 + self.PROFIT_LOCK_PCT)
+            if peak_price >= _profit_lock_trigger:
+                # Trade has reached the lock threshold — protect the gain
+                _lock_floor = entry_price * (1.0 + self.PROFIT_LOCK_TRAIL_PCT)
+                # Use the higher of ATR trail or the fixed floor
+                _effective_floor = (
+                    max(_lock_floor, atr_trail_stop)
+                    if atr_trail_stop is not None
+                    else _lock_floor
+                )
+                if current_price <= _effective_floor:
+                    return True, (
+                        f"vol_adj_profit_lock "
+                        f"(floor={_effective_floor:.4f} current={current_price:.4f} "
+                        f"peak={peak_price:.4f} lock=+{self.PROFIT_LOCK_PCT:.0%})"
+                    )
 
         # ── 3. VWAP breach + confirmed trend breakdown ────────────────────────
         # Only exits when BOTH conditions are met:

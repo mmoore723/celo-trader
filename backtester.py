@@ -64,7 +64,7 @@ from risk import RiskManager
 
 # Router quality-gate constants — import directly so the backtester
 # always stays in sync when these values are tuned in strategy_router.py
-from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY
+from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY, _CONFLUENCE_FLOOR
 
 logger = logging.getLogger("celo_trader.backtester")
 
@@ -447,6 +447,10 @@ class Backtester:
                     close, entry_strike, 5, iv=ticker_iv, option_type=option_type,
                 )
 
+                # Track peak option price (for volatility-adjusted profit lock below)
+                if opt_price > peak_opt_price:
+                    peak_opt_price = opt_price
+
                 # ── Exit 1: Early momentum stop ───────────────────────────────
                 # If the trade is down > EARLY_STOP_PCT (12%) in first
                 # EARLY_TIMEBOX_MIN (30 min), the setup failed — exit immediately.
@@ -486,6 +490,24 @@ class Backtester:
                     session_pnl += pnl
                     in_trade = False
                     continue
+
+                # ── Exit 2b: Volatility-adjusted profit lock ──────────────────
+                # Mirrors risk.py PROFIT_LOCK_PCT / PROFIT_LOCK_TRAIL_PCT logic.
+                # Once the trade has been up 12%+, exit if it falls back to entry+3%.
+                # Captures 12–40% winning moves rather than waiting for +50%.
+                _profit_lock_trigger = entry_price * (1.0 + RiskManager.PROFIT_LOCK_PCT)
+                if not stage1_done and peak_opt_price >= _profit_lock_trigger:
+                    _lock_floor = entry_price * (1.0 + RiskManager.PROFIT_LOCK_TRAIL_PCT)
+                    if opt_price <= _lock_floor:
+                        exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
+                        pnl = self._close_bt_trade(
+                            entry_price, exit_px, remaining_contracts, option_type,
+                            "vol_adj_profit_lock", ts.hour, round(elapsed_min, 1),
+                            active_strategy, entry_date_str,
+                        )
+                        session_pnl += pnl
+                        in_trade = False
+                        continue
 
                 # ── Exit 3: Stage 1 — sell 50% at +50% ───────────────────────
                 if not stage1_done:
@@ -637,22 +659,25 @@ class Backtester:
                             _sig.confidence = max(0.0, _sig.confidence - _bt_bias_penalty)
                     raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
-            # ── Intraday VWAP slope penalty (mirrors strategy_router logic) ──
-            # If VWAP has been declining for 10 bars, bullish signals get penalized.
-            # Dead-cat-bounce protection — the #1 cause of losing call entries.
+            # ── Intraday VWAP slope — weighted 20% factor (mirrors router) ──────
+            # VWAP trend = 20% of signal strength. Against flow → ×0.80.
+            # High-momentum signals (0.87+) survive; marginal ones at 0.74 drop
+            # to 0.59 and get filtered. Replaces flat -0.04 which over-fired.
             if raw_signals and len(bar_slice) >= 12 and "vwap" in bar_slice.columns:
-                _bt_vwap_now = float(bar_slice.iloc[-1].get("vwap", 0) or 0)
-                _bt_vwap_10  = float(bar_slice.iloc[-10].get("vwap", _bt_vwap_now) or _bt_vwap_now)
+                _bt_vwap_now   = float(bar_slice.iloc[-1].get("vwap", 0) or 0)
+                _bt_vwap_10    = float(bar_slice.iloc[-10].get("vwap", _bt_vwap_now) or _bt_vwap_now)
                 _bt_vwap_slope = (_bt_vwap_now - _bt_vwap_10) / max(_bt_vwap_10, 1.0)
-                _BT_VWAP_THRESH  = 0.0005
-                _BT_VWAP_PENALTY = 0.04
+                _BT_VWAP_THRESH = 0.0005
+                _BT_VWAP_WEIGHT = 0.20
                 for _sig in raw_signals:
                     _against_flow = (
                         (_bt_vwap_slope < -_BT_VWAP_THRESH and _sig.direction == "bullish") or
                         (_bt_vwap_slope >  _BT_VWAP_THRESH and _sig.direction == "bearish")
                     )
                     if _against_flow:
-                        _sig.confidence = max(0.0, _sig.confidence - _BT_VWAP_PENALTY)
+                        _sig.confidence = round(
+                            max(0.0, _sig.confidence * (1.0 - _BT_VWAP_WEIGHT)), 4
+                        )
                 raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
             # ── Confluence bonus (mirrors strategy_router logic) ───────────────
@@ -665,8 +690,11 @@ class Backtester:
                     raw_signals[0].confidence = min(0.95, raw_signals[0].confidence + _bt_bonus)
                 raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
-            # ── Quality gate 1: confidence floor ─────────────────────────────
-            signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]
+            # ── Quality gate 1: confidence floor (confluence-aware) ──────────
+            # 2+ agree → 0.65 (_CONFLUENCE_FLOOR); single signal → 0.74 (_MIN_CONFIDENCE)
+            # _bt_agree_cnt was computed in the confluence bonus block above.
+            _bt_effective_floor = _CONFLUENCE_FLOOR if _bt_agree_cnt >= 2 else _MIN_CONFIDENCE
+            signals = [s for s in raw_signals if s.confidence >= _bt_effective_floor]
             if not signals:
                 self._diag["below_floor"] += 1
                 continue
@@ -721,6 +749,7 @@ class Backtester:
             stage1_done         = False
             active_strategy     = strat_id
             entry_date_str      = day_str
+            peak_opt_price      = entry_opt_px   # tracks highest option price for profit lock
 
         # ── EOD: force-close any open position ───────────────────────────────
         if in_trade and remaining_contracts > 0:
