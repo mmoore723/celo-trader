@@ -1,5 +1,6 @@
 # celo-trader
-Automated options day-trading bot
+https://github.com/mmoore723/celo-trader
+Automated options day-trading bot - Marquesha Moore
 
 ## Codebase map
 
