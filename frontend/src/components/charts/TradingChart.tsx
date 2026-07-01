@@ -452,8 +452,9 @@ export function TradingChart({
         handleScale:  false,
         timeScale: {
           borderColor:    C.border,
-          timeVisible:    false,   // no axis labels in the middle panel
+          timeVisible:    false,
           secondsVisible: false,
+          visible:        false,   // completely hide time axis on middle panel
           tickMarkFormatter,
         },
       });
@@ -542,13 +543,15 @@ export function TradingChart({
     }
 
     // ── Time-scale sync: main chart → sub-panels ──────────────────────────
-    // One-directional because sub-panels have handleScroll/Scale disabled.
-    const syncHandler = (range: { from: number; to: number } | null) => {
-      if (!range) return;
-      rsiChartRef.current?.timeScale().setVisibleLogicalRange(range);
-      macdChartRef.current?.timeScale().setVisibleLogicalRange(range);
+    // Use TIME-range sync (not logical/bar-index range) so that sub-panels
+    // with fewer data points (MACD starts at bar 34; RSI at bar 14) still
+    // show the correct timestamps regardless of their own bar-index offsets.
+    const syncHandler = (timeRange: { from: Time; to: Time } | null) => {
+      if (!timeRange) return;
+      rsiChartRef.current?.timeScale().setVisibleRange(timeRange);
+      macdChartRef.current?.timeScale().setVisibleRange(timeRange);
     };
-    chart.timeScale().subscribeVisibleLogicalRangeChange(syncHandler);
+    chart.timeScale().subscribeVisibleTimeRangeChange(syncHandler);
 
     // ── Resize observer: keep all panels the same width ───────────────────
     const ro = new ResizeObserver(() => {
@@ -562,7 +565,7 @@ export function TradingChart({
 
     return () => {
       ro.disconnect();
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncHandler);
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(syncHandler);
       chart.remove();
       chartRef.current    = null;
       candleRef.current   = null;

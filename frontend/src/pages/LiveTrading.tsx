@@ -479,9 +479,8 @@ export function LiveTrading() {
           </div>
           <div className="px-2 pb-3">
             {(() => {
-              // Tickers already in an open position — exclude these from the watch list
-              // so BOT FOCUS only shows candidates the bot is evaluating for ENTRY.
-              // Open positions are already fully visible in the Open Positions table below.
+              // Build a set of tickers already in an open position so we can
+              // badge them in the watchlist (not filter them — user wants ALL tickers visible).
               const openTickerSet = new Set<string>(
                 status?.open_positions
                   ? Object.values(status.open_positions as Record<string, LivePosition>).map((p) => p.ticker)
@@ -489,7 +488,7 @@ export function LiveTrading() {
               );
 
               if (false) {
-                // ── removed: open-position display moved to Open Positions table ──────────
+                // dead branch — kept to satisfy TypeScript variable references below
                 return (
                   <div style={{ overflowX: "auto" }}>
                     <table style={{
@@ -520,7 +519,6 @@ export function LiveTrading() {
                           const stopPct = pos.current_stop_pct;
                           return (
                             <tr key={pos.trade_id} style={{ borderBottom: "1px solid var(--border)" }}>
-                              {/* Ticker — click to switch chart */}
                               <td
                                 style={{
                                   padding: "4px 5px", color: "var(--accent)",
@@ -532,7 +530,6 @@ export function LiveTrading() {
                               >
                                 {pos.ticker}
                               </td>
-                              {/* Option type badge */}
                               <td style={{ padding: "4px 5px" }}>
                                 <span style={{
                                   fontSize: 9, fontWeight: 700, padding: "1px 4px",
@@ -543,11 +540,9 @@ export function LiveTrading() {
                                   {pos.option_type?.toUpperCase() ?? "—"}
                                 </span>
                               </td>
-                              {/* Entry */}
                               <td style={{ padding: "4px 5px", color: "var(--ink)", whiteSpace: "nowrap" }}>
                                 ${entry.toFixed(2)}
                               </td>
-                              {/* Current option price — live */}
                               <td style={{ padding: "4px 5px", color: "var(--ink)", whiteSpace: "nowrap" }}>
                                 {curPx != null ? `$${curPx.toFixed(2)}` : "—"}
                                 {pos.current_option_price_time && (
@@ -556,7 +551,6 @@ export function LiveTrading() {
                                   </span>
                                 )}
                               </td>
-                              {/* Live unrealized P&L */}
                               <td style={{ padding: "4px 5px", whiteSpace: "nowrap", fontWeight: 700 }}>
                                 {unreal != null ? (
                                   <span style={{ color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
@@ -612,46 +606,48 @@ export function LiveTrading() {
                 );
               }
 
-              // ── ENTRY CANDIDATES: watchlist minus any tickers already in a position ──
-              // Always show this view — even when in a trade — because the user needs
-              // to see what the bot is watching next, not a duplicate of Open Positions.
+              // ── ALL WATCHED TICKERS (full scan watchlist, nothing filtered out) ──
+              // Tickers with open positions get a small "IN" badge so the user can
+              // see the complete picture at a glance.
               if (status?.ticker || (status?.scan_watchlist ?? []).length > 0) {
-                const rawList: string[] = status?.scan_watchlist ?? (status?.ticker ? [status.ticker] : []);
-                // Filter out tickers that already have an open position — they're shown above
-                const watchlist = rawList.filter((t) => !openTickerSet.has(t));
-                const activeTicker = !openTickerSet.has(status?.ticker ?? "") ? (status?.ticker ?? "") : "";
-                // All candidates already in open positions
-                if (watchlist.length === 0) {
-                  return (
-                    <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
-                      All watched tickers have open positions — bot monitoring exits.
-                    </p>
-                  );
-                }
+                const watchlist: string[] = status?.scan_watchlist ?? (status?.ticker ? [status.ticker] : []);
+                const activeTicker = status?.ticker ?? "";
                 return (
                   <div>
-                    {/* Watchlist grid — entry candidates only (open-position tickers excluded) */}
+                    {/* Full scan watchlist — current eval ticker highlighted, in-trade ones badged */}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "2px 0 6px" }}>
                       {watchlist.map((t) => {
                         const isCurrent = t === activeTicker;
+                        const inTrade   = openTickerSet.has(t);
                         return (
                           <button
                             key={t}
                             onClick={() => setTicker(t)}
-                            title={`View ${t} chart`}
+                            title={`View ${t} chart${inTrade ? " · position open" : ""}`}
                             style={{
+                              position: "relative",
                               padding: "2px 7px",
                               borderRadius: 4,
-                              border: `1px solid ${isCurrent ? "var(--accent)" : "var(--border)"}`,
+                              border: `1px solid ${isCurrent ? "var(--accent)" : inTrade ? "var(--positive)" : "var(--border)"}`,
                               background: isCurrent ? "var(--accent)" : "transparent",
-                              color: isCurrent ? "#fff" : "var(--ink-muted)",
+                              color: isCurrent ? "#fff" : inTrade ? "var(--positive)" : "var(--ink-muted)",
                               fontFamily: "JetBrains Mono, monospace",
-                              fontSize: 10, fontWeight: isCurrent ? 700 : 500,
+                              fontSize: 10, fontWeight: isCurrent || inTrade ? 700 : 500,
                               cursor: "pointer",
                               transition: "all 0.15s",
                             }}
                           >
                             {t}
+                            {/* "IN" badge for tickers currently in a trade */}
+                            {inTrade && (
+                              <span style={{
+                                position: "absolute", top: -5, right: -5,
+                                background: "var(--positive)", color: "#fff",
+                                fontSize: 7, fontWeight: 700, lineHeight: 1,
+                                padding: "1px 3px", borderRadius: 3,
+                                letterSpacing: "0.04em",
+                              }}>IN</span>
+                            )}
                           </button>
                         );
                       })}
