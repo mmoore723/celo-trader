@@ -364,11 +364,79 @@ def route_signals(
                 )
                 signals.sort(key=lambda s: s.confidence, reverse=True)
 
+    # ── Directional consensus filter — the direction decision ────────────────
+    # This is the core fix for wrong-direction trading. Three independent
+    # indicators must ALL agree before a direction is considered "established":
+    #
+    #   1. Price vs VWAP       — where is price relative to intraday mean?
+    #   2. VWAP slope 20 bars  — which way is institutional money flowing?
+    #   3. MSA swing structure — are we making HH/HL (up) or LH/LL (down)?
+    #
+    # When all three agree AND RVOL ≥ 1.5× (institutions are driving this):
+    #   3/3 bullish → block ALL put signals. Money prints on calls only.
+    #   3/3 bearish → block ALL call signals. Money prints on puts only.
+    #
+    # This is not a penalty. It is a direction decision. In a crash day (April
+    # 2026: -5% at open, VWAP declining, LH/LL structure), the bot should ONLY
+    # be looking for put entries — not taking calls because a 5-min bounce
+    # "looked like" a VWAP pullback recovery.
+    if signals and len(today) >= 20:
+        _dc_last   = today.iloc[-1]
+        _dc_rvol   = float(_dc_last.get("rvol", 1.0) or 1.0)
+        _dc_close  = float(_dc_last["close"])
+        _dc_vwap   = float(_dc_last.get("vwap", _dc_close) or _dc_close)
+
+        # 1. Price position vs VWAP
+        _dc_price_bull = _dc_close > _dc_vwap
+        _dc_price_bear = _dc_close < _dc_vwap
+
+        # 2. VWAP slope over 20 bars (100 min) — medium-term institutional flow
+        _dc_vwap_20   = float(today.iloc[-20].get("vwap", _dc_vwap) or _dc_vwap)
+        _dc_slope_pct = (_dc_vwap - _dc_vwap_20) / max(_dc_vwap_20, 1.0)
+        _dc_slope_bull = _dc_slope_pct > 0.0005    # +0.05% over 100 min
+        _dc_slope_bear = _dc_slope_pct < -0.0005
+
+        # 3. Market structure (confirmed swing highs/lows)
+        _dc_msa    = MarketStructureAnalyzer(today)
+        _dc_trend  = _dc_msa.classify_trend()
+        _dc_struct_bull = _dc_trend == "uptrend"
+        _dc_struct_bear = _dc_trend == "downtrend"
+
+        _bull_score = sum([_dc_price_bull, _dc_slope_bull, _dc_struct_bull])
+        _bear_score = sum([_dc_price_bear, _dc_slope_bear, _dc_struct_bear])
+
+        # Hard block when RVOL ≥ 1.5× confirms institutional participation
+        if _dc_rvol >= 1.5:
+            _dc_before = len(signals)
+            if _bull_score == 3:
+                signals = [s for s in signals if s.direction == "bullish"]
+                if len(signals) < _dc_before:
+                    logger.info(
+                        "router: dir_consensus=BULLISH (3/3: price>VWAP slope+%.3f%% %s RVOL=%.1f×) "
+                        "— %d PUT signal(s) blocked",
+                        _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
+                    )
+                    _db_log("INFO", "scan",
+                        f"{ticker} — Directional consensus BULLISH "
+                        f"(price>VWAP, VWAP slope +{_dc_slope_pct*100:.2f}%, {_dc_trend}, "
+                        f"RVOL {_dc_rvol:.1f}×) — PUT entries blocked today.")
+            elif _bear_score == 3:
+                signals = [s for s in signals if s.direction == "bearish"]
+                if len(signals) < _dc_before:
+                    logger.info(
+                        "router: dir_consensus=BEARISH (3/3: price<VWAP slope%.3f%% %s RVOL=%.1f×) "
+                        "— %d CALL signal(s) blocked",
+                        _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
+                    )
+                    _db_log("INFO", "scan",
+                        f"{ticker} — Directional consensus BEARISH "
+                        f"(price<VWAP, VWAP slope {_dc_slope_pct*100:.2f}%, {_dc_trend}, "
+                        f"RVOL {_dc_rvol:.1f}×) — CALL entries blocked today.")
+
+            if len(signals) != _dc_before:
+                signals.sort(key=lambda s: s.confidence, reverse=True)
+
     # ── Quality gate 1: confidence floor ─────────────────────────────────────
-    # Confluence BONUS (+0.03–0.05) is already applied above when strategies agree.
-    # The floor itself does not change with confluence — weak signals (0.65–0.73)
-    # have always been filtered and confluence doesn't earn them a lower bar.
-    # Confluence rewards strong signals becoming stronger, not noise becoming tradeable.
     _before_floor = len(signals)
     signals = [s for s in signals if s.confidence >= _MIN_CONFIDENCE]
     if len(signals) < _before_floor:

@@ -65,6 +65,7 @@ from risk import RiskManager
 # Router quality-gate constants — import directly so the backtester
 # always stays in sync when these values are tuned in strategy_router.py
 from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY
+from strategies.base import MarketStructureAnalyzer
 
 logger = logging.getLogger("celo_trader.backtester")
 
@@ -710,6 +711,37 @@ class Backtester:
                         if _sig.direction != _bt_tdir:
                             _sig.confidence = min(_sig.confidence, 0.70)
                     raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+
+            # ── Directional consensus filter (mirrors strategy_router) ────────
+            # Hard-block counter-trend signals when price/VWAP/structure all agree
+            # AND RVOL ≥ 1.5× confirms institutional participation.
+            if raw_signals and len(bar_slice) >= 20 and "vwap" in bar_slice.columns:
+                _dc_last   = bar_slice.iloc[-1]
+                _dc_rvol   = float(_dc_last.get("rvol", 1.0) or 1.0)
+                _dc_close  = float(_dc_last["close"])
+                _dc_vwap   = float(_dc_last.get("vwap", _dc_close) or _dc_close)
+                _dc_v20    = float(bar_slice.iloc[-20].get("vwap", _dc_vwap) or _dc_vwap)
+                _dc_slope  = (_dc_vwap - _dc_v20) / max(_dc_v20, 1.0)
+                _dc_trend  = MarketStructureAnalyzer(bar_slice).classify_trend()
+
+                _dc_bull = sum([
+                    _dc_close > _dc_vwap,
+                    _dc_slope > 0.0005,
+                    _dc_trend == "uptrend",
+                ])
+                _dc_bear = sum([
+                    _dc_close < _dc_vwap,
+                    _dc_slope < -0.0005,
+                    _dc_trend == "downtrend",
+                ])
+
+                if _dc_rvol >= 1.5:
+                    if _dc_bull == 3:
+                        raw_signals = [s for s in raw_signals if s.direction == "bullish"]
+                    elif _dc_bear == 3:
+                        raw_signals = [s for s in raw_signals if s.direction == "bearish"]
+                    if raw_signals:
+                        raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
             # ── Quality gate 1: confidence floor ─────────────────────────────
             signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]
