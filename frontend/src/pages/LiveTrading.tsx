@@ -481,14 +481,17 @@ export function LiveTrading() {
             {(() => {
               // ── Trade setup card — shows the specific contract the bot is evaluating ──
               // Fields: ticker, CALL/PUT, strike, expiry, #contracts, entry price, S1 target
-              const evalTicker    = status?.last_eval_ticker ?? status?.ticker ?? null;
+              const evalTicker    = status?.last_eval_ticker ?? null;
               const evalOpt       = status?.last_eval_opt_type ?? null;
               const evalStrike    = status?.last_eval_strike ?? null;
               const evalExpiry    = status?.last_eval_expiry ?? null;
               const evalContracts = status?.last_eval_contracts ?? null;
               const evalEntry     = status?.last_eval_eff_entry ?? null;
               const isCall        = (evalOpt ?? "").toLowerCase() === "call";
-              const hasEval       = !!(evalTicker || evalEntry || evalStrike);
+              // Only show the card when we have actual contract-level data (strike or entry).
+              // Falling back to status.ticker showed "SPY" with no other details whenever
+              // the bot was scanning but hadn't found a valid contract yet.
+              const hasEval       = !!(evalStrike != null || evalEntry != null);
 
               // Format "2026-07-07" → "Jul 07"
               const fmtExpiry = (e: string) => {
