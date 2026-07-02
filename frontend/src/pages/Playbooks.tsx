@@ -169,20 +169,34 @@ const STRATEGIES: Strategy[] = [
 
 // ── Global risk / exit parameters (shared across all strategies) ─────────────
 const GLOBAL_PARAMS: { param: string; value: string; note?: string }[] = [
-  { param: "Stage 1 target",     value: "+50% on option premium",  note: "Exits 50% of contracts" },
-  { param: "Stage 2 trail lock", value: "+15% profit floor",        note: "Floor after Stage 1 fires" },
-  { param: "ATR trail mult.",    value: "2.0× ATR (underlying)",    note: "peak − 2× ATR14" },
-  { param: "ATR trail warmup",   value: "5 min minimum in trade",   note: "Trail doesn't arm before this" },
-  { param: "Hard stop (loss)",   value: "−50% on option premium" },
-  { param: "Momentum stop",      value: "−20% (early exit)",        note: "Cuts before full stop if trend collapses" },
-  { param: "Time-box (losing)",  value: "20 min max" },
-  { param: "Time-box (winner)",  value: "90 min after Stage 1" },
-  { param: "Spread max",         value: "$0.10 bid-ask" },
-  { param: "Min R:R (bootstrap)","value": "1.2× (balance < $5k)" },
-  { param: "Min R:R (standard)", value: "1.6×" },
-  { param: "Max positions",      value: "2 concurrent" },
-  { param: "Kill lock",          value: "24 hrs after daily cap" },
-  { param: "RVOL baseline",      value: "5-min bars, 10-day same-slot avg" },
+  // ── Entry / sizing ──────────────────────────────────────────────────────────
+  { param: "Min R:R (bootstrap)", value: "1.2× (balance < $5k)" },
+  { param: "Min R:R (standard)",  value: "1.6×" },
+  { param: "Max positions",       value: "2 concurrent" },
+  { param: "Spread max",          value: "$0.10 bid-ask" },
+  { param: "RVOL baseline",       value: "5-min bars, 10-day same-slot avg" },
+  // ── Exit hierarchy ──────────────────────────────────────────────────────────
+  { param: "Stage 1 target",      value: "+50% on option premium",   note: "Exits 50% of contracts" },
+  { param: "Stage 2 trail lock",  value: "+15% profit floor",         note: "Floor locked after Stage 1" },
+  { param: "Hard stop",           value: "−50% on option premium" },
+  { param: "Momentum stop",       value: "−20% early exit",           note: "Only first 20 min if losing" },
+  { param: "Time-box (losing)",   value: "60 min max" },
+  { param: "Time-box (winner)",   value: "90 min after Stage 1" },
+  { param: "ATR trail warmup",    value: "5 min + option ≥ +15%",     note: "Trail doesn't arm before both gates" },
+  // ── Multi-timeframe ATR trail (dynamic) ────────────────────────────────────
+  { param: "ATR source",          value: "5-min bars (falls back to 1-min)",  note: "Less noisy than 1-min" },
+  { param: "Trail mult — base",   value: "2.0× ATR",                  note: "Default when 1h trend is neutral" },
+  { param: "Trail mult — 1h with",value: "2.5× ATR",                  note: "1-hour EMA20 aligned with trade → give runners room" },
+  { param: "Trail mult — 1h vs.", value: "1.5× ATR",                  note: "1-hour EMA20 opposing trade → tighter stop" },
+  { param: "Trail mult — exhaust",value: "1.0× ATR",                  note: "5-min RSI >72 (call) or <28 (put) → very tight" },
+  { param: "Trail mult — MACD",   value: "≤ 1.5× ATR",               note: "5-min MACD hist declining 2 bars → fade signal" },
+  { param: "Trail mult — 15m lvl",value: "1.0× ATR",                  note: "Within 0.3% of 15-min swing level → near wall" },
+  // ── VWAP breach (trend-dead gate) ──────────────────────────────────────────
+  { param: "VWAP breach (5-min)", value: "2 consecutive 5-min bars",  note: "Primary signal when 5m data loaded" },
+  { param: "VWAP breach (1-min)", value: "5 consecutive 1-min bars",  note: "Fallback if 5-min not yet loaded" },
+  { param: "Trend-dead confirm",  value: "ADX < 20 AND EMA stack broken", note: "Both required — prevents false exits on dips" },
+  // ── Risk controls ──────────────────────────────────────────────────────────
+  { param: "Kill lock",           value: "24 hrs after daily cap" },
 ];
 
 const TAG_COLORS: Record<string, string> = {
