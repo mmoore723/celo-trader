@@ -43,10 +43,7 @@ from trading.state import LIVE_STATE, _now_et, _ET_TZ, _BOT_ROOT
 logger = logging.getLogger("celo_trader.trading_logic")
 
 # ── ATR / swing trailing stop constants ──────────────────────────────────────
-_ATR_TRAIL_MULTIPLIER = 2.0   # stop = peak − 2.0 × ATR (underlying space)
-                               # Widened from 1.5: 7–21 DTE options need room for
-                               # intraday wicks without getting chopped off healthy
-                               # pullbacks before the daily trend can develop.
+_ATR_TRAIL_MULTIPLIER = 2.0   # baseline ATR trail multiplier (dynamically adjusted below)
 _DELTA_APPROX         = 0.40  # approximate option delta for underlying→option conversion
 _SWING_LOOKBACK       = 20    # bars to look back for swing high/low
 
@@ -55,20 +52,28 @@ _ADX_WEAK_THRESHOLD   = 20    # ADX < 20 → trend has no directional strength
 _EMA_FAST             = 8
 _EMA_MID              = 21
 _EMA_SLOW             = 50
-_VWAP_BREACH_BARS     = 5     # VWAP must be breached for ≥ 5 consecutive 1-min bars
-                               # (= 5 minutes) before we check trend. 2 was too fast —
-                               # a 2-minute dip below VWAP during normal chop triggered
-                               # the exit before the trade had any chance to develop.
+_VWAP_BREACH_BARS     = 5     # 1-min VWAP breach bars (fallback if 5-min unavailable)
+_VWAP_5M_BREACH_BARS  = 2     # 5-min VWAP breach bars (cleaner structural signal)
+
 # ── Time cap of last resort (safety net only) ─────────────────────────────────
 _TIME_CAP_WINNER_MIN  = 90    # stage1 done  → 90 min max
 _TIME_CAP_LOSER_MIN   = 20    # flat/losing  → 20 min max
 
 # ── ATR trail warmup ──────────────────────────────────────────────────────────
-# Don't arm the ATR trailing stop until the trade is at least this many minutes
-# old. On 1-min bars, the entry-bar ATR and swing levels are right at current
-# price, so the stop fires almost immediately on any noise. A 5-min warmup gives
-# the trade room to breathe before the structural trail kicks in.
-_MIN_TRAIL_WARMUP_MIN = 5
+_MIN_TRAIL_WARMUP_MIN = 5     # don't arm trail until 5 min into trade
+
+# ── Multi-timeframe exit tuning ───────────────────────────────────────────────
+# ATR trail multiplier is dynamically adjusted based on multi-TF context.
+# Higher = more room for runners; lower = tighter, exits sooner.
+_TRAIL_MULT_1H_WITH    = 2.5  # 1-hour trend aligned with trade → give runners room
+_TRAIL_MULT_BASE       = 2.0  # default when 1-hour is neutral
+_TRAIL_MULT_1H_AGAINST = 1.5  # 1-hour trend opposing trade → tighter stop
+_TRAIL_MULT_TIGHT      = 1.0  # RSI exhaustion OR near 15-min swing level → very tight
+
+_RSI_EXHAUST_CALL      = 72   # 5-min RSI above this while long = momentum exhaustion
+_RSI_EXHAUST_PUT       = 28   # 5-min RSI below this while short = momentum exhaustion
+_MACD_FADE_BARS        = 2    # MACD histogram declining for N consecutive 5-min bars
+_15M_SWING_PROX_PCT    = 0.003  # within 0.3% of 15-min swing level = near resistance/support
 
 
 # ── Indicator helpers ─────────────────────────────────────────────────────────
@@ -217,6 +222,63 @@ def _underlying_stop_to_option(
     return round(max(option_stop, hard_floor, 0.01), 4)
 
 
+# ── Multi-timeframe helpers ───────────────────────────────────────────────────
+
+def _compute_rsi(df: pd.DataFrame, period: int = 14) -> Optional[float]:
+    """RSI on the most recent bar. Returns None if insufficient history."""
+    try:
+        if len(df) < period + 2:
+            return None
+        close = df["close"].astype(float)
+        delta = close.diff()
+        gain  = delta.clip(lower=0)
+        loss  = (-delta).clip(lower=0)
+        avg_g = gain.ewm(alpha=1.0 / period, adjust=False).mean()
+        avg_l = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+        rs    = avg_g / avg_l.replace(0, np.nan)
+        rsi   = 100.0 - (100.0 / (1.0 + rs))
+        val   = float(rsi.iloc[-1])
+        return val if not np.isnan(val) else None
+    except Exception:
+        return None
+
+
+def _compute_macd_hist(df: pd.DataFrame,
+                       fast: int = 12, slow: int = 26, sig: int = 9) -> list:
+    """Returns last 3 MACD histogram values (most recent last). Empty list if not enough data."""
+    try:
+        if len(df) < slow + sig:
+            return []
+        close     = df["close"].astype(float)
+        ema_fast  = close.ewm(span=fast, adjust=False).mean()
+        ema_slow  = close.ewm(span=slow, adjust=False).mean()
+        macd_line = ema_fast - ema_slow
+        sig_line  = macd_line.ewm(span=sig, adjust=False).mean()
+        hist      = (macd_line - sig_line).tolist()
+        return hist[-3:]
+    except Exception:
+        return []
+
+
+def _1h_trend_bias(df_1h: pd.DataFrame, direction: str) -> str:
+    """
+    Check if 1-hour EMA20 supports the trade direction.
+    Returns "with", "against", or "neutral" (insufficient data).
+    """
+    try:
+        if df_1h is None or len(df_1h) < 22:
+            return "neutral"
+        close  = df_1h["close"].astype(float)
+        ema20  = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
+        price  = float(close.iloc[-1])
+        if direction == "bullish":
+            return "with" if price > ema20 else "against"
+        else:
+            return "with" if price < ema20 else "against"
+    except Exception:
+        return "neutral"
+
+
 # ── Main position manager ─────────────────────────────────────────────────────
 
 def _manage_open_position(
@@ -262,10 +324,18 @@ def _manage_open_position(
             "last_position_narration_minute": None,
             # Adaptive state machine
             "atr_trail_stop":            None,
-            "vwap_breached_bars":        0,     # consecutive bars below/above VWAP
+            "vwap_breached_bars":        0,     # consecutive 1-min bars below/above VWAP (fallback)
+            "vwap_5m_breached_bars":     0,     # consecutive 5-min bars below/above VWAP (primary)
             "peak_underlying":           None,  # highest underlying close for trail calc
-            "last_bar_fetch_minute":     None,  # throttle: fetch bars max once/minute
-            "cached_underlying_df":      None,  # cache to avoid refetching every tick
+            "last_bar_fetch_minute":     None,  # throttle: 1-min bars — fetch max once/minute
+            "cached_underlying_df":      None,  # 1-min bar cache
+            # Multi-timeframe caches (throttled by bar boundary)
+            "cached_5m_df":              None,
+            "cached_15m_df":             None,
+            "cached_1h_df":              None,
+            "last_5m_fetch_key":         None,  # "%Y-%m-%d %H:MM//5" bar key
+            "last_15m_fetch_key":        None,  # "%Y-%m-%d %H:MM//15" bar key
+            "last_1h_fetch_key":         None,  # "%Y-%m-%d %H" bar key
         })
 
         ps["current_option_price"]      = current_price
@@ -323,6 +393,51 @@ def _manage_open_position(
             except Exception as _be:
                 logger.debug("Bar fetch for position management failed (%s): %s", ticker, _be)
 
+        # ── Fetch 5-min bars (throttled to once per 5-min bar) ───────────────
+        # Used for: RSI exhaustion, MACD fade, 5-min VWAP breach, 5-min ATR
+        _5m_bar_key = now_et.strftime("%Y-%m-%d %H:") + str(now_et.minute // 5)
+        df_5m: Optional[pd.DataFrame] = ps.get("cached_5m_df")
+        if ps.get("last_5m_fetch_key") != _5m_bar_key:
+            try:
+                from signals import bars_to_df as _btd
+                _b5, _e5, _ = alpaca.get_session_bars(ticker, "5Min")
+                if _b5 and not _e5:
+                    df_5m = _btd(_b5)
+                    ps["cached_5m_df"]      = df_5m
+                    ps["last_5m_fetch_key"] = _5m_bar_key
+            except Exception as _e5m:
+                logger.debug("5m bar fetch failed (%s): %s", ticker, _e5m)
+
+        # ── Fetch 15-min bars (throttled to once per 15-min bar) ─────────────
+        # Used for: swing level proximity check
+        _15m_bar_key = now_et.strftime("%Y-%m-%d %H:") + str(now_et.minute // 15)
+        df_15m: Optional[pd.DataFrame] = ps.get("cached_15m_df")
+        if ps.get("last_15m_fetch_key") != _15m_bar_key:
+            try:
+                from signals import bars_to_df as _btd
+                _b15, _e15, _ = alpaca.get_session_bars(ticker, "15Min")
+                if _b15 and not _e15:
+                    df_15m = _btd(_b15)
+                    ps["cached_15m_df"]      = df_15m
+                    ps["last_15m_fetch_key"] = _15m_bar_key
+            except Exception as _e15m:
+                logger.debug("15m bar fetch failed (%s): %s", ticker, _e15m)
+
+        # ── Fetch 1-hour bars (throttled to once per hour) ───────────────────
+        # Used for: macro trend bias (EMA20 alignment)
+        _1h_bar_key = now_et.strftime("%Y-%m-%d %H")
+        df_1h: Optional[pd.DataFrame] = ps.get("cached_1h_df")
+        if ps.get("last_1h_fetch_key") != _1h_bar_key:
+            try:
+                from signals import bars_to_df as _btd
+                _b1h, _e1h = alpaca.get_bars(ticker, "1Hour", limit=100)
+                if _b1h and not _e1h:
+                    df_1h = _btd(_b1h)
+                    ps["cached_1h_df"]      = df_1h
+                    ps["last_1h_fetch_key"] = _1h_bar_key
+            except Exception as _e1h:
+                logger.debug("1h bar fetch failed (%s): %s", ticker, _e1h)
+
         # ── Compute adaptive trailing stop from bars ───────────────────────────
         atr_trail_stop: Optional[float]  = ps.get("atr_trail_stop")
         vwap: Optional[float]            = None
@@ -335,18 +450,79 @@ def _manage_open_position(
             if entry_time else 999.0
         )
 
+        # ── Multi-timeframe exit signals → dynamic ATR trail multiplier ─────────
+        # Each timeframe narrows or widens the ATR trail independently.
+        # Signals stack: RSI exhaustion on top of a 1h headwind = very tight stop.
+        _dynamic_trail_mult = _TRAIL_MULT_BASE   # start at 2.0×
+        _mtf_notes: list[str] = []
+
+        # 1-hour trend bias: gives runners more room when aligned, tightens when opposing
+        _1h_bias = _1h_trend_bias(df_1h, direction)
+        if _1h_bias == "with":
+            _dynamic_trail_mult = _TRAIL_MULT_1H_WITH   # 2.5×
+            _mtf_notes.append(f"1h_trend=WITH({_TRAIL_MULT_1H_WITH}×)")
+        elif _1h_bias == "against":
+            _dynamic_trail_mult = min(_dynamic_trail_mult, _TRAIL_MULT_1H_AGAINST)  # 1.5×
+            _mtf_notes.append(f"1h_trend=AGAINST({_TRAIL_MULT_1H_AGAINST}×)")
+
+        if df_5m is not None and not df_5m.empty:
+            # 5-min RSI exhaustion: caps trail very tight regardless of other signals
+            _5m_rsi = _compute_rsi(df_5m)
+            _rsi_exhausted = (
+                (_5m_rsi is not None and direction == "bullish" and _5m_rsi >= _RSI_EXHAUST_CALL) or
+                (_5m_rsi is not None and direction == "bearish" and _5m_rsi <= _RSI_EXHAUST_PUT)
+            )
+            if _rsi_exhausted:
+                _dynamic_trail_mult = min(_dynamic_trail_mult, _TRAIL_MULT_TIGHT)  # 1.0×
+                _mtf_notes.append(f"5m_rsi_exhaust={_5m_rsi:.0f}({_TRAIL_MULT_TIGHT}×)")
+
+            # 5-min MACD histogram declining for ≥ 2 bars = momentum fading
+            _macd_hist = _compute_macd_hist(df_5m)
+            if len(_macd_hist) >= _MACD_FADE_BARS:
+                _macd_fading = all(
+                    _macd_hist[-(i + 1)] < _macd_hist[-(i + 2)]
+                    for i in range(_MACD_FADE_BARS - 1)
+                )
+                if _macd_fading:
+                    _dynamic_trail_mult = min(_dynamic_trail_mult, _TRAIL_MULT_1H_AGAINST)  # 1.5×
+                    _mtf_notes.append(f"5m_macd_fade({_TRAIL_MULT_1H_AGAINST}×)")
+
+            # 5-min VWAP breach tracking (cleaner signal than 1-min)
+            _5m_vwap = _compute_vwap(df_5m)
+            _5m_close = float(df_5m["close"].iloc[-1])
+            if _5m_vwap is not None:
+                _5m_breached = (
+                    (direction == "bullish" and _5m_close < _5m_vwap) or
+                    (direction == "bearish" and _5m_close > _5m_vwap)
+                )
+                if _5m_breached:
+                    ps["vwap_5m_breached_bars"] = ps.get("vwap_5m_breached_bars", 0) + 1
+                else:
+                    ps["vwap_5m_breached_bars"] = 0
+
+        if df_15m is not None and not df_15m.empty:
+            # 15-min swing level proximity: if price is at a key level, get very tight
+            _15m_close = float(df_15m["close"].iloc[-1])
+            _swing_15m = _structural_swing_stop(df_15m, direction, lookback=20)
+            if _swing_15m is not None and _15m_close > 0:
+                _prox_pct = abs(_15m_close - _swing_15m) / _15m_close
+                if _prox_pct <= _15M_SWING_PROX_PCT:
+                    _dynamic_trail_mult = min(_dynamic_trail_mult, _TRAIL_MULT_TIGHT)  # 1.0×
+                    _mtf_notes.append(f"near_15m_swing={_prox_pct*100:.2f}%({_TRAIL_MULT_TIGHT}×)")
+
+        if _mtf_notes:
+            logger.debug("[%s] MTF trail mult=%.1f× — %s", ticker, _dynamic_trail_mult, " | ".join(_mtf_notes))
+
         if df_under is not None and not df_under.empty:
             _underlying_now = float(df_under["close"].iloc[-1])
 
             # ATR-based trailing stop in underlying space.
-            # WARMUP GUARD: don't arm until _MIN_TRAIL_WARMUP_MIN minutes have
-            # elapsed.  On 1-min bars the entry-bar ATR/swing is essentially at
-            # current price, so the stop fires on first-minute noise otherwise.
-            _atr = _compute_atr(df_under)
+            # Uses 5-min ATR when available (less noisy than 1-min), falls back to 1-min.
+            # WARMUP GUARD: don't arm until _MIN_TRAIL_WARMUP_MIN minutes elapsed.
+            _atr = _compute_atr(df_5m) if (df_5m is not None and len(df_5m) >= 15) else _compute_atr(df_under)
             # PROFIT GATE: only arm the ATR trail once the option is at least
-            # 15% above entry.  Before that threshold the underlying has barely
-            # moved, so the ATR stop sits essentially at entry price — any normal
-            # wiggle fires the trail at break-even or a loss despite positive MFE.
+            # 15% above entry. Before that the underlying has barely moved and the
+            # stop would sit at entry price — any wig fires the trail at a loss.
             _opt_gain_pct = (current_price - entry_price) / entry_price if entry_price else 0.0
             _trail_profit_gate = _opt_gain_pct >= 0.15
             if (_atr is not None
@@ -355,9 +531,9 @@ def _manage_open_position(
                     and _trail_profit_gate):
                 _peak_u = float(ps["peak_underlying"])
                 if direction == "bullish":
-                    _atr_stop_u = _peak_u - _ATR_TRAIL_MULTIPLIER * _atr
+                    _atr_stop_u = _peak_u - _dynamic_trail_mult * _atr
                 else:
-                    _atr_stop_u = _peak_u + _ATR_TRAIL_MULTIPLIER * _atr
+                    _atr_stop_u = _peak_u + _dynamic_trail_mult * _atr
 
                 _atr_stop_opt = _underlying_stop_to_option(
                     entry_price, _underlying_now, _atr_stop_u
@@ -405,16 +581,24 @@ def _manage_open_position(
                 else:
                     ps["vwap_breached_bars"] = 0   # reset on any bar back through VWAP
 
-            # Trend breakdown check — only when VWAP breach is sustained
-            if ps.get("vwap_breached_bars", 0) >= _VWAP_BREACH_BARS:
-                _adx   = _compute_adx(df_under)
-                _ema_ok = _ema_stack_aligned(df_under, direction)
-                adx_weak    = (_adx is not None and _adx < _ADX_WEAK_THRESHOLD)
-                ema_broken  = not _ema_ok
+            # Trend breakdown check — use 5-min VWAP breach when available
+            # (2 consecutive 5-min bars is a stronger signal than 5 noisy 1-min bars),
+            # falling back to 1-min counter if 5-min data hasn't loaded yet.
+            _vwap_breached = (
+                ps.get("vwap_5m_breached_bars", 0) >= _VWAP_5M_BREACH_BARS
+                if df_5m is not None
+                else ps.get("vwap_breached_bars", 0) >= _VWAP_BREACH_BARS
+            )
+            if _vwap_breached:
+                # Prefer 5-min bars for ADX/EMA check (less noise than 1-min)
+                _df_for_trend = df_5m if (df_5m is not None and len(df_5m) >= 55) else df_under
+                _adx    = _compute_adx(_df_for_trend)
+                _ema_ok = _ema_stack_aligned(_df_for_trend, direction)
+                adx_weak   = (_adx is not None and _adx < _ADX_WEAK_THRESHOLD)
+                ema_broken = not _ema_ok
                 # Require BOTH conditions — ADX<20 alone is common during normal
-                # mid-morning consolidation and should not terminate a live trade.
-                # EMA misalignment alone can be transient. Both together = confirmed dead.
-                trend_dead  = adx_weak and ema_broken
+                # mid-morning consolidation. Both together = confirmed dead.
+                trend_dead = adx_weak and ema_broken
 
         # Persist current stop for dashboard visibility
         _current_stop_pct_display = (
