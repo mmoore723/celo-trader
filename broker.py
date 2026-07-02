@@ -257,6 +257,12 @@ class AlpacaClient:
             )
             raise
 
+    def _patch(self, url: str, payload: dict) -> dict:
+        """PATCH with single attempt — used for in-flight order modification (price step-up)."""
+        r = requests.patch(url, headers=self.headers, json=payload, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
     def _delete(self, url: str) -> None:
         """DELETE with retry — used for panic close."""
         def call():
@@ -758,6 +764,7 @@ class AlpacaClient:
         side: str,              # 'buy' or 'sell'
         order_type: str = "limit",
         limit_price: Optional[float] = None,
+        step_to_price: Optional[float] = None,  # if set, step up to this price after 5s if not filled
     ) -> Optional[dict]:
         """
         Submit an options order via Alpaca v2 OPTIONS endpoint.
@@ -811,7 +818,9 @@ class AlpacaClient:
 
             # FIX S1: Poll for fill confirmation — don't record trade on pending.
             # Pass limit_price so paper fallback can use it for confirmed_fill_price.
-            confirmed = self._wait_for_fill(order_id, limit_price=limit_price)
+            # Pass step_to_price so live orders step up from mid→ask if not filled.
+            confirmed = self._wait_for_fill(order_id, limit_price=limit_price,
+                                            step_to_price=step_to_price)
             if not confirmed:
                 log_event("ERROR", "order",
                           f"🔴 [{symbol}] Order did not fill — no position recorded. "
@@ -904,20 +913,20 @@ class AlpacaClient:
         order_id: str,
         max_wait: int = 300,
         limit_price: Optional[float] = None,
+        step_to_price: Optional[float] = None,
     ) -> Optional[dict]:
         """
         Poll order status until filled or rejected.
         Returns the order dict with confirmed_fill_price set, or None.
 
-        FAST-FILL LOGIC (solves the 5-minute block):
-        - Paper account: poll 10 seconds. If still pending, assume fill at
-          limit_price and return immediately. Paper simulation is slow and a
-          limit order placed above the ask is virtually guaranteed to fill.
-          Returning after 10s means the bot records the trade and continues
-          rather than blocking for 5 minutes.
-        - Live account: poll 30 seconds. Limit orders above ask should fill
-          in < 1s in normal conditions. If 30s pass, cancel to prevent ghost
-          positions and return None.
+        SMART FILL LOGIC (mid-price entry with ask step-up):
+        - Initial limit is placed at mid-price (same favorable fill as paper).
+        - Live account: if not filled after 5 seconds, modify the order's
+          limit price up to step_to_price (ask). This maximises the chance of
+          getting the mid fill while still guaranteeing execution.
+          If still not filled after 30 total seconds, cancel to prevent ghosts.
+        - Paper account: poll 10 seconds. Paper simulation fills quickly at
+          any reasonable limit, so no step-up needed. Assume fill after 10s.
         """
         if not order_id or order_id == "paper_simulated":
             return {"id": order_id, "status": "filled",
@@ -927,17 +936,53 @@ class AlpacaClient:
         is_paper = "paper" in self.base.lower()
         effective_wait = 10 if is_paper else 30   # seconds before giving up
 
+        # Step-up threshold: on live, after this many seconds without a fill,
+        # modify the order's limit price from mid up to the ask.
+        _STEP_UP_AFTER_SECS = 5
+        _stepped_up = False
+
         terminal_states = {"filled", "expired", "canceled", "cancelled",
                            "rejected", "stopped", "suspended", "done_for_day"}
         for i in range(effective_wait):
+            # ── Live step-up: mid → ask after 5 seconds ───────────────────────
+            # Only step up once; only on live accounts; only when a step_to_price
+            # was supplied (i.e. mid < ask, so there's actually a spread to cross).
+            if (not is_paper
+                    and not _stepped_up
+                    and step_to_price is not None
+                    and step_to_price > (limit_price or 0)
+                    and i == _STEP_UP_AFTER_SECS):
+                try:
+                    self._patch(
+                        f"{self.base}/v2/orders/{order_id}",
+                        {"limit_price": str(round(step_to_price, 2))},
+                    )
+                    _stepped_up = True
+                    log_event("INFO", "order",
+                              f"⬆️ [{order_id[:8]}…] Mid-price limit not filled after "
+                              f"{_STEP_UP_AFTER_SECS}s — stepping up to ask "
+                              f"${step_to_price:.2f}.")
+                    logger.info(
+                        "order_step_up mid=%.4f ask=%.4f order=%s",
+                        limit_price or 0, step_to_price, order_id,
+                    )
+                except Exception as _pe:
+                    logger.warning("order_step_up_failed order=%s: %s", order_id, _pe)
+
             try:
                 order = self._get(f"{self.base}/v2/orders/{order_id}")
                 status = order.get("status", "")
                 logger.debug("Order %s status: %s", order_id, status)
                 if status == "filled":
                     filled_price = float(order.get("filled_avg_price") or limit_price or 0)
+                    # Log whether we got the mid-price improvement or had to step up.
+                    _saved_per_contract = (step_to_price or filled_price) - filled_price
+                    _fill_note = (
+                        f" (filled at mid — saved ${_saved_per_contract:.2f}/contract vs ask)"
+                        if _saved_per_contract > 0.005 else ""
+                    )
                     log_event("INFO", "order",
-                              f"✅ Order filled @ ${filled_price:.2f} — position recorded.")
+                              f"✅ Order filled @ ${filled_price:.2f}{_fill_note} — position recorded.")
                     logger.info("Order %s filled @ $%.4f", order_id, filled_price)
                     order["confirmed_fill_price"] = filled_price
                     return order

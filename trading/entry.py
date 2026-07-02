@@ -1229,16 +1229,26 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Stamp the key BEFORE placing so a concurrent tick that reaches here
     # in the same minute sees the lock immediately.
     LIVE_STATE["_last_order_key"] = _entry_key
-    # Use ask + 2% as limit price so minor market ticks don't kill the fill.
-    # The eff_entry already includes 5% slippage for sizing/R:R — this 2% pad
-    # is strictly for order placement and doesn't affect risk calculations.
-    _order_limit = round(ask_price * 1.02, 2)
+    # Smart limit order: submit at the mid-price (bid+ask)/2 first — the same
+    # favorable price paper trading fills at. If the market is moving and the
+    # mid isn't taken within 5 seconds, _wait_for_fill steps the limit up to
+    # the raw ask (step_to_price) to guarantee execution.
+    # eff_entry (ask + 5% slippage) is intentionally kept conservative for all
+    # risk/sizing calculations — actual fill will be equal to or better than that.
+    _order_mid   = round(_c_mid, 2)   # best-case: fill at mid
+    _order_ask   = round(ask_price, 2) # worst-case step-up: fill at ask
+    _spread_save = round((_order_ask - _order_mid) * n_contracts * 100, 2)
+    log_event("INFO", "order",
+              f"💡 [{ticker}] Limit order at mid ${_order_mid:.2f} "
+              f"(ask ${_order_ask:.2f}) — potential saving ${_spread_save:.2f} "
+              f"on {n_contracts} contract(s). Will step up to ask if not filled in 5s.")
     order = alpaca.place_option_order(
-        symbol      = contract["symbol"],
-        qty         = n_contracts,
-        side        = "buy",
-        order_type  = "limit",
-        limit_price = _order_limit,
+        symbol         = contract["symbol"],
+        qty            = n_contracts,
+        side           = "buy",
+        order_type     = "limit",
+        limit_price    = _order_mid,
+        step_to_price  = _order_ask,
     )
 
     # FIX S1: Only record trade if order actually filled
