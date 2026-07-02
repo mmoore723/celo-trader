@@ -1,12 +1,13 @@
 /**
  * Performance.tsx — P&L analytics, equity curve, and deep breakdowns.
  */
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AreaChart, Area, BarChart, Bar as RBar, XAxis, YAxis,
   Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell,
 } from "recharts";
+// Note: BarChart/RBar/Cell still used in analytics sections below
 import { api } from "../lib/api";
 import { useThemeStore } from "../store/theme";
 import { PageLoader } from "../components/PageLoader";
@@ -24,6 +25,205 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
 function SectionHeader({ title }: { title: string }) {
   return (
     <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>{title}</h3>
+  );
+}
+
+// ── Calendar heatmap — monthly + yearly views ─────────────────────────────────
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+function pnlColor(pnl: number | undefined, maxAbs: number, dark: boolean): string {
+  if (pnl == null) return "transparent";
+  if (Math.abs(pnl) < 0.01) return dark ? "#21262d" : "#f0f2f7"; // no trade
+  const intensity = Math.min(1, Math.abs(pnl) / (maxAbs || 1));
+  if (pnl > 0) {
+    // green: low → #1a4731, high → #3fb950 (dark) / #bbf7d0 → #16a34a (light)
+    const r = dark ? Math.round(31 + intensity * (80 - 31))   : Math.round(187 - intensity * (187 - 22));
+    const g = dark ? Math.round(71 + intensity * (185 - 71))  : Math.round(247 - intensity * (247 - 163));
+    const b = dark ? Math.round(49 + intensity * (80 - 49))   : Math.round(208 - intensity * (208 - 74));
+    return `rgb(${r},${g},${b})`;
+  } else {
+    // red: low → #4b1113, high → #f85149 (dark) / #fecaca → #dc2626 (light)
+    const r = dark ? Math.round(75 + intensity * (248 - 75))  : Math.round(254 - intensity * (254 - 220));
+    const g = dark ? Math.round(17 + intensity * (81 - 17))   : Math.round(202 - intensity * (202 - 38));
+    const b = dark ? Math.round(19 + intensity * (73 - 19))   : Math.round(202 - intensity * (202 - 38));
+    return `rgb(${r},${g},${b})`;
+  }
+}
+
+function MonthGrid({
+  year, month, pnlMap, maxAbs, dark, tooltip, setTooltip,
+}: {
+  year: number; month: number; // month 0-based
+  pnlMap: Record<string, number>;
+  maxAbs: number; dark: boolean;
+  tooltip: string | null; setTooltip: (s: string | null) => void;
+}) {
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array(firstDay).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  // Pad to full weeks
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  return (
+    <div>
+      <div className="text-xs font-semibold mb-1" style={{ color: "var(--ink-muted)" }}>
+        {MONTHS[month]} {year}
+      </div>
+      {/* Day-of-week header */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 2 }}>
+        {DAYS.map((d) => (
+          <div key={d} style={{ fontSize: 9, color: "var(--ink-faint)", textAlign: "center" }}>{d[0]}</div>
+        ))}
+      </div>
+      {/* Date cells */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
+        {cells.map((day, i) => {
+          if (!day) return <div key={i} />;
+          const dateStr = `${year}-${String(month + 1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+          const pnl = pnlMap[dateStr];
+          const bg  = pnlColor(pnl, maxAbs, dark);
+          const isWeekend = (firstDay + day - 1) % 7 === 0 || (firstDay + day - 1) % 7 === 6;
+          const tipKey = `${dateStr}`;
+          return (
+            <div
+              key={i}
+              title={pnl != null ? `${dateStr}: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` : dateStr}
+              onMouseEnter={() => pnl != null && setTooltip(tipKey)}
+              onMouseLeave={() => setTooltip(null)}
+              style={{
+                height: 28,
+                borderRadius: 3,
+                background: isWeekend && pnl == null
+                  ? (dark ? "#161b22" : "#f8fafc")
+                  : bg || (dark ? "#21262d" : "#f0f2f7"),
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center",
+                cursor: pnl != null ? "default" : "default",
+                border: tooltip === tipKey ? "1px solid var(--accent)" : "1px solid transparent",
+                position: "relative",
+              }}
+            >
+              <span style={{ fontSize: 9, color: pnl != null ? (dark ? "#e6edf3" : "#1f2937") : "var(--ink-faint)", fontWeight: pnl != null ? 600 : 400 }}>
+                {day}
+              </span>
+              {pnl != null && (
+                <span style={{ fontSize: 7, color: dark ? "#e6edf3" : "#1f2937", lineHeight: 1 }}>
+                  {pnl >= 0 ? "+" : ""}{pnl >= 100 || pnl <= -100 ? `$${Math.round(pnl)}` : `$${pnl.toFixed(0)}`}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CalendarHeatmap({ daily, dark }: { daily: { date: string; pnl: number }[]; dark: boolean }) {
+  const [view, setView]           = useState<"month" | "year">("month");
+  const [monthOffset, setMonthOffset] = useState(0); // 0 = current month
+  const [tooltip, setTooltip]     = useState<string | null>(null);
+
+  const pnlMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const d of daily) m[d.date] = d.pnl;
+    return m;
+  }, [daily]);
+
+  const maxAbs = useMemo(() =>
+    Math.max(1, ...daily.map((d) => Math.abs(d.pnl))),
+  [daily]);
+
+  const now   = new Date();
+  const year  = now.getFullYear();
+
+  // Month view target
+  const target     = new Date(year, now.getMonth() + monthOffset, 1);
+  const tYear      = target.getFullYear();
+  const tMonth     = target.getMonth();
+  const monthLabel = `${MONTHS[tMonth]} ${tYear}`;
+
+  return (
+    <div className="card p-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-4">
+        <SectionHeader title="Daily P&L Calendar" />
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex gap-1">
+            {(["month", "year"] as const).map((v) => (
+              <button
+                key={v}
+                className={`btn btn-sm ${view === v ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setView(v)}
+              >
+                {v.charAt(0).toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+          {/* Month navigation (month view only) */}
+          {view === "month" && (
+            <div className="flex items-center gap-1">
+              <button className="btn btn-ghost btn-sm" onClick={() => setMonthOffset((o) => o - 1)}>‹</button>
+              <span className="text-xs font-semibold" style={{ color: "var(--ink)", minWidth: 80, textAlign: "center" }}>
+                {monthLabel}
+              </span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setMonthOffset((o) => Math.min(o + 1, 0))}
+                disabled={monthOffset >= 0}
+              >›</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Monthly view */}
+      {view === "month" && (
+        <MonthGrid
+          year={tYear} month={tMonth}
+          pnlMap={pnlMap} maxAbs={maxAbs} dark={dark}
+          tooltip={tooltip} setTooltip={setTooltip}
+        />
+      )}
+
+      {/* Yearly view — 3×4 grid of month mini-calendars */}
+      {view === "year" && (
+        <div>
+          <div className="text-xs font-semibold mb-3" style={{ color: "var(--ink-muted)" }}>{year}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
+            {Array.from({ length: 12 }, (_, m) => (
+              <MonthGrid
+                key={m}
+                year={year} month={m}
+                pnlMap={pnlMap} maxAbs={maxAbs} dark={dark}
+                tooltip={tooltip} setTooltip={setTooltip}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Legend */}
+      <div className="flex items-center gap-2 mt-4" style={{ color: "var(--ink-faint)", fontSize: 10 }}>
+        <span>Loss</span>
+        {[1, 0.6, 0.2].map((i) => (
+          <div key={i} style={{ width: 14, height: 14, borderRadius: 2,
+            background: pnlColor(-maxAbs * i, maxAbs, dark) }} />
+        ))}
+        <div style={{ width: 14, height: 14, borderRadius: 2,
+          background: dark ? "#21262d" : "#f0f2f7" }} />
+        {[0.2, 0.6, 1].map((i) => (
+          <div key={i} style={{ width: 14, height: 14, borderRadius: 2,
+            background: pnlColor(maxAbs * i, maxAbs, dark) }} />
+        ))}
+        <span>Profit</span>
+      </div>
+    </div>
   );
 }
 
@@ -166,31 +366,8 @@ export function Performance() {
         </ResponsiveContainer>
       </div>
 
-      {/* Daily P&L bars */}
-      <div className="card p-4">
-        <SectionHeader title="Daily P&L" />
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={equity}>
-            <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: tickColor }} />
-            <YAxis tick={{ fontSize: 10, fill: tickColor }} />
-            <Tooltip
-              contentStyle={{
-                background: dark ? "#161b22" : "#fff",
-                border: `1px solid ${dark ? "#30363d" : "#e2e5ed"}`,
-                borderRadius: 8, fontSize: 12,
-              }}
-              formatter={(v: unknown) => [`$${(v as number).toFixed(2)}`, "P&L"]}
-            />
-            <ReferenceLine y={0} stroke={dark ? "#30363d" : "#e2e5ed"} />
-            <RBar dataKey="pnl" radius={[3, 3, 0, 0]}>
-              {equity.map((d, i) => (
-                <Cell key={i} fill={d.pnl >= 0 ? posColor : negColor} />
-              ))}
-            </RBar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Daily P&L Calendar */}
+      <CalendarHeatmap daily={daily} dark={dark} />
 
       {/* ── Analytics sections (only when we have data) ───────────────────── */}
       {analytics && (
