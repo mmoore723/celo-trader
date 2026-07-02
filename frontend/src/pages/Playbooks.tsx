@@ -13,6 +13,7 @@ interface Strategy {
   target: string;
   notes: string;
   tags: string[];
+  tuning: { param: string; value: string }[];
 }
 
 const STRATEGIES: Strategy[] = [
@@ -20,90 +21,168 @@ const STRATEGIES: Strategy[] = [
     id: "orb",
     name: "Opening Range Breakout",
     emoji: "🎯",
-    setup:  "Price forms a tight range during 9:30–9:44 ET. Wait for the first 15-minute candle to close.",
-    entry:  "Enter on a candle close above ORB high (long) or below ORB low (short). RVOL ≥ 1.5×.",
-    stop:   "Below ORB low (long) or above ORB high (short). Never more than 20% from entry.",
-    target: "Stage 1: 1:1 R:R. Stage 2: let runners trail. Time-box at 45 min (90 min if Stage 1 hit).",
-    notes:  "Highest-probability signal. Avoid if SPY is below VWAP — broad market sell bias.",
+    setup:  "Price forms a tight range during 9:30–9:44 ET. Breakout detected 9:45–10:30; retest entry allowed until 10:45.",
+    entry:  "Candle close above ORB high (long) or below ORB low (short). Dynamic RVOL gate (see tuning).",
+    stop:   "Below ORB low (long) or above ORB high (short). -50% hard stop on option premium.",
+    target: "Stage 1: +50% on premium. Stage 2: ATR trail floor at +15%. Time-box 20 min losing / 90 min after Stage 1.",
+    notes:  "Highest-probability signal. Skipped if price > 3× ATR from boundary (overextended). 20-min cooldown per ticker.",
     tags:   ["primary", "momentum"],
+    tuning: [
+      { param: "Window",          value: "9:45–10:30 detect / 10:45 retest" },
+      { param: "RVOL (early)",    value: "≥ 1.0× floor before 10:30" },
+      { param: "RVOL (after)",    value: "≥ 0.75× floor after 10:30" },
+      { param: "RVOL (MSA conf)", value: "≥ 0.75× (structure confirmed)" },
+      { param: "Overext. skip",   value: "> 3.0× ATR from boundary" },
+      { param: "Retest tol.",     value: "0.15% of level (min $0.05)" },
+      { param: "Cooldown",        value: "20 min per ticker" },
+    ],
   },
   {
     id: "vwap",
     name: "VWAP Pullback",
     emoji: "📈",
-    setup:  "Trending stock pulls back to VWAP after a strong first push above/below.",
-    entry:  "Bounce off VWAP with volume confirmation and MSA trend alignment. RVOL ≥ 1.3×.",
-    stop:   "Below VWAP (long) or above VWAP (short). Tight — VWAP is the thesis level.",
-    target: "Previous session high/low or 2× ATR.",
+    setup:  "Trending stock pulls back to VWAP after a strong first push above/below. Needs ≥ 8 bars today.",
+    entry:  "Bounce off VWAP with RVOL gate and ≥ 3 of the last 5 bars on correct side of VWAP before the touch.",
+    stop:   "Below VWAP (long) or above VWAP (short). -50% hard stop on premium.",
+    target: "Stage 1: +50%. Stage 2: ATR trail. Time-box 20 min losing / 90 min after Stage 1.",
     notes:  "Works best when VWAP is flat or slightly sloped, not during chop.",
     tags:   ["secondary", "mean-reversion"],
+    tuning: [
+      { param: "Window",          value: "9:45 ET onwards (≥ 8 bars)" },
+      { param: "RVOL gate",       value: "Dynamic (≥ 1.0× early / ≥ 0.75× after 10:30 / ≥ 0.75× with MSA)" },
+      { param: "VWAP side check", value: "≥ 3 of last 5 bars on correct side" },
+      { param: "Conf. range",     value: "0.60 – 0.82" },
+      { param: "Conf. formula",   value: "0.60 + proximity×0.15 + (RVOL−min, max 1.0)×0.07" },
+      { param: "Cooldown",        value: "20 min per ticker" },
+    ],
   },
   {
     id: "fvg",
     name: "Fair Value Gap",
     emoji: "⚡",
-    setup:  "3-bar pattern: bullish (or bearish) impulse candle leaves a gap between candle 1's high and candle 3's low.",
-    entry:  "Price retests the FVG zone (fills the gap). Enter on first candle that closes into the zone.",
-    stop:   "Beyond the 50% level of the FVG.",
-    target: "Swing high/low that created the FVG move.",
-    notes:  "Requires BOS/MSS confirmation to avoid fading into a trend.",
+    setup:  "3-bar pattern: impulse candle leaves a gap between candle 1's high and candle 3's low. Retest of the gap zone.",
+    entry:  "First candle that closes into the FVG zone. Gap must be ≥ 0.5× ATR14 wide. RVOL ≥ 1.5×.",
+    stop:   "Beyond the 50% midpoint of the FVG zone.",
+    target: "Swing high/low that created the FVG move. Stage 1 at +50%, Stage 2 trail.",
+    notes:  "Liquidity sweep of a prior swing in the last 15 bars upgrades confidence to 0.90. No sweep caps at 0.78 (near EMA50) or 0.75 (extended).",
     tags:   ["structural", "ICT"],
+    tuning: [
+      { param: "Window",        value: "9:45 ET onwards (≥ 6 bars)" },
+      { param: "RVOL gate",     value: "≥ 1.5× (hard — not dynamic)" },
+      { param: "Gap min width", value: "≥ 0.5× ATR14" },
+      { param: "Sweep lookback",value: "15 bars" },
+      { param: "Conf. (sweep)", value: "0.55 – 0.90  (base + 0.07 sweep bonus)" },
+      { param: "Conf. (no swp)",value: "cap 0.78 near EMA50 / 0.75 extended" },
+      { param: "Conf. formula", value: "0.55 + min(gap/ATR, 2.0)×0.10 + min(RVOL−1.5, 1.0)×0.05" },
+      { param: "Cooldown",      value: "20 min per ticker" },
+    ],
   },
   {
     id: "bos",
     name: "BOS / MSS",
     emoji: "🔓",
-    setup:  "Break of Structure: price takes out a prior swing high (bullish) or swing low (bearish).",
-    entry:  "Enter on BOS candle close or first retest of broken level.",
-    stop:   "Structural stop below the last higher low (bullish) or above last lower high (bearish).",
-    target: "Next significant swing level.",
-    notes:  "MSS (Market Structure Shift) is the strongest signal — trend reversal, not continuation.",
+    setup:  "Break of Structure: price takes out a prior swing high (bullish) or swing low (bearish). Requires FVG evidence within last 20 bars.",
+    entry:  "BOS candle close. RVOL ≥ 1.5× hard floor. Skipped if already > 1.5× ATR past the break level.",
+    stop:   "Below last higher low (bullish) or above last lower high (bearish). -50% hard stop on premium.",
+    target: "Next significant swing level. Stage 1 +50%, Stage 2 ATR trail.",
+    notes:  "MSS (Market Structure Shift) is the strongest signal — trend reversal. Needs ≥ 10 bars before it's eligible.",
     tags:   ["structural", "smc"],
+    tuning: [
+      { param: "Min bars",       value: "≥ 10 bars today" },
+      { param: "RVOL floor",     value: "≥ 1.5× (hard floor, not dynamic)" },
+      { param: "Overext. skip",  value: "> 1.5× ATR past swing level" },
+      { param: "FVG confirm",    value: "Within last 20 bars" },
+      { param: "Cooldown",       value: "20 min per ticker" },
+    ],
   },
   {
     id: "flip",
     name: "Flip Trading",
     emoji: "🔄",
-    setup:  "Bot has an open directional trade that fails its initial target and reverses hard.",
-    entry:  "Bot auto-flips direction when price crosses the ORB breakout level in the opposite direction.",
-    stop:   "Mirror of original — now the opposite ORB level.",
-    target: "Same 1:1 Stage 1, then trail.",
+    setup:  "Bot has an open directional trade that fails and price reverses through the original trigger level.",
+    entry:  "Auto-flips CALL→PUT or PUT→CALL when reversal is confirmed at the ORB boundary.",
+    stop:   "Mirror of original — now the opposite ORB level. -50% hard stop on premium.",
+    target: "Same two-stage exit: Stage 1 +50%, Stage 2 ATR trail.",
     notes:  "Enabled/disabled in Settings. Adds churn risk — keep off if RVOL is low.",
     tags:   ["adaptive", "risk"],
+    tuning: [
+      { param: "Trigger",    value: "Price crosses ORB boundary opposite to entry" },
+      { param: "Stop",       value: "Opposite ORB level" },
+      { param: "Enable/off", value: "flip_trading_enabled in Settings" },
+    ],
   },
   {
     id: "chan",
     name: "Channel Breakout",
     emoji: "🏹",
     setup:  "Price is range-bound for ≥ 4 bars. Identify horizontal resistance/support.",
-    entry:  "Breakout candle closes above resistance (long) or below support (short) with RVOL ≥ 1.5×.",
+    entry:  "Breakout candle closes above resistance (long) or below support (short). Dynamic RVOL ≥ 1.0×.",
     stop:   "Back inside the channel.",
     target: "Channel height projected from breakout point.",
-    notes:  "Avoid in the first 15 minutes (ORB window) and last 20 minutes of session.",
+    notes:  "⚠️ Currently DISABLED. Avoid in the first 15 minutes (ORB window) and last 20 minutes of session.",
     tags:   ["breakout", "range"],
+    tuning: [
+      { param: "Status",       value: "⚠️ DISABLED in router + backtester" },
+      { param: "RVOL gate",    value: "≥ 1.0× (relaxed vs. other strategies)" },
+      { param: "Min range",    value: "≥ 4 bars of consolidation" },
+      { param: "Cooldown",     value: "20 min per ticker" },
+    ],
   },
   {
     id: "mid",
     name: "Mid-Day Breakdown",
     emoji: "📉",
-    setup:  "After the opening range plays out (10:30–13:00 ET), price collapses below OR Low with VWAP acting as resistance. Market structure has already printed a Lower High — the bullish thesis is broken.",
-    entry:  "Enter PUT when: price closes below OR Low AND below VWAP AND MSA confirms a Lower High AND volume > 1.5× its 20-bar average.",
-    stop:   "Above OR Low (the broken level). If price reclaims OR Low, setup is invalid.",
-    target: "Stage 1: 1:1 R:R below entry. Stage 2: trail to next swing low. Time-box 45 min.",
-    notes:  "Bearish-only strategy. Only triggers 10:30–13:00 ET — avoids the chaotic open and the dead midday grind. Requires both structure (Lower High) and volume to fire.",
+    setup:  "10:30–13:00 ET only. Price collapses below OR Low with VWAP as resistance. MSA must confirm a Lower High.",
+    entry:  "Enter PUT: price closes below OR Low AND below VWAP AND MSA Lower High confirmed. Dynamic RVOL gate.",
+    stop:   "Above OR Low. If price reclaims it, setup is invalid. -50% hard stop on premium.",
+    target: "Stage 1: +50% below entry. Stage 2: trail to next swing low. Time-box 20 min losing / 90 min after Stage 1.",
+    notes:  "Bearish-only. Window strictly 10:30–13:00 ET. With MSA confirmed the RVOL floor relaxes to 0.75×.",
     tags:   ["secondary", "bearish"],
+    tuning: [
+      { param: "Window",          value: "10:30–13:00 ET (bearish only)" },
+      { param: "RVOL gate",       value: "Dynamic; 0.75× with MSA confirmed" },
+      { param: "Conf. range",     value: "0.65 – 0.86" },
+      { param: "Conf. formula",   value: "0.65 + min(RVOL−1.0, 2.0)×0.04 + 0.05 if downtrend" },
+      { param: "Cooldown",        value: "20 min per ticker" },
+    ],
   },
   {
     id: "trend",
     name: "Trend Continuation",
     emoji: "🌊",
-    setup:  "After a trend is already established, price pulls back to a key level (Higher Low for uptrends, Lower High for downtrends) and resumes. This is the 2nd or 3rd entry, not the first — the trend must already be proven.",
-    entry:  "Bullish: close above the Higher Low bar's close with RVOL ≥ 1.2× and price above VWAP. Bearish: close below the Lower High bar's close with RVOL ≥ 1.2× and price below VWAP. Pivot must be within last 20 bars (fresh, not stale).",
-    stop:   "Below the Higher Low (bullish) or above the Lower High (bearish). Structure is the anchor.",
-    target: "Previous swing high (bullish) or previous swing low (bearish). Stage 2 lets runners trail.",
-    notes:  "Lowest RVOL threshold (1.2×) because the trend does the heavy lifting. Active 9:45 AM–2:30 PM ET. Never take a TREND_CONT trade if the pivot is more than 20 bars old — momentum has faded.",
+    setup:  "Established trend (Higher Low for uptrends, Lower High for downtrends). This is the 2nd or 3rd entry — trend must already be proven.",
+    entry:  "Bullish: close above Higher Low bar with RVOL ≥ 1.2× and price above VWAP. Bearish: inverse. Pivot must be ≤ 20 bars old.",
+    stop:   "Below the Higher Low (bullish) or above the Lower High (bearish).",
+    target: "Previous swing high/low. Stage 1 +50%, Stage 2 ATR trail.",
+    notes:  "Lowest RVOL threshold (1.2×) because the trend does the heavy lifting. Active 9:45–14:30 ET.",
     tags:   ["secondary", "momentum"],
+    tuning: [
+      { param: "Window",        value: "9:45–14:30 ET" },
+      { param: "RVOL min",      value: "≥ 1.2× (lowest of all strategies)" },
+      { param: "Pivot max age", value: "≤ 20 bars (stale pivots skipped)" },
+      { param: "Conf. range",   value: "0.65 – 0.82" },
+      { param: "Conf. formula", value: "0.65 + min((RVOL−1.2)×0.06, 0.08) + depth bonus" },
+      { param: "Cooldown",      value: "20 min per ticker" },
+    ],
   },
+];
+
+// ── Global risk / exit parameters (shared across all strategies) ─────────────
+const GLOBAL_PARAMS: { param: string; value: string; note?: string }[] = [
+  { param: "Stage 1 target",     value: "+50% on option premium",  note: "Exits 50% of contracts" },
+  { param: "Stage 2 trail lock", value: "+15% profit floor",        note: "Floor after Stage 1 fires" },
+  { param: "ATR trail mult.",    value: "2.0× ATR (underlying)",    note: "peak − 2× ATR14" },
+  { param: "ATR trail warmup",   value: "5 min minimum in trade",   note: "Trail doesn't arm before this" },
+  { param: "Hard stop (loss)",   value: "−50% on option premium" },
+  { param: "Momentum stop",      value: "−20% (early exit)",        note: "Cuts before full stop if trend collapses" },
+  { param: "Time-box (losing)",  value: "20 min max" },
+  { param: "Time-box (winner)",  value: "90 min after Stage 1" },
+  { param: "Spread max",         value: "$0.10 bid-ask" },
+  { param: "Min R:R (bootstrap)","value": "1.2× (balance < $5k)" },
+  { param: "Min R:R (standard)", value: "1.6×" },
+  { param: "Max positions",      value: "2 concurrent" },
+  { param: "Kill lock",          value: "24 hrs after daily cap" },
+  { param: "RVOL baseline",      value: "5-min bars, 10-day same-slot avg" },
 ];
 
 const TAG_COLORS: Record<string, string> = {
@@ -385,11 +464,11 @@ export function Playbooks() {
         <div>
           <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Strategy Playbooks</h2>
           <p className="text-sm mt-0.5" style={{ color: "var(--ink-muted)" }}>
-            Reference cards for every strategy the bot trades. All use the same 1% risk model and two-stage exit.
+            Reference cards for every strategy the bot trades. All use the same risk model and two-stage exit.
           </p>
         </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))" }}>
         {STRATEGIES.map((s) => (
           <div key={s.id} className="card p-4 flex flex-col gap-3">
             {/* Header */}
@@ -427,6 +506,34 @@ export function Playbooks() {
               ))}
             </div>
 
+            {/* Tuning numbers */}
+            <div className="flex flex-col gap-1">
+              <span
+                className="text-xs font-semibold uppercase tracking-widest"
+                style={{ color: "var(--ink-muted)" }}
+              >
+                ⚙️ Live Tuning
+              </span>
+              <div
+                className="rounded-lg px-3 py-2 flex flex-col gap-1"
+                style={{ background: "var(--muted)" }}
+              >
+                {s.tuning.map((t) => (
+                  <div key={t.param} className="flex gap-2 text-xs">
+                    <span
+                      className="shrink-0 font-mono"
+                      style={{ color: "var(--ink-muted)", width: 130 }}
+                    >
+                      {t.param}
+                    </span>
+                    <span className="font-mono font-semibold" style={{ color: "var(--accent)" }}>
+                      {t.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Notes */}
             <div
               className="text-xs px-3 py-2 rounded-lg"
@@ -437,6 +544,43 @@ export function Playbooks() {
           </div>
         ))}
       </div>
+
+      {/* Global risk parameters */}
+      <div className="flex flex-col gap-2 mt-2">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🛡️</span>
+          <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+            Global Risk &amp; Exit Parameters
+          </span>
+          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>
+            — shared across all strategies
+          </span>
+        </div>
+        <div
+          className="card p-4 grid gap-x-8 gap-y-1.5"
+          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}
+        >
+          {GLOBAL_PARAMS.map((g) => (
+            <div key={g.param} className="flex gap-2 text-xs items-baseline">
+              <span
+                className="shrink-0 font-mono"
+                style={{ color: "var(--ink-muted)", width: 148 }}
+              >
+                {g.param}
+              </span>
+              <span className="font-mono font-semibold" style={{ color: "var(--accent)" }}>
+                {g.value}
+              </span>
+              {g.note && (
+                <span className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                  — {g.note}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       </div>
       )}
     </div>
