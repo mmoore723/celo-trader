@@ -91,7 +91,7 @@ export function Performance() {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard
           label="Total P&L"
           value={`${(perf?.total_pnl ?? 0) >= 0 ? "+" : ""}$${Math.abs(perf?.total_pnl ?? 0).toFixed(2)}`}

@@ -184,30 +184,32 @@ export function Journal() {
   return (
     <div className="p-4 flex flex-col gap-4">
       {/* Controls */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex gap-1">
-          {(["paper", "live"] as const).map((m) => (
-            <button
-              key={m}
-              className={`btn btn-sm ${mode === m ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setMode(m)}
-            >
-              {m.charAt(0).toUpperCase() + m.slice(1)}
-            </button>
-          ))}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex gap-1">
+            {(["paper", "live"] as const).map((m) => (
+              <button
+                key={m}
+                className={`btn btn-sm ${mode === m ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setMode(m)}
+              >
+                {m.charAt(0).toUpperCase() + m.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            {(["all", "open", "closed"] as const).map((f) => (
+              <button
+                key={f}
+                className={`btn btn-sm ${filter === f ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setFilter(f)}
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-1">
-          {(["all", "open", "closed"] as const).map((f) => (
-            <button
-              key={f}
-              className={`btn btn-sm ${filter === f ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setFilter(f)}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
-        </div>
-        <div className="flex-1" />
+        {/* Summary row — separate line so it never clips on mobile */}
         <div className="flex gap-4 text-sm num" style={{ color: "var(--ink-muted)" }}>
           <span>{data?.total ?? 0} trades</span>
           <span style={{ color: (data?.total_pnl ?? 0) >= 0 ? posColor : negColor }}>
@@ -226,21 +228,21 @@ export function Journal() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: 18 }}></th>  {/* expand toggle */}
-                  <th>#</th>
+                  <th style={{ width: 18 }}></th>
+                  <th className="hidden sm:table-cell">#</th>
                   <th>Ticker</th>
                   <th>Dir</th>
-                  <th>Strategy</th>
+                  <th className="hidden sm:table-cell">Strategy</th>
                   <th>Entry $</th>
                   <th>Exit $</th>
-                  <th>MFE</th>
-                  <th>Efficiency</th>
-                  <th>Qty</th>
+                  <th className="hidden md:table-cell">MFE</th>
+                  <th className="hidden md:table-cell">Efficiency</th>
+                  <th className="hidden sm:table-cell">Qty</th>
                   <th>P&L</th>
-                  <th>Status</th>
-                  <th>Exit Reason</th>
-                  <th>Entry Time</th>
-                  <th>Exit Time</th>
+                  <th className="hidden sm:table-cell">Status</th>
+                  <th className="hidden lg:table-cell">Exit Reason</th>
+                  <th className="hidden lg:table-cell">Entry Time</th>
+                  <th className="hidden lg:table-cell">Exit Time</th>
                   <th></th>
                 </tr>
               </thead>
@@ -273,27 +275,27 @@ export function Journal() {
                               : <ChevronRight size={12} />
                             : null}
                         </td>
-                        <td className="num text-xs" style={{ color: "var(--ink-muted)" }}>{t.id}</td>
+                        <td className="num text-xs hidden sm:table-cell" style={{ color: "var(--ink-muted)" }}>{t.id}</td>
                         <td className="font-semibold">{t.ticker}</td>
                         <td>
                           <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
                             {t.direction?.toUpperCase()}
                           </span>
                         </td>
-                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                        <td className="text-xs hidden sm:table-cell" style={{ color: "var(--ink-muted)" }}>
                           {t.strategy_id ?? "—"}
                         </td>
                         <td className="num">${t.entry_price.toFixed(2)}</td>
                         <td className="num">
                           {t.exit_price != null ? `$${t.exit_price.toFixed(2)}` : "—"}
                         </td>
-                        {/* MFE % */}
-                        <td className="num text-xs"
+                        {/* MFE % — hidden below md */}
+                        <td className="num text-xs hidden md:table-cell"
                             style={{ color: mfe != null && mfe > 0 ? posColor : "var(--ink-muted)" }}>
                           {mfe != null ? `+${mfe.toFixed(1)}%` : "—"}
                         </td>
-                        {/* Exit efficiency % */}
-                        <td className="num text-xs" style={{
+                        {/* Exit efficiency % — hidden below md */}
+                        <td className="num text-xs hidden md:table-cell" style={{
                           color: eff == null
                             ? "var(--ink-muted)"
                             : eff >= 70 ? posColor
@@ -302,21 +304,21 @@ export function Journal() {
                         }}>
                           {eff != null ? `${eff.toFixed(0)}%` : "—"}
                         </td>
-                        <td className="num">{t.contracts}</td>
+                        <td className="num hidden sm:table-cell">{t.contracts}</td>
                         <td className="num font-medium"
                             style={{ color: (t.pnl ?? 0) >= 0 ? posColor : negColor }}>
                           {t.pnl != null
                             ? `${t.pnl >= 0 ? "+" : ""}$${t.pnl.toFixed(2)}`
                             : "—"}
                         </td>
-                        <td><StatusBadge status={t.status} /></td>
-                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                        <td className="hidden sm:table-cell"><StatusBadge status={t.status} /></td>
+                        <td className="text-xs hidden lg:table-cell" style={{ color: "var(--ink-muted)" }}>
                           {t.exit_reason ?? "—"}
                         </td>
-                        <td className="text-xs num" style={{ color: "var(--ink-muted)" }}>
+                        <td className="text-xs num hidden lg:table-cell" style={{ color: "var(--ink-muted)" }}>
                           {fmtTime(t.entry_time)}
                         </td>
-                        <td className="text-xs num" style={{ color: "var(--ink-muted)" }}>
+                        <td className="text-xs num hidden lg:table-cell" style={{ color: "var(--ink-muted)" }}>
                           {fmtTime(t.exit_time)}
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>

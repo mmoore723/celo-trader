@@ -76,36 +76,40 @@ export function Topbar() {
       <div className="h-5 w-px" style={{ background: "var(--border)" }} />
 
       {/* Bot status pill */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         {running ? (
           <span className="badge badge-green">LIVE</span>
         ) : marketOpen ? (
           <span className="badge badge-yellow">{mode.toUpperCase()}</span>
         ) : preMarket ? (
-          <span className="badge badge-yellow">PRE-MARKET</span>
+          <span className="badge badge-yellow hidden sm:inline-flex">PRE-MARKET</span>
         ) : (
-          <span className="badge badge-gray flex items-center gap-1">
+          <span className="badge badge-gray hidden sm:inline-flex items-center gap-1">
             <Moon size={11} />
-            MARKET CLOSED
+            CLOSED
           </span>
         )}
+        {/* Strategy ID — desktop only */}
         {status?.last_strategy_id && (
-          <span className="text-xs font-mono" style={{ color: "var(--ink-muted)" }}>
+          <span className="text-xs font-mono hidden lg:inline" style={{ color: "var(--ink-muted)" }}>
             {status.last_strategy_id}
           </span>
         )}
       </div>
 
-      {/* Live metrics */}
-      <div className="flex items-center gap-5 ml-2">
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Live metrics — compact on mobile, full on desktop */}
+      <div className="flex items-center gap-3 md:gap-5 shrink-0">
         <div className="flex flex-col leading-none">
-          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Balance</span>
+          <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Balance</span>
           <span className="num text-sm font-semibold" style={{ color: "var(--ink)" }}>
             {fmt(bal)}
           </span>
         </div>
         <div className="flex flex-col leading-none">
-          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Session P&L</span>
+          <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Session P&L</span>
           <span
             className="num text-sm font-semibold flex items-center gap-1"
             style={{ color: pnl >= 0 ? "var(--positive)" : "var(--negative)" }}
@@ -115,8 +119,9 @@ export function Topbar() {
             {fmt(pnl)}
           </span>
         </div>
+        {/* Watching ticker — desktop only */}
         {status?.ticker && (
-          <div className="flex flex-col leading-none">
+          <div className="flex flex-col leading-none hidden md:flex">
             <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Watching</span>
             <span className="num text-sm font-semibold" style={{ color: "var(--ink)" }}>
               {status.ticker}
@@ -125,11 +130,8 @@ export function Topbar() {
         )}
       </div>
 
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Connection indicator */}
-      <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--ink-muted)" }}>
+      {/* Connection indicator — desktop only */}
+      <div className="hidden sm:flex items-center gap-1.5 text-xs" style={{ color: "var(--ink-muted)" }}>
         {connected ? (
           <Wifi size={14} style={{ color: "var(--positive)" }} />
         ) : (
