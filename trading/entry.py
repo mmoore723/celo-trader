@@ -263,6 +263,24 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # below never lags with a stale "standby" value from the previous tick.
     LIVE_STATE["last_update"] = _now_et().isoformat()
 
+    # ── Daily session reset ───────────────────────────────────────────────────
+    # If the calendar date has changed since the last tick, reset session P&L
+    # to 0 and recalculate from today's closed trades only.  Without this the
+    # bot carries Friday's P&L into Monday morning when running continuously.
+    from datetime import date as _date
+    _today_str = _date.today().isoformat()
+    if LIVE_STATE.get("_session_date") != _today_str:
+        LIVE_STATE["_session_date"]      = _today_str
+        LIVE_STATE["session_pnl"]        = 0.0
+        LIVE_STATE["scanner_ran_today"]  = False
+        LIVE_STATE["orb_entered_today"]  = set()
+        LIVE_STATE["ticker_win_cooldown"] = {}
+        # Recalculate from DB in case trades were closed earlier today
+        from trading.controls import _refresh_session_pnl
+        _refresh_session_pnl()
+        log_event("INFO", "session",
+                  f"📅 New trading day ({_today_str}) — session P&L reset to $0.")
+
     # ── FIX S6: Market hours check ────────────────────────────────────────────
     # Write heartbeat so dashboard can detect the bot is running
     import pathlib as _pl, time as _tm
