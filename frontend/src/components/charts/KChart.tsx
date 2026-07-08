@@ -329,34 +329,43 @@ export function KChart({
       });
     }
 
-    // ── Trade markers (entry=teal triangle up, exit=orange circle) ────────────
-    try { chart.removeOverlay({ groupId: "trades" }); } catch (_) { /* no-op */ }
-    trades.forEach((t: Trade) => {
-      if (!t.entry_time || !t.entry_price) return;
-      const entryTs = new Date(t.entry_time).getTime();
-      const isLong  = t.direction !== "short";
-      chart.createOverlay({
-        name: isLong ? "buyMarker" : "sellMarker",
-        groupId: "trades", lock: true,
-        points: [{ timestamp: entryTs, value: t.entry_price }],
-        extendData: `${isLong ? "B" : "S"} $${t.entry_price.toFixed(2)}`,
-      });
-      if (t.exit_time && t.exit_price) {
-        const exitTs = new Date(t.exit_time).getTime();
-        chart.createOverlay({
-          name: "exitMarker",
-          groupId: "trades", lock: true,
-          points: [{ timestamp: exitTs, value: t.exit_price }],
-        });
-      }
-    });
-  }, [bars, trades, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, visibleFrom]);
+  }, [bars, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, visibleFrom]);
 
   // ── Scroll to period when visibleFrom changes independently ─────────────────
   useEffect(() => {
     if (!chartRef.current || !visibleFrom) return;
     try { chartRef.current.scrollToTimestamp(visibleFrom); } catch (_) { /* no-op */ }
   }, [visibleFrom]);
+
+  // ── Trade markers — own effect so 10s polling never triggers applyNewData or
+  //    a scroll reset, which was disrupting user drawing tools ──────────────────
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    try { chart.removeOverlay({ groupId: "trades" }); } catch (_) { /* no-op */ }
+    trades.forEach((t: Trade) => {
+      if (!t.entry_time || !t.entry_price) return;
+      const entryTs = new Date(t.entry_time).getTime();
+      const isLong  = t.direction !== "short";
+      try {
+        chart.createOverlay({
+          name: isLong ? "buyMarker" : "sellMarker",
+          groupId: "trades", lock: true,
+          points: [{ timestamp: entryTs, value: t.entry_price }],
+          extendData: `${isLong ? "B" : "S"} $${t.entry_price.toFixed(2)}`,
+        });
+      } catch (_) { /* skip — overlay may fail if timestamp is out of range */ }
+      if (t.exit_time && t.exit_price) {
+        try {
+          chart.createOverlay({
+            name: "exitMarker",
+            groupId: "trades", lock: true,
+            points: [{ timestamp: new Date(t.exit_time).getTime(), value: t.exit_price }],
+          });
+        } catch (_) { /* skip exit marker */ }
+      }
+    });
+  }, [trades]);
 
   // ── Activate drawing tool on toolbar click ─────────────────────────────────
   useEffect(() => {
