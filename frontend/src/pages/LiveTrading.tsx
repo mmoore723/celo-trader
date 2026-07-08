@@ -5,10 +5,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import {
-  ResponsiveContainer, YAxis,
-  LineChart, Line, XAxis, Tooltip, CartesianGrid,
-} from "recharts";
 import { TradingChart } from "../components/charts/TradingChart";
 import { useBotStore } from "../store/bot";
 import { api, type Trade, type Bar, type OptionsChainRow } from "../lib/api";
@@ -79,8 +75,6 @@ export function LiveTrading() {
   const [showOR,          setShowOR]          = useState(true);
   const [showSwings,      setShowSwings]      = useState(true);
   const [showPositionCard,setShowPositionCard]= useState(true);
-  // 5-min chart overlay (toggleable second chart below main)
-  const [show5m,          setShow5m]          = useState(false);
   // Scanner panel tab: "scanner" list or live options "chain"
   const [scannerTab,      setScannerTab]      = useState<"scanner" | "chain">("scanner");
   // Bot thinking: pause log scroll when user hovers inside the panel
@@ -128,15 +122,6 @@ export function LiveTrading() {
     queryFn: () => api.market.or(ticker),
     enabled: showOR,
     refetchInterval: 300_000,
-  });
-
-  // 5-min bars for the second chart overlay (only fetched when toggle is on and
-  // the main chart is not already 5-min — avoids a redundant second fetch).
-  const { data: bars5m = [] } = useQuery({
-    queryKey: ["bars", ticker, "5Min"],
-    queryFn:  () => api.market.bars(ticker, "5Min", 200),
-    enabled:  show5m && tf !== "5Min",
-    refetchInterval: 60_000,
   });
 
   // Live options chain for the "Chain" tab in the scanner panel
@@ -269,7 +254,6 @@ export function LiveTrading() {
               ["OR",    showOR,            setShowOR],
               ["Swings",showSwings,        setShowSwings],
               ["Pos",   showPositionCard,  setShowPositionCard],
-              ["5m",    show5m,            setShow5m],
             ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
               <label key={label} className="flex items-center gap-1 cursor-pointer text-xs"
                      style={{ color: val ? "var(--ink)" : "var(--ink-muted)" }}>
@@ -294,53 +278,16 @@ export function LiveTrading() {
             orHigh={or?.high}
             orLow={or?.low}
             positionLevels={positionLevels}
+            currentOptionPrice={
+              // Pull live option mid price for the open trade on the selected ticker
+              openTickerTrade
+                ? (status?.open_positions?.[String(openTickerTrade.id)]?.current_option_price ?? null)
+                : null
+            }
             ticker={ticker}
             height={420}
           />
 
-          {/* 5-min chart overlay — shown when "5m" toggle is on and main tf ≠ 5Min */}
-          {show5m && tf !== "5Min" && (
-            <div style={{ borderTop: "1px solid var(--border)", padding: "8px 12px" }}>
-              <div className="text-xs font-semibold mb-1" style={{ color: "var(--ink-muted)" }}>
-                {ticker} · 5-minute
-              </div>
-              <ResponsiveContainer width="100%" height={140}>
-                <LineChart
-                  data={(bars5m as Bar[]).slice(-100).map((b) => ({
-                    t: b.time.slice(11, 16),  // "HH:MM"
-                    c: b.close,
-                    v: b.vwap,
-                  }))}
-                  margin={{ top: 2, right: 8, left: -10, bottom: 0 }}
-                >
-                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                  <XAxis dataKey="t" tick={{ fontSize: 9, fill: "var(--ink-faint)" }} interval={9} />
-                  <YAxis
-                    domain={["auto", "auto"]}
-                    tick={{ fontSize: 9, fill: "var(--ink-faint)" }}
-                    tickFormatter={(v) => `$${v.toFixed(0)}`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "var(--card-bg)", border: "1px solid var(--border)",
-                      borderRadius: 6, fontSize: 11,
-                    }}
-                    formatter={(v: unknown, name: unknown) => [
-                      `$${(v as number).toFixed(2)}`,
-                      name === "c" ? "Close" : "VWAP",
-                    ]}
-                  />
-                  <Line type="monotone" dataKey="c" stroke="var(--accent)"
-                        strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                  {bars5m.some((b: Bar) => b.vwap != null) && (
-                    <Line type="monotone" dataKey="v" stroke="var(--positive)"
-                          strokeWidth={1} strokeDasharray="4 3"
-                          dot={false} isAnimationActive={false} />
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
         </div>
 
         {/* Scanner / Chain panel */}
@@ -470,136 +417,125 @@ export function LiveTrading() {
             </div>
           )}
 
-          {/* Bot Focus */}
+          {/* Bot Focus — running list of every option the bot has evaluated */}
           <div
-            className="border-t px-3 py-2 text-xs font-semibold uppercase tracking-wider"
-            style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
+            className="border-t px-3 py-2 flex items-center justify-between"
+            style={{ borderColor: "var(--border)" }}
           >
-            Bot Focus
+            <span className="text-xs font-semibold uppercase tracking-wider"
+                  style={{ color: "var(--ink-muted)" }}>Bot Focus</span>
+            <span className="text-[9px]" style={{ color: "var(--ink-faint)" }}>
+              tap row to copy
+            </span>
           </div>
-          <div className="px-2 pb-3">
+          <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
             {(() => {
-              // ── Trade setup card — shows the specific contract the bot is evaluating ──
-              // Fields: ticker, CALL/PUT, strike, expiry, #contracts, entry price, S1 target
-              const evalTicker    = status?.last_eval_ticker ?? null;
-              const evalOpt       = status?.last_eval_opt_type ?? null;
-              const evalStrike    = status?.last_eval_strike ?? null;
-              const evalExpiry    = status?.last_eval_expiry ?? null;
-              const evalContracts = status?.last_eval_contracts ?? null;
-              const evalEntry     = status?.last_eval_eff_entry ?? null;
-              const isCall        = (evalOpt ?? "").toLowerCase() === "call";
-              // Only show the card when we have actual contract-level data (strike or entry).
-              // Falling back to status.ticker showed "SPY" with no other details whenever
-              // the bot was scanning but hadn't found a valid contract yet.
-              const hasEval       = !!(evalStrike != null || evalEntry != null);
-
               // Format "2026-07-07" → "Jul 07"
-              const fmtExpiry = (e: string) => {
+              const fmtExp = (e: string) => {
                 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun",
                                 "Jul","Aug","Sep","Oct","Nov","Dec"];
-                const p = e.split("-");
-                if (p.length < 3) return e;
+                const p = e?.split("-");
+                if (!p || p.length < 3) return e ?? "";
                 const mo  = parseInt(p[1], 10) - 1;
                 const day = parseInt(p[2], 10);
-                return `${MONTHS[mo] ?? p[1]} ${day < 10 ? "0" : ""}${day}`;
+                return `${MONTHS[mo] ?? p[1]} ${day}`;
               };
 
-              if (!hasEval) {
+              // Build Discord-ready copy string for a single eval entry
+              const toDiscord = (ev: any) => {
+                const dir = (ev.opt_type ?? "").toUpperCase();
+                const stk = ev.strike != null
+                  ? `$${ev.strike % 1 === 0 ? ev.strike.toFixed(0) : ev.strike.toFixed(2)}`
+                  : "";
+                const exp = ev.expiry ? fmtExp(ev.expiry) : "";
+                const nc  = ev.contracts ?? 1;
+                const ent = ev.eff_entry != null ? `$${ev.eff_entry.toFixed(2)}` : "";
+                const tgt = ev.s1_target != null ? `$${ev.s1_target.toFixed(2)}` : "";
+                const pnl = ev.profit    != null ? `+$${ev.profit.toFixed(2)}`   : "";
+                const sid = ev.strategy  ?? "";
+                return `[${dir}] ${ev.ticker ?? ""} ${stk} ${exp} | ${nc}c @ ${ent} → ${tgt} (${pnl}) [${sid}]`;
+              };
+
+              const evalLog: any[] = (status as any)?.eval_log ?? [];
+
+              if (evalLog.length === 0) {
                 return (
-                  <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
+                  <p className="text-xs px-3 pb-3" style={{ color: "var(--ink-muted)" }}>
                     {status?.running
-                      ? "Scanning… waiting for first signal evaluation"
+                      ? "Scanning… no contract evaluations yet"
                       : "Waiting for bot to start scanning…"}
                   </p>
                 );
               }
 
-              // Stage-1 target = +50% on the option premium
-              const targetPremium = evalEntry != null ? evalEntry * 1.5 : null;
-              const totalProfit   = evalEntry != null && evalContracts != null
-                ? evalEntry * 0.5 * evalContracts * 100
-                : null;
-
-              return (
-                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, lineHeight: 1.6 }}>
-
-                  {/* Row 1: [CALL] AMZN  $240 strike  Jul 07 */}
-                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 8px", marginBottom: 4 }}>
-                    {evalOpt ? (
+              return evalLog.map((ev: any, i: number) => {
+                const isCall = (ev.opt_type ?? "").toLowerCase() === "call";
+                const stk    = ev.strike != null
+                  ? `$${ev.strike % 1 === 0 ? ev.strike.toFixed(0) : ev.strike.toFixed(2)}`
+                  : "";
+                return (
+                  <button
+                    key={i}
+                    className="w-full text-left px-3 py-1.5 border-b hover:bg-muted transition-colors"
+                    style={{
+                      borderColor: "var(--border)",
+                      fontFamily: "JetBrains Mono, monospace",
+                      fontSize: 10,
+                    }}
+                    title="Click to copy Discord-ready trade idea"
+                    onClick={() => {
+                      navigator.clipboard.writeText(toDiscord(ev)).catch(() => {});
+                    }}
+                  >
+                    {/* Time + badge */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
+                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>
+                        {ev.ts ?? ""}
+                      </span>
                       <span style={{
-                        fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 3,
+                        fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
                         background: isCall ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
                         color: isCall ? "var(--positive)" : "var(--negative)",
-                        letterSpacing: "0.05em",
                       }}>
-                        {evalOpt.toUpperCase()}
+                        {(ev.opt_type ?? "").toUpperCase()}
                       </span>
-                    ) : null}
-                    {evalTicker && (
                       <span
-                        style={{ color: "var(--accent)", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                        title={`View ${evalTicker} chart`}
-                        onClick={() => setTicker(evalTicker)}
+                        style={{ color: "var(--accent)", fontWeight: 700, cursor: "pointer" }}
+                        onClick={(e) => { e.stopPropagation(); setTicker(ev.ticker); }}
+                        title={`View ${ev.ticker} chart`}
                       >
-                        {evalTicker}
+                        {ev.ticker}
                       </span>
-                    )}
-                    {evalStrike != null && (
-                      <>
-                        <span style={{ color: "var(--ink-faint)", fontSize: 10 }}>@</span>
-                        <span style={{ color: "var(--ink)", fontWeight: 600 }}>
-                          ${evalStrike % 1 === 0 ? evalStrike.toFixed(0) : evalStrike.toFixed(2)}
-                        </span>
-                        <span style={{ color: "var(--ink-faint)", fontSize: 9 }}>strike</span>
-                      </>
-                    )}
-                    {evalExpiry && (
-                      <span style={{ color: "var(--ink-muted)" }}>{fmtExpiry(evalExpiry)}</span>
-                    )}
-                  </div>
-
-                  {/* Row 2: 2 contracts  @ $2.36 entry */}
-                  {(evalContracts != null || evalEntry != null) && (
-                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 8px", marginBottom: 4 }}>
-                      {evalContracts != null && (
-                        <span style={{ color: "var(--ink)", fontWeight: 600 }}>
-                          {evalContracts} contract{evalContracts !== 1 ? "s" : ""}
-                        </span>
+                      <span style={{ color: "var(--ink)" }}>{stk}</span>
+                      {ev.expiry && (
+                        <span style={{ color: "var(--ink-muted)" }}>{fmtExp(ev.expiry)}</span>
                       )}
-                      {evalEntry != null && (
-                        <>
-                          <span style={{ color: "var(--ink-faint)", fontSize: 10 }}>@</span>
-                          <span style={{ color: "var(--ink)", fontWeight: 600 }}>
-                            ${evalEntry.toFixed(2)}
+                      {ev.strategy && (
+                        <span className="badge badge-blue" style={{ fontSize: 7 }}>{ev.strategy}</span>
+                      )}
+                    </div>
+                    {/* Contracts / entry / target */}
+                    <div style={{ display: "flex", gap: 8, color: "var(--ink-muted)" }}>
+                      <span>
+                        <span style={{ color: "var(--ink)" }}>{ev.contracts ?? 1}c</span>
+                        {" @ "}
+                        <span style={{ color: "var(--ink)", fontWeight: 600 }}>
+                          ${(ev.eff_entry ?? 0).toFixed(2)}
+                        </span>
+                        {" → "}
+                        <span style={{ color: "var(--positive)", fontWeight: 600 }}>
+                          ${(ev.s1_target ?? 0).toFixed(2)}
+                        </span>
+                        {ev.profit != null && (
+                          <span style={{ color: "var(--positive)", opacity: 0.7 }}>
+                            {" "}(+${ev.profit.toFixed(2)})
                           </span>
-                          <span style={{ color: "var(--ink-faint)", fontSize: 9 }}>entry</span>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Row 3: S1 target  $3.54  (+$118.00)  [TREND_CONT] */}
-                  {targetPremium != null && (
-                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 8px" }}>
-                      <span style={{ color: "var(--ink-faint)", fontSize: 9 }}>S1 target</span>
-                      <span style={{ color: "var(--positive)", fontWeight: 700 }}>
-                        ${targetPremium.toFixed(2)}
+                        )}
                       </span>
-                      {totalProfit != null && (
-                        <span style={{ fontSize: 9, color: "var(--positive)", opacity: 0.8 }}>
-                          (+${totalProfit.toFixed(2)})
-                        </span>
-                      )}
-                      {status?.last_strategy_id && (
-                        <span className="badge badge-blue" style={{ fontSize: 8, letterSpacing: "0.04em" }}>
-                          {status.last_strategy_id}
-                        </span>
-                      )}
                     </div>
-                  )}
-
-                </div>
-              );
+                  </button>
+                );
+              });
             })()}
           </div>
         </div>

@@ -64,6 +64,7 @@ interface Props {
   orHigh?: number;
   orLow?: number;
   positionLevels?: PositionLevels;
+  currentOptionPrice?: number | null;  // live option mid price for unrealized P&L display
   height?: number;
   ticker?: string;
 }
@@ -288,6 +289,7 @@ export function TradingChart({
   orHigh,
   orLow,
   positionLevels,
+  currentOptionPrice = null,
   height = 420,
   ticker,
 }: Props) {
@@ -688,13 +690,17 @@ export function TradingChart({
     for (const t of trades) {
       if (t.entry_time) tradeMarkers.push({
         time: toTime(t.entry_time), position: "belowBar",
-        color: C.buyMarker, shape: "arrowUp",
-        text: `BUY ${t.ticker}`, size: 1,
+        color: C.up,          // green circle = buy
+        shape: "circle",
+        text: `${t.ticker} @ ${t.entry_price?.toFixed(2) ?? ""}`,
+        size: 2,
       });
       if (t.exit_time) tradeMarkers.push({
         time: toTime(t.exit_time), position: "aboveBar",
-        color: C.sellMarker, shape: "arrowDown",
-        text: `SELL ${t.exit_reason ?? ""}`, size: 1,
+        color: C.down,        // red circle = sell
+        shape: "circle",
+        text: `${t.exit_reason ?? "exit"}`,
+        size: 2,
       });
     }
 
@@ -848,6 +854,16 @@ export function TradingChart({
     const fmt    = (n: number) => n.toFixed(2);
     const fmtPct = (n: number | null) => n != null ? `${n.toFixed(1)}%` : "—";
 
+    // Live unrealized P&L — uses the real-time option mid price from the broker
+    const unrealPnl = (currentOptionPrice != null && pl.contracts)
+      ? (currentOptionPrice - pl.entry) * pl.contracts * 100
+      : null;
+    const unrealPct = (currentOptionPrice != null)
+      ? (currentOptionPrice - pl.entry) / pl.entry * 100
+      : null;
+    const pnlColor  = unrealPnl == null ? "var(--ink-muted)"
+      : unrealPnl >= 0 ? C.target : C.stop;
+
     return (
       <div
         onMouseEnter={() => setCardHovered(true)}
@@ -857,10 +873,10 @@ export function TradingChart({
           pointerEvents: "auto",
           fontFamily: "JetBrains Mono, monospace", fontSize: 11,
           display: "flex", flexDirection: "column", gap: 2,
-          minWidth: 180, cursor: "default",
+          minWidth: 190, cursor: "default",
         }}
       >
-        {/* Direction badge — always visible */}
+        {/* Direction badge + live P&L — always visible */}
         <div style={{
           display: "inline-flex", alignItems: "center", gap: 6,
           background: isLong ? "rgba(63,185,80,0.18)" : "rgba(248,81,73,0.18)",
@@ -876,6 +892,31 @@ export function TradingChart({
             {cardHovered ? " ▲" : " ▼"}
           </span>
         </div>
+
+        {/* Live P&L badge — always visible when we have a current price */}
+        {unrealPnl != null && (
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            background: unrealPnl >= 0 ? "rgba(63,185,80,0.12)" : "rgba(248,81,73,0.12)",
+            border: `1px solid ${pnlColor}44`,
+            borderRadius: 4, padding: "2px 8px",
+            width: "fit-content",
+          }}>
+            <span style={{ color: pnlColor, fontWeight: 700, fontSize: 12 }}>
+              {unrealPnl >= 0 ? "+" : ""}${unrealPnl.toFixed(2)}
+            </span>
+            {unrealPct != null && (
+              <span style={{ color: pnlColor, opacity: 0.75, fontSize: 9 }}>
+                ({unrealPct >= 0 ? "+" : ""}{unrealPct.toFixed(1)}%)
+              </span>
+            )}
+            {currentOptionPrice != null && (
+              <span style={{ color: "var(--ink-faint)", fontSize: 9 }}>
+                · ${currentOptionPrice.toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Detail rows — only on hover */}
         {cardHovered && (

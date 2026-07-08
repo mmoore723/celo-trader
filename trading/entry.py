@@ -1120,6 +1120,27 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         with open(_state_path) as _f:
             _bs_c = _json.load(_f)
         _bs_c["last_eval_contracts"] = n_contracts
+
+        # ── Append to running eval_log (last 10 entries) ─────────────────────
+        # Each entry represents one contract the bot evaluated — kept as a
+        # scrollable list in the dashboard so every option considered is visible.
+        _s1_target = round(eff_entry * 1.5, 2)
+        _profit    = round(eff_entry * 0.5 * n_contracts * 100, 2) if n_contracts >= 1 else None
+        _new_entry = {
+            "ts":        LIVE_STATE.get("last_eval_time", ""),
+            "ticker":    ticker,
+            "opt_type":  opt_type,
+            "strike":    contract.get("strike"),
+            "expiry":    contract.get("expiry"),
+            "contracts": n_contracts,
+            "eff_entry": round(eff_entry, 2),
+            "s1_target": _s1_target,
+            "profit":    _profit,
+            "strategy":  strategy_id,
+        }
+        _log = _bs_c.get("eval_log") or []
+        _log.insert(0, _new_entry)           # newest first
+        _bs_c["eval_log"] = _log[:10]        # keep last 10 only
         _json.dump(_bs_c, open(_state_path, "w"))
     except Exception:
         pass  # non-critical — next full tick write will catch up
