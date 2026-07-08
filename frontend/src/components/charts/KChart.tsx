@@ -183,9 +183,10 @@ export function KChart({
     chart.setOffsetRightDistance(80);
 
     // Volume in candle pane, RSI/MACD as sub-panels
-    // isStack: true = overlaid in candle pane with auto-scaled secondary axis
-    // isStack: false would share the price axis and dwarf the candles
-    chart.createIndicator("VOL", true, { id: "candle_pane" });
+    // VOL must be in its own pane — KLineChart v9 has no secondary Y-axis,
+    // so stacking volume in the candle pane would include volume values
+    // (1-3M+) in the price axis range and make candles invisible.
+    chart.createIndicator("VOL", false, { id: "vol_pane", height: 56, minHeight: 40 });
     if (showRsi)  chart.createIndicator("RSI",  false, { id: "rsi_pane",  height: 90  });
     if (showMacd) chart.createIndicator("MACD", false, { id: "macd_pane", height: 100 });
 

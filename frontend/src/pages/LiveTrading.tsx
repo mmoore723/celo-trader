@@ -287,7 +287,7 @@ export function LiveTrading() {
                 : null
             }
             ticker={ticker}
-            height={420}
+            height={500}
           />
 
         </div>
