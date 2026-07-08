@@ -1,13 +1,13 @@
 /**
- * KChart.tsx — KLineChart v9 chart replacing LightweightCharts.
+ * KChart.tsx — KLineChart v9 trading chart with drawing tools.
  *
- * Gains over the old chart:
- *   - Full drawing toolbar (trend line, H-line, ray, fibonacci, rectangle, parallel)
- *   - Built-in RSI + MACD sub-panels
- *   - Custom VWAP ±1σ indicator (computed intraday)
- *   - TradingView navy dark palette
- *   - OHLC crosshair legend (O/H/L/C + delta)
- *   - Locked position / OR price-line overlays
+ * Features:
+ *   - Drawing toolbar: Select / Trend / H-Line / Ray / Segment / Fibonacci / Parallel / Rect
+ *   - TradingView navy dark palette (#131722 bg, teal up, red down)
+ *   - Custom VWAP ±1σ indicator (intraday, day-reset)
+ *   - RSI + MACD sub-panels (built-in)
+ *   - OHLC crosshair legend via direct DOM update
+ *   - Locked OR lines and position price-line overlays
  */
 import { useEffect, useRef, useState } from "react";
 import { init, dispose } from "klinecharts";
@@ -16,29 +16,29 @@ import { useThemeStore } from "../../store/theme";
 import { registerCustomIndicators } from "./kchartIndicators";
 import type { PositionLevels } from "./TradingChart";
 
-registerCustomIndicators(); // idempotent global registration
+registerCustomIndicators(); // idempotent one-time registration
 
-// ── Drawing tools ─────────────────────────────────────────────────────────────
+// ── Drawing tool definitions ──────────────────────────────────────────────────
 const TOOLS = [
-  { key: "",                       icon: "↖", label: "Select"     },
-  { key: "straightLine",           icon: "╲", label: "Trend"      },
-  { key: "horizontalStraightLine", icon: "—", label: "H-Line"     },
-  { key: "rayLine",                icon: "→", label: "Ray"        },
-  { key: "segment",                icon: "╴", label: "Segment"    },
-  { key: "fibonacciLine",          icon: "φ", label: "Fibonacci"  },
-  { key: "parallelStraightLine",   icon: "⫽", label: "Parallel"   },
-  { key: "rect",                   icon: "□", label: "Rectangle"  },
+  { key: "",                       icon: "↖",  label: "Select"    },
+  { key: "straightLine",           icon: "╲",  label: "Trend"     },
+  { key: "horizontalStraightLine", icon: "—",  label: "H-Line"    },
+  { key: "rayLine",                icon: "→",  label: "Ray"       },
+  { key: "segment",                icon: "╴",  label: "Segment"   },
+  { key: "fibonacciLine",          icon: "φ",  label: "Fibonacci" },
+  { key: "parallelStraightLine",   icon: "⫽",  label: "Parallel"  },
+  { key: "rect",                   icon: "□",  label: "Rectangle" },
 ];
 
-// ── Props (same interface as TradingChart for a drop-in swap) ─────────────────
-interface Props {
+// ── Component props (compatible with old TradingChart for drop-in swap) ───────
+export interface KChartProps {
   bars: Bar[];
   trades?: Trade[];
   showVwap?: boolean;
   showVwapBands?: boolean;
   showOR?: boolean;
-  showSwings?: boolean;       // not yet implemented in KLineChart — accepted but ignored
-  showPositionCard?: boolean; // position lines always show when positionLevels provided
+  showSwings?: boolean;
+  showPositionCard?: boolean;
   showRsi?: boolean;
   showMacd?: boolean;
   orHigh?: number;
@@ -49,30 +49,105 @@ interface Props {
   ticker?: string;
 }
 
-// ── Color palette (TradingView dark / light) ──────────────────────────────────
-function pal(dark: boolean) {
+// ── Build KLineChart style object ─────────────────────────────────────────────
+function makeStyles(dark: boolean) {
+  const grid   = dark ? "#1e222d" : "#f0f2f7";
+  const border = dark ? "#2a2e39" : "#d1d5db";
+  const text   = dark ? "#848e9c" : "#5a6476";
+  const up     = dark ? "#26a69a" : "#089981";
+  const dn     = dark ? "#ef5350" : "#f23645";
+
   return {
-    bg:     dark ? "#131722" : "#ffffff",
-    grid:   dark ? "#1e222d" : "#f0f2f7",
-    border: dark ? "#2a2e39" : "#e2e5ed",
-    text:   dark ? "#848e9c" : "#5a6476",
-    up:     dark ? "#26a69a" : "#089981",   // TradingView teal
-    dn:     dark ? "#ef5350" : "#f23645",   // TradingView red
-    vwap:   "#2962ff",
-    entry:  "#eab308",
-    stop:   "#ef5350",
-    target: "#26a69a",
-    trail:  "#9333ea",
+    grid: {
+      show: true,
+      horizontal: { show: true, size: 1, color: grid, style: "dashed" as const, dashedValue: [4, 2] },
+      vertical:   { show: true, size: 1, color: grid, style: "dashed" as const, dashedValue: [4, 2] },
+    },
+    candle: {
+      bar: {
+        upColor: up,   downColor: dn,   noChangeColor: text,
+        upBorderColor: up, downBorderColor: dn, noChangeBorderColor: text,
+        upWickColor:   up, downWickColor: dn,   noChangeWickColor: text,
+      },
+      priceMark: {
+        show: true,
+        high: { show: true, color: up,   textSize: 10, textFamily: "monospace", textWeight: "normal", textOffset: 5 },
+        low:  { show: true, color: dn,   textSize: 10, textFamily: "monospace", textWeight: "normal", textOffset: 5 },
+        last: {
+          show: true, upColor: up, downColor: dn, noChangeColor: text,
+          line: { show: true, style: "dashed" as const, dashedValue: [4, 4], size: 1 },
+          text: { show: true, style: "fill" as const, size: 11, color: "#ffffff", weight: "bold" },
+        },
+      },
+      tooltip: { showRule: "always" as const, showType: "standard" as const,
+                 text: { size: 11, color: text, weight: "normal", family: "monospace",
+                         marginLeft: 8, marginTop: 4, marginRight: 8, marginBottom: 4 } },
+    },
+    indicator: {
+      bars:  [{ upColor: `${up}44`, downColor: `${dn}44`, noChangeColor: `${text}44`,
+                upBorderColor: `${up}44`, downBorderColor: `${dn}44`, noChangeBorderColor: `${text}44` }],
+      lines: [
+        { size: 2, color: "#2962ff" },          // VWAP line / RSI
+        { size: 1, color: "#2962ff88" },         // +1σ
+        { size: 1, color: "#2962ff88" },         // -1σ
+        { size: 2, color: "#f59e0b" },           // MACD histogram / line
+        { size: 1, color: "#e879f9" },           // signal
+      ],
+      tooltip: { showRule: "always" as const, showName: true, showParams: true,
+                 text: { size: 10, color: text, weight: "normal", family: "monospace",
+                         marginLeft: 8, marginTop: 4, marginRight: 8, marginBottom: 4 } },
+    },
+    xAxis: { show: true,
+             axisLine: { show: true, color: border, size: 1 },
+             tickLine: { show: true, color: border, size: 1, length: 3 },
+             tickText: { show: true, color: text, size: 10, family: "monospace", weight: "normal" } },
+    yAxis: { show: true,
+             axisLine: { show: true, color: border, size: 1 },
+             tickLine: { show: true, color: border, size: 1, length: 3 },
+             tickText: { show: true, color: text, size: 10, family: "monospace", weight: "normal" } },
+    crosshair: {
+      show: true,
+      horizontal: { show: true,
+                    line: { show: true, style: "dashed" as const, dashedValue: [4, 2], size: 1, color: border },
+                    text: { show: true, style: "fill" as const, size: 10, color: "#ffffff",
+                            weight: "normal", family: "monospace",
+                            borderSize: 0, borderRadius: 2, borderColor: up,
+                            paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
+                            backgroundColor: up } },
+      vertical:   { show: true,
+                    line: { show: true, style: "dashed" as const, dashedValue: [4, 2], size: 1, color: border },
+                    text: { show: true, style: "fill" as const, size: 10, color: dark ? "#e6edf3" : "#1c2128",
+                            weight: "normal", family: "monospace",
+                            borderSize: 0, borderRadius: 2, borderColor: border,
+                            paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
+                            backgroundColor: dark ? "#1e222d" : "#f6f8fa" } },
+    },
+    separator: { size: 1, color: border },
+    overlay: {
+      line: { size: 1, color: up, style: "solid" as const, dashedValue: [4, 2], smooth: false },
+      text: { size: 10, color: text, weight: "normal", family: "monospace",
+              style: "fill" as const, borderRadius: 2, borderSize: 0, borderColor: "transparent",
+              paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
+              backgroundColor: "transparent" },
+    },
   };
 }
 
+// ── Component ─────────────────────────────────────────────────────────────────
 export function KChart({
-  bars, trades: _trades = [],
-  showVwap = true, showVwapBands = true,
-  showOR = true, showRsi = true, showMacd = true,
-  orHigh, orLow, positionLevels,
-  height = 420, ticker,
-}: Props) {
+  bars,
+  trades: _trades = [],
+  showVwap = true,
+  showVwapBands = true,
+  showOR = true,
+  showRsi = true,
+  showMacd = true,
+  orHigh,
+  orLow,
+  positionLevels,
+  height = 420,
+  ticker,
+}: KChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<any>(null);
   const ohlcRef      = useRef<HTMLDivElement>(null);
@@ -80,225 +155,240 @@ export function KChart({
 
   const { theme } = useThemeStore();
   const dark = theme === "dark";
-  const c    = pal(dark);
 
-  // ── Create chart (recreate on theme / panel toggle) ───────────────────────
+  // Color palette shortcuts (must stay in sync with makeStyles)
+  const up     = dark ? "#26a69a" : "#089981";
+  const dn     = dark ? "#ef5350" : "#f23645";
+  const border = dark ? "#2a2e39" : "#d1d5db";
+  const text   = dark ? "#848e9c" : "#5a6476";
+
+  // ── Create / destroy chart when theme or indicators change ──────────────────
   useEffect(() => {
-    if (!containerRef.current) return;
-    const chart = init(containerRef.current) as any;
+    const el = containerRef.current;
+    if (!el) return;
+
+    // Ensure container has dimensions before init
+    if (el.clientWidth === 0 || el.clientHeight === 0) {
+      // wait one frame for layout to complete
+      const id = requestAnimationFrame(() => { chartRef.current?.resize(); });
+      // still proceed — KLineChart handles 0-sized containers on resize
+      return () => cancelAnimationFrame(id);
+    }
+
+    const chart = init(el) as any;
+    if (!chart) return;               // init returns null if el is null
     chartRef.current = chart;
 
-    chart.setTimezone("America/New_York");
-    chart.setOffsetRightDistance(80);  // breathing room after last candle
+    // Apply theme styles
+    chart.setStyles(makeStyles(dark));
+    chart.setOffsetRightDistance(80);
 
-    // TradingView-style theme
-    chart.setStyles({
-      grid: {
-        horizontal: { color: c.grid, size: 1, style: "dashed", dashedValue: [4, 2] },
-        vertical:   { color: c.grid, size: 1, style: "dashed", dashedValue: [4, 2] },
-      },
-      candle: {
-        bar: {
-          upColor: c.up, downColor: c.dn, noChangeColor: c.text,
-          upBorderColor: c.up, downBorderColor: c.dn, noChangeBorderColor: c.text,
-          upWickColor: c.up, downWickColor: c.dn, noChangeWickColor: c.text,
-        },
-        priceMark: {
-          high: { show: true, color: c.up,  textSize: 10 },
-          low:  { show: true, color: c.dn,  textSize: 10 },
-          last: {
-            show: true, upColor: c.up, downColor: c.dn, noChangeColor: c.text,
-            line: { show: true, style: "dashed", dashedValue: [4, 4], size: 1, color: c.border },
-            text: { show: true, style: "fill",   size: 11, color: "#ffffff",
-                    paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2, borderRadius: 2 },
-          },
-        },
-        tooltip: {
-          showRule: "always", showType: "standard",
-          text: { color: c.text, size: 11, family: "JetBrains Mono, monospace",
-                  marginLeft: 8, marginTop: 4, marginRight: 8, marginBottom: 4 },
-        },
-      },
-      indicator: {
-        ohlc: { upColor: `${c.up}aa`, downColor: `${c.dn}aa`, noChangeColor: `${c.text}aa` },
-        bars:  [{ upColor: `${c.up}44`, downColor: `${c.dn}44`, noChangeColor: `${c.text}44` }],
-        // lines[0] = VWAP, RSI; lines[1] = +1σ; lines[2] = -1σ; lines[3] = MACD; lines[4] = signal
-        lines: [
-          { color: c.vwap,           size: 2 },
-          { color: `${c.vwap}77`,    size: 1 },
-          { color: `${c.vwap}77`,    size: 1 },
-          { color: "#f59e0b",        size: 2 },
-          { color: "#e879f9",        size: 1 },
-        ],
-        tooltip: { showRule: "always", text: { color: c.text, size: 10,
-                   family: "JetBrains Mono, monospace",
-                   marginLeft: 8, marginTop: 4, marginRight: 8, marginBottom: 4 } },
-      },
-      xAxis: { tickText: { color: c.text, size: 10, family: "JetBrains Mono, monospace" },
-               axisLine: { color: c.border }, tickLine: { color: c.border } },
-      yAxis: { tickText: { color: c.text, size: 10, family: "JetBrains Mono, monospace" },
-               axisLine: { color: c.border }, tickLine: { color: c.border } },
-      crosshair: {
-        horizontal: { line: { color: c.border },
-                      text: { color: "#fff", backgroundColor: c.up } },
-        vertical:   { line: { color: c.border },
-                      text: { color: "#fff", backgroundColor: dark ? c.bg : c.border } },
-      },
-      separator: { color: c.border },
-    });
+    // Volume in candle pane, RSI/MACD as sub-panels
+    chart.createIndicator("VOL", false, { id: "candle_pane" });
+    if (showRsi)  chart.createIndicator("RSI",  false, { id: "rsi_pane",  height: 90  });
+    if (showMacd) chart.createIndicator("MACD", false, { id: "macd_pane", height: 100 });
 
-    // Volume in main pane (bottom 15%) + RSI + MACD sub-panels
-    chart.createIndicator("VOL",  false, { id: "candle_pane" });
-    if (showRsi)  chart.createIndicator("RSI",  false, { id: "rsi_pane",  height: 90,  minHeight: 60 });
-    if (showMacd) chart.createIndicator("MACD", false, { id: "macd_pane", height: 100, minHeight: 60 });
-
-    // OHLC crosshair legend — pure DOM update, no React re-render
+    // OHLC crosshair legend — pure DOM update (no React re-render on mouse move)
     chart.subscribeAction("onCrosshairChange", (data: any) => {
-      const el = ohlcRef.current;
-      if (!el || !data?.kLineData) { if (el) el.style.opacity = "0"; return; }
-      const d  = data.kLineData;
+      const el2 = ohlcRef.current;
+      if (!el2) return;
+      if (!data?.kLineData) { el2.style.opacity = "0"; return; }
+      const d = data.kLineData;
       const chg    = d.close - d.open;
       const chgPct = (chg / d.open) * 100;
-      const col    = chg >= 0 ? c.up : c.dn;
-      el.innerHTML =
-        `<span style="color:${c.text}">O</span>&nbsp;<b>${d.open.toFixed(2)}</b>&emsp;` +
-        `<span style="color:${c.up}">H</span>&nbsp;<b>${d.high.toFixed(2)}</b>&emsp;` +
-        `<span style="color:${c.dn}">L</span>&nbsp;<b>${d.low.toFixed(2)}</b>&emsp;` +
-        `<span style="color:${c.text}">C</span>&nbsp;<b>${d.close.toFixed(2)}</b>&emsp;` +
-        `<span style="color:${col}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}`
-        + ` (${chgPct >= 0 ? "+" : ""}${chgPct.toFixed(2)}%)</span>`;
-      el.style.opacity = "1";
+      const col    = chg >= 0 ? up : dn;
+      el2.innerHTML =
+        `<span>O</span>&nbsp;<b>${d.open.toFixed(2)}</b>&ensp;` +
+        `<span style="color:${up}">H</span>&nbsp;<b>${d.high.toFixed(2)}</b>&ensp;` +
+        `<span style="color:${dn}">L</span>&nbsp;<b>${d.low.toFixed(2)}</b>&ensp;` +
+        `<span>C</span>&nbsp;<b>${d.close.toFixed(2)}</b>&ensp;` +
+        `<span style="color:${col}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chgPct >= 0 ? "+" : ""}${chgPct.toFixed(2)}%)</span>`;
+      el2.style.opacity = "1";
     });
 
-    // Auto-resize when container width changes
-    const ro = new ResizeObserver(() => chart.resize());
-    ro.observe(containerRef.current!);
+    // Auto-resize when container dimensions change
+    const ro = new ResizeObserver(() => { chartRef.current?.resize(); });
+    ro.observe(el);
 
     return () => {
       ro.disconnect();
-      dispose(containerRef.current!);
+      // chartRef.current may be null if a previous cleanup already ran
+      if (chartRef.current && containerRef.current) {
+        dispose(containerRef.current);
+      }
       chartRef.current = null;
     };
+  // Re-run only when visual theme or sub-panel config changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dark, showRsi, showMacd]);
 
-  // ── Feed data + manage overlays on bars / prop changes ────────────────────
+  // ── Feed bars + manage VWAP/OR/position overlays ───────────────────────────
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart || !bars.length) return;
+    if (!chart) return;
 
-    chart.applyNewData(bars.map((b) => ({
-      timestamp: new Date(b.time).getTime(),
-      open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume,
-    })));
-
-    // VWAP — toggle by removing/creating (getIndicatorByPaneId returns null when absent)
-    const hasVwap = !!chart.getIndicatorByPaneId("candle_pane", "VWAP");
-    if (showVwap && !hasVwap) chart.createIndicator("VWAP", true, { id: "candle_pane" });
-    if (!showVwap && hasVwap) chart.removeIndicator("candle_pane", "VWAP");
-    if (showVwap) {
-      chart.overrideIndicator({
-        name: "VWAP",
-        styles: {
-          lines: [
-            { color: c.vwap,                                        size: 2 },
-            { color: showVwapBands ? `${c.vwap}88` : "transparent", size: 1 },
-            { color: showVwapBands ? `${c.vwap}88` : "transparent", size: 1 },
-          ],
-        },
-      }, "candle_pane");
+    // Load bars (convert string timestamp → ms epoch)
+    if (bars.length > 0) {
+      chart.applyNewData(
+        bars.map((b) => ({
+          timestamp: new Date(b.time).getTime(),
+          open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
+        }))
+      );
+      chart.scrollToRealTime();
     }
 
-    // Remove managed overlays then recreate (cleanly handles prop changes)
-    chart.removeOverlay({ groupId: "pos" });
-    chart.removeOverlay({ groupId: "or"  });
+    // VWAP indicator — toggle without recreating the whole chart
+    try {
+      const hasVwap = !!(chart.getIndicatorByPaneId("candle_pane", "VWAP"));
+      if (showVwap && !hasVwap) {
+        chart.createIndicator("VWAP", true, { id: "candle_pane" }, () => {
+          // override styles inside callback so indicator exists
+          chart.overrideIndicator({
+            name: "VWAP",
+            styles: {
+              lines: [
+                { color: "#2962ff", size: 2 },
+                { color: showVwapBands ? "#2962ff66" : "transparent", size: 1 },
+                { color: showVwapBands ? "#2962ff66" : "transparent", size: 1 },
+              ],
+            },
+          }, "candle_pane");
+        });
+      } else if (!showVwap && hasVwap) {
+        chart.removeIndicator("candle_pane", "VWAP");
+      } else if (showVwap && hasVwap) {
+        // Already exists — just update band visibility
+        chart.overrideIndicator({
+          name: "VWAP",
+          styles: {
+            lines: [
+              { color: "#2962ff", size: 2 },
+              { color: showVwapBands ? "#2962ff66" : "transparent", size: 1 },
+              { color: showVwapBands ? "#2962ff66" : "transparent", size: 1 },
+            ],
+          },
+        }, "candle_pane");
+      }
+    } catch (_) { /* indicator may not be ready yet — will reconcile on next render */ }
 
-    // Opening Range lines
+    // Clear managed overlays before recreating
+    try { chart.removeOverlay({ groupId: "or"  }); } catch (_) { /* no-op */ }
+    try { chart.removeOverlay({ groupId: "pos" }); } catch (_) { /* no-op */ }
+
+    // Opening Range horizontal lines
     if (showOR) {
-      if (orHigh) chart.createOverlay({ name: "horizontalStraightLine", groupId: "or",
-        lock: true, points: [{ value: orHigh }],
-        styles: { line: { color: c.up, size: 2 } }, needDefaultYAxisFigure: true });
-      if (orLow)  chart.createOverlay({ name: "horizontalStraightLine", groupId: "or",
-        lock: true, points: [{ value: orLow  }],
-        styles: { line: { color: c.dn, size: 2 } }, needDefaultYAxisFigure: true });
+      if (orHigh != null) {
+        chart.createOverlay({
+          name: "horizontalStraightLine", groupId: "or", lock: true,
+          points: [{ value: orHigh }],
+          styles: { line: { color: up, size: 2 } },
+          needDefaultYAxisFigure: true,
+        });
+      }
+      if (orLow != null) {
+        chart.createOverlay({
+          name: "horizontalStraightLine", groupId: "or", lock: true,
+          points: [{ value: orLow }],
+          styles: { line: { color: dn, size: 2 } },
+          needDefaultYAxisFigure: true,
+        });
+      }
     }
 
     // Position price lines (Entry / Stop / Target / Trail)
     if (positionLevels) {
       const ep = positionLevels.entry;
-      [
-        { val: positionLevels.entry,  col: c.entry,  sz: 2, label: "Entry"  },
-        { val: positionLevels.stop,   col: c.stop,   sz: 1, label: "Stop"   },
-        { val: positionLevels.target, col: c.target, sz: 1, label: "Target" },
-        { val: positionLevels.trail,  col: c.trail,  sz: 1, label: "Trail"  },
-      ].forEach(({ val, col, sz, label }) => {
+      const LEVELS = [
+        { val: ep,                       col: "#eab308", sz: 2, label: "Entry"  },
+        { val: positionLevels.stop,      col: dn,        sz: 1, label: "Stop"   },
+        { val: positionLevels.target,    col: up,        sz: 1, label: "Target" },
+        { val: (positionLevels as any).trail, col: "#9333ea", sz: 1, label: "Trail" },
+      ];
+      LEVELS.forEach(({ val, col, sz, label }) => {
         if (!val || val <= 0) return;
         const pct = ep && ep !== val
           ? ` (${((val - ep) / ep * 100).toFixed(1)}%)` : "";
-        chart.createOverlay({ name: "priceLine", groupId: "pos", lock: true,
-          points:     [{ value: val }],
-          styles:     { line: { color: col, size: sz } },
+        chart.createOverlay({
+          name: "priceLine", groupId: "pos", lock: true,
+          points: [{ value: val }],
+          styles: { line: { color: col, size: sz } },
           extendData: `${label} $${val.toFixed(2)}${pct}`,
         });
       });
     }
   }, [bars, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels]);
 
-  // ── Activate drawing tool ─────────────────────────────────────────────────
+  // ── Activate drawing tool on toolbar click ─────────────────────────────────
   useEffect(() => {
-    if (tool && chartRef.current) chartRef.current.createOverlay(tool);
+    if (tool && chartRef.current) {
+      try { chartRef.current.createOverlay(tool); } catch (_) { /* not in dom yet */ }
+    }
   }, [tool]);
 
-  // ESC cancels active draw
+  // ESC exits drawing mode
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") setTool(""); };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, []);
 
-  // ── JSX ───────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col w-full" onWheel={(e) => e.stopPropagation()}>
-      {/* Drawing toolbar */}
+    <div className="flex flex-col w-full">
+      {/* ── Drawing toolbar ── */}
       <div className="flex items-center gap-1 px-2 py-1.5 flex-wrap"
-           style={{ borderBottom: `1px solid ${c.border}`, background: dark ? "#1a1f2e" : "#f6f8fa" }}>
+           style={{ borderBottom: `1px solid ${border}`, background: dark ? "#1a1f2e" : "#f6f8fa" }}>
         {TOOLS.map((t) => (
-          <button key={t.key}
-            className={`btn btn-sm ${tool === t.key ? "btn-primary" : "btn-ghost"}`}
+          <button
+            key={t.key}
             title={t.label}
-            style={{ fontFamily: "monospace", gap: 3 }}
-            onClick={() => setTool(tool === t.key ? "" : t.key)}>
+            className={`btn btn-sm ${tool === t.key ? "btn-primary" : "btn-ghost"}`}
+            style={{ fontFamily: "monospace" }}
+            onClick={() => setTool(tool === t.key ? "" : t.key)}
+          >
             <span>{t.icon}</span>
-            <span className="text-[10px] hidden sm:inline">{t.label}</span>
+            <span className="text-[10px] hidden sm:inline ml-1">{t.label}</span>
           </button>
         ))}
-        <div style={{ width: 1, height: 18, background: c.border, margin: "0 4px" }} />
-        <button className="btn btn-ghost btn-sm text-xs" title="Clear all drawings"
-          onClick={() => { chartRef.current?.removeOverlay(); setTool(""); }}>
+        <div style={{ width: 1, height: 18, background: border, margin: "0 4px" }} />
+        <button
+          className="btn btn-ghost btn-sm"
+          title="Clear all drawings"
+          onClick={() => { chartRef.current?.removeOverlay(); setTool(""); }}
+        >
           🗑
         </button>
         {tool && (
-          <span className="text-[10px] ml-2 italic" style={{ color: c.text }}>
-            Click chart · ESC cancel · DEL remove selected
+          <span className="ml-2 text-[10px] italic" style={{ color: text }}>
+            Click chart · ESC to cancel · DEL removes selected
           </span>
         )}
       </div>
 
-      {/* Chart area */}
+      {/* ── Chart area ── */}
       <div className="relative" style={{ height }}>
-        {/* Ticker + OHLC legend */}
+        {/* Ticker + OHLC crosshair legend overlay */}
         <div className="absolute top-2 left-3 z-10 flex items-center gap-3 pointer-events-none"
-             style={{ fontFamily: "JetBrains Mono, monospace" }}>
+             style={{ fontFamily: "monospace" }}>
           {ticker && (
-            <span className="text-sm font-bold"
-                  style={{ color: dark ? "#e6edf3" : "#1c2128", letterSpacing: "0.05em" }}>
+            <span className="text-sm font-bold tracking-widest"
+                  style={{ color: dark ? "#e6edf3" : "#1c2128" }}>
               {ticker}
             </span>
           )}
-          <div ref={ohlcRef} className="text-xs flex items-center gap-1"
-               style={{ opacity: 0, color: c.text, transition: "opacity 0.1s" }} />
+          <div
+            ref={ohlcRef}
+            className="text-xs"
+            style={{ opacity: 0, color: text, transition: "opacity 0.1s" }}
+          />
         </div>
-        <div ref={containerRef} className="w-full h-full" style={{ background: c.bg }} />
+
+        {/* KLineChart mount point — must have explicit 100% dimensions */}
+        <div
+          ref={containerRef}
+          style={{ width: "100%", height: "100%", background: dark ? "#131722" : "#ffffff", position: "relative" }}
+        />
       </div>
     </div>
   );
