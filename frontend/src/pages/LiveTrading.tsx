@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { KChart } from "../components/charts/KChart";
 import { useBotStore } from "../store/bot";
-import { api, type Trade, type Bar, type OptionsChainRow } from "../lib/api";
+import { api, type Trade, type OptionsChainRow } from "../lib/api";
 
 // Fallback ticker list — used only when the scanner hasn't run yet.
 // The live dropdown always prefers the scanner watchlist so the user
@@ -17,18 +17,12 @@ const FALLBACK_TICKERS = ["SPY", "QQQ"];
 // ── Period helper ───────────────────────────────────────────────────────────
 type Period = "1D" | "5D" | "1M" | "3M";
 
-function filterByPeriod(bars: Bar[], period: Period): Bar[] {
-  if (!bars.length) return bars;
-  const now = new Date();
-  const ms: Record<Period, number> = {
-    "1D":  1  * 24 * 60 * 60 * 1000,
-    "5D":  5  * 24 * 60 * 60 * 1000,
-    "1M":  30 * 24 * 60 * 60 * 1000,
-    "3M":  90 * 24 * 60 * 60 * 1000,
-  };
-  const cutoff = new Date(now.getTime() - ms[period]);
-  return bars.filter((b) => new Date(b.time) >= cutoff);
-}
+const PERIOD_MS: Record<Period, number> = {
+  "1D":  1  * 24 * 60 * 60 * 1000,
+  "5D":  5  * 24 * 60 * 60 * 1000,
+  "1M":  30 * 24 * 60 * 60 * 1000,
+  "3M":  90 * 24 * 60 * 60 * 1000,
+};
 
 
 // Classify a log entry as network-related (broker/API) vs a trading decision.
@@ -158,8 +152,12 @@ export function LiveTrading() {
     contracts: openTickerTrade.contracts    ?? undefined,
   } : undefined;
 
-  // Filter bars by selected period
-  const visibleBars = useMemo(() => filterByPeriod(bars, period), [bars, period]);
+  // Compute scroll cutoff for period view — chart receives ALL bars for full
+  // indicator history, but scrolls to show only the selected period window.
+  const visibleFrom = useMemo(
+    () => Date.now() - PERIOD_MS[period],
+    [period]
+  );
 
   // Determine sparkline color for scanner ticker (green if positive change, red otherwise)
   const scannerColor = (changePct: number) =>
@@ -271,8 +269,9 @@ export function LiveTrading() {
           </div>
 
           <KChart
-            bars={visibleBars}
+            bars={bars}
             trades={tickerTrades}
+            visibleFrom={visibleFrom}
             showVwap={showVwap}
             showVwapBands={showVwapBands}
             showOR={showOR}

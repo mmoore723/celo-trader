@@ -47,6 +47,8 @@ export interface KChartProps {
   currentOptionPrice?: number | null;
   height?: number;
   ticker?: string;
+  /** Epoch ms — chart scrolls so this timestamp appears at the left edge */
+  visibleFrom?: number;
 }
 
 // ── Build KLineChart style object ─────────────────────────────────────────────
@@ -135,7 +137,7 @@ function makeStyles(dark: boolean) {
 // ── Component ─────────────────────────────────────────────────────────────────
 export function KChart({
   bars,
-  trades: _trades = [],
+  trades = [],
   showVwap = true,
   showVwapBands = true,
   showOR = true,
@@ -146,6 +148,7 @@ export function KChart({
   positionLevels,
   height = 420,
   ticker,
+  visibleFrom,
 }: KChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<any>(null);
@@ -237,7 +240,13 @@ export function KChart({
           open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
         }))
       );
-      chart.scrollToRealTime();
+      // Period view: scroll to visibleFrom cutoff so that timeframe is at left edge.
+      // If no cutoff, show the latest data at the right edge.
+      if (visibleFrom) {
+        chart.scrollToTimestamp(visibleFrom);
+      } else {
+        chart.scrollToRealTime();
+      }
     }
 
     // VWAP indicator — toggle without recreating the whole chart
@@ -319,7 +328,35 @@ export function KChart({
         });
       });
     }
-  }, [bars, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels]);
+
+    // ── Trade markers (entry=teal triangle up, exit=orange circle) ────────────
+    try { chart.removeOverlay({ groupId: "trades" }); } catch (_) { /* no-op */ }
+    trades.forEach((t: Trade) => {
+      if (!t.entry_time || !t.entry_price) return;
+      const entryTs = new Date(t.entry_time).getTime();
+      const isLong  = t.direction !== "short";
+      chart.createOverlay({
+        name: isLong ? "buyMarker" : "sellMarker",
+        groupId: "trades", lock: true,
+        points: [{ timestamp: entryTs, value: t.entry_price }],
+        extendData: `${isLong ? "B" : "S"} $${t.entry_price.toFixed(2)}`,
+      });
+      if (t.exit_time && t.exit_price) {
+        const exitTs = new Date(t.exit_time).getTime();
+        chart.createOverlay({
+          name: "exitMarker",
+          groupId: "trades", lock: true,
+          points: [{ timestamp: exitTs, value: t.exit_price }],
+        });
+      }
+    });
+  }, [bars, trades, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, visibleFrom]);
+
+  // ── Scroll to period when visibleFrom changes independently ─────────────────
+  useEffect(() => {
+    if (!chartRef.current || !visibleFrom) return;
+    try { chartRef.current.scrollToTimestamp(visibleFrom); } catch (_) { /* no-op */ }
+  }, [visibleFrom]);
 
   // ── Activate drawing tool on toolbar click ─────────────────────────────────
   useEffect(() => {
