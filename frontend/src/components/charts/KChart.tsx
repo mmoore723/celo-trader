@@ -79,9 +79,8 @@ function makeStyles(dark: boolean) {
           text: { show: true, style: "fill" as const, size: 11, color: "#ffffff", weight: "bold" },
         },
       },
-      tooltip: { showRule: "always" as const, showType: "standard" as const,
-                 text: { size: 11, color: text, weight: "normal", family: "monospace",
-                         marginLeft: 8, marginTop: 4, marginRight: 8, marginBottom: 4 } },
+      // Disable built-in candle tooltip — custom DOM legend handles OHLC display
+      tooltip: { showRule: "none" as const },
     },
     indicator: {
       bars:  [{ upColor: `${up}44`, downColor: `${dn}44`, noChangeColor: `${text}44`,
@@ -184,7 +183,9 @@ export function KChart({
     chart.setOffsetRightDistance(80);
 
     // Volume in candle pane, RSI/MACD as sub-panels
-    chart.createIndicator("VOL", false, { id: "candle_pane" });
+    // isStack: true = overlaid in candle pane with auto-scaled secondary axis
+    // isStack: false would share the price axis and dwarf the candles
+    chart.createIndicator("VOL", true, { id: "candle_pane" });
     if (showRsi)  chart.createIndicator("RSI",  false, { id: "rsi_pane",  height: 90  });
     if (showMacd) chart.createIndicator("MACD", false, { id: "macd_pane", height: 100 });
 
