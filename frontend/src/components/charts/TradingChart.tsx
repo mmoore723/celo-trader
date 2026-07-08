@@ -73,12 +73,12 @@ interface Props {
 
 function colors(dark: boolean) {
   return {
-    background:   dark ? "#0d1117" : "#ffffff",
-    text:         dark ? "#8b949e" : "#5a6476",
-    grid:         dark ? "#21262d" : "#f0f2f7",
-    border:       dark ? "#30363d" : "#e2e5ed",
-    up:           dark ? "#3fb950" : "#16a34a",
-    down:         dark ? "#f85149" : "#dc2626",
+    background:   dark ? "#131722" : "#ffffff",   // TradingView navy (not GitHub dark)
+    text:         dark ? "#848e9c" : "#5a6476",
+    grid:         dark ? "#1e222d" : "#f0f2f7",   // subtle grid like TV
+    border:       dark ? "#2a2e39" : "#e2e5ed",
+    up:           dark ? "#26a69a" : "#089981",   // TradingView teal
+    down:         dark ? "#ef5350" : "#f23645",   // TradingView red
     vwap:         dark ? "#58a6ff" : "#2563eb",
     vwapBand1:    dark ? "#58a6ffcc" : "#2563eb99",   // ±1σ — solid, visible
     vwapBand2:    dark ? "#58a6ff66" : "#2563eb55",   // ±2σ — lighter
@@ -102,8 +102,8 @@ function colors(dark: boolean) {
     // MACD
     macdLine:     dark ? "#f59e0b" : "#d97706",       // gold
     macdSignal:   dark ? "#e879f9" : "#9333ea",       // purple
-    macdHistPos:  dark ? "#3fb950" : "#16a34a",       // green histogram bars
-    macdHistNeg:  dark ? "#f85149" : "#dc2626",       // red histogram bars
+    macdHistPos:  dark ? "#26a69a" : "#089981",       // match candle up color
+    macdHistNeg:  dark ? "#ef5350" : "#f23645",       // match candle down color
   };
 }
 
@@ -328,6 +328,8 @@ export function TradingChart({
 
   // Tooltip div ref
   const tooltipRef = useRef<HTMLDivElement | null>(null);
+  // OHLC legend div — DOM-updated on crosshairMove (no React re-render cost)
+  const ohlcLegendRef = useRef<HTMLDivElement | null>(null);
 
   const { theme } = useThemeStore();
   const dark = theme === "dark";
@@ -379,6 +381,8 @@ export function TradingChart({
         borderColor:    C.border,
         timeVisible:    true,
         secondsVisible: false,
+        rightOffset:    12,   // breathing room after last bar (TradingView default ~12)
+        barSpacing:     7,    // slightly wider candles for clarity
         tickMarkFormatter,
       },
     });
@@ -629,7 +633,7 @@ export function TradingChart({
       bars.map((b) => {
         const isBreakout = (b.rvol ?? 0) >= breakoutThreshold;
         const base = b.close >= b.open ? C.up : C.down;
-        return { time: toTime(b.time), value: b.volume, color: isBreakout ? C.breakout + "bb" : base + "55" };
+        return { time: toTime(b.time), value: b.volume, color: isBreakout ? C.breakout + "99" : base + "33" };
       })
     );
     volAvgRef.current?.setData(
@@ -811,12 +815,15 @@ export function TradingChart({
   // NOTE: C (color object) intentionally not in deps — color changes trigger a full
   // chart recreation via the `dark` dep in the chart-creation effect above.
 
-  // ── Crosshair tooltip for trade markers ──────────────────────────────────
+  // ── Crosshair: OHLC legend + trade tooltip ───────────────────────────────
+  // deps include dark/height/showRsi/showMacd so we resubscribe when the chart
+  // is recreated (those deps trigger chart.remove() + chart recreation above).
   useEffect(() => {
     const chart = chartRef.current;
     const candle = candleRef.current;
-    if (!chart || !candle || !trades.length) return;
+    if (!chart || !candle) return;
 
+    // Build trade marker lookup: timestamp → label
     const lookup = new Map<number, string>();
     for (const t of trades) {
       if (t.entry_time) {
@@ -829,19 +836,52 @@ export function TradingChart({
       }
     }
 
-    const handleCrosshair = (param: { time?: Time }) => {
-      const tt = tooltipRef.current;
-      if (!tt) return;
-      if (!param.time) { tt.style.display = "none"; return; }
-      const label = lookup.get(param.time as number);
-      if (!label) { tt.style.display = "none"; return; }
-      tt.textContent = label;
-      tt.style.display = "block";
+    const handleCrosshair = (param: any) => {
+      const tt     = tooltipRef.current;
+      const legend = ohlcLegendRef.current;
+
+      if (!param?.time) {
+        if (tt)     tt.style.display = "none";
+        if (legend) legend.style.opacity = "0";
+        return;
+      }
+
+      // ── OHLC legend: O / H / L / C + delta (TradingView-style) ─────────
+      if (legend) {
+        const d = param.seriesData?.get(candle) as any;
+        if (d?.open != null) {
+          const chg    = d.close - d.open;
+          const chgPct = (chg / d.open) * 100;
+          const col    = chg >= 0 ? C.up : C.down;
+          legend.innerHTML =
+            `<span style="color:var(--ink-faint)">O</span> <b style="color:var(--ink)">${d.open.toFixed(2)}</b>`
+          + `&nbsp;&nbsp;<span style="color:${C.up}">H</span> <b style="color:var(--ink)">${d.high.toFixed(2)}</b>`
+          + `&nbsp;&nbsp;<span style="color:${C.down}">L</span> <b style="color:var(--ink)">${d.low.toFixed(2)}</b>`
+          + `&nbsp;&nbsp;<span style="color:var(--ink-faint)">C</span> <b style="color:var(--ink)">${d.close.toFixed(2)}</b>`
+          + `&nbsp;&nbsp;<span style="color:${col}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chgPct >= 0 ? "+" : ""}${chgPct.toFixed(2)}%)</span>`;
+          legend.style.opacity = "1";
+        }
+      }
+
+      // ── Trade marker tooltip ─────────────────────────────────────────────
+      if (tt) {
+        const label = lookup.get(param.time as number);
+        if (label) {
+          tt.textContent = label;
+          tt.style.display = "block";
+        } else {
+          tt.style.display = "none";
+        }
+      }
     };
 
     chart.subscribeCrosshairMove(handleCrosshair);
-    return () => chart.unsubscribeCrosshairMove(handleCrosshair);
-  }, [trades]);
+    return () => {
+      chart.unsubscribeCrosshairMove(handleCrosshair);
+      if (ohlcLegendRef.current) ohlcLegendRef.current.style.opacity = "0";
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trades, dark, height, showRsi, showMacd]);
 
   // ── Position overlay card ─────────────────────────────────────────────────
   // Direction badge always visible; STP/ENT/TGT detail rows appear on hover.
@@ -970,13 +1010,30 @@ export function TradingChart({
       {/* ── Main price chart ─────────────────────────────────────────────── */}
       <div className="relative w-full" style={{ height }}>
 
-        {/* Ticker label */}
-        {ticker && (
-          <div className="absolute top-2 left-3 z-10 text-xs font-mono font-semibold"
-               style={{ color: "var(--ink-muted)" }}>
-            {ticker}
-          </div>
-        )}
+        {/* Top-left: ticker symbol + OHLC crosshair legend (TradingView-style) */}
+        <div
+          className="absolute top-2 left-3 z-10 flex items-center gap-4"
+          style={{ pointerEvents: "none" }}
+        >
+          {ticker && (
+            <span
+              className="text-sm font-mono font-bold"
+              style={{ color: "var(--ink)", letterSpacing: "0.04em" }}
+            >
+              {ticker}
+            </span>
+          )}
+          {/* Populated via direct DOM update in the crosshairMove handler — no React re-render */}
+          <div
+            ref={ohlcLegendRef}
+            className="text-xs font-mono"
+            style={{
+              display: "flex", alignItems: "center", gap: 0,
+              color: "var(--ink-muted)", opacity: 0,
+              transition: "opacity 0.1s",
+            }}
+          />
+        </div>
 
         {/* Overlay legend + Fit button */}
         <div className="absolute top-2 right-3 z-10 flex items-center gap-2 text-[10px] font-mono select-none"

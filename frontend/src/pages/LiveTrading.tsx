@@ -247,21 +247,24 @@ export function LiveTrading() {
               ))}
             </div>
 
-            {/* Overlay toggles */}
-            {([
-              ["VWAP",  showVwap,         setShowVwap],
-              ["Bands", showVwapBands,     setShowVwapBands],
-              ["OR",    showOR,            setShowOR],
-              ["Swings",showSwings,        setShowSwings],
-              ["Pos",   showPositionCard,  setShowPositionCard],
-            ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
-              <label key={label} className="flex items-center gap-1 cursor-pointer text-xs"
-                     style={{ color: val ? "var(--ink)" : "var(--ink-muted)" }}>
-                <input type="checkbox" checked={val}
-                       onChange={(e) => setter(e.target.checked)} />
-                {label}
-              </label>
-            ))}
+            {/* Overlay toggles — styled like timeframe buttons, not checkboxes */}
+            <div className="flex gap-1 ml-1 border-l pl-3" style={{ borderColor: "var(--border)" }}>
+              {([
+                ["VWAP",   showVwap,        setShowVwap],
+                ["Bands",  showVwapBands,   setShowVwapBands],
+                ["OR",     showOR,          setShowOR],
+                ["Swings", showSwings,      setShowSwings],
+                ["Pos",    showPositionCard,setShowPositionCard],
+              ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
+                <button
+                  key={label}
+                  className={`btn btn-sm ${val ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setter(!val)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
             <div className="flex-1" />
             {barsLoading && <RefreshCw size={13} className="animate-spin text-ink-muted" />}
