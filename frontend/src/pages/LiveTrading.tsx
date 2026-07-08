@@ -555,14 +555,14 @@ export function LiveTrading() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Ticker</th><th>Dir</th><th>Entry</th>
+                  <th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th>
                   <th>Now</th><th>Strategy</th><th>P&L (live)</th><th></th>
                 </tr>
               </thead>
               <tbody>
                 {openTrades.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
+                    <td colSpan={8} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
                       No open positions
                     </td>
                   </tr>
@@ -595,6 +595,9 @@ export function LiveTrading() {
                           <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
                             {t.direction?.toUpperCase()}
                           </span>
+                        </td>
+                        <td className="num text-center">
+                          <span className="badge badge-blue">{qty}c</span>
                         </td>
                         <td className="num">${t.entry_price.toFixed(2)}</td>
                         {/* Live current price */}

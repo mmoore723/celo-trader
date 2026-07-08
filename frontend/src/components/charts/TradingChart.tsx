@@ -718,7 +718,7 @@ export function TradingChart({
           color,
           shape:    isHigh ? "arrowDown" : "arrowUp",
           text:     sw.label,
-          size:     1,
+          size:     2,   // increased from 1 — was too small to see
         });
       }
     }
@@ -741,16 +741,24 @@ export function TradingChart({
           { key: "target", color: C.target, label: "Target", dash: false },
           { key: "trail",  color: C.trail,  label: "Trail",  dash: true  },
         ];
+        const entryPx = positionLevels.entry ?? null;
         for (const def of defs) {
           const price = positionLevels[def.key] as number | undefined;
           if (price != null && price > 0) {
+            // Build label: "Stop $2.18 (-20.1%)" or "Entry $2.73"
+            const pctDiff = (entryPx && entryPx > 0 && price !== entryPx)
+              ? ((price - entryPx) / entryPx * 100)
+              : null;
+            const pctStr = pctDiff != null
+              ? ` (${pctDiff >= 0 ? "+" : ""}${pctDiff.toFixed(1)}%)`
+              : "";
             const pl = candleRef.current.createPriceLine({
               price,
               color: def.color,
-              lineWidth: 1,
+              lineWidth: def.key === "entry" ? 2 : 1,  // entry line slightly bolder
               lineStyle: def.dash ? LineStyle.Dashed : LineStyle.Solid,
               axisLabelVisible: true,
-              title: def.label,
+              title: `${def.label} $${price.toFixed(2)}${pctStr}`,
             });
             priceLineRefs.current.push(pl);
           }

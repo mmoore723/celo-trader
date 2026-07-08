@@ -214,15 +214,19 @@ export function DailyBrief() {
             <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
-                  <tr><th>Ticker</th><th>Strategy</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Reason</th></tr>
+                  <tr><th>Ticker</th><th>Strategy</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Reason</th></tr>
                 </thead>
                 <tbody>
                   {todayTrades.map((t) => {
                     const pnl = t.pnl ?? 0;
+                    const qty = t.contracts ?? 1;
                     return (
                       <tr key={t.id}>
                         <td className="font-semibold">{t.ticker}</td>
                         <td className="text-xs" style={{ color: "var(--ink-muted)" }}>{t.strategy_id ?? "—"}</td>
+                        <td className="num text-center">
+                          <span className="badge badge-blue">{qty}c</span>
+                        </td>
                         <td className="num">${t.entry_price.toFixed(2)}</td>
                         <td className="num">{t.exit_price != null ? `$${t.exit_price.toFixed(2)}` : "—"}</td>
                         <td className="num" style={{ color: pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>
