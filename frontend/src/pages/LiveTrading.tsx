@@ -5,7 +5,7 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import { TradingChart } from "../components/charts/TradingChart";
+import { KChart } from "../components/charts/KChart";
 import { useBotStore } from "../store/bot";
 import { api, type Trade, type Bar, type OptionsChainRow } from "../lib/api";
 
@@ -270,7 +270,7 @@ export function LiveTrading() {
             {barsLoading && <RefreshCw size={13} className="animate-spin text-ink-muted" />}
           </div>
 
-          <TradingChart
+          <KChart
             bars={visibleBars}
             trades={tickerTrades}
             showVwap={showVwap}
@@ -282,7 +282,6 @@ export function LiveTrading() {
             orLow={or?.low}
             positionLevels={positionLevels}
             currentOptionPrice={
-              // Pull live option mid price for the open trade on the selected ticker
               openTickerTrade
                 ? (status?.open_positions?.[String(openTickerTrade.id)]?.current_option_price ?? null)
                 : null
