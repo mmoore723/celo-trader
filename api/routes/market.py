@@ -46,23 +46,11 @@ def get_bars(
 
     df = pd.DataFrame()
 
-    # ── Attempt 1: Alpaca get_session_bars — same path the bot uses ──────────
-    # get_bars with the free IEX feed returns empty for most intraday timeframes
-    # because IEX only provides real-time snapshots, not historical bar data.
-    # get_session_bars uses a date-range query that reliably works — confirmed
-    # because the bot calls it every tick and the scan logs show bar counts.
-    if _market_is_open():
-        try:
-            from broker import get_clients
-            alpaca, _ = get_clients()
-            session_bars, is_error, _ = alpaca.get_session_bars(ticker, timeframe)
-            if not is_error and session_bars:
-                df = bars_to_df(session_bars)
-        except Exception:
-            pass  # fall through to yfinance
-
-    # ── Attempt 2: yfinance (pre/after-market, no quota) ─────────────────────
-    if df.empty:
+    # ── yfinance: 30-day history (always used for the chart) ─────────────────
+    # Alpaca's get_session_bars returns only TODAY's session, which leaves the
+    # chart with 4-5 bars early in the morning and breaks period view + RSI/MACD.
+    # yfinance with a 30-day lookback gives the full history the chart needs.
+    if True:
         try:
             import yfinance as yf
             import datetime as _dt
@@ -124,7 +112,7 @@ def get_bars(
             pass
 
     if df.empty:
-        raise HTTPException(status_code=503, detail=f"No bar data available for {ticker} from Alpaca or yfinance")
+        raise HTTPException(status_code=503, detail=f"No bar data available for {ticker} from yfinance")
 
     df["rvol"] = compute_rvol(df)
     df["atr"]  = compute_atr(df)
