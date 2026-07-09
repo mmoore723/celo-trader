@@ -234,14 +234,17 @@ def get_trade_logger(
 
 # ── Handler factory ───────────────────────────────────────────────────────────
 
-def _make_rotating_handler() -> logging.handlers.RotatingFileHandler:
-    """10 MB per file, keep 5 backups — bot.log never grows unbounded."""
-    handler = logging.handlers.RotatingFileHandler(
+def _make_rotating_handler() -> logging.handlers.TimedRotatingFileHandler:
+    """Rotate at midnight, keep 30 days — enough to debug strategy regressions."""
+    handler = logging.handlers.TimedRotatingFileHandler(
         filename    = str(LOG_FILE),
-        maxBytes    = 10 * 1024 * 1024,   # 10 MB
-        backupCount = 5,
+        when        = "midnight",   # new file each trading day
+        backupCount = 30,           # 30 days of history on disk
         encoding    = "utf-8",
+        utc         = False,        # rotate in server local time
     )
+    # Suffix: bot.log.2026-07-09
+    handler.suffix = "%Y-%m-%d"
     handler.setFormatter(_JsonFormatter())
     return handler
 
@@ -294,8 +297,8 @@ def setup_logging(level: int = LOG_LEVEL) -> logging.Logger:
         extra={
             "event": "logging_initialised",
             "log_file": str(LOG_FILE),
-            "max_bytes": 10 * 1024 * 1024,
-            "backup_count": 5,
+            "rotation": "midnight",
+            "backup_count": 30,
             "level": logging.getLevelName(level),
         },
     )

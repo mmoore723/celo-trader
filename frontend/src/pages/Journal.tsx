@@ -18,6 +18,33 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/**
+ * Map raw exit_reason strings to clean display labels.
+ * Strips embedded parameter values (sl=2.17 current=2.15, rvol=0.68, etc.)
+ * so the same exit type can be grouped and compared across trades.
+ */
+function normalizeExitReason(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  // Extract category = everything before the first space or '('
+  const cat = raw.split(/[\s(]/)[0];
+  const MAP: Record<string, string> = {
+    momentum_dead_exit:                       "Dead Momentum",
+    structural_stop_bar_high:                 "Structural Stop",
+    atr_trail_stop:                           "Trail Stop",
+    trail_stop:                               "Trail Stop",
+    time_cap_loser_60m:                       "Time Limit",
+    time_cap_winner:                          "Time Limit (Win)",
+    stage1_50pct_full_exit_single_contract:   "50% Target",
+    stage1_50pct_full_exit:                   "50% Target",
+    panic_close:                              "Panic Close",
+    manual_close:                             "Manual Close",
+    profit_lock:                              "Profit Lock",
+    stop_loss:                                "Stop Loss",
+    target_hit:                               "Target Hit",
+  };
+  return MAP[cat] ?? cat.replace(/_/g, " ");
+}
+
 /** Compact time formatter: "06/26 09:45" */
 function fmtTime(iso: string | undefined): string {
   if (!iso) return "—";
@@ -155,9 +182,13 @@ function TradeDetail({ t }: { t: Trade }) {
   );
 }
 
+type DateWindow = "today" | "week" | "month" | "custom" | "all";
+
 export function Journal() {
   const [mode,        setMode]        = useState<"paper" | "live">("paper");
   const [filter,      setFilter]      = useState<"all" | "open" | "closed">("all");
+  const [dateWindow,  setDateWindow]  = useState<DateWindow>("all");
+  const [customFrom,  setCustomFrom]  = useState<string>("");   // "YYYY-MM-DD"
   const [expandedId,  setExpandedId]  = useState<number | null>(null);
   const qc = useQueryClient();
 
@@ -167,7 +198,36 @@ export function Journal() {
     refetchInterval: 10_000,
   });
 
-  const trades: Trade[] = data?.trades ?? [];
+  const allTrades: Trade[] = data?.trades ?? [];
+
+  // ── Client-side date filter ─────────────────────────────────────────────────
+  const trades = allTrades.filter((t) => {
+    if (!t.entry_time) return true;
+    const entry = new Date(t.entry_time);
+    const now   = new Date();
+    if (dateWindow === "today") {
+      return entry.toDateString() === now.toDateString();
+    }
+    if (dateWindow === "week") {
+      const cut = new Date(now); cut.setDate(now.getDate() - 7);
+      return entry >= cut;
+    }
+    if (dateWindow === "month") {
+      const cut = new Date(now); cut.setMonth(now.getMonth() - 1);
+      return entry >= cut;
+    }
+    if (dateWindow === "custom" && customFrom) {
+      return entry >= new Date(customFrom);
+    }
+    return true; // "all"
+  });
+
+  // Recompute summary from filtered set (API totals won't match when date-filtered)
+  const filteredPnl     = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const filteredWins    = trades.filter((t) => (t.pnl ?? 0) > 0).length;
+  const filteredWinRate = trades.length > 0
+    ? ((filteredWins / trades.length) * 100).toFixed(1)
+    : "0.0";
 
   async function close(id: number) {
     await api.bot.closeTrade(id);
@@ -186,36 +246,69 @@ export function Journal() {
       {/* Controls */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Paper / Live */}
           <div className="flex gap-1">
             {(["paper", "live"] as const).map((m) => (
-              <button
-                key={m}
+              <button key={m}
                 className={`btn btn-sm ${mode === m ? "btn-primary" : "btn-ghost"}`}
-                onClick={() => setMode(m)}
-              >
+                onClick={() => setMode(m)}>
                 {m.charAt(0).toUpperCase() + m.slice(1)}
               </button>
             ))}
           </div>
+          {/* Open / Closed / All */}
           <div className="flex gap-1">
             {(["all", "open", "closed"] as const).map((f) => (
-              <button
-                key={f}
+              <button key={f}
                 className={`btn btn-sm ${filter === f ? "btn-primary" : "btn-ghost"}`}
-                onClick={() => setFilter(f)}
-              >
+                onClick={() => setFilter(f)}>
                 {f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
           </div>
+          {/* Date window */}
+          <div className="flex gap-1 flex-wrap">
+            {([
+              { key: "today", label: "Today"  },
+              { key: "week",  label: "7 Days"  },
+              { key: "month", label: "30 Days" },
+              { key: "all",   label: "All"     },
+              { key: "custom",label: "From…"   },
+            ] as { key: DateWindow; label: string }[]).map(({ key, label }) => (
+              <button key={key}
+                className={`btn btn-sm ${dateWindow === key ? "btn-accent" : "btn-ghost"}`}
+                onClick={() => setDateWindow(key)}>
+                {label}
+              </button>
+            ))}
+            {/* Custom date input — only visible when "From…" is selected */}
+            {dateWindow === "custom" && (
+              <input
+                type="date"
+                className="input input-sm"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                style={{ fontSize: 12, padding: "2px 6px", height: 28 }}
+              />
+            )}
+          </div>
         </div>
-        {/* Summary row — separate line so it never clips on mobile */}
+        {/* Summary row — computed from filtered set */}
         <div className="flex gap-4 text-sm num" style={{ color: "var(--ink-muted)" }}>
-          <span>{data?.total ?? 0} trades</span>
-          <span style={{ color: (data?.total_pnl ?? 0) >= 0 ? posColor : negColor }}>
-            {(data?.total_pnl ?? 0) >= 0 ? "+" : ""}${Math.abs(data?.total_pnl ?? 0).toFixed(2)} P&L
+          <span>{trades.length} trades</span>
+          <span style={{ color: filteredPnl >= 0 ? posColor : negColor }}>
+            {filteredPnl >= 0 ? "+" : ""}${Math.abs(filteredPnl).toFixed(2)} P&L
           </span>
-          <span>Win {data?.win_rate ?? 0}%</span>
+          <span>Win {filteredWinRate}%</span>
+          {dateWindow !== "all" && (
+            <span style={{ color: "var(--accent)", fontSize: 11 }}>
+              ({dateWindow === "custom" && customFrom
+                ? `from ${customFrom}`
+                : dateWindow === "today" ? "today"
+                : dateWindow === "week"  ? "last 7 days"
+                : "last 30 days"})
+            </span>
+          )}
         </div>
       </div>
 
@@ -312,8 +405,10 @@ export function Journal() {
                             : "—"}
                         </td>
                         <td className="hidden sm:table-cell"><StatusBadge status={t.status} /></td>
-                        <td className="text-xs hidden lg:table-cell" style={{ color: "var(--ink-muted)" }}>
-                          {t.exit_reason ?? "—"}
+                        <td className="text-xs hidden lg:table-cell"
+                            style={{ color: "var(--ink-muted)" }}
+                            title={t.exit_reason ?? undefined}> {/* full raw reason on hover */}
+                          {normalizeExitReason(t.exit_reason)}
                         </td>
                         <td className="text-xs num hidden lg:table-cell" style={{ color: "var(--ink-muted)" }}>
                           {fmtTime(t.entry_time)}
