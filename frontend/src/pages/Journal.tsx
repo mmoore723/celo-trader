@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { api, type Trade } from "../lib/api";
+import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 
 function StatusBadge({ status }: { status: string }) {
@@ -185,7 +186,12 @@ function TradeDetail({ t }: { t: Trade }) {
 type DateWindow = "today" | "week" | "month" | "custom" | "all";
 
 export function Journal() {
-  const [mode,        setMode]        = useState<"paper" | "live">("paper");
+  // Default to whichever mode the bot is currently running in.
+  // is_paper=true → paper, is_paper=false → live, null (unknown) → paper fallback.
+  const botStatus = useBotStore((s) => s.status);
+  const defaultMode: "paper" | "live" = botStatus?.is_paper === false ? "live" : "paper";
+
+  const [mode,        setMode]        = useState<"paper" | "live">(defaultMode);
   const [filter,      setFilter]      = useState<"all" | "open" | "closed">("all");
   const [dateWindow,  setDateWindow]  = useState<DateWindow>("all");
   const [customFrom,  setCustomFrom]  = useState<string>("");   // "YYYY-MM-DD"

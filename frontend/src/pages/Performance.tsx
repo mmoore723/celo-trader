@@ -10,6 +10,7 @@ import {
 // Note: BarChart/RBar/Cell still used in analytics sections below
 import { api } from "../lib/api";
 import { useThemeStore } from "../store/theme";
+import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
@@ -228,7 +229,9 @@ function CalendarHeatmap({ daily, dark }: { daily: { date: string; pnl: number }
 }
 
 export function Performance() {
-  const [mode, setMode] = useState<"paper" | "live">("paper");
+  const botStatus = useBotStore((s) => s.status);
+  const defaultMode: "paper" | "live" = botStatus?.is_paper === false ? "live" : "paper";
+  const [mode, setMode] = useState<"paper" | "live">(defaultMode);
   const { theme } = useThemeStore();
   const dark = theme === "dark";
 
