@@ -114,6 +114,39 @@ def get_conn():
         conn.close()
 
 
+@contextmanager
+def _conn_for_mode(mode: str):
+    """
+    Yield a read connection to the DB file for the requested mode —
+    regardless of which mode the bot is currently running in.
+
+    get_conn() opens whichever DB matches the current bot setting.  That's
+    correct for INSERT/UPDATE paths (the bot writes to its active DB).  But
+    the Journal and Performance pages use a mode toggle: the user should be
+    able to read paper trades while the bot is live and vice-versa.
+
+    Bug without this: get_all_trades(mode="paper") while bot runs live →
+    get_conn() opens trades_live.db → WHERE paper=1 → 0 rows always.
+
+    Directory is derived from get_db_path().parent so it works whether the
+    DB lives at the project root (single-user) or user_data/{id}/ (multi-user).
+    """
+    _db_dir  = get_db_path().parent
+    _path    = _db_dir / f"trades_{mode}.db"
+    conn = sqlite3.connect(str(_path), detect_types=sqlite3.PARSE_DECLTYPES)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 # ── Initialisation ────────────────────────────────────────────────────────────
 
 def _init_db_at(db_path: Path) -> None:
@@ -431,38 +464,29 @@ def get_all_trades(limit: int = 500, mode: str = "paper", status_filter: str = "
     """
     Return trades for the journal page.
 
-    mode          — "paper" (paper=1) or "live" (paper=0). Defaults to paper.
+    mode          — "paper" or "live". Opens the corresponding DB file directly
+                    via _conn_for_mode() so the Journal's mode toggle always reads
+                    the right database, regardless of which mode the bot is running.
     status_filter — "all" | "open" | "closed". Defaults to all.
     limit         — max rows returned.
-
-    Returns both open and closed trades so the Journal's All/Open/Closed tabs
-    all work correctly. Ordered newest-first (exit_time for closed, entry_time
-    for still-open).
     """
-    paper_flag = 1 if mode == "paper" else 0
-
     if status_filter == "open":
-        sql = (
-            "SELECT * FROM trades WHERE paper = ? AND status = 'open' "
-            "ORDER BY entry_time DESC LIMIT ?"
-        )
-        params = (paper_flag, limit)
+        sql    = "SELECT * FROM trades WHERE status = 'open' ORDER BY entry_time DESC LIMIT ?"
+        params = (limit,)
     elif status_filter == "closed":
-        sql = (
-            "SELECT * FROM trades WHERE paper = ? AND status = 'closed' "
-            "ORDER BY exit_time DESC LIMIT ?"
-        )
-        params = (paper_flag, limit)
-    else:  # "all"
-        sql = (
-            "SELECT * FROM trades WHERE paper = ? "
-            "ORDER BY COALESCE(exit_time, entry_time) DESC LIMIT ?"
-        )
-        params = (paper_flag, limit)
+        sql    = "SELECT * FROM trades WHERE status = 'closed' ORDER BY exit_time DESC LIMIT ?"
+        params = (limit,)
+    else:
+        sql    = "SELECT * FROM trades ORDER BY COALESCE(exit_time, entry_time) DESC LIMIT ?"
+        params = (limit,)
 
-    with get_conn() as conn:
-        rows = conn.execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
+    try:
+        with _conn_for_mode(mode) as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.warning("get_all_trades(%s) failed: %s", mode, e)
+        return []
 
 
 # ── Daily summary ─────────────────────────────────────────────────────────────
@@ -495,31 +519,31 @@ def _upsert_daily_summary(trade_date: date, pnl: float) -> None:
 
 def get_daily_summaries(mode: str = "paper") -> list[dict]:
     """
-    Return daily summary rows for the calendar heatmap.
-    Derives daily P&L from the trades table filtered by paper/live flag so the
-    Performance page stays in sync with the Journal's mode toggle.
-    The legacy daily_summary table is not filtered by mode, so we recompute
-    from trades directly to avoid cross-contamination.
+    Return daily P&L summary rows for the calendar heatmap.
+    Opens the mode-specific DB directly so the Performance page's Paper/Live
+    toggle always reads the right database.
     """
-    paper_flag = 1 if mode == "paper" else 0
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT date(COALESCE(exit_time, entry_time)) AS trade_date,
-                   SUM(COALESCE(realized_pnl, 0))        AS pnl,
-                   COUNT(*)                              AS trades,
-                   ROUND(
-                     100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END)
-                     / NULLIF(COUNT(*), 0), 1
-                   )                                     AS win_rate
-            FROM trades
-            WHERE paper = ? AND status = 'closed'
-            GROUP BY trade_date
-            ORDER BY trade_date
-            """,
-            (paper_flag,),
-        ).fetchall()
-    return [dict(r) for r in rows]
+    try:
+        with _conn_for_mode(mode) as conn:
+            rows = conn.execute(
+                """
+                SELECT date(COALESCE(exit_time, entry_time)) AS trade_date,
+                       SUM(COALESCE(realized_pnl, 0))        AS pnl,
+                       COUNT(*)                              AS trades,
+                       ROUND(
+                         100.0 * SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END)
+                         / NULLIF(COUNT(*), 0), 1
+                       )                                     AS win_rate
+                FROM trades
+                WHERE status = 'closed'
+                GROUP BY trade_date
+                ORDER BY trade_date
+                """,
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.warning("get_daily_summaries(%s) failed: %s", mode, e)
+        return []
 
 
 def get_cumulative_pnl() -> list[dict]:
