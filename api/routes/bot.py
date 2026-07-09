@@ -113,28 +113,28 @@ def start_bot(request: Request, mode: str = "paper") -> BotActionResponse:
 
 @router.post("/stop", response_model=BotActionResponse)
 def stop_bot() -> BotActionResponse:
-    from trading_logic import stop_loop
+    from trading.loop import stop_loop
     stop_loop()
     return BotActionResponse(ok=True, message="Bot stop signal sent")
 
 
 @router.post("/panic", response_model=BotActionResponse)
 def panic_close() -> BotActionResponse:
-    from trading_logic import panic_close_all
+    from trading.controls import panic_close_all
     panic_close_all()
     return BotActionResponse(ok=True, message="Panic close triggered")
 
 
 @router.post("/reset", response_model=BotActionResponse)
 def reset_session() -> BotActionResponse:
-    from trading_logic import reset_session_state
+    from trading.state import reset_session_state
     reset_session_state()
     return BotActionResponse(ok=True, message="Session state reset")
 
 
 @router.post("/close/{trade_id}", response_model=BotActionResponse)
 def close_trade(trade_id: int) -> BotActionResponse:
-    from trading_logic import close_trade_by_id
+    from trading.controls import close_trade_by_id
     try:
         close_trade_by_id(trade_id)
         return BotActionResponse(ok=True, message=f"Close signal sent for trade {trade_id}")
