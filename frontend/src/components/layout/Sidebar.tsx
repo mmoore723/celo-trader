@@ -3,7 +3,7 @@
  */
 import {
   Activity, BarChart2, BookOpen, Settings,
-  FlaskConical, Newspaper, Power, StopCircle, Skull, CalendarDays, ShieldCheck,
+  FlaskConical, Newspaper, Power, StopCircle, Skull, CalendarDays, ShieldCheck, LogOut,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useBotStore } from "../../store/bot";
@@ -33,7 +33,7 @@ const NAV: NavItem[] = [
 export function Sidebar() {
   const { status, connected } = useBotStore();
   const { mobileSidebarOpen, closeMobileSidebar } = useUIStore();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const running = status?.running ?? false;
   // True once we've received the first WS status message (status transitions
   // from null → object).  Until then the button is disabled so a reload can't
@@ -91,6 +91,24 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* User / sign-out */}
+      <div
+        className="px-3 py-2 border-t flex items-center justify-between"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <span className="text-xs truncate" style={{ color: "var(--ink-faint)" }}>
+          {user?.name ?? user?.email ?? ""}
+        </span>
+        <button
+          onClick={logout}
+          title="Sign out"
+          className="p-1.5 rounded hover:bg-[var(--accent-subtle)] transition-colors"
+          style={{ color: "var(--ink-muted)" }}
+        >
+          <LogOut size={14} />
+        </button>
+      </div>
 
       {/* Bot controls */}
       <div
