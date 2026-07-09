@@ -307,25 +307,28 @@ export function KChart({
       }
     }
 
-    // Position price lines (Entry / Stop / Target / Trail)
+    // Position price lines (Entry / Stop / Target / Trail).
+    // "horizontalStraightLine" is the correct KLineChart v9 built-in name.
+    // "priceLine" is NOT valid — it caused an unknown-overlay rendering artifact
+    // (a tall vertical spike) and forced the Y-axis to scale out to the stop price.
     if (positionLevels) {
       const ep = positionLevels.entry;
       const LEVELS = [
-        { val: ep,                       col: "#eab308", sz: 2, label: "Entry"  },
-        { val: positionLevels.stop,      col: dn,        sz: 1, label: "Stop"   },
-        { val: positionLevels.target,    col: up,        sz: 1, label: "Target" },
-        { val: (positionLevels as any).trail, col: "#9333ea", sz: 1, label: "Trail" },
+        { val: ep,                            col: "#eab308", sz: 2 },
+        { val: positionLevels.stop,           col: dn,        sz: 1 },
+        { val: positionLevels.target,         col: up,        sz: 1 },
+        { val: (positionLevels as any).trail, col: "#9333ea", sz: 1 },
       ];
-      LEVELS.forEach(({ val, col, sz, label }) => {
+      LEVELS.forEach(({ val, col, sz }) => {
         if (!val || val <= 0) return;
-        const pct = ep && ep !== val
-          ? ` (${((val - ep) / ep * 100).toFixed(1)}%)` : "";
-        chart.createOverlay({
-          name: "priceLine", groupId: "pos", lock: true,
-          points: [{ value: val }],
-          styles: { line: { color: col, size: sz } },
-          extendData: `${label} $${val.toFixed(2)}${pct}`,
-        });
+        try {
+          chart.createOverlay({
+            name: "horizontalStraightLine", groupId: "pos", lock: true,
+            points: [{ value: val }],
+            styles: { line: { color: col, size: sz } },
+            needDefaultYAxisFigure: true,   // shows price label on Y-axis
+          });
+        } catch (_) { /* skip if overlay fails */ }
       });
     }
 
@@ -337,35 +340,10 @@ export function KChart({
     try { chartRef.current.scrollToTimestamp(visibleFrom); } catch (_) { /* no-op */ }
   }, [visibleFrom]);
 
-  // ── Trade markers — own effect so 10s polling never triggers applyNewData or
-  //    a scroll reset, which was disrupting user drawing tools ──────────────────
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-    try { chart.removeOverlay({ groupId: "trades" }); } catch (_) { /* no-op */ }
-    trades.forEach((t: Trade) => {
-      if (!t.entry_time || !t.entry_price) return;
-      const entryTs = new Date(t.entry_time).getTime();
-      const isLong  = t.direction !== "short";
-      try {
-        chart.createOverlay({
-          name: isLong ? "buyMarker" : "sellMarker",
-          groupId: "trades", lock: true,
-          points: [{ timestamp: entryTs, value: t.entry_price }],
-          extendData: `${isLong ? "B" : "S"} $${t.entry_price.toFixed(2)}`,
-        });
-      } catch (_) { /* skip — overlay may fail if timestamp is out of range */ }
-      if (t.exit_time && t.exit_price) {
-        try {
-          chart.createOverlay({
-            name: "exitMarker",
-            groupId: "trades", lock: true,
-            points: [{ timestamp: new Date(t.exit_time).getTime(), value: t.exit_price }],
-          });
-        } catch (_) { /* skip exit marker */ }
-      }
-    });
-  }, [trades]);
+  // Trade markers temporarily disabled — custom overlay registration was corrupting
+  // KLineChart's overlay system and blocking the built-in drawing tools.
+  // The trades prop is kept on KChartProps so the parent doesn't need to change.
+  void trades;
 
   // ── Activate drawing tool on toolbar click ─────────────────────────────────
   useEffect(() => {
