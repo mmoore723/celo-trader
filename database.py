@@ -200,12 +200,54 @@ def init_db() -> None:
     DB always has all migration columns ready — even when the user has never
     traded live before.  This prevents "no such column: peak_price" errors on
     the first live-mode close_trade() call.
+
+    One-time migration: if the active DB directory is NOT the project root
+    (i.e. we are using the new per-user layout under user_data/admin/) and the
+    old root-level DB files still exist, copy them to the new location BEFORE
+    creating/migrating the schema.  This ensures historical trades remain visible
+    after the config change.  The copy is skipped on all subsequent startups
+    because the destination already exists.
     """
-    from config import ALPACA_BASE_URL   # noqa — only for resolving DB dir
-    # Resolve the directory where both DB files live (same folder as settings).
+    import shutil as _shutil
     _db_dir  = get_db_path().parent
     _paper_p = _db_dir / "trades_paper.db"
     _live_p  = _db_dir / "trades_live.db"
+
+    # ── One-time data migration from root → user_data/admin/ ──────────────────
+    # get_db_path() used to return root/trades_paper.db; it now returns
+    # user_data/admin/trades_paper.db.  Copy old root-level DBs to the new
+    # path if (a) they don't exist at the new path yet, OR (b) they exist but
+    # are empty (created by a prior startup before this migration ran).
+    # We copy BEFORE _init_db_at() so schema creation doesn't interfere.
+    _root = Path(__file__).resolve().parent
+    for _fname, _dst in [("trades_paper.db", _paper_p), ("trades_live.db", _live_p)]:
+        _src = _root / _fname
+        if not _src.exists() or _src.resolve() == _dst.resolve():
+            continue  # nothing to migrate
+        _needs_copy = not _dst.exists()
+        if not _needs_copy and _dst.exists():
+            # Destination exists — only overwrite if it has NO trades yet
+            try:
+                _chk = sqlite3.connect(str(_dst))
+                _row = _chk.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='trades'"
+                ).fetchone()
+                _has_table = _row and _row[0] > 0
+                if _has_table:
+                    _cnt = _chk.execute("SELECT COUNT(*) FROM trades").fetchone()
+                    _needs_copy = (_cnt is None or _cnt[0] == 0)
+                else:
+                    _needs_copy = True   # no trades table → effectively empty
+                _chk.close()
+            except Exception:
+                _needs_copy = True   # can't read → treat as empty, overwrite
+        if _needs_copy:
+            try:
+                _dst.parent.mkdir(parents=True, exist_ok=True)
+                _shutil.copy2(_src, _dst)
+                logger.info("init_db: migrated %s → %s", _src, _dst)
+            except Exception as _copy_err:
+                logger.warning("init_db: could not migrate %s: %s", _fname, _copy_err)
 
     for _db in (_paper_p, _live_p):
         try:
