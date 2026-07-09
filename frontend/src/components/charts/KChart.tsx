@@ -240,13 +240,11 @@ export function KChart({
           open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
         }))
       );
-      // Period view: scroll to visibleFrom cutoff so that timeframe is at left edge.
-      // If no cutoff, show the latest data at the right edge.
-      if (visibleFrom) {
-        chart.scrollToTimestamp(visibleFrom);
-      } else {
-        chart.scrollToRealTime();
-      }
+      // Always scroll to the most recent data after loading.
+      // NOTE: scrollToTimestamp() in KLineChart v9 puts the timestamp at the
+      // RIGHT edge (not left), so calling it with visibleFrom scrolled BACKWARD
+      // to show old data instead of recent data. Use scrollToRealTime() always.
+      chart.scrollToRealTime();
     }
 
     // VWAP indicator — toggle without recreating the whole chart
@@ -332,18 +330,12 @@ export function KChart({
       });
     }
 
-  }, [bars, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, visibleFrom]);
+  }, [bars, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels]);
 
-  // ── Scroll to period when visibleFrom changes independently ─────────────────
-  useEffect(() => {
-    if (!chartRef.current || !visibleFrom) return;
-    try { chartRef.current.scrollToTimestamp(visibleFrom); } catch (_) { /* no-op */ }
-  }, [visibleFrom]);
-
-  // Trade markers temporarily disabled — custom overlay registration was corrupting
-  // KLineChart's overlay system and blocking the built-in drawing tools.
-  // The trades prop is kept on KChartProps so the parent doesn't need to change.
-  void trades;
+  // trades/visibleFrom props kept on interface so parent doesn't need to change.
+  // Trade markers temporarily disabled (custom overlay was corrupting KLineChart).
+  // visibleFrom scroll disabled (scrollToTimestamp put it at RIGHT edge, backwards).
+  void trades; void visibleFrom;
 
   // ── Activate drawing tool on toolbar click ─────────────────────────────────
   useEffect(() => {

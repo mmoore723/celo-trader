@@ -152,12 +152,21 @@ export function LiveTrading() {
     contracts: openTickerTrade.contracts    ?? undefined,
   } : undefined;
 
-  // Compute scroll cutoff for period view — chart receives ALL bars for full
-  // indicator history, but scrolls to show only the selected period window.
-  const visibleFrom = useMemo(
-    () => Date.now() - PERIOD_MS[period],
-    [period]
-  );
+  const visibleFrom = useMemo(() => Date.now() - PERIOD_MS[period], [period]);
+
+  // Validate OR values before passing to chart.
+  // yfinance prepost data can contain bad prints (e.g. a single erroneous 5m bar
+  // whose low is 7% below the actual session price). A bad OR low forces the chart
+  // Y-axis to scale out to that price, squishing all candles into the top 20%.
+  // Guard: only show OR if both values are within 5% of the most recent close.
+  const lastClose = bars[bars.length - 1]?.close ?? 0;
+  const orHighRaw  = or?.high ?? 0;
+  const orLowRaw   = or?.low  ?? 0;
+  const orInRange  = lastClose > 0 && orHighRaw > 0 && orLowRaw > 0
+    && Math.abs(orHighRaw - lastClose) / lastClose < 0.05
+    && Math.abs(orLowRaw  - lastClose) / lastClose < 0.05;
+  const safeOrHigh = orInRange ? orHighRaw : undefined;
+  const safeOrLow  = orInRange ? orLowRaw  : undefined;
 
   // Determine sparkline color for scanner ticker (green if positive change, red otherwise)
   const scannerColor = (changePct: number) =>
@@ -277,8 +286,8 @@ export function LiveTrading() {
             showOR={showOR}
             showSwings={showSwings}
             showPositionCard={showPositionCard}
-            orHigh={or?.high}
-            orLow={or?.low}
+            orHigh={safeOrHigh}
+            orLow={safeOrLow}
             positionLevels={positionLevels}
             currentOptionPrice={
               openTickerTrade
