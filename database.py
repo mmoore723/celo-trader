@@ -116,45 +116,70 @@ def get_conn():
 
 # ── Initialisation ────────────────────────────────────────────────────────────
 
-def init_db() -> None:
+def _init_db_at(db_path: Path) -> None:
     """
-    Create tables if they don't already exist.  Safe to call on every startup.
-
-    Initialises whichever database file is currently active (paper or live) so
-    both files get the full schema the first time each mode is used.
+    Internal helper: create all tables and run migrations on ONE specific
+    SQLite file (paper or live). Operates on `db_path` directly — does NOT
+    call get_db_path() / get_conn(), so it's safe to call for either DB
+    regardless of which mode is currently active in user_settings.json.
     """
-    _active_path = get_db_path()
-    with get_conn() as conn:
+    conn = sqlite3.connect(str(db_path), detect_types=sqlite3.PARSE_DECLTYPES)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
+    try:
         conn.execute(_CREATE_TRADES)
         conn.execute(_CREATE_DAILY_SUMMARY)
         conn.execute(_CREATE_SYSTEM_EVENTS)
         # ── Migrations ────────────────────────────────────────────────────────
-        # Add strategy_id column if upgrading from a pre-router schema.
-        # ALTER TABLE IF NOT EXISTS is not supported in older SQLite; use
-        # the column-list inspection approach instead.
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
         if "strategy_id" not in _cols:
             conn.execute(
                 "ALTER TABLE trades ADD COLUMN strategy_id TEXT DEFAULT 'INST_ORB'"
             )
-            logger.info("Migration: added strategy_id column to trades table")
+            logger.info("Migration: added strategy_id column to %s", db_path.name)
         if "stop_price" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN stop_price REAL")
-            logger.info("Migration: added stop_price column to trades table")
+            logger.info("Migration: added stop_price column to %s", db_path.name)
         if "target_price" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN target_price REAL")
-            logger.info("Migration: added target_price column to trades table")
-        # MFE / MAE columns — highest and lowest option price seen during the trade.
-        # peak_price is the MFE (max favorable excursion): highest option mid-price.
-        # mae_price  is the MAE (max adverse excursion): lowest option mid-price.
-        # Both are tracked live in position_manager.py and saved at close.
+            logger.info("Migration: added target_price column to %s", db_path.name)
         if "peak_price" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN peak_price REAL")
-            logger.info("Migration: added peak_price (MFE) column to trades table")
+            logger.info("Migration: added peak_price (MFE) column to %s", db_path.name)
         if "mae_price" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN mae_price REAL")
-            logger.info("Migration: added mae_price (MAE) column to trades table")
-    logger.info("Database initialised at %s", _active_path)
+            logger.info("Migration: added mae_price (MAE) column to %s", db_path.name)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    logger.info("Database initialised at %s", db_path)
+
+
+def init_db() -> None:
+    """
+    Create tables if they don't already exist.  Safe to call on every startup.
+
+    Initialises BOTH trades_paper.db AND trades_live.db at startup so the live
+    DB always has all migration columns ready — even when the user has never
+    traded live before.  This prevents "no such column: peak_price" errors on
+    the first live-mode close_trade() call.
+    """
+    from config import ALPACA_BASE_URL   # noqa — only for resolving DB dir
+    # Resolve the directory where both DB files live (same folder as settings).
+    _db_dir  = get_db_path().parent
+    _paper_p = _db_dir / "trades_paper.db"
+    _live_p  = _db_dir / "trades_live.db"
+
+    for _db in (_paper_p, _live_p):
+        try:
+            _init_db_at(_db)
+        except Exception as _e:
+            logger.warning("init_db: failed to init %s: %s", _db.name, _e)
+
     # Rebuild daily_summary from any closed trades that slipped through
     # (e.g. trades closed before this function existed, or after a transient error).
     backfill_daily_summaries()
@@ -286,14 +311,17 @@ def close_trade(
     confirmed_fill_price: Optional[float] = None,
     peak_price: Optional[float] = None,   # MFE: highest option mid-price seen during trade
     mae_price: Optional[float] = None,    # MAE: lowest  option mid-price seen during trade
+    paper: bool = True,                   # False → deduct Alpaca commission from P&L
 ) -> float:
     """
     Mark a trade closed and compute realised P&L.
     FIX N2: If confirmed_fill_price is provided (from broker fill confirmation),
     use that for P&L calculation instead of intended exit_price.
     peak_price / mae_price are the MFE and MAE values tracked live by position_manager.
-    Returns the realised P&L in dollars.
+    Commission ($0.65/contract × 2 legs) is deducted for live trades only.
+    Returns the realised P&L in dollars (net of commissions on live).
     """
+    from config import COMMISSION_PER_CONTRACT
     actual_exit = confirmed_fill_price if confirmed_fill_price else exit_price
 
     with get_conn() as conn:
@@ -306,6 +334,13 @@ def close_trade(
         entry_price  = row["entry_price"]
         contracts    = row["contracts"]
         realized_pnl = (actual_exit - entry_price) * contracts * 100
+
+        # Deduct round-trip commission on live trades (entry leg + exit leg).
+        # Paper trading has no commissions — Alpaca paper is fee-free.
+        if not paper:
+            commission   = contracts * COMMISSION_PER_CONTRACT * 2
+            realized_pnl = realized_pnl - commission
+            logger.debug("Commission deducted: contracts=%d commission=$%.2f", contracts, commission)
 
         conn.execute(
             """

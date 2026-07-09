@@ -66,6 +66,12 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     init_db()
     alpaca, tradier = get_clients()
 
+    # Determine mode from settings (written by start_bot() before the loop starts).
+    _settings     = get_settings()
+    _is_paper     = _settings.get("paper_trading", True)
+    _trade_mode   = "paper" if _is_paper else "live"
+    LIVE_STATE["mode"] = _trade_mode
+
     try:
         acct    = alpaca.get_account()
         balance = float(acct.get("equity", 0)) if acct else 0
@@ -81,12 +87,12 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     # FIX: seed LIVE_STATE["account_balance"] immediately before the first tick.
     LIVE_STATE["account_balance"] = balance
 
-    # FIX: seed LIVE_STATE["session_pnl"] from DB at startup to survive restarts.
-    # Use (val or 0) guards so None values from nullable DB columns don't crash
-    # the sum (t.get("exit_time", "") returns None when the column is NULL).
+    # FIX: seed LIVE_STATE["session_pnl"] from the CORRECT mode DB at startup.
+    # Pass mode= so live restarts query trades_live.db (paper=0) not paper trades.
     try:
         LIVE_STATE["session_pnl"] = sum(
-            (t.get("realized_pnl") or 0) for t in get_all_trades(limit=100)
+            (t.get("realized_pnl") or 0)
+            for t in get_all_trades(limit=100, mode=_trade_mode)
             if (t.get("exit_time") or "")[:10] == date.today().isoformat()
         )
     except Exception as e:
@@ -176,6 +182,7 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
         json.dump({
             "running":              True,
             "auto_start_disabled":  False,   # clear explicit-stop flag on fresh start
+            "mode":                 _trade_mode,   # "paper" or "live" — shown in dashboard
             "account_balance":      float(balance),
             "session_pnl":          LIVE_STATE.get("session_pnl", 0.0),
             "status":               "starting",

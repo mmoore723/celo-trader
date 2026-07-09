@@ -154,7 +154,21 @@ class AlpacaClient:
     """Alpaca REST API v2 — equity bars, account data, paper/live options orders."""
 
     def __init__(self):
-        self.base    = ALPACA_BASE_URL
+        # Read live/paper mode from user_settings.json at instantiation time so
+        # switching the UI toggle takes effect on the next bot start without
+        # needing to change .env or restart the server process.
+        # ALPACA_BASE_URL (from .env) is the fallback only when settings file
+        # is unavailable (first run, missing file, etc.).
+        from config import get_settings as _gs, ALPACA_PAPER as _env_paper
+        _s = _gs()
+        # paper_trading key written by start_bot() before the loop starts.
+        # Fall back to .env ALPACA_PAPER if key is absent.
+        _paper = _s.get("paper_trading", _env_paper)
+        self.base = (
+            "https://paper-api.alpaca.markets"
+            if _paper else
+            "https://api.alpaca.markets"
+        )
         self.data    = "https://data.alpaca.markets"
         self.headers = {
             "APCA-API-KEY-ID":     ALPACA_API_KEY,
@@ -163,6 +177,10 @@ class AlpacaClient:
         }
         if not ALPACA_API_KEY:
             logger.warning("Alpaca keys not set — running in demo mode")
+        logger.info(
+            "AlpacaClient: routing to %s (paper_trading=%s)",
+            self.base, _paper,
+        )
 
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
@@ -764,7 +782,7 @@ class AlpacaClient:
         side: str,              # 'buy' or 'sell'
         order_type: str = "limit",
         limit_price: Optional[float] = None,
-        step_to_price: Optional[float] = None,  # if set, step up to this price after 5s if not filled
+        step_to_price: Optional[float] = None,  # buy: step UP to ask; sell: step DOWN to bid
     ) -> Optional[dict]:
         """
         Submit an options order via Alpaca v2 OPTIONS endpoint.
@@ -818,9 +836,9 @@ class AlpacaClient:
 
             # FIX S1: Poll for fill confirmation — don't record trade on pending.
             # Pass limit_price so paper fallback can use it for confirmed_fill_price.
-            # Pass step_to_price so live orders step up from mid→ask if not filled.
+            # Pass step_to_price: buys step UP mid→ask; sells step DOWN mid→bid.
             confirmed = self._wait_for_fill(order_id, limit_price=limit_price,
-                                            step_to_price=step_to_price)
+                                            step_to_price=step_to_price, side=side)
             if not confirmed:
                 log_event("ERROR", "order",
                           f"🔴 [{symbol}] Order did not fill — no position recorded. "
@@ -914,26 +932,28 @@ class AlpacaClient:
         max_wait: int = 300,
         limit_price: Optional[float] = None,
         step_to_price: Optional[float] = None,
+        side: str = "buy",
     ) -> Optional[dict]:
         """
         Poll order status until filled or rejected.
         Returns the order dict with confirmed_fill_price set, or None.
 
-        SMART FILL LOGIC (mid-price entry with ask step-up):
-        - Initial limit is placed at mid-price (same favorable fill as paper).
-        - Live account: if not filled after 5 seconds, modify the order's
-          limit price up to step_to_price (ask). This maximises the chance of
-          getting the mid fill while still guaranteeing execution.
-          If still not filled after 30 total seconds, cancel to prevent ghosts.
-        - Paper account: poll 10 seconds. Paper simulation fills quickly at
-          any reasonable limit, so no step-up needed. Assume fill after 10s.
+        SMART FILL LOGIC (mid-price with spread-crossing step):
+        - BUY  orders: initial limit at mid; live steps UP to ask after 5s
+          (crosses the spread to guarantee entry).
+        - SELL orders: initial limit at mid; live steps DOWN to bid after 5s
+          (crosses the spread to guarantee exit — avoids holding a stuck position).
+        - Paper account: poll 10 seconds; assume fill at limit_price after that.
+        - Live account: cancel if still unfilled after 30 seconds (prevents ghosts).
         """
         if not order_id or order_id == "paper_simulated":
             return {"id": order_id, "status": "filled",
                     "confirmed_fill_price": limit_price or 0}
 
-        # Detect paper vs live from API base URL.
-        is_paper = "paper" in self.base.lower()
+        # Detect paper vs live from current settings (not frozen URL) so a mode
+        # switch between bot restarts is reflected immediately.
+        from config import get_settings as _gs
+        is_paper = _gs().get("paper_trading", "paper" in self.base.lower())
         effective_wait = 10 if is_paper else 30   # seconds before giving up
 
         # Step-up threshold: on live, after this many seconds without a fill,
@@ -944,30 +964,41 @@ class AlpacaClient:
         terminal_states = {"filled", "expired", "canceled", "cancelled",
                            "rejected", "stopped", "suspended", "done_for_day"}
         for i in range(effective_wait):
-            # ── Live step-up: mid → ask after 5 seconds ───────────────────────
-            # Only step up once; only on live accounts; only when a step_to_price
-            # was supplied (i.e. mid < ask, so there's actually a spread to cross).
-            if (not is_paper
-                    and not _stepped_up
-                    and step_to_price is not None
-                    and step_to_price > (limit_price or 0)
-                    and i == _STEP_UP_AFTER_SECS):
+            # ── Live spread-crossing step after 5 seconds ─────────────────────
+            # BUY:  step UP   mid → ask  (cross the ask to guarantee entry)
+            # SELL: step DOWN mid → bid  (cross the bid to guarantee exit)
+            # Only fires once; only on live; only when step_to_price was supplied.
+            _is_buy  = side.lower() == "buy"
+            _step_ok = (
+                step_to_price is not None
+                and (
+                    (_is_buy  and step_to_price > (limit_price or 0)) or  # ask > mid
+                    (not _is_buy and step_to_price < (limit_price or float("inf")))  # bid < mid
+                )
+            )
+            if (not is_paper and not _stepped_up and _step_ok and i == _STEP_UP_AFTER_SECS):
                 try:
                     self._patch(
                         f"{self.base}/v2/orders/{order_id}",
                         {"limit_price": str(round(step_to_price, 2))},
                     )
                     _stepped_up = True
-                    log_event("INFO", "order",
-                              f"⬆️ [{order_id[:8]}…] Mid-price limit not filled after "
-                              f"{_STEP_UP_AFTER_SECS}s — stepping up to ask "
-                              f"${step_to_price:.2f}.")
-                    logger.info(
-                        "order_step_up mid=%.4f ask=%.4f order=%s",
-                        limit_price or 0, step_to_price, order_id,
-                    )
+                    if _is_buy:
+                        log_event("INFO", "order",
+                                  f"⬆️ [{order_id[:8]}…] Mid-price buy not filled after "
+                                  f"{_STEP_UP_AFTER_SECS}s — stepping UP to ask "
+                                  f"${step_to_price:.2f}.")
+                        logger.info("order_step_up mid=%.4f ask=%.4f order=%s",
+                                    limit_price or 0, step_to_price, order_id)
+                    else:
+                        log_event("INFO", "order",
+                                  f"⬇️ [{order_id[:8]}…] Mid-price sell not filled after "
+                                  f"{_STEP_UP_AFTER_SECS}s — stepping DOWN to bid "
+                                  f"${step_to_price:.2f}.")
+                        logger.info("order_step_down mid=%.4f bid=%.4f order=%s",
+                                    limit_price or 0, step_to_price, order_id)
                 except Exception as _pe:
-                    logger.warning("order_step_up_failed order=%s: %s", order_id, _pe)
+                    logger.warning("order_step_failed order=%s: %s", order_id, _pe)
 
             try:
                 order = self._get(f"{self.base}/v2/orders/{order_id}")
@@ -975,12 +1006,19 @@ class AlpacaClient:
                 logger.debug("Order %s status: %s", order_id, status)
                 if status == "filled":
                     filled_price = float(order.get("filled_avg_price") or limit_price or 0)
-                    # Log whether we got the mid-price improvement or had to step up.
-                    _saved_per_contract = (step_to_price or filled_price) - filled_price
-                    _fill_note = (
-                        f" (filled at mid — saved ${_saved_per_contract:.2f}/contract vs ask)"
-                        if _saved_per_contract > 0.005 else ""
-                    )
+                    # Log mid-price improvement vs worst-case (ask for buys, bid for sells).
+                    if side.lower() == "buy":
+                        _saved_per_contract = (step_to_price or filled_price) - filled_price
+                        _fill_note = (
+                            f" (filled at mid — saved ${_saved_per_contract:.2f}/contract vs ask)"
+                            if _saved_per_contract > 0.005 else ""
+                        )
+                    else:
+                        _saved_per_contract = filled_price - (step_to_price or filled_price)
+                        _fill_note = (
+                            f" (filled at mid — saved ${_saved_per_contract:.2f}/contract vs bid)"
+                            if _saved_per_contract > 0.005 else ""
+                        )
                     log_event("INFO", "order",
                               f"✅ Order filled @ ${filled_price:.2f}{_fill_note} — position recorded.")
                     logger.info("Order %s filled @ $%.4f", order_id, filled_price)
