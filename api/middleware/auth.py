@@ -1,17 +1,16 @@
 """
-api/middleware/auth.py — Session authentication middleware.
+api/middleware/auth.py — FastAPI auth dependency.
 
-Protects all /api/* routes EXCEPT /api/auth/* routes (login/logout/me).
-Reads the HttpOnly 'celo_session' cookie and validates the JWT.
-Returns 401 JSON if missing or expired so the React frontend can redirect to /login.
+Validates the session cookie on protected routes and sets the request-scoped
+ContextVar so downstream code (config.get_settings, config.get_db_path, broker,
+etc.) automatically resolves to the authenticated user's data without any extra
+function-signature changes.
 """
 from __future__ import annotations
 import os
 import logging
 
-from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi import Request, HTTPException
-from fastapi.responses import JSONResponse
 from jose import jwt, JWTError
 
 logger = logging.getLogger(__name__)
@@ -19,23 +18,16 @@ logger = logging.getLogger(__name__)
 JWT_ALGORITHM = "HS256"
 COOKIE_NAME   = "celo_session"
 
-# DO NOT read JWT_SECRET at module level — config.py calls load_dotenv() which
-# runs AFTER this module is first imported (main.py imports middleware before
-# logger_config, which triggers load_dotenv via config.py). Reading the secret
-# at module level captures the pre-dotenv default instead of the real .env value.
-# Read it lazily inside the function so it's always the post-dotenv value.
 
-
-# ── FastAPI dependency (replaces BaseHTTPMiddleware) ──────────────────────────
 async def require_auth(request: Request) -> None:
     """
-    FastAPI dependency: validates the session cookie on every protected route.
-    Add via  dependencies=[Depends(require_auth)]  on each router that needs auth.
+    FastAPI dependency injected via  dependencies=[Depends(require_auth)]
+    on every protected router.  Sets auth.context ContextVars so all
+    downstream helpers (config, db, broker) resolve to the correct user.
     """
-    # Read secret lazily so load_dotenv() has already run before we access it.
-    JWT_SECRET = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
-
-    token = request.cookies.get(COOKIE_NAME)
+    # Lazy-read secret so load_dotenv() has run before we access it.
+    secret = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
+    token  = request.cookies.get(COOKIE_NAME)
     if not token:
         raise HTTPException(
             status_code=401,
@@ -43,7 +35,7 @@ async def require_auth(request: Request) -> None:
             headers={"X-Auth-Code": "no_session"},
         )
     try:
-        jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
     except JWTError:
         raise HTTPException(
             status_code=401,
@@ -51,8 +43,21 @@ async def require_auth(request: Request) -> None:
             headers={"X-Auth-Code": "expired"},
         )
 
+    # Inject user into request-scoped ContextVar
+    from auth.context import set_current_user
+    set_current_user(
+        user_id  = payload.get("sub", "admin"),
+        username = payload.get("username", "admin"),
+        is_admin = bool(payload.get("is_admin", False)),
+    )
 
-# Keep the class for backwards-compat import but it is no longer registered.
-class AuthMiddleware(BaseHTTPMiddleware):
+    # Also stash on request.state for routes that need to inspect it directly
+    request.state.user_id   = payload.get("sub", "admin")
+    request.state.username  = payload.get("username", "admin")
+    request.state.is_admin  = bool(payload.get("is_admin", False))
+
+
+# Backward-compat stub — no longer registered but kept for imports
+class AuthMiddleware:
     async def dispatch(self, request: Request, call_next):
         return await call_next(request)

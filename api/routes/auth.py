@@ -1,130 +1,121 @@
 """
-api/routes/auth.py — Password-based authentication routes.
-
-Simple single-user login: one hashed password stored in .env.
-Issues a signed JWT session cookie on success.
+api/routes/auth.py — Multi-user authentication endpoints.
 
 Endpoints:
-  POST /api/auth/login   — verify password → issue session cookie
-  GET  /api/auth/me      — check current session
-  POST /api/auth/logout  — clear session cookie
-
-Dependencies:
-  pip install python-jose[cryptography] passlib[bcrypt]
-
-Setup:
-  1. Generate a hashed password:
-       python3 -c "from passlib.hash import bcrypt; print(bcrypt.hash('yourpassword'))"
-  2. Add to .env:
-       DASHBOARD_PASSWORD_HASH=$2b$12$...the hash...
-       JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+  POST /api/auth/login    — username + password → session cookie
+  GET  /api/auth/me       — current session info
+  POST /api/auth/logout   — clear cookie
+  POST /api/auth/register — create account via invite token
 """
 from __future__ import annotations
 import os
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Request, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Request
 from pydantic import BaseModel
 from jose import jwt, JWTError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# ── Config ─────────────────────────────────────────────────────────────────────
-JWT_SECRET    = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
 JWT_ALGORITHM = "HS256"
 COOKIE_NAME   = "celo_session"
-
-# bcrypt hash of the dashboard password (set in .env)
-PASSWORD_HASH = os.getenv("DASHBOARD_PASSWORD_HASH", "")
-
-# Fallback plaintext password for first-time setup only (not recommended for prod)
-DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
-
-SESSION_SHORT = timedelta(days=7)     # without "stay signed in"
-SESSION_LONG  = timedelta(days=30)    # with "stay signed in"
+SESSION_SHORT = timedelta(days=7)
+SESSION_LONG  = timedelta(days=30)
 
 
-# ── Request body ───────────────────────────────────────────────────────────────
+def _jwt_secret() -> str:
+    return os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
+
+
+# ── Pydantic models ───────────────────────────────────────────────────────────
+
 class LoginRequest(BaseModel):
-    password: str
+    username:       str
+    password:       str
     stay_signed_in: bool = False
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
-def _verify_password(plain: str) -> bool:
-    """Check the submitted password against the stored hash (or plaintext fallback)."""
-    if PASSWORD_HASH:
-        try:
-            from passlib.hash import bcrypt
-            return bcrypt.verify(plain, PASSWORD_HASH)
-        except Exception as e:
-            logger.error("bcrypt verify error: %s", e)
-            return False
-    # Plaintext fallback — only useful for initial local dev setup
-    if DASHBOARD_PASSWORD:
-        return plain == DASHBOARD_PASSWORD
-    logger.error("No DASHBOARD_PASSWORD_HASH or DASHBOARD_PASSWORD set in .env")
-    return False
+class RegisterRequest(BaseModel):
+    token:    str       # invite token
+    username: str
+    password: str
 
 
-def _issue_session(response: Response, stay: bool) -> dict:
-    """Sign a JWT and attach it as a secure HttpOnly cookie."""
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _issue_session(response: Response, user: dict, stay: bool) -> dict:
     duration = SESSION_LONG if stay else SESSION_SHORT
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub":  "admin",
-        "iat":  int(now.timestamp()),
-        "exp":  int((now + duration).timestamp()),
+    now      = datetime.now(timezone.utc)
+    payload  = {
+        "sub":      user["id"],
+        "username": user["username"],
+        "is_admin": user["is_admin"],
+        "iat":      int(now.timestamp()),
+        "exp":      int((now + duration).timestamp()),
     }
-    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
+    token = jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
     response.set_cookie(
-        key=COOKIE_NAME,
-        value=token,
-        httponly=True,          # JS cannot read the cookie
-        secure=True,            # HTTPS only (set secure=False for local http dev)
-        samesite="lax",
-        max_age=int(duration.total_seconds()),
-        path="/",
+        key=COOKIE_NAME, value=token, httponly=True,
+        secure=True, samesite="lax",
+        max_age=int(duration.total_seconds()), path="/",
     )
-    return {"ok": True}
+    return {"ok": True, "user_id": user["id"], "username": user["username"],
+            "is_admin": user["is_admin"]}
 
 
-def _decode_session(token: str) -> dict:
-    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+def decode_session(token: str) -> dict:
+    return jwt.decode(token, _jwt_secret(), algorithms=[JWT_ALGORITHM])
 
 
-# ── Routes ─────────────────────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────────
+
 @router.post("/login")
 async def auth_login(body: LoginRequest, response: Response):
-    """Verify dashboard password and issue a session cookie."""
-    if not _verify_password(body.password):
-        logger.warning("Failed login attempt")
-        raise HTTPException(401, "Incorrect password")
-    logger.info("Dashboard login successful (stay=%s)", body.stay_signed_in)
-    return _issue_session(response, body.stay_signed_in)
+    from auth.users import authenticate
+    user = authenticate(body.username, body.password)
+    if not user:
+        logger.warning("Failed login for username=%s", body.username)
+        raise HTTPException(401, "Incorrect username or password")
+    logger.info("Login: username=%s id=%s", user["username"], user["id"])
+    return _issue_session(response, user, body.stay_signed_in)
 
 
 @router.get("/me")
 async def auth_me(request: Request):
-    """
-    Returns 200 if a valid session cookie is present, 401 otherwise.
-    Called by the frontend on page load to check auth state.
-    """
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         raise HTTPException(401, "Not authenticated")
     try:
-        _decode_session(token)
-        return {"ok": True}
+        p = decode_session(token)
+        return {"ok": True, "user_id": p["sub"], "username": p.get("username", "admin"),
+                "is_admin": bool(p.get("is_admin", False)),
+                "email": p.get("username", "admin")}
     except JWTError:
         raise HTTPException(401, "Session expired — please sign in again")
 
 
 @router.post("/logout")
 async def auth_logout(response: Response):
-    """Clear the session cookie."""
     response.delete_cookie(COOKIE_NAME, path="/")
     return {"ok": True}
+
+
+@router.post("/register")
+async def auth_register(body: RegisterRequest, response: Response):
+    """Self-registration via a one-time invite link sent by the admin."""
+    from auth.users import consume_invite, create_user, mark_invite_used
+    if not body.token or not consume_invite(body.token):
+        raise HTTPException(400, "Invalid or expired invite link")
+    if len(body.username.strip()) < 3:
+        raise HTTPException(400, "Username must be at least 3 characters")
+    if len(body.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    try:
+        user = create_user(body.username, body.password, is_admin=False)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    mark_invite_used(body.token, user["id"])
+    logger.info("New user registered via invite: %s", user["username"])
+    return _issue_session(response, user, stay=True)

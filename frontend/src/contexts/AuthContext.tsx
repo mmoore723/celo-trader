@@ -10,8 +10,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export interface AuthUser {
-  email: string;
-  name: string;
+  email:    string;
+  name:     string;
+  user_id?: string;
+  is_admin?: boolean;
 }
 
 interface AuthState {
@@ -41,7 +43,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const r = await fetch("/api/auth/me", { credentials: "include" });
         if (r.ok) {
           const data = await r.json();
-          setUser({ email: data.email, name: data.name || data.email });
+          setUser({
+            email:    data.username || data.email || "user",
+            name:     data.username || data.name  || data.email || "user",
+            user_id:  data.user_id,
+            is_admin: !!data.is_admin,
+          });
         }
         // 401 → user stays null → redirect to login
       } catch {
@@ -59,7 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handler = () => {
       setUser(null);
-      // Best-effort cookie clear; the real clear happens on the next login.
       fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
     };
     window.addEventListener("celo:session-expired", handler);

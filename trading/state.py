@@ -35,78 +35,110 @@ _DATA_GAP_PAUSE_MINUTES = 10   # skip strategy evaluation after this many minute
 # ── Logger ────────────────────────────────────────────────────────────────────
 logger = logging.getLogger("celo_trader.trading_logic")
 
-# ── Singleton / loop guards ───────────────────────────────────────────────────
-_stop_event    = threading.Event()
-_bot_loop_lock = threading.Lock()   # only one trading loop may run at a time
+# ── Per-user singleton guards ─────────────────────────────────────────────────
+# Each user gets their own stop event and lock so multiple users can run
+# concurrent bot instances without interfering.
+# Legacy single-instance symbols (_stop_event, _bot_loop_lock) still refer
+# to the "admin" user's state for backward-compat with existing import sites.
+
+_USER_STOP_EVENTS: dict[str, threading.Event] = {}
+_USER_LOCKS:       dict[str, threading.Lock]  = {}
+
+
+def _get_stop_event(user_id: str = "admin") -> threading.Event:
+    if user_id not in _USER_STOP_EVENTS:
+        _USER_STOP_EVENTS[user_id] = threading.Event()
+    return _USER_STOP_EVENTS[user_id]
+
+
+def _get_lock(user_id: str = "admin") -> threading.Lock:
+    if user_id not in _USER_LOCKS:
+        _USER_LOCKS[user_id] = threading.Lock()
+    return _USER_LOCKS[user_id]
+
+
+# Backward-compat aliases — point to admin user's primitives
+_stop_event    = _get_stop_event("admin")
+_bot_loop_lock = _get_lock("admin")
 
 # ── RiskManager instance (set in loop.py, read everywhere) ───────────────────
 # Imported lazily to avoid heavy circular imports at module load time.
 _risk = None   # type: Optional[object]
 
-# ── Shared state dict ─────────────────────────────────────────────────────────
-# Import RiskManager here for the ORB_STOP_PCT class attribute used at init.
+# ── Per-user live state ────────────────────────────────────────────────────────
+# USER_STATES[user_id] is each user's isolated bot state dict.
+# LIVE_STATE is a backward-compat alias pointing to USER_STATES["admin"].
 from risk import RiskManager  # noqa: E402
 
-LIVE_STATE: dict = {
-    "account_balance":      0.0,
-    "options_buying_power": 0.0,
-    "ghost_position_alert": None,
-    "open_trade":      None,   # backward-compat: most-recently-opened of open_trades, or None
-    "open_trades":     [],     # list of ALL open trade dicts (MAX_CONCURRENT_POSITIONS support)
-    # Per-position live-management state, keyed by trade_id.  Replaces the
-    # single-position fields that used to be overwritten in place.
-    # Structure: { trade_id: {peak_price, stage1_done, stage1_be_price,
-    #              current_stop_pct, struct_stop_price, current_option_price,
-    #              current_option_price_time, entry_time,
-    #              last_position_narration_minute} }
-    "positions":       {},
-    "last_signal":     None,
-    "current_ticker":  None,
-    "bars_5m":         [],
-    "session_pnl":     0.0,
-    "status":          "idle",
-    "last_update":     None,
-    "peak_price":      None,     # kept for DB compatibility
-    "last_tax_sweep":  0.0,
-    "market_open":     False,
-    # ── Scanner watchlist state ───────────────────────────────────────────────
-    "scan_watchlist":    [],
-    "scan_idx":          0,
-    "scanner_ran_today": False,
-    # ── ORB-specific state ────────────────────────────────────────────────────
-    "entry_time":            None,
-    "stage1_done":           False,
-    "stage1_be_price":       None,
-    "orb_triggered":         False,
-    "current_stop_pct":      RiskManager.ORB_STOP_PCT,
-    "struct_stop_price":     None,
-    # ── Flip-trade state ─────────────────────────────────────────────────────
-    "flip_eligible":         False,
-    "flip_direction":        None,
-    "flip_ticker":           None,
-    "last_direction":        None,
-    "last_trade_closed_time": None,
-    # ── Per-session entry guards ──────────────────────────────────────────────
-    "ticker_win_cooldown":   {},
-    "orb_entered_today":     set(),
-    # ── Duplicate-order guard ─────────────────────────────────────────────────
-    "_last_order_key":       None,
-    # ── Sizing / affordability state ──────────────────────────────────────────
-    "last_eval_ticker":      None,
-    "last_eval_opt_type":    None,
-    "last_eval_premium":     None,
-    "last_eval_eff_entry":   None,
-    "last_eval_time":        None,
-    "last_eval_expiry":      None,
-    "last_eval_strike":      None,
-    "last_eval_contract_symbol": None,
-    "last_eval_contracts":   None,   # number of contracts sized for this eval
-    "risk_budget_usd":       0.0,
-    "max_affordable_premium": 0.0,
-    # ── Network health watchdog ───────────────────────────────────────────────
-    "last_successful_bar_fetch": None,
-    "data_gap_minutes":          0,
-}
+
+def _make_initial_state() -> dict:
+    """Return a fresh state dict for a new user's bot instance."""
+    return {
+        "account_balance":      0.0,
+        "options_buying_power": 0.0,
+        "ghost_position_alert": None,
+        "open_trade":      None,
+        "open_trades":     [],
+        "positions":       {},
+        "last_signal":     None,
+        "current_ticker":  None,
+        "bars_5m":         [],
+        "session_pnl":     0.0,
+        "status":          "idle",
+        "last_update":     None,
+        "peak_price":      None,
+        "last_tax_sweep":  0.0,
+        "market_open":     False,
+        "scan_watchlist":    [],
+        "scan_idx":          0,
+        "scanner_ran_today": False,
+        "entry_time":            None,
+        "stage1_done":           False,
+        "stage1_be_price":       None,
+        "orb_triggered":         False,
+        "current_stop_pct":      RiskManager.ORB_STOP_PCT,
+        "struct_stop_price":     None,
+        "flip_eligible":         False,
+        "flip_direction":        None,
+        "flip_ticker":           None,
+        "last_direction":        None,
+        "last_trade_closed_time": None,
+        "ticker_win_cooldown":   {},
+        "orb_entered_today":     set(),
+        "_last_order_key":       None,
+        "last_eval_ticker":      None,
+        "last_eval_opt_type":    None,
+        "last_eval_premium":     None,
+        "last_eval_eff_entry":   None,
+        "last_eval_time":        None,
+        "last_eval_expiry":      None,
+        "last_eval_strike":      None,
+        "last_eval_contract_symbol": None,
+        "last_eval_contracts":   None,
+        "risk_budget_usd":       0.0,
+        "max_affordable_premium": 0.0,
+        "last_successful_bar_fetch": None,
+        "data_gap_minutes":          0,
+    }
+
+
+# Registry of all per-user state dicts
+USER_STATES: dict[str, dict] = {}
+
+
+def get_user_state(user_id: str = "admin") -> dict:
+    """Return (creating if needed) the live state dict for a given user."""
+    if user_id not in USER_STATES:
+        USER_STATES[user_id] = _make_initial_state()
+    return USER_STATES[user_id]
+
+
+# Backward-compat: LIVE_STATE always refers to the admin user's state.
+# All existing modules that do `from trading.state import LIVE_STATE`
+# continue to work without changes.
+LIVE_STATE: dict = get_user_state("admin")
+
+
 
 
 def _update_data_gap() -> None:

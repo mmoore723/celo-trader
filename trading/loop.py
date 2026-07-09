@@ -19,19 +19,23 @@ from typing import Optional
 
 from trading.state import (
     LIVE_STATE, _now_et, _stop_event, _bot_loop_lock, _BOT_ROOT,
+    _get_stop_event, _get_lock, get_user_state,
 )
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
-def run_trading_loop(poll_interval: int = 10) -> None:
+def run_trading_loop(user_id: str = "admin", poll_interval: int = 10) -> None:
     """
-    Singleton-guarded entry point.  Only ONE trading loop may run at a time.
+    Singleton-guarded entry point.  One trading loop per user at a time.
+    Called via ctx.run() from bot.py so the ContextVar (user identity) is
+    already set and propagates into all downstream helpers.
     """
-    if not _bot_loop_lock.acquire(blocking=False):
+    _lock  = _get_lock(user_id)
+    _stop  = _get_stop_event(user_id)
+    if not _lock.acquire(blocking=False):
         logger.warning(
-            "run_trading_loop called while another loop is already running — "
-            "refusing to start a second concurrent loop."
+            "run_trading_loop called while loop for user %s is already running", user_id
         )
         from database import log_event
         log_event(
@@ -41,16 +45,14 @@ def run_trading_loop(poll_interval: int = 10) -> None:
         )
         return
     try:
-        _stop_event.clear()
-        _run_trading_loop_inner(poll_interval)
+        _stop.clear()
+        _run_trading_loop_inner(user_id=user_id, poll_interval=poll_interval)
     finally:
-        _bot_loop_lock.release()
+        _lock.release()
 
 
-def _run_trading_loop_inner(poll_interval: int = 10) -> None:
+def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> None:
     """Inner body of the trading loop — called exclusively from run_trading_loop()."""
-    # _risk lives in entry.py (because _tick() uses `global _risk` there).
-    # We set it through the module object so _tick() sees the new instance.
     import trading.entry as _em
 
     from broker import get_clients
@@ -63,14 +65,23 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     from trading.diagnostics import _check_ghost_positions
     from trading.controls import _panic_close_all_positions
 
+    # Use this user's state dict instead of the global LIVE_STATE alias.
+    # All code inside this function that previously used LIVE_STATE now uses
+    # _US, which is the per-user dict from the USER_STATES registry.
+    _US = get_user_state(user_id)
+
+    # Resolve stop event for this user
+    _stop = _get_stop_event(user_id)
+
     init_db()
     alpaca, tradier = get_clients()
 
     # Determine mode from settings (written by start_bot() before the loop starts).
-    _settings     = get_settings()
-    _is_paper     = _settings.get("paper_trading", True)
-    _trade_mode   = "paper" if _is_paper else "live"
-    LIVE_STATE["mode"] = _trade_mode
+    _settings   = get_settings()
+    _is_paper   = _settings.get("paper_trading", True)
+    _trade_mode = "paper" if _is_paper else "live"
+    _US["mode"] = _trade_mode
+    LIVE_STATE["mode"] = _trade_mode   # keep global alias in sync for admin user
 
     try:
         acct    = alpaca.get_account()
@@ -84,27 +95,24 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
         logger.error("Cannot fetch account balance: %s", e)
         balance = float(get_settings().get("last_known_balance", STARTING_CAPITAL))
 
-    # FIX: seed LIVE_STATE["account_balance"] immediately before the first tick.
-    LIVE_STATE["account_balance"] = balance
+    _US["account_balance"] = balance
+    LIVE_STATE["account_balance"] = balance   # keep global alias in sync
 
-    # FIX: seed LIVE_STATE["session_pnl"] from the CORRECT mode DB at startup.
-    # Pass mode= so live restarts query trades_live.db (paper=0) not paper trades.
     try:
-        LIVE_STATE["session_pnl"] = sum(
+        _US["session_pnl"] = sum(
             (t.get("realized_pnl") or 0)
             for t in get_all_trades(limit=100, mode=_trade_mode)
             if (t.get("exit_time") or "")[:10] == date.today().isoformat()
         )
     except Exception as e:
         logger.error("Could not recompute session_pnl from DB at startup: %s", e)
-        LIVE_STATE["session_pnl"] = 0.0
+        _US["session_pnl"] = 0.0
+    LIVE_STATE["session_pnl"] = _US["session_pnl"]
 
     _em._risk = RiskManager(account_balance=balance)
-    logger.info(
-        "bot_started",
-        extra={"event": "bot_started", "account_balance": round(balance, 2)},
-    )
-    log_event("INFO", "trading_logic", f"🟢 Bot started. Account balance: ${balance:.2f}")
+    logger.info("bot_started", extra={"event": "bot_started", "account_balance": round(balance, 2)})
+    log_event("INFO", "trading_logic", f"🟢 Bot started [{user_id}]. Account balance: ${balance:.2f}")
+    _US["running"] = True
     LIVE_STATE["running"] = True
 
     # ── Startup reconciliation ────────────────────────────────────────────────
@@ -196,7 +204,7 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     except Exception:
         pass
 
-    while not _stop_event.is_set():
+    while not _stop.is_set():
         try:
             # ── After-hours deep sleep: 5:00 PM – 8:00 AM ET ─────────────────
             # No scan, no tick, no API calls. Wakes at 8:00 AM on the next
@@ -278,7 +286,7 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
             logger.warning("kill_lock_sleep: trading halted for 24h")
             for _ in range(288):   # 288 × 5 min = 24 h
                 # _stop_event.wait() returns immediately when Stop Bot is pressed
-                if _stop_event.wait(timeout=300):
+                if _stop.wait(timeout=300):
                     break
         except KeyboardInterrupt:
             break
@@ -301,7 +309,7 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
                 }, open(_BOT_ROOT / "bot_state.json", "w"))
             except Exception:
                 pass
-            _stop_event.wait(timeout=30)
+            _stop.wait(timeout=30)
 
         # Smart sleep: poll_interval inside trading window, 60s outside.
         # Wrapped in try/except — any exception here used to silently exit
@@ -317,7 +325,7 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
                 int(e.split(":")[0]) * 60 + int(e.split(":")[1])
                 for s, e in _windows
             )
-            _stop_event.wait(timeout=poll_interval if _in_window else 60)
+            _stop.wait(timeout=poll_interval if _in_window else 60)
         except Exception as _sleep_err:
             logger.warning("Smart sleep error (non-fatal): %s", _sleep_err)
             _stop_event.wait(timeout=poll_interval)
@@ -325,15 +333,16 @@ def _run_trading_loop_inner(poll_interval: int = 10) -> None:
     # Only log "stopped" when the stop was intentional (_stop_event was set).
     # Unexpected exits (exceptions escaping the loop body) are already logged
     # as errors above — an extra "Trading loop stopped" would be misleading.
-    if _stop_event.is_set():
+    if _stop.is_set():
         logger.info("Trading loop stopped")
     else:
         logger.warning("Trading loop exited unexpectedly — will be restarted by auto-start")
 
 
-def stop_loop() -> None:
-    """Signal the loop to exit and persist the stopped state to bot_state.json."""
-    _stop_event.set()
+def stop_loop(user_id: str = "admin") -> None:
+    """Signal the loop for a given user to exit."""
+    _get_stop_event(user_id).set()
+    get_user_state(user_id)["running"] = False
     LIVE_STATE["running"] = False
     # Log to the database so the THINKING panel shows confirmation that the bot
     # actually received the stop signal (not just a network disconnect).

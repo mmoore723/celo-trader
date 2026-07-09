@@ -154,15 +154,12 @@ class AlpacaClient:
     """Alpaca REST API v2 — equity bars, account data, paper/live options orders."""
 
     def __init__(self):
-        # Read live/paper mode from user_settings.json at instantiation time so
-        # switching the UI toggle takes effect on the next bot start without
-        # needing to change .env or restart the server process.
-        # ALPACA_BASE_URL (from .env) is the fallback only when settings file
-        # is unavailable (first run, missing file, etc.).
-        from config import get_settings as _gs, ALPACA_PAPER as _env_paper
-        _s = _gs()
-        # paper_trading key written by start_bot() before the loop starts.
-        # Fall back to .env ALPACA_PAPER if key is absent.
+        # Read live/paper mode + API keys from user-scoped settings so switching
+        # the UI toggle or saving new credentials takes effect on the next bot
+        # start without touching .env or restarting the server.
+        from config import get_settings as _gs, ALPACA_PAPER as _env_paper, get_api_keys as _gak
+        _s     = _gs()
+        _keys  = _gak()   # decrypts user-specific credentials, falls back to .env
         _paper = _s.get("paper_trading", _env_paper)
         self.base = (
             "https://paper-api.alpaca.markets"
@@ -170,12 +167,14 @@ class AlpacaClient:
             "https://api.alpaca.markets"
         )
         self.data    = "https://data.alpaca.markets"
+        _api_key    = _keys.get("alpaca_api_key",    ALPACA_API_KEY)
+        _secret_key = _keys.get("alpaca_secret_key", ALPACA_SECRET_KEY)
         self.headers = {
-            "APCA-API-KEY-ID":     ALPACA_API_KEY,
-            "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
+            "APCA-API-KEY-ID":     _api_key,
+            "APCA-API-SECRET-KEY": _secret_key,
             "Content-Type":        "application/json",
         }
-        if not ALPACA_API_KEY:
+        if not _api_key:
             logger.warning("Alpaca keys not set — running in demo mode")
         logger.info(
             "AlpacaClient: routing to %s (paper_trading=%s)",
@@ -1171,12 +1170,15 @@ class TradierClient:
     """
 
     def __init__(self):
+        from config import get_api_keys as _gak
+        _keys = _gak()
+        _key  = _keys.get("tradier_api_key", TRADIER_API_KEY)
         self.base    = TRADIER_BASE_URL
         self.headers = {
-            "Authorization": f"Bearer {TRADIER_API_KEY}",
+            "Authorization": f"Bearer {_key}",
             "Accept":        "application/json",
         }
-        if not TRADIER_API_KEY:
+        if not _key:
             logger.warning("Tradier API key not set — options data unavailable")
 
     def _get(self, endpoint: str, params: dict = None) -> dict:

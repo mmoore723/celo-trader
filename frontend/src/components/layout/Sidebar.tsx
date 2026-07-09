@@ -3,18 +3,20 @@
  */
 import {
   Activity, BarChart2, BookOpen, Settings,
-  FlaskConical, Newspaper, Power, StopCircle, Skull, CalendarDays,
+  FlaskConical, Newspaper, Power, StopCircle, Skull, CalendarDays, ShieldCheck,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useBotStore } from "../../store/bot";
 import { useUIStore } from "../../store/ui";
+import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../lib/api";
 import { useState } from "react";
 
 interface NavItem {
-  label: string;
-  to: string;
-  icon: React.ReactNode;
+  label:     string;
+  to:        string;
+  icon:      React.ReactNode;
+  adminOnly?: boolean;
 }
 
 const NAV: NavItem[] = [
@@ -25,11 +27,13 @@ const NAV: NavItem[] = [
   { label: "Backtest",      to: "/backtest",    icon: <FlaskConical size={16} /> },
   { label: "Playbooks",     to: "/playbooks",   icon: <Newspaper size={16} /> },
   { label: "Settings",      to: "/settings",    icon: <Settings size={16} /> },
+  { label: "Admin",         to: "/admin",       icon: <ShieldCheck size={16} />, adminOnly: true },
 ];
 
 export function Sidebar() {
   const { status, connected } = useBotStore();
   const { mobileSidebarOpen, closeMobileSidebar } = useUIStore();
+  const { user } = useAuth();
   const running = status?.running ?? false;
   // True once we've received the first WS status message (status transitions
   // from null → object).  Until then the button is disabled so a reload can't
@@ -63,7 +67,7 @@ export function Sidebar() {
     >
       {/* Nav links */}
       <nav className="flex-1 py-3 px-2 flex flex-col gap-0.5">
-        {NAV.map((item) => (
+        {NAV.filter(item => !item.adminOnly || user?.is_admin).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

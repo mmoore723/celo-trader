@@ -7,33 +7,52 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=True)
 
 BASE_DIR      = Path(__file__).resolve().parent
-DB_PATH       = BASE_DIR / "trades.db"          # legacy alias — kept so old imports don't break
-DB_PATH_PAPER = BASE_DIR / "trades_paper.db"    # paper-trading + simulation mode only
-DB_PATH_LIVE  = BASE_DIR / "trades_live.db"     # real live-trading mode only
+_USER_DATA    = BASE_DIR / "user_data"           # per-user data root
+DB_PATH       = BASE_DIR / "trades.db"           # legacy alias — kept so old imports don't break
+DB_PATH_PAPER = BASE_DIR / "trades_paper.db"     # legacy — now per-user inside user_data/
+DB_PATH_LIVE  = BASE_DIR / "trades_live.db"      # legacy — now per-user inside user_data/
 LOG_PATH      = BASE_DIR / "log" / "bot.log"
-SETTINGS_PATH = BASE_DIR / "user_settings.json"
+SETTINGS_PATH = BASE_DIR / "user_settings.json"  # legacy single-user fallback
 
 
-def get_db_path() -> Path:
+def _get_user_id() -> str:
     """
-    Return the active SQLite database path based on the current paper_trading setting.
+    Return the currently authenticated user's ID from the request-scoped ContextVar.
+    Falls back to "admin" so all single-user / background-thread code is unchanged.
+    """
+    try:
+        from auth.context import get_current_user_id
+        return get_current_user_id()
+    except Exception:
+        return "admin"
 
-    Hard separation rules:
-      paper_trading = True  → trades_paper.db  (paper orders, sim trades, backtests)
+
+def get_user_data_dir(user_id: str | None = None) -> Path:
+    """Return the per-user data directory, creating it if needed."""
+    uid = user_id or _get_user_id()
+    p   = _USER_DATA / uid
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def get_db_path(user_id: str | None = None) -> Path:
+    """
+    Return the active SQLite database path for the given (or current) user.
+
+    Hard separation:
+      paper_trading = True  → trades_paper.db  (paper orders / sim trades)
       paper_trading = False → trades_live.db   (real broker fills ONLY)
 
-    These two files must NEVER be merged or read across modes. The function reads
-    user_settings.json every call so a live toggle in the dashboard takes effect on
-    the very next DB connection without requiring a bot restart.
+    Reads settings dynamically so a live toggle takes effect immediately.
     """
-    # Avoid circular import: get_settings() is defined later in this module.
-    # We call it with a direct file-read fallback so this function is safe at import time.
     try:
-        _s = get_settings()
+        _s     = get_settings(user_id=user_id)
         _paper = _s.get("paper_trading", ALPACA_PAPER)
     except Exception:
-        _paper = ALPACA_PAPER   # safe fallback if settings file not yet written
-    return DB_PATH_PAPER if _paper else DB_PATH_LIVE
+        _paper = ALPACA_PAPER
+    _dir  = get_user_data_dir(user_id)
+    _name = "trades_paper.db" if _paper else "trades_live.db"
+    return _dir / _name
 
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
@@ -215,6 +234,13 @@ MAX_CONTRACT_COST     = 10.00  # max option premium — raised from $5 to fit JP
 VOLUME_FILTER_MULTIPLIER = 1.2
 EARNINGS_BLACKOUT_DAYS   = 2
 
+# ── Commission (live trading only) ────────────────────────────────────────────
+# Alpaca charges $0.65 per contract per leg.  Each round-trip (entry + exit)
+# costs 2 legs, so total per trade = contracts × $0.65 × 2.
+# Paper trading has zero commission — this constant is only applied when
+# paper_trading = False in close_trade().
+COMMISSION_PER_CONTRACT = 0.65
+
 # Trading windows (ET) — full session: 09:30 open through 16:00 close
 # Both phases use the same full-day window so afternoon momentum setups
 # (e.g. 1:00–3:30 PM breakdowns/breakouts) are never blocked.
@@ -298,23 +324,74 @@ _DEFAULTS = {
 }
 
 
-def get_settings() -> dict:
+def get_settings(user_id: str | None = None) -> dict:
+    """
+    Return settings for the given (or current) user, falling back through:
+      1. user_data/{user_id}/settings.json  (per-user override)
+      2. user_settings.json                 (legacy single-user file)
+      3. _DEFAULTS                          (hardcoded defaults)
+    """
     settings = _DEFAULTS.copy()
-    if SETTINGS_PATH.exists():
-        try:
-            with open(SETTINGS_PATH, "r") as f:
-                overrides = json.load(f)
-            settings.update(overrides)
-        except (json.JSONDecodeError, OSError):
-            pass
+    uid      = user_id or _get_user_id()
+
+    # Load per-user settings if the file exists
+    _user_settings = get_user_data_dir(uid) / "settings.json"
+    _paths = [_user_settings, SETTINGS_PATH]   # user-specific first, then legacy
+    for _p in _paths:
+        if _p.exists():
+            try:
+                with open(_p, "r") as f:
+                    overrides = json.load(f)
+                settings.update(overrides)
+                break   # first hit wins
+            except (json.JSONDecodeError, OSError):
+                pass
     return settings
 
 
-def save_settings(updates: dict) -> None:
-    current = get_settings()
+def save_settings(updates: dict, user_id: str | None = None) -> None:
+    uid     = user_id or _get_user_id()
+    _path   = get_user_data_dir(uid) / "settings.json"
+    current = get_settings(user_id=uid)
     current.update(updates)
-    with open(SETTINGS_PATH, "w") as f:
+    with open(_path, "w") as f:
         json.dump(current, f, indent=2)
+
+
+# ── Per-user API key management ───────────────────────────────────────────────
+
+def get_api_keys(user_id: str | None = None) -> dict:
+    """
+    Return decrypted API keys for the user.  Priority:
+      1. user_data/{user_id}/credentials.enc  (UI-saved keys, encrypted)
+      2. .env environment variables           (legacy/admin fallback)
+    """
+    uid       = user_id or _get_user_id()
+    cred_path = get_user_data_dir(uid) / "credentials.enc"
+    if cred_path.exists():
+        try:
+            from auth.encryption import decrypt_dict
+            return decrypt_dict(cred_path.read_text().strip())
+        except Exception as e:
+            import logging as _lg
+            _lg.getLogger("celo_trader.config").warning(
+                "Could not decrypt credentials for user %s: %s", uid, e
+            )
+    # Fallback to env vars (admin or unset users)
+    return {
+        "alpaca_api_key":     ALPACA_API_KEY,
+        "alpaca_secret_key":  ALPACA_SECRET_KEY,
+        "tradier_api_key":    TRADIER_API_KEY,
+        "tradier_account_id": TRADIER_ACCOUNT_ID,
+    }
+
+
+def save_api_keys(keys: dict, user_id: str | None = None) -> None:
+    """Encrypt and persist API keys for the user."""
+    uid       = user_id or _get_user_id()
+    cred_path = get_user_data_dir(uid) / "credentials.enc"
+    from auth.encryption import encrypt_dict
+    cred_path.write_text(encrypt_dict(keys))
 
 
 def setup_logging() -> logging.Logger:

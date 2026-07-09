@@ -21,6 +21,8 @@ import { Settings }        from "./pages/Settings";
 import { Backtest }        from "./pages/Backtest";
 import { Playbooks }       from "./pages/Playbooks";
 import { DailyBrief }      from "./pages/DailyBrief";
+import { Admin }           from "./pages/Admin";
+import { Register }        from "./pages/Register";
 import { Login }           from "./pages/Login";
 import { Maintenance }     from "./pages/Maintenance";
 
@@ -57,11 +59,23 @@ function AppShell() {
           <Route path="/backtest"    element={<Backtest />} />
           <Route path="/playbooks"   element={<Playbooks />} />
           <Route path="/settings"    element={<Settings />} />
+          <Route path="/admin"       element={<AdminGuard />} />
         </Routes>
       </main>
       <TickerBar />
     </div>
   );
+}
+
+// ── Admin guard — 403 for non-admins ──────────────────────────────────────────
+function AdminGuard() {
+  const { user } = useAuth();
+  if (!user?.is_admin) return (
+    <div className="p-8 text-center" style={{ color: "var(--ink-muted)" }}>
+      Access denied — admin only.
+    </div>
+  );
+  return <Admin />;
 }
 
 // ── Auth gate — decides what to render based on session state ──────────────────
@@ -71,7 +85,7 @@ function AuthGate() {
   // Still checking session cookie → branded loading screen
   if (loading) return <Maintenance mode="connecting" />;
 
-  // Not logged in → login page
+  // Not logged in → login page (register has its own public route below)
   if (!isAuthenticated) return <Login />;
 
   // Authenticated → full app
@@ -86,7 +100,12 @@ export default function App() {
         {/* HashRouter: navigation is always client-side (URL becomes /#/page).
             Eliminates any server-routing edge cases with the FastAPI catch-all. */}
         <HashRouter>
-          <AuthGate />
+          <Routes>
+            {/* Public invite registration route — no auth required */}
+            <Route path="/register" element={<Register />} />
+            {/* Everything else gates on auth */}
+            <Route path="*" element={<AuthGate />} />
+          </Routes>
         </HashRouter>
       </AuthProvider>
     </QueryClientProvider>

@@ -304,6 +304,7 @@ def _manage_open_position(
             return
 
         current_price = quote["mid"]
+        bid_price     = float(quote.get("bid") or quote["mid"])  # for limit sell step-down
         entry_price   = trade["entry_price"]
         trade_id      = trade["id"]
         ticker        = trade.get("ticker", "")
@@ -698,7 +699,8 @@ def _manage_open_position(
                     f"(can't split a single contract). Closing now.",
                 )
                 _close_position(alpaca, trade, current_price,
-                                "stage1_50pct_full_exit_single_contract")
+                                "stage1_50pct_full_exit_single_contract",
+                                bid_price=bid_price)
                 return
 
             from config import get_settings
@@ -715,11 +717,14 @@ def _manage_open_position(
                         "entry_price":    round(entry_price, 4),
                     },
                 )
+            # Limit sell at mid; live steps down to bid after 5s if not taken.
             fill = alpaca.place_option_order(
-                symbol     = trade["contract_symbol"],
-                qty        = half_contracts,
-                side       = "sell",
-                order_type = "market",
+                symbol        = trade["contract_symbol"],
+                qty           = half_contracts,
+                side          = "sell",
+                order_type    = "limit",
+                limit_price   = current_price,   # mid price
+                step_to_price = bid_price,        # step down to bid on live
             )
 
             if fill is None:
@@ -752,6 +757,7 @@ def _manage_open_position(
                 exit_time            = _now_et().replace(tzinfo=None),
                 exit_reason          = "stage1_50pct_profit_take",
                 confirmed_fill_price = fill_price,
+                paper                = paper,
             )
 
             with get_conn() as _conn:
@@ -773,7 +779,7 @@ def _manage_open_position(
 
         else:
             # Full exit for all other reasons
-            _close_position(alpaca, trade, current_price, reason)
+            _close_position(alpaca, trade, current_price, reason, bid_price=bid_price)
 
     except Exception as e:
         from database import log_event
@@ -788,6 +794,7 @@ def _close_position(
     trade: dict,
     exit_price: float,
     reason: str,
+    bid_price: Optional[float] = None,
 ) -> None:
     from trading import entry as _em
 
@@ -816,11 +823,16 @@ def _close_position(
 
     if paper:
         logger.info("[PAPER] SELL %s @ $%.4f (%s)", trade["contract_symbol"], exit_price, reason)
+    # Limit sell at mid-price (exit_price = quote["mid"]) — same favorable fill
+    # as paper trading.  On live, if not filled in 5s, _wait_for_fill steps DOWN
+    # to bid_price to guarantee execution and prevent a stuck open position.
     fill = alpaca.place_option_order(
-        symbol     = trade["contract_symbol"],
-        qty        = trade["contracts"],
-        side       = "sell",
-        order_type = "market",
+        symbol         = trade["contract_symbol"],
+        qty            = trade["contracts"],
+        side           = "sell",
+        order_type     = "limit",
+        limit_price    = exit_price,   # mid price
+        step_to_price  = bid_price,    # step down to bid on live if mid not taken
     )
 
     fill_price = exit_price
@@ -841,6 +853,7 @@ def _close_position(
         confirmed_fill_price = fill_price,
         peak_price           = _peak_px,
         mae_price            = _min_px,
+        paper                = paper,
     )
 
     # Human-readable close narrative

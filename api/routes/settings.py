@@ -1,8 +1,9 @@
 """
-api/routes/settings.py — Settings read/write endpoints.
+api/routes/settings.py — Settings read/write endpoints + API credentials.
 """
 from __future__ import annotations
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, HTTPException
+from pydantic import BaseModel
 from api.models import Settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -67,3 +68,49 @@ def save_settings_endpoint(payload: Settings) -> Settings:
         pass  # bot may not be running — non-fatal
 
     return payload
+
+
+# ── API credentials ───────────────────────────────────────────────────────────
+
+class CredentialsPayload(BaseModel):
+    alpaca_api_key:     str
+    alpaca_secret_key:  str
+    tradier_api_key:    str = ""
+    tradier_account_id: str = ""
+
+
+@router.get("/credentials")
+def get_credentials() -> dict:
+    """
+    Return stored API keys for the current user — secrets are MASKED for display.
+    Frontend uses this to show which keys are set without revealing the full value.
+    """
+    from config import get_api_keys
+    keys = get_api_keys()
+    def mask(v: str) -> str:
+        return v[:4] + "…" + v[-4:] if len(v) >= 10 else ("set" if v else "")
+    return {
+        "alpaca_api_key":     mask(keys.get("alpaca_api_key", "")),
+        "alpaca_secret_key":  mask(keys.get("alpaca_secret_key", "")),
+        "tradier_api_key":    mask(keys.get("tradier_api_key", "")),
+        "tradier_account_id": keys.get("tradier_account_id", ""),   # not secret
+        "has_alpaca":         bool(keys.get("alpaca_api_key")),
+        "has_tradier":        bool(keys.get("tradier_api_key")),
+    }
+
+
+@router.post("/credentials")
+def save_credentials(payload: CredentialsPayload) -> dict:
+    """
+    Save Alpaca + Tradier API keys for the current user (encrypted at rest).
+    Note: Alpaca uses the SAME key pair for both paper and live trading.
+    The paper vs live routing is controlled by the Paper/Live toggle, not the keys.
+    """
+    from config import save_api_keys
+    save_api_keys({
+        "alpaca_api_key":     payload.alpaca_api_key.strip(),
+        "alpaca_secret_key":  payload.alpaca_secret_key.strip(),
+        "tradier_api_key":    payload.tradier_api_key.strip(),
+        "tradier_account_id": payload.tradier_account_id.strip(),
+    })
+    return {"ok": True, "message": "API keys saved securely"}

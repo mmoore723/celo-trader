@@ -1,9 +1,9 @@
 /**
- * Settings.tsx — Bot configuration form.
+ * Settings.tsx — Bot configuration form + API credentials.
  */
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save } from "lucide-react";
+import { Save, Eye, EyeOff, Key } from "lucide-react";
 import { api, type AppSettings } from "../lib/api";
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -45,6 +45,129 @@ const TIMEZONES = [
   { value: "America/Phoenix",     label: "Arizona (MST, no DST)" },
   { value: "UTC",                 label: "UTC" },
 ];
+
+// ── Credentials panel ──────────────────────────────────────────────────────
+function CredentialField({
+  label, name, value, onChange, show, onToggle, hint
+}: {
+  label: string; name: string; value: string;
+  onChange: (v: string) => void; show: boolean;
+  onToggle: () => void; hint?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>{label}</label>
+      <div className="relative">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={hint || "Enter key…"}
+          className="input w-full pr-10 font-mono text-sm"
+          autoComplete="off"
+          name={name}
+        />
+        <button type="button" onClick={onToggle}
+          className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
+          style={{ background: "none", border: "none", cursor: "pointer" }}>
+          {show ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CredentialsPanel() {
+  // Show/hide state per field
+  const [show, setShow] = useState({ alpaca_key: false, alpaca_secret: false, tradier_key: false });
+  const toggle = (f: keyof typeof show) => setShow(s => ({ ...s, [f]: !s[f] }));
+
+  const [creds, setCreds] = useState({
+    alpaca_api_key: "", alpaca_secret_key: "", tradier_api_key: "", tradier_account_id: ""
+  });
+  const [status, setStatus] = useState<{ ok?: boolean; msg?: string } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load masked values on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/settings/credentials", { credentials: "include" });
+        if (r.ok) {
+          const d = await r.json();
+          setCreds({
+            alpaca_api_key:    d.alpaca_api_key    || "",
+            alpaca_secret_key: d.alpaca_secret_key || "",
+            tradier_api_key:   d.tradier_api_key   || "",
+            tradier_account_id: d.tradier_account_id || "",
+          });
+        }
+      } catch { /* ignore */ }
+      setLoaded(true);
+    })();
+  }, []);
+
+  async function save() {
+    setStatus(null);
+    try {
+      const r = await fetch("/api/settings/credentials", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(creds),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Save failed");
+      setStatus({ ok: true, msg: "Keys saved securely." });
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Save failed" });
+    }
+    setTimeout(() => setStatus(null), 3000);
+  }
+
+  if (!loaded) return <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading…</p>;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 mb-1">
+        <Key size={14} style={{ color: "var(--accent)" }} />
+        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+          Alpaca uses the <strong>same</strong> API key pair for paper and live trading — only the
+          URL changes when you toggle modes.
+        </p>
+      </div>
+
+      <CredentialField label="Alpaca API Key" name="alpaca_key"
+        value={creds.alpaca_api_key} onChange={v => setCreds(c => ({ ...c, alpaca_api_key: v }))}
+        show={show.alpaca_key} onToggle={() => toggle("alpaca_key")}
+        hint="PK…" />
+      <CredentialField label="Alpaca Secret Key" name="alpaca_secret"
+        value={creds.alpaca_secret_key} onChange={v => setCreds(c => ({ ...c, alpaca_secret_key: v }))}
+        show={show.alpaca_secret} onToggle={() => toggle("alpaca_secret")} />
+      <CredentialField label="Tradier API Key" name="tradier_key"
+        value={creds.tradier_api_key} onChange={v => setCreds(c => ({ ...c, tradier_api_key: v }))}
+        show={show.tradier_key} onToggle={() => toggle("tradier_key")}
+        hint="Bearer token from Tradier dashboard" />
+      <CredentialField label="Tradier Account ID" name="tradier_account_id"
+        value={creds.tradier_account_id} onChange={v => setCreds(c => ({ ...c, tradier_account_id: v }))}
+        show={true} onToggle={() => {}} hint="Account number (digits only)" />
+
+      <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+        Keys are encrypted at rest (AES-128 / Fernet). Never stored in plain text.
+      </p>
+
+      {status && (
+        <p className="text-xs font-medium"
+          style={{ color: status.ok ? "var(--accent)" : "#f87171" }}>
+          {status.msg}
+        </p>
+      )}
+
+      <button className="btn btn-primary" onClick={save}>
+        <Save size={14} /> Save API Keys
+      </button>
+    </div>
+  );
+}
 
 export function Settings() {
   const [form, setForm] = useState<AppSettings>(DEFAULT);
@@ -195,6 +318,14 @@ export function Settings() {
         <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>
           Comma-separated tickers. Scanner may override this during market hours.
         </p>
+      </div>
+
+      {/* API Credentials */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
+          API Credentials
+        </h3>
+        <CredentialsPanel />
       </div>
 
       {/* Save */}

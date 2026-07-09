@@ -9,6 +9,7 @@ import { useAuth }             from "../contexts/AuthContext";
 
 export function Login() {
   const { login }                   = useAuth();
+  const [username, setUsername]     = useState("");
   const [password, setPassword]     = useState("");
   const [staySignedIn, setStay]     = useState(true);
   const [showPw, setShowPw]         = useState(false);
@@ -17,6 +18,7 @@ export function Login() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!username) { setError("Enter your username"); return; }
     if (!password) { setError("Enter your password"); return; }
     setError(null);
     setLoading(true);
@@ -26,12 +28,12 @@ export function Login() {
         method:      "POST",
         credentials: "include",
         headers:     { "Content-Type": "application/json" },
-        body:        JSON.stringify({ password, stay_signed_in: staySignedIn }),
+        body:        JSON.stringify({ username, password, stay_signed_in: staySignedIn }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || "Login failed");
-      // Session cookie is now set — update auth context so App re-renders AppShell
-      login({ email: "admin", name: "Trader" });
+      login({ email: data.username || username, name: data.username || username,
+              is_admin: !!data.is_admin });
     } catch (e: any) {
       setError(e.message || "Login failed");
     } finally {
@@ -56,7 +58,7 @@ export function Login() {
         </div>
 
         <h1 style={styles.title}>Celo Trader</h1>
-        <p style={styles.subtitle}>Enter your dashboard password to continue</p>
+        <p style={styles.subtitle}>Sign in to your dashboard</p>
 
         {/* Error */}
         {error && (
@@ -69,11 +71,22 @@ export function Login() {
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.inputWrap}>
             <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Username"
+              autoFocus
+              autoComplete="username"
+              style={styles.input}
+            />
+          </div>
+          <div style={styles.inputWrap}>
+            <input
               type={showPw ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
-              autoFocus
+              autoComplete="current-password"
               style={styles.input}
             />
             <button
