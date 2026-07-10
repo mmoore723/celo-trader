@@ -95,10 +95,25 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
         logger.error("Cannot fetch account balance: %s", e)
         balance = float(get_settings().get("last_known_balance", STARTING_CAPITAL))
 
-    _US["account_balance"]    = balance
-    _US["day_start_balance"]  = balance       # locked at startup — never overwritten
-    LIVE_STATE["account_balance"]   = balance
-    LIVE_STATE["day_start_balance"] = balance  # keep global alias in sync
+    _US["account_balance"]  = balance
+    LIVE_STATE["account_balance"] = balance
+
+    # Day-start balance: persist per calendar date so mid-session bot restarts
+    # don't overwrite the true opening value with the current (already-traded) balance.
+    # Key: "day_start_YYYY-MM-DD" in settings — only written on first start of the day.
+    from config import save_settings as _save_dsb
+    import datetime as _dt_dsb
+    _today_key = f"day_start_{_dt_dsb.date.today().isoformat()}"
+    _saved_dsb = get_settings().get(_today_key)
+    if _saved_dsb:
+        # Bot restarted mid-session — use the balance saved at first start today
+        day_start_balance = float(_saved_dsb)
+    else:
+        # First start of the day — lock in today's opening Alpaca equity
+        day_start_balance = balance
+        _save_dsb({_today_key: round(day_start_balance, 2)})
+    _US["day_start_balance"]        = day_start_balance
+    LIVE_STATE["day_start_balance"] = day_start_balance
 
     try:
         _US["session_pnl"] = sum(
