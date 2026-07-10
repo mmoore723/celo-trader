@@ -101,21 +101,22 @@ def get_bars(
                     .dt.tz_localize(None)
                 )
                 raw_yf = raw_yf[["time","open","high","low","close","volume"]].copy()
-                # Filter 1: close moved >5% from prior bar (catches bad tick closes)
-                prev_close = raw_yf["close"].shift(1)
-                pct_move   = (raw_yf["close"] - prev_close).abs() / prev_close
-                raw_yf     = raw_yf[(pct_move < 0.05) | pct_move.isna()].reset_index(drop=True)
-                # Filter 2: wick extends >5% beyond bar body (catches bad wick prints
-                # like low=699 on a bar whose open/close are ~751 — these survive
-                # Filter 1 because the close-to-close move is small, but the low
-                # is a single bad tick from extended-hours illiquid trading).
-                if not raw_yf.empty:
-                    body_low  = raw_yf[["open", "close"]].min(axis=1)
-                    body_high = raw_yf[["open", "close"]].max(axis=1)
-                    low_wick  = (body_low  - raw_yf["low"])   / body_low.clip(lower=0.01)
-                    high_wick = (raw_yf["high"] - body_high)  / body_high.clip(lower=0.01)
-                    raw_yf    = raw_yf[(low_wick < 0.05) & (high_wick < 0.05)].reset_index(drop=True)
-                df = raw_yf.tail(limit).reset_index(drop=True)
+                # ── Regular session only (9:30 AM – 4:00 PM ET) ─────────────
+                # Pre/after-market bars are the root cause of every chart spike:
+                # extended-hours prices are legitimate but differ from regular
+                # session prices, creating apparent "spikes" between sessions.
+                # The bot only trades 9:30–4 PM ET so there is no analytical
+                # value in showing extended hours bars on the chart.
+                import datetime as _dt2
+                _open  = _dt2.time(9, 30)
+                _close = _dt2.time(16, 0)
+                raw_yf = raw_yf[
+                    raw_yf["time"].dt.time.between(_open, _close)
+                ].reset_index(drop=True)
+                if raw_yf.empty:
+                    df = pd.DataFrame()
+                else:
+                    df = raw_yf.tail(limit).reset_index(drop=True)
         except Exception:
             pass
 
