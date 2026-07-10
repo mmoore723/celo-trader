@@ -171,6 +171,9 @@ function TradeDetail({ t }: { t: Trade }) {
             <div>Hold time: <strong style={{ color: "var(--ink)" }}>
               {fmtDuration(t.entry_time, t.exit_time)}
             </strong></div>
+            <div>Exit reason: <strong style={{ color: "var(--ink)" }}>
+              {normalizeExitReason(t.exit_reason)}
+            </strong></div>
           </div>
 
           {/* Narrative */}

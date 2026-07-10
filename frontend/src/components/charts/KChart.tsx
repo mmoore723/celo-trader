@@ -190,8 +190,29 @@ export function KChart({
     // so stacking volume in the candle pane would include volume values
     // (1-3M+) in the price axis range and make candles invisible.
     chart.createIndicator("VOL", false, { id: "vol_pane", height: 56, minHeight: 40 });
-    if (showRsi)  chart.createIndicator("RSI",  false, { id: "rsi_pane",  height: 90  });
+    if (showRsi) {
+      chart.createIndicator("RSI", false, { id: "rsi_pane", height: 90 });
+      // Default RSI shows 3 lines [6,12,24] — override to single period 14
+      try { chart.overrideIndicator({ name: "RSI", calcParams: [14] }, "rsi_pane"); } catch (_) {}
+    }
     if (showMacd) chart.createIndicator("MACD", false, { id: "macd_pane", height: 100 });
+
+    // 12-hour AM/PM time format for x-axis ticks
+    chart.setCustomApi({
+      formatDate: (_fmt: unknown, timestamp: number, format: string, _type: unknown) => {
+        const d = new Date(timestamp);
+        // Time ticks (HH:mm format string) → convert to 12h
+        if (format && (format.includes("HH") || format.includes("hh"))) {
+          let h = d.getHours();
+          const m = String(d.getMinutes()).padStart(2, "0");
+          const ampm = h >= 12 ? "PM" : "AM";
+          h = h % 12 || 12;
+          return `${h}:${m} ${ampm}`;
+        }
+        // Date ticks → MM/DD
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+      },
+    });
 
     // OHLC crosshair legend — pure DOM update (no React re-render on mouse move)
     chart.subscribeAction("onCrosshairChange", (data: any) => {

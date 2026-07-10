@@ -97,7 +97,7 @@ export function Sidebar() {
         className="px-3 py-2 border-t flex items-center justify-between"
         style={{ borderColor: "var(--border)" }}
       >
-        <span className="text-xs truncate" style={{ color: "var(--ink-faint)" }}>
+        <span className="text-sm font-medium truncate" style={{ color: "var(--ink)" }}>
           {user?.name ?? user?.email ?? ""}
         </span>
         <button

@@ -97,7 +97,7 @@ export function ApiSetupModal({ onClose }: Props) {
         className="card"
         style={{
           width: "100%", maxWidth: "460px",
-          background: "var(--surface-bg)",
+          background: "var(--surface)",
           border: "1px solid var(--border)",
           borderRadius: "12px",
           overflow: "hidden",

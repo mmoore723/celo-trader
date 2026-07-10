@@ -13,6 +13,28 @@ import { useThemeStore } from "../store/theme";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 
+/** Normalize raw exit_reason strings to clean display labels (same map as Journal). */
+function normalizeExitReason(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  const cat = raw.split(/[\s(]/)[0];
+  const MAP: Record<string, string> = {
+    momentum_dead_exit:                       "Dead Momentum",
+    structural_stop_bar_high:                 "Structural Stop",
+    atr_trail_stop:                           "Trail Stop",
+    trail_stop:                               "Trail Stop",
+    time_cap_loser_60m:                       "Time Limit",
+    time_cap_winner:                          "Time Limit (Win)",
+    stage1_50pct_full_exit_single_contract:   "50% Target",
+    stage1_50pct_full_exit:                   "50% Target",
+    panic_close:                              "Panic Close",
+    manual_close:                             "Manual Close",
+    profit_lock:                              "Profit Lock",
+    stop_loss:                                "Stop Loss",
+    target_hit:                               "Target Hit",
+  };
+  return MAP[cat] ?? cat.replace(/_/g, " ");
+}
+
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="card px-4 py-3 flex flex-col gap-0.5">
@@ -268,7 +290,23 @@ export function Performance() {
   const byStrategy = analytics?.by_strategy ?? [];
   const byHour     = analytics?.by_hour ?? [];
   const byTicker   = analytics?.by_ticker ?? [];
-  const byExit     = analytics?.by_exit_reason ?? [];
+  // Consolidate raw exit reasons into normalized labels (merges e.g. atr_trail_stop + trail_stop)
+  const byExit = useMemo(() => {
+    const raw = analytics?.by_exit_reason ?? [];
+    const merged: Record<string, { label: string; trades: number; total_pnl: number }> = {};
+    for (const r of raw) {
+      const label = normalizeExitReason(r.reason);
+      if (!merged[label]) merged[label] = { label, trades: 0, total_pnl: 0 };
+      merged[label].trades    += r.trades;
+      merged[label].total_pnl += r.total_pnl;
+    }
+    return Object.values(merged).map((m) => ({
+      reason:    m.label,
+      trades:    m.trades,
+      total_pnl: m.total_pnl,
+      avg_pnl:   m.trades > 0 ? m.total_pnl / m.trades : 0,
+    }));
+  }, [analytics]);
 
   // MFE vs Exit comparison chart
   const mfeVsExit = analytics

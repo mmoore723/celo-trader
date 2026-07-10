@@ -158,13 +158,14 @@ export function LiveTrading() {
   // yfinance prepost data can contain bad prints (e.g. a single erroneous 5m bar
   // whose low is 7% below the actual session price). A bad OR low forces the chart
   // Y-axis to scale out to that price, squishing all candles into the top 20%.
-  // Guard: only show OR if both values are within 5% of the most recent close.
+  // Guard: only show OR if both values are within 15% of the most recent close.
+  // 5% was too strict — bars can lag live price, especially outside market hours.
   const lastClose = bars[bars.length - 1]?.close ?? 0;
   const orHighRaw  = or?.high ?? 0;
   const orLowRaw   = or?.low  ?? 0;
   const orInRange  = lastClose > 0 && orHighRaw > 0 && orLowRaw > 0
-    && Math.abs(orHighRaw - lastClose) / lastClose < 0.05
-    && Math.abs(orLowRaw  - lastClose) / lastClose < 0.05;
+    && Math.abs(orHighRaw - lastClose) / lastClose < 0.15
+    && Math.abs(orLowRaw  - lastClose) / lastClose < 0.15;
   const safeOrHigh = orInRange ? orHighRaw : undefined;
   const safeOrLow  = orInRange ? orLowRaw  : undefined;
 
