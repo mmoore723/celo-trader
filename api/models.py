@@ -13,6 +13,7 @@ class BotStatus(BaseModel):
     mode: str                        # "live" | "sim" | "stopped"
     ticker: Optional[str]
     account_balance: float
+    day_start_balance: float         # Alpaca equity captured once at bot startup — never derived
     session_pnl: float
     options_buying_power: float
     last_update: Optional[str]

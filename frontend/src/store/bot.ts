@@ -27,6 +27,7 @@ export interface BotStatus {
   mode: string;
   ticker: string | null;
   account_balance: number;
+  day_start_balance: number;
   session_pnl: number;
   options_buying_power: number;
   last_update: string | null;

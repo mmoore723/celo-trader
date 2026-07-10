@@ -95,8 +95,10 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
         logger.error("Cannot fetch account balance: %s", e)
         balance = float(get_settings().get("last_known_balance", STARTING_CAPITAL))
 
-    _US["account_balance"] = balance
-    LIVE_STATE["account_balance"] = balance   # keep global alias in sync
+    _US["account_balance"]    = balance
+    _US["day_start_balance"]  = balance       # locked at startup — never overwritten
+    LIVE_STATE["account_balance"]   = balance
+    LIVE_STATE["day_start_balance"] = balance  # keep global alias in sync
 
     try:
         _US["session_pnl"] = sum(

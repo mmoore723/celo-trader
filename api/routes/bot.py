@@ -60,6 +60,12 @@ def get_status(request: Request) -> BotStatus:
             or _state.get("account_balance")
             or settings.get("last_known_balance", STARTING_CAPITAL)
         ),
+        day_start_balance=float(
+            state.get("day_start_balance")
+            or _state.get("day_start_balance")
+            or state.get("account_balance")
+            or settings.get("last_known_balance", STARTING_CAPITAL)
+        ),
         session_pnl=float(state.get("session_pnl", _state.get("session_pnl", 0.0))),
         options_buying_power=float(state.get("options_buying_power", 0.0)),
         last_update=state.get("last_update"),

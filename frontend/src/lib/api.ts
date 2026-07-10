@@ -29,6 +29,7 @@ export interface BotStatus {
   mode: string;
   ticker: string | null;
   account_balance: number;
+  day_start_balance: number;   // Alpaca equity captured at bot startup — never derived
   session_pnl: number;
   options_buying_power: number;
   last_update: string | null;
