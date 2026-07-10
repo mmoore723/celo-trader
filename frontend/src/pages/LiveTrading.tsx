@@ -26,15 +26,17 @@ const PERIOD_MS: Record<Period, number> = {
 
 /** How many bars to fetch for a given timeframe + period combination.
  *  Capped at 2000 (matching the raised API limit).
- *  barsPerDay approximates a full 6.5-hour session + some pre/post-market buffer. */
+ *  Minimum 150 bars ensures RSI(14) and MACD(12,26,9) always have enough
+ *  warmup history — without this, 1h+1D returns only 16 bars and both
+ *  indicators show "n/a" (MACD alone needs 35 bars before its first value). */
 function barLimitForPeriod(tf: string, period: Period): number {
   const barsPerDay: Record<string, number> = {
     "1Min": 420, "5Min": 90, "15Min": 30, "1Hour": 8,
   };
   const tradingDays: Record<Period, number> = {
-    "1D": 2, "5D": 6, "1M": 23, "3M": 68,
+    "1D": 3, "5D": 8, "1M": 25, "3M": 70,
   };
-  return Math.min(2000, Math.ceil((barsPerDay[tf] ?? 90) * (tradingDays[period] ?? 2)));
+  return Math.min(2000, Math.max(150, Math.ceil((barsPerDay[tf] ?? 90) * (tradingDays[period] ?? 3))));
 }
 
 
