@@ -24,6 +24,19 @@ const PERIOD_MS: Record<Period, number> = {
   "3M":  90 * 24 * 60 * 60 * 1000,
 };
 
+/** How many bars to fetch for a given timeframe + period combination.
+ *  Capped at 2000 (matching the raised API limit).
+ *  barsPerDay approximates a full 6.5-hour session + some pre/post-market buffer. */
+function barLimitForPeriod(tf: string, period: Period): number {
+  const barsPerDay: Record<string, number> = {
+    "1Min": 420, "5Min": 90, "15Min": 30, "1Hour": 8,
+  };
+  const tradingDays: Record<Period, number> = {
+    "1D": 2, "5D": 6, "1M": 23, "3M": 68,
+  };
+  return Math.min(2000, Math.ceil((barsPerDay[tf] ?? 90) * (tradingDays[period] ?? 2)));
+}
+
 
 // Classify a log entry as network-related (broker/API) vs a trading decision.
 // Network: module contains broker/alpaca/tradier keywords or message has API noise.
@@ -80,8 +93,8 @@ export function LiveTrading() {
   const { status, logs } = useBotStore();
 
   const { data: bars = [], isLoading: barsLoading } = useQuery({
-    queryKey: ["bars", ticker, tf],
-    queryFn: () => api.market.bars(ticker, tf, 500),
+    queryKey: ["bars", ticker, tf, period],           // period now triggers refetch
+    queryFn: () => api.market.bars(ticker, tf, barLimitForPeriod(tf, period)),
     refetchInterval: 60_000,
   });
 

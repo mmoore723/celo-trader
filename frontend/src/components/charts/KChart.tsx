@@ -378,23 +378,41 @@ export function KChart({
   // visibleFrom scroll disabled (scrollToTimestamp put it at RIGHT edge, backwards).
   void trades; void visibleFrom;
 
-  // ── Activate drawing tool on toolbar click ─────────────────────────────────
+  // ── Activate / deactivate drawing tool ────────────────────────────────────
+  // startDraw(name) enters interactive draw mode — user clicks to place points.
+  // stopDraw() returns to normal select/pan mode.
+  // createOverlay(name) is the programmatic API and does NOT enter click-to-draw mode.
   useEffect(() => {
-    if (tool && chartRef.current) {
-      try { chartRef.current.createOverlay(tool); } catch (_) { /* not in dom yet */ }
+    if (!chartRef.current) return;
+    if (tool) {
+      try { chartRef.current.startDraw(tool); } catch (_) {}
+    } else {
+      try { chartRef.current.stopDraw(); } catch (_) {}
     }
   }, [tool]);
 
-  // ESC exits drawing mode
+  // ESC exits drawing mode; DEL removes the hovered/selected overlay
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") setTool(""); };
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setTool("");
+        try { chartRef.current?.stopDraw(); } catch (_) {}
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && !tool) {
+        // Remove overlays only when not actively drawing (to avoid cutting a draw in progress)
+        try { chartRef.current?.removeOverlay(); } catch (_) {}
+      }
+    };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col w-full">
+    // stopPropagation on wheel so the parent page-scroll container doesn't consume
+    // the event before KLineChart's built-in scroll-to-zoom handler receives it.
+    <div className="flex flex-col w-full" onWheel={(e) => e.stopPropagation()}>
       {/* ── Drawing toolbar ── */}
       <div className="flex items-center gap-1 px-2 py-1.5 flex-wrap"
            style={{ borderBottom: `1px solid ${border}`, background: dark ? "#1a1f2e" : "#f6f8fa" }}>
@@ -404,23 +422,48 @@ export function KChart({
             title={t.label}
             className={`btn btn-sm ${tool === t.key ? "btn-primary" : "btn-ghost"}`}
             style={{ fontFamily: "monospace" }}
-            onClick={() => setTool(tool === t.key ? "" : t.key)}
+            onClick={() => {
+              const next = tool === t.key ? "" : t.key;
+              setTool(next);
+              // If deselecting, explicitly stop draw mode immediately (don't wait for effect)
+              if (!next) try { chartRef.current?.stopDraw(); } catch (_) {}
+            }}
           >
             <span>{t.icon}</span>
             <span className="text-[10px] hidden sm:inline ml-1">{t.label}</span>
           </button>
         ))}
         <div style={{ width: 1, height: 18, background: border, margin: "0 4px" }} />
+        {/* Zoom in / out buttons — backup for trackpads that don't scroll-zoom */}
+        <button
+          className="btn btn-ghost btn-sm"
+          title="Zoom in (scroll up also works)"
+          onClick={() => {
+            const el = containerRef.current;
+            if (!chartRef.current || !el) return;
+            chartRef.current.zoomAtCoordinate(1.2, { x: el.clientWidth / 2, y: el.clientHeight / 2 });
+          }}
+        >＋</button>
+        <button
+          className="btn btn-ghost btn-sm"
+          title="Zoom out (scroll down also works)"
+          onClick={() => {
+            const el = containerRef.current;
+            if (!chartRef.current || !el) return;
+            chartRef.current.zoomAtCoordinate(0.8, { x: el.clientWidth / 2, y: el.clientHeight / 2 });
+          }}
+        >－</button>
+        <div style={{ width: 1, height: 18, background: border, margin: "0 4px" }} />
         <button
           className="btn btn-ghost btn-sm"
           title="Clear all drawings"
-          onClick={() => { chartRef.current?.removeOverlay(); setTool(""); }}
+          onClick={() => { chartRef.current?.removeOverlay(); setTool(""); try { chartRef.current?.stopDraw(); } catch (_) {} }}
         >
           🗑
         </button>
         {tool && (
           <span className="ml-2 text-[10px] italic" style={{ color: text }}>
-            Click chart · ESC to cancel · DEL removes selected
+            Click chart to draw · ESC to cancel
           </span>
         )}
       </div>

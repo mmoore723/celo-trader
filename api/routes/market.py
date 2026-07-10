@@ -29,7 +29,7 @@ def _market_is_open() -> bool:
 def get_bars(
     ticker: str,
     timeframe: str = Query("5Min", enum=["1Min", "5Min", "15Min", "1Hour"]),
-    limit: int = Query(200, ge=10, le=1000),
+    limit: int = Query(200, ge=10, le=2000),
 ) -> list[Bar]:
     """
     Fetch OHLCV bars with pre/after-market data.
