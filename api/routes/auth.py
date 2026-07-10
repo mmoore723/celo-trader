@@ -49,7 +49,7 @@ def _issue_session(response: Response, user: dict, stay: bool) -> dict:
     duration = SESSION_LONG if stay else SESSION_SHORT
     now      = datetime.now(timezone.utc)
     payload  = {
-        "sub":      user["id"],
+        "sub":      user["user_id"],
         "username": user["username"],
         "is_admin": user["is_admin"],
         "iat":      int(now.timestamp()),
@@ -61,7 +61,7 @@ def _issue_session(response: Response, user: dict, stay: bool) -> dict:
         secure=True, samesite="lax",
         max_age=int(duration.total_seconds()), path="/",
     )
-    return {"ok": True, "user_id": user["id"], "username": user["username"],
+    return {"ok": True, "user_id": user["user_id"], "username": user["username"],
             "is_admin": user["is_admin"]}
 
 
@@ -78,7 +78,7 @@ async def auth_login(body: LoginRequest, response: Response):
     if not user:
         logger.warning("Failed login for username=%s", body.username)
         raise HTTPException(401, "Incorrect username or password")
-    logger.info("Login: username=%s id=%s", user["username"], user["id"])
+    logger.info("Login: username=%s id=%s", user["username"], user["user_id"])
     return _issue_session(response, user, body.stay_signed_in)
 
 
@@ -116,6 +116,6 @@ async def auth_register(body: RegisterRequest, response: Response):
         user = create_user(body.username, body.password, is_admin=False)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    mark_invite_used(body.token, user["id"])
+    mark_invite_used(body.token, user["user_id"])
     logger.info("New user registered via invite: %s", user["username"])
     return _issue_session(response, user, stay=True)

@@ -140,7 +140,7 @@ def create_user(username: str, password: str, is_admin: bool = False,
     # Create the user's data directory
     (_DATA / uid).mkdir(parents=True, exist_ok=True)
     logger.info("User created: id=%s username=%s admin=%s", uid, username, is_admin)
-    return {"id": uid, "username": username, "is_admin": is_admin}
+    return {"user_id": uid, "username": username, "is_admin": is_admin}
 
 
 def authenticate(username: str, password: str) -> Optional[dict]:
@@ -157,7 +157,7 @@ def authenticate(username: str, password: str) -> Optional[dict]:
             return None
     except Exception:
         return None
-    return {"id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"])}
+    return {"user_id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"])}
 
 
 def get_user(user_id: str) -> Optional[dict]:
@@ -166,7 +166,7 @@ def get_user(user_id: str) -> Optional[dict]:
     conn.close()
     if not row:
         return None
-    return {"id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"])}
+    return {"user_id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"])}
 
 
 def list_users() -> list[dict]:
@@ -175,7 +175,7 @@ def list_users() -> list[dict]:
         "SELECT id, username, is_admin, created_at FROM users ORDER BY created_at"
     ).fetchall()
     conn.close()
-    return [{"id": r["id"], "username": r["username"],
+    return [{"user_id": r["id"], "username": r["username"],
              "is_admin": bool(r["is_admin"]), "created_at": r["created_at"]} for r in rows]
 
 
