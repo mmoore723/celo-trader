@@ -79,7 +79,8 @@ function AppShell() {
         src="/mascot.png"
         aria-hidden="true"
         style={{
-          position: "fixed", bottom: -40, right: -40,
+          position: "fixed", top: "50%", left: "50%",
+          transform: "translate(-50%, -50%)",
           width: 400, height: 400, objectFit: "contain",
           opacity: 0.035, filter: "grayscale(100%)",
           pointerEvents: "none", userSelect: "none", zIndex: 0,
