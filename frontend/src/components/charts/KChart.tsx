@@ -285,10 +285,15 @@ export function KChart({
           open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
         }))
       );
+      // Auto-fit bar spacing so the entire loaded period fills the viewport.
+      // This is what makes 1D vs 5D vs 1M actually look different — without it
+      // all periods show the same number of bars at default spacing and you can
+      // only tell them apart by scrolling left.
+      // Formula: (chart width - y-axis) / bar count, clamped to [2, 10] px.
+      const containerW = containerRef.current?.clientWidth ?? 900;
+      const barSpace   = Math.max(2, Math.min(10, (containerW - 70) / safe.length));
+      try { chart.setBarSpace(barSpace); } catch (_) {}
       // Always scroll to the most recent data after loading.
-      // NOTE: scrollToTimestamp() in KLineChart v9 puts the timestamp at the
-      // RIGHT edge (not left), so calling it with visibleFrom scrolled BACKWARD
-      // to show old data instead of recent data. Use scrollToRealTime() always.
       chart.scrollToRealTime();
     }
 
@@ -381,6 +386,29 @@ export function KChart({
   // Trade markers temporarily disabled (custom overlay was corrupting KLineChart).
   // visibleFrom scroll disabled (scrollToTimestamp put it at RIGHT edge, backwards).
   void trades; void visibleFrom;
+
+  // ── Wheel zoom — native listener so e.preventDefault() stops page scroll ──
+  // KLineChart v9 setZoomEnabled enables pinch/trackpad zoom but does NOT
+  // reliably hook wheel events in all browsers. A native listener that calls
+  // zoomAtCoordinate() at the cursor position is the reliable cross-browser fix.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault(); // stop the page behind the chart from scrolling
+      if (!chartRef.current) return;
+      const rect  = el.getBoundingClientRect();
+      const scale = e.deltaY < 0 ? 1.1 : 0.9; // up = zoom in, down = zoom out
+      try {
+        chartRef.current.zoomAtCoordinate(scale, {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        });
+      } catch (_) {}
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []); // ref stays current; no deps needed
 
   // ── Activate drawing tool ─────────────────────────────────────────────────
   // In KLineChart v9.8.12, createOverlay(name) enters interactive draw mode
