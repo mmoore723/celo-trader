@@ -79,9 +79,10 @@ function AppShell() {
         src="/mascot.png"
         aria-hidden="true"
         style={{
-          position: "fixed", bottom: -60, right: -60,
-          width: 480, height: 480, objectFit: "contain",
-          opacity: 0.06, pointerEvents: "none", userSelect: "none", zIndex: 0,
+          position: "fixed", bottom: -40, right: -40,
+          width: 400, height: 400, objectFit: "contain",
+          opacity: 0.035, filter: "grayscale(100%)",
+          pointerEvents: "none", userSelect: "none", zIndex: 0,
         }}
       />
       <Topbar />
