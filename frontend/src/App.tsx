@@ -81,10 +81,10 @@ function AppShell() {
         style={{
           position: "fixed", top: "50%", left: "50%",
           transform: "translate(-50%, -50%)",
-          width: 800, height: 800, objectFit: "contain",
-          opacity: 0.09, filter: "grayscale(100%)",
-          WebkitMaskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, black 30%, transparent 72%)",
-          maskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, black 30%, transparent 72%)",
+          width: 1100, height: 1100, objectFit: "contain",
+          opacity: 0.18, filter: "grayscale(100%)",
+          WebkitMaskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, black 35%, transparent 70%)",
+          maskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, black 35%, transparent 70%)",
           pointerEvents: "none", userSelect: "none", zIndex: 0,
         }}
       />
