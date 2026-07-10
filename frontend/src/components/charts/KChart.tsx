@@ -255,19 +255,20 @@ export function KChart({
 
     // Load bars (convert string timestamp → ms epoch)
     if (bars.length > 0) {
-      // Filter outlier candles that would crush the y-axis.
-      // Compute median close, then drop any bar whose high or low deviates > 12%.
-      // 699 vs 751 is ~7% — catches bad data without touching normal intraday swings.
-      const closes = bars.map((b) => b.close).sort((a, z) => a - z);
-      const medClose = closes[Math.floor(closes.length / 2)];
-      const SPIKE_THRESHOLD = 0.12;
-      const filtered = bars.filter(
-        (b) =>
-          Math.abs(b.high - medClose) / medClose < SPIKE_THRESHOLD &&
-          Math.abs(b.low  - medClose) / medClose < SPIKE_THRESHOLD
-      );
-      // Fall back to unfiltered if everything was removed (shouldn't happen)
-      const safe = filtered.length > 0 ? filtered : bars;
+      // Clip bad-tick wicks: if a wick extends more than 4% beyond the bar's
+      // own body (open/close), it's almost certainly a data error (e.g. 699.05
+      // on SPY while price is at 751 = 6.9% wick below body → clipped).
+      // Clipping is safer than removing bars because it leaves no gaps.
+      const WICK_CLIP = 0.04;
+      const safe = bars.map((b) => {
+        const bodyHigh = Math.max(b.open, b.close);
+        const bodyLow  = Math.min(b.open, b.close);
+        return {
+          ...b,
+          high: Math.min(b.high, bodyHigh * (1 + WICK_CLIP)),
+          low:  Math.max(b.low,  bodyLow  * (1 - WICK_CLIP)),
+        };
+      });
       chart.applyNewData(
         safe.map((b) => ({
           timestamp: new Date(b.time).getTime(),
