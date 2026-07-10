@@ -23,17 +23,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from passlib.hash import bcrypt as _bcrypt
+import bcrypt as _bcrypt_lib
 
 logger = logging.getLogger("celo_trader.auth.users")
 
-# bcrypt silently truncates at 72 bytes in some backends and raises in others.
-# Always truncate explicitly so behaviour is consistent and predictable.
+# passlib 1.7.4 is incompatible with bcrypt >= 4.0 (passlib's internal
+# detect_wrap_bug test uses a >72-byte string which bcrypt 4+ rejects).
+# Use the bcrypt package directly instead.
+# bcrypt hard-limits at 72 bytes — always truncate before hashing/verifying.
 def _hash_pw(plain: str) -> str:
-    return _bcrypt.hash(plain[:72])
+    return _bcrypt_lib.hashpw(plain[:72].encode(), _bcrypt_lib.gensalt()).decode()
 
 def _verify_pw(plain: str, hashed: str) -> bool:
-    return _bcrypt.verify(plain[:72], hashed)
+    try:
+        return _bcrypt_lib.checkpw(plain[:72].encode(), hashed.encode())
+    except Exception:
+        return False
 
 _ROOT    = Path(__file__).resolve().parents[1]
 _DB_PATH = _ROOT / "user_data" / "users.db"
