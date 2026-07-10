@@ -133,6 +133,9 @@ def _conn_for_mode(mode: str):
     """
     _db_dir  = get_db_path().parent
     _path    = _db_dir / f"trades_{mode}.db"
+    # Auto-init schema if this DB file is new or was never migrated.
+    # _init_db_at uses CREATE TABLE IF NOT EXISTS so it's safe to call every time.
+    _init_db_at(_path)
     conn = sqlite3.connect(str(_path), detect_types=sqlite3.PARSE_DECLTYPES)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")

@@ -255,8 +255,21 @@ export function KChart({
 
     // Load bars (convert string timestamp → ms epoch)
     if (bars.length > 0) {
+      // Filter outlier candles that would crush the y-axis.
+      // Compute median close, then drop any bar whose high or low deviates > 12%.
+      // 699 vs 751 is ~7% — catches bad data without touching normal intraday swings.
+      const closes = bars.map((b) => b.close).sort((a, z) => a - z);
+      const medClose = closes[Math.floor(closes.length / 2)];
+      const SPIKE_THRESHOLD = 0.12;
+      const filtered = bars.filter(
+        (b) =>
+          Math.abs(b.high - medClose) / medClose < SPIKE_THRESHOLD &&
+          Math.abs(b.low  - medClose) / medClose < SPIKE_THRESHOLD
+      );
+      // Fall back to unfiltered if everything was removed (shouldn't happen)
+      const safe = filtered.length > 0 ? filtered : bars;
       chart.applyNewData(
-        bars.map((b) => ({
+        safe.map((b) => ({
           timestamp: new Date(b.time).getTime(),
           open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
         }))
