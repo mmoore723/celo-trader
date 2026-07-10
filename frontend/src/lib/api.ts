@@ -161,6 +161,7 @@ export interface ScannerResult {
 }
 
 export interface AppSettings {
+  paper_trading?: boolean;   // true = paper (default), false = live; only toggled via Settings
   risk_pct: number;
   growth_mode: boolean;
   flip_trading_enabled: boolean;
@@ -217,7 +218,7 @@ export interface BacktestResult {
 export const api = {
   bot: {
     status:    () => request<BotStatus>("/api/bot/status"),
-    start:     (mode = "paper") => request<{ok:boolean;message:string}>(`/api/bot/start?mode=${mode}`, { method: "POST" }),
+    start:     () => request<{ok:boolean;message:string}>("/api/bot/start", { method: "POST" }),
     stop:      () => request<{ok:boolean;message:string}>("/api/bot/stop",  { method: "POST" }),
     panic:     () => request<{ok:boolean;message:string}>("/api/bot/panic", { method: "POST" }),
     reset:     () => request<{ok:boolean;message:string}>("/api/bot/reset", { method: "POST" }),

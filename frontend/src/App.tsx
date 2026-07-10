@@ -25,6 +25,8 @@ import { Admin }           from "./pages/Admin";
 import { Register }        from "./pages/Register";
 import { Login }           from "./pages/Login";
 import { Maintenance }     from "./pages/Maintenance";
+import { ApiSetupModal }   from "./components/ApiSetupModal";
+import { useState, useEffect } from "react";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -46,8 +48,21 @@ function AppShell() {
   // Connect WebSocket on mount; feeds Zustand bot store
   useWebSocket();
 
+  // Show API setup modal for new users who have no credentials yet
+  const [showSetup, setShowSetup] = useState(false);
+  useEffect(() => {
+    fetch("/api/settings/credentials", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => {
+        const empty = !d.alpaca_key && !d.tradier_token;
+        if (empty) setShowSetup(true);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="app-shell">
+      {showSetup && <ApiSetupModal onClose={() => setShowSetup(false)} />}
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>

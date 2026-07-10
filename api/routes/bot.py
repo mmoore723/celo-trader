@@ -80,20 +80,23 @@ def get_status(request: Request) -> BotStatus:
 
 
 @router.post("/start", response_model=BotActionResponse)
-def start_bot(request: Request, mode: str = "paper") -> BotActionResponse:
+def start_bot(request: Request) -> BotActionResponse:
     from trading.loop import run_trading_loop
     from trading.state import _get_lock, _get_stop_event
-    from config import save_settings
+    from config import get_settings
 
-    user_id = _get_uid(request)
-    lock    = _get_lock(user_id)
+    user_id  = _get_uid(request)
+    lock     = _get_lock(user_id)
+    # Mode is controlled exclusively via Settings (paper_trading flag).
+    # Never overwrite it here — read whatever the user last saved.
+    settings = get_settings()
+    mode     = "paper" if settings.get("paper_trading", True) else "live"
 
     lock_held = not lock.acquire(blocking=False)
     if lock_held:
         return BotActionResponse(ok=False, message="Bot is already running")
     lock.release()
 
-    save_settings({"paper_trading": mode != "live"})
     _get_stop_event(user_id).clear()
 
     # copy_context() captures ContextVars (incl. user_id) so all per-user

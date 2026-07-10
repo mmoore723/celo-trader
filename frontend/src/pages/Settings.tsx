@@ -21,6 +21,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 }
 
 const DEFAULT: AppSettings = {
+  paper_trading: true,
   risk_pct: 1.0,
   growth_mode: false,
   flip_trading_enabled: true,
@@ -203,6 +204,31 @@ export function Settings() {
 
   return (
     <div className="p-4 max-w-2xl flex flex-col gap-4">
+      {/* Trading Mode */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Trading mode</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          Controls whether the bot places real orders or simulated paper trades. Takes effect on next bot start.
+        </p>
+        <div className="flex gap-2">
+          {(["paper", "live"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => set("paper_trading" as any, m === "paper")}
+              className={`btn flex-1 justify-center ${(form as any).paper_trading === (m === "paper") ? "btn-primary" : "btn-ghost"}`}
+              style={{ textTransform: "capitalize" }}
+            >
+              {m === "paper" ? "📄 Paper" : "⚡ Live"}
+            </button>
+          ))}
+        </div>
+        {(form as any).paper_trading === false && (
+          <p className="text-xs mt-2" style={{ color: "#f87171" }}>
+            ⚠️ Live mode places real orders with real money. Ensure your Alpaca live API keys are configured.
+          </p>
+        )}
+      </div>
+
       {/* Risk */}
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Risk</h3>
