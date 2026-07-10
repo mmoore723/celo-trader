@@ -74,6 +74,16 @@ function AppShell() {
   return (
     <div className="app-shell">
       {showSetup && <ApiSetupModal onClose={closeSetup} />}
+      {/* Mascot watermark — fixed behind all page content */}
+      <img
+        src="/mascot.png"
+        aria-hidden="true"
+        style={{
+          position: "fixed", bottom: -60, right: -60,
+          width: 480, height: 480, objectFit: "contain",
+          opacity: 0.06, pointerEvents: "none", userSelect: "none", zIndex: 0,
+        }}
+      />
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>

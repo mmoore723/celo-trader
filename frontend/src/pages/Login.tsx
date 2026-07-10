@@ -43,20 +43,26 @@ export function Login() {
 
   return (
     <div style={styles.backdrop}>
+      {/* Mascot watermark */}
+      <img
+        src="/mascot.png"
+        aria-hidden="true"
+        style={{
+          position: "fixed", bottom: -60, right: -60,
+          width: 480, height: 480, objectFit: "contain",
+          opacity: 0.06, pointerEvents: "none", userSelect: "none", zIndex: 0,
+        }}
+      />
       <div style={styles.card}>
 
-        {/* Mascot */}
+        {/* Logo */}
         <div style={styles.logoWrap}>
           <img
-            src="/mascot.png"
+            src="/logo.png"
             alt="Celo Trader"
             style={styles.logo}
             onError={(e) => {
-              // fallback chain: mascot → logo → favicon
-              (e.target as HTMLImageElement).src = "/logo.png";
-              (e.target as HTMLImageElement).onerror = () => {
-                (e.target as HTMLImageElement).src = "/favicon.svg";
-              };
+              (e.target as HTMLImageElement).src = "/favicon.svg";
             }}
           />
         </div>
