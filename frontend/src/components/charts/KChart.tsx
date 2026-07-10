@@ -153,9 +153,13 @@ export function KChart({
   visibleFrom,
   tf = "5Min",
 }: KChartProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef     = useRef<any>(null);
-  const ohlcRef      = useRef<HTMLDivElement>(null);
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const chartRef      = useRef<any>(null);
+  const ohlcRef       = useRef<HTMLDivElement>(null);
+  // Track the last TF that bar-spacing was applied for.
+  // setBarSpace should only fire on TF change, NOT on every 60-second data refresh —
+  // otherwise the user's zoom is reset every minute and the chart feels frozen/broken.
+  const lastSpacingTf = useRef<string>("");
   const [tool, setTool] = useState("");
 
   const { theme } = useThemeStore();
@@ -306,18 +310,25 @@ export function KChart({
           open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
         }))
       );
-      // Set bar spacing based on timeframe so each TF looks visually distinct.
-      // naturalCount = how many bars should fill the visible area by default.
-      // e.g. 1m -> tight, 1h -> wide candles.
-      const naturalCount: Record<string, number> = {
-        "1Min": 240, "5Min": 100, "15Min": 50, "1Hour": 30,
-      };
-      const barsInView = Math.min(safe.length, naturalCount[tf] ?? 100);
-      const containerW = containerRef.current?.clientWidth ?? 900;
-      const barSpace   = Math.max(2, Math.min(30, (containerW - 70) / barsInView));
-      try { chart.setBarSpace(barSpace); } catch (_) {}
-      // Always scroll to the most recent data after loading.
-      chart.scrollToRealTime();
+      // Only reset bar spacing when the timeframe actually changes.
+      // On 60-second live refetches (same TF), skip setBarSpace so the user's
+      // zoom level is preserved. Calling setBarSpace every minute makes the chart
+      // feel frozen because it resets zoom after every data refresh.
+      if (tf !== lastSpacingTf.current) {
+        const naturalCount: Record<string, number> = {
+          "1Min": 240, "5Min": 100, "15Min": 50, "1Hour": 30,
+        };
+        const barsInView = Math.min(safe.length, naturalCount[tf] ?? 100);
+        const containerW = containerRef.current?.clientWidth ?? 900;
+        const barSpace   = Math.max(2, Math.min(30, (containerW - 70) / barsInView));
+        try { chart.setBarSpace(barSpace); } catch (_) {}
+        lastSpacingTf.current = tf;
+      }
+      // Scroll to latest bar. Use a small delay so applyNewData finishes
+      // rendering before we scroll — avoids landing at bar-0 on fast refreshes.
+      setTimeout(() => {
+        try { chartRef.current?.scrollToRealTime(); } catch (_) {}
+      }, 50);
     }
 
     // VWAP indicator — toggle without recreating the whole chart

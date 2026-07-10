@@ -95,10 +95,14 @@ export function LiveTrading() {
 
   const { status, logs } = useBotStore();
 
+  // Refetch faster for short timeframes so the current candle updates visually.
+  // 1m → 15s, 5m → 30s, 15m/1h → 60s.
+  const barsRefetchMs = tf === "1Min" ? 15_000 : tf === "5Min" ? 30_000 : 60_000;
+
   const { data: bars = [], isLoading: barsLoading } = useQuery({
     queryKey: ["bars", ticker, tf, period],           // period now triggers refetch
     queryFn: () => api.market.bars(ticker, tf, barLimitForPeriod(tf, period)),
-    refetchInterval: 60_000,
+    refetchInterval: barsRefetchMs,
   });
 
   const { data: openTrades = [] } = useQuery({

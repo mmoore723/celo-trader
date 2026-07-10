@@ -110,9 +110,10 @@ def get_bars(
                 import datetime as _dt2
                 _open  = _dt2.time(9, 30)
                 _close = _dt2.time(16, 0)
-                raw_yf = raw_yf[
-                    raw_yf["time"].dt.time.between(_open, _close)
-                ].reset_index(drop=True)
+                # Use explicit >= / < instead of .between() so that 4:00 PM bars
+                # (first extended-hours bar) are excluded (.between is inclusive on both ends)
+                _t = raw_yf["time"].dt.time
+                raw_yf = raw_yf[(_t >= _open) & (_t < _close)].reset_index(drop=True)
                 if raw_yf.empty:
                     df = pd.DataFrame()
                 else:
