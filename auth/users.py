@@ -27,6 +27,14 @@ from passlib.hash import bcrypt as _bcrypt
 
 logger = logging.getLogger("celo_trader.auth.users")
 
+# bcrypt silently truncates at 72 bytes in some backends and raises in others.
+# Always truncate explicitly so behaviour is consistent and predictable.
+def _hash_pw(plain: str) -> str:
+    return _bcrypt.hash(plain[:72])
+
+def _verify_pw(plain: str, hashed: str) -> bool:
+    return _bcrypt.verify(plain[:72], hashed)
+
 _ROOT    = Path(__file__).resolve().parents[1]
 _DB_PATH = _ROOT / "user_data" / "users.db"
 _DATA    = _ROOT / "user_data"
@@ -75,7 +83,7 @@ def _migrate_admin_if_needed(conn: sqlite3.Connection) -> None:
     pw_hash = os.getenv("DASHBOARD_PASSWORD_HASH", "")
     pw_plain = os.getenv("DASHBOARD_PASSWORD", "celo2024")
     if not pw_hash:
-        pw_hash = _bcrypt.hash(pw_plain)
+        pw_hash = _hash_pw(pw_plain)
         logger.info("Migration: hashed DASHBOARD_PASSWORD for admin user")
 
     admin_id = "admin"
@@ -110,7 +118,7 @@ def create_user(username: str, password: str, is_admin: bool = False,
                 user_id: Optional[str] = None) -> dict:
     """Create a new user. Returns the user dict. Raises ValueError on duplicate."""
     uid     = user_id or str(uuid.uuid4())[:8]
-    pw_hash = _bcrypt.hash(password)
+    pw_hash = _hash_pw(password)
     conn    = get_db()
     try:
         conn.execute(
@@ -140,7 +148,7 @@ def authenticate(username: str, password: str) -> Optional[dict]:
     if not row:
         return None
     try:
-        if not _bcrypt.verify(password, row["pw_hash"]):
+        if not _verify_pw(password, row["pw_hash"]):
             return None
     except Exception:
         return None
