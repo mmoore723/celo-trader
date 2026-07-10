@@ -48,9 +48,14 @@ function AppShell() {
   // Connect WebSocket on mount; feeds Zustand bot store
   useWebSocket();
 
-  // Show API setup modal for new users who have no credentials yet
+  // Show API setup modal for new users who have no credentials yet.
+  // Use localStorage so it only ever appears once per user, even if
+  // credentials aren't migrated yet from the old config format.
+  const { user } = useAuth();
   const [showSetup, setShowSetup] = useState(false);
   useEffect(() => {
+    const dismissedKey = `celo_setup_done_${user?.user_id ?? "admin"}`;
+    if (localStorage.getItem(dismissedKey)) return; // already seen
     fetch("/api/settings/credentials", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => {
@@ -58,11 +63,17 @@ function AppShell() {
         if (empty) setShowSetup(true);
       })
       .catch(() => {});
-  }, []);
+  }, [user?.user_id]);
+
+  function closeSetup() {
+    const dismissedKey = `celo_setup_done_${user?.user_id ?? "admin"}`;
+    localStorage.setItem(dismissedKey, "1");
+    setShowSetup(false);
+  }
 
   return (
     <div className="app-shell">
-      {showSetup && <ApiSetupModal onClose={() => setShowSetup(false)} />}
+      {showSetup && <ApiSetupModal onClose={closeSetup} />}
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>
