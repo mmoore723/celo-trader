@@ -255,20 +255,26 @@ export function KChart({
 
     // Load bars (convert string timestamp → ms epoch)
     if (bars.length > 0) {
-      // Clip bad-tick wicks: if a wick extends more than 4% beyond the bar's
-      // own body (open/close), it's almost certainly a data error (e.g. 699.05
-      // on SPY while price is at 751 = 6.9% wick below body → clipped).
-      // Clipping is safer than removing bars because it leaves no gaps.
-      const WICK_CLIP = 0.04;
-      const safe = bars.map((b) => {
-        const bodyHigh = Math.max(b.open, b.close);
-        const bodyLow  = Math.min(b.open, b.close);
-        return {
-          ...b,
-          high: Math.min(b.high, bodyHigh * (1 + WICK_CLIP)),
-          low:  Math.max(b.low,  bodyLow  * (1 - WICK_CLIP)),
-        };
-      });
+      // Statistical outlier removal using Median Absolute Deviation (MAD).
+      // The 699.05 spike has open≈close≈699, so wick-clipping (prior approach)
+      // doesn't help — the whole bar body is the bad data point. MAD-based
+      // filtering removes entire bars that are statistical impossibilities.
+      //
+      // Z = |value - median| / MAD  — anything ≥ 8 is a data error.
+      // Example: med=751, MAD≈1 → 699.05 gives Z≈52 → removed.
+      // Legitimate crash bars on monthly charts: med≈500, MAD≈20 → Z≈1.5 → kept.
+      const sortedCloses = bars.map((b) => b.close).sort((a, z) => a - z);
+      const med    = sortedCloses[Math.floor(sortedCloses.length / 2)];
+      const madArr = sortedCloses.map((c) => Math.abs(c - med)).sort((a, z) => a - z);
+      const mad    = madArr[Math.floor(madArr.length / 2)] || med * 0.001;
+      const Z_CUT  = 8;
+      const filtered = bars.filter(
+        (b) =>
+          Math.abs(b.low  - med) / mad < Z_CUT &&
+          Math.abs(b.high - med) / mad < Z_CUT
+      );
+      // Safety: if the filter removed more than 10% of bars something is wrong — use raw
+      const safe = filtered.length >= bars.length * 0.9 ? filtered : bars;
       chart.applyNewData(
         safe.map((b) => ({
           timestamp: new Date(b.time).getTime(),
