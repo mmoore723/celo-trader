@@ -8,7 +8,7 @@
  *  - Delete a user (cannot delete self)
  */
 import { useState, useEffect } from "react";
-import { UserPlus, Link2, Trash2, RefreshCw } from "lucide-react";
+import { UserPlus, Link2, Trash2, RefreshCw, KeyRound } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
 interface User {
@@ -28,6 +28,10 @@ export function Admin() {
   const [newUser, setNewUser]   = useState({ username: "", password: "", is_admin: false });
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Reset password inline state
+  const [resetState, setResetState] = useState<{ uid: string; uname: string; pw: string } | null>(null);
+  const [resetMsg,   setResetMsg]   = useState<{ ok: boolean; msg: string } | null>(null);
 
   // Invite
   const [inviteUrl, setInviteUrl]   = useState<string | null>(null);
@@ -88,6 +92,26 @@ export function Admin() {
       loadUsers();
     } catch (e: any) {
       alert(e.message || "Delete failed");
+    }
+  }
+
+  async function resetPassword() {
+    if (!resetState || resetState.pw.length < 6) {
+      setResetMsg({ ok: false, msg: "Min 6 characters" });
+      return;
+    }
+    try {
+      const r = await fetch(`/api/admin/users/${resetState.uid}/reset-password`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: resetState.pw }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Reset failed");
+      setResetMsg({ ok: true, msg: "Password updated!" });
+      setTimeout(() => { setResetState(null); setResetMsg(null); }, 1500);
+    } catch (e: any) {
+      setResetMsg({ ok: false, msg: e.message || "Reset failed" });
     }
   }
 
@@ -154,33 +178,86 @@ export function Admin() {
             </thead>
             <tbody>
               {users.map(u => (
-                <tr key={u.user_id}
-                  style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                  <td style={{ padding: "8px 8px", fontSize: 13, color: "var(--ink)" }}>
-                    {u.username}
-                    {u.user_id === user?.user_id && (
-                      <span style={{ fontSize: 10, color: "var(--accent)", marginLeft: 6 }}>you</span>
-                    )}
-                  </td>
-                  <td style={{ padding: "8px 8px", fontSize: 12,
-                    color: u.is_admin ? "var(--accent)" : "var(--ink-muted)" }}>
-                    {u.is_admin ? "Admin" : "Member"}
-                  </td>
-                  <td style={{ padding: "8px 8px", fontSize: 11, color: "var(--ink-muted)" }}>
-                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
-                  </td>
-                  <td style={{ padding: "8px 8px" }}>
-                    {u.user_id !== user?.user_id && (
-                      <button
-                        className="btn btn-ghost"
-                        style={{ padding: "2px 8px", fontSize: 12 }}
-                        onClick={() => deleteUser(u.user_id, u.username)}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                <>
+                  <tr key={u.user_id}
+                    style={{ borderBottom: resetState?.uid === u.user_id ? "none" : "1px solid rgba(255,255,255,0.04)" }}>
+                    <td style={{ padding: "8px 8px", fontSize: 13, color: "var(--ink)" }}>
+                      {u.username}
+                      {u.user_id === user?.user_id && (
+                        <span style={{ fontSize: 10, color: "var(--accent)", marginLeft: 6 }}>you</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "8px 8px", fontSize: 12,
+                      color: u.is_admin ? "var(--accent)" : "var(--ink-muted)" }}>
+                      {u.is_admin ? "Admin" : "Member"}
+                    </td>
+                    <td style={{ padding: "8px 8px", fontSize: 11, color: "var(--ink-muted)" }}>
+                      {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
+                    </td>
+                    <td style={{ padding: "8px 8px" }}>
+                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        {/* Reset password — available for all users including self */}
+                        <button
+                          className="btn btn-ghost"
+                          style={{ padding: "2px 8px", fontSize: 12 }}
+                          title="Reset password"
+                          onClick={() => {
+                            setResetMsg(null);
+                            setResetState(resetState?.uid === u.user_id
+                              ? null
+                              : { uid: u.user_id, uname: u.username, pw: "" });
+                          }}
+                        >
+                          <KeyRound size={12} />
+                        </button>
+                        {/* Delete — not allowed for self */}
+                        {u.user_id !== user?.user_id && (
+                          <button
+                            className="btn btn-ghost"
+                            style={{ padding: "2px 8px", fontSize: 12 }}
+                            title="Delete user"
+                            onClick={() => deleteUser(u.user_id, u.username)}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {/* Inline reset password row */}
+                  {resetState?.uid === u.user_id && (
+                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(0,200,83,0.03)" }}>
+                      <td colSpan={4} style={{ padding: "6px 8px 10px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
+                            New password for <strong style={{ color: "var(--ink)" }}>{u.username}</strong>:
+                          </span>
+                          <input
+                            type="password"
+                            className="input"
+                            style={{ fontSize: 12, padding: "4px 10px", width: 180 }}
+                            placeholder="Min 6 characters"
+                            value={resetState.pw}
+                            autoFocus
+                            onChange={e => setResetState(s => s ? { ...s, pw: e.target.value } : null)}
+                            onKeyDown={e => e.key === "Enter" && resetPassword()}
+                          />
+                          <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }} onClick={resetPassword}>
+                            Set
+                          </button>
+                          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => { setResetState(null); setResetMsg(null); }}>
+                            Cancel
+                          </button>
+                          {resetMsg && (
+                            <span style={{ fontSize: 12, color: resetMsg.ok ? "var(--accent)" : "#f87171" }}>
+                              {resetMsg.msg}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>

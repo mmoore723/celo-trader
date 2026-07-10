@@ -33,6 +33,10 @@ class InviteRequest(BaseModel):
     hours: int = 48   # link validity window
 
 
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/users")
@@ -68,6 +72,23 @@ async def delete_user(user_id: str, request: Request):
         raise HTTPException(400, str(e))
     if not ok:
         raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_user_password(user_id: str, request: Request, body: ResetPasswordRequest):
+    """Admin resets any user's password."""
+    _require_admin(request)
+    if len(body.new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    from auth.users import reset_password as _reset
+    try:
+        ok = _reset(user_id, body.new_password)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not ok:
+        raise HTTPException(404, "User not found")
+    logger.info("Admin %s reset password for user_id=%s", request.state.username, user_id)
     return {"ok": True}
 
 

@@ -45,14 +45,18 @@ export function Login() {
     <div style={styles.backdrop}>
       <div style={styles.card}>
 
-        {/* Logo */}
+        {/* Mascot */}
         <div style={styles.logoWrap}>
           <img
-            src="/logo.png"
+            src="/mascot.png"
             alt="Celo Trader"
             style={styles.logo}
             onError={(e) => {
-              (e.target as HTMLImageElement).src = "/favicon.svg";
+              // fallback chain: mascot → logo → favicon
+              (e.target as HTMLImageElement).src = "/logo.png";
+              (e.target as HTMLImageElement).onerror = () => {
+                (e.target as HTMLImageElement).src = "/favicon.svg";
+              };
             }}
           />
         </div>

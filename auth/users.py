@@ -179,6 +179,19 @@ def list_users() -> list[dict]:
              "is_admin": bool(r["is_admin"]), "created_at": r["created_at"]} for r in rows]
 
 
+def reset_password(user_id: str, new_password: str) -> bool:
+    """Set a new password for any user. Returns False if user not found."""
+    if len(new_password) < 6:
+        raise ValueError("Password must be at least 6 characters")
+    pw_hash = _hash_pw(new_password)
+    conn = get_db()
+    cur  = conn.execute("UPDATE users SET pw_hash = ? WHERE id = ?", (pw_hash, user_id))
+    conn.commit()
+    conn.close()
+    logger.info("Password reset for user_id=%s", user_id)
+    return cur.rowcount > 0
+
+
 def delete_user(user_id: str) -> bool:
     if user_id == "admin":
         raise ValueError("Cannot delete the primary admin account")
