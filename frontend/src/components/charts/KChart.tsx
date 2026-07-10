@@ -49,6 +49,8 @@ export interface KChartProps {
   ticker?: string;
   /** Epoch ms — chart scrolls so this timestamp appears at the left edge */
   visibleFrom?: number;
+  /** Active timeframe — used to set natural bar spacing ("1Min"|"5Min"|"15Min"|"1Hour") */
+  tf?: string;
 }
 
 // ── Build KLineChart style object ─────────────────────────────────────────────
@@ -149,6 +151,7 @@ export function KChart({
   height = 420,
   ticker,
   visibleFrom,
+  tf = "5Min",
 }: KChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<any>(null);
@@ -239,9 +242,27 @@ export function KChart({
     const ro = new ResizeObserver(() => { chartRef.current?.resize(); });
     ro.observe(el);
 
+    // Wheel zoom — native listener so preventDefault() stops page scroll.
+    // setZoomEnabled(true) handles pinch/trackpad but does NOT reliably hook
+    // mouse-wheel events in all browsers; a native handler is the reliable fix.
+    // Placed here (inside chart init effect) so it's tied to the chart lifetime.
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (!chartRef.current) return;
+      const rect  = el.getBoundingClientRect();
+      const scale = e.deltaY < 0 ? 1.1 : 0.9;
+      try {
+        chartRef.current.zoomAtCoordinate(scale, {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        });
+      } catch (_) {}
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+
     return () => {
+      el.removeEventListener("wheel", onWheel);
       ro.disconnect();
-      // chartRef.current may be null if a previous cleanup already ran
       if (chartRef.current && containerRef.current) {
         dispose(containerRef.current);
       }
@@ -285,13 +306,15 @@ export function KChart({
           open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
         }))
       );
-      // Auto-fit bar spacing so the entire loaded period fills the viewport.
-      // This is what makes 1D vs 5D vs 1M actually look different — without it
-      // all periods show the same number of bars at default spacing and you can
-      // only tell them apart by scrolling left.
-      // Formula: (chart width - y-axis) / bar count, clamped to [2, 10] px.
+      // Set bar spacing based on timeframe so each TF looks visually distinct.
+      // naturalCount = how many bars should fill the visible area by default.
+      // e.g. 1m -> tight, 1h -> wide candles.
+      const naturalCount: Record<string, number> = {
+        "1Min": 240, "5Min": 100, "15Min": 50, "1Hour": 30,
+      };
+      const barsInView = Math.min(safe.length, naturalCount[tf] ?? 100);
       const containerW = containerRef.current?.clientWidth ?? 900;
-      const barSpace   = Math.max(2, Math.min(10, (containerW - 70) / safe.length));
+      const barSpace   = Math.max(2, Math.min(30, (containerW - 70) / barsInView));
       try { chart.setBarSpace(barSpace); } catch (_) {}
       // Always scroll to the most recent data after loading.
       chart.scrollToRealTime();
@@ -380,35 +403,15 @@ export function KChart({
       });
     }
 
-  }, [bars, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels]);
+  }, [bars, tf, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels]);
 
   // trades/visibleFrom props kept on interface so parent doesn't need to change.
   // Trade markers temporarily disabled (custom overlay was corrupting KLineChart).
   // visibleFrom scroll disabled (scrollToTimestamp put it at RIGHT edge, backwards).
   void trades; void visibleFrom;
 
-  // ── Wheel zoom — native listener so e.preventDefault() stops page scroll ──
-  // KLineChart v9 setZoomEnabled enables pinch/trackpad zoom but does NOT
-  // reliably hook wheel events in all browsers. A native listener that calls
-  // zoomAtCoordinate() at the cursor position is the reliable cross-browser fix.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault(); // stop the page behind the chart from scrolling
-      if (!chartRef.current) return;
-      const rect  = el.getBoundingClientRect();
-      const scale = e.deltaY < 0 ? 1.1 : 0.9; // up = zoom in, down = zoom out
-      try {
-        chartRef.current.zoomAtCoordinate(scale, {
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        });
-      } catch (_) {}
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []); // ref stays current; no deps needed
+  // Wheel zoom is registered inside the chart-init useEffect above,
+  // so it's automatically cleaned up when the chart is destroyed.
 
   // ── Activate drawing tool ─────────────────────────────────────────────────
   // In KLineChart v9.8.12, createOverlay(name) enters interactive draw mode

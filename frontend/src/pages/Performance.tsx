@@ -270,27 +270,9 @@ export function Performance() {
     retry: false,
   });
 
-  if (isLoading && !perf) return <PageLoader label="Performance" />;
-
-  const daily      = perf?.daily_summaries ?? [];
-  const gridColor  = dark ? "#21262d" : "#f0f2f7";
-  const posColor   = dark ? "#3fb950" : "#16a34a";
-  const negColor   = dark ? "#f85149" : "#dc2626";
-  const tickColor  = dark ? "#8b949e" : "#5a6476";
-  const accentColor = dark ? "#58a6ff" : "#2563eb";
-
-  // Cumulative equity curve
-  let cum = 0;
-  const equity = daily.map((d) => {
-    cum += d.pnl;
-    return { date: d.date.slice(5), pnl: d.pnl, equity: +cum.toFixed(2) };
-  });
-
-  // ── Analytics-derived data ──────────────────────────────────────────────────
-  const byStrategy = analytics?.by_strategy ?? [];
-  const byHour     = analytics?.by_hour ?? [];
-  const byTicker   = analytics?.by_ticker ?? [];
-  // Consolidate raw exit reasons into normalized labels (merges e.g. atr_trail_stop + trail_stop)
+  // ── All hooks MUST be declared before any conditional return ─────────────────
+  // useMemo is a hook — placing it after "if (isLoading) return" violates the
+  // Rules of Hooks and causes React to crash with a blank page on second render.
   const byExit = useMemo(() => {
     const raw = analytics?.by_exit_reason ?? [];
     const merged: Record<string, { label: string; trades: number; total_pnl: number }> = {};
@@ -307,6 +289,28 @@ export function Performance() {
       avg_pnl:   m.trades > 0 ? m.total_pnl / m.trades : 0,
     }));
   }, [analytics]);
+
+  // Early return AFTER all hooks — never before (Rules of Hooks)
+  if (isLoading && !perf) return <PageLoader label="Performance" />;
+
+  const daily       = perf?.daily_summaries ?? [];
+  const gridColor   = dark ? "#21262d" : "#f0f2f7";
+  const posColor    = dark ? "#3fb950" : "#16a34a";
+  const negColor    = dark ? "#f85149" : "#dc2626";
+  const tickColor   = dark ? "#8b949e" : "#5a6476";
+  const accentColor = dark ? "#58a6ff" : "#2563eb";
+
+  // Cumulative equity curve
+  let cum = 0;
+  const equity = daily.map((d) => {
+    cum += d.pnl;
+    return { date: d.date.slice(5), pnl: d.pnl, equity: +cum.toFixed(2) };
+  });
+
+  // Analytics-derived data
+  const byStrategy = analytics?.by_strategy ?? [];
+  const byHour     = analytics?.by_hour ?? [];
+  const byTicker   = analytics?.by_ticker ?? [];
 
   // MFE vs Exit comparison chart
   const mfeVsExit = analytics

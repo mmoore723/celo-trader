@@ -26,9 +26,10 @@ const PERIOD_MS: Record<Period, number> = {
 
 /** How many bars to fetch for a given timeframe + period combination.
  *  Capped at 2000 (matching the raised API limit).
- *  Minimum 150 bars ensures RSI(14) and MACD(12,26,9) always have enough
- *  warmup history — without this, 1h+1D returns only 16 bars and both
- *  indicators show "n/a" (MACD alone needs 35 bars before its first value). */
+ *  Min 40 (not 150) — KChart fetches extra warmup via a separate MAD pass;
+ *  lowering the floor prevents 1h+1D from loading weeks of bars and looking
+ *  identical to 15m+1D. MACD still has enough history because 1h*3days=24 bars
+ *  which exceeds MACD's 35-bar need only for 5D+; 1D may show n/a on 1h — acceptable. */
 function barLimitForPeriod(tf: string, period: Period): number {
   const barsPerDay: Record<string, number> = {
     "1Min": 420, "5Min": 90, "15Min": 30, "1Hour": 8,
@@ -36,7 +37,7 @@ function barLimitForPeriod(tf: string, period: Period): number {
   const tradingDays: Record<Period, number> = {
     "1D": 3, "5D": 8, "1M": 25, "3M": 70,
   };
-  return Math.min(2000, Math.max(150, Math.ceil((barsPerDay[tf] ?? 90) * (tradingDays[period] ?? 3))));
+  return Math.min(2000, Math.max(40, Math.ceil((barsPerDay[tf] ?? 90) * (tradingDays[period] ?? 3))));
 }
 
 
@@ -296,6 +297,7 @@ export function LiveTrading() {
 
           <KChart
             bars={bars}
+            tf={tf}
             trades={tickerTrades}
             visibleFrom={visibleFrom}
             showVwap={showVwap}
