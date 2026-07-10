@@ -101,12 +101,20 @@ def get_bars(
                     .dt.tz_localize(None)
                 )
                 raw_yf = raw_yf[["time","open","high","low","close","volume"]].copy()
-                # Drop bad thin-market prints: bars where close moved >8% from
-                # the prior bar's close are almost always erroneous pre/post
-                # market data (single-trade bad prints in illiquid sessions).
+                # Filter 1: close moved >5% from prior bar (catches bad tick closes)
                 prev_close = raw_yf["close"].shift(1)
                 pct_move   = (raw_yf["close"] - prev_close).abs() / prev_close
-                raw_yf     = raw_yf[(pct_move < 0.08) | pct_move.isna()].reset_index(drop=True)
+                raw_yf     = raw_yf[(pct_move < 0.05) | pct_move.isna()].reset_index(drop=True)
+                # Filter 2: wick extends >5% beyond bar body (catches bad wick prints
+                # like low=699 on a bar whose open/close are ~751 — these survive
+                # Filter 1 because the close-to-close move is small, but the low
+                # is a single bad tick from extended-hours illiquid trading).
+                if not raw_yf.empty:
+                    body_low  = raw_yf[["open", "close"]].min(axis=1)
+                    body_high = raw_yf[["open", "close"]].max(axis=1)
+                    low_wick  = (body_low  - raw_yf["low"])   / body_low.clip(lower=0.01)
+                    high_wick = (raw_yf["high"] - body_high)  / body_high.clip(lower=0.01)
+                    raw_yf    = raw_yf[(low_wick < 0.05) & (high_wick < 0.05)].reset_index(drop=True)
                 df = raw_yf.tail(limit).reset_index(drop=True)
         except Exception:
             pass

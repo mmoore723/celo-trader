@@ -184,6 +184,9 @@ export function KChart({
     // Apply theme styles
     chart.setStyles(makeStyles(dark));
     chart.setOffsetRightDistance(80);
+    // Explicitly enable zoom and scroll (required in v9 — not on by default)
+    chart.setZoomEnabled(true);
+    chart.setScrollEnabled(true);
 
     // Volume in candle pane, RSI/MACD as sub-panels
     // VOL must be in its own pane — KLineChart v9 has no secondary Y-axis,
@@ -270,11 +273,12 @@ export function KChart({
       const Z_CUT  = 8;
       const filtered = bars.filter(
         (b) =>
-          Math.abs(b.low  - med) / mad < Z_CUT &&
-          Math.abs(b.high - med) / mad < Z_CUT
+          Math.abs(b.low   - med) / mad < Z_CUT &&
+          Math.abs(b.high  - med) / mad < Z_CUT &&
+          Math.abs(b.close - med) / mad < Z_CUT   // catch bars where the whole body is bad
       );
-      // Safety: if the filter removed more than 10% of bars something is wrong — use raw
-      const safe = filtered.length >= bars.length * 0.9 ? filtered : bars;
+      // Fall back to raw only if the filter eliminated EVERYTHING (true data error)
+      const safe = filtered.length > 0 ? filtered : bars;
       chart.applyNewData(
         safe.map((b) => ({
           timestamp: new Date(b.time).getTime(),
@@ -378,25 +382,22 @@ export function KChart({
   // visibleFrom scroll disabled (scrollToTimestamp put it at RIGHT edge, backwards).
   void trades; void visibleFrom;
 
-  // ── Activate / deactivate drawing tool ────────────────────────────────────
-  // startDraw(name) enters interactive draw mode — user clicks to place points.
-  // stopDraw() returns to normal select/pan mode.
-  // createOverlay(name) is the programmatic API and does NOT enter click-to-draw mode.
+  // ── Activate drawing tool ─────────────────────────────────────────────────
+  // In KLineChart v9.8.12, createOverlay(name) enters interactive draw mode
+  // when passed a string — the user then clicks to place points.
+  // startDraw / stopDraw DO NOT EXIST in v9 — calling them silently throws.
+  // Deselecting a tool (tool="") just stops activating new draws; the user
+  // completes or cancels the in-progress one naturally.
   useEffect(() => {
-    if (!chartRef.current) return;
-    if (tool) {
-      try { chartRef.current.startDraw(tool); } catch (_) {}
-    } else {
-      try { chartRef.current.stopDraw(); } catch (_) {}
-    }
+    if (!chartRef.current || !tool) return;
+    try { chartRef.current.createOverlay(tool); } catch (_) {}
   }, [tool]);
 
-  // ESC exits drawing mode; DEL removes the hovered/selected overlay
+  // ESC returns to select mode; DEL removes the hovered/selected overlay
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setTool("");
-        try { chartRef.current?.stopDraw(); } catch (_) {}
+        setTool(""); // return to select mode — no stopDraw, it doesn't exist in v9
       }
       if ((e.key === "Delete" || e.key === "Backspace") && !tool) {
         // Remove overlays only when not actively drawing (to avoid cutting a draw in progress)
@@ -423,10 +424,7 @@ export function KChart({
             className={`btn btn-sm ${tool === t.key ? "btn-primary" : "btn-ghost"}`}
             style={{ fontFamily: "monospace" }}
             onClick={() => {
-              const next = tool === t.key ? "" : t.key;
-              setTool(next);
-              // If deselecting, explicitly stop draw mode immediately (don't wait for effect)
-              if (!next) try { chartRef.current?.stopDraw(); } catch (_) {}
+              setTool(tool === t.key ? "" : t.key);
             }}
           >
             <span>{t.icon}</span>
@@ -457,7 +455,7 @@ export function KChart({
         <button
           className="btn btn-ghost btn-sm"
           title="Clear all drawings"
-          onClick={() => { chartRef.current?.removeOverlay(); setTool(""); try { chartRef.current?.stopDraw(); } catch (_) {} }}
+          onClick={() => { try { chartRef.current?.removeOverlay(); } catch (_) {} setTool(""); }}
         >
           🗑
         </button>
