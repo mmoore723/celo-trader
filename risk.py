@@ -278,8 +278,8 @@ class RiskManager:
     ORB_STOP_PCT        = 0.20   # initial stop-loss = 20% of premium (tightened from 30%
                                  # — smaller hole to dig out of on a <$5k account)
     ORB_RISK_PCT        = 0.01   # baseline risk % — used for R:R display / logging
-    ORB_STAGE1_PCT      = 0.50   # sell 50% of contracts at +50% profit
-    ORB_STAGE1_GAIN     = 0.50   # +50% gain threshold for stage-1 exit
+    ORB_STAGE1_PCT      = 0.50   # sell 50% of contracts at stage-1 target
+    ORB_STAGE1_GAIN     = 0.25   # +25% gain threshold for stage-1 exit (lowered from +50%)
     ORB_TIME_BOX        = 45     # flat/losing hard cap (stage1 NOT done)
     ORB_TIME_BOX_WINNER = 90     # extended cap when stage1 IS done (let winners run)
 
@@ -967,11 +967,12 @@ class RiskManager:
         now: Optional[datetime] = None,
         stage1_done: bool = False,
         stage1_be_price: Optional[float] = None,
-        peak_price: Optional[float] = None,         # kept for API compatibility
+        peak_price: Optional[float] = None,         # highest option price seen (for giveback rule)
         struct_stop_price: Optional[float] = None,  # entry_bar_high/low-derived option stop
         # Adaptive exit params — supplied by position_manager's bar analysis
         atr_trail_stop: Optional[float] = None,     # tighter of 1.5×ATR or swing stop (option price)
         vwap: Optional[float] = None,               # current underlying VWAP
+        vwap_breached: bool = False,                # True when VWAP breached ≥1 bar (no trend_dead required)
         trend_dead: bool = False,                   # ADX<20 OR EMA stack misaligned
         direction: str = "bullish",                 # trade direction (for VWAP side check)
         rvol: float = 0.0,                          # current bar RVOL (for momentum-death check)
@@ -1058,7 +1059,38 @@ class RiskManager:
             _ = vwap_broken   # referenced above for clarity but trend_dead is the gate
             return True, f"vwap_trend_dead (trend_dead=True direction={direction})"
 
-        # ── 4. Stage 1: +50% profit target ───────────────────────────────────
+        # ── 3b. VWAP breach while profitable — take the money ────────────────
+        # If we're already +5% profitable and VWAP gets breached (even without
+        # full trend death), lock in the gain now rather than waiting for ADX/EMA
+        # to confirm. A winning trade that loses VWAP is a sign the move is done.
+        if (not stage1_done
+                and vwap_breached
+                and current_price > entry_price * 1.05):
+            profit_pct = (current_price / entry_price - 1.0) * 100
+            return True, (
+                f"vwap_breach_profitable "
+                f"(profit={profit_pct:.1f}% VWAP breached — locking gain)"
+            )
+
+        # ── 3c. Peak-giveback exit ────────────────────────────────────────────
+        # If trade reached +20% at peak and has given back >40% of that gain,
+        # exit the runner. Captures most of the move without watching it evaporate.
+        # Only active when stage1 is NOT done yet (full position still on).
+        # After stage1, the ATR trail handles the runner.
+        if (not stage1_done
+                and peak_price is not None
+                and peak_price >= entry_price * 1.20):  # was up ≥20%
+            gain_at_peak    = peak_price - entry_price
+            current_gain    = current_price - entry_price
+            giveback_pct    = 1.0 - (current_gain / gain_at_peak) if gain_at_peak > 0 else 0.0
+            if giveback_pct >= 0.40:   # gave back ≥40% of peak gain
+                return True, (
+                    f"peak_giveback "
+                    f"(peak={peak_price:.4f} +{gain_at_peak/entry_price*100:.1f}% "
+                    f"gave_back={giveback_pct*100:.0f}% of gain)"
+                )
+
+        # ── 4. Stage 1: +25% profit target ───────────────────────────────────
         if not stage1_done:
             s1 = self.stage1_exit_price(entry_price)
             if current_price >= s1:
@@ -1125,11 +1157,12 @@ class RiskManager:
         stage1_be_price: Optional[float] = None,
         # Legacy kwargs — kept so old call-sites don't break
         is_last_window: bool = False,
-        peak_price: Optional[float] = None,
+        peak_price: Optional[float] = None,         # MFE: highest option price seen
         struct_stop_price: Optional[float] = None,
         # Adaptive exit params (new)
         atr_trail_stop: Optional[float] = None,
         vwap: Optional[float] = None,
+        vwap_breached: bool = False,                # True when VWAP breached ≥1 bar
         trend_dead: bool = False,
         direction: str = "bullish",
         rvol: float = 0.0,
@@ -1139,9 +1172,11 @@ class RiskManager:
             entry_price, current_price,
             entry_time=entry_time, now=now,
             stage1_done=stage1_done, stage1_be_price=stage1_be_price,
+            peak_price=peak_price,
             struct_stop_price=struct_stop_price,
             atr_trail_stop=atr_trail_stop,
             vwap=vwap,
+            vwap_breached=vwap_breached,
             trend_dead=trend_dead,
             direction=direction,
             rvol=rvol,

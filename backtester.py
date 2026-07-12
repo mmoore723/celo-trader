@@ -356,6 +356,7 @@ class Backtester:
         import strategies.bos_mss    as _bos_mss
         import strategies.vwap_pb    as _vwap_pb
         import strategies.fvg        as _fvg
+        import strategies.ifvg       as _ifvg
         import strategies.mid_brk    as _mid_brk
         import strategies.aft_rev    as _aft_rev
         import strategies.trend_cont as _trend_cont
@@ -372,6 +373,7 @@ class Backtester:
             ("INST_ORB",   _inst_orb.evaluate),
             ("VWAP_PB",    _vwap_pb.evaluate),
             ("FVG",        _fvg.evaluate),
+            ("IFVG",       _ifvg.evaluate),   # Inverted FVG — zone-flip reversal
             ("MID_BRK",    _mid_brk.evaluate),
             ("AFT_REV",    _aft_rev.evaluate),
             ("TREND_CONT", _trend_cont.evaluate),

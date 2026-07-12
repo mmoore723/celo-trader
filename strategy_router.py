@@ -51,7 +51,7 @@ from database import log_event as _db_log
 from strategies.base import Signal, MarketStructureAnalyzer  # noqa: F401
 
 # ── Strategy evaluator modules ────────────────────────────────────────────────
-from strategies import inst_orb, bos_mss, vwap_pb, fvg, mid_brk, aft_rev, trend_cont, chan_break
+from strategies import inst_orb, bos_mss, vwap_pb, fvg, ifvg, mid_brk, aft_rev, trend_cont, chan_break
 
 logger = logging.getLogger("celo_trader.strategy_router")
 
@@ -175,6 +175,7 @@ def route_signals(
         ("INST_ORB",   inst_orb.evaluate),
         ("VWAP_PB",    vwap_pb.evaluate),
         ("FVG",        fvg.evaluate),
+        ("IFVG",       ifvg.evaluate),    # Inverted FVG — zone-flip reversal
         ("MID_BRK",    mid_brk.evaluate),
         ("AFT_REV",    aft_rev.evaluate),
         ("TREND_CONT", trend_cont.evaluate),
@@ -501,6 +502,7 @@ _STRAT_NAMES = {
     "BOS_MSS":    "Break of Structure",
     "VWAP_PB":    "VWAP Pullback",
     "FVG":        "Fair Value Gap",
+    "IFVG":       "Inverted Fair Value Gap",
     "MID_BRK":    "Mid-Day Breakdown",
     "AFT_REV":    "Afternoon Reversal",
     "TREND_CONT": "Trend Continuation",

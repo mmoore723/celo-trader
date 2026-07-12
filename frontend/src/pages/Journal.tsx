@@ -20,13 +20,11 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 /**
- * Map raw exit_reason strings to clean display labels.
- * Strips embedded parameter values (sl=2.17 current=2.15, rvol=0.68, etc.)
- * so the same exit type can be grouped and compared across trades.
+ * Normalized label for the EXIT REASON column in the table (short / scannable).
+ * The full raw reason is shown in the expanded detail panel below.
  */
 function normalizeExitReason(raw: string | null | undefined): string {
   if (!raw) return "—";
-  // Extract category = everything before the first space or '('
   const cat = raw.split(/[\s(]/)[0];
   const MAP: Record<string, string> = {
     momentum_dead_exit:                       "Dead Momentum",
@@ -34,9 +32,17 @@ function normalizeExitReason(raw: string | null | undefined): string {
     atr_trail_stop:                           "Trail Stop",
     trail_stop:                               "Trail Stop",
     time_cap_loser_60m:                       "Time Limit",
+    time_cap_loser_20m:                       "Time Limit",
     time_cap_winner:                          "Time Limit (Win)",
-    stage1_50pct_full_exit_single_contract:   "50% Target",
-    stage1_50pct_full_exit:                   "50% Target",
+    time_cap_winner_90m:                      "Time Limit (Win)",
+    stage1_50pct_full_exit_single_contract:   "25% Target",
+    stage1_50pct_full_exit:                   "25% Target",
+    stage1_50pct:                             "25% Target",
+    vwap_trend_dead:                          "VWAP Dead",
+    vwap_breach_profitable:                   "VWAP (Profit Lock)",
+    peak_giveback:                            "Peak Giveback",
+    hard_stop_20pct:                          "Hard Stop",
+    early_momentum_stop_12pct:                "Early Stop",
     panic_close:                              "Panic Close",
     manual_close:                             "Manual Close",
     profit_lock:                              "Profit Lock",
@@ -65,9 +71,7 @@ function fmtDuration(entry?: string, exit?: string): string {
 }
 
 /**
- * Expandable efficiency detail panel shown when a trade row is clicked.
- * Uses 4 data points: entry, MAE low, MFE peak, exit — rendered as a bar chart.
- * Explains what "ideal" would have looked like vs what actually happened.
+ * Expandable efficiency detail panel — shows full raw exit reason, not the normalized short label.
  */
 function TradeDetail({ t }: { t: Trade }) {
   const ep  = t.entry_price;
@@ -75,7 +79,6 @@ function TradeDetail({ t }: { t: Trade }) {
   const pp  = t.peak_price ?? xp;
   const mp  = t.mae_price  ?? ep;
 
-  // Bar chart comparing key price levels
   const pricePoints = [
     { label: "MAE Low",  value: mp,  color: "var(--negative)" },
     { label: "Entry",    value: ep,  color: "var(--ink-muted)" },
@@ -83,7 +86,6 @@ function TradeDetail({ t }: { t: Trade }) {
     { label: "MFE Peak", value: pp,  color: "var(--accent)" },
   ].sort((a, b) => a.value - b.value);
 
-  // Narrative: "what should have happened"
   const eff  = t.exit_efficiency_pct;
   const mfe  = t.mfe_pct;
   const mae  = t.mae_pct;
@@ -115,7 +117,7 @@ function TradeDetail({ t }: { t: Trade }) {
 
   return (
     <tr>
-      <td colSpan={15} style={{ padding: 0 }}>
+      <td colSpan={16} style={{ padding: 0 }}>
         <div
           className="px-6 py-3 flex gap-6 items-start"
           style={{ background: "var(--surface-raised)", borderBottom: "1px solid var(--border)" }}
@@ -171,8 +173,9 @@ function TradeDetail({ t }: { t: Trade }) {
             <div>Hold time: <strong style={{ color: "var(--ink)" }}>
               {fmtDuration(t.entry_time, t.exit_time)}
             </strong></div>
-            <div>Exit reason: <strong style={{ color: "var(--ink)" }}>
-              {normalizeExitReason(t.exit_reason)}
+            {/* Full raw exit reason — not normalized — so user sees the real detail */}
+            <div>Exit reason: <strong style={{ color: "var(--ink)", wordBreak: "break-all" }}>
+              {t.exit_reason ?? "—"}
             </strong></div>
           </div>
 
@@ -188,16 +191,18 @@ function TradeDetail({ t }: { t: Trade }) {
 
 type DateWindow = "today" | "week" | "month" | "custom" | "all";
 
+// All known strategy IDs (for the filter dropdown)
+const ALL_STRATEGIES = ["FVG", "IFVG", "INST_ORB", "VWAP_PB", "MID_BRK", "AFT_REV", "TREND_CONT"];
+
 export function Journal() {
-  // Default to whichever mode the bot is currently running in.
-  // is_paper=true → paper, is_paper=false → live, null (unknown) → paper fallback.
   const botStatus = useBotStore((s) => s.status);
   const defaultMode: "paper" | "live" = botStatus?.is_paper === false ? "live" : "paper";
 
   const [mode,        setMode]        = useState<"paper" | "live">(defaultMode);
   const [filter,      setFilter]      = useState<"all" | "open" | "closed">("all");
   const [dateWindow,  setDateWindow]  = useState<DateWindow>("all");
-  const [customFrom,  setCustomFrom]  = useState<string>("");   // "YYYY-MM-DD"
+  const [customFrom,  setCustomFrom]  = useState<string>("");
+  const [stratFilter, setStratFilter] = useState<string>("all");  // strategy filter
   const [expandedId,  setExpandedId]  = useState<number | null>(null);
   const qc = useQueryClient();
 
@@ -211,27 +216,26 @@ export function Journal() {
 
   // ── Client-side date filter ─────────────────────────────────────────────────
   const trades = allTrades.filter((t) => {
-    if (!t.entry_time) return true;
-    const entry = new Date(t.entry_time);
-    const now   = new Date();
-    if (dateWindow === "today") {
-      return entry.toDateString() === now.toDateString();
+    // Date filter
+    if (t.entry_time) {
+      const entry = new Date(t.entry_time);
+      const now   = new Date();
+      if (dateWindow === "today" && entry.toDateString() !== now.toDateString()) return false;
+      if (dateWindow === "week") {
+        const cut = new Date(now); cut.setDate(now.getDate() - 7);
+        if (entry < cut) return false;
+      }
+      if (dateWindow === "month") {
+        const cut = new Date(now); cut.setMonth(now.getMonth() - 1);
+        if (entry < cut) return false;
+      }
+      if (dateWindow === "custom" && customFrom && entry < new Date(customFrom)) return false;
     }
-    if (dateWindow === "week") {
-      const cut = new Date(now); cut.setDate(now.getDate() - 7);
-      return entry >= cut;
-    }
-    if (dateWindow === "month") {
-      const cut = new Date(now); cut.setMonth(now.getMonth() - 1);
-      return entry >= cut;
-    }
-    if (dateWindow === "custom" && customFrom) {
-      return entry >= new Date(customFrom);
-    }
-    return true; // "all"
+    // Strategy filter
+    if (stratFilter !== "all" && t.strategy_id !== stratFilter) return false;
+    return true;
   });
 
-  // Recompute summary from filtered set (API totals won't match when date-filtered)
   const filteredPnl     = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
   const filteredWins    = trades.filter((t) => (t.pnl ?? 0) > 0).length;
   const filteredWinRate = trades.length > 0
@@ -290,7 +294,6 @@ export function Journal() {
                 {label}
               </button>
             ))}
-            {/* Custom date input — only visible when "From…" is selected */}
             {dateWindow === "custom" && (
               <input
                 type="date"
@@ -301,14 +304,29 @@ export function Journal() {
               />
             )}
           </div>
+          {/* Strategy filter */}
+          <select
+            className="select"
+            value={stratFilter}
+            onChange={(e) => setStratFilter(e.target.value)}
+            style={{ fontSize: 12, padding: "2px 8px", height: 28 }}
+          >
+            <option value="all">All Strategies</option>
+            {ALL_STRATEGIES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
-        {/* Summary row — computed from filtered set */}
+        {/* Summary row */}
         <div className="flex gap-4 text-sm num" style={{ color: "var(--ink-muted)" }}>
           <span>{trades.length} trades</span>
           <span style={{ color: filteredPnl >= 0 ? posColor : negColor }}>
             {filteredPnl >= 0 ? "+" : ""}${Math.abs(filteredPnl).toFixed(2)} P&L
           </span>
           <span>Win {filteredWinRate}%</span>
+          {stratFilter !== "all" && (
+            <span style={{ color: "var(--accent)", fontSize: 11 }}>({stratFilter})</span>
+          )}
           {dateWindow !== "all" && (
             <span style={{ color: "var(--accent)", fontSize: 11 }}>
               ({dateWindow === "custom" && customFrom
@@ -369,7 +387,6 @@ export function Journal() {
                         style={{ cursor: hasDetail ? "pointer" : "default" }}
                         onClick={() => hasDetail && toggleExpand(t.id)}
                       >
-                        {/* Expand toggle */}
                         <td style={{ paddingRight: 0, color: "var(--ink-faint)" }}>
                           {hasDetail
                             ? isExpanded
@@ -391,12 +408,10 @@ export function Journal() {
                         <td className="num">
                           {t.exit_price != null ? `$${t.exit_price.toFixed(2)}` : "—"}
                         </td>
-                        {/* MFE % — hidden below md */}
                         <td className="num text-xs hidden md:table-cell"
                             style={{ color: mfe != null && mfe > 0 ? posColor : "var(--ink-muted)" }}>
                           {mfe != null ? `+${mfe.toFixed(1)}%` : "—"}
                         </td>
-                        {/* Exit efficiency % — hidden below md */}
                         <td className="num text-xs hidden md:table-cell" style={{
                           color: eff == null
                             ? "var(--ink-muted)"
@@ -414,9 +429,10 @@ export function Journal() {
                             : "—"}
                         </td>
                         <td className="hidden sm:table-cell"><StatusBadge status={t.status} /></td>
+                        {/* Short normalized label in table — full raw reason in expanded detail */}
                         <td className="text-xs hidden lg:table-cell"
                             style={{ color: "var(--ink-muted)" }}
-                            title={t.exit_reason ?? undefined}> {/* full raw reason on hover */}
+                            title={t.exit_reason ?? undefined}>
                           {normalizeExitReason(t.exit_reason)}
                         </td>
                         <td className="text-xs num hidden lg:table-cell" style={{ color: "var(--ink-muted)" }}>
@@ -437,7 +453,6 @@ export function Journal() {
                           )}
                         </td>
                       </tr>,
-                      // Inline expanded detail row
                       ...(isExpanded && hasDetail ? [<TradeDetail key={`detail-${t.id}`} t={t} />] : []),
                     ];
                   })

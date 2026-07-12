@@ -1,11 +1,5 @@
 /**
- * Admin.tsx — User management page (admin only).
- *
- * Features:
- *  - List all users
- *  - Create a user directly (username + password)
- *  - Generate an invite link for self-registration
- *  - Delete a user (cannot delete self)
+ * Admin.tsx — User management page (admin only). Mobile-responsive.
  */
 import { useState, useEffect } from "react";
 import { UserPlus, Link2, Trash2, RefreshCw, KeyRound } from "lucide-react";
@@ -24,16 +18,13 @@ export function Admin() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
 
-  // Create user form
   const [newUser, setNewUser]   = useState({ username: "", password: "", is_admin: false });
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Reset password inline state
   const [resetState, setResetState] = useState<{ uid: string; uname: string; pw: string } | null>(null);
   const [resetMsg,   setResetMsg]   = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Invite
   const [inviteUrl, setInviteUrl]   = useState<string | null>(null);
   const [inviteExp, setInviteExp]   = useState<number>(48);
   const [inviting, setInviting]     = useState(false);
@@ -143,7 +134,7 @@ export function Admin() {
   }
 
   return (
-    <div className="p-4 max-w-2xl flex flex-col gap-4">
+    <div className="p-4 flex flex-col gap-4" style={{ maxWidth: 600, width: "100%" }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>
@@ -154,7 +145,7 @@ export function Admin() {
         </button>
       </div>
 
-      {/* Users table */}
+      {/* Users list — card-per-user on mobile, table on larger screens */}
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
           All Users
@@ -165,102 +156,97 @@ export function Admin() {
         {loading ? (
           <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading…</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                {["Username", "Role", "Created", ""].map(h => (
-                  <th key={h} style={{
-                    textAlign: "left", padding: "4px 8px",
-                    fontSize: 11, color: "var(--ink-muted)", fontWeight: 500
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(u => (
-                <>
-                  <tr key={u.user_id}
-                    style={{ borderBottom: resetState?.uid === u.user_id ? "none" : "1px solid rgba(255,255,255,0.04)" }}>
-                    <td style={{ padding: "8px 8px", fontSize: 13, color: "var(--ink)" }}>
+          <div className="flex flex-col gap-2">
+            {users.map(u => (
+              <div key={u.user_id}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  background: resetState?.uid === u.user_id ? "rgba(0,200,83,0.03)" : undefined,
+                }}
+              >
+                {/* User row */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {/* Name + role */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 14, color: "var(--ink)", fontWeight: 500 }}>
                       {u.username}
-                      {u.user_id === user?.user_id && (
-                        <span style={{ fontSize: 10, color: "var(--accent)", marginLeft: 6 }}>you</span>
-                      )}
-                    </td>
-                    <td style={{ padding: "8px 8px", fontSize: 12,
-                      color: u.is_admin ? "var(--accent)" : "var(--ink-muted)" }}>
+                    </span>
+                    {u.user_id === user?.user_id && (
+                      <span style={{ fontSize: 10, color: "var(--accent)", marginLeft: 6 }}>you</span>
+                    )}
+                    <span style={{
+                      fontSize: 11, marginLeft: 8,
+                      color: u.is_admin ? "var(--accent)" : "var(--ink-muted)",
+                    }}>
                       {u.is_admin ? "Admin" : "Member"}
-                    </td>
-                    <td style={{ padding: "8px 8px", fontSize: 11, color: "var(--ink-muted)" }}>
-                      {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
-                    </td>
-                    <td style={{ padding: "8px 8px" }}>
-                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                        {/* Reset password — available for all users including self */}
-                        <button
-                          className="btn btn-ghost"
-                          style={{ padding: "2px 8px", fontSize: 12 }}
-                          title="Reset password"
-                          onClick={() => {
-                            setResetMsg(null);
-                            setResetState(resetState?.uid === u.user_id
-                              ? null
-                              : { uid: u.user_id, uname: u.username, pw: "" });
-                          }}
-                        >
-                          <KeyRound size={12} />
-                        </button>
-                        {/* Delete — not allowed for self */}
-                        {u.user_id !== user?.user_id && (
-                          <button
-                            className="btn btn-ghost"
-                            style={{ padding: "2px 8px", fontSize: 12 }}
-                            title="Delete user"
-                            onClick={() => deleteUser(u.user_id, u.username)}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {/* Inline reset password row */}
-                  {resetState?.uid === u.user_id && (
-                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(0,200,83,0.03)" }}>
-                      <td colSpan={4} style={{ padding: "6px 8px 10px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 12, color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
-                            New password for <strong style={{ color: "var(--ink)" }}>{u.username}</strong>:
-                          </span>
-                          <input
-                            type="password"
-                            className="input"
-                            style={{ fontSize: 12, padding: "4px 10px", width: 180 }}
-                            placeholder="Min 6 characters"
-                            value={resetState.pw}
-                            autoFocus
-                            onChange={e => setResetState(s => s ? { ...s, pw: e.target.value } : null)}
-                            onKeyDown={e => e.key === "Enter" && resetPassword()}
-                          />
-                          <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }} onClick={resetPassword}>
-                            Set
-                          </button>
-                          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => { setResetState(null); setResetMsg(null); }}>
-                            Cancel
-                          </button>
-                          {resetMsg && (
-                            <span style={{ fontSize: 12, color: resetMsg.ok ? "var(--accent)" : "#f87171" }}>
-                              {resetMsg.msg}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
-              ))}
-            </tbody>
-          </table>
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--ink-faint)", marginLeft: 8 }}>
+                      {u.created_at ? new Date(u.created_at).toLocaleDateString() : ""}
+                    </span>
+                  </div>
+                  {/* Actions */}
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ padding: "4px 10px", fontSize: 12 }}
+                      title="Reset password"
+                      onClick={() => {
+                        setResetMsg(null);
+                        setResetState(resetState?.uid === u.user_id
+                          ? null
+                          : { uid: u.user_id, uname: u.username, pw: "" });
+                      }}
+                    >
+                      <KeyRound size={13} />
+                    </button>
+                    {u.user_id !== user?.user_id && (
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "4px 10px", fontSize: 12, color: "var(--negative)" }}
+                        title="Delete user"
+                        onClick={() => deleteUser(u.user_id, u.username)}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline reset password — shown below user row on all screen sizes */}
+                {resetState?.uid === u.user_id && (
+                  <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 12, color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
+                      New password for <strong style={{ color: "var(--ink)" }}>{u.username}</strong>:
+                    </span>
+                    <input
+                      type="password"
+                      className="input"
+                      style={{ fontSize: 12, padding: "4px 10px", flex: 1, minWidth: 140 }}
+                      placeholder="Min 6 characters"
+                      value={resetState.pw}
+                      autoFocus
+                      onChange={e => setResetState(s => s ? { ...s, pw: e.target.value } : null)}
+                      onKeyDown={e => e.key === "Enter" && resetPassword()}
+                    />
+                    <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }} onClick={resetPassword}>
+                      Set
+                    </button>
+                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}
+                      onClick={() => { setResetState(null); setResetMsg(null); }}>
+                      Cancel
+                    </button>
+                    {resetMsg && (
+                      <span style={{ fontSize: 12, color: resetMsg.ok ? "var(--accent)" : "#f87171", width: "100%" }}>
+                        {resetMsg.msg}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -270,7 +256,8 @@ export function Admin() {
           Create User
         </h3>
         <div className="flex flex-col gap-3">
-          <div className="flex gap-2">
+          {/* Stack inputs vertically on mobile */}
+          <div className="flex flex-col gap-2 sm:flex-row">
             <input
               className="input flex-1"
               placeholder="Username"
@@ -314,7 +301,7 @@ export function Admin() {
           Send this link to someone so they can create their own account and connect their
           own Alpaca/Tradier API keys. The link expires after the chosen period.
         </p>
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
           <label className="text-sm" style={{ color: "var(--ink)" }}>Expires in</label>
           <select
             className="select"
@@ -327,7 +314,7 @@ export function Admin() {
             <option value={168}>7 days</option>
           </select>
         </div>
-        <button className="btn btn-primary mb-3" onClick={generateInvite} disabled={inviting}>
+        <button className="btn btn-primary mb-3" onClick={generateInvite} disabled={inviting} style={{ width: "100%" }}>
           <Link2 size={14} />
           {inviting ? "Generating…" : "Generate Invite Link"}
         </button>
@@ -340,7 +327,7 @@ export function Admin() {
             >
               {inviteUrl}
             </div>
-            <button className="btn btn-ghost" onClick={copyInvite}>
+            <button className="btn btn-ghost" onClick={copyInvite} style={{ width: "100%" }}>
               {copied ? "Copied!" : "Copy Link"}
             </button>
           </div>

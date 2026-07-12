@@ -172,6 +172,7 @@ export interface AppSettings {
   orb_enabled: boolean;
   vwap_pullback_enabled: boolean;
   fvg_enabled: boolean;
+  ifvg_enabled: boolean;          // Inverted Fair Value Gap
   bos_mss_enabled: boolean;
   chan_break_enabled: boolean;
   mid_brk_enabled: boolean;

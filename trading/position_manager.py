@@ -669,15 +669,24 @@ def _manage_open_position(
             )
 
         # ── Exit decision ─────────────────────────────────────────────────────
+        # Build vwap_breached flag: any ≥1 bar breach (for profitable-exit rule)
+        _vwap_breached_any = (
+            ps.get("vwap_5m_breached_bars", 0) >= 1
+            if df_5m is not None
+            else ps.get("vwap_breached_bars", 0) >= 1
+        )
+
         should_exit, reason = _em._risk.should_exit(
             entry_price, current_price,
             entry_time      = entry_time,
             now             = now_et,
             stage1_done     = stage1_done,
             stage1_be_price = stage1_be_price,
+            peak_price      = ps.get("peak_price"),   # MFE for giveback rule
             struct_stop_price = _struct_stop,
             atr_trail_stop  = atr_trail_stop,
             vwap            = vwap,
+            vwap_breached   = _vwap_breached_any,     # any breach (≥1 bar)
             trend_dead      = trend_dead,
             direction       = direction,
             rvol            = _rvol_for_exit,

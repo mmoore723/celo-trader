@@ -125,6 +125,7 @@ class Settings(BaseModel):
     orb_enabled: bool
     vwap_pullback_enabled: bool
     fvg_enabled: bool
+    ifvg_enabled: bool = True    # Inverted Fair Value Gap — zone-flip reversal
     bos_mss_enabled: bool
     chan_break_enabled: bool = True
     mid_brk_enabled: bool = True
