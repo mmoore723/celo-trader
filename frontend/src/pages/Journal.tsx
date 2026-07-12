@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import { api, type Trade } from "../lib/api";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
@@ -194,6 +194,33 @@ type DateWindow = "today" | "week" | "month" | "custom" | "all";
 // All known strategy IDs (for the filter dropdown)
 const ALL_STRATEGIES = ["FVG", "IFVG", "INST_ORB", "VWAP_PB", "MID_BRK", "AFT_REV", "TREND_CONT"];
 
+/** Export the visible trades as a CSV download. */
+function exportCsv(trades: Trade[], mode: string) {
+  const headers = [
+    "id","ticker","direction","strategy","option_type",
+    "contracts","entry_price","exit_price",
+    "mfe_pct","mae_pct","exit_efficiency_pct",
+    "pnl","status","exit_reason","entry_time","exit_time",
+  ];
+  const rows = trades.map((t) => [
+    t.id, t.ticker, t.direction, t.strategy_id ?? "",
+    t.option_type ?? "", t.contracts,
+    t.entry_price, t.exit_price ?? "",
+    t.mfe_pct ?? "", t.mae_pct ?? "", t.exit_efficiency_pct ?? "",
+    t.pnl ?? "", t.status,
+    (t.exit_reason ?? "").replace(/,/g, ";"),   // escape commas in reason
+    t.entry_time ?? "", t.exit_time ?? "",
+  ]);
+  const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `celo_trades_${mode}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function Journal() {
   const botStatus = useBotStore((s) => s.status);
   const defaultMode: "paper" | "live" = botStatus?.is_paper === false ? "live" : "paper";
@@ -316,6 +343,17 @@ export function Journal() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
+
+          {/* CSV export — exports whatever is currently visible */}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => exportCsv(trades, mode)}
+            title="Export visible trades as CSV"
+            style={{ display: "flex", alignItems: "center", gap: 4 }}
+          >
+            <Download size={13} />
+            <span className="hidden sm:inline">Export</span>
+          </button>
         </div>
         {/* Summary row */}
         <div className="flex gap-4 text-sm num" style={{ color: "var(--ink-muted)" }}>
