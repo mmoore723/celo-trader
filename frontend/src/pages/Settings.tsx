@@ -37,6 +37,11 @@ const DEFAULT: AppSettings = {
   mid_brk_enabled: true,
   trend_cont_enabled: true,
   display_timezone: "America/New_York",
+  // Trade parameters
+  orb_stage1_gain_pct: 50,
+  orb_stop_loss_pct: 20,
+  spread_gate_pct: 25,
+  vol_roc_threshold: 0.50,
 };
 
 const TIMEZONES = [
@@ -328,6 +333,72 @@ export function Settings() {
               <option key={tz.value} value={tz.value}>{tz.label}</option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* Trade Parameters */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Trade Parameters</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          Live-tuning — changes apply on the next bot tick (&lt;60 s). No restart needed.
+        </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm" style={{ color: "var(--ink)" }}>
+              Stage-1 target (% gain)
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+                Sell 50% of contracts once option gains this much (default 50%)
+              </span>
+            </label>
+            <input
+              type="number" step="5" min="15" max="100"
+              value={form.orb_stage1_gain_pct ?? 50}
+              onChange={(e) => set("orb_stage1_gain_pct", parseFloat(e.target.value))}
+              className="input w-24"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm" style={{ color: "var(--ink)" }}>
+              Stop-loss (% loss)
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+                Exit if option premium falls this much from entry (default 20%)
+              </span>
+            </label>
+            <input
+              type="number" step="5" min="5" max="50"
+              value={form.orb_stop_loss_pct ?? 20}
+              onChange={(e) => set("orb_stop_loss_pct", parseFloat(e.target.value))}
+              className="input w-24"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm" style={{ color: "var(--ink)" }}>
+              Spread gate (% of mid)
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+                Skip contracts wider than this bid-ask spread (default 25%)
+              </span>
+            </label>
+            <input
+              type="number" step="5" min="5" max="50"
+              value={form.spread_gate_pct ?? 25}
+              onChange={(e) => set("spread_gate_pct", parseFloat(e.target.value))}
+              className="input w-24"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm" style={{ color: "var(--ink)" }}>
+              Volume ROC threshold
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+                Veto signals if recent vol is below this fraction of prior vol (default 0.50)
+              </span>
+            </label>
+            <input
+              type="number" step="0.05" min="0.10" max="0.90"
+              value={form.vol_roc_threshold ?? 0.50}
+              onChange={(e) => set("vol_roc_threshold", parseFloat(e.target.value))}
+              className="input w-24"
+            />
+          </div>
         </div>
       </div>
 

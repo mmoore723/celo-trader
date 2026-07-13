@@ -186,6 +186,11 @@ export interface AppSettings {
   trend_cont_enabled: boolean;
   signal_only_mode?: boolean;  // true = signal alerts only, bot does NOT place orders
   display_timezone?: string;   // e.g. "America/New_York" | "America/Chicago" | "America/Los_Angeles"
+  // Trade parameters — user-tunable without touching code
+  orb_stage1_gain_pct?: number;  // Stage-1 profit target as % of entry (default 50)
+  orb_stop_loss_pct?: number;    // Option premium stop-loss as % of entry (default 20)
+  spread_gate_pct?: number;      // Max bid-ask spread as % of mid (default 25)
+  vol_roc_threshold?: number;    // Volume ROC veto threshold (default 0.50)
 }
 
 export interface PerformanceStats {

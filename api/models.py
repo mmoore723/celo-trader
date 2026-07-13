@@ -131,6 +131,11 @@ class Settings(BaseModel):
     mid_brk_enabled: bool = True
     trend_cont_enabled: bool = True
     signal_only_mode: bool = False  # True = bot alerts but never places orders
+    # ── Trade parameters (user-tunable without touching code) ─────────────────
+    orb_stage1_gain_pct: float = 50.0   # Stage-1 profit target as % of entry
+    orb_stop_loss_pct:   float = 20.0   # Option premium stop-loss as % of entry
+    spread_gate_pct:     float = 25.0   # Max bid-ask spread as % of mid
+    vol_roc_threshold:   float = 0.50   # Volume ROC veto threshold
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────

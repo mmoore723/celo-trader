@@ -46,6 +46,7 @@ from signals import (
 )
 from risk import check_kill_lock
 from database import log_event as _db_log
+from config import get_settings as _get_settings
 
 # ── Re-export Signal + MSA so callers that import from strategy_router still work ─
 from strategies.base import Signal, MarketStructureAnalyzer  # noqa: F401
@@ -488,11 +489,12 @@ def route_signals(
         _prior_vol  = today["volume"].iloc[-6:-3].mean()
         _vol_roc    = _recent_vol / _prior_vol if _prior_vol > 0 else 1.0
 
-        if _vol_roc < 0.50:
+        _roc_threshold = float(_get_settings().get("vol_roc_threshold", 0.50))
+        if _vol_roc < _roc_threshold:
             _db_log(
                 "INFO", "scan",
                 f"{ticker} — Volume ROC veto: recent vol {_recent_vol:.0f} "
-                f"vs prior {_prior_vol:.0f} (ROC={_vol_roc:.2f}) "
+                f"vs prior {_prior_vol:.0f} (ROC={_vol_roc:.2f} < {_roc_threshold:.2f}) "
                 f"— fading momentum, staying in cash.",
             )
             logger.info(

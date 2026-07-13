@@ -304,6 +304,14 @@ _DEFAULTS = {
     "take_profit_pct":       1.00,
     "trail_stop_pct":        0.25,
 
+    # ── ORB trade parameters (user-editable via Settings → Trade Parameters) ────
+    # These override the class constants in risk.py and the hardcoded gates in
+    # entry.py / strategy_router.py so the user can tune live without touching code.
+    "orb_stage1_gain_pct":   50,    # Stage-1 profit target as % of entry (50 = +50%)
+    "orb_stop_loss_pct":     20,    # Option premium stop-loss as % of entry (20 = -20%)
+    "spread_gate_pct":       25,    # Max bid-ask spread as % of mid (25 = 25%)
+    "vol_roc_threshold":     0.50,  # Volume ROC veto threshold (0.50 = 50% of prior vol)
+
     # Filters
     "volume_filter_enabled":   True,
     "volume_filter_multiplier": 2.0,

@@ -415,6 +415,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     from config import get_risk_tier as _grt, DAILY_LOSS_HARD_CAP_PCT as _DLHCP, get_settings as _gs
     _kill_locked, _kill_reason = check_kill_lock()
     _is_paper = _gs().get("paper_trading", True)
+    # Preserve eval_log across full state writes — without this, every tick
+    # overwrites bot_state.json with a fresh dict that has no eval_log field,
+    # wiping signal history one tick after it was written.
+    _preserved_eval_log = []
+    try:
+        if _state_path.exists():
+            with open(_state_path) as _ef:
+                _preserved_eval_log = _json.load(_ef).get("eval_log", [])
+    except Exception:
+        pass
     try:
         _json.dump({
             "running":                True,
@@ -474,6 +484,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "last_eval_time":         LIVE_STATE.get("last_eval_time"),
             "last_eval_expiry":       LIVE_STATE.get("last_eval_expiry"),
             "last_eval_strike":       LIVE_STATE.get("last_eval_strike"),
+            # Persist eval_log across ticks — wiped every tick otherwise
+            "eval_log":               _preserved_eval_log,
         }, open(_state_path, "w"))
     except Exception:
         pass
@@ -605,6 +617,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # the free slot below.
     LIVE_STATE["status"] = "in_trade" if _bot_trades else "scanning"
     settings = get_settings()
+
+    # ── Sync user-editable trade parameters into the live risk manager ────────
+    # This runs every tick so settings changes take effect within seconds,
+    # no bot restart needed.
+    if _risk:
+        _risk.ORB_STAGE1_GAIN = float(settings.get("orb_stage1_gain_pct", 50)) / 100.0
+        _risk.ORB_STOP_PCT    = float(settings.get("orb_stop_loss_pct",   20)) / 100.0
+
     # Pass ET time explicitly — risk.py's is_trading_window() defaults to
     # datetime.now() which is UTC on EC2, making the 9:30–16:00 ET window
     # appear expired at 1 PM ET (= 5 PM UTC > 16:00). This caused the bot to
@@ -1200,7 +1220,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _c_mid = (_c_bid + _c_ask) / 2 if _c_bid > 0 else _c_ask
     if _c_mid > 0:
         _spread_pct = (_c_ask - _c_bid) / _c_mid
-        if _spread_pct > 0.10:   # 10% max relative spread
+        _spread_max = float(settings.get("spread_gate_pct", 25)) / 100.0
+        if _spread_pct > _spread_max:   # user-configurable via Settings → Trade Parameters
             log_event("INFO", "bar_eval",
                       f"🟡 [{ticker}] Skipping — bid-ask spread is "
                       f"{_spread_pct*100:.1f}% of mid price "

@@ -29,6 +29,11 @@ def get_settings_endpoint() -> Settings:
         mid_brk_enabled=bool(s.get("strategy_mid_enabled", True)),
         trend_cont_enabled=bool(s.get("strategy_tcont_enabled", True)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
+        # Trade parameters
+        orb_stage1_gain_pct=float(s.get("orb_stage1_gain_pct", 50)),
+        orb_stop_loss_pct=float(s.get("orb_stop_loss_pct", 20)),
+        spread_gate_pct=float(s.get("spread_gate_pct", 25)),
+        vol_roc_threshold=float(s.get("vol_roc_threshold", 0.50)),
     )
 
 
