@@ -168,6 +168,19 @@ def get_trade_events(trade_id: int) -> list[dict]:
     return [dict(e) for e in events]
 
 
+@router.get("/annotations/{ticker}")
+def get_chart_annotations(ticker: str) -> list[dict]:
+    """
+    Return all chart annotations accumulated by the bot for the given ticker
+    this session.  Used by the frontend to overlay bot-detected patterns
+    (FVG zones, BOS levels, signal/veto markers) on the price chart.
+    Annotations live in LIVE_STATE["chart_annotations"][TICKER].
+    """
+    from trading.state import LIVE_STATE
+    anns = LIVE_STATE.get("chart_annotations", {}).get(ticker.upper(), [])
+    return list(anns)
+
+
 @router.post("/close/{trade_id}", response_model=BotActionResponse)
 def close_trade(trade_id: int) -> BotActionResponse:
     from trading.controls import close_trade_by_id

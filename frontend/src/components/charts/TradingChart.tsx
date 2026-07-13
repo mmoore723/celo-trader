@@ -37,7 +37,7 @@ import type {
   IPriceLine,
   AutoscaleInfo,
 } from "lightweight-charts";
-import type { Bar, Trade } from "../../lib/api";
+import type { Bar, Trade, ChartAnnotation } from "../../lib/api";
 import { useThemeStore } from "../../store/theme";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -67,6 +67,8 @@ interface Props {
   currentOptionPrice?: number | null;  // live option mid price for unrealized P&L display
   height?: number;
   ticker?: string;
+  /** Bot-generated overlays from strategy_router — zones, hlines, markers */
+  annotations?: ChartAnnotation[];
 }
 
 // ─── Color palette ────────────────────────────────────────────────────────────
@@ -292,6 +294,7 @@ export function TradingChart({
   currentOptionPrice = null,
   height = 420,
   ticker,
+  annotations = [],
 }: Props) {
   // ── DOM container refs ───────────────────────────────────────────────────
   const containerRef     = useRef<HTMLDivElement>(null);
@@ -322,6 +325,8 @@ export function TradingChart({
   // ── Price-line refs ──────────────────────────────────────────────────────
   const priceLineRefs    = useRef<IPriceLine[]>([]);
   const orPriceLineRefs  = useRef<IPriceLine[]>([]);
+  // Bot annotation price lines (hlines + zone bounds) — rebuilt on each poll
+  const annPriceLineRefs = useRef<IPriceLine[]>([]);
 
   // Mutable ref so the autoscaleInfoProvider closure always reads current OR values
   const orRef = useRef<{ high: number | null; low: number | null }>({ high: null, low: null });
@@ -586,8 +591,9 @@ export function TradingChart({
       vwapL1Ref.current   = null;
       vwapU2Ref.current   = null;
       vwapL2Ref.current   = null;
-      priceLineRefs.current   = [];
-      orPriceLineRefs.current = [];
+      priceLineRefs.current    = [];
+      orPriceLineRefs.current  = [];
+      annPriceLineRefs.current = [];
 
       rsiChartRef.current?.remove();
       rsiChartRef.current  = null;
@@ -688,6 +694,52 @@ export function TradingChart({
       }
     }
 
+    // ── Bot annotation price lines (hlines + zone bounds) ────────────────────
+    // Clear previous annotation lines before redrawing on every poll cycle.
+    if (candleRef.current) {
+      for (const pl of annPriceLineRefs.current) {
+        try { candleRef.current.removePriceLine(pl); } catch (_) { /* gone */ }
+      }
+      annPriceLineRefs.current = [];
+
+      for (const ann of annotations) {
+        try {
+          if (ann.type === "hline" && ann.price != null) {
+            // Single horizontal line — strategy level (BOS, TREND_CONT, INST_ORB, etc.)
+            const pl = candleRef.current.createPriceLine({
+              price: ann.price,
+              color: ann.color,
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: ann.label,
+            });
+            annPriceLineRefs.current.push(pl);
+
+          } else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) {
+            // Zone: two dotted lines for top and bottom with label on the top line
+            const plTop = candleRef.current.createPriceLine({
+              price: ann.price_high,
+              color: ann.color,
+              lineWidth: 1,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: ann.label,
+            });
+            const plBot = candleRef.current.createPriceLine({
+              price: ann.price_low,
+              color: ann.color,
+              lineWidth: 1,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: false,
+              title: "",
+            });
+            annPriceLineRefs.current.push(plTop, plBot);
+          }
+        } catch (_) { /* skip if series not ready */ }
+      }
+    }
+
     // ── Swing structure + trade markers ──────────────────────────────────────
     const tradeMarkers: SeriesMarker<Time>[] = [];
 
@@ -723,6 +775,23 @@ export function TradingChart({
           shape:    isHigh ? "arrowDown" : "arrowUp",
           text:     sw.label,
           size:     2,   // increased from 1 — was too small to see
+        });
+      }
+    }
+
+    // ── Bot annotation markers (signal fired / veto) ─────────────────────────
+    // Snap to epoch-seconds; library aligns to nearest bar automatically.
+    for (const ann of annotations) {
+      if (ann.type === "marker" && ann.price != null) {
+        const isVeto     = ann.strategy === "veto";
+        const isBullish  = ann.direction === "bullish";
+        tradeMarkers.push({
+          time:     (new Date(ann.ts).getTime() / 1000) as Time,
+          position: isBullish ? "belowBar" : "aboveBar",
+          color:    ann.color,
+          shape:    isVeto ? "square" : (isBullish ? "arrowUp" : "arrowDown"),
+          text:     ann.label,
+          size:     isVeto ? 1 : 2,
         });
       }
     }
@@ -811,7 +880,7 @@ export function TradingChart({
     rsiChartRef.current?.timeScale().fitContent();
     macdChartRef.current?.timeScale().fitContent();
 
-  }, [bars, trades, showVwap, showVwapBands, showOR, showSwings, orHigh, orLow, positionLevels, showRsi, showMacd]);
+  }, [bars, trades, annotations, showVwap, showVwapBands, showOR, showSwings, orHigh, orLow, positionLevels, showRsi, showMacd]);
   // NOTE: C (color object) intentionally not in deps — color changes trigger a full
   // chart recreation via the `dark` dep in the chart-creation effect above.
 

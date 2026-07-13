@@ -47,6 +47,7 @@ from signals import (
 from risk import check_kill_lock
 from database import log_event as _db_log
 from config import get_settings as _get_settings
+from trading.annotations import emit_annotation as _emit_ann
 
 # ── Re-export Signal + MSA so callers that import from strategy_router still work ─
 from strategies.base import Signal, MarketStructureAnalyzer  # noqa: F401
@@ -79,6 +80,82 @@ _SESSION_BIAS_PENALTY = 0.05  # fallback default (overridden dynamically below)
 
 # ── Audit state — tracks last-logged structure so we don't spam the DB ────────
 _last_audit_state: dict = {}
+
+
+# ── Chart annotation emitter ──────────────────────────────────────────────────
+
+def _emit_signal_annotation(ticker: str, sig: "Signal", today: "pd.DataFrame") -> None:
+    """
+    Translate a strategy Signal into one or more chart overlays stored in
+    LIVE_STATE["chart_annotations"][ticker].  Called immediately after a
+    strategy fires so the drawing appears on the frontend chart in real time.
+
+    Per-strategy rules:
+      FVG / IFVG  → zone band (gap_low … gap_high)
+      BOS_MSS     → hline at bos_level
+      TREND_CONT  → hline at the swing re-entry level (lh_price or hl_price)
+      INST_ORB    → hline at prior swing high/low that was broken
+      AFT_REV     → hline at prior swing high/low
+      VWAP_PB / MID_BRK → marker only (VWAP line already on chart)
+    All strategies also emit a candle marker showing where the signal fired.
+    """
+    meta   = sig.meta or {}
+    ts_str = (sig.trigger_bar.isoformat()
+              if hasattr(sig.trigger_bar, "isoformat") else str(sig.trigger_bar))
+    arrow  = "↑" if sig.direction == "bullish" else "↓"
+
+    _last_close = float(today.iloc[-1]["close"]) if not today.empty else None
+
+    # ── Zone overlays (FVG, IFVG) ─────────────────────────────────────────────
+    if sig.strategy_id in ("FVG", "IFVG"):
+        gl = meta.get("gap_low")
+        gh = meta.get("gap_high")
+        if gl is not None and gh is not None:
+            _emit_ann(
+                ticker, "zone", sig.strategy_id,
+                label=f"{sig.strategy_id} {arrow}  {sig.confidence:.0%}",
+                ts=ts_str, direction=sig.direction,
+                price_low=gl, price_high=gh,
+            )
+
+    # ── Horizontal levels ─────────────────────────────────────────────────────
+    elif sig.strategy_id == "BOS_MSS":
+        lvl = meta.get("bos_level")
+        if lvl:
+            _emit_ann(ticker, "hline", "BOS_MSS",
+                      label=f"BOS {arrow}  {sig.confidence:.0%}",
+                      ts=ts_str, price=lvl, direction=sig.direction)
+
+    elif sig.strategy_id == "TREND_CONT":
+        lvl = meta.get("lh_price") or meta.get("hl_price")
+        if lvl:
+            _emit_ann(ticker, "hline", "TREND_CONT",
+                      label=f"TC {arrow}  {sig.confidence:.0%}",
+                      ts=ts_str, price=lvl, direction=sig.direction)
+
+    elif sig.strategy_id == "INST_ORB":
+        lvl = meta.get("prev_swing_high") or meta.get("prev_swing_low")
+        if lvl:
+            _emit_ann(ticker, "hline", "INST_ORB",
+                      label=f"ORB {arrow}  {sig.confidence:.0%}",
+                      ts=ts_str, price=lvl, direction=sig.direction)
+
+    elif sig.strategy_id == "AFT_REV":
+        lvl = meta.get("prev_swing_high") or meta.get("prev_swing_low")
+        if lvl:
+            _emit_ann(ticker, "hline", "AFT_REV",
+                      label=f"AFT {arrow}  {sig.confidence:.0%}",
+                      ts=ts_str, price=lvl, direction=sig.direction)
+
+    # ── Candle marker for ALL strategies (shows where signal fired) ───────────
+    if _last_close:
+        sig_color = "#22c55e" if sig.direction == "bullish" else "#ef4444"
+        _emit_ann(
+            ticker, "marker", sig.strategy_id,
+            label=f"{sig.strategy_id} {arrow}  {sig.confidence:.0%}",
+            ts=ts_str, price=_last_close,
+            direction=sig.direction, color=sig_color,
+        )
 
 
 # ── Indicator frame builder ───────────────────────────────────────────────────
@@ -194,6 +271,11 @@ def route_signals(
             sig = fn(today, ticker=ticker)
             if sig is not None:
                 signals.append(sig)
+                # Emit chart annotation so the frontend can draw this signal
+                try:
+                    _emit_signal_annotation(ticker, sig, today)
+                except Exception:
+                    pass   # annotation failure must never crash the router
                 logger.info(
                     "strategy_signal",
                     extra={
@@ -478,6 +560,15 @@ def route_signals(
                 "router: conflict veto fired for %s (%s vs %s)",
                 ticker, _top.strategy_id, _second.strategy_id,
             )
+            # Annotate: conflict veto marker so chart shows the ambiguous zone
+            try:
+                _cv_ts = str(today.iloc[-1]["time"])
+                _cv_px = float(today.iloc[-1]["close"])
+                _emit_ann(ticker, "marker", "veto",
+                          label=f"✗ Conflict {_top.strategy_id}↑↓{_second.strategy_id}",
+                          ts=_cv_ts, price=_cv_px, color="#64748b")
+            except Exception:
+                pass
             return []
 
     # ── Volume ROC gate (false signal filter) ────────────────────────────────
@@ -501,6 +592,15 @@ def route_signals(
                 "router: vol_roc_veto %s — vol declining %.0f%% (%.0f → %.0f)",
                 ticker, (1 - _vol_roc) * 100, _prior_vol, _recent_vol,
             )
+            # Annotate: veto marker at current price so the chart shows why no entry
+            try:
+                _veto_ts  = str(today.iloc[-1]["time"])
+                _veto_px  = float(today.iloc[-1]["close"])
+                _emit_ann(ticker, "marker", "veto",
+                          label=f"✗ Vol ROC {_vol_roc:.2f}",
+                          ts=_veto_ts, price=_veto_px, color="#64748b")
+            except Exception:
+                pass
             return []
 
     if signals:

@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { init, dispose } from "klinecharts";
-import type { Bar, Trade } from "../../lib/api";
+import type { Bar, Trade, ChartAnnotation } from "../../lib/api";
 import { useThemeStore } from "../../store/theme";
 import { registerCustomIndicators } from "./kchartIndicators";
 import type { PositionLevels } from "./TradingChart";
@@ -51,6 +51,8 @@ export interface KChartProps {
   visibleFrom?: number;
   /** Active timeframe — used to set natural bar spacing ("1Min"|"5Min"|"15Min"|"1Hour") */
   tf?: string;
+  /** Bot-generated overlays: FVG zones, BOS hlines, signal/veto markers */
+  annotations?: ChartAnnotation[];
 }
 
 // ── Build KLineChart style object ─────────────────────────────────────────────
@@ -152,6 +154,7 @@ export function KChart({
   ticker,
   visibleFrom,
   tf = "5Min",
+  annotations = [],
 }: KChartProps) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const chartRef      = useRef<any>(null);
@@ -414,7 +417,48 @@ export function KChart({
       });
     }
 
-  }, [bars, tf, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels]);
+    // ── Bot annotation overlays (hline / zone) ───────────────────────────────
+    // Clear previous annotation group then redraw from fresh poll data.
+    // "marker" type is skipped here — KLineChart has no native candle marker API.
+    // hline  → one horizontalStraightLine at ann.price
+    // zone   → two horizontalStraightLines (top and bottom of the gap band)
+    try { chart.removeOverlay({ groupId: "ann" }); } catch (_) { /* no-op */ }
+
+    for (const ann of annotations) {
+      try {
+        if (ann.type === "hline" && ann.price != null) {
+          chart.createOverlay({
+            name: "horizontalStraightLine",
+            groupId: "ann",
+            lock: true,
+            points: [{ value: ann.price }],
+            styles: { line: { color: ann.color, size: 1, style: "dashed" as const, dashedValue: [4, 3] } },
+            needDefaultYAxisFigure: true,
+          });
+        } else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) {
+          // Top edge of zone with label
+          chart.createOverlay({
+            name: "horizontalStraightLine",
+            groupId: "ann",
+            lock: true,
+            points: [{ value: ann.price_high }],
+            styles: { line: { color: ann.color, size: 1, style: "dashed" as const, dashedValue: [4, 3] } },
+            needDefaultYAxisFigure: true,
+          });
+          // Bottom edge of zone (no label — same color, thinner)
+          chart.createOverlay({
+            name: "horizontalStraightLine",
+            groupId: "ann",
+            lock: true,
+            points: [{ value: ann.price_low }],
+            styles: { line: { color: ann.color, size: 1, style: "dashed" as const, dashedValue: [4, 3] } },
+            needDefaultYAxisFigure: false,
+          });
+        }
+      } catch (_) { /* skip if overlay type not available */ }
+    }
+
+  }, [bars, tf, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, annotations]);
 
   // trades/visibleFrom props kept on interface so parent doesn't need to change.
   // Trade markers temporarily disabled (custom overlay was corrupting KLineChart).

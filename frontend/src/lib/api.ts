@@ -193,6 +193,22 @@ export interface AppSettings {
   vol_roc_threshold?: number;    // Volume ROC veto threshold (default 0.50)
 }
 
+// ── Chart annotations (bot-drawn overlays) ────────────────────────────────────
+// Emitted by strategy_router.py when a signal or veto fires.
+// Frontend polls GET /api/bot/annotations/{ticker} every 5 s.
+export interface ChartAnnotation {
+  id: string;
+  type: "hline" | "zone" | "marker";
+  strategy: string;         // "FVG" | "BOS_MSS" | "veto" | …
+  label: string;
+  ts: string;               // ISO datetime
+  color: string;            // hex
+  direction?: string;       // "bullish" | "bearish"
+  price?: number;           // hline + marker
+  price_low?: number;       // zone bottom
+  price_high?: number;      // zone top
+}
+
 export interface PerformanceStats {
   total_pnl: number;
   total_trades: number;
@@ -238,7 +254,8 @@ export const api = {
     panic:     () => request<{ok:boolean;message:string}>("/api/bot/panic", { method: "POST" }),
     reset:     () => request<{ok:boolean;message:string}>("/api/bot/reset", { method: "POST" }),
     closeTrade:  (id: number) => request<{ok:boolean;message:string}>(`/api/bot/close/${id}`, { method: "POST" }),
-    tradeEvents: (id: number) => request<{ts:string;level:string;component:string;message:string}[]>(`/api/bot/trade-events/${id}`),
+    tradeEvents:   (id: number)     => request<{ts:string;level:string;component:string;message:string}[]>(`/api/bot/trade-events/${id}`),
+    annotations:   (ticker: string) => request<ChartAnnotation[]>(`/api/bot/annotations/${ticker}`),
   },
   trades: {
     list:        (mode="paper", status="all") => request<TradeListResponse>(`/api/trades?mode=${mode}&status=${status}`),

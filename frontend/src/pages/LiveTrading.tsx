@@ -8,7 +8,7 @@ import { RefreshCw, Radio, Bot } from "lucide-react";
 import { KChart } from "../components/charts/KChart";
 import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
-import { api, type Trade, type OptionsChainRow } from "../lib/api";
+import { api, type Trade, type OptionsChainRow, type ChartAnnotation } from "../lib/api";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
@@ -150,6 +150,14 @@ export function LiveTrading() {
     queryFn:  () => api.market.chain(ticker),
     enabled:  scannerTab === "chain",
     refetchInterval: 60_000,
+    retry: false,
+  });
+
+  // Bot chart annotations — zones, hlines, markers emitted by strategy_router
+  const { data: annotations = [] } = useQuery<ChartAnnotation[]>({
+    queryKey: ["annotations", ticker],
+    queryFn:  () => api.bot.annotations(ticker),
+    refetchInterval: 5_000,   // same cadence as bot tick
     retry: false,
   });
 
@@ -462,6 +470,7 @@ export function LiveTrading() {
             }
             ticker={ticker}
             height={500}
+            annotations={annotations}
           />
         </div>
 
