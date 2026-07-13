@@ -479,6 +479,28 @@ def route_signals(
             )
             return []
 
+    # ── Volume ROC gate (false signal filter) ────────────────────────────────
+    # Prevent entries when buying pressure is already fading.
+    # Compares avg volume of last 3 bars vs prior 3 bars.
+    # If recent vol < 65% of prior vol, momentum is dying → veto all signals.
+    if signals and len(today) >= 6:
+        _recent_vol = today["volume"].iloc[-3:].mean()
+        _prior_vol  = today["volume"].iloc[-6:-3].mean()
+        _vol_roc    = _recent_vol / _prior_vol if _prior_vol > 0 else 1.0
+
+        if _vol_roc < 0.65:
+            _db_log(
+                "INFO", "scan",
+                f"{ticker} — Volume ROC veto: recent vol {_recent_vol:.0f} "
+                f"vs prior {_prior_vol:.0f} (ROC={_vol_roc:.2f}) "
+                f"— fading momentum, staying in cash.",
+            )
+            logger.info(
+                "router: vol_roc_veto %s — vol declining %.0f%% (%.0f → %.0f)",
+                ticker, (1 - _vol_roc) * 100, _prior_vol, _recent_vol,
+            )
+            return []
+
     if signals:
         logger.info(
             "router_result: %d signal(s) for %s — top=%s %.0f%% conf",
