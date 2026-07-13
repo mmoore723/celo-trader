@@ -198,6 +198,12 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 _prev_state = json.load(_f)
             _prev_opt_px      = _prev_state.get("current_option_price")
             _prev_opt_px_time = _prev_state.get("current_option_price_time")
+            # ── Carry forward today's signal history so restarts don't wipe the log ──
+            # eval_log entries only have a time (HH:MM:SS), not a date, so we keep
+            # them all (capped at 10) — stale entries are displaced by new ones quickly.
+            _prev_eval = _prev_state.get("eval_log", [])
+            if _prev_eval:
+                LIVE_STATE["eval_log"] = _prev_eval
     except Exception:
         pass
     LIVE_STATE["current_option_price"]      = _prev_opt_px
