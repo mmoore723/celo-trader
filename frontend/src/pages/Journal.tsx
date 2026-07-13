@@ -19,39 +19,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-/**
- * Normalized label for the EXIT REASON column in the table (short / scannable).
- * The full raw reason is shown in the expanded detail panel below.
- */
-function normalizeExitReason(raw: string | null | undefined): string {
-  if (!raw) return "—";
-  const cat = raw.split(/[\s(]/)[0];
-  const MAP: Record<string, string> = {
-    momentum_dead_exit:                       "Dead Momentum",
-    structural_stop_bar_high:                 "Structural Stop",
-    atr_trail_stop:                           "Trail Stop",
-    trail_stop:                               "Trail Stop",
-    time_cap_loser_60m:                       "Time Limit",
-    time_cap_loser_20m:                       "Time Limit",
-    time_cap_winner:                          "Time Limit (Win)",
-    time_cap_winner_90m:                      "Time Limit (Win)",
-    stage1_50pct_full_exit_single_contract:   "25% Target",
-    stage1_50pct_full_exit:                   "25% Target",
-    stage1_50pct:                             "25% Target",
-    vwap_trend_dead:                          "VWAP Dead",
-    vwap_breach_profitable:                   "VWAP (Profit Lock)",
-    peak_giveback:                            "Peak Giveback",
-    hard_stop_20pct:                          "Hard Stop",
-    early_momentum_stop_12pct:                "Early Stop",
-    panic_close:                              "Panic Close",
-    manual_close:                             "Manual Close",
-    profit_lock:                              "Profit Lock",
-    stop_loss:                                "Stop Loss",
-    target_hit:                               "Target Hit",
-  };
-  return MAP[cat] ?? cat.replace(/_/g, " ");
-}
-
 /** Compact time formatter: "06/26 09:45" */
 function fmtTime(iso: string | undefined): string {
   if (!iso) return "—";
