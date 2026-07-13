@@ -415,16 +415,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     from config import get_risk_tier as _grt, DAILY_LOSS_HARD_CAP_PCT as _DLHCP, get_settings as _gs
     _kill_locked, _kill_reason = check_kill_lock()
     _is_paper = _gs().get("paper_trading", True)
-    # Preserve eval_log across full state writes — without this, every tick
-    # overwrites bot_state.json with a fresh dict that has no eval_log field,
-    # wiping signal history one tick after it was written.
-    _preserved_eval_log = []
-    try:
-        if _state_path.exists():
-            with open(_state_path) as _ef:
-                _preserved_eval_log = _json.load(_ef).get("eval_log", [])
-    except Exception:
-        pass
+    # Preserve eval_log across ticks using LIVE_STATE (in-memory).
+    # File-read was racy: an intermediate write at line ~1133 could put
+    # eval_log:[] back in the file between the eval_log write (line ~1168)
+    # and this read, silently dropping every signal.  LIVE_STATE is updated
+    # atomically in the same thread so there is no race.
+    _preserved_eval_log = LIVE_STATE.get("eval_log", [])
     try:
         _json.dump({
             "running":                True,
@@ -1162,9 +1158,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             # "signal" = manual mode alert (bot won't execute), "auto" = bot will execute
             "mode":      "signal" if settings.get("signal_only_mode", False) else "auto",
         }
-        _log = _bs_c.get("eval_log") or []
-        _log.insert(0, _new_entry)           # newest first
-        _bs_c["eval_log"] = _log[:10]        # keep last 10 only
+        _log = list(LIVE_STATE.get("eval_log", []))  # read from memory, not file
+        _log.insert(0, _new_entry)                    # newest first
+        LIVE_STATE["eval_log"] = _log[:10]            # update in-memory copy first
+        _bs_c["eval_log"]      = LIVE_STATE["eval_log"]
         _json.dump(_bs_c, open(_state_path, "w"))
     except Exception:
         pass  # non-critical — next full tick write will catch up
