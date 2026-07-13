@@ -1139,6 +1139,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "s1_target": _s1_target,
             "profit":    _profit,
             "strategy":  strategy_id,
+            # "signal" = manual mode alert (bot won't execute), "auto" = bot will execute
+            "mode":      "signal" if settings.get("signal_only_mode", False) else "auto",
         }
         _log = _bs_c.get("eval_log") or []
         _log.insert(0, _new_entry)           # newest first
@@ -1236,6 +1238,18 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 "ticker":     ticker,
             },
         )
+        return
+
+    # ── Signal-only mode gate ─────────────────────────────────────────────────
+    # All quality checks passed. If signal_only_mode is on, broadcast the alert
+    # but skip execution — user enters the trade manually in their broker.
+    if settings.get("signal_only_mode", False):
+        _s1_disp = round(eff_entry * 1.5, 2)
+        log_event("INFO", "trading_logic",
+                  f"📡 [{ticker}] MANUAL SIGNAL — {opt_type.upper()} "
+                  f"${contract.get('strike', '')} exp {contract.get('expiry', '')} "
+                  f"| {n_contracts}c @ ${eff_entry:.2f} → ${_s1_disp:.2f} "
+                  f"[{strategy_id}] — Signal-Only mode is ON. Enter this trade yourself.")
         return
 
     # ── Place order ───────────────────────────────────────────────────────────

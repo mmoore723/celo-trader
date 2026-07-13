@@ -130,6 +130,7 @@ class Settings(BaseModel):
     chan_break_enabled: bool = True
     mid_brk_enabled: bool = True
     trend_cont_enabled: bool = True
+    signal_only_mode: bool = False  # True = bot alerts but never places orders
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────

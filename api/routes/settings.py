@@ -28,6 +28,7 @@ def get_settings_endpoint() -> Settings:
         chan_break_enabled=bool(s.get("strategy_chan_enabled", True)),
         mid_brk_enabled=bool(s.get("strategy_mid_enabled", True)),
         trend_cont_enabled=bool(s.get("strategy_tcont_enabled", True)),
+        signal_only_mode=bool(s.get("signal_only_mode", False)),
     )
 
 
