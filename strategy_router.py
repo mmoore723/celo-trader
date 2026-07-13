@@ -488,7 +488,7 @@ def route_signals(
         _prior_vol  = today["volume"].iloc[-6:-3].mean()
         _vol_roc    = _recent_vol / _prior_vol if _prior_vol > 0 else 1.0
 
-        if _vol_roc < 0.65:
+        if _vol_roc < 0.50:
             _db_log(
                 "INFO", "scan",
                 f"{ticker} — Volume ROC veto: recent vol {_recent_vol:.0f} "
