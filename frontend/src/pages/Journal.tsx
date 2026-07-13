@@ -467,11 +467,10 @@ export function Journal() {
                             : "—"}
                         </td>
                         <td className="hidden sm:table-cell"><StatusBadge status={t.status} /></td>
-                        {/* Short normalized label in table — full raw reason in expanded detail */}
+                        {/* Full raw exit reason in table */}
                         <td className="text-xs hidden lg:table-cell"
-                            style={{ color: "var(--ink-muted)" }}
-                            title={t.exit_reason ?? undefined}>
-                          {normalizeExitReason(t.exit_reason)}
+                            style={{ color: "var(--ink-muted)", maxWidth: 200, wordBreak: "break-word" }}>
+                          {t.exit_reason ?? "—"}
                         </td>
                         <td className="text-xs num hidden lg:table-cell" style={{ color: "var(--ink-muted)" }}>
                           {fmtTime(t.entry_time)}
