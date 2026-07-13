@@ -99,6 +99,7 @@ export function LiveTrading() {
   const [logPaused,       setLogPaused]       = useState(false);
   const logSnapshotRef  = useRef<typeof logs>([]);
   const [logTab,         setLogTab]           = useState<"thinking" | "network">("thinking");
+  const [tradeDrawerId,  setTradeDrawerId]    = useState<number | null>(null);
 
   const { status, logs } = useBotStore();
   const { } = useUIStore();
@@ -152,6 +153,14 @@ export function LiveTrading() {
     retry: false,
   });
 
+  // Trade log drawer — fetches system_events filtered to clicked trade's ticker+entry_time
+  const { data: tradeEvents = [] } = useQuery({
+    queryKey: ["trade-events", tradeDrawerId],
+    queryFn: () => api.bot.tradeEvents(tradeDrawerId!),
+    enabled: tradeDrawerId !== null,
+    refetchInterval: 5_000,
+  });
+
   // Settings — for signal_only_mode toggle
   const { data: appSettings } = useQuery({
     queryKey: ["settings"],
@@ -203,6 +212,7 @@ export function LiveTrading() {
     changePct >= 0 ? "var(--positive)" : "var(--negative)";
 
   return (
+    <>
     <div className="p-4 flex flex-col gap-4">
 
       {/* ── Stat bar ──────────────────────────────────────────────────────── */}
@@ -670,10 +680,13 @@ export function LiveTrading() {
                     const pnlPct  = curPx != null ? (curPx - t.entry_price) / t.entry_price * 100 : null;
                     const updTime = livePos?.current_option_price_time;
                     return (
-                      <tr key={t.id}>
+                      <tr key={t.id}
+                        style={{ cursor: "pointer" }}
+                        title="Click to view bot thinking log for this trade"
+                        onClick={() => setTradeDrawerId(id => id === t.id ? null : t.id)}>
                         <td className="font-semibold"
-                          style={{ cursor: "pointer", color: "var(--accent)" }}
-                          onClick={() => setTicker(t.ticker)}
+                          style={{ color: "var(--accent)" }}
+                          onClick={(e) => { e.stopPropagation(); setTicker(t.ticker); }}
                           title={`View ${t.ticker} chart`}>
                           {t.ticker}
                         </td>
@@ -817,5 +830,67 @@ export function LiveTrading() {
         </div>
       </div>
     </div>
+
+    {/* ── Trade log drawer ──────────────────────────────────────────────────── */}
+    {tradeDrawerId !== null && (() => {
+      const trade = openTrades.find((t: Trade) => t.id === tradeDrawerId);
+      const levelColor = (lvl: string) => {
+        if (lvl === "ERROR" || lvl === "CRITICAL") return "#f87171";
+        if (lvl === "WARNING") return "#fbbf24";
+        return "var(--ink-muted)";
+      };
+      return (
+        <div style={{
+          position: "fixed", top: 0, right: 0, bottom: 0, width: 420,
+          background: "var(--surface)", borderLeft: "1px solid var(--border)",
+          boxShadow: "-4px 0 24px rgba(0,0,0,0.18)", zIndex: 200,
+          display: "flex", flexDirection: "column",
+        }}>
+          {/* Header */}
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <span className="font-semibold" style={{ color: "var(--ink)", fontSize: 14 }}>
+                {trade?.ticker ?? "Trade"} — Bot Thinking Log
+              </span>
+              {trade && (
+                <span className="text-xs ml-2" style={{ color: "var(--ink-muted)" }}>
+                  {trade.direction?.toUpperCase()} · {trade.strategy_id} · Entry ${trade.entry_price?.toFixed(2)}
+                </span>
+              )}
+            </div>
+            <button onClick={() => setTradeDrawerId(null)}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--ink-muted)", lineHeight: 1 }}>
+              ✕
+            </button>
+          </div>
+
+          {/* Log entries */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", fontSize: 11, fontFamily: "monospace" }}>
+            {tradeEvents.length === 0 ? (
+              <p style={{ color: "var(--ink-muted)", marginTop: 16, textAlign: "center" }}>
+                No bot log entries yet for this trade.<br/>
+                <span style={{ fontSize: 10 }}>Events appear as the bot evaluates this ticker.</span>
+              </p>
+            ) : (
+              [...tradeEvents].reverse().map((ev, i) => {
+                const ts = ev.ts?.slice(11, 19) ?? "";   // HH:MM:SS from ISO
+                return (
+                  <div key={i} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid var(--border-faint, var(--border))" }}>
+                    <span style={{ color: "var(--ink-faint, var(--ink-muted))", marginRight: 6 }}>{ts}</span>
+                    <span style={{ color: levelColor(ev.level), marginRight: 6, fontWeight: 600 }}>{ev.level !== "INFO" ? ev.level : ""}</span>
+                    <span style={{ color: "var(--ink)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{ev.message}</span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div style={{ padding: "8px 16px", borderTop: "1px solid var(--border)", fontSize: 10, color: "var(--ink-muted)" }}>
+            {tradeEvents.length} events · auto-refreshes every 5s · newest first
+          </div>
+        </div>
+      );
+    })()}
+    </>
   );
 }

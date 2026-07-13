@@ -141,6 +141,33 @@ def reset_session() -> BotActionResponse:
     return BotActionResponse(ok=True, message="Session state reset")
 
 
+@router.get("/trade-events/{trade_id}")
+def get_trade_events(trade_id: int) -> list[dict]:
+    """
+    Return all system_events tagged to the given trade since its entry time.
+    Filters by [TICKER] pattern in the message so only that ticker's events show.
+    """
+    from database import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT ticker, entry_time FROM trades WHERE id = ?", (trade_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Trade not found")
+        ticker   = row["ticker"]
+        entry_ts = row["entry_time"]
+        events   = conn.execute(
+            """SELECT ts, level, component, message
+               FROM system_events
+               WHERE ts >= ?
+               AND message LIKE '%[' || ? || ']%'
+               ORDER BY ts ASC
+               LIMIT 500""",
+            (entry_ts, ticker),
+        ).fetchall()
+    return [dict(e) for e in events]
+
+
 @router.post("/close/{trade_id}", response_model=BotActionResponse)
 def close_trade(trade_id: int) -> BotActionResponse:
     from trading.controls import close_trade_by_id

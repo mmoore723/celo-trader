@@ -237,7 +237,8 @@ export const api = {
     stop:      () => request<{ok:boolean;message:string}>("/api/bot/stop",  { method: "POST" }),
     panic:     () => request<{ok:boolean;message:string}>("/api/bot/panic", { method: "POST" }),
     reset:     () => request<{ok:boolean;message:string}>("/api/bot/reset", { method: "POST" }),
-    closeTrade:(id: number) => request<{ok:boolean;message:string}>(`/api/bot/close/${id}`, { method: "POST" }),
+    closeTrade:  (id: number) => request<{ok:boolean;message:string}>(`/api/bot/close/${id}`, { method: "POST" }),
+    tradeEvents: (id: number) => request<{ts:string;level:string;component:string;message:string}[]>(`/api/bot/trade-events/${id}`),
   },
   trades: {
     list:        (mode="paper", status="all") => request<TradeListResponse>(`/api/trades?mode=${mode}&status=${status}`),
