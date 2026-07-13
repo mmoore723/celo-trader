@@ -143,7 +143,9 @@ _MIN_PRICE         = 10.0        # minimum stock price
 _MIN_AVG_DAILY_VOL = 2_000_000   # 20-day avg daily share volume
 _MIN_GAP_PCT       = 1.0         # open must gap at least 1 % from prev close
 _MAX_GAP_PCT       = 4.0         # cap at 4 % to avoid over-extended names
-_MIN_RVOL          = 2.5         # early-session RVOL vs normalized avg
+_MIN_RVOL          = 2.0         # early-session RVOL vs normalized avg (individual stocks)
+_MIN_RVOL_ETF      = 1.5         # ETFs move less; 1.5× is meaningful institutional signal
+_MIN_GAP_PCT_ETF   = 0.5         # 0.5% gap on SPY/QQQ is a real directional move (not noise)
 _MIN_ATR_DOLLARS   = 1.0         # ATR(14) on daily bars must be > $1
 
 # Legacy intra-session ATR thresholds (used by _score_ticker rescore)
@@ -380,9 +382,11 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
         gap_pct = (gap_ref - prev_close) / prev_close * 100
         abs_gap  = abs(gap_pct)
 
-        if abs_gap < _MIN_GAP_PCT or abs_gap > _MAX_GAP_PCT:
-            logger.debug("%s gap=%.2f%% outside [%.0f%%–%.0f%%] — skipped",
-                         ticker, gap_pct, _MIN_GAP_PCT, _MAX_GAP_PCT)
+        # ETFs gap less than stocks by nature — use a lower minimum gap threshold
+        _gap_min = _MIN_GAP_PCT_ETF if ticker in _ETF_SET else _MIN_GAP_PCT
+        if abs_gap < _gap_min or abs_gap > _MAX_GAP_PCT:
+            logger.debug("%s gap=%.2f%% outside [%.2f%%–%.0f%%] — skipped",
+                         ticker, gap_pct, _gap_min, _MAX_GAP_PCT)
             continue
 
         candidates.append({
@@ -507,14 +511,16 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
             expected_vol = max(avg_daily_vol * elapsed_pct, one_bar_vol)
             rvol = c["daily_vol"] / expected_vol if expected_vol > 0 else 0.0
 
+            # ETFs get a lower RVOL bar — they don't spike like individual stocks
+            _rvol_min = _MIN_RVOL_ETF if ticker in _ETF_SET else _MIN_RVOL
             if elapsed_min >= 5:
-                rvol_ok = rvol >= _MIN_RVOL
+                rvol_ok = rvol >= _rvol_min
             else:
                 rvol_ok = c["daily_vol"] >= one_bar_vol  # early: real volume check
             if not rvol_ok:
                 logger.debug(
-                    "%s RVOL=%.2f (vol=%d, exp=%d, elapsed=%.0f min) — skipped",
-                    ticker, rvol, c["daily_vol"], int(expected_vol), elapsed_min,
+                    "%s RVOL=%.2f < %.1f (vol=%d, exp=%d, elapsed=%.0f min) — skipped",
+                    ticker, rvol, _rvol_min, c["daily_vol"], int(expected_vol), elapsed_min,
                 )
                 continue
 
@@ -545,12 +551,11 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
         len(scored), max_tickers, top,
     )
 
-    # Pad with anchors if fewer than 2 stocks survive all filters
-    for anchor in ANCHOR_TICKERS:
+    # Always prepend SPY/QQQ — primary instruments evaluated every day regardless of gap
+    for anchor in reversed(ANCHOR_TICKERS):
         if anchor not in top:
-            if len(top) < 2:
-                top.append(anchor)
-                logger.info("daily_premarket_scan: padded with anchor %s", anchor)
+            top.insert(0, anchor)
+            logger.info("daily_premarket_scan: prepended anchor %s", anchor)
 
     # ── Pin user watchlist tickers — always include, front of list ────────────
     # These bypass the gap/RVOL filter. They are prepended so the bot evaluates
