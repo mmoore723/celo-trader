@@ -3,7 +3,7 @@
  * Real-time chart, signal alert banner (Bot Focus), open positions, eval log, scanner.
  */
 import { useState, useMemo, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Radio, Bot } from "lucide-react";
 import { KChart } from "../components/charts/KChart";
 import { useBotStore } from "../store/bot";
@@ -103,7 +103,6 @@ export function LiveTrading() {
 
   const { status, logs } = useBotStore();
   const { } = useUIStore();
-  const qc = useQueryClient();
 
   const barsRefetchMs = tf === "1Min" ? 15_000 : tf === "5Min" ? 30_000 : 60_000;
 
@@ -168,22 +167,6 @@ export function LiveTrading() {
     enabled: tradeDrawerId !== null,
     refetchInterval: 5_000,
   });
-
-  // Settings — for signal_only_mode toggle
-  const { data: appSettings } = useQuery({
-    queryKey: ["settings"],
-    queryFn: api.settings.get,
-    refetchInterval: 30_000,
-  });
-  const signalOnly = appSettings?.signal_only_mode ?? false;
-
-  async function toggleSignalOnly() {
-    if (!appSettings) return;
-    try {
-      await api.settings.save({ ...appSettings, signal_only_mode: !signalOnly });
-      qc.invalidateQueries({ queryKey: ["settings"] });
-    } catch { /* non-fatal */ }
-  }
 
   // ── Derived values ──────────────────────────────────────────────────────────
   const dropdownTickers = useMemo(() => {
@@ -258,28 +241,6 @@ export function LiveTrading() {
           </div>
         ))}
 
-        {/* Auto / Manual execution toggle */}
-        <button
-          onClick={toggleSignalOnly}
-          className="card px-4 py-2.5 flex flex-col gap-0.5 min-w-[130px] text-left transition-colors"
-          style={{
-            border: signalOnly
-              ? "1.5px solid var(--warning)"
-              : "1.5px solid var(--positive)",
-            cursor: "pointer",
-          }}
-          title={signalOnly
-            ? "Signal-Only mode: bot signals but does NOT place orders. Click to enable Auto-Execute."
-            : "Auto-Execute mode: bot places orders automatically. Click to switch to Signal-Only."}
-        >
-          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Execution</span>
-          <span className="flex items-center gap-1.5 font-semibold text-sm">
-            {signalOnly
-              ? <><Radio size={13} style={{ color: "var(--warning)" }} /><span style={{ color: "var(--warning)" }}>SIGNAL ONLY</span></>
-              : <><Bot  size={13} style={{ color: "var(--positive)" }} /><span style={{ color: "var(--positive)" }}>AUTO</span></>
-            }
-          </span>
-        </button>
       </div>
 
       {/* ── Bot Focus — Signal Alert Banner ───────────────────────────────── */}

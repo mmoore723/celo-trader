@@ -36,6 +36,7 @@ const DEFAULT: AppSettings = {
   chan_break_enabled: true,
   mid_brk_enabled: true,
   trend_cont_enabled: true,
+  signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
   // Trade parameters
   orb_stage1_gain_pct: 50,
@@ -177,8 +178,9 @@ function CredentialsPanel() {
 }
 
 export function Settings() {
-  const [form, setForm] = useState<AppSettings>(DEFAULT);
-  const [saved, setSaved] = useState(false);
+  const [form,      setForm]      = useState<AppSettings>(DEFAULT);
+  const [savedForm, setSavedForm] = useState<AppSettings>(DEFAULT); // last committed state
+  const [saved,     setSaved]     = useState(false);
   // Raw watchlist text — only parsed into form.watchlist on blur so commas
   // don't disappear while the user is still typing
   const [watchlistRaw, setWatchlistRaw] = useState(DEFAULT.watchlist.join(", "));
@@ -192,6 +194,7 @@ export function Settings() {
   useEffect(() => {
     if (data) {
       setForm(data);
+      setSavedForm(data);   // anchor the "discard" reference
       setWatchlistRaw(data.watchlist.join(", "));
     }
   }, [data]);
@@ -201,8 +204,17 @@ export function Settings() {
     setSaved(false);
   }
 
+  // True when the form has been changed since the last save/load
+  const hasChanges = JSON.stringify(form) !== JSON.stringify(savedForm);
+
+  function discard() {
+    setForm(savedForm);
+    setWatchlistRaw(savedForm.watchlist.join(", "));
+  }
+
   async function save() {
     await api.settings.save(form);
+    setSavedForm(form);   // move the anchor forward so discard stays correct
     qc.invalidateQueries({ queryKey: ["settings"] });
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -233,6 +245,20 @@ export function Settings() {
             ⚠️ Live mode places real orders with real money. Ensure your Alpaca live API keys are configured.
           </p>
         )}
+
+        {/* Execution mode — signal-only vs auto-execute */}
+        <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+          <Toggle
+            label="Signal-Only mode — bot signals but does NOT place orders"
+            checked={form.signal_only_mode ?? false}
+            onChange={(v) => set("signal_only_mode" as any, v)}
+          />
+          {(form.signal_only_mode) && (
+            <p className="text-xs mt-1" style={{ color: "var(--warning)" }}>
+              ⚠️ Signal-Only is ON. The bot will alert you to every entry but will NOT submit any orders. Switch off to enable auto-execution.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Risk */}
@@ -428,14 +454,25 @@ export function Settings() {
         <CredentialsPanel />
       </div>
 
-      {/* Save */}
-      <button
-        className={`btn w-full justify-center ${saved ? "btn-ghost" : "btn-primary"}`}
-        onClick={save}
-      >
-        <Save size={14} />
-        {saved ? "Saved!" : "Save Settings"}
-      </button>
+      {/* Save / Discard */}
+      <div className="flex gap-2">
+        {hasChanges && (
+          <button
+            className="btn btn-ghost flex-none"
+            onClick={discard}
+            title="Revert all unsaved changes back to the last saved state"
+          >
+            Discard changes
+          </button>
+        )}
+        <button
+          className={`btn flex-1 justify-center ${saved ? "btn-ghost" : hasChanges ? "btn-primary" : "btn-ghost"}`}
+          onClick={save}
+        >
+          <Save size={14} />
+          {saved ? "Saved!" : "Save Settings"}
+        </button>
+      </div>
     </div>
   );
 }
