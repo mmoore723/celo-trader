@@ -73,8 +73,12 @@ export interface StrategyRow {
   strategy_id: string;
   trades: number;
   wins: number;
+  losses: number;
   win_rate: number;
   total_pnl: number;
+  avg_win: number;
+  avg_loss: number;
+  profit_factor: number;
   avg_mfe_pct: number;
 }
 
@@ -91,8 +95,11 @@ export interface TickerRow {
   ticker: string;
   trades: number;
   wins: number;
+  losses: number;
   win_rate: number;
   total_pnl: number;
+  avg_win: number;
+  avg_loss: number;
 }
 
 export interface ExitReasonRow {

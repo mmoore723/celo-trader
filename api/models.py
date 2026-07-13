@@ -138,8 +138,12 @@ class StrategyRow(BaseModel):
     strategy_id: str
     trades: int
     wins: int
+    losses: int
     win_rate: float
     total_pnl: float
+    avg_win: float        # avg P&L on winning trades
+    avg_loss: float       # avg P&L on losing trades (negative)
+    profit_factor: float  # gross_wins / abs(gross_losses)
     avg_mfe_pct: float
 
 class HourRow(BaseModel):
@@ -154,8 +158,11 @@ class TickerRow(BaseModel):
     ticker: str
     trades: int
     wins: int
+    losses: int
     win_rate: float
     total_pnl: float
+    avg_win: float
+    avg_loss: float
 
 class ExitReasonRow(BaseModel):
     reason: str

@@ -1,141 +1,116 @@
 /**
- * Performance.tsx — P&L analytics, equity curve, and deep breakdowns.
+ * Performance.tsx — actionable trading analytics dashboard.
+ *
+ * Sections (top → bottom):
+ *   1. Mode toggle
+ *   2. Key stats strip  — P&L, Win%, Profit Factor, Avg Win, Avg Loss, Total Trades
+ *   3. Daily P&L bars  — bar per trading day + cumulative equity line
+ *   4. Strategy table  — profit factor, avg win/loss, P&L share bar
+ *   5. Signal quality  — false signal rate (momentum_dead), exit analysis
+ *   6. Ticker table    — per-symbol breakdown
+ *   7. Entry hour      — win rate by hour of day
+ *   8. Calendar        — monthly heatmap at bottom
  */
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AreaChart, Area, BarChart, Bar as RBar, XAxis, YAxis,
-  Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell,
+  ComposedChart, Bar, Line,
+  BarChart, Bar as RBar,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell,
 } from "recharts";
-// Note: BarChart/RBar/Cell still used in analytics sections below
 import { api } from "../lib/api";
 import { useThemeStore } from "../store/theme";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 
-/** Normalize raw exit_reason strings to clean display labels (same map as Journal). */
-function normalizeExitReason(raw: string | null | undefined): string {
-  if (!raw) return "—";
-  const cat = raw.split(/[\s(]/)[0];
-  const MAP: Record<string, string> = {
-    momentum_dead_exit:                       "Dead Momentum",
-    structural_stop_bar_high:                 "Structural Stop",
-    atr_trail_stop:                           "Trail Stop",
-    trail_stop:                               "Trail Stop",
-    time_cap_loser_60m:                       "Time Limit",
-    time_cap_winner:                          "Time Limit (Win)",
-    stage1_50pct_full_exit_single_contract:   "50% Target",
-    stage1_50pct_full_exit:                   "50% Target",
-    panic_close:                              "Panic Close",
-    manual_close:                             "Manual Close",
-    profit_lock:                              "Profit Lock",
-    stop_loss:                                "Stop Loss",
-    target_hit:                               "Target Hit",
-  };
-  return MAP[cat] ?? cat.replace(/_/g, " ");
+// ── Exit reason categorisation (frontend only) ────────────────────────────────
+type ExitGroup = "target" | "timecap" | "signal" | "stop" | "cutoff" | "other";
+
+function categoriseExit(raw: string): { label: string; group: ExitGroup } {
+  const key = (raw || "").split(/[\s(]/)[0];
+  if (key.startsWith("stage1"))               return { label: "Stage 1 Target",   group: "target"  };
+  if (key.startsWith("vwap_breach"))          return { label: "VWAP Breach Exit", group: "target"  };
+  if (key.startsWith("peak_giveback"))        return { label: "Peak Giveback",     group: "stop"    };
+  if (key.startsWith("time_cap"))             return { label: "Time Cap (60 min)", group: "timecap" };
+  if (key.startsWith("session_hard_cutoff"))  return { label: "Session Cutoff",    group: "cutoff"  };
+  if (key === "momentum_dead_exit")           return { label: "Dead Momentum",     group: "signal"  };
+  if (key === "atr_trail_stop" || key === "trail_stop") return { label: "ATR Trail Stop", group: "stop" };
+  if (key.startsWith("structural_stop"))      return { label: "Structural Stop",   group: "stop"    };
+  if (key.startsWith("early_momentum"))       return { label: "Early Stop",        group: "stop"    };
+  if (key.startsWith("vwap_trend"))           return { label: "VWAP Trend Dead",   group: "stop"    };
+  if (key === "manual_journal" || key === "panic") return { label: "Manual/Panic", group: "other"   };
+  return { label: key.replace(/_/g, " "), group: "other" };
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
-  return (
-    <div className="card px-4 py-3 flex flex-col gap-0.5">
-      <span className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</span>
-      <span className="num text-xl font-semibold" style={{ color: "var(--ink)" }}>{value}</span>
-      {sub && <span className="text-xs" style={{ color: "var(--ink-faint)" }}>{sub}</span>}
-    </div>
-  );
-}
+const GROUP_COLOR: Record<ExitGroup, string> = {
+  target:  "var(--positive)",
+  timecap: "#58a6ff",
+  cutoff:  "#8b949e",
+  signal:  "#f0883e",
+  stop:    "var(--negative)",
+  other:   "#8b949e",
+};
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>{title}</h3>
-  );
-}
-
-// ── Calendar heatmap — monthly + yearly views ─────────────────────────────────
+// ── Calendar helpers ──────────────────────────────────────────────────────────
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const DAYS   = ["S","M","T","W","T","F","S"];
 
 function pnlColor(pnl: number | undefined, maxAbs: number, dark: boolean): string {
-  if (pnl == null) return "transparent";
-  if (Math.abs(pnl) < 0.01) return dark ? "#21262d" : "#f0f2f7"; // no trade
+  if (pnl == null || Math.abs(pnl) < 0.01) return dark ? "#21262d" : "#f0f2f7";
   const intensity = Math.min(1, Math.abs(pnl) / (maxAbs || 1));
   if (pnl > 0) {
-    // green: low → #1a4731, high → #3fb950 (dark) / #bbf7d0 → #16a34a (light)
-    const r = dark ? Math.round(31 + intensity * (80 - 31))   : Math.round(187 - intensity * (187 - 22));
-    const g = dark ? Math.round(71 + intensity * (185 - 71))  : Math.round(247 - intensity * (247 - 163));
-    const b = dark ? Math.round(49 + intensity * (80 - 49))   : Math.round(208 - intensity * (208 - 74));
-    return `rgb(${r},${g},${b})`;
-  } else {
-    // red: low → #4b1113, high → #f85149 (dark) / #fecaca → #dc2626 (light)
-    const r = dark ? Math.round(75 + intensity * (248 - 75))  : Math.round(254 - intensity * (254 - 220));
-    const g = dark ? Math.round(17 + intensity * (81 - 17))   : Math.round(202 - intensity * (202 - 38));
-    const b = dark ? Math.round(19 + intensity * (73 - 19))   : Math.round(202 - intensity * (202 - 38));
+    const r = dark ? Math.round(31  + intensity * 49)  : Math.round(187 - intensity * 165);
+    const g = dark ? Math.round(71  + intensity * 114) : Math.round(247 - intensity * 84);
+    const b = dark ? Math.round(49  + intensity * 31)  : Math.round(208 - intensity * 134);
     return `rgb(${r},${g},${b})`;
   }
+  const r = dark ? Math.round(75  + intensity * 173) : Math.round(254 - intensity * 34);
+  const g = dark ? Math.round(17  + intensity * 64)  : Math.round(202 - intensity * 164);
+  const b = dark ? Math.round(19  + intensity * 54)  : Math.round(202 - intensity * 164);
+  return `rgb(${r},${g},${b})`;
 }
 
-function MonthGrid({
-  year, month, pnlMap, maxAbs, dark, tooltip, setTooltip,
+function CalendarMonth({
+  year, month, pnlMap, maxAbs, dark,
 }: {
-  year: number; month: number; // month 0-based
-  pnlMap: Record<string, number>;
-  maxAbs: number; dark: boolean;
-  tooltip: string | null; setTooltip: (s: string | null) => void;
+  year: number; month: number; pnlMap: Record<string,number>; maxAbs: number; dark: boolean;
 }) {
-  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const firstDay    = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (number | null)[] = [
     ...Array(firstDay).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
-  // Pad to full weeks
   while (cells.length % 7 !== 0) cells.push(null);
-
   return (
     <div>
-      <div className="text-xs font-semibold mb-1" style={{ color: "var(--ink-muted)" }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-muted)", marginBottom: 4 }}>
         {MONTHS[month]} {year}
       </div>
-      {/* Day-of-week header */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 2 }}>
-        {DAYS.map((d) => (
-          <div key={d} style={{ fontSize: 9, color: "var(--ink-faint)", textAlign: "center" }}>{d[0]}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 1, marginBottom: 2 }}>
+        {DAYS.map((d, i) => (
+          <div key={i} style={{ fontSize: 8, color: "var(--ink-faint)", textAlign: "center" }}>{d}</div>
         ))}
       </div>
-      {/* Date cells */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
         {cells.map((day, i) => {
           if (!day) return <div key={i} />;
-          const dateStr = `${year}-${String(month + 1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-          const pnl = pnlMap[dateStr];
-          const bg  = pnlColor(pnl, maxAbs, dark);
-          const isWeekend = (firstDay + day - 1) % 7 === 0 || (firstDay + day - 1) % 7 === 6;
-          const tipKey = `${dateStr}`;
+          const ds  = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+          const pnl = pnlMap[ds];
           return (
-            <div
-              key={i}
-              title={pnl != null ? `${dateStr}: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` : dateStr}
-              onMouseEnter={() => pnl != null && setTooltip(tipKey)}
-              onMouseLeave={() => setTooltip(null)}
+            <div key={i} title={pnl != null ? `${ds}: ${pnl>=0?"+":""}$${pnl.toFixed(2)}` : ds}
               style={{
-                height: 28,
-                borderRadius: 3,
-                background: isWeekend && pnl == null
-                  ? (dark ? "#161b22" : "#f8fafc")
-                  : bg || (dark ? "#21262d" : "#f0f2f7"),
-                display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center",
-                cursor: pnl != null ? "default" : "default",
-                border: tooltip === tipKey ? "1px solid var(--accent)" : "1px solid transparent",
-                position: "relative",
+                height: 26, borderRadius: 3,
+                background: pnlColor(pnl, maxAbs, dark),
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
               }}
             >
-              <span style={{ fontSize: 9, color: pnl != null ? (dark ? "#e6edf3" : "#1f2937") : "var(--ink-faint)", fontWeight: pnl != null ? 600 : 400 }}>
+              <span style={{ fontSize: 8, color: pnl!=null ? (dark?"#e6edf3":"#1f2937") : "var(--ink-faint)", fontWeight: pnl!=null?600:400 }}>
                 {day}
               </span>
               {pnl != null && (
-                <span style={{ fontSize: 7, color: dark ? "#e6edf3" : "#1f2937", lineHeight: 1 }}>
-                  {pnl >= 0 ? "+" : ""}{pnl >= 100 || pnl <= -100 ? `$${Math.round(pnl)}` : `$${pnl.toFixed(0)}`}
+                <span style={{ fontSize: 6.5, color: dark?"#e6edf3":"#1f2937", lineHeight: 1 }}>
+                  {pnl>=0?"+":""}{Math.abs(pnl)>=100?`$${Math.round(pnl)}`:`$${pnl.toFixed(0)}`}
                 </span>
               )}
             </div>
@@ -146,464 +121,464 @@ function MonthGrid({
   );
 }
 
-function CalendarHeatmap({ daily, dark }: { daily: { date: string; pnl: number }[]; dark: boolean }) {
-  const [view, setView]           = useState<"month" | "year">("month");
-  const [monthOffset, setMonthOffset] = useState(0); // 0 = current month
-  const [tooltip, setTooltip]     = useState<string | null>(null);
-
-  const pnlMap = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const d of daily) m[d.date] = d.pnl;
-    return m;
-  }, [daily]);
-
-  const maxAbs = useMemo(() =>
-    Math.max(1, ...daily.map((d) => Math.abs(d.pnl))),
-  [daily]);
-
-  const now   = new Date();
-  const year  = now.getFullYear();
-
-  // Month view target
-  const target     = new Date(year, now.getMonth() + monthOffset, 1);
-  const tYear      = target.getFullYear();
-  const tMonth     = target.getMonth();
-  const monthLabel = `${MONTHS[tMonth]} ${tYear}`;
-
+// ── Small reusable pieces ──────────────────────────────────────────────────────
+function StatCard({ label, value, sub, color }: {
+  label: string; value: string; sub?: string; color?: string;
+}) {
   return (
-    <div className="card p-4">
-      {/* Header row */}
-      <div className="flex items-center justify-between mb-4">
-        <SectionHeader title="Daily P&L Calendar" />
-        <div className="flex items-center gap-2">
-          {/* View toggle */}
-          <div className="flex gap-1">
-            {(["month", "year"] as const).map((v) => (
-              <button
-                key={v}
-                className={`btn btn-sm ${view === v ? "btn-primary" : "btn-ghost"}`}
-                onClick={() => setView(v)}
-              >
-                {v.charAt(0).toUpperCase() + v.slice(1)}
-              </button>
-            ))}
-          </div>
-          {/* Month navigation (month view only) */}
-          {view === "month" && (
-            <div className="flex items-center gap-1">
-              <button className="btn btn-ghost btn-sm" onClick={() => setMonthOffset((o) => o - 1)}>‹</button>
-              <span className="text-xs font-semibold" style={{ color: "var(--ink)", minWidth: 80, textAlign: "center" }}>
-                {monthLabel}
-              </span>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setMonthOffset((o) => Math.min(o + 1, 0))}
-                disabled={monthOffset >= 0}
-              >›</button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Monthly view */}
-      {view === "month" && (
-        <MonthGrid
-          year={tYear} month={tMonth}
-          pnlMap={pnlMap} maxAbs={maxAbs} dark={dark}
-          tooltip={tooltip} setTooltip={setTooltip}
-        />
-      )}
-
-      {/* Yearly view — 3×4 grid of month mini-calendars */}
-      {view === "year" && (
-        <div>
-          <div className="text-xs font-semibold mb-3" style={{ color: "var(--ink-muted)" }}>{year}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
-            {Array.from({ length: 12 }, (_, m) => (
-              <MonthGrid
-                key={m}
-                year={year} month={m}
-                pnlMap={pnlMap} maxAbs={maxAbs} dark={dark}
-                tooltip={tooltip} setTooltip={setTooltip}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Legend */}
-      <div className="flex items-center gap-2 mt-4" style={{ color: "var(--ink-faint)", fontSize: 10 }}>
-        <span>Loss</span>
-        {[1, 0.6, 0.2].map((i) => (
-          <div key={i} style={{ width: 14, height: 14, borderRadius: 2,
-            background: pnlColor(-maxAbs * i, maxAbs, dark) }} />
-        ))}
-        <div style={{ width: 14, height: 14, borderRadius: 2,
-          background: dark ? "#21262d" : "#f0f2f7" }} />
-        {[0.2, 0.6, 1].map((i) => (
-          <div key={i} style={{ width: 14, height: 14, borderRadius: 2,
-            background: pnlColor(maxAbs * i, maxAbs, dark) }} />
-        ))}
-        <span>Profit</span>
-      </div>
+    <div className="card px-4 py-3 flex flex-col gap-0.5" style={{ minWidth: 0 }}>
+      <span style={{ fontSize: 11, color: "var(--ink-muted)" }}>{label}</span>
+      <span style={{ fontSize: 20, fontWeight: 700, color: color ?? "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
+        {value}
+      </span>
+      {sub && <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>{sub}</span>}
     </div>
   );
 }
 
+function Hdr({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="mb-3">
+      <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", marginBottom: sub?2:0 }}>{title}</h3>
+      {sub && <p style={{ fontSize: 11, color: "var(--ink-muted)" }}>{sub}</p>}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export function Performance() {
-  const botStatus = useBotStore((s) => s.status);
-  const defaultMode: "paper" | "live" = botStatus?.is_paper === false ? "live" : "paper";
-  const [mode, setMode] = useState<"paper" | "live">(defaultMode);
+  const botStatus  = useBotStore((s) => s.status);
+  const defaultMode: "paper"|"live" = botStatus?.is_paper===false ? "live" : "paper";
+  const [mode, setMode] = useState<"paper"|"live">(defaultMode);
   const { theme } = useThemeStore();
   const dark = theme === "dark";
 
   const { data: perf, isLoading } = useQuery({
     queryKey: ["performance", mode],
-    queryFn: () => api.trades.performance(mode),
+    queryFn:  () => api.trades.performance(mode),
     refetchInterval: 30_000,
   });
-
   const { data: analytics } = useQuery({
     queryKey: ["analytics", mode],
-    queryFn: () => api.trades.analytics(mode),
+    queryFn:  () => api.trades.analytics(mode),
     refetchInterval: 60_000,
     retry: false,
   });
 
-  // ── All hooks MUST be declared before any conditional return ─────────────────
-  // useMemo is a hook — placing it after "if (isLoading) return" violates the
-  // Rules of Hooks and causes React to crash with a blank page on second render.
-  const byExit = useMemo(() => {
+  // ── All useMemo calls before any conditional return (Rules of Hooks) ─────────
+
+  // Daily chart data: bars for daily P&L + cumulative equity line
+  const dailyChart = useMemo(() => {
+    let cum = 0;
+    return (perf?.daily_summaries ?? []).map((d) => {
+      cum += d.pnl;
+      return { date: d.date.slice(5), pnl: +d.pnl.toFixed(2), equity: +cum.toFixed(2) };
+    });
+  }, [perf]);
+
+  // Exit reason aggregation — merge raw strings into categories
+  const exitBreakdown = useMemo(() => {
     const raw = analytics?.by_exit_reason ?? [];
-    const merged: Record<string, { label: string; trades: number; total_pnl: number }> = {};
+    const merged: Record<string, { label: string; group: ExitGroup; trades: number; total_pnl: number }> = {};
     for (const r of raw) {
-      const label = normalizeExitReason(r.reason);
-      if (!merged[label]) merged[label] = { label, trades: 0, total_pnl: 0 };
+      const { label, group } = categoriseExit(r.reason);
+      if (!merged[label]) merged[label] = { label, group, trades: 0, total_pnl: 0 };
       merged[label].trades    += r.trades;
       merged[label].total_pnl += r.total_pnl;
     }
-    return Object.values(merged).map((m) => ({
-      reason:    m.label,
-      trades:    m.trades,
-      total_pnl: m.total_pnl,
-      avg_pnl:   m.trades > 0 ? m.total_pnl / m.trades : 0,
-    }));
+    return Object.values(merged)
+      .map((m) => ({ ...m, avg_pnl: m.trades > 0 ? m.total_pnl / m.trades : 0 }))
+      .sort((a, b) => b.total_pnl - a.total_pnl);
   }, [analytics]);
 
-  // Early return AFTER all hooks — never before (Rules of Hooks)
+  // False signal stats: momentum_dead exits
+  const falseSigStats = useMemo(() => {
+    const total  = analytics?.by_exit_reason?.reduce((s, r) => s + r.trades, 0) ?? 0;
+    const deadRow = exitBreakdown.find((e) => e.group === "signal");
+    if (!deadRow || !total) return null;
+    return {
+      count: deadRow.trades,
+      pct:   (deadRow.trades / total * 100).toFixed(0),
+      total_pnl: deadRow.total_pnl,
+      avg_pnl:   deadRow.avg_pnl,
+    };
+  }, [exitBreakdown, analytics]);
+
+  // P&L share bar width per strategy
+  const stratTotalPnl = useMemo(() => {
+    const rows = analytics?.by_strategy ?? [];
+    const gross = rows.reduce((s, r) => s + (r.total_pnl > 0 ? r.total_pnl : 0), 0);
+    return Math.max(gross, 1);
+  }, [analytics]);
+
+  // Calendar pnl map
+  const { pnlMap, calMaxAbs } = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const d of (perf?.daily_summaries ?? [])) m[d.date] = d.pnl;
+    const maxAbs = Math.max(1, ...Object.values(m).map(Math.abs));
+    return { pnlMap: m, calMaxAbs: maxAbs };
+  }, [perf]);
+
   if (isLoading && !perf) return <PageLoader label="Performance" />;
 
-  const daily       = perf?.daily_summaries ?? [];
-  const gridColor   = dark ? "#21262d" : "#f0f2f7";
-  const posColor    = dark ? "#3fb950" : "#16a34a";
-  const negColor    = dark ? "#f85149" : "#dc2626";
-  const tickColor   = dark ? "#8b949e" : "#5a6476";
-  const accentColor = dark ? "#58a6ff" : "#2563eb";
+  // Derived colours
+  const posColor  = dark ? "#3fb950" : "#16a34a";
+  const negColor  = dark ? "#f85149" : "#dc2626";
+  const gridColor = dark ? "#21262d" : "#f0f2f7";
+  const tickColor = dark ? "#8b949e" : "#5a6476";
+  const lineColor = dark ? "#58a6ff" : "#2563eb";
 
-  // Cumulative equity curve
-  let cum = 0;
-  const equity = daily.map((d) => {
-    cum += d.pnl;
-    return { date: d.date.slice(5), pnl: d.pnl, equity: +cum.toFixed(2) };
-  });
+  // Top-level stats
+  const totalPnl   = perf?.total_pnl ?? 0;
+  const winRate    = perf?.win_rate ?? 0;
+  const avgWin     = perf?.avg_win ?? 0;
+  const avgLoss    = perf?.avg_loss ?? 0;
+  const totalTrades= perf?.total_trades ?? 0;
+  const streak     = perf?.current_streak ?? 0;
+  // Profit factor from perf-level averages (wins × avg_win / losses × avg_loss)
+  const wins       = Math.round(winRate / 100 * totalTrades);
+  const losses     = totalTrades - wins;
+  const grossWins  = wins * avgWin;
+  const grossLoss  = losses * Math.abs(avgLoss);
+  const profitFactor = grossLoss > 0 ? (grossWins / grossLoss).toFixed(2) : "∞";
 
-  // Analytics-derived data
   const byStrategy = analytics?.by_strategy ?? [];
-  const byHour     = analytics?.by_hour ?? [];
-  const byTicker   = analytics?.by_ticker ?? [];
-
-  // MFE vs Exit comparison chart
-  const mfeVsExit = analytics
-    ? [
-        { name: "Avg MFE",  value: analytics.avg_mfe_pct,  fill: accentColor },
-        { name: "Avg Exit", value: analytics.avg_exit_pct, fill: posColor },
-      ]
-    : [];
+  const byTicker   = analytics?.by_ticker   ?? [];
+  const byHour     = analytics?.by_hour     ?? [];
+  const now        = new Date();
 
   return (
     <div className="p-4 flex flex-col gap-4">
-      {/* Mode toggle */}
-      <div className="flex items-center gap-2">
-        {(["paper", "live"] as const).map((m) => (
-          <button
-            key={m}
-            className={`btn btn-sm ${mode === m ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => setMode(m)}
-          >
-            {m.charAt(0).toUpperCase() + m.slice(1)} Mode
+
+      {/* ── Mode toggle ───────────────────────────────────────────────────── */}
+      <div className="flex gap-2">
+        {(["paper","live"] as const).map((m) => (
+          <button key={m}
+            className={`btn btn-sm ${mode===m ? "btn-primary" : "btn-ghost"}`}
+            onClick={() => setMode(m)}>
+            {m.charAt(0).toUpperCase()+m.slice(1)} Mode
           </button>
         ))}
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard
-          label="Total P&L"
-          value={`${(perf?.total_pnl ?? 0) >= 0 ? "+" : ""}$${Math.abs(perf?.total_pnl ?? 0).toFixed(2)}`}
-          sub={`${perf?.total_trades ?? 0} trades`}
-        />
-        <StatCard
-          label="Win Rate"
-          value={`${perf?.win_rate ?? 0}%`}
-          sub={`Streak: ${perf?.current_streak ?? 0}`}
-        />
-        <StatCard
-          label="Avg Win"
-          value={`+$${(perf?.avg_win ?? 0).toFixed(2)}`}
-        />
-        <StatCard
-          label="Avg Loss"
-          value={`$${(perf?.avg_loss ?? 0).toFixed(2)}`}
-        />
-        <StatCard
-          label="Best Day"
-          value={`+$${(perf?.best_day ?? 0).toFixed(2)}`}
-        />
-        <StatCard
-          label="Worst Day"
-          value={`$${(perf?.worst_day ?? 0).toFixed(2)}`}
-        />
-        {analytics && (
-          <>
-            <StatCard
-              label="Avg MFE"
-              value={`+${analytics.avg_mfe_pct.toFixed(1)}%`}
-              sub="avg peak per trade"
-            />
-            <StatCard
-              label="Exit Efficiency"
-              value={`${analytics.avg_exit_efficiency_pct.toFixed(0)}%`}
-              sub="of move captured"
-            />
-          </>
+      {/* ── Key stats strip ───────────────────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}
+           className="sm:grid-cols-6">
+        <StatCard label="Total P&L"
+          value={`${totalPnl>=0?"+":""}$${Math.abs(totalPnl).toFixed(2)}`}
+          sub={`${totalTrades} trades`}
+          color={totalPnl>=0 ? posColor : negColor} />
+        <StatCard label="Win Rate"
+          value={`${winRate}%`}
+          sub={`Streak: ${streak}`}
+          color={winRate>=50 ? posColor : "var(--ink)"} />
+        <StatCard label="Profit Factor"
+          value={String(profitFactor)}
+          sub="gross wins ÷ gross losses"
+          color={Number(profitFactor)>=2 ? posColor : Number(profitFactor)>=1 ? "var(--ink)" : negColor} />
+        <StatCard label="Avg Win"
+          value={`+$${avgWin.toFixed(2)}`}
+          color={posColor} />
+        <StatCard label="Avg Loss"
+          value={`$${avgLoss.toFixed(2)}`}
+          color={negColor} />
+        <StatCard label="Best / Worst Day"
+          value={`+$${(perf?.best_day??0).toFixed(0)}`}
+          sub={`Worst: $${(perf?.worst_day??0).toFixed(0)}`} />
+      </div>
+
+      {/* ── Daily P&L bars + cumulative equity line ───────────────────────── */}
+      {dailyChart.length > 0 && (
+        <div className="card p-4">
+          <Hdr title="Daily P&L & Equity Curve"
+               sub="Bars = daily P&L · Line = cumulative equity" />
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={dailyChart} margin={{ top: 4, right: 12, left: -10, bottom: 0 }}>
+              <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: tickColor }} />
+              <YAxis tick={{ fontSize: 10, fill: tickColor }}
+                     tickFormatter={(v) => `$${v}`} />
+              <Tooltip
+                contentStyle={{ background: dark?"#161b22":"#fff",
+                  border: `1px solid ${dark?"#30363d":"#e2e5ed"}`, borderRadius:8, fontSize:12 }}
+                formatter={(v: unknown, name: unknown) =>
+                  [`$${(v as number).toFixed(2)}`, name==="pnl" ? "Daily P&L" : "Equity"]}
+              />
+              <ReferenceLine y={0} stroke={dark?"#30363d":"#e2e5ed"} />
+              <Bar dataKey="pnl" radius={[3,3,0,0]} maxBarSize={40}>
+                {dailyChart.map((d, i) => (
+                  <Cell key={i} fill={d.pnl >= 0 ? posColor : negColor} />
+                ))}
+              </Bar>
+              <Line type="monotone" dataKey="equity" stroke={lineColor}
+                    strokeWidth={2} dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ── Strategy breakdown ────────────────────────────────────────────── */}
+      {byStrategy.length > 0 && (
+        <div className="card p-4">
+          <Hdr title="Strategy Performance"
+               sub="Profit Factor = gross wins ÷ gross losses. PF > 2 is strong." />
+          <div className="overflow-x-auto">
+            <table className="data-table" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th>Strategy</th>
+                  <th className="text-right">Trades</th>
+                  <th className="text-right">Win%</th>
+                  <th className="text-right">PF</th>
+                  <th className="text-right">Avg Win</th>
+                  <th className="text-right">Avg Loss</th>
+                  <th className="text-right">Total P&L</th>
+                  <th style={{ width: 80 }}>P&L Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byStrategy.map((s) => {
+                  const sharePct = s.total_pnl > 0
+                    ? Math.min(100, (s.total_pnl / stratTotalPnl) * 100)
+                    : 0;
+                  const pf = s.profit_factor ?? 0;
+                  return (
+                    <tr key={s.strategy_id}>
+                      <td style={{ fontWeight: 600 }}>{s.strategy_id}</td>
+                      <td className="num text-right">{s.trades}</td>
+                      <td className="num text-right"
+                          style={{ color: s.win_rate>=50 ? posColor : s.win_rate>=40 ? "var(--ink)" : negColor }}>
+                        {s.win_rate.toFixed(0)}%
+                      </td>
+                      <td className="num text-right"
+                          style={{ fontWeight:600, color: pf>=3 ? posColor : pf>=1.5 ? "var(--ink)" : negColor }}>
+                        {pf > 0 ? pf.toFixed(1) : "—"}
+                      </td>
+                      <td className="num text-right" style={{ color: posColor }}>
+                        {s.avg_win > 0 ? `+$${s.avg_win.toFixed(2)}` : "—"}
+                      </td>
+                      <td className="num text-right" style={{ color: negColor }}>
+                        {s.avg_loss < 0 ? `$${s.avg_loss.toFixed(2)}` : "—"}
+                      </td>
+                      <td className="num text-right" style={{ fontWeight:600,
+                          color: s.total_pnl>=0 ? posColor : negColor }}>
+                        {s.total_pnl>=0?"+":""}${s.total_pnl.toFixed(2)}
+                      </td>
+                      <td style={{ paddingLeft: 8 }}>
+                        {sharePct > 0 && (
+                          <div style={{ height: 8, borderRadius: 4,
+                            background: dark?"#21262d":"#f0f2f7", overflow:"hidden" }}>
+                            <div style={{ height:"100%", width:`${sharePct}%`,
+                              background: posColor, borderRadius:4 }} />
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Signal quality / false signal analysis ────────────────────────── */}
+      {exitBreakdown.length > 0 && (
+        <div className="card p-4">
+          <Hdr title="Exit Analysis"
+               sub="What's closing your trades and what each type earns on average." />
+
+          {/* False signal callout */}
+          {falseSigStats && (
+            <div style={{
+              background: dark ? "rgba(240,136,62,0.08)" : "rgba(240,136,62,0.06)",
+              border: "1px solid rgba(240,136,62,0.25)",
+              borderRadius: 8, padding: "10px 14px", marginBottom: 16,
+              display:"flex", alignItems:"center", gap:12, flexWrap:"wrap",
+            }}>
+              <span style={{ fontSize: 20 }}>⚠️</span>
+              <div>
+                <p style={{ fontSize: 12, fontWeight:600, color:"#f0883e" }}>
+                  {falseSigStats.pct}% of trades exit as Dead Momentum — {falseSigStats.count} entries
+                  where volume faded immediately
+                </p>
+                <p style={{ fontSize: 11, color:"var(--ink-muted)", marginTop:2 }}>
+                  Avg loss per false signal: ${Math.abs(falseSigStats.avg_pnl).toFixed(2)} ·
+                  Total drag: ${Math.abs(falseSigStats.total_pnl).toFixed(2)} ·
+                  These are controlled (small losses) but signal quality can be improved —
+                  see strategy breakdown above to find which strategies generate the most.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Exit breakdown table */}
+          <div className="overflow-x-auto">
+            <table className="data-table" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th>Exit Type</th>
+                  <th className="text-right">Count</th>
+                  <th className="text-right">% Trades</th>
+                  <th className="text-right">Total P&L</th>
+                  <th className="text-right">Avg / Trade</th>
+                  <th style={{ width: 100 }}>Contribution</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const totalExits = exitBreakdown.reduce((s, r) => s + r.trades, 0);
+                  const maxAbs = Math.max(1, ...exitBreakdown.map((r) => Math.abs(r.total_pnl)));
+                  return exitBreakdown.map((r) => {
+                    const barPct = Math.abs(r.total_pnl) / maxAbs * 100;
+                    const col    = GROUP_COLOR[r.group];
+                    return (
+                      <tr key={r.label}>
+                        <td>
+                          <span style={{ display:"inline-block", width:8, height:8,
+                            borderRadius:"50%", background:col, marginRight:6 }} />
+                          {r.label}
+                        </td>
+                        <td className="num text-right">{r.trades}</td>
+                        <td className="num text-right" style={{ color:"var(--ink-muted)" }}>
+                          {(r.trades / totalExits * 100).toFixed(0)}%
+                        </td>
+                        <td className="num text-right font-semibold"
+                            style={{ color: r.total_pnl>=0 ? posColor : negColor }}>
+                          {r.total_pnl>=0?"+":""}${r.total_pnl.toFixed(2)}
+                        </td>
+                        <td className="num text-right"
+                            style={{ color: r.avg_pnl>=0 ? posColor : negColor }}>
+                          {r.avg_pnl>=0?"+":""}${r.avg_pnl.toFixed(2)}
+                        </td>
+                        <td style={{ paddingLeft: 8 }}>
+                          <div style={{ height: 8, borderRadius:4,
+                            background: dark?"#21262d":"#f0f2f7", overflow:"hidden" }}>
+                            <div style={{ height:"100%", width:`${barPct}%`,
+                              background: col, borderRadius:4, opacity: r.total_pnl<0 ? 0.6 : 1 }} />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Ticker + Hour side by side ────────────────────────────────────── */}
+      <div style={{ display:"grid", gap:12, gridTemplateColumns:"1fr 1fr" }}>
+
+        {/* Ticker table */}
+        {byTicker.length > 0 && (
+          <div className="card p-4">
+            <Hdr title="By Ticker" />
+            <div className="overflow-x-auto">
+              <table className="data-table" style={{ fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Ticker</th>
+                    <th className="text-right">T</th>
+                    <th className="text-right">Win%</th>
+                    <th className="text-right">Avg W</th>
+                    <th className="text-right">Avg L</th>
+                    <th className="text-right">P&L</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byTicker.map((t) => (
+                    <tr key={t.ticker}>
+                      <td style={{ fontWeight:600 }}>{t.ticker}</td>
+                      <td className="num text-right">{t.trades}</td>
+                      <td className="num text-right"
+                          style={{ color: t.win_rate>=50 ? posColor : t.win_rate>=40 ? "var(--ink)" : negColor }}>
+                        {t.win_rate.toFixed(0)}%
+                      </td>
+                      <td className="num text-right" style={{ color: posColor }}>
+                        {t.avg_win > 0 ? `+$${t.avg_win.toFixed(0)}` : "—"}
+                      </td>
+                      <td className="num text-right" style={{ color: negColor }}>
+                        {t.avg_loss < 0 ? `$${t.avg_loss.toFixed(0)}` : "—"}
+                      </td>
+                      <td className="num text-right font-semibold"
+                          style={{ color: t.total_pnl>=0 ? posColor : negColor }}>
+                        {t.total_pnl>=0?"+":""}${t.total_pnl.toFixed(0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Entry hour chart */}
+        {byHour.length > 0 && (
+          <div className="card p-4">
+            <Hdr title="Win Rate by Entry Hour (ET)"
+                 sub="When are entries most effective?" />
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={byHour} margin={{ top:0, right:4, left:-24, bottom:0 }}>
+                <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
+                <XAxis dataKey="label" tick={{ fontSize: 9, fill: tickColor }} />
+                <YAxis domain={[0,100]} tick={{ fontSize: 9, fill: tickColor }}
+                       tickFormatter={(v) => `${v}%`} />
+                <Tooltip
+                  formatter={(v: unknown, n: unknown) => [
+                    n==="win_rate" ? `${(v as number).toFixed(1)}%` : `$${(v as number).toFixed(2)}`,
+                    n==="win_rate" ? "Win Rate" : "Avg P&L",
+                  ]}
+                  contentStyle={{ background: dark?"#161b22":"#fff",
+                    border: `1px solid ${dark?"#30363d":"#e2e5ed"}`, borderRadius:8, fontSize:12 }}
+                />
+                <ReferenceLine y={50} stroke={dark?"#30363d":"#e2e5ed"} strokeDasharray="4 2"
+                  label={{ value:"50%", position:"right", fontSize:9, fill:tickColor }} />
+                <RBar dataKey="win_rate" radius={[3,3,0,0]} maxBarSize={32}>
+                  {byHour.map((h, i) => (
+                    <Cell key={i} fill={h.win_rate>=50 ? posColor : h.win_rate>=40 ? lineColor : negColor} />
+                  ))}
+                </RBar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </div>
 
-      {/* Equity curve */}
-      <div className="card p-4">
-        <SectionHeader title="Cumulative P&L" />
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={equity}>
-            <defs>
-              <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor={posColor} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={posColor} stopOpacity={0}   />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: tickColor }} />
-            <YAxis tick={{ fontSize: 10, fill: tickColor }} />
-            <Tooltip
-              contentStyle={{
-                background: dark ? "#161b22" : "#fff",
-                border: `1px solid ${dark ? "#30363d" : "#e2e5ed"}`,
-                borderRadius: 8, fontSize: 12,
-              }}
-              formatter={(v: unknown) => [`$${(v as number).toFixed(2)}`, "Equity"]}
-            />
-            <ReferenceLine y={0} stroke={dark ? "#30363d" : "#e2e5ed"} />
-            <Area
-              type="monotone" dataKey="equity"
-              stroke={posColor} strokeWidth={2}
-              fill="url(#eqGrad)" dot={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Daily P&L Calendar */}
-      <CalendarHeatmap daily={daily} dark={dark} />
-
-      {/* ── Analytics sections (only when we have data) ───────────────────── */}
-      {analytics && (
-        <>
-          {/* MFE vs Exit comparison */}
-          {(analytics.avg_mfe_pct > 0 || analytics.avg_exit_pct !== 0) && (
-            <div className="card p-4">
-              <SectionHeader title="Avg MFE vs Avg Exit (% move from entry)" />
-              <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-                MFE is how far the option moved in your favor on average. Exit shows what you actually
-                captured. The gap is money consistently left on the table.
-                Exit efficiency: <strong>{analytics.avg_exit_efficiency_pct.toFixed(0)}%</strong> of the available move captured.
-              </p>
-              <ResponsiveContainer width="100%" height={100}>
-                <BarChart data={mfeVsExit} layout="vertical"
-                          margin={{ top: 0, right: 20, left: 60, bottom: 0 }}>
-                  <XAxis type="number" tick={{ fontSize: 10, fill: tickColor }}
-                         tickFormatter={(v) => `${v.toFixed(1)}%`} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: tickColor }} />
-                  <Tooltip
-                    formatter={(v: unknown) => [`${(v as number).toFixed(1)}%`, ""]}
-                    contentStyle={{
-                      background: dark ? "#161b22" : "#fff",
-                      border: `1px solid ${dark ? "#30363d" : "#e2e5ed"}`,
-                      borderRadius: 8, fontSize: 12,
-                    }}
-                  />
-                  <RBar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {mfeVsExit.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                  </RBar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* Win rate by strategy */}
-          {byStrategy.length > 0 && (
-            <div className="card p-4">
-              <SectionHeader title="Win Rate by Strategy" />
-              <div className="overflow-x-auto">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Strategy</th>
-                      <th className="text-right">Trades</th>
-                      <th className="text-right">Win Rate</th>
-                      <th className="text-right">Total P&L</th>
-                      <th className="text-right">Avg MFE</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byStrategy.map((s) => (
-                      <tr key={s.strategy_id}>
-                        <td className="font-medium text-xs">{s.strategy_id}</td>
-                        <td className="num text-right text-xs">{s.trades}</td>
-                        <td className="num text-right text-xs"
-                            style={{ color: s.win_rate >= 50 ? posColor : negColor }}>
-                          {s.win_rate.toFixed(1)}%
-                        </td>
-                        <td className="num text-right text-xs font-semibold"
-                            style={{ color: s.total_pnl >= 0 ? posColor : negColor }}>
-                          {s.total_pnl >= 0 ? "+" : ""}${s.total_pnl.toFixed(2)}
-                        </td>
-                        <td className="num text-right text-xs"
-                            style={{ color: s.avg_mfe_pct > 0 ? posColor : "var(--ink-muted)" }}>
-                          {s.avg_mfe_pct > 0 ? `+${s.avg_mfe_pct.toFixed(1)}%` : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Win rate by hour and by ticker side by side */}
-          {(byHour.length > 0 || byTicker.length > 0) && (
-            <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              {/* By hour */}
-              {byHour.length > 0 && (
-                <div className="card p-4">
-                  <SectionHeader title="Win Rate by Hour (ET)" />
-                  <ResponsiveContainer width="100%" height={160}>
-                    <BarChart data={byHour} margin={{ top: 0, right: 8, left: -20, bottom: 0 }}>
-                      <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
-                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: tickColor }} />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: tickColor }}
-                             tickFormatter={(v) => `${v}%`} />
-                      <Tooltip
-                        formatter={(v: unknown, name: unknown) => [
-                          name === "win_rate" ? `${(v as number).toFixed(1)}%` : String(v),
-                          name === "win_rate" ? "Win Rate" : "Avg P&L",
-                        ]}
-                        contentStyle={{
-                          background: dark ? "#161b22" : "#fff",
-                          border: `1px solid ${dark ? "#30363d" : "#e2e5ed"}`,
-                          borderRadius: 8, fontSize: 12,
-                        }}
-                      />
-                      <RBar dataKey="win_rate" radius={[3, 3, 0, 0]}>
-                        {byHour.map((h, i) => (
-                          <Cell key={i} fill={h.win_rate >= 50 ? posColor : negColor} />
-                        ))}
-                      </RBar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-
-              {/* By ticker */}
-              {byTicker.length > 0 && (
-                <div className="card p-4">
-                  <SectionHeader title="P&L by Ticker" />
-                  <div className="overflow-x-auto">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Ticker</th>
-                          <th className="text-right">Trades</th>
-                          <th className="text-right">Win %</th>
-                          <th className="text-right">P&L</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {byTicker.map((t) => (
-                          <tr key={t.ticker}>
-                            <td className="font-semibold text-xs">{t.ticker}</td>
-                            <td className="num text-right text-xs">{t.trades}</td>
-                            <td className="num text-right text-xs"
-                                style={{ color: t.win_rate >= 50 ? posColor : negColor }}>
-                              {t.win_rate.toFixed(1)}%
-                            </td>
-                            <td className="num text-right text-xs font-medium"
-                                style={{ color: t.total_pnl >= 0 ? posColor : negColor }}>
-                              {t.total_pnl >= 0 ? "+" : ""}${t.total_pnl.toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* P&L by exit reason */}
-          {byExit.length > 0 && (
-            <div className="card p-4">
-              <SectionHeader title="P&L by Exit Reason" />
-              <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-                Tells you which exit type is costing or making the most. Negative avg P&L on a reason
-                means those exits are not working — consider adjusting that logic.
-              </p>
-              <div className="overflow-x-auto">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Exit Reason</th>
-                      <th className="text-right">Trades</th>
-                      <th className="text-right">Total P&L</th>
-                      <th className="text-right">Avg / Trade</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byExit
-                      .slice()
-                      .sort((a, b) => b.total_pnl - a.total_pnl)
-                      .map((r) => (
-                        <tr key={r.reason}>
-                          <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                            {r.reason}
-                          </td>
-                          <td className="num text-right text-xs">{r.trades}</td>
-                          <td className="num text-right text-xs font-semibold"
-                              style={{ color: r.total_pnl >= 0 ? posColor : negColor }}>
-                            {r.total_pnl >= 0 ? "+" : ""}${r.total_pnl.toFixed(2)}
-                          </td>
-                          <td className="num text-right text-xs"
-                              style={{ color: r.avg_pnl >= 0 ? posColor : negColor }}>
-                            {r.avg_pnl >= 0 ? "+" : ""}${r.avg_pnl.toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </>
+      {/* ── Calendar heatmap ─────────────────────────────────────────────── */}
+      {Object.keys(pnlMap).length > 0 && (
+        <div className="card p-4">
+          <Hdr title="Monthly Calendar" sub="Daily P&L colour intensity" />
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:24 }}>
+            {/* Show current month and previous month */}
+            {[1, 0].map((offset) => {
+              const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+              return (
+                <CalendarMonth key={offset}
+                  year={d.getFullYear()} month={d.getMonth()}
+                  pnlMap={pnlMap} maxAbs={calMaxAbs} dark={dark} />
+              );
+            })}
+          </div>
+          {/* Legend */}
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:12,
+            color:"var(--ink-faint)", fontSize:10 }}>
+            <span>Loss</span>
+            {[1, 0.5, 0.1].map((i) => (
+              <div key={i} style={{ width:12, height:12, borderRadius:2,
+                background: pnlColor(-calMaxAbs*i, calMaxAbs, dark) }} />
+            ))}
+            <div style={{ width:12, height:12, borderRadius:2, background:dark?"#21262d":"#f0f2f7" }} />
+            {[0.1, 0.5, 1].map((i) => (
+              <div key={i} style={{ width:12, height:12, borderRadius:2,
+                background: pnlColor(calMaxAbs*i, calMaxAbs, dark) }} />
+            ))}
+            <span>Profit</span>
+          </div>
+        </div>
       )}
+
     </div>
   );
 }

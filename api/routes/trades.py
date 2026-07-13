@@ -151,14 +151,22 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
     rows = get_all_trades(limit=2000, mode=mode, status_filter="closed") or []
 
     # ── By strategy ───────────────────────────────────────────────────────────
-    strat: dict = defaultdict(lambda: {"trades": 0, "wins": 0, "total_pnl": 0.0, "mfe_sum": 0.0, "mfe_count": 0})
+    strat: dict = defaultdict(lambda: {
+        "trades": 0, "wins": 0, "losses": 0,
+        "total_pnl": 0.0, "win_pnl": 0.0, "loss_pnl": 0.0,
+        "mfe_sum": 0.0, "mfe_count": 0,
+    })
     for r in rows:
         sid  = r.get("strategy_id") or "UNKNOWN"
         pnl  = float(r.get("realized_pnl") or 0)
         strat[sid]["trades"]    += 1
         strat[sid]["total_pnl"] += pnl
         if pnl > 0:
-            strat[sid]["wins"] += 1
+            strat[sid]["wins"]    += 1
+            strat[sid]["win_pnl"] += pnl
+        elif pnl < 0:
+            strat[sid]["losses"]    += 1
+            strat[sid]["loss_pnl"]  += pnl
         # MFE only available for trades that stored peak_price
         if r.get("peak_price") is not None and float(r.get("entry_price") or 0) > 0:
             ep = float(r["entry_price"])
@@ -167,12 +175,16 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
 
     by_strategy = [
         StrategyRow(
-            strategy_id = sid,
-            trades      = v["trades"],
-            wins        = v["wins"],
-            win_rate    = round(v["wins"] / v["trades"] * 100, 1) if v["trades"] else 0.0,
-            total_pnl   = round(v["total_pnl"], 2),
-            avg_mfe_pct = round(v["mfe_sum"] / v["mfe_count"], 1) if v["mfe_count"] else 0.0,
+            strategy_id   = sid,
+            trades        = v["trades"],
+            wins          = v["wins"],
+            losses        = v["losses"],
+            win_rate      = round(v["wins"] / v["trades"] * 100, 1) if v["trades"] else 0.0,
+            total_pnl     = round(v["total_pnl"], 2),
+            avg_win       = round(v["win_pnl"]  / v["wins"],   2) if v["wins"]   else 0.0,
+            avg_loss      = round(v["loss_pnl"] / v["losses"], 2) if v["losses"] else 0.0,
+            profit_factor = round(v["win_pnl"] / abs(v["loss_pnl"]), 2) if v["loss_pnl"] else 0.0,
+            avg_mfe_pct   = round(v["mfe_sum"] / v["mfe_count"], 1) if v["mfe_count"] else 0.0,
         )
         for sid, v in sorted(strat.items(), key=lambda kv: -kv[1]["total_pnl"])
     ]
@@ -206,24 +218,34 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
     ]
 
     # ── By ticker ─────────────────────────────────────────────────────────────
-    tkr_data: dict = defaultdict(lambda: {"trades": 0, "wins": 0, "pnl_sum": 0.0})
+    tkr_data: dict = defaultdict(lambda: {
+        "trades": 0, "wins": 0, "losses": 0,
+        "pnl_sum": 0.0, "win_pnl": 0.0, "loss_pnl": 0.0,
+    })
     for r in rows:
         t   = r.get("ticker") or "?"
         pnl = float(r.get("realized_pnl") or 0)
         tkr_data[t]["trades"]  += 1
         tkr_data[t]["pnl_sum"] += pnl
         if pnl > 0:
-            tkr_data[t]["wins"] += 1
+            tkr_data[t]["wins"]    += 1
+            tkr_data[t]["win_pnl"] += pnl
+        elif pnl < 0:
+            tkr_data[t]["losses"]    += 1
+            tkr_data[t]["loss_pnl"]  += pnl
 
     by_ticker = [
         TickerRow(
-            ticker   = t,
-            trades   = v["trades"],
-            wins     = v["wins"],
-            win_rate = round(v["wins"] / v["trades"] * 100, 1) if v["trades"] else 0.0,
-            total_pnl= round(v["pnl_sum"], 2),
+            ticker    = t,
+            trades    = v["trades"],
+            wins      = v["wins"],
+            losses    = v["losses"],
+            win_rate  = round(v["wins"] / v["trades"] * 100, 1) if v["trades"] else 0.0,
+            total_pnl = round(v["pnl_sum"], 2),
+            avg_win   = round(v["win_pnl"]  / v["wins"],   2) if v["wins"]   else 0.0,
+            avg_loss  = round(v["loss_pnl"] / v["losses"], 2) if v["losses"] else 0.0,
         )
-        for t, v in sorted(tkr_data.items(), key=lambda kv: -abs(kv[1]["pnl_sum"]))
+        for t, v in sorted(tkr_data.items(), key=lambda kv: -kv[1]["pnl_sum"])
     ]
 
     # ── By exit reason ────────────────────────────────────────────────────────
