@@ -1132,39 +1132,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # ── ORB 1% risk sizing (uses slippage-adjusted price) ─────────────────────
     n_contracts = _risk.calculate_contracts(eff_entry, balance)
-    # Persist contract count so the dashboard can show it in the Bot Focus panel
-    LIVE_STATE["last_eval_contracts"] = n_contracts
-    try:
-        with open(_state_path) as _f:
-            _bs_c = _json.load(_f)
-        _bs_c["last_eval_contracts"] = n_contracts
-
-        # ── Append to running eval_log (last 10 entries) ─────────────────────
-        # Each entry represents one contract the bot evaluated — kept as a
-        # scrollable list in the dashboard so every option considered is visible.
-        _s1_target = round(eff_entry * 1.5, 2)
-        _profit    = round(eff_entry * 0.5 * n_contracts * 100, 2) if n_contracts >= 1 else None
-        _new_entry = {
-            "ts":        LIVE_STATE.get("last_eval_time", ""),
-            "ticker":    ticker,
-            "opt_type":  opt_type,
-            "strike":    contract.get("strike"),
-            "expiry":    contract.get("expiry"),
-            "contracts": n_contracts,
-            "eff_entry": round(eff_entry, 2),
-            "s1_target": _s1_target,
-            "profit":    _profit,
-            "strategy":  strategy_id,
-            # "signal" = manual mode alert (bot won't execute), "auto" = bot will execute
-            "mode":      "signal" if settings.get("signal_only_mode", False) else "auto",
-        }
-        _log = list(LIVE_STATE.get("eval_log", []))  # read from memory, not file
-        _log.insert(0, _new_entry)                    # newest first
-        LIVE_STATE["eval_log"] = _log[:10]            # update in-memory copy first
-        _bs_c["eval_log"]      = LIVE_STATE["eval_log"]
-        _json.dump(_bs_c, open(_state_path, "w"))
-    except Exception:
-        pass  # non-critical — next full tick write will catch up
 
     if n_contracts < 1:
         logger.warning(
@@ -1188,23 +1155,67 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"account) or a cheaper-premium contract.")
         return
 
-    # ── Total-position-cost cap ───────────────────────────────────────────────
-    # calculate_contracts() sizes purely off risk_per_trade % and can ask for
-    # MORE contracts than max_spend allows on cheap-premium setups —
-    # select_contract() only validated that a SINGLE contract fits the budget.
-    # Clamp here so total spend (n_contracts × ask × 100) never exceeds max_spend.
-    # ask_price > 0 is guaranteed (select_contract enforces MIN_CONTRACT_COST),
-    # and select_contract already proved 1 contract fits within max_spend, so
-    # _max_affordable is always >= 1.
-    _max_affordable = max(1, int(max_spend // (ask_price * 100)))
+    # ── Total-position-cost cap (tier-aware notional cap) ─────────────────────
+    # calculate_contracts() already has a built-in notional cap (45%/30%/20% of
+    # balance). The old secondary clamp used max_spend (15% of balance = $267 on
+    # a $1,778 account) which is tighter than the bootstrap tier's 45% notional
+    # cap ($800), causing the risk model to approve 2 contracts but this clamp
+    # to force it back to 1. Fix: mirror the same tier percentages here.
+    _in_bs_clamp = bool(settings.get("growth_mode", False)) and \
+                   balance < float(settings.get("growth_risk_boundary_boot", 5000.0))
+    _eff_rp_clamp = _risk.effective_risk_pct(balance)
+    if _in_bs_clamp:
+        _notional_pct = 0.45          # bootstrap: matches calculate_contracts()
+    elif _eff_rp_clamp > 0.01:        # growth / mid tier (> 1%)
+        _notional_pct = 0.30
+    else:
+        _notional_pct = 0.20          # conservative (1%)
+    _notional_cap   = balance * _notional_pct
+    _max_affordable = max(1, int(_notional_cap // (ask_price * 100)))
     if n_contracts > _max_affordable:
-        logger.debug(
+        logger.info(
             "Sizing clamp for %s: risk model wanted %d contracts ($%.0f total), "
-            "budget cap ($%.0f) allows %d",
+            "notional cap (%.0f%% = $%.0f) allows %d",
             ticker, n_contracts, n_contracts * ask_price * 100,
-            max_spend, _max_affordable,
+            _notional_pct * 100, _notional_cap, _max_affordable,
         )
         n_contracts = _max_affordable
+
+    # ── Persist contract count AFTER clamp so dashboard shows actual count ─────
+    # (Previously written before the clamp, so the eval log showed 2c while the
+    # bot actually traded 1c — now both reflect the same post-clamp number.)
+    LIVE_STATE["last_eval_contracts"] = n_contracts
+    try:
+        with open(_state_path) as _f:
+            _bs_c = _json.load(_f)
+        _bs_c["last_eval_contracts"] = n_contracts
+
+        # ── Append to running eval_log (last 10 entries) ─────────────────────
+        # Each entry represents one contract the bot evaluated — kept as a
+        # scrollable list in the dashboard so every option considered is visible.
+        _s1_target = round(eff_entry * 1.5, 2)
+        _profit    = round(eff_entry * 0.5 * n_contracts * 100, 2)
+        _new_entry = {
+            "ts":        LIVE_STATE.get("last_eval_time", ""),
+            "ticker":    ticker,
+            "opt_type":  opt_type,
+            "strike":    contract.get("strike"),
+            "expiry":    contract.get("expiry"),
+            "contracts": n_contracts,
+            "eff_entry": round(eff_entry, 2),
+            "s1_target": _s1_target,
+            "profit":    _profit,
+            "strategy":  strategy_id,
+            # "signal" = manual mode alert (bot won't execute), "auto" = bot will execute
+            "mode":      "signal" if settings.get("signal_only_mode", False) else "auto",
+        }
+        _log = list(LIVE_STATE.get("eval_log", []))  # read from memory, not file
+        _log.insert(0, _new_entry)                    # newest first
+        LIVE_STATE["eval_log"] = _log[:10]            # update in-memory copy first
+        _bs_c["eval_log"]      = LIVE_STATE["eval_log"]
+        _json.dump(_bs_c, open(_state_path, "w"))
+    except Exception:
+        pass  # non-critical — next full tick write will catch up
 
     # ── Spread gate: skip if bid-ask spread > 10% of mid price ───────────────
     # Wide spreads mean we pay an immediate 5–10% toll just getting in and out.

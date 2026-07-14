@@ -120,12 +120,12 @@ MIN_RR_RATIO_SMALL_ACCOUNT = 1.2   # relaxed gate for sub-$5k bootstrap accounts
 MIN_RR_RATIO_PROFESSIONAL  = 1.6   # standard gate once account graduates past bootstrap tier
 
 # ── Manual risk override ──────────────────────────────────────────────────────
-# When set to 0.01, 0.03, or 0.05 in user_settings.json this value takes
+# When risk_per_trade is present in user_settings.json this value takes
 # precedence over the automatic balance-based tier logic in get_risk_tier().
 # None (default) means "let the tier system decide".
-# Accepted values: 0.01 (1%), 0.03 (3%), 0.05 (5%).  Any other value is ignored.
+# Accepted range: 0 < val <= 0.25 (i.e. up to 25%).
+# Populated automatically by settings save (risk_pct % / 100).
 RISK_PER_TRADE: float | None = None
-_VALID_RISK_OVERRIDES = {0.01, 0.03, 0.05}
 
 
 def get_risk_tier(balance: float) -> float:
@@ -133,8 +133,10 @@ def get_risk_tier(balance: float) -> float:
     Return the effective risk % for a given account balance.
 
     Manual override (highest priority):
-      If 'risk_per_trade' is set to 0.01, 0.03, or 0.05 in user_settings.json,
+      If 'risk_per_trade' is set in user_settings.json (0 < val <= 0.25),
       that value is returned immediately — balance and growth_mode are ignored.
+      The Settings page saves risk_pct (e.g. 10) and converts to risk_per_trade
+      (0.10) on POST so both keys are always in sync.
 
     Automatic tier logic (used when risk_per_trade is None / missing):
       Growth mode ON:
@@ -146,12 +148,14 @@ def get_risk_tier(balance: float) -> float:
     """
     settings = get_settings()
 
-    # ── Manual override: if explicitly set to a valid value, use it directly ──
+    # ── Manual override: risk_per_trade (decimal) written by settings POST ────
+    # Accepts any value in (0, 0.25] — previously the hard-coded set {0.01, 0.03,
+    # 0.05} silently ignored any other value (including 0.10 for 10%).
     _override = settings.get("risk_per_trade")
     if _override is not None:
         try:
             _override_f = float(_override)
-            if _override_f in _VALID_RISK_OVERRIDES:
+            if 0 < _override_f <= 0.25:   # sanity cap at 25%
                 return _override_f
         except (TypeError, ValueError):
             pass  # fall through to automatic tier logic

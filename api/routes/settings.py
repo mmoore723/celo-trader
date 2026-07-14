@@ -50,6 +50,16 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_chan_enabled"]   = data.pop("chan_break_enabled", True)
     data["strategy_mid_enabled"]    = data.pop("mid_brk_enabled", True)
     data["strategy_tcont_enabled"]  = data.pop("trend_cont_enabled", True)
+    # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
+    # get_risk_tier() reads risk_per_trade; without this conversion it never saw
+    # the user's setting and always fell through to the bootstrap 5% auto-tier.
+    # Both keys are saved so GET can still return risk_pct for UI display.
+    _rp_ui = data.get("risk_pct")
+    if _rp_ui is not None:
+        try:
+            data["risk_per_trade"] = round(float(_rp_ui) / 100.0, 4)  # 10.0 → 0.10
+        except (TypeError, ValueError):
+            pass
     current.update(data)
     save_settings(current)
 
