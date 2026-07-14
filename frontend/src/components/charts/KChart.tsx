@@ -250,18 +250,31 @@ export function KChart({
     const ro = new ResizeObserver(() => { chartRef.current?.resize(); });
     ro.observe(el);
 
-    // Prevent page scroll when the mouse wheel fires over the chart.
-    // KLineChart already attaches its own wheel listener to the canvas and
-    // handles zoom natively when setZoomEnabled(true) is set.  We must NOT
-    // call zoomAtCoordinate here — the event bubbles from canvas → el, so
-    // our handler fires AFTER KLineChart's own handler, causing every scroll
-    // to zoom twice (double-zoom = chart coordinates break, candles desync).
-    // Calling only e.preventDefault() stops page scroll without interfering.
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); };
-    el.addEventListener("wheel", onWheel, { passive: false });
+    // Wheel zoom — CAPTURE PHASE trick to prevent double-zoom:
+    //   KLineChart registers its handler on the canvas (a child of el).
+    //   Normal (bubble-phase) listeners on el fire AFTER the canvas handler,
+    //   so calling zoomAtCoordinate there zoomed the chart twice per tick.
+    //   Using { capture: true } makes our handler fire BEFORE canvas handlers
+    //   (capture phase travels window→el→canvas; bubble goes the other way).
+    //   Then stopPropagation() stops the event from ever reaching the canvas,
+    //   so KLineChart never sees it.  Result: exactly ONE zoom per scroll tick.
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation(); // block KLineChart's canvas handler
+      if (!chartRef.current) return;
+      const rect = el.getBoundingClientRect();
+      const scale = e.deltaY < 0 ? 1.1 : 0.9;
+      try {
+        chartRef.current.zoomAtCoordinate(scale, {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        });
+      } catch (_) {}
+    };
+    el.addEventListener("wheel", onWheel, { passive: false, capture: true });
 
     return () => {
-      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("wheel", onWheel, { capture: true });
       ro.disconnect();
       if (chartRef.current && containerRef.current) {
         dispose(containerRef.current);
@@ -367,6 +380,7 @@ export function KChart({
     // Clear managed overlays before recreating
     try { chart.removeOverlay({ groupId: "or"  }); } catch (_) { /* no-op */ }
     try { chart.removeOverlay({ groupId: "pos" }); } catch (_) { /* no-op */ }
+    try { chart.removeOverlay({ groupId: "edu" }); } catch (_) { /* no-op */ }
 
     // Opening Range horizontal lines
     if (showOR) {
@@ -385,6 +399,71 @@ export function KChart({
           styles: { line: { color: dn, size: 2 } },
           needDefaultYAxisFigure: true,
         });
+      }
+    }
+
+    // ── Educational chart drawings ─────────────────────────────────────────────
+    // These help users understand WHAT is being drawn and WHY — training overlays
+    // that are always present regardless of whether the bot has traded.
+    //
+    // 1) OR Zone shaded rect: semi-transparent band between OR High/Low over the
+    //    first 30-minute window (9:30–10:00 AM ET = first 6 bars on 5Min).
+    //    Shows users visually where the opening range formed.
+    // 2) Key session time markers: dashed vertical lines at market open (9:30),
+    //    end of OR window (10:00), midday (12:00), afternoon session (2:00 PM)
+    //    and last hour (3:00 PM) — teaches time-of-day awareness.
+    if (bars.length > 0 && showOR && orHigh != null && orLow != null) {
+      // Locate key session timestamps from the bars data.
+      // Bars use the user's local time string; extract hour/min from each bar.
+      const SESSION_LABELS: Array<[number, number, string]> = [
+        [9, 30,  "Market Open"],
+        [10, 0,  "OR Close"],
+        [12, 0,  "Midday"],
+        [14, 0,  "Afternoon"],
+        [15, 0,  "Final Hour"],
+      ];
+      let orStartTs: number | null  = null;
+      let orEndTs:   number | null  = null;
+      for (const [h, m, _label] of SESSION_LABELS) {
+        const match = bars.find((b) => {
+          const d = new Date(b.time);
+          return d.getHours() === h && d.getMinutes() === m;
+        });
+        if (match) {
+          const ts = new Date(match.time).getTime();
+          if (h === 9  && m === 30) orStartTs = ts;
+          if (h === 10 && m === 0)  orEndTs   = ts;
+          // Vertical dashed time marker
+          try {
+            chart.createOverlay({
+              name: "verticalStraightLine",
+              groupId: "edu",
+              lock: true,
+              points: [{ timestamp: ts }],
+              needDefaultYAxisFigure: false,
+              styles: { line: { color: "#ffffff1a", size: 1, style: "dashed", dashedValue: [4, 3] } },
+            });
+          } catch (_) {}
+        }
+      }
+      // OR Zone shaded rectangle — shows the opening range band visually
+      if (orStartTs != null && orEndTs != null) {
+        try {
+          chart.createOverlay({
+            name: "rect",
+            groupId: "edu",
+            lock: true,
+            points: [
+              { timestamp: orStartTs, value: orLow  },
+              { timestamp: orEndTs,   value: orHigh },
+            ],
+            needDefaultYAxisFigure: false,
+            styles: {
+              polygon: { style: "fill", color: `${up}14` },
+              line:    { color: `${up}30`, size: 1, style: "dashed", dashedValue: [4, 2] },
+            },
+          });
+        } catch (_) {}
       }
     }
 
@@ -429,19 +508,22 @@ export function KChart({
             lock: true,
             points: [{ value: ann.price }],
             styles: { line: { color: ann.color, size: 1, style: "dashed" as const, dashedValue: [4, 3] } },
-            needDefaultYAxisFigure: true,
+            // DO NOT set needDefaultYAxisFigure: true on annotations — bot annotation
+            // prices from other sessions can be far outside today's range, which forces
+            // KLineChart to expand the Y-axis to include them (660–840 bloat bug).
+            needDefaultYAxisFigure: false,
           });
         } else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) {
-          // Top edge of zone with label
+          // Top edge of zone
           chart.createOverlay({
             name: "horizontalStraightLine",
             groupId: "ann",
             lock: true,
             points: [{ value: ann.price_high }],
             styles: { line: { color: ann.color, size: 1, style: "dashed" as const, dashedValue: [4, 3] } },
-            needDefaultYAxisFigure: true,
+            needDefaultYAxisFigure: false,
           });
-          // Bottom edge of zone (no label — same color, thinner)
+          // Bottom edge of zone (same color, thinner)
           chart.createOverlay({
             name: "horizontalStraightLine",
             groupId: "ann",
@@ -536,6 +618,28 @@ export function KChart({
         <div style={{ width: 1, height: 18, background: border, margin: "0 4px" }} />
         <button
           className="btn btn-ghost btn-sm"
+          title="Reset zoom to default view"
+          onClick={() => {
+            try {
+              chartRef.current?.scrollToRealTime();
+              // Re-apply natural bar spacing for the current TF so the chart
+              // snaps back to the original zoom level, not a zoomed-out mess.
+              const naturalCount: Record<string, number> = {
+                "1Min": 240, "5Min": 100, "15Min": 50, "1Hour": 30,
+              };
+              const barsInView = naturalCount[tf] ?? 100;
+              const containerW = containerRef.current?.clientWidth ?? 900;
+              const barSpace   = Math.max(2, Math.min(30, (containerW - 70) / barsInView));
+              chartRef.current?.setBarSpace(barSpace);
+              // Force lastSpacingTf reset so next TF change re-applies spacing
+              lastSpacingTf.current = "";
+            } catch (_) {}
+          }}
+        >
+          ⊙
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
           title="Clear all drawings"
           onClick={() => { try { chartRef.current?.removeOverlay(); } catch (_) {} setTool(""); }}
         >
@@ -549,7 +653,7 @@ export function KChart({
       </div>
 
       {/* ── Chart legend strip — explains every colored element on the chart ── */}
-      {(showVwap || showOR || (positionLevels && (positionLevels.entry ?? 0) > 0) || annotations.length > 0) && (
+      {(showVwap || showOR || (positionLevels && (positionLevels.entry ?? 0) > 0) || true) && (
         <div
           className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-1.5 text-[10px]"
           style={{ borderBottom: `1px solid ${border}`, background: dark ? "#0f131c" : "#f0f2f7", color: text }}
@@ -607,8 +711,21 @@ export function KChart({
               )}
             </>
           )}
-          {/* Bot annotation zones */}
-          {annotations.length > 0 && (() => {
+          {/* OR zone educational indicator */}
+          {showOR && orHigh != null && orLow != null && (
+            <span className="flex items-center gap-1">
+              <span style={{ display:"inline-block", width:14, height:8,
+                             background:`${up}14`, borderRadius:2,
+                             border:`1px dashed ${up}55` }} />
+              OR Zone <span style={{ opacity:0.6, fontSize:9 }}>(9:30–10:00 AM)</span>
+            </span>
+          )}
+          {/* Bot scanning status / annotation legend */}
+          {annotations.length === 0 ? (
+            <span style={{ opacity:0.45, fontStyle:"italic", fontSize:9 }}>
+              Bot scanning — strategy zones appear here when a setup fires
+            </span>
+          ) : (() => {
             // Deduplicate annotation labels so we don't show "FVG zone, FVG zone, FVG zone"
             const seen = new Set<string>();
             return annotations.filter(a => {
@@ -625,6 +742,10 @@ export function KChart({
               </span>
             ));
           })()}
+          {/* Time key */}
+          <span style={{ marginLeft:"auto", opacity:0.35, fontSize:9, whiteSpace:"nowrap" }}>
+            ⊙ = Reset zoom
+          </span>
         </div>
       )}
 
