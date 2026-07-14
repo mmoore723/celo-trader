@@ -92,6 +92,16 @@ export function Sidebar() {
         ))}
       </nav>
 
+      {/* Terms of Service link — lets already-accepted users review the disclosure */}
+      <div className="px-3 pb-1">
+        <NavLink
+          to="/terms"
+          style={{ fontSize: 11, color: "var(--ink-faint)", textDecoration: "underline" }}
+        >
+          Terms of Service
+        </NavLink>
+      </div>
+
       {/* User / sign-out */}
       <div
         className="px-3 py-2 border-t flex items-center justify-between"

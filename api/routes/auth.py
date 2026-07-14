@@ -89,11 +89,35 @@ async def auth_me(request: Request):
         raise HTTPException(401, "Not authenticated")
     try:
         p = decode_session(token)
-        return {"ok": True, "user_id": p["sub"], "username": p.get("username", "admin"),
-                "is_admin": bool(p.get("is_admin", False)),
-                "email": p.get("username", "admin")}
+        from auth.users import get_user, CURRENT_TERMS_VERSION
+        u = get_user(p["sub"]) or {}
+        accepted_v = u.get("terms_version")
+        return {
+            "ok":                    True,
+            "user_id":               p["sub"],
+            "username":              p.get("username", "admin"),
+            "is_admin":              bool(p.get("is_admin", False)),
+            "email":                 p.get("username", "admin"),
+            "terms_accepted":        accepted_v == CURRENT_TERMS_VERSION,
+            "current_terms_version": CURRENT_TERMS_VERSION,
+        }
     except JWTError:
         raise HTTPException(401, "Session expired — please sign in again")
+
+
+@router.post("/accept-terms")
+async def auth_accept_terms(request: Request):
+    """Record that the authenticated user accepted the current ToS."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        raise HTTPException(401, "Not authenticated")
+    try:
+        p = decode_session(token)
+    except JWTError:
+        raise HTTPException(401, "Session expired — please sign in again")
+    from auth.users import accept_terms, CURRENT_TERMS_VERSION
+    accept_terms(p["sub"], CURRENT_TERMS_VERSION)
+    return {"ok": True, "terms_version": CURRENT_TERMS_VERSION}
 
 
 @router.post("/logout")

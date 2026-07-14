@@ -24,6 +24,7 @@ import { DailyBrief }      from "./pages/DailyBrief";
 import { Admin }           from "./pages/Admin";
 import { Register }        from "./pages/Register";
 import { Login }           from "./pages/Login";
+import { Terms }           from "./pages/Terms";
 import { Maintenance }     from "./pages/Maintenance";
 import { ApiSetupModal }   from "./components/ApiSetupModal";
 import { useState, useEffect } from "react";
@@ -100,6 +101,8 @@ function AppShell() {
           <Route path="/playbooks"   element={<Playbooks />} />
           <Route path="/settings"    element={<Settings />} />
           <Route path="/admin"       element={<AdminGuard />} />
+          {/* Read-only terms view for already-accepted users */}
+          <Route path="/terms"       element={<Terms viewOnly />} />
         </Routes>
       </main>
       <TickerBar />
@@ -120,7 +123,7 @@ function AdminGuard() {
 
 // ── Auth gate — decides what to render based on session state ──────────────────
 function AuthGate() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
 
   // Still checking session cookie → branded loading screen
   if (loading) return <Maintenance mode="connecting" />;
@@ -128,7 +131,10 @@ function AuthGate() {
   // Not logged in → login page (register has its own public route below)
   if (!isAuthenticated) return <Login />;
 
-  // Authenticated → full app
+  // Logged in but ToS not accepted (or older version) → show Terms gate
+  if (!user?.terms_accepted) return <Terms />;
+
+  // Authenticated + ToS accepted → full app
   return <AppShell />;
 }
 

@@ -45,6 +45,12 @@ _DB_PATH = _ROOT / "user_data" / "users.db"
 _DATA    = _ROOT / "user_data"
 
 
+# ── Terms of Service version ──────────────────────────────────────────────────
+# Bump this string whenever the ToS text changes.  All users who accepted an
+# older version will be re-prompted on next login.
+CURRENT_TERMS_VERSION = "1.0"
+
+
 # ── DB bootstrap ──────────────────────────────────────────────────────────────
 
 def get_db() -> sqlite3.Connection:
@@ -55,11 +61,13 @@ def get_db() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id          TEXT PRIMARY KEY,
-            username    TEXT UNIQUE NOT NULL,
-            pw_hash     TEXT NOT NULL,
-            is_admin    INTEGER NOT NULL DEFAULT 0,
-            created_at  TEXT NOT NULL
+            id                TEXT PRIMARY KEY,
+            username          TEXT UNIQUE NOT NULL,
+            pw_hash           TEXT NOT NULL,
+            is_admin          INTEGER NOT NULL DEFAULT 0,
+            created_at        TEXT NOT NULL,
+            terms_accepted_at TEXT,
+            terms_version     TEXT
         )
     """)
     conn.execute("""
@@ -73,7 +81,20 @@ def get_db() -> sqlite3.Connection:
     """)
     conn.commit()
     _migrate_admin_if_needed(conn)
+    _run_migrations(conn)   # add any columns missing from older DB files
     return conn
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Non-destructive column additions for schema upgrades."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    for col, typedef in [
+        ("terms_accepted_at", "TEXT"),
+        ("terms_version",     "TEXT"),
+    ]:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
+    conn.commit()
 
 
 def _migrate_admin_if_needed(conn: sqlite3.Connection) -> None:
@@ -166,7 +187,25 @@ def get_user(user_id: str) -> Optional[dict]:
     conn.close()
     if not row:
         return None
-    return {"user_id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"])}
+    return {
+        "user_id":       row["id"],
+        "username":      row["username"],
+        "is_admin":      bool(row["is_admin"]),
+        "terms_version": row["terms_version"],  # None if never accepted
+    }
+
+
+def accept_terms(user_id: str, version: str = CURRENT_TERMS_VERSION) -> bool:
+    """Record that the user accepted the given ToS version. Returns True on success."""
+    conn = get_db()
+    cur  = conn.execute(
+        "UPDATE users SET terms_accepted_at = ?, terms_version = ? WHERE id = ?",
+        (_now(), version, user_id),
+    )
+    conn.commit()
+    conn.close()
+    logger.info("Terms v%s accepted by user_id=%s", version, user_id)
+    return cur.rowcount > 0
 
 
 def list_users() -> list[dict]:

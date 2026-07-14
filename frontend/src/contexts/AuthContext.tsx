@@ -10,26 +10,29 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export interface AuthUser {
-  email:    string;
-  name:     string;
-  user_id?: string;
-  is_admin?: boolean;
+  email:          string;
+  name:           string;
+  user_id?:       string;
+  is_admin?:      boolean;
+  terms_accepted?: boolean;   // true = user accepted the current ToS version
 }
 
 interface AuthState {
   isAuthenticated: boolean;
   user: AuthUser | null;
-  loading: boolean;             // true while the /me check is in-flight
+  loading: boolean;                    // true while the /me check is in-flight
   login: (user: AuthUser) => void;
   logout: () => Promise<void>;
+  acceptTerms: () => Promise<void>;    // call after user clicks "I Agree"
 }
 
 const AuthContext = createContext<AuthState>({
   isAuthenticated: false,
   user: null,
   loading: true,
-  login: () => {},
-  logout: async () => {},
+  login:        () => {},
+  logout:       async () => {},
+  acceptTerms:  async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -44,10 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (r.ok) {
           const data = await r.json();
           setUser({
-            email:    data.username || data.email || "user",
-            name:     data.username || data.name  || data.email || "user",
-            user_id:  data.user_id,
-            is_admin: !!data.is_admin,
+            email:          data.username || data.email || "user",
+            name:           data.username || data.name  || data.email || "user",
+            user_id:        data.user_id,
+            is_admin:       !!data.is_admin,
+            terms_accepted: !!data.terms_accepted,
           });
         }
         // 401 → user stays null → redirect to login
@@ -82,9 +86,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Called when user clicks "I Agree" on the Terms page.
+  // POSTs acceptance to the backend, then marks the user as having accepted.
+  const acceptTerms = async () => {
+    const r = await fetch("/api/auth/accept-terms", {
+      method: "POST", credentials: "include",
+    });
+    if (!r.ok) throw new Error("Failed to record acceptance");
+    setUser((prev) => prev ? { ...prev, terms_accepted: true } : prev);
+  };
+
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated: !!user, user, loading, login, logout }}
+      value={{ isAuthenticated: !!user, user, loading, login, logout, acceptTerms }}
     >
       {children}
     </AuthContext.Provider>
