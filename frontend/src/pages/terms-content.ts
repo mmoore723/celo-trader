@@ -214,10 +214,10 @@ export const SECTIONS: TermsSection[] = [
     heading: "15. Governing Law, Dispute Resolution & Class Action Waiver",
     body:
       'This Agreement shall be governed by and construed in accordance with the laws of the ' +
-      'State of Delaware, USA, without regard to its conflict of laws provisions. Any dispute ' +
+      'State of Maryland, USA, without regard to its conflict of laws provisions. Any dispute ' +
       'arising out of or relating to this Agreement shall be resolved by binding arbitration ' +
       'administered by the American Arbitration Association (AAA) under its Commercial ' +
-      'Arbitration Rules, with proceedings conducted in English in the State of Delaware. ' +
+      'Arbitration Rules, with proceedings conducted in English in the State of Maryland. ' +
       'YOU WAIVE ANY RIGHT TO PARTICIPATE IN A CLASS ACTION LAWSUIT OR CLASS-WIDE ' +
       'ARBITRATION AGAINST THE OPERATOR. Notwithstanding the foregoing, either party may ' +
       'seek emergency injunctive relief from a court of competent jurisdiction.',
