@@ -191,11 +191,12 @@ export function KChart({
     // Apply theme styles
     chart.setStyles(makeStyles(dark));
     chart.setOffsetRightDistance(80);
-    // Enable drag-to-pan.  Zoom is DISABLED in KLineChart's built-in handler
-    // so its wheel listener becomes a no-op — we handle zoom ourselves below.
-    // If we left setZoomEnabled(true), KLineChart's handler and ours would both
-    // fire on the same wheel event → double-zoom → Y-axis explodes to 660-840.
-    chart.setZoomEnabled(false);
+    // Let KLineChart handle zoom AND pan natively.
+    // The Y-axis 660-840 explosion was caused by needDefaultYAxisFigure: true on
+    // annotations whose prices were from old sessions (far outside today's range) —
+    // NOT by double-zoom. That's already fixed (all annotations use false now).
+    // Disabling zoom here also disabled horizontal wheel pan → candles frozen.
+    chart.setZoomEnabled(true);
     chart.setScrollEnabled(true);
 
     // Volume in candle pane, RSI/MACD as sub-panels
@@ -253,38 +254,11 @@ export function KChart({
     const ro = new ResizeObserver(() => { chartRef.current?.resize(); });
     ro.observe(el);
 
-    // Wheel zoom handler — NO capture, NO stopPropagation.
-    //
-    // Why this approach:
-    //   We set chart.setZoomEnabled(false) above, making KLineChart's own wheel
-    //   handler a no-op for zoom. We only need OUR handler for zoom.
-    //
-    //   We must NOT use stopPropagation() — on macOS, two-finger horizontal
-    //   swipe sends deltaX events that KLineChart uses for panning. Blocking
-    //   propagation killed those events → candles appeared frozen/stuck.
-    //
-    //   We must NOT use capture: true — capture fires in the same order as
-    //   registration on the exact same element, and KLineChart may also register
-    //   in capture phase. No guarantee we win the race.
-    //
-    //   Correct solution: only intercept VERTICAL scroll (deltaY dominates).
-    //   Horizontal events fall through to KLineChart's drag/pan system untouched.
-    const onWheel = (e: WheelEvent) => {
-      // Let horizontal pan events pass through to KLineChart unchanged
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      // Vertical scroll → our zoom handler takes over
-      e.preventDefault();
-      if (!chartRef.current) return;
-      const rect = el.getBoundingClientRect();
-      const scale = e.deltaY < 0 ? 1.1 : 0.9;
-      try {
-        chartRef.current.zoomAtCoordinate(scale, {
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        });
-      } catch (_) {}
-    };
-    // Bubble phase (default), no capture — horizontal pan events reach KLineChart
+    // Only prevent the page from scrolling when the cursor is over the chart.
+    // KLineChart's own wheel listeners (registered on this same element during init)
+    // handle zoom (bar spacing) and horizontal pan natively — we must NOT add any
+    // competing zoom logic here or we get double-zoom per scroll tick.
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); };
     el.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
@@ -349,21 +323,22 @@ export function KChart({
       }
       // Scroll to latest bar, then create ALL overlays.
       //
-      // CRITICAL TIMING FIX: Overlays created synchronously in the same tick as
-      // applyNewData() were being silently cleared by KLineChart's internal canvas
-      // flush (requestAnimationFrame). The result: overlays only appeared after
-      // navigating away and back (component remount), because on remount React
-      // Query served bars from cache instantly, skipping the flush cycle.
+      // Why the delay: applyNewData() + scrollToRealTime() both kick off
+      // internal RAF repaint cycles.  Overlays created synchronously in the same
+      // tick get silently cleared when those cycles flush the canvas.  Result on
+      // first load: no overlays until user navigates away and back (component
+      // remount has bars in cache so timing differs).
       //
-      // Fix: 60ms delay lets the RAF cycle complete before we add overlays.
-      // All overlay creation (VWAP, OR lines, edu rects, position lines,
-      // annotations) is now inside this callback.
+      // 150ms gives the RAF flush and scrollToRealTime animation time to settle.
+      // resize() before overlay creation forces the canvas dimensions to sync so
+      // the overlay coordinate system is stable.
       setTimeout(() => {
         try { chartRef.current?.scrollToRealTime(); } catch (_) {}
+        try { chartRef.current?.resize(); } catch (_) {}
         const c = chartRef.current;
         if (!c) return;
         applyOverlays(c);
-      }, 60);
+      }, 150);
     } else {
       // No bars yet — still sync VWAP + overlays (no canvas flush risk)
       applyOverlays(chart);
