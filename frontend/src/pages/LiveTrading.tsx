@@ -8,7 +8,7 @@ import { RefreshCw, Radio, Bot } from "lucide-react";
 import { KChart } from "../components/charts/KChart";
 import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
-import { api, type Trade, type OptionsChainRow, type ChartAnnotation } from "../lib/api";
+import { api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle } from "../lib/api";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
@@ -159,6 +159,19 @@ export function LiveTrading() {
     queryKey: ["annotations", ticker],
     queryFn:  () => api.bot.annotations(ticker),
     refetchInterval: 5_000,   // same cadence as bot tick
+    retry: false,
+  });
+
+  // News — Alpaca's free news API, refreshed every 5 minutes
+  const newsSymbols = useMemo(() => {
+    const syms = [ticker, ...openTrades.map((t: Trade) => t.ticker)];
+    return [...new Set(syms)].slice(0, 5).join(",");
+  }, [ticker, openTrades]);
+
+  const { data: newsArticles = [] } = useQuery<NewsArticle[]>({
+    queryKey: ["news", newsSymbols],
+    queryFn:  () => api.market.news(newsSymbols, 15),
+    refetchInterval: 5 * 60_000,   // refresh every 5 minutes
     retry: false,
   });
 
@@ -799,6 +812,81 @@ export function LiveTrading() {
               </>
             );
           })()}
+        </div>
+      </div>
+
+      {/* ── News feed ───────────────────────────────────────────────────────── */}
+      <div className="card">
+        <div className="px-3 py-2 border-b flex items-center gap-2"
+             style={{ borderColor: "var(--border)" }}>
+          <span className="text-xs font-semibold uppercase tracking-wider"
+                style={{ color: "var(--ink-muted)" }}>
+            Market News
+          </span>
+          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+            {newsSymbols} · via Alpaca
+          </span>
+        </div>
+        <div className="flex flex-col divide-y" style={{ borderColor: "var(--border)" }}>
+          {newsArticles.length === 0 ? (
+            <p className="px-3 py-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+              No news available — Alpaca API key required, or no recent articles for {ticker}.
+            </p>
+          ) : (
+            newsArticles.map((article, i) => {
+              // Format timestamp as "Jul 12, 9:34 AM"
+              const ts = article.created_at
+                ? new Date(article.created_at).toLocaleString("en-US", {
+                    month: "short", day: "numeric",
+                    hour: "numeric", minute: "2-digit",
+                  })
+                : "";
+              return (
+                <div key={article.id ?? i} className="px-3 py-2">
+                  <div className="flex items-start gap-2">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {article.url ? (
+                        <a
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium hover:underline"
+                          style={{ color: "var(--ink)", lineHeight: 1.4, display: "block" }}
+                        >
+                          {article.headline}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-medium" style={{ color: "var(--ink)", lineHeight: 1.4, display: "block" }}>
+                          {article.headline}
+                        </span>
+                      )}
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {article.source && (
+                          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+                            {article.source}
+                          </span>
+                        )}
+                        {ts && (
+                          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+                            {ts}
+                          </span>
+                        )}
+                        {article.symbols?.length > 0 && (
+                          <div className="flex gap-1">
+                            {article.symbols.slice(0, 4).map((s) => (
+                              <span key={s} className="badge badge-blue" style={{ fontSize: 9, padding: "1px 4px" }}>
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

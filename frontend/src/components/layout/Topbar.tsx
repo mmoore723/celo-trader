@@ -137,7 +137,7 @@ export function Topbar() {
         ) : (
           <WifiOff size={14} style={{ color: "var(--negative)" }} />
         )}
-        {connected ? "Live" : "Reconnecting…"}
+        {connected ? "Bot Live" : "Reconnecting…"}
       </div>
 
       {/* Theme toggle */}

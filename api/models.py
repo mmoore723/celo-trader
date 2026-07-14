@@ -186,6 +186,18 @@ class TradeAnalytics(BaseModel):
     avg_exit_efficiency_pct: float
 
 
+# ── News ──────────────────────────────────────────────────────────────────────
+
+class NewsArticle(BaseModel):
+    id: Optional[int] = None
+    headline: str
+    summary: Optional[str] = None
+    source: Optional[str] = None
+    url: Optional[str] = None
+    created_at: Optional[str] = None
+    symbols: list[str] = []
+
+
 # ── Options chain ──────────────────────────────────────────────────────────────
 
 class OptionsChainRow(BaseModel):

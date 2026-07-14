@@ -179,14 +179,11 @@ export function KChart({
     const el = containerRef.current;
     if (!el) return;
 
-    // Ensure container has dimensions before init
-    if (el.clientWidth === 0 || el.clientHeight === 0) {
-      // wait one frame for layout to complete
-      const id = requestAnimationFrame(() => { chartRef.current?.resize(); });
-      // still proceed — KLineChart handles 0-sized containers on resize
-      return () => cancelAnimationFrame(id);
-    }
-
+    // Initialize chart regardless of current container dimensions.
+    // If the container hasn't been laid out yet (clientWidth === 0) the
+    // ResizeObserver below fires immediately when dimensions settle and
+    // calls chart.resize(), which corrects the layout.  The old early-return
+    // here exited *before* calling init(), so the chart was never created.
     const chart = init(el) as any;
     if (!chart) return;               // init returns null if el is null
     chartRef.current = chart;
@@ -245,8 +242,11 @@ export function KChart({
       el2.style.opacity = "1";
     });
 
-    // Auto-resize when container dimensions change
-    const ro = new ResizeObserver(() => { chartRef.current?.resize(); });
+    // Auto-resize when container dimensions change; scroll to latest bar after resize
+    const ro = new ResizeObserver(() => {
+      chartRef.current?.resize();
+      setTimeout(() => { try { chartRef.current?.scrollToRealTime(); } catch (_) {} }, 30);
+    });
     ro.observe(el);
 
     // Wheel zoom — native listener so preventDefault() stops page scroll.

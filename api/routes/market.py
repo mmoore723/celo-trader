@@ -431,3 +431,52 @@ def get_opening_range(ticker: str) -> dict:
         return _get_or(df) or {}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/news", response_model=list)
+def get_news(
+    symbols: str = Query("SPY,QQQ"),
+    limit: int = Query(10, ge=1, le=50),
+) -> list:
+    """
+    Fetch recent news for one or more tickers via Alpaca's free news API.
+    symbols: comma-separated, e.g. "SPY,QQQ,AAPL"
+    Falls back to [] with no error if keys are missing or API is unavailable.
+    """
+    try:
+        import requests as _req
+        from config import ALPACA_API_KEY, ALPACA_SECRET_KEY, get_api_keys
+        _keys      = get_api_keys()
+        _api_key   = _keys.get("alpaca_api_key",    ALPACA_API_KEY)
+        _secret    = _keys.get("alpaca_secret_key", ALPACA_SECRET_KEY)
+        if not _api_key or not _secret:
+            return []
+        headers = {
+            "APCA-API-KEY-ID":     _api_key,
+            "APCA-API-SECRET-KEY": _secret,
+        }
+        params = {
+            "symbols": symbols.upper(),
+            "limit":   min(limit, 50),
+            "sort":    "desc",
+        }
+        r = _req.get(
+            "https://data.alpaca.markets/v1beta1/news",
+            headers=headers, params=params, timeout=8,
+        )
+        r.raise_for_status()
+        articles = r.json().get("news", [])
+        result = []
+        for a in articles:
+            result.append({
+                "id":         a.get("id"),
+                "headline":   a.get("headline", ""),
+                "summary":    a.get("summary", ""),
+                "source":     a.get("source", ""),
+                "url":        a.get("url", ""),
+                "created_at": a.get("created_at", ""),
+                "symbols":    a.get("symbols", []),
+            })
+        return result
+    except Exception:
+        return []   # never fail the frontend; news is supplemental

@@ -1,20 +1,43 @@
 /**
- * Login.tsx — Simple password login page for Celo Trader dashboard.
+ * Login.tsx — Landing page + login form for celotrader.com.
  *
- * Posts to POST /api/auth/login with { password, stay_signed_in }.
- * On success the backend sets a session cookie and AuthContext picks it up.
+ * Left panel (desktop): hero headline, 3 feature callouts, disclaimer.
+ * Right panel: logo, login form, ToS link.
+ * On mobile: stacked vertically (hero → form).
  */
 import { useState, type FormEvent } from "react";
-import { useAuth }             from "../contexts/AuthContext";
+import { useAuth } from "../contexts/AuthContext";
+
+// ── Feature cards ─────────────────────────────────────────────────────────────
+
+const FEATURES = [
+  {
+    icon: "📡",
+    title: "Pre-Market Intelligence",
+    body:  "Scans 30+ tickers every morning for gap plays, relative-volume spikes, and momentum setups — so you never miss the morning's best opportunities.",
+  },
+  {
+    icon: "⚡",
+    title: "Automated Execution",
+    body:  "Instant order entry with professional position sizing, dynamic targets, and trailing stops. The bot manages the trade so you don't have to stare at a screen.",
+  },
+  {
+    icon: "📊",
+    title: "Actionable Analytics",
+    body:  "Every trade logged — win rate by strategy, entry hour, and ticker. See exactly what's working and tune your edge over time.",
+  },
+];
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function Login() {
-  const { login }                   = useAuth();
-  const [username, setUsername]     = useState("");
-  const [password, setPassword]     = useState("");
-  const [staySignedIn, setStay]     = useState(true);
-  const [showPw, setShowPw]         = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-  const [loading, setLoading]       = useState(false);
+  const { login }               = useAuth();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [staySignedIn, setStay] = useState(true);
+  const [showPw, setShowPw]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading]   = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,7 +45,6 @@ export function Login() {
     if (!password) { setError("Enter your password"); return; }
     setError(null);
     setLoading(true);
-
     try {
       const r = await fetch("/api/auth/login", {
         method:      "POST",
@@ -42,258 +64,279 @@ export function Login() {
   }
 
   return (
-    <div style={styles.backdrop}>
-      {/* Mascot watermark */}
-      <img
-        src="/mascot.png"
-        aria-hidden="true"
-        style={{
-          position: "fixed", bottom: -60, right: -60,
-          width: 480, height: 480, objectFit: "contain",
-          opacity: 0.06, pointerEvents: "none", userSelect: "none", zIndex: 0,
-        }}
-      />
-      <div style={styles.card}>
+    <div style={s.backdrop}>
+      {/* Responsive grid — stack on mobile */}
+      <style>{`
+        .celo-login-shell {
+          display: grid;
+          grid-template-columns: minmax(0,1fr) minmax(0,400px);
+          gap: 48px;
+          max-width: 960px;
+          width: 100%;
+          z-index: 1;
+        }
+        @media (max-width: 720px) {
+          .celo-login-shell {
+            grid-template-columns: 1fr;
+            gap: 28px;
+          }
+          .celo-login-hero-extra { display: none; }
+        }
+      `}</style>
 
-        {/* Logo */}
-        <div style={styles.logoWrap}>
-          <img
-            src="/logo.png"
-            alt="Celo Trader"
-            style={styles.logo}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = "/favicon.svg";
-            }}
-          />
+      {/* Mascot watermark */}
+      <img src="/mascot.png" aria-hidden="true"
+        style={{ position:"fixed", bottom:-80, right:-80, width:520, height:520,
+                 objectFit:"contain", opacity:0.05, pointerEvents:"none",
+                 userSelect:"none", zIndex:0 }} />
+
+      <div className="celo-login-shell">
+
+        {/* ── LEFT: Hero panel ── */}
+        <div style={s.hero}>
+          {/* Logo mark */}
+          <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:36 }}>
+            <img src="/logo.png" alt="" style={{ width:42, height:42, objectFit:"contain",
+                filter:"drop-shadow(0 0 16px rgba(0,200,83,0.6))" }}
+              onError={(e) => { (e.target as HTMLImageElement).src = "/favicon.svg"; }} />
+            <span style={{ fontSize:20, fontWeight:700, color:"#fff", letterSpacing:"-0.5px" }}>
+              Celo Trader
+            </span>
+          </div>
+
+          {/* Headline */}
+          <h1 style={s.headline}>
+            Algorithmic Options Trading —{" "}
+            <span style={{ color:"#00c853" }}>Built for Serious Traders</span>
+          </h1>
+          <p style={s.sub}>
+            A full-stack trading system that scans the market, spots high-probability setups,
+            and executes options trades with professional risk management — all on your own
+            brokerage account.
+          </p>
+
+          {/* Feature cards + disclaimer — hidden on very small screens */}
+          <div className="celo-login-hero-extra"
+               style={{ display:"flex", flexDirection:"column", gap:18, margin:"32px 0 36px" }}>
+            {FEATURES.map((f) => (
+              <div key={f.title} style={s.featureCard}>
+                <span style={{ fontSize:24, lineHeight:1 }}>{f.icon}</span>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#fff", marginBottom:4 }}>
+                    {f.title}
+                  </div>
+                  <div style={{ fontSize:13, color:"#94a3b8", lineHeight:1.55 }}>{f.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Disclaimer block */}
+          <div className="celo-login-hero-extra" style={s.disclaimer}>
+            <strong style={{ color:"#cbd5e1", fontSize:11 }}>
+              For Educational &amp; Informational Use Only
+            </strong>
+            <p style={{ margin:"4px 0 0", fontSize:11, color:"#64748b", lineHeight:1.6 }}>
+              Celo Trader is a software tool, not a registered investment adviser. Past
+              performance does not guarantee future results. All trading involves substantial
+              risk of loss. You are solely responsible for any trades placed in your own
+              brokerage account. By accessing this platform you agree to our{" "}
+              <a href="/#/terms" style={{ color:"#00c853", textDecoration:"underline" }}>
+                Terms of Service
+              </a>
+              .
+            </p>
+          </div>
         </div>
 
-        <h1 style={styles.title}>Celo Trader</h1>
-        <p style={styles.subtitle}>Sign in to your dashboard</p>
-
-        {/* Error */}
-        {error && (
-          <div style={styles.errorBanner}>
-            <span style={{ marginRight: 6 }}>⚠️</span>{error}
-          </div>
-        )}
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <div style={styles.inputWrap}>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Username"
-              autoFocus
-              autoComplete="username"
-              style={styles.input}
-            />
-          </div>
-          <div style={styles.inputWrap}>
-            <input
-              type={showPw ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              autoComplete="current-password"
-              style={styles.input}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPw((p) => !p)}
-              style={styles.eyeBtn}
-              tabIndex={-1}
-            >
-              {showPw ? "🙈" : "👁️"}
-            </button>
-          </div>
-
-          {/* Stay signed in toggle */}
-          <label style={styles.stayRow}>
-            <div
-              style={{
-                ...styles.toggle,
-                background: staySignedIn ? "#00c853" : "#334155",
-              }}
-              onClick={() => setStay((p) => !p)}
-              role="checkbox"
-              aria-checked={staySignedIn}
-            >
-              <div
-                style={{
-                  ...styles.toggleThumb,
-                  transform: staySignedIn ? "translateX(18px)" : "translateX(2px)",
-                }}
-              />
+        {/* ── RIGHT: Login card ── */}
+        <div style={s.loginSide}>
+          <div style={s.card}>
+            {/* Logo (mobile also shows this) */}
+            <div style={s.logoWrap}>
+              <img src="/logo.png" alt="Celo Trader" style={s.logo}
+                onError={(e) => { (e.target as HTMLImageElement).src = "/favicon.svg"; }} />
             </div>
-            <span style={styles.stayLabel}>Stay signed in for 30 days</span>
-          </label>
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{ ...styles.submitBtn, opacity: loading ? 0.7 : 1 }}
-          >
-            {loading ? "Signing in…" : "Sign In"}
-          </button>
-        </form>
+            <h2 style={s.cardTitle}>Welcome Back</h2>
+            <p style={s.cardSub}>Sign in to your trading dashboard</p>
 
-        <p style={styles.footer}>
-          Celo Trader © {new Date().getFullYear()} · Algorithmic Options Trading
-        </p>
+            {error && (
+              <div style={s.errorBanner}>
+                <span style={{ marginRight:6 }}>⚠️</span>{error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} style={s.form}>
+              <div style={s.inputWrap}>
+                <input
+                  type="text" value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Username"
+                  autoFocus autoComplete="username"
+                  style={s.input}
+                />
+              </div>
+              <div style={s.inputWrap}>
+                <input
+                  type={showPw ? "text" : "password"} value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  autoComplete="current-password"
+                  style={s.input}
+                />
+                <button type="button" onClick={() => setShowPw((p) => !p)}
+                  style={s.eyeBtn} tabIndex={-1}>
+                  {showPw ? "🙈" : "👁️"}
+                </button>
+              </div>
+
+              {/* Stay signed in */}
+              <label style={s.stayRow}>
+                <div style={{ ...s.toggle, background: staySignedIn ? "#00c853" : "#334155" }}
+                  onClick={() => setStay((p) => !p)}
+                  role="checkbox" aria-checked={staySignedIn}>
+                  <div style={{ ...s.toggleThumb,
+                    transform: staySignedIn ? "translateX(18px)" : "translateX(2px)" }} />
+                </div>
+                <span style={s.stayLabel}>Stay signed in for 30 days</span>
+              </label>
+
+              <button type="submit" disabled={loading}
+                style={{ ...s.submitBtn, opacity: loading ? 0.7 : 1 }}>
+                {loading ? "Signing in…" : "Sign In"}
+              </button>
+            </form>
+
+            {/* Footer links */}
+            <div style={{ marginTop:20, display:"flex", flexDirection:"column",
+                          alignItems:"center", gap:6 }}>
+              <p style={s.footer}>Celo Trader © {new Date().getFullYear()}</p>
+              <a href="/#/terms" style={{ fontSize:11, color:"#475569",
+                textDecoration:"underline", cursor:"pointer" }}>
+                Terms of Service &amp; Disclosures
+              </a>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const styles: Record<string, React.CSSProperties> = {
+const s: Record<string, React.CSSProperties> = {
   backdrop: {
-    minHeight:      "100vh",
-    width:          "100%",
-    display:        "flex",
-    alignItems:     "center",
-    justifyContent: "center",
-    background:     "linear-gradient(135deg, #060c19 0%, #0d1a2e 50%, #060c19 100%)",
-    fontFamily:     "Inter, sans-serif",
-    padding:        "20px",
+    minHeight: "100vh", width: "100%",
+    background: "linear-gradient(135deg, #060c19 0%, #0d1a2e 55%, #060c19 100%)",
+    fontFamily: "Inter, sans-serif",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: "24px 16px",
+    boxSizing: "border-box",
+  },
+  shell: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0,1fr) minmax(0,400px)",
+    gap: 48,
+    maxWidth: 960,
+    width: "100%",
+    zIndex: 1,
+    // Stack on narrow screens
+    // (Tailwind not available here; use a <style> trick via a CSS variable or accept desktop-only grid)
+  },
+  hero: {
+    display: "flex", flexDirection: "column",
+    padding: "8px 0 8px",
+  },
+  headline: {
+    margin: 0,
+    fontSize: "clamp(22px, 3vw, 34px)",
+    fontWeight: 800,
+    color: "#fff",
+    lineHeight: 1.25,
+    letterSpacing: "-0.5px",
+  },
+  sub: {
+    margin: "14px 0 0",
+    fontSize: 15,
+    color: "#94a3b8",
+    lineHeight: 1.65,
+  },
+  featureCard: {
+    display: "flex", gap: 14, alignItems: "flex-start",
+    background: "rgba(255,255,255,0.035)",
+    border: "1px solid rgba(255,255,255,0.07)",
+    borderRadius: 12,
+    padding: "14px 16px",
+  },
+  disclaimer: {
+    background: "rgba(0,0,0,0.2)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: 10,
+    padding: "12px 14px",
+  },
+  loginSide: {
+    display: "flex", alignItems: "center", justifyContent: "center",
   },
   card: {
-    width:          "100%",
-    maxWidth:       380,
-    background:     "rgba(13,24,46,0.9)",
-    border:         "1px solid rgba(0,200,83,0.2)",
-    borderRadius:   20,
-    padding:        "44px 36px 32px",
-    display:        "flex",
-    flexDirection:  "column",
-    alignItems:     "center",
-    boxShadow:      "0 0 60px rgba(0,200,83,0.08), 0 20px 60px rgba(0,0,0,0.5)",
+    width: "100%",
+    background: "rgba(13,24,46,0.92)",
+    border: "1px solid rgba(0,200,83,0.2)",
+    borderRadius: 20,
+    padding: "36px 32px 28px",
+    display: "flex", flexDirection: "column", alignItems: "center",
+    boxShadow: "0 0 60px rgba(0,200,83,0.07), 0 20px 60px rgba(0,0,0,0.5)",
     backdropFilter: "blur(20px)",
   },
   logoWrap: {
-    width:          88,
-    height:         88,
-    marginBottom:   20,
-    display:        "flex",
-    alignItems:     "center",
-    justifyContent: "center",
+    width: 72, height: 72, marginBottom: 16,
+    display: "flex", alignItems: "center", justifyContent: "center",
   },
   logo: {
-    width:          "100%",
-    height:         "100%",
-    objectFit:      "contain",
-    filter:         "drop-shadow(0 0 20px rgba(0,200,83,0.5))",
+    width: "100%", height: "100%", objectFit: "contain",
+    filter: "drop-shadow(0 0 16px rgba(0,200,83,0.5))",
   },
-  title: {
-    margin:         0,
-    fontSize:       24,
-    fontWeight:     700,
-    color:          "#fff",
-    letterSpacing:  "-0.5px",
+  cardTitle: {
+    margin: 0, fontSize: 20, fontWeight: 700, color: "#fff", letterSpacing: "-0.3px",
   },
-  subtitle: {
-    margin:         "6px 0 24px",
-    fontSize:       13,
-    color:          "#64748b",
-    textAlign:      "center",
+  cardSub: {
+    margin: "6px 0 20px", fontSize: 13, color: "#64748b", textAlign: "center",
   },
   errorBanner: {
-    width:          "100%",
-    background:     "rgba(220,38,38,0.12)",
-    border:         "1px solid rgba(220,38,38,0.3)",
-    borderRadius:   8,
-    padding:        "10px 14px",
-    fontSize:       13,
-    color:          "#fca5a5",
-    marginBottom:   14,
-    display:        "flex",
-    alignItems:     "center",
-    boxSizing:      "border-box",
+    width: "100%", background: "rgba(220,38,38,0.12)",
+    border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8,
+    padding: "10px 14px", fontSize: 13, color: "#fca5a5",
+    marginBottom: 14, display: "flex", alignItems: "center", boxSizing: "border-box",
   },
-  form: {
-    width:          "100%",
-    display:        "flex",
-    flexDirection:  "column",
-    gap:            14,
-  },
-  inputWrap: {
-    position:       "relative",
-    width:          "100%",
-  },
+  form: { width: "100%", display: "flex", flexDirection: "column", gap: 13 },
+  inputWrap: { position: "relative", width: "100%" },
   input: {
-    width:          "100%",
-    padding:        "13px 44px 13px 16px",
-    background:     "rgba(255,255,255,0.06)",
-    border:         "1px solid rgba(255,255,255,0.12)",
-    borderRadius:   10,
-    fontSize:       15,
-    color:          "#fff",
-    outline:        "none",
-    boxSizing:      "border-box",
-    fontFamily:     "Inter, sans-serif",
-    transition:     "border-color 0.15s",
+    width: "100%", padding: "12px 44px 12px 16px",
+    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: 10, fontSize: 15, color: "#fff", outline: "none",
+    boxSizing: "border-box", fontFamily: "Inter, sans-serif", transition: "border-color 0.15s",
   },
   eyeBtn: {
-    position:       "absolute",
-    right:          12,
-    top:            "50%",
-    transform:      "translateY(-50%)",
-    background:     "none",
-    border:         "none",
-    cursor:         "pointer",
-    fontSize:       16,
-    lineHeight:     1,
-    padding:        4,
+    position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+    background: "none", border: "none", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 4,
   },
-  stayRow: {
-    display:        "flex",
-    alignItems:     "center",
-    gap:            10,
-    cursor:         "pointer",
-  },
+  stayRow:   { display: "flex", alignItems: "center", gap: 10, cursor: "pointer" },
   toggle: {
-    width:          40,
-    height:         22,
-    borderRadius:   11,
-    position:       "relative",
-    cursor:         "pointer",
-    transition:     "background 0.2s",
-    flexShrink:     0,
+    width: 40, height: 22, borderRadius: 11, position: "relative",
+    cursor: "pointer", transition: "background 0.2s", flexShrink: 0,
   },
   toggleThumb: {
-    position:       "absolute",
-    top:            3,
-    width:          16,
-    height:         16,
-    borderRadius:   "50%",
-    background:     "#fff",
-    transition:     "transform 0.2s",
+    position: "absolute", top: 3, width: 16, height: 16,
+    borderRadius: "50%", background: "#fff", transition: "transform 0.2s",
   },
-  stayLabel: {
-    fontSize:       13,
-    color:          "#94a3b8",
-    userSelect:     "none",
-  },
+  stayLabel: { fontSize: 13, color: "#94a3b8", userSelect: "none" },
   submitBtn: {
-    width:          "100%",
-    padding:        "13px",
-    background:     "linear-gradient(135deg, #00c853, #00e676)",
-    border:         "none",
-    borderRadius:   10,
-    fontSize:       15,
-    fontWeight:     600,
-    color:          "#060c19",
-    cursor:         "pointer",
-    transition:     "opacity 0.15s",
-    fontFamily:     "Inter, sans-serif",
-    marginTop:      4,
+    width: "100%", padding: "12px",
+    background: "linear-gradient(135deg, #00c853, #00e676)",
+    border: "none", borderRadius: 10, fontSize: 15, fontWeight: 600,
+    color: "#060c19", cursor: "pointer", transition: "opacity 0.15s",
+    fontFamily: "Inter, sans-serif", marginTop: 2,
   },
-  footer: {
-    marginTop:      28,
-    fontSize:       11,
-    color:          "#334155",
-    textAlign:      "center",
-  },
+  footer: { margin: 0, fontSize: 11, color: "#334155", textAlign: "center" },
 };

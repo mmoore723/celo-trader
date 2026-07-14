@@ -196,6 +196,16 @@ export interface AppSettings {
 // ── Chart annotations (bot-drawn overlays) ────────────────────────────────────
 // Emitted by strategy_router.py when a signal or veto fires.
 // Frontend polls GET /api/bot/annotations/{ticker} every 5 s.
+export interface NewsArticle {
+  id?: number;
+  headline: string;
+  summary?: string;
+  source?: string;
+  url?: string;
+  created_at?: string;
+  symbols: string[];
+}
+
 export interface ChartAnnotation {
   id: string;
   type: "hline" | "zone" | "marker";
@@ -269,6 +279,7 @@ export const api = {
     scanner: () => request<ScannerResult[]>("/api/market/scanner"),
     or:      (ticker: string) => request<Record<string,number>>(`/api/market/opening-range/${ticker}`),
     chain:   (ticker: string) => request<OptionsChainRow[]>(`/api/market/chain/${ticker}`),
+    news:    (symbols: string, limit = 10) => request<NewsArticle[]>(`/api/market/news?symbols=${symbols}&limit=${limit}`),
   },
   settings: {
     get:  () => request<AppSettings>("/api/settings"),
