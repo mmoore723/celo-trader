@@ -530,6 +530,31 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
             atr_factor  = min(atr_usd / 5.0, 2.0)  # caps contribution at 2×
             score = rvol_capped * c["abs_gap"] * atr_factor * liq
 
+            # ── Affordability filter: de-rank tickers that would always bust the
+            # risk budget.  Estimate: ATM option premium ≈ 0.5 × daily ATR.
+            # If the stop loss on 1 contract (premium × 30% × 100 shares) exceeds
+            # the risk budget, the bot will return 0 contracts every tick and skip
+            # this ticker all session — move it to the bottom now.
+            try:
+                from config import get_settings as _get_s_aff
+                _s_aff = _get_s_aff()
+                _bal   = float(_s_aff.get("last_known_balance", 1000.0))
+                # Prefer the converted decimal risk_per_trade; fall back to risk_pct %
+                _rp    = _s_aff.get("risk_per_trade") or (float(_s_aff.get("risk_pct", 1.0)) / 100.0)
+                _rp    = max(0.01, float(_rp))
+                _budget       = _bal * _rp
+                _est_premium  = atr_usd * 0.5           # rough ATM premium estimate
+                _est_risk_1c  = _est_premium * 0.30 * 100  # loss if 30% stop hits
+                if _budget > 0 and _est_risk_1c > _budget:
+                    score *= 0.05   # 95% penalty — bot can't size even 1 contract
+                    logger.debug(
+                        "%s affordability penalty: est_premium=$%.2f → stop_loss_1c=$%.2f "
+                        "> budget=$%.2f (%.0f%% of $%.0f) → score de-ranked",
+                        ticker, _est_premium, _est_risk_1c, _budget, _rp * 100, _bal,
+                    )
+            except Exception:
+                pass  # non-critical — scoring still runs without affordability check
+
             scored.append({
                 **c,
                 "avg_daily_vol": int(avg_daily_vol),

@@ -297,7 +297,18 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                     LIVE_STATE["scanner_ran_today"] = False
                     LIVE_STATE["current_ticker"]    = "SPY"
 
-            _tick(alpaca, tradier)
+            # ── Batch-evaluate ALL watchlist tickers once per bar ────────────
+            # Old design: one ticker per 10-second tick.  With 10 tickers the
+            # cycle took ~100 s, so each ticker was only seen every 1.5 bars.
+            # New design: run _tick() for each ticker in one pass, then sleep
+            # to the next 60-second bar boundary.  Every ticker now gets one
+            # evaluation per new 1-minute candle — no missed bars, no stale
+            # re-evaluations, ~40% fewer redundant API calls.
+            _wl_batch = LIVE_STATE.get("scan_watchlist") or ["SPY", "QQQ"]
+            for _bi in range(len(_wl_batch)):
+                if _stop.is_set():
+                    break
+                _tick(alpaca, tradier)
 
         except DailyLossLimitReached as e:
             LIVE_STATE["status"] = "kill_locked"
@@ -334,7 +345,11 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 pass
             _stop.wait(timeout=30)
 
-        # Smart sleep: poll_interval inside trading window, 60s outside.
+        # ── Sleep until the next 60-second bar boundary ───────────────────────
+        # Inside the trading window: sleep to the start of the next 1-minute
+        # candle so every tick sees fresh bars.  Floor at 5 s so a slow pass
+        # never blocks for a whole minute when already near the boundary.
+        # Outside the trading window: sleep 60 s (rate-limit API when idle).
         # Wrapped in try/except — any exception here used to silently exit
         # the while loop (it was outside the inner try/except), causing the
         # "Trading loop stopped" log with no error message.
@@ -348,7 +363,13 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 int(e.split(":")[0]) * 60 + int(e.split(":")[1])
                 for s, e in _windows
             )
-            _stop.wait(timeout=poll_interval if _in_window else 60)
+            if _in_window:
+                # Sleep to next minute boundary (new bar = new data)
+                _secs_into = _now_et_sl.second + _now_et_sl.microsecond / 1_000_000
+                _secs_wait = max(5.0, 60.0 - _secs_into)
+                _stop.wait(timeout=_secs_wait)
+            else:
+                _stop.wait(timeout=60)
         except Exception as _sleep_err:
             logger.warning("Smart sleep error (non-fatal): %s", _sleep_err)
             _stop_event.wait(timeout=poll_interval)

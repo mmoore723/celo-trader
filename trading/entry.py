@@ -249,6 +249,40 @@ def select_contract(
     return None, info
 
 
+# ── Reject-reason logging helper ─────────────────────────────────────────────
+
+def _skip_log(ticker: str, reason: str, *,
+              strategy: str = "", confidence: float = 0.0, rr: float = 0.0) -> None:
+    """
+    Append a rejection entry to eval_log so the dashboard shows WHY each ticker
+    was passed over on a given bar (no signal, low confidence, zero contracts, etc.).
+
+    reason values: "no_signal" | "below_confidence" | "zero_contracts" |
+                   "spread_too_wide" | "rr_too_low"
+    """
+    import json as _skj
+    try:
+        _entry: dict = {
+            "ts":       _now_et().strftime("%H:%M:%S"),
+            "ticker":   ticker,
+            "rejected": True,
+            "reason":   reason,
+        }
+        if strategy:    _entry["strategy"]   = strategy
+        if confidence:  _entry["confidence"] = round(confidence, 2)
+        if rr:          _entry["rr"]         = round(rr, 2)
+        _log = list(LIVE_STATE.get("eval_log", []))
+        _log.insert(0, _entry)
+        LIVE_STATE["eval_log"] = _log[:10]
+        _sp = Path(__file__).resolve().parent / "bot_state.json"
+        with open(_sp) as _f:
+            _bs = _skj.load(_f)
+        _bs["eval_log"] = LIVE_STATE["eval_log"]
+        _skj.dump(_bs, open(_sp, "w"))
+    except Exception:
+        pass   # non-critical — dashboard still shows whatever was last written
+
+
 # ── Per-tick evaluation ───────────────────────────────────────────────────────
 
 def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
@@ -846,6 +880,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"Conditions not yet aligned — continuing to watch.")
         except Exception:
             pass
+        _skip_log(ticker, "no_signal")   # visible in dashboard eval log
         return
 
     _top: _RouterSignal = _signals[0]
@@ -865,6 +900,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"⚪ [{ticker}] Signal from {strategy_id} skipped — "
                   f"confidence {_top.confidence:.0%} below minimum {_MIN_CONFIDENCE:.0%}. "
                   f"Waiting for a higher-conviction setup.")
+        _skip_log(ticker, "below_confidence", strategy=strategy_id, confidence=_top.confidence)
         return
 
     # ── Post-loss price displacement gate ────────────────────────────────────
@@ -1153,6 +1189,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"${_risk_budget:.2f} ({_risk_pct*100:.0f}% of ${balance:.2f}). "
                   f"Need a bigger risk budget (raise risk_per_trade or grow the "
                   f"account) or a cheaper-premium contract.")
+        _skip_log(ticker, "zero_contracts", strategy=strategy_id, confidence=_top.confidence)
         return
 
     # ── Total-position-cost cap (tier-aware notional cap) ─────────────────────
@@ -1235,6 +1272,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"{_spread_pct*100:.1f}% of mid price "
                       f"(bid=${_c_bid:.2f} ask=${_c_ask:.2f}). "
                       f"Too wide; waiting for tighter liquidity.")
+            _skip_log(ticker, "spread_too_wide", strategy=strategy_id, confidence=_top.confidence)
             return
 
     # ── R:R gate: block entry if reward-to-risk < 1.6 ─────────────────────────
@@ -1251,6 +1289,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         log_event("INFO", "bar_eval",
                   f"🟡 [{ticker}] Skipping this candle — the reward is less than 1.6× the risk "
                   f"at the current price (${eff_entry:.2f}). Waiting for a better entry point.")
+        _rr_val = float(rr_audit.get("rr_ratio", 0)) if isinstance(rr_audit, dict) else 0.0
+        _skip_log(ticker, "rr_too_low", strategy=strategy_id, confidence=_top.confidence, rr=_rr_val)
         return
 
     # ── Slippage-adjusted profit-target sanity check ──────────────────────────
