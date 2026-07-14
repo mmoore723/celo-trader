@@ -124,9 +124,11 @@ export function LiveTrading() {
     queryFn: () => api.trades.list("paper", "all"),
     refetchInterval: 10_000,
     select: (res: any) => {
-      const today = new Date().toISOString().slice(0, 10);
+      // Use local-date comparison — ET tz-naive timestamps don't match toISOString() (UTC)
+      // after ~8 PM ET when UTC has already rolled to the next day.
+      const now = new Date();
       return (res?.trades ?? []).filter((t: Trade) =>
-        (t.entry_time ?? "").startsWith(today)
+        t.entry_time != null && new Date(t.entry_time).toDateString() === now.toDateString()
       );
     },
   });

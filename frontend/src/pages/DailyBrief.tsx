@@ -74,10 +74,11 @@ export function DailyBrief() {
     refetchInterval: 60_000,
   });
 
-  // Today's trades
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // Today's trades — compare using local date (timestamps stored as ET tz-naive;
+  // toISOString() returns UTC which rolls to the next day after ~8 PM ET).
+  const _now = new Date();
   const todayTrades: Trade[] = (tradesResp?.trades ?? []).filter(
-    (t) => t.entry_time && t.entry_time.startsWith(todayStr)
+    (t) => t.entry_time && new Date(t.entry_time).toDateString() === _now.toDateString()
   );
   const wins     = todayTrades.filter((t) => (t.pnl ?? 0) > 0).length;
   const losses   = todayTrades.filter((t) => (t.pnl ?? 0) < 0).length;
