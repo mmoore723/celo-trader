@@ -1,7 +1,7 @@
 /**
  * Journal.tsx — Trade journal table with MFE, exit efficiency, and expandable trade detail.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -198,7 +198,12 @@ export function Journal() {
   const [customFrom,  setCustomFrom]  = useState<string>("");
   const [stratFilter, setStratFilter] = useState<string>("all");  // strategy filter
   const [expandedId,  setExpandedId]  = useState<number | null>(null);
+  const [page,        setPage]        = useState(0);
+  const PAGE_SIZE = 20;
   const qc = useQueryClient();
+
+  // Reset to page 0 whenever any filter changes
+  useEffect(() => { setPage(0); }, [mode, filter, dateWindow, customFrom, stratFilter]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["trades", mode, filter],
@@ -229,6 +234,10 @@ export function Journal() {
     if (stratFilter !== "all" && t.strategy_id !== stratFilter) return false;
     return true;
   });
+
+  const pageCount   = Math.max(1, Math.ceil(trades.length / PAGE_SIZE));
+  const safePage    = Math.min(page, pageCount - 1);
+  const pageTrades  = trades.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   const filteredPnl     = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
   const filteredWins    = trades.filter((t) => (t.pnl ?? 0) > 0).length;
@@ -345,7 +354,7 @@ export function Journal() {
       </div>
 
       {/* Table */}
-      <div className="card overflow-hidden">
+      <div className="card overflow-hidden" style={{ overflowX: "auto" }}>
         <div className="overflow-x-auto">
           {isLoading ? (
             <PageLoader label="Trade Journal" />
@@ -380,7 +389,7 @@ export function Journal() {
                     </td>
                   </tr>
                 ) : (
-                  trades.flatMap((t) => {
+                  pageTrades.flatMap((t) => {
                     const isExpanded = expandedId === t.id;
                     const hasDetail  = t.status === "closed" && t.entry_price != null;
                     const eff        = t.exit_efficiency_pct;
@@ -465,6 +474,35 @@ export function Journal() {
             </table>
           )}
         </div>
+
+        {/* Pagination bar — only shown when there's more than one page */}
+        {pageCount > 1 && (
+          <div
+            className="flex items-center justify-between px-4 py-2"
+            style={{ borderTop: "1px solid var(--border)" }}
+          >
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={safePage === 0}
+              onClick={() => setPage(safePage - 1)}
+            >
+              ← Prev
+            </button>
+            <span className="text-xs" style={{ color: "var(--ink-muted)" }}>
+              Page {safePage + 1} of {pageCount}
+              <span className="ml-2" style={{ color: "var(--ink-faint)" }}>
+                ({safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, trades.length)} of {trades.length})
+              </span>
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage(safePage + 1)}
+            >
+              Next →
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
