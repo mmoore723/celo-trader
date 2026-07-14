@@ -837,7 +837,8 @@ class AlpacaClient:
             # Pass limit_price so paper fallback can use it for confirmed_fill_price.
             # Pass step_to_price: buys step UP mid→ask; sells step DOWN mid→bid.
             confirmed = self._wait_for_fill(order_id, limit_price=limit_price,
-                                            step_to_price=step_to_price, side=side)
+                                            step_to_price=step_to_price, side=side,
+                                            symbol=symbol, qty=qty)
             if not confirmed:
                 log_event("ERROR", "order",
                           f"🔴 [{symbol}] Order did not fill — no position recorded. "
@@ -932,6 +933,8 @@ class AlpacaClient:
         limit_price: Optional[float] = None,
         step_to_price: Optional[float] = None,
         side: str = "buy",
+        symbol: Optional[str] = None,
+        qty: Optional[int] = None,
     ) -> Optional[dict]:
         """
         Poll order status until filled or rejected.
@@ -942,7 +945,9 @@ class AlpacaClient:
           (crosses the spread to guarantee entry).
         - SELL orders: initial limit at mid; live steps DOWN to bid after 5s
           (crosses the spread to guarantee exit — avoids holding a stuck position).
-        - Paper account: poll 10 seconds; assume fill at limit_price after that.
+        - Paper account: poll 10 seconds; cancel the pending limit and place a
+          market order to get the REAL fill price (avoids paper_assumed_fill at
+          the limit price while Alpaca's paper simulator fills at a worse price).
         - Live account: cancel if still unfilled after 30 seconds (prevents ghosts).
         """
         if not order_id or order_id == "paper_simulated":
@@ -1033,20 +1038,64 @@ class AlpacaClient:
             time.sleep(1)
 
         if is_paper:
-            # Paper simulation is slow — the order IS accepted and will fill.
-            # Record the trade now at the limit price so positions are tracked
-            # immediately rather than waiting indefinitely.
-            fill_px = limit_price or 0
+            # Limit order didn't fill in 10s — cancel it and place a market order
+            # so we record the REAL fill price from Alpaca's paper simulator.
+            # The old "paper_assumed_fill" shortcut used the intended limit price
+            # while Alpaca's order sat open or got canceled at a worse price later,
+            # creating a large P&L discrepancy between the bot's DB and the account.
             log_event("INFO", "order",
-                      f"📝 Paper order pending after {effective_wait}s — "
-                      f"recording at ${fill_px:.2f} (fill simulation in progress).")
-            logger.info(
-                "paper_order_assumed_fill: order=%s fill_px=%.4f",
-                order_id, fill_px,
-            )
+                      f"📝 Paper limit order pending after {effective_wait}s — "
+                      f"cancelling and re-submitting as market to get real fill price.")
+            try:
+                self.cancel_order(order_id)
+            except Exception as _ce:
+                logger.warning("paper_limit_cancel_failed order=%s: %s", order_id, _ce)
+
+            if symbol and qty:
+                try:
+                    mkt_payload = {
+                        "symbol":        symbol,
+                        "qty":           str(qty),
+                        "side":          side,
+                        "type":          "market",
+                        "time_in_force": "day",
+                    }
+                    mkt_order    = self._post(f"{self.base}/v2/orders", mkt_payload)
+                    mkt_order_id = mkt_order.get("id", "")
+                    log_event("INFO", "order",
+                              f"📤 [{symbol}] Market fallback sent (ID: {mkt_order_id[:8]}…). "
+                              f"Waiting for fill…")
+                    # Poll up to 30s for the market fill — paper markets fill fast
+                    for _ in range(30):
+                        time.sleep(1)
+                        try:
+                            mkt_status = self._get(f"{self.base}/v2/orders/{mkt_order_id}")
+                            if mkt_status.get("status") == "filled":
+                                filled_price = float(
+                                    mkt_status.get("filled_avg_price") or limit_price or 0
+                                )
+                                log_event("INFO", "order",
+                                          f"✅ Market fallback filled @ ${filled_price:.2f}")
+                                logger.info("paper_market_fill: order=%s fill=%.4f",
+                                            mkt_order_id, filled_price)
+                                mkt_status["confirmed_fill_price"] = filled_price
+                                return mkt_status
+                            if mkt_status.get("status") in terminal_states:
+                                break
+                        except Exception:
+                            pass
+                except Exception as _me:
+                    logger.warning("paper_market_fallback_failed: %s", _me)
+
+            # Last resort: if market order also failed, record at limit price
+            # (this should almost never happen on a paper account)
+            fill_px = limit_price or 0
+            log_event("WARNING", "order",
+                      f"⚠️ Market fallback also failed — recording at ${fill_px:.2f} as last resort.")
+            logger.warning("paper_order_last_resort_fill: order=%s fill_px=%.4f", order_id, fill_px)
             return {
                 "id":                   order_id,
-                "status":               "paper_assumed_fill",
+                "status":               "paper_market_fallback_failed",
                 "confirmed_fill_price": fill_px,
             }
         else:

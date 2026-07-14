@@ -744,7 +744,7 @@ def _manage_open_position(
                 )
                 return
 
-            fill_price = float(fill.get("filled_avg_price") or current_price)
+            fill_price = float(fill.get("confirmed_fill_price") or fill.get("filled_avg_price") or current_price)
 
             from database import insert_trade, close_trade, get_conn
             partial_id = insert_trade(
@@ -844,9 +844,18 @@ def _close_position(
         step_to_price  = bid_price,    # step down to bid on live if mid not taken
     )
 
-    fill_price = exit_price
-    if fill and fill.get("filled_avg_price"):
-        fill_price = float(fill["filled_avg_price"])
+    # If the exit order didn't fill at all, leave the trade open and retry next tick.
+    # Previously this fell through to close_trade() using the intended mid-price,
+    # recording a false "closed" entry in the DB while Alpaca still held the position.
+    if fill is None:
+        log_event("WARNING", "trading_logic",
+                  f"⚠️ [{trade['contract_symbol']}] Exit order did not fill — "
+                  f"trade stays open, will retry next tick.")
+        return
+
+    # Use actual broker fill price; fall back to mid only if broker didn't report one
+    fill_price = float(fill.get("confirmed_fill_price") or
+                       fill.get("filled_avg_price") or exit_price)
 
     # Pull MFE (peak_price) and MAE (min_price) from live position state so they
     # get saved to the DB and appear in the Journal's efficiency columns.
