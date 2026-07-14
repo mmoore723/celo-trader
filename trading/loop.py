@@ -306,6 +306,27 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                     LIVE_STATE["scanner_ran_today"] = False
                     LIVE_STATE["current_ticker"]    = "SPY"
 
+            # ── Refresh account balance + recompute session P&L ─────────────
+            # Balance is fetched from Alpaca once per batch cycle (every ~60s)
+            # so the dashboard always shows current equity.
+            # session_pnl is derived from real equity delta — not DB trade sums —
+            # so it matches Alpaca's account value regardless of fill-price bugs.
+            try:
+                _acct_tick = alpaca.get_account()
+                _bal_tick  = float(_acct_tick.get("equity", 0)) if _acct_tick else 0
+                if _bal_tick > 0:
+                    _US["account_balance"]         = _bal_tick
+                    LIVE_STATE["account_balance"]  = _bal_tick
+                    _dsb = LIVE_STATE.get("day_start_balance") or _bal_tick
+                    _spnl = round(_bal_tick - _dsb, 2)
+                    _US["session_pnl"]             = _spnl
+                    LIVE_STATE["session_pnl"]      = _spnl
+                    # Persist so the WebSocket + bot_state.json stay in sync
+                    from config import save_settings as _save_bal
+                    _save_bal({"last_known_balance": round(_bal_tick, 2)})
+            except Exception as _bal_err:
+                logger.debug("Balance refresh failed (non-fatal): %s", _bal_err)
+
             # ── Batch-evaluate ALL watchlist tickers once per bar ────────────
             # Old design: one ticker per 10-second tick.  With 10 tickers the
             # cycle took ~100 s, so each ticker was only seen every 1.5 bars.
