@@ -403,59 +403,80 @@ export function KChart({
     }
 
     // ── Educational chart drawings ─────────────────────────────────────────────
-    // These help users understand WHAT is being drawn and WHY — training overlays
-    // that are always present regardless of whether the bot has traded.
+    // Always-visible training overlays: OR zone shaded rect + session time markers.
     //
-    // 1) OR Zone shaded rect: semi-transparent band between OR High/Low over the
-    //    first 30-minute window (9:30–10:00 AM ET = first 6 bars on 5Min).
-    //    Shows users visually where the opening range formed.
-    // 2) Key session time markers: dashed vertical lines at market open (9:30),
-    //    end of OR window (10:00), midday (12:00), afternoon session (2:00 PM)
-    //    and last hour (3:00 PM) — teaches time-of-day awareness.
+    // Three issues that broke non-5Min timeframes — all fixed here:
+    //   1. bars.find() returns OLDEST match — multi-day loads place the zone
+    //      days in the past.  Fix: reverse-search so we find the MOST RECENT
+    //      occurrence of each session time (today's session, not last week's).
+    //   2. 1Hour bars start at :30 offset (9:30, 10:30, 11:30…) so exact
+    //      minutes===0 matching never finds them.  Fix: tolerance-based search
+    //      scaled to the timeframe (45 min for 1Hour, 5 min for 15Min, 1 min for 1Min).
+    //   3. 1Hour charts can't find a 10:00 bar (no bar at exactly 10:00).
+    //      Fix: if orEndTs is missing but orStartTs found, synthesize it as
+    //      orStartTs + 30 minutes so the OR zone rect always renders.
     if (bars.length > 0 && showOR && orHigh != null && orLow != null) {
-      // Locate key session timestamps from the bars data.
-      // Bars use the user's local time string; extract hour/min from each bar.
-      const SESSION_LABELS: Array<[number, number, string]> = [
-        [9, 30,  "Market Open"],
-        [10, 0,  "OR Close"],
-        [12, 0,  "Midday"],
-        [14, 0,  "Afternoon"],
-        [15, 0,  "Final Hour"],
-      ];
-      let orStartTs: number | null  = null;
-      let orEndTs:   number | null  = null;
-      for (const [h, m, _label] of SESSION_LABELS) {
-        const match = bars.find((b) => {
-          const d = new Date(b.time);
-          return d.getHours() === h && d.getMinutes() === m;
+      // Tolerance (minutes) for time matching, keyed to the active timeframe.
+      // 1Min: 1 min tolerance (exact)  15Min: 7 min  5Min: 3 min  1Hour: 45 min
+      const toleranceMs: Record<string, number> = {
+        "1Min": 1, "5Min": 3, "15Min": 7, "1Hour": 45,
+      };
+      const tol = (toleranceMs[tf] ?? 5) * 60 * 1000;
+
+      // Reverse-search so we get the MOST RECENT session's bar, not the oldest.
+      const reversed = [...bars].reverse();
+      const findSessionBar = (h: number, m: number): number | null => {
+        const targetMs = (h * 60 + m) * 60 * 1000; // offset from midnight
+        const match = reversed.find((b) => {
+          const d    = new Date(b.time);
+          const barMs = (d.getHours() * 60 + d.getMinutes()) * 60 * 1000;
+          return Math.abs(barMs - targetMs) <= tol;
         });
-        if (match) {
-          const ts = new Date(match.time).getTime();
-          if (h === 9  && m === 30) orStartTs = ts;
-          if (h === 10 && m === 0)  orEndTs   = ts;
-          // Vertical dashed time marker
-          try {
-            chart.createOverlay({
-              name: "verticalStraightLine",
-              groupId: "edu",
-              lock: true,
-              points: [{ timestamp: ts }],
-              needDefaultYAxisFigure: false,
-              styles: { line: { color: "#ffffff1a", size: 1, style: "dashed", dashedValue: [4, 3] } },
-            });
-          } catch (_) {}
-        }
+        return match ? new Date(match.time).getTime() : null;
+      };
+
+      const SESSION_MARKERS: Array<[number, number]> = [
+        [9, 30],   // Market Open
+        [10, 0],   // OR Close
+        [12, 0],   // Midday
+        [14, 0],   // Afternoon Session
+        [15, 0],   // Final Hour
+      ];
+
+      let orStartTs: number | null = null;
+      let orEndTs:   number | null = null;
+
+      for (const [h, m] of SESSION_MARKERS) {
+        const ts = findSessionBar(h, m);
+        if (ts == null) continue;
+        if (h === 9  && m === 30) orStartTs = ts;
+        if (h === 10 && m === 0)  orEndTs   = ts;
+        // Subtle dashed vertical line at each key session boundary
+        try {
+          chart.createOverlay({
+            name: "verticalStraightLine",
+            groupId: "edu",
+            lock: true,
+            points: [{ timestamp: ts }],
+            needDefaultYAxisFigure: false,
+            styles: { line: { color: "#ffffff1a", size: 1, style: "dashed", dashedValue: [4, 3] } },
+          });
+        } catch (_) {}
       }
-      // OR Zone shaded rectangle — shows the opening range band visually
-      if (orStartTs != null && orEndTs != null) {
+
+      // OR Zone shaded rectangle — shows the opening range band visually.
+      // Synthesize orEndTs (+30 min) if no bar was found at exactly 10:00 AM
+      // (e.g. 1Hour bars jump from 9:30 to 10:30, skipping 10:00 entirely).
+      const effectiveOrEnd = orEndTs ?? (orStartTs != null ? orStartTs + 30 * 60 * 1000 : null);
+      if (orStartTs != null && effectiveOrEnd != null) {
         try {
           chart.createOverlay({
             name: "rect",
             groupId: "edu",
             lock: true,
             points: [
-              { timestamp: orStartTs, value: orLow  },
-              { timestamp: orEndTs,   value: orHigh },
+              { timestamp: orStartTs,    value: orLow  },
+              { timestamp: effectiveOrEnd, value: orHigh },
             ],
             needDefaultYAxisFigure: false,
             styles: {
