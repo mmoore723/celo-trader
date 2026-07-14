@@ -70,6 +70,7 @@ class Trade(BaseModel):
     exit_reason: Optional[str]
     stage1_done: Optional[bool]
     mode: Optional[str]           # "paper" | "live" — derived from paper int column
+    recap: Optional[str] = None   # auto-generated post-trade recap narrative
 
 
 class TradeListResponse(BaseModel):

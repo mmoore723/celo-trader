@@ -894,6 +894,78 @@ export function LiveTrading() {
     {/* ── Trade log drawer ──────────────────────────────────────────────────── */}
     {tradeDrawerId !== null && (() => {
       const trade = openTrades.find((t: Trade) => t.id === tradeDrawerId);
+
+      // ── Strategy education map ─────────────────────────────────────────────
+      // Each entry explains: full name, setup the bot identified, what to watch,
+      // and how the bot will manage the trade — so users learn while the trade runs.
+      const STRAT_EDU: Record<string, { name: string; setup: string; watch: string; manage: string; color: string }> = {
+        INST_ORB: {
+          name: "Institutional Opening Range Breakout",
+          color: "#00c853",
+          setup: "The market established a clear Opening Range (OR) in the first 15–30 minutes. Price then broke above (for calls) or below (for puts) that range with volume confirmation. This is where institutional order flow often commits to a direction for the day.",
+          watch: "Watch the OR High/Low lines on the chart (green = OR High, red = OR Low). If price re-enters the OR, momentum is fading. A failed breakout means the bot will stop out to protect capital.",
+          manage: "The bot targets 2× risk on Stage 1, then moves stop to breakeven and lets the rest run toward 4× risk. A trailing stop activates if price extends beyond the first target.",
+        },
+        FVG: {
+          name: "Fair Value Gap",
+          color: "#f59e0b",
+          setup: "An imbalance was identified on the chart — a 3-candle pattern where price moved so fast it left a price gap (Fair Value Gap). These gaps act as magnets: price often fills back into them before resuming the trend.",
+          watch: "Watch for price to fill the gap and bounce. If price blows through the gap without slowing, the setup is invalidated. The bot will exit if this happens.",
+          manage: "Entry is at the mid-point of the gap. Stop is below the gap's bottom edge. The bot targets the prior swing high/low as the first exit point.",
+        },
+        IFVG: {
+          name: "Inverted Fair Value Gap",
+          color: "#e879f9",
+          setup: "A Fair Value Gap formed but price mitigated (filled) it and is now using the old gap as a launchpad in the opposite direction. This is a more aggressive setup indicating a potential reversal or strong continuation after the initial fill.",
+          watch: "The key level is the old FVG zone — now acting as support (for calls) or resistance (for puts). If price closes back inside the inverted gap, the setup fails.",
+          manage: "Smaller position size due to the reversal nature. Stop sits just beyond the IFVG extreme. Bot exits Stage 1 quickly to lock in premium.",
+        },
+        VWAP_PB: {
+          name: "VWAP Pullback",
+          color: "#2962ff",
+          setup: "Price was trending strongly away from VWAP (the blue line on the chart), then pulled back to touch or test it. The bot entered as price bounced off VWAP with a confirmed candle showing rejection.",
+          watch: "The blue VWAP line is your key level — it acts like a live moving average of fair value for the day. As long as price holds above VWAP (for calls) or below (for puts), the trend is intact. A VWAP recross in the wrong direction is the exit signal.",
+          manage: "VWAP trades tend to be shorter in duration. The bot sets a tight stop below the pullback candle and targets the morning high/low for first exit.",
+        },
+        MID_BRK: {
+          name: "Mid-Day Breakout",
+          color: "#06b6d4",
+          setup: "After the initial morning volatility settled into a consolidation range (roughly 10:30–12:00 ET), price broke out of that tight range. Mid-day breakouts are less crowded trades that can produce clean trends into the afternoon.",
+          watch: "The breakout level is your anchor. A retest of the breakout point that holds = healthy. A close back inside the range = the bot exits. Volume should confirm — low-volume breakouts are more likely to fail.",
+          manage: "The bot uses a wider initial stop on mid-day setups because midday ranges are smaller. First target is the morning's high or low.",
+        },
+        AFT_REV: {
+          name: "Afternoon Reversal",
+          color: "#f97316",
+          setup: "Price made an extended move in one direction throughout the day, then showed signs of exhaustion and reversal in the 2–3 PM ET window. This captures the afternoon mean-reversion move as intraday traders unwind positions before the close.",
+          watch: "Afternoon reversals can be sharp but also whippy. The bot holds a smaller position than usual. Watch for the 3:30 PM ET window — if the move hasn't materialized, the bot will close to avoid holding into the close.",
+          manage: "Hard stop at 3:50 PM ET regardless of price — no holding options into the close. First target is a 50% retrace of the day's trend move.",
+        },
+        TREND_CONT: {
+          name: "Trend Continuation",
+          color: "#84cc16",
+          setup: "The bot identified a clear intraday trend (series of higher highs / higher lows for calls, or lower highs / lower lows for puts), and entered on a brief consolidation or flag pattern within that trend.",
+          watch: "Trend continuation trades require the trend to stay intact. Each new candle should respect the trend structure. A lower low (for calls) or higher high (for puts) signals the trend may be breaking down and the bot will exit.",
+          manage: "This is the highest-conviction setup in the playbook. Bot uses full position size and a trailing stop that tightens as the trade progresses. Hold time can be longer than other strategies.",
+        },
+        BOS_MSS: {
+          name: "Break of Structure / Market Structure Shift",
+          color: "#a78bfa",
+          setup: "Price broke a key swing high (bullish BOS) or swing low (bearish BOS), signaling a change in the dominant order flow direction. A Market Structure Shift (MSS) is a BOS against the prevailing trend — indicating a potential trend reversal.",
+          watch: "The broken swing level is now the key reference. For calls, a re-break below the BOS level invalidates the setup. Watch for price to confirm the new direction with follow-through, not just a wick.",
+          manage: "BOS trades enter on the retest of the broken level. Stop goes just beyond the swing that was broken. Target is the next major swing point in the direction of the break.",
+        },
+        CHAN_BREAK: {
+          name: "Channel Breakout",
+          color: "#fb923c",
+          setup: "Price was channeling (moving in a parallel range with defined highs and lows) before breaking decisively out of one side of the channel. Channel breakouts often produce some of the strongest directional moves of the day.",
+          watch: "The channel boundary (the level that was broken) now acts as support (for upside breaks) or resistance (for downside breaks). If price falls back into the channel, the bot exits — the breakout failed.",
+          manage: "Entry is just beyond the channel boundary on a confirmed close. Target is the channel width projected from the break point. Bot trails stop along the channel boundary once the trade is in profit.",
+        },
+      };
+
+      const edu = trade?.strategy_id ? (STRAT_EDU[trade.strategy_id] ?? null) : null;
+
       const levelColor = (lvl: string) => {
         if (lvl === "ERROR" || lvl === "CRITICAL") return "#f87171";
         if (lvl === "WARNING") return "#fbbf24";
@@ -924,8 +996,43 @@ export function LiveTrading() {
             </button>
           </div>
 
+          {/* ── Strategy education card ── */}
+          {edu && (
+            <div style={{
+              margin: "10px 12px 0", borderRadius: 10, overflow: "hidden",
+              border: `1px solid ${edu.color}33`,
+            }}>
+              {/* Card header */}
+              <div style={{ background: `${edu.color}18`, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: edu.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: edu.color }}>{edu.name}</span>
+              </div>
+              {/* Card body */}
+              <div style={{ padding: "10px 12px", background: "var(--surface-raised)", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>
+                    📡 Setup the bot saw
+                  </div>
+                  <p style={{ margin: 0, fontSize: 11, color: "var(--ink)", lineHeight: 1.55 }}>{edu.setup}</p>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>
+                    👁 What to watch
+                  </div>
+                  <p style={{ margin: 0, fontSize: 11, color: "var(--ink)", lineHeight: 1.55 }}>{edu.watch}</p>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>
+                    🤖 How the bot manages it
+                  </div>
+                  <p style={{ margin: 0, fontSize: 11, color: "var(--ink)", lineHeight: 1.55 }}>{edu.manage}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Log entries */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", fontSize: 11, fontFamily: "monospace" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", fontSize: 11, fontFamily: "monospace", marginTop: edu ? 8 : 0 }}>
             {tradeEvents.length === 0 ? (
               <p style={{ color: "var(--ink-muted)", marginTop: 16, textAlign: "center" }}>
                 No bot log entries yet for this trade.<br/>

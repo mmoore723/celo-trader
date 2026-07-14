@@ -65,6 +65,7 @@ export interface Trade {
   exit_reason?: string;
   stage1_done?: boolean;
   mode?: string;
+  recap?: string;           // auto-generated post-trade recap narrative
 }
 
 // ── Analytics ──────────────────────────────────────────────────────────────

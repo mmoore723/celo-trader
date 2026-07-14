@@ -556,6 +556,86 @@ export function KChart({
         )}
       </div>
 
+      {/* ── Chart legend strip — explains every colored element on the chart ── */}
+      {(showVwap || showOR || (positionLevels && (positionLevels.entry ?? 0) > 0) || annotations.length > 0) && (
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-1.5 text-[10px]"
+          style={{ borderBottom: `1px solid ${border}`, background: dark ? "#0f131c" : "#f0f2f7", color: text }}
+        >
+          {/* VWAP */}
+          {showVwap && (
+            <span className="flex items-center gap-1">
+              <span style={{ display:"inline-block", width:18, height:2, background:"#2962ff", borderRadius:1 }} />
+              VWAP
+            </span>
+          )}
+          {showVwap && showVwapBands && (
+            <span className="flex items-center gap-1">
+              <span style={{ display:"inline-block", width:18, height:2, background:"#2962ff66", borderRadius:1, borderTop:"1px dashed #2962ff88" }} />
+              ±1σ Band
+            </span>
+          )}
+          {/* OR levels */}
+          {showOR && orHigh != null && (
+            <span className="flex items-center gap-1">
+              <span style={{ display:"inline-block", width:18, height:2, background:up, borderRadius:1 }} />
+              OR High <span style={{ opacity:0.7 }}>({orHigh.toFixed(2)})</span>
+            </span>
+          )}
+          {showOR && orLow != null && (
+            <span className="flex items-center gap-1">
+              <span style={{ display:"inline-block", width:18, height:2, background:dn, borderRadius:1 }} />
+              OR Low <span style={{ opacity:0.7 }}>({orLow.toFixed(2)})</span>
+            </span>
+          )}
+          {/* Position price lines */}
+          {positionLevels && (positionLevels.entry ?? 0) > 0 && (
+            <>
+              <span className="flex items-center gap-1">
+                <span style={{ display:"inline-block", width:18, height:2, background:"#eab308", borderRadius:1 }} />
+                Entry
+              </span>
+              {(positionLevels.stop ?? 0) > 0 && (
+                <span className="flex items-center gap-1">
+                  <span style={{ display:"inline-block", width:18, height:2, background:dn, borderRadius:1, opacity:0.7 }} />
+                  Stop
+                </span>
+              )}
+              {(positionLevels.target ?? 0) > 0 && (
+                <span className="flex items-center gap-1">
+                  <span style={{ display:"inline-block", width:18, height:2, background:up, borderRadius:1, opacity:0.7 }} />
+                  Target
+                </span>
+              )}
+              {(positionLevels as any).trail > 0 && (
+                <span className="flex items-center gap-1">
+                  <span style={{ display:"inline-block", width:18, height:2, background:"#9333ea", borderRadius:1 }} />
+                  Trail
+                </span>
+              )}
+            </>
+          )}
+          {/* Bot annotation zones */}
+          {annotations.length > 0 && (() => {
+            // Deduplicate annotation labels so we don't show "FVG zone, FVG zone, FVG zone"
+            const seen = new Set<string>();
+            return annotations.filter(a => {
+              const key = `${a.strategy}:${a.label}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            }).slice(0, 5).map((ann) => (
+              <span key={ann.id} className="flex items-center gap-1">
+                <span style={{ display:"inline-block", width:14, height:2,
+                               background:ann.color, borderRadius:1,
+                               borderTop:`1px dashed ${ann.color}` }} />
+                {ann.label}
+              </span>
+            ));
+          })()}
+        </div>
+      )}
+
       {/* ── Chart area ── */}
       <div className="relative" style={{ height }}>
         {/* Ticker + OHLC crosshair legend overlay */}

@@ -186,6 +186,9 @@ def _init_db_at(db_path: Path) -> None:
         if "mae_price" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN mae_price REAL")
             logger.info("Migration: added mae_price (MAE) column to %s", db_path.name)
+        if "recap" not in _cols:
+            conn.execute("ALTER TABLE trades ADD COLUMN recap TEXT")
+            logger.info("Migration: added recap column to %s", db_path.name)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -390,6 +393,7 @@ def close_trade(
     peak_price: Optional[float] = None,   # MFE: highest option mid-price seen during trade
     mae_price: Optional[float] = None,    # MAE: lowest  option mid-price seen during trade
     paper: bool = True,                   # False → deduct Alpaca commission from P&L
+    recap: Optional[str] = None,          # Auto-generated trade recap stored in DB
 ) -> float:
     """
     Mark a trade closed and compute realised P&L.
@@ -425,11 +429,11 @@ def close_trade(
             UPDATE trades
             SET exit_price = ?, exit_time = ?, exit_reason = ?,
                 realized_pnl = ?, status = 'closed',
-                peak_price = ?, mae_price = ?
+                peak_price = ?, mae_price = ?, recap = ?
             WHERE id = ?
             """,
             (actual_exit, _to_et_isoformat(exit_time), exit_reason,
-             realized_pnl, peak_price, mae_price, trade_id),
+             realized_pnl, peak_price, mae_price, recap, trade_id),
         )
 
     logger.info(

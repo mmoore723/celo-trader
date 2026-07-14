@@ -854,6 +854,51 @@ def _close_position(
     _peak_px  = _trade_ps.get("peak_price")   # MFE: highest option mid-price seen
     _min_px   = _trade_ps.get("min_price")    # MAE: lowest  option mid-price seen
 
+    # ── Generate post-trade recap (stored in DB; displayed in Journal) ────────
+    # Build a one-paragraph natural-language summary of the trade so users
+    # can review what happened without digging through the raw log.
+    _entry_px   = float(trade.get("entry_price", 0) or 0)
+    _contracts  = int(trade.get("contracts", 1) or 1)
+    _ticker_r   = trade.get("ticker", "?")
+    _strat_r    = trade.get("strategy_id", "?")
+    _opt_r      = (trade.get("option_type") or "option").upper()
+    _REASON_MAP = {
+        "stage1_50pct":             "Stage 1 profit target (+50%) was hit — bot locked in half the position and moved the stop to breakeven",
+        "stage2_break_even":        "Stop-to-breakeven triggered — the remainder exited at no loss after Stage 1 ran",
+        "stage2_trail_stop":        "Trailing stop activated after locking in profit — price pulled back and the floor was hit",
+        "atr_trail_stop":           "ATR/swing trailing stop tightened and triggered as price pulled back from the high",
+        "vwap_trend_dead":          "VWAP breach plus trend breakdown confirmed — bot exited to avoid a larger loss",
+        "structural_stop_bar_high": "Structural stop hit at the rejection level — the setup invalidated",
+        "time_cap_loser":           "20-minute time cap hit without a confirming move — flat/losing trade closed to free capital",
+        "time_cap_winner":          "90-minute maximum hold cap reached — winner closed to avoid late-day decay",
+        "manual":                   "manually closed by the user",
+        "panic":                    "emergency close triggered (kill-switch or account risk limit)",
+        "kill_lock_force_close":    "daily loss limit reached — all positions force-closed to protect the account",
+    }
+    _reason_txt = next((v for k, v in _REASON_MAP.items() if reason and k in reason), reason or "exit signal")
+    _pnl_sign   = "+" if 0 >= 0 else ""   # placeholder; real pnl not available yet
+    _dur_secs   = 0
+    try:
+        from datetime import datetime as _dt
+        _et_str = trade.get("entry_time", "")
+        if _et_str:
+            _entry_dt = _dt.fromisoformat(str(_et_str).replace("Z", "+00:00"))
+            _dur_secs = int((_now_et().replace(tzinfo=None) - _entry_dt.replace(tzinfo=None)).total_seconds())
+    except Exception:
+        _dur_secs = 0
+    _dur_txt = (
+        f"{_dur_secs // 60}m {_dur_secs % 60}s" if _dur_secs < 3600
+        else f"{_dur_secs // 3600}h {(_dur_secs % 3600) // 60}m"
+    ) if _dur_secs > 0 else "unknown duration"
+    _mfe_txt  = f" — the option peaked at ${_peak_px:.2f} ({round((_peak_px - _entry_px) / _entry_px * 100, 1):+.1f}% from entry)" if _peak_px and _entry_px > 0 else ""
+    _mae_txt  = f", dipped as low as ${_min_px:.2f} ({round((_min_px - _entry_px) / _entry_px * 100, 1):+.1f}%)" if _min_px and _entry_px > 0 else ""
+    _recap = (
+        f"Strategy: {_strat_r} | {_ticker_r} {_opt_r} | "
+        f"Entry ${_entry_px:.2f} → Exit ${fill_price:.2f} | "
+        f"{_contracts} contract{'s' if _contracts != 1 else ''} | Hold: {_dur_txt}. "
+        f"Exit: {_reason_txt}{_mfe_txt}{_mae_txt}."
+    )
+
     pnl = close_trade(
         trade_id             = trade["id"],
         exit_price           = exit_price,
@@ -863,6 +908,7 @@ def _close_position(
         peak_price           = _peak_px,
         mae_price            = _min_px,
         paper                = paper,
+        recap                = _recap,
     )
 
     # Human-readable close narrative

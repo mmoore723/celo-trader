@@ -64,6 +64,7 @@ def _row_to_trade(row: dict) -> Trade:
         exit_reason=row.get("exit_reason"),
         stage1_done=bool(row.get("stage1_done", False)),
         mode=mode,
+        recap=row.get("recap"),
     )
 
 
