@@ -52,8 +52,7 @@ async def create_user(request: Request, body: CreateUserRequest):
     _require_admin(request)
     if len(body.username.strip()) < 3:
         raise HTTPException(400, "Username must be at least 3 characters")
-    if len(body.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    # Password complexity enforced inside create_user() via validate_password()
     from auth.users import create_user as _create
     try:
         user = _create(body.username, body.password, is_admin=body.is_admin)
@@ -79,8 +78,7 @@ async def delete_user(user_id: str, request: Request):
 async def reset_user_password(user_id: str, request: Request, body: ResetPasswordRequest):
     """Admin resets any user's password."""
     _require_admin(request)
-    if len(body.new_password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    # Complexity enforced inside reset_password() via validate_password()
     from auth.users import reset_password as _reset
     try:
         ok = _reset(user_id, body.new_password)

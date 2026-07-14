@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { UserPlus, Link2, Trash2, RefreshCw, KeyRound } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { PasswordChecklist, isPasswordValid } from "../components/PasswordChecklist";
 
 interface User {
   user_id:    string;
@@ -52,6 +53,10 @@ export function Admin() {
       setCreateMsg({ ok: false, msg: "Username and password required" });
       return;
     }
+    if (!isPasswordValid(newUser.password)) {
+      setCreateMsg({ ok: false, msg: "Password does not meet complexity requirements." });
+      return;
+    }
     setCreating(true);
     setCreateMsg(null);
     try {
@@ -87,8 +92,8 @@ export function Admin() {
   }
 
   async function resetPassword() {
-    if (!resetState || resetState.pw.length < 6) {
-      setResetMsg({ ok: false, msg: "Min 6 characters" });
+    if (!resetState || !isPasswordValid(resetState.pw)) {
+      setResetMsg({ ok: false, msg: "Password does not meet complexity requirements." });
       return;
     }
     try {
@@ -216,29 +221,32 @@ export function Admin() {
 
                 {/* Inline reset password — shown below user row on all screen sizes */}
                 {resetState?.uid === u.user_id && (
-                  <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontSize: 12, color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
+                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
                       New password for <strong style={{ color: "var(--ink)" }}>{u.username}</strong>:
                     </span>
-                    <input
-                      type="password"
-                      className="input"
-                      style={{ fontSize: 12, padding: "4px 10px", flex: 1, minWidth: 140 }}
-                      placeholder="Min 6 characters"
-                      value={resetState.pw}
-                      autoFocus
-                      onChange={e => setResetState(s => s ? { ...s, pw: e.target.value } : null)}
-                      onKeyDown={e => e.key === "Enter" && resetPassword()}
-                    />
-                    <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }} onClick={resetPassword}>
-                      Set
-                    </button>
-                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}
-                      onClick={() => { setResetState(null); setResetMsg(null); }}>
-                      Cancel
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input
+                        type="password"
+                        className="input"
+                        style={{ fontSize: 12, padding: "4px 10px", flex: 1, minWidth: 160 }}
+                        placeholder="12+ chars, upper, lower, number, special"
+                        value={resetState.pw}
+                        autoFocus
+                        onChange={e => setResetState(s => s ? { ...s, pw: e.target.value } : null)}
+                        onKeyDown={e => e.key === "Enter" && resetPassword()}
+                      />
+                      <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }} onClick={resetPassword}>
+                        Set
+                      </button>
+                      <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}
+                        onClick={() => { setResetState(null); setResetMsg(null); }}>
+                        Cancel
+                      </button>
+                    </div>
+                    <PasswordChecklist password={resetState.pw} style={{ paddingLeft: 2 }} />
                     {resetMsg && (
-                      <span style={{ fontSize: 12, color: resetMsg.ok ? "var(--accent)" : "#f87171", width: "100%" }}>
+                      <span style={{ fontSize: 12, color: resetMsg.ok ? "var(--accent)" : "#f87171" }}>
                         {resetMsg.msg}
                       </span>
                     )}
@@ -267,11 +275,12 @@ export function Admin() {
             <input
               className="input flex-1"
               type="password"
-              placeholder="Password"
+              placeholder="12+ chars, upper, lower, number, special"
               value={newUser.password}
               onChange={e => setNewUser(n => ({ ...n, password: e.target.value }))}
             />
           </div>
+          <PasswordChecklist password={newUser.password} style={{ paddingLeft: 2 }} />
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"

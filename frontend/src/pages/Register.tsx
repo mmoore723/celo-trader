@@ -7,6 +7,7 @@
  */
 import { useState, type FormEvent } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { PasswordChecklist, isPasswordValid } from "../components/PasswordChecklist";
 
 export function Register() {
   const [params]            = useSearchParams();
@@ -25,6 +26,7 @@ export function Register() {
     if (!token)    { setError("No invite token found in URL."); return; }
     if (!username) { setError("Choose a username."); return; }
     if (!password) { setError("Choose a password."); return; }
+    if (!isPasswordValid(password)) { setError("Password does not meet complexity requirements."); return; }
     if (password !== confirm) { setError("Passwords do not match."); return; }
     setError(null);
     setLoading(true);
@@ -96,6 +98,10 @@ export function Register() {
             <button type="button" onClick={() => setShowPw(p => !p)}
               style={styles.eyeBtn}>{showPw ? "🙈" : "👁️"}</button>
           </div>
+
+          {/* Live complexity checklist — appears on first keystroke */}
+          <PasswordChecklist password={password} style={{ padding: "6px 4px" }} />
+
           <input
             className="input"
             type="password"

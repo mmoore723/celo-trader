@@ -134,8 +134,7 @@ async def auth_register(body: RegisterRequest, response: Response):
         raise HTTPException(400, "Invalid or expired invite link")
     if len(body.username.strip()) < 3:
         raise HTTPException(400, "Username must be at least 3 characters")
-    if len(body.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    # Complexity enforced inside create_user() via validate_password()
     try:
         user = create_user(body.username, body.password, is_admin=False)
     except ValueError as e:

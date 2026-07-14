@@ -16,6 +16,7 @@ migrated automatically so the current user sees no change.
 """
 from __future__ import annotations
 import os
+import re
 import uuid
 import sqlite3
 import logging
@@ -26,6 +27,38 @@ from typing import Optional
 import bcrypt as _bcrypt_lib
 
 logger = logging.getLogger("celo_trader.auth.users")
+
+# ── Password complexity ───────────────────────────────────────────────────────
+
+_SPECIAL = r"[!@#$%^&*()\-_=+\[\]{}|;:,.<>?/~`'\"]"
+
+def validate_password(password: str) -> None:
+    """
+    Raise ValueError with a descriptive message if the password fails
+    any complexity requirement.  Called by create_user() and reset_password()
+    so the same rules apply everywhere — register, admin create, admin reset.
+
+    Requirements:
+      • 12 or more characters
+      • At least one uppercase letter  (A-Z)
+      • At least one lowercase letter  (a-z)
+      • At least one digit             (0-9)
+      • At least one special character (!@#$%^&* etc.)
+    """
+    failures = []
+    if len(password) < 12:
+        failures.append("at least 12 characters")
+    if not re.search(r"[A-Z]", password):
+        failures.append("one uppercase letter")
+    if not re.search(r"[a-z]", password):
+        failures.append("one lowercase letter")
+    if not re.search(r"\d", password):
+        failures.append("one number")
+    if not re.search(_SPECIAL, password):
+        failures.append("one special character (!@#$%^&* …)")
+    if failures:
+        raise ValueError("Password must contain: " + ", ".join(failures))
+
 
 # passlib 1.7.4 is incompatible with bcrypt >= 4.0 (passlib's internal
 # detect_wrap_bug test uses a >72-byte string which bcrypt 4+ rejects).
@@ -142,7 +175,8 @@ def _now() -> str:
 
 def create_user(username: str, password: str, is_admin: bool = False,
                 user_id: Optional[str] = None) -> dict:
-    """Create a new user. Returns the user dict. Raises ValueError on duplicate."""
+    """Create a new user. Returns the user dict. Raises ValueError on duplicate or weak password."""
+    validate_password(password)          # raises ValueError if requirements not met
     uid     = user_id or str(uuid.uuid4())[:8]
     pw_hash = _hash_pw(password)
     conn    = get_db()
@@ -220,8 +254,7 @@ def list_users() -> list[dict]:
 
 def reset_password(user_id: str, new_password: str) -> bool:
     """Set a new password for any user. Returns False if user not found."""
-    if len(new_password) < 6:
-        raise ValueError("Password must be at least 6 characters")
+    validate_password(new_password)      # raises ValueError if requirements not met
     pw_hash = _hash_pw(new_password)
     conn = get_db()
     cur  = conn.execute("UPDATE users SET pw_hash = ? WHERE id = ?", (pw_hash, user_id))
