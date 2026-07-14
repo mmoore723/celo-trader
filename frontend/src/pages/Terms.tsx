@@ -58,11 +58,6 @@ export function Terms({ viewOnly = false }: TermsProps) {
 
           <p style={s.lastUpdated}>
             Version {TERMS_VERSION} · {TERMS_DATE}
-            &nbsp;·&nbsp;
-            <em>
-              This document does not constitute legal advice. Consult a licensed
-              attorney for jurisdiction-specific guidance.
-            </em>
           </p>
         </div>
 

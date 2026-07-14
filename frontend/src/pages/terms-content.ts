@@ -8,8 +8,7 @@
  *   • SEC Rule 156 (past performance in investment company literature)
  *   • FINRA Regulatory Notice 16-21 (algorithmic trading supervision)
  *
- * You should have a licensed attorney review this before deploying to paying users
- * or users in jurisdictions outside the United States.
+ * Attorney review recommended before deploying to users in additional jurisdictions.
  *
  * To re-prompt all users after a text change: bump CURRENT_TERMS_VERSION in
  * auth/users.py from "1.0" to "1.1" (or higher).
