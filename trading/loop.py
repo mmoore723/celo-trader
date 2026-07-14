@@ -274,6 +274,15 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             if _needs_scan:
                 try:
                     wl = run_scan(alpaca, max_tickers=10)
+                    # Always prepend user's settings pins so tickers like XLE
+                    # stay in the watchlist even if the scanner didn't rank them.
+                    # dict.fromkeys preserves order and deduplicates.
+                    try:
+                        from config import get_settings as _get_scan_pins
+                        _pins = [t.upper().strip() for t in (_get_scan_pins().get("watchlist") or []) if t.strip()]
+                        wl = list(dict.fromkeys(_pins + wl))
+                    except Exception:
+                        pass
                     LIVE_STATE["scan_watchlist"] = wl
                     LIVE_STATE["scan_idx"]       = 0
                     if wl:
