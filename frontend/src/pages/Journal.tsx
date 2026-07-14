@@ -1,13 +1,14 @@
 /**
  * Journal.tsx — Trade journal table with MFE, exit efficiency, and expandable trade detail.
+ *              Includes Reconcile tab comparing bot DB records against actual Alpaca fills.
  */
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
-import { ChevronDown, ChevronRight, Download } from "lucide-react";
-import { api, type Trade } from "../lib/api";
+import { ChevronDown, ChevronRight, Download, AlertTriangle, CheckCircle } from "lucide-react";
+import { api, type Trade, type ReconcileResponse, type ReconcileRow } from "../lib/api";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 
@@ -171,6 +172,231 @@ function TradeDetail({ t }: { t: Trade }) {
   );
 }
 
+// ── Reconcile tab ──────────────────────────────────────────────────────────────
+
+function fmt$(v: number | null | undefined, decimals = 2): string {
+  if (v == null) return "—";
+  return `${v >= 0 ? "+" : ""}$${Math.abs(v).toFixed(decimals)}`;
+}
+
+function fmtPx(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return `$${v.toFixed(2)}`;
+}
+
+function ReconcileTab() {
+  // Default to today in YYYY-MM-DD
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState<string>(todayStr);
+
+  const { data, isLoading, refetch } = useQuery<ReconcileResponse>({
+    queryKey: ["reconcile", date],
+    queryFn: () => api.trades.reconcile(date),
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  });
+
+  const posColor = "var(--positive)";
+  const negColor = "var(--negative)";
+  const gapColor = "var(--warning)";
+
+  const equityGap = data?.equity_gap ?? null;
+  const bigGap    = equityGap != null && Math.abs(equityGap) > 10;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Date picker + refresh */}
+      <div className="flex items-center gap-3">
+        <input
+          type="date"
+          className="input input-sm"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          style={{ fontSize: 13, padding: "3px 8px", height: 30 }}
+        />
+        <button className="btn btn-ghost btn-sm" onClick={() => refetch()}>Refresh</button>
+      </div>
+
+      {isLoading ? (
+        <PageLoader label="Reconcile" />
+      ) : !data ? (
+        <p style={{ color: "var(--ink-muted)" }}>No data returned.</p>
+      ) : (
+        <>
+          {/* ── Equity summary banner ───────────────────────────────────────── */}
+          <div
+            className="card flex flex-wrap gap-6 px-5 py-3 items-center"
+            style={{
+              borderColor: bigGap ? "var(--warning)" : "var(--border)",
+              borderWidth: bigGap ? 2 : 1,
+            }}
+          >
+            {bigGap && (
+              <div className="flex items-center gap-2" style={{ color: gapColor }}>
+                <AlertTriangle size={16} />
+                <span className="text-sm font-semibold">
+                  Equity gap detected — bot P&L and Alpaca account differ by {fmt$(equityGap)}
+                </span>
+              </div>
+            )}
+            {!bigGap && equityGap != null && (
+              <div className="flex items-center gap-2" style={{ color: posColor }}>
+                <CheckCircle size={16} />
+                <span className="text-sm font-semibold">P&L looks accurate (gap &lt; $10)</span>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-5 text-sm num ml-auto">
+              <div className="flex flex-col items-end">
+                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Day Start</span>
+                <span className="font-semibold">
+                  {data.day_start_balance != null ? `$${data.day_start_balance.toFixed(2)}` : "—"}
+                </span>
+              </div>
+              <div className="flex flex-col items-end">
+                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Alpaca Equity</span>
+                <span className="font-semibold">
+                  {data.alpaca_equity != null ? `$${data.alpaca_equity.toFixed(2)}` : "—"}
+                </span>
+              </div>
+              <div className="flex flex-col items-end">
+                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Bot P&L</span>
+                <span className="font-semibold"
+                      style={{ color: data.bot_session_pnl >= 0 ? posColor : negColor }}>
+                  {fmt$(data.bot_session_pnl)}
+                </span>
+              </div>
+              <div className="flex flex-col items-end">
+                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Alpaca P&L</span>
+                <span className="font-semibold"
+                      style={{ color: (data.alpaca_session_pnl ?? 0) >= 0 ? posColor : negColor }}>
+                  {fmt$(data.alpaca_session_pnl)}
+                </span>
+              </div>
+              <div className="flex flex-col items-end">
+                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Gap</span>
+                <span className="font-semibold"
+                      style={{ color: bigGap ? gapColor : "var(--ink-muted)" }}>
+                  {fmt$(equityGap)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Per-trade reconcile table ───────────────────────────────────── */}
+          <div className="card overflow-hidden">
+            <div style={{ padding: "8px 16px 6px", borderBottom: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Trade-level comparison
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="data-table" style={{ fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Contract</th>
+                    <th>Qty</th>
+                    <th>Strategy</th>
+                    <th>Bot Entry</th>
+                    <th>Bot Exit</th>
+                    <th>Bot P&L</th>
+                    <th>Alpaca Entry</th>
+                    <th>Alpaca Exit</th>
+                    <th>Alpaca P&L</th>
+                    <th>Gap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.trades.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="text-center py-6"
+                          style={{ color: "var(--ink-muted)" }}>
+                        No closed trades on {data.date}
+                      </td>
+                    </tr>
+                  ) : (
+                    data.trades.map((row: ReconcileRow, i: number) => {
+                      const gapBig = row.has_gap;
+                      const bpnl   = row.bot_pnl   ?? 0;
+                      const apnl   = row.alpaca_pnl ?? 0;
+                      const gap    = row.pnl_gap;
+                      return (
+                        <tr key={i} style={gapBig ? { background: "color-mix(in srgb, var(--warning) 6%, transparent)" } : {}}>
+                          <td className="text-xs" style={{ fontFamily: "monospace", maxWidth: 160, wordBreak: "break-all" }}>
+                            {row.contract_symbol ?? "—"}
+                          </td>
+                          <td className="num">{row.contracts ?? "—"}</td>
+                          <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                            {row.strategy_id ?? "—"}
+                          </td>
+                          <td className="num">{fmtPx(row.bot_entry)}</td>
+                          <td className="num">{fmtPx(row.bot_exit)}</td>
+                          <td className="num font-medium"
+                              style={{ color: bpnl >= 0 ? posColor : negColor }}>
+                            {fmt$(row.bot_pnl)}
+                          </td>
+                          <td className="num">{fmtPx(row.alpaca_entry)}</td>
+                          <td className="num">{fmtPx(row.alpaca_exit)}</td>
+                          <td className="num font-medium"
+                              style={{ color: apnl >= 0 ? posColor : negColor }}>
+                            {fmt$(row.alpaca_pnl)}
+                          </td>
+                          <td className="num font-semibold"
+                              style={{ color: gapBig ? gapColor : "var(--ink-muted)" }}>
+                            {gap != null
+                              ? `${gap >= 0 ? "+" : ""}$${Math.abs(gap).toFixed(2)}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── Unmatched Alpaca orders ─────────────────────────────────────── */}
+          {data.unmatched_alpaca_orders.length > 0 && (
+            <div className="card overflow-hidden">
+              <div style={{ padding: "8px 16px 6px", borderBottom: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--warning)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Unmatched Alpaca fills ({data.unmatched_alpaca_orders.length})
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table" style={{ fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>Symbol</th>
+                      <th>Side</th>
+                      <th>Qty</th>
+                      <th>Fill Price</th>
+                      <th>Filled At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.unmatched_alpaca_orders.map((o, i) => (
+                      <tr key={i}>
+                        <td className="text-xs" style={{ fontFamily: "monospace" }}>{o.symbol}</td>
+                        <td>
+                          <span className={`badge ${o.side === "buy" ? "badge-green" : "badge-red"}`}>
+                            {o.side.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="num">{o.filled_qty}</td>
+                        <td className="num">{fmtPx(o.filled_avg_price)}</td>
+                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                          {o.filled_at ? fmtTime(o.filled_at) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 type DateWindow = "today" | "week" | "month" | "custom" | "all";
 
 // All known strategy IDs (for the filter dropdown)
@@ -206,6 +432,9 @@ function exportCsv(trades: Trade[], mode: string) {
 export function Journal() {
   const botStatus = useBotStore((s) => s.status);
   const defaultMode: "paper" | "live" = botStatus?.is_paper === false ? "live" : "paper";
+
+  // Top-level tab: "journal" | "reconcile"
+  const [mainTab, setMainTab] = useState<"journal" | "reconcile">("journal");
 
   const [mode,        setMode]        = useState<"paper" | "live">(defaultMode);
   const [filter,      setFilter]      = useState<"all" | "open" | "closed">("all");
@@ -274,6 +503,28 @@ export function Journal() {
 
   return (
     <div className="p-4 flex flex-col gap-4">
+      {/* Top-level tab switcher */}
+      <div className="flex gap-1">
+        <button
+          className={`btn btn-sm ${mainTab === "journal" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setMainTab("journal")}
+        >
+          Journal
+        </button>
+        <button
+          className={`btn btn-sm ${mainTab === "reconcile" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setMainTab("reconcile")}
+        >
+          Reconcile
+        </button>
+      </div>
+
+      {/* Reconcile tab */}
+      {mainTab === "reconcile" && <ReconcileTab />}
+
+      {/* Journal tab — hidden when reconcile is active */}
+      {mainTab === "journal" && (
+      <div className="flex flex-col gap-4">
       {/* Controls */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -519,6 +770,8 @@ export function Journal() {
           </div>
         )}
       </div>
+      </div>
+      )}
     </div>
   );
 }

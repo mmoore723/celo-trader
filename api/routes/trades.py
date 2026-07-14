@@ -2,10 +2,12 @@
 api/routes/trades.py — Trade journal and performance data.
 """
 from __future__ import annotations
+from datetime import date as _date
 from fastapi import APIRouter, Query
 from api.models import (
     Trade, TradeListResponse, PerformanceStats, DailySummary,
     TradeAnalytics, StrategyRow, HourRow, TickerRow, ExitReasonRow,
+    AlpacaOrder, ReconcileRow, ReconcileResponse,
 )
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
@@ -296,4 +298,236 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
         avg_mfe_pct              = avg_mfe_pct,
         avg_exit_pct             = avg_exit_pct,
         avg_exit_efficiency_pct  = avg_exit_efficiency,
+    )
+
+
+# ── Reconcile endpoint ────────────────────────────────────────────────────────
+# Compares bot DB trade records against actual Alpaca order fills for a given
+# date. Highlights price gaps so the user can see the paper_fill discrepancy.
+
+@router.get("/reconcile", response_model=ReconcileResponse)
+def reconcile_trades(
+    date: str = Query(default="", description="YYYY-MM-DD; defaults to today"),
+) -> ReconcileResponse:
+    import re
+    from datetime import datetime, timezone, timedelta
+    from database import get_all_trades
+    from config import ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL, get_settings as _get_settings
+    import requests as _req
+
+    # ── 1. Resolve date ───────────────────────────────────────────────────────
+    if not date or not re.match(r"\d{4}-\d{2}-\d{2}", date):
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    date_start = f"{date}T00:00:00Z"
+    date_end   = f"{date}T23:59:59Z"
+
+    # ── 2. Fetch Alpaca orders for the date ───────────────────────────────────
+    headers = {
+        "APCA-API-KEY-ID":     ALPACA_API_KEY,
+        "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
+    }
+    alpaca_orders: list[dict] = []
+    try:
+        resp = _req.get(
+            f"{ALPACA_BASE_URL}/v2/orders",
+            headers=headers,
+            params={
+                "status": "all",
+                "after":  date_start,
+                "until":  date_end,
+                "limit":  500,
+                "direction": "asc",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        alpaca_orders = resp.json() or []
+    except Exception as _e:
+        # Non-fatal — reconcile will still show DB data with empty Alpaca side
+        alpaca_orders = []
+
+    # ── 3. Fetch Alpaca equity ────────────────────────────────────────────────
+    alpaca_equity: float | None = None
+    try:
+        acct = _req.get(
+            f"{ALPACA_BASE_URL}/v2/account", headers=headers, timeout=5
+        ).json()
+        alpaca_equity = float(acct.get("equity", 0)) or None
+    except Exception:
+        pass
+
+    # ── 4. Pull day_start_balance from settings ───────────────────────────────
+    day_start_balance: float | None = None
+    try:
+        _cfg = _get_settings()
+        dsb_key = f"day_start_{date}"
+        raw_dsb = _cfg.get(dsb_key) or _cfg.get("day_start_balance")
+        if raw_dsb is not None:
+            day_start_balance = float(raw_dsb)
+    except Exception:
+        pass
+
+    alpaca_session_pnl: float | None = (
+        round(alpaca_equity - day_start_balance, 2)
+        if alpaca_equity is not None and day_start_balance is not None
+        else None
+    )
+
+    # ── 5. Pull DB trades for the date ────────────────────────────────────────
+    all_db_rows = get_all_trades(limit=1000, mode="paper", status_filter="closed") or []
+    db_trades = [
+        r for r in all_db_rows
+        if str(r.get("exit_time") or r.get("entry_time") or "").startswith(date)
+    ]
+    bot_session_pnl = round(
+        sum(float(r.get("realized_pnl") or 0) for r in db_trades), 2
+    )
+
+    # ── 6. Build Alpaca order lookup: only FILLED orders, grouped by symbol ───
+    # We keep buy fills and sell fills separately.
+    # Each entry: {symbol -> [{"side", "filled_qty", "filled_avg_price", "filled_at", "order_id"}]}
+    from collections import defaultdict
+    alp_buys:  dict = defaultdict(list)
+    alp_sells: dict = defaultdict(list)
+
+    for o in alpaca_orders:
+        if o.get("status") != "filled":
+            continue
+        sym   = o.get("symbol", "")
+        side  = o.get("side", "")
+        fqty  = int(float(o.get("filled_qty") or 0))
+        fpx   = float(o.get("filled_avg_price") or 0) if o.get("filled_avg_price") else None
+        fat   = o.get("filled_at") or o.get("submitted_at")
+        oid   = o.get("id", "")
+        entry = {"filled_qty": fqty, "filled_avg_price": fpx, "filled_at": fat, "order_id": oid}
+        if side == "buy":
+            alp_buys[sym].append(entry)
+        else:
+            alp_sells[sym].append(entry)
+
+    # ── 7. Match DB trades to Alpaca fills ────────────────────────────────────
+    # Strategy: for each DB trade, find the closest Alpaca buy + sell by contract_symbol.
+    # We consume matched orders to avoid double-counting.
+    used_buy_oids:  set[str] = set()
+    used_sell_oids: set[str] = set()
+
+    def _parse_ts(ts: str | None) -> datetime | None:
+        if not ts:
+            return None
+        for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ"):
+            try:
+                return datetime.strptime(ts[:26], fmt[:len(ts)])
+            except Exception:
+                pass
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    reconcile_rows: list[ReconcileRow] = []
+    matched_order_ids: set[str] = set()
+
+    for r in db_trades:
+        sym         = r.get("contract_symbol") or ""
+        contracts   = int(r.get("contracts") or 1)
+        bot_entry   = float(r.get("entry_price") or 0) or None
+        bot_exit    = float(r.get("exit_price") or 0) or None
+        bot_pnl     = float(r.get("realized_pnl") or 0)
+        entry_time  = str(r.get("entry_time") or "")
+        exit_time   = str(r.get("exit_time") or "")
+
+        db_entry_ts = _parse_ts(entry_time)
+        db_exit_ts  = _parse_ts(exit_time)
+
+        # Find closest unused Alpaca buy for this symbol within ±60 min of entry
+        alp_entry: float | None = None
+        for ab in alp_buys.get(sym, []):
+            if ab["order_id"] in used_buy_oids:
+                continue
+            ab_ts = _parse_ts(ab["filled_at"])
+            if db_entry_ts and ab_ts:
+                delta = abs((ab_ts - db_entry_ts).total_seconds())
+                if delta > 3600:
+                    continue
+            alp_entry = ab.get("filled_avg_price")
+            used_buy_oids.add(ab["order_id"])
+            matched_order_ids.add(ab["order_id"])
+            break
+
+        # Find closest unused Alpaca sell for this symbol within ±60 min of exit
+        alp_exit: float | None = None
+        for ab in alp_sells.get(sym, []):
+            if ab["order_id"] in used_sell_oids:
+                continue
+            ab_ts = _parse_ts(ab["filled_at"])
+            if db_exit_ts and ab_ts:
+                delta = abs((ab_ts - db_exit_ts).total_seconds())
+                if delta > 3600:
+                    continue
+            alp_exit = ab.get("filled_avg_price")
+            used_sell_oids.add(ab["order_id"])
+            matched_order_ids.add(ab["order_id"])
+            break
+
+        # Compute actual Alpaca P&L for this leg
+        alpaca_pnl: float | None = None
+        if alp_entry is not None and alp_exit is not None:
+            alpaca_pnl = round((alp_exit - alp_entry) * contracts * 100, 2)
+
+        pnl_gap  = round(bot_pnl - alpaca_pnl, 2) if alpaca_pnl is not None else None
+        has_gap  = abs(pnl_gap) > 1.0 if pnl_gap is not None else False
+
+        reconcile_rows.append(ReconcileRow(
+            trade_id        = int(r.get("id", 0)),
+            ticker          = r.get("ticker"),
+            strategy_id     = r.get("strategy_id"),
+            contracts       = contracts,
+            contract_symbol = sym,
+            bot_entry       = bot_entry,
+            bot_exit        = bot_exit,
+            bot_pnl         = bot_pnl,
+            entry_time      = entry_time or None,
+            exit_time       = exit_time or None,
+            alpaca_entry    = alp_entry,
+            alpaca_exit     = alp_exit,
+            alpaca_pnl      = alpaca_pnl,
+            pnl_gap         = pnl_gap,
+            has_gap         = has_gap,
+        ))
+
+    # ── 8. Collect unmatched Alpaca filled orders ─────────────────────────────
+    unmatched: list[AlpacaOrder] = []
+    for o in alpaca_orders:
+        if o.get("status") != "filled":
+            continue
+        if o.get("id") in matched_order_ids:
+            continue
+        unmatched.append(AlpacaOrder(
+            order_id        = o.get("id", ""),
+            symbol          = o.get("symbol", ""),
+            side            = o.get("side", ""),
+            qty             = int(float(o.get("qty") or 0)),
+            filled_qty      = int(float(o.get("filled_qty") or 0)),
+            filled_avg_price= float(o.get("filled_avg_price") or 0) or None,
+            status          = o.get("status", ""),
+            submitted_at    = o.get("submitted_at"),
+            filled_at       = o.get("filled_at"),
+        ))
+
+    equity_gap: float | None = (
+        round(bot_session_pnl - alpaca_session_pnl, 2)
+        if alpaca_session_pnl is not None
+        else None
+    )
+
+    return ReconcileResponse(
+        date                  = date,
+        alpaca_equity         = alpaca_equity,
+        day_start_balance     = day_start_balance,
+        bot_session_pnl       = bot_session_pnl,
+        alpaca_session_pnl    = alpaca_session_pnl,
+        equity_gap            = equity_gap,
+        trades                = reconcile_rows,
+        unmatched_alpaca_orders = unmatched,
     )

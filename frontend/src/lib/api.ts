@@ -137,6 +137,48 @@ export interface TradeListResponse {
   win_rate: number;
 }
 
+// ── Reconciliation types ──────────────────────────────────────────────────────
+export interface AlpacaOrder {
+  order_id: string;
+  symbol: string;
+  side: string;
+  qty: number;
+  filled_qty: number;
+  filled_avg_price: number | null;
+  status: string;
+  submitted_at: string | null;
+  filled_at: string | null;
+}
+
+export interface ReconcileRow {
+  trade_id: number | null;
+  ticker: string | null;
+  strategy_id: string | null;
+  contracts: number | null;
+  contract_symbol: string | null;
+  bot_entry: number | null;
+  bot_exit: number | null;
+  bot_pnl: number | null;
+  entry_time: string | null;
+  exit_time: string | null;
+  alpaca_entry: number | null;
+  alpaca_exit: number | null;
+  alpaca_pnl: number | null;
+  pnl_gap: number | null;
+  has_gap: boolean;
+}
+
+export interface ReconcileResponse {
+  date: string;
+  alpaca_equity: number | null;
+  day_start_balance: number | null;
+  bot_session_pnl: number;
+  alpaca_session_pnl: number | null;
+  equity_gap: number | null;
+  trades: ReconcileRow[];
+  unmatched_alpaca_orders: AlpacaOrder[];
+}
+
 export interface Bar {
   time: string;
   open: number;
@@ -273,6 +315,7 @@ export const api = {
     open:        () => request<Trade[]>("/api/trades/open"),
     performance: (mode="paper") => request<PerformanceStats>(`/api/trades/performance?mode=${mode}`),
     analytics:   (mode="paper") => request<TradeAnalytics>(`/api/trades/analytics?mode=${mode}`),
+    reconcile:   (date?: string) => request<ReconcileResponse>(`/api/trades/reconcile${date ? `?date=${date}` : ""}`),
   },
   market: {
     bars:    (ticker: string, tf="5Min", limit=200) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}`),
