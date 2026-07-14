@@ -191,8 +191,11 @@ export function KChart({
     // Apply theme styles
     chart.setStyles(makeStyles(dark));
     chart.setOffsetRightDistance(80);
-    // Explicitly enable zoom and scroll (required in v9 — not on by default)
-    chart.setZoomEnabled(true);
+    // Enable drag-to-pan.  Zoom is DISABLED in KLineChart's built-in handler
+    // so its wheel listener becomes a no-op — we handle zoom ourselves below.
+    // If we left setZoomEnabled(true), KLineChart's handler and ours would both
+    // fire on the same wheel event → double-zoom → Y-axis explodes to 660-840.
+    chart.setZoomEnabled(false);
     chart.setScrollEnabled(true);
 
     // Volume in candle pane, RSI/MACD as sub-panels
@@ -250,17 +253,27 @@ export function KChart({
     const ro = new ResizeObserver(() => { chartRef.current?.resize(); });
     ro.observe(el);
 
-    // Wheel zoom — CAPTURE PHASE trick to prevent double-zoom:
-    //   KLineChart registers its handler on the canvas (a child of el).
-    //   Normal (bubble-phase) listeners on el fire AFTER the canvas handler,
-    //   so calling zoomAtCoordinate there zoomed the chart twice per tick.
-    //   Using { capture: true } makes our handler fire BEFORE canvas handlers
-    //   (capture phase travels window→el→canvas; bubble goes the other way).
-    //   Then stopPropagation() stops the event from ever reaching the canvas,
-    //   so KLineChart never sees it.  Result: exactly ONE zoom per scroll tick.
+    // Wheel zoom handler — NO capture, NO stopPropagation.
+    //
+    // Why this approach:
+    //   We set chart.setZoomEnabled(false) above, making KLineChart's own wheel
+    //   handler a no-op for zoom. We only need OUR handler for zoom.
+    //
+    //   We must NOT use stopPropagation() — on macOS, two-finger horizontal
+    //   swipe sends deltaX events that KLineChart uses for panning. Blocking
+    //   propagation killed those events → candles appeared frozen/stuck.
+    //
+    //   We must NOT use capture: true — capture fires in the same order as
+    //   registration on the exact same element, and KLineChart may also register
+    //   in capture phase. No guarantee we win the race.
+    //
+    //   Correct solution: only intercept VERTICAL scroll (deltaY dominates).
+    //   Horizontal events fall through to KLineChart's drag/pan system untouched.
     const onWheel = (e: WheelEvent) => {
+      // Let horizontal pan events pass through to KLineChart unchanged
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      // Vertical scroll → our zoom handler takes over
       e.preventDefault();
-      e.stopPropagation(); // block KLineChart's canvas handler
       if (!chartRef.current) return;
       const rect = el.getBoundingClientRect();
       const scale = e.deltaY < 0 ? 1.1 : 0.9;
@@ -271,10 +284,11 @@ export function KChart({
         });
       } catch (_) {}
     };
-    el.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    // Bubble phase (default), no capture — horizontal pan events reach KLineChart
+    el.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
-      el.removeEventListener("wheel", onWheel, { capture: true });
+      el.removeEventListener("wheel", onWheel);
       ro.disconnect();
       if (chartRef.current && containerRef.current) {
         dispose(containerRef.current);
@@ -333,23 +347,46 @@ export function KChart({
         try { chart.setBarSpace(barSpace); } catch (_) {}
         lastSpacingTf.current = tf;
       }
-      // Scroll to latest bar. Use a small delay so applyNewData finishes
-      // rendering before we scroll — avoids landing at bar-0 on fast refreshes.
+      // Scroll to latest bar, then create ALL overlays.
+      //
+      // CRITICAL TIMING FIX: Overlays created synchronously in the same tick as
+      // applyNewData() were being silently cleared by KLineChart's internal canvas
+      // flush (requestAnimationFrame). The result: overlays only appeared after
+      // navigating away and back (component remount), because on remount React
+      // Query served bars from cache instantly, skipping the flush cycle.
+      //
+      // Fix: 60ms delay lets the RAF cycle complete before we add overlays.
+      // All overlay creation (VWAP, OR lines, edu rects, position lines,
+      // annotations) is now inside this callback.
       setTimeout(() => {
         try { chartRef.current?.scrollToRealTime(); } catch (_) {}
-      }, 50);
+        const c = chartRef.current;
+        if (!c) return;
+        applyOverlays(c);
+      }, 60);
+    } else {
+      // No bars yet — still sync VWAP + overlays (no canvas flush risk)
+      applyOverlays(chart);
     }
 
+  }, [bars, tf, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, annotations]);
+
+  // ── applyOverlays: VWAP indicator + all overlay groups ───────────────────
+  // Extracted so it can be called both from setTimeout (after bar render) and
+  // directly (when bars is empty).  Uses chartRef.current not a captured `chart`
+  // var so it always gets the live instance even across async boundaries.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function applyOverlays(c: any) {
     // VWAP indicator — toggle without recreating the whole chart
     try {
       // getIndicatorByPaneId returns an array; !![] is truthy even when empty,
       // so we must check length explicitly — otherwise VWAP is never created.
-      const _vwapResult = chart.getIndicatorByPaneId("candle_pane", "VWAP");
+      const _vwapResult = c.getIndicatorByPaneId("candle_pane", "VWAP");
       const hasVwap = Array.isArray(_vwapResult) ? _vwapResult.length > 0 : !!_vwapResult;
       if (showVwap && !hasVwap) {
-        chart.createIndicator("VWAP", true, { id: "candle_pane" }, () => {
-          // override styles inside callback so indicator exists
-          chart.overrideIndicator({
+        c.createIndicator("VWAP", true, { id: "candle_pane" }, () => {
+          c.overrideIndicator({
             name: "VWAP",
             styles: {
               lines: [
@@ -361,10 +398,9 @@ export function KChart({
           }, "candle_pane");
         });
       } else if (!showVwap && hasVwap) {
-        chart.removeIndicator("candle_pane", "VWAP");
+        c.removeIndicator("candle_pane", "VWAP");
       } else if (showVwap && hasVwap) {
-        // Already exists — just update band visibility
-        chart.overrideIndicator({
+        c.overrideIndicator({
           name: "VWAP",
           styles: {
             lines: [
@@ -377,59 +413,48 @@ export function KChart({
       }
     } catch (_) { /* indicator may not be ready yet — will reconcile on next render */ }
 
-    // Clear managed overlays before recreating
-    try { chart.removeOverlay({ groupId: "or"  }); } catch (_) { /* no-op */ }
-    try { chart.removeOverlay({ groupId: "pos" }); } catch (_) { /* no-op */ }
-    try { chart.removeOverlay({ groupId: "edu" }); } catch (_) { /* no-op */ }
+    // Clear managed overlay groups before recreating
+    try { c.removeOverlay({ groupId: "or"  }); } catch (_) { /* no-op */ }
+    try { c.removeOverlay({ groupId: "pos" }); } catch (_) { /* no-op */ }
+    try { c.removeOverlay({ groupId: "edu" }); } catch (_) { /* no-op */ }
+    try { c.removeOverlay({ groupId: "ann" }); } catch (_) { /* no-op */ }
 
     // Opening Range horizontal lines
     if (showOR) {
       if (orHigh != null) {
-        chart.createOverlay({
+        try { c.createOverlay({
           name: "horizontalStraightLine", groupId: "or", lock: true,
           points: [{ value: orHigh }],
           styles: { line: { color: up, size: 2 } },
           needDefaultYAxisFigure: true,
-        });
+        }); } catch (_) {}
       }
       if (orLow != null) {
-        chart.createOverlay({
+        try { c.createOverlay({
           name: "horizontalStraightLine", groupId: "or", lock: true,
           points: [{ value: orLow }],
           styles: { line: { color: dn, size: 2 } },
           needDefaultYAxisFigure: true,
-        });
+        }); } catch (_) {}
       }
     }
 
-    // ── Educational chart drawings ─────────────────────────────────────────────
-    // OR Zone: two layered rects that are ALWAYS visible regardless of viewport.
-    //
-    // Problem: the old approach placed the zone only at 9:30–10:00 AM.
-    // On 1Min/15Min/1Hour charts, scrollToRealTime() puts the afternoon bars
-    // at the right edge, pushing 9:30 AM off-screen to the left.
-    //
-    // Fix: use bars[0] → bars[last] for the outer band (full-width, always
-    // visible), then overlay a brighter inner band just for the OR window.
-    //
-    // Note: verticalStraightLine is NOT a valid KLineChart v9 overlay type
-    // (it's absent from the built-in toolbar types) and silently threw.  Removed.
+    // ── Educational chart drawings ───────────────────────────────────────────
+    // OR Zone: two layered rects — outer full-width band always visible,
+    // inner 9:30–10:00 AM band shows where the range originally formed.
+    // verticalStraightLine is NOT a valid KLineChart v9 type — removed.
     if (bars.length > 0 && showOR && orHigh != null && orLow != null) {
-      // Bar duration in ms — used to extend the right edge one bar past the last.
       const tfMs: Record<string, number> = {
         "1Min": 60_000, "5Min": 300_000, "15Min": 900_000, "1Hour": 3_600_000,
       };
-      const barDur = tfMs[tf] ?? 300_000;
+      const barDur  = tfMs[tf] ?? 300_000;
       const firstTs = new Date(bars[0].time).getTime();
       const lastTs  = new Date(bars[bars.length - 1].time).getTime() + barDur;
 
-      // ① Full-width band between OR High and OR Low (very subtle, ~6% opacity).
-      //    This is visible at ALL times so users always know where the range is.
+      // ① Full-width subtle band — visible even when 9:30 AM is off-screen
       try {
-        chart.createOverlay({
-          name: "rect",
-          groupId: "edu",
-          lock: true,
+        c.createOverlay({
+          name: "rect", groupId: "edu", lock: true,
           points: [
             { timestamp: firstTs, value: orLow  },
             { timestamp: lastTs,  value: orHigh },
@@ -442,9 +467,8 @@ export function KChart({
         });
       } catch (_) {}
 
-      // ② Brighter highlight for the actual 9:30–10:00 AM OR formation window.
-      //    Tolerance search (scaled per TF) to handle :30-offset 1Hour bars.
-      //    Shows WHERE the range originally formed within the full-width band.
+      // ② Brighter inner rect for the exact 9:30–10:00 AM window
+      //    Tolerance-scaled search handles :30-offset 1Hour bars
       const toleranceMs: Record<string, number> = {
         "1Min": 1, "5Min": 3, "15Min": 8, "1Hour": 45,
       };
@@ -462,10 +486,8 @@ export function KChart({
       const orCloseTs = findBar(10, 0) ?? (orOpenTs != null ? orOpenTs + 30 * 60_000 : null);
       if (orOpenTs != null && orCloseTs != null) {
         try {
-          chart.createOverlay({
-            name: "rect",
-            groupId: "edu",
-            lock: true,
+          c.createOverlay({
+            name: "rect", groupId: "edu", lock: true,
             points: [
               { timestamp: orOpenTs,  value: orLow  },
               { timestamp: orCloseTs, value: orHigh },
@@ -481,9 +503,7 @@ export function KChart({
     }
 
     // Position price lines (Entry / Stop / Target / Trail).
-    // "horizontalStraightLine" is the correct KLineChart v9 built-in name.
-    // "priceLine" is NOT valid — it caused an unknown-overlay rendering artifact
-    // (a tall vertical spike) and forced the Y-axis to scale out to the stop price.
+    // "horizontalStraightLine" is the correct KLineChart v9 name.
     if (positionLevels) {
       const ep = positionLevels.entry;
       const LEVELS = [
@@ -495,61 +515,47 @@ export function KChart({
       LEVELS.forEach(({ val, col, sz }) => {
         if (!val || val <= 0) return;
         try {
-          chart.createOverlay({
+          c.createOverlay({
             name: "horizontalStraightLine", groupId: "pos", lock: true,
             points: [{ value: val }],
             styles: { line: { color: col, size: sz } },
-            needDefaultYAxisFigure: true,   // shows price label on Y-axis
+            needDefaultYAxisFigure: true,
           });
-        } catch (_) { /* skip if overlay fails */ }
+        } catch (_) {}
       });
     }
 
-    // ── Bot annotation overlays (hline / zone) ───────────────────────────────
-    // Clear previous annotation group then redraw from fresh poll data.
-    // "marker" type is skipped here — KLineChart has no native candle marker API.
-    // hline  → one horizontalStraightLine at ann.price
-    // zone   → two horizontalStraightLines (top and bottom of the gap band)
-    try { chart.removeOverlay({ groupId: "ann" }); } catch (_) { /* no-op */ }
-
+    // ── Bot annotation overlays (hline / zone) ──────────────────────────────
+    // hline → horizontalStraightLine at ann.price
+    // zone  → two horizontalStraightLines (top and bottom of band)
+    // needDefaultYAxisFigure: false — bot prices may be outside today's range;
+    // setting true forces Y-axis to scale out to 660-840 (prior bloat bug).
     for (const ann of annotations) {
       try {
         if (ann.type === "hline" && ann.price != null) {
-          chart.createOverlay({
-            name: "horizontalStraightLine",
-            groupId: "ann",
-            lock: true,
+          c.createOverlay({
+            name: "horizontalStraightLine", groupId: "ann", lock: true,
             points: [{ value: ann.price }],
             styles: { line: { color: ann.color, size: 1, style: "dashed" as const, dashedValue: [4, 3] } },
-            // DO NOT set needDefaultYAxisFigure: true on annotations — bot annotation
-            // prices from other sessions can be far outside today's range, which forces
-            // KLineChart to expand the Y-axis to include them (660–840 bloat bug).
             needDefaultYAxisFigure: false,
           });
         } else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) {
-          // Top edge of zone
-          chart.createOverlay({
-            name: "horizontalStraightLine",
-            groupId: "ann",
-            lock: true,
+          c.createOverlay({
+            name: "horizontalStraightLine", groupId: "ann", lock: true,
             points: [{ value: ann.price_high }],
             styles: { line: { color: ann.color, size: 1, style: "dashed" as const, dashedValue: [4, 3] } },
             needDefaultYAxisFigure: false,
           });
-          // Bottom edge of zone (same color, thinner)
-          chart.createOverlay({
-            name: "horizontalStraightLine",
-            groupId: "ann",
-            lock: true,
+          c.createOverlay({
+            name: "horizontalStraightLine", groupId: "ann", lock: true,
             points: [{ value: ann.price_low }],
             styles: { line: { color: ann.color, size: 1, style: "dashed" as const, dashedValue: [4, 3] } },
             needDefaultYAxisFigure: false,
           });
         }
-      } catch (_) { /* skip if overlay type not available */ }
+      } catch (_) {}
     }
-
-  }, [bars, tf, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, annotations]);
+  }
 
   // trades/visibleFrom props kept on interface so parent doesn't need to change.
   // Trade markers temporarily disabled (custom overlay was corrupting KLineChart).
