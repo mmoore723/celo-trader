@@ -147,8 +147,10 @@ export default function App() {
             Eliminates any server-routing edge cases with the FastAPI catch-all. */}
         <HashRouter>
           <Routes>
-            {/* Public invite registration route — no auth required */}
+            {/* Public routes — no auth required */}
             <Route path="/register" element={<Register />} />
+            {/* Terms page public so the login-page ToS link works without being logged in */}
+            <Route path="/terms"    element={<Terms viewOnly />} />
             {/* Everything else gates on auth */}
             <Route path="*" element={<AuthGate />} />
           </Routes>

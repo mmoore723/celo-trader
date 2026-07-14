@@ -242,11 +242,12 @@ export function KChart({
       el2.style.opacity = "1";
     });
 
-    // Auto-resize when container dimensions change; scroll to latest bar after resize
-    const ro = new ResizeObserver(() => {
-      chartRef.current?.resize();
-      setTimeout(() => { try { chartRef.current?.scrollToRealTime(); } catch (_) {} }, 30);
-    });
+    // Auto-resize when container dimensions change.
+    // Do NOT call scrollToRealTime() here — that would jump the user's view
+    // position every time the window is resized, making candles appear to
+    // desync from overlays.  scrollToRealTime() only belongs in the data effect
+    // (after applyNewData) where it's intentional.
+    const ro = new ResizeObserver(() => { chartRef.current?.resize(); });
     ro.observe(el);
 
     // Wheel zoom — native listener so preventDefault() stops page scroll.
@@ -336,7 +337,10 @@ export function KChart({
 
     // VWAP indicator — toggle without recreating the whole chart
     try {
-      const hasVwap = !!(chart.getIndicatorByPaneId("candle_pane", "VWAP"));
+      // getIndicatorByPaneId returns an array; !![] is truthy even when empty,
+      // so we must check length explicitly — otherwise VWAP is never created.
+      const _vwapResult = chart.getIndicatorByPaneId("candle_pane", "VWAP");
+      const hasVwap = Array.isArray(_vwapResult) ? _vwapResult.length > 0 : !!_vwapResult;
       if (showVwap && !hasVwap) {
         chart.createIndicator("VWAP", true, { id: "candle_pane" }, () => {
           // override styles inside callback so indicator exists
