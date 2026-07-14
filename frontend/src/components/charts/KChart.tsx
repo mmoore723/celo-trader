@@ -250,22 +250,14 @@ export function KChart({
     const ro = new ResizeObserver(() => { chartRef.current?.resize(); });
     ro.observe(el);
 
-    // Wheel zoom — native listener so preventDefault() stops page scroll.
-    // setZoomEnabled(true) handles pinch/trackpad but does NOT reliably hook
-    // mouse-wheel events in all browsers; a native handler is the reliable fix.
-    // Placed here (inside chart init effect) so it's tied to the chart lifetime.
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (!chartRef.current) return;
-      const rect  = el.getBoundingClientRect();
-      const scale = e.deltaY < 0 ? 1.1 : 0.9;
-      try {
-        chartRef.current.zoomAtCoordinate(scale, {
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        });
-      } catch (_) {}
-    };
+    // Prevent page scroll when the mouse wheel fires over the chart.
+    // KLineChart already attaches its own wheel listener to the canvas and
+    // handles zoom natively when setZoomEnabled(true) is set.  We must NOT
+    // call zoomAtCoordinate here — the event bubbles from canvas → el, so
+    // our handler fires AFTER KLineChart's own handler, causing every scroll
+    // to zoom twice (double-zoom = chart coordinates break, candles desync).
+    // Calling only e.preventDefault() stops page scroll without interfering.
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); };
     el.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {

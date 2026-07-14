@@ -91,7 +91,12 @@ async def auth_me(request: Request):
         p = decode_session(token)
         from auth.users import get_user, CURRENT_TERMS_VERSION
         u = get_user(p["sub"]) or {}
-        accepted_v = u.get("terms_version")
+        # JWT layer: terms_version baked in when user accepted (re-issued cookie).
+        # DB layer: fallback for sessions issued before this feature was added.
+        # Either source matching CURRENT_TERMS_VERSION = user has accepted.
+        jwt_terms = p.get("terms_version")
+        db_terms  = u.get("terms_version")
+        accepted_v = jwt_terms if jwt_terms == CURRENT_TERMS_VERSION else db_terms
         return {
             "ok":                    True,
             "user_id":               p["sub"],
@@ -106,8 +111,16 @@ async def auth_me(request: Request):
 
 
 @router.post("/accept-terms")
-async def auth_accept_terms(request: Request):
-    """Record that the authenticated user accepted the current ToS."""
+async def auth_accept_terms(request: Request, response: Response):
+    """
+    Record that the authenticated user accepted the current ToS.
+
+    Two-layer persistence:
+      1. DB write (terms_version column in users table) — survives restarts.
+      2. Re-issued session cookie with terms_version baked into the JWT —
+         protects against DB resets or failed writes so the user never gets
+         re-prompted mid-session, and the /me endpoint can trust the JWT alone.
+    """
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         raise HTTPException(401, "Not authenticated")
@@ -116,7 +129,21 @@ async def auth_accept_terms(request: Request):
     except JWTError:
         raise HTTPException(401, "Session expired — please sign in again")
     from auth.users import accept_terms, CURRENT_TERMS_VERSION
-    accept_terms(p["sub"], CURRENT_TERMS_VERSION)
+    # Write to DB (primary storage)
+    ok = accept_terms(p["sub"], CURRENT_TERMS_VERSION)
+    if not ok:
+        logger.warning("accept_terms: DB UPDATE matched 0 rows for user_id=%s", p["sub"])
+    # Re-issue the cookie with terms_version embedded so /me can trust the JWT
+    # even if the DB row is later missing.  Preserve the original expiry.
+    _now_ts  = int(datetime.now(timezone.utc).timestamp())
+    _exp     = p.get("exp", _now_ts + int(SESSION_SHORT.total_seconds()))
+    _max_age = max(0, _exp - _now_ts)
+    new_payload = {**p, "terms_version": CURRENT_TERMS_VERSION}
+    new_token   = jwt.encode(new_payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
+    response.set_cookie(
+        key=COOKIE_NAME, value=new_token, httponly=True,
+        secure=True, samesite="lax", max_age=_max_age, path="/",
+    )
     return {"ok": True, "terms_version": CURRENT_TERMS_VERSION}
 
 
