@@ -107,10 +107,17 @@ export function LiveTrading() {
   const barsRefetchMs = tf === "1Min" ? 15_000 : tf === "5Min" ? 30_000 : 60_000;
 
   // ── Data queries ────────────────────────────────────────────────────────────
+  // 1-minute bars: yfinance only reliably serves ~1 trading day.
+  // Requesting 5D/1M/3M of 1-minute data makes the API fail, which triggers
+  // an unhandled promise rejection → React error boundary → red outline on chart.
+  // Cap to 1D silently when the user picks 1m.
+  const effectivePeriod: Period = tf === "1Min" && period !== "1D" ? "1D" : period;
+
   const { data: bars = [], isLoading: barsLoading } = useQuery({
-    queryKey: ["bars", ticker, tf, period],
-    queryFn: () => api.market.bars(ticker, tf, barLimitForPeriod(tf, period)),
+    queryKey: ["bars", ticker, tf, effectivePeriod],
+    queryFn: () => api.market.bars(ticker, tf, barLimitForPeriod(tf, effectivePeriod)),
     refetchInterval: barsRefetchMs,
+    retry: false,   // fail fast — retries pile up and delay visible feedback
   });
 
   const { data: openTrades = [] } = useQuery({

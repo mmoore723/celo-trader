@@ -98,7 +98,9 @@ function makeStyles(dark: boolean) {
         { size: 2, color: "#f59e0b" },           // MACD histogram / line
         { size: 1, color: "#e879f9" },           // signal
       ],
-      tooltip: { showRule: "always" as const, showName: true, showParams: true,
+      // "follow_cross" hides tooltips when the crosshair leaves the chart.
+      // "always" caused VOL/RSI values to ghost frozen on screen after mouseout.
+      tooltip: { showRule: "follow_cross" as const, showName: true, showParams: true,
                  text: { size: 10, color: text, weight: "normal", family: "monospace",
                          marginLeft: 8, marginTop: 4, marginRight: 8, marginBottom: 4 } },
     },
@@ -261,6 +263,14 @@ export function KChart({
     const onWheel = (e: WheelEvent) => { e.preventDefault(); };
     el.addEventListener("wheel", onWheel, { passive: false });
 
+    // Resize after the browser has laid out the full flex column (toolbar + legend strip + canvas).
+    // KLineChart measures the container rect at init time — if the legend strip hasn't
+    // rendered yet, the measured height is wrong and causes two issues:
+    //   1. Y-axis coordinate overflow → indicator lines snap to top edge on hover
+    //   2. Bounding-box dead zone → clicks at the top of the visual chart don't register
+    // requestAnimationFrame fires after layout, ensuring the canvas coordinates are correct.
+    requestAnimationFrame(() => { chartRef.current?.resize(); });
+
     return () => {
       el.removeEventListener("wheel", onWheel);
       ro.disconnect();
@@ -301,12 +311,17 @@ export function KChart({
       );
       // Fall back to raw only if the filter eliminated EVERYTHING (true data error)
       const safe = filtered.length > 0 ? filtered : bars;
-      chart.applyNewData(
-        safe.map((b) => ({
-          timestamp: new Date(b.time).getTime(),
-          open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
-        }))
-      );
+      // Wrap in try/catch — applyNewData can throw if the chart is mid-dispose
+      // (e.g., during a rapid timeframe switch) and the unhandled error would
+      // propagate to React's error boundary, showing a red error outline.
+      try {
+        chart.applyNewData(
+          safe.map((b) => ({
+            timestamp: new Date(b.time).getTime(),
+            open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0,
+          }))
+        );
+      } catch (_) { return; }
       // Only reset bar spacing when the timeframe actually changes.
       // On 60-second live refetches (same TF), skip setBarSpace so the user's
       // zoom level is preserved. Calling setBarSpace every minute makes the chart
@@ -426,7 +441,8 @@ export function KChart({
       const firstTs = new Date(bars[0].time).getTime();
       const lastTs  = new Date(bars[bars.length - 1].time).getTime() + barDur;
 
-      // ① Full-width subtle band — visible even when 9:30 AM is off-screen
+      // ① Full-width subtle band — visible even when 9:30 AM is off-screen.
+      // Opacity suffix: 2-digit hex appended to the 6-digit color → 50 ≈ 31%, 25 was 6% (invisible).
       try {
         c.createOverlay({
           name: "rect", groupId: "edu", lock: true,
@@ -436,8 +452,8 @@ export function KChart({
           ],
           needDefaultYAxisFigure: false,
           styles: {
-            polygon: { style: "fill", color: `${up}10` },
-            line:    { color: `${up}25`, size: 1, style: "dashed", dashedValue: [4, 2] },
+            polygon: { style: "fill", color: `${up}50` },
+            line:    { color: `${up}80`, size: 1, style: "dashed", dashedValue: [4, 2] },
           },
         });
       } catch (_) {}
@@ -469,8 +485,8 @@ export function KChart({
             ],
             needDefaultYAxisFigure: false,
             styles: {
-              polygon: { style: "fill", color: `${up}28` },
-              line:    { color: `${up}55`, size: 1, style: "dashed", dashedValue: [4, 2] },
+              polygon: { style: "fill", color: `${up}60` },
+              line:    { color: `${up}cc`, size: 1, style: "dashed", dashedValue: [4, 2] },
             },
           });
         } catch (_) {}
@@ -757,7 +773,10 @@ export function KChart({
           <div
             ref={ohlcRef}
             className="text-xs"
-            style={{ opacity: 0, color: text, transition: "opacity 0.1s" }}
+            // Explicit pointerEvents:none here (in addition to parent) prevents the
+            // invisible OHLC text layer from creating an interaction dead-zone over
+            // the chart canvas when the crosshair legend is visible (opacity:1).
+            style={{ opacity: 0, color: text, transition: "opacity 0.1s", pointerEvents: "none" }}
           />
         </div>
 
