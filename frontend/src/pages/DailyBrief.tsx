@@ -39,11 +39,11 @@ function gradeColor(g: string): string {
 
 /** Background for a setup grade badge. */
 function gradeBg(g: string): string {
-  if (g === "A+") return "rgba(0,230,118,0.15)";
-  if (g === "A")  return "rgba(0,200,83,0.12)";
-  if (g === "B")  return "rgba(41,182,246,0.12)";
-  if (g === "C")  return "rgba(255,215,64,0.10)";
-  return "rgba(255,255,255,0.05)";
+  if (g === "A+") return "rgba(0,230,118,0.22)";
+  if (g === "A")  return "rgba(0,200,83,0.20)";
+  if (g === "B")  return "rgba(41,182,246,0.20)";
+  if (g === "C")  return "rgba(255,215,64,0.22)";
+  return "rgba(255,255,255,0.10)";
 }
 
 /** Translate raw exit_reason to a plain sentence. */
@@ -519,7 +519,7 @@ export function DailyBrief() {
                         {pm ? (
                           <div
                             className="text-[9px] font-black rounded px-1 py-0.5 shrink-0"
-                            style={{ background: gradeBg(grade), color: gradeColor(grade), minWidth: 24, textAlign: "center" }}
+                            style={{ background: gradeBg(grade), color: gradeColor(grade), minWidth: 24, textAlign: "center", border: `1px solid ${gradeColor(grade)}80` }}
                           >
                             {grade}
                           </div>
