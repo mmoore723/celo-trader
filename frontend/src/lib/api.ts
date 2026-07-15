@@ -211,6 +211,30 @@ export interface ScannerResult {
   rank: number;
 }
 
+export interface PremarketTicker {
+  ticker: string;
+  price: number;
+  prev_close: number;
+  prev_high: number;
+  prev_low: number;
+  gap_pct: number;
+  atr: number;
+  atr_pct: number;
+  avg_vol_20d: number;
+  daily_vol: number;
+  rvol: number;
+  implied_move_pct: number;
+  grade: string;                // "A+" | "A" | "B" | "C" | "Watch"
+  direction: string;            // "calls" | "puts" | "neutral"
+  entry_note: string;
+  stop_note: string;
+  target_note: string;
+  key_levels: { label: string; price: number; type: string }[];
+  setup_notes: string;
+  is_pinned: boolean;
+  rank: number;
+}
+
 export interface AppSettings {
   paper_trading?: boolean;   // true = paper (default), false = live; only toggled via Settings
   risk_pct: number;
@@ -320,7 +344,10 @@ export const api = {
   market: {
     bars:    (ticker: string, tf="5Min", limit=200) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}`),
     quotes:  (tickers: string) => request<Quote[]>(`/api/market/quotes?tickers=${tickers}`),
-    scanner: () => request<ScannerResult[]>("/api/market/scanner"),
+    scanner:   () => request<ScannerResult[]>("/api/market/scanner"),
+    premarket: (tickers?: string) => request<PremarketTicker[]>(
+      `/api/market/premarket${tickers ? `?tickers=${encodeURIComponent(tickers)}` : ""}`
+    ),
     or:      (ticker: string) => request<Record<string,number>>(`/api/market/opening-range/${ticker}`),
     chain:   (ticker: string) => request<OptionsChainRow[]>(`/api/market/chain/${ticker}`),
     news:    (symbols: string, limit = 10) => request<NewsArticle[]>(`/api/market/news?symbols=${symbols}&limit=${limit}`),

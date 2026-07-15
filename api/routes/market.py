@@ -3,9 +3,14 @@ api/routes/market.py — Market data: bars, quotes, scanner results.
 """
 from __future__ import annotations
 from datetime import datetime
+import json
 import pytz
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from api.models import Bar, Quote, ScannerResult, OptionsChainRow
+
+# Shared path used by scanner and premarket endpoints
+universe_path = Path(__file__).resolve().parents[2] / "daily_universe.json"
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -212,15 +217,12 @@ def get_scanner() -> list[ScannerResult]:
     live prices are fetched from Alpaca snapshots before returning.
     """
     try:
-        import json
         import datetime as _dt
-        from pathlib import Path
 
-        base          = Path(__file__).resolve().parents[2]
-        universe_path = base / "daily_universe.json"
-        state_path    = base / "scanner_state.json"
-        today_str     = _dt.date.today().isoformat()
+        state_path = Path(__file__).resolve().parents[2] / "scanner_state.json"
+        today_str  = _dt.date.today().isoformat()
         results: list[ScannerResult] = []
+        u: dict = {}
 
         # ── Preferred source: daily_universe.json has rich per-ticker dicts ──
         if universe_path.exists():
@@ -256,9 +258,6 @@ def get_scanner() -> list[ScannerResult]:
                 ))
 
         # ── Live-price refresh: if scan is stale or prices are 0, hit Alpaca ──
-        # This keeps the scanner useful throughout the trading day even when the
-        # premarket scan file is from a prior session (happens after restarts or
-        # when yfinance wasn't installed during the original scan run).
         scan_date = u.get("date", "") if universe_path.exists() else ""
         prices_missing = any(r.price == 0.0 for r in results)
         if results and (scan_date != today_str or prices_missing):
@@ -266,6 +265,32 @@ def get_scanner() -> list[ScannerResult]:
             for r in results:
                 if live.get(r.ticker, 0) > 0:
                     r.price = live[r.ticker]
+
+        # ── Always include all user watchlist tickers with live data ──────────
+        # scan_details only contains tickers that passed gap+RVOL filters.
+        # Watchlist-pinned tickers that didn't gap enough get silently dropped —
+        # this patch adds them back with their real snapshot prices/change_pct.
+        try:
+            from config import get_settings as _gs
+            _wl      = [t.upper().strip() for t in (_gs().get("watchlist") or []) if t.strip()]
+            _have    = {r.ticker for r in results}
+            _missing = [t for t in _wl if t not in _have]
+            if _missing:
+                from broker import get_clients as _gc
+                _alp, _ = _gc()
+                _snaps   = _alp.get_snapshots(_missing) or {}
+                for _t in _missing:
+                    _s = _snaps.get(_t, {})
+                    results.append(ScannerResult(
+                        ticker=_t,
+                        rvol=0.0,
+                        price=float(_s.get("price", 0) or 0),
+                        atr=0.0,
+                        change_pct=float(_s.get("change_pct", 0) or 0),
+                        rank=len(results) + 1,
+                    ))
+        except Exception:
+            pass
 
         return results
     except Exception as e:
@@ -332,6 +357,242 @@ def get_options_chain(ticker: str) -> list[OptionsChainRow]:
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/premarket")
+def get_premarket_report(tickers: str = Query("")) -> list[dict]:
+    """
+    Rich premarket analysis for the user's watchlist + scanner-found tickers.
+
+    Returns per-ticker:
+      price, prev_close, prev_high, prev_low, gap_pct,
+      atr, atr_pct, avg_vol_20d, daily_vol, rvol,
+      implied_move_pct, grade (A+/A/B/C/Watch),
+      direction (calls/puts/neutral), key_levels,
+      entry_note, stop_note, target_note, setup_notes,
+      is_pinned, rank
+
+    Data sources:
+      - yfinance daily bars (batch)   → ATR, prev H/L/C, avg volume
+      - Alpaca snapshots              → live price, change_pct, today's volume
+    """
+    import concurrent.futures
+    import datetime as _dt
+    import pandas as pd
+    from config import get_settings as _gs
+
+    # ── Build unified ticker list ─────────────────────────────────────────────
+    _settings    = _gs()
+    _pins        = [t.upper().strip() for t in (_settings.get("watchlist") or []) if t.strip()]
+    _extra       = [t.upper().strip() for t in tickers.split(",") if t.strip()] if tickers else []
+    # Include top scanner hits from today's universe file
+    try:
+        _u = json.loads(universe_path.read_text()) if universe_path.exists() else {}
+        _scan_tickers = [d["ticker"] for d in _u.get("scan_details", [])
+                         if isinstance(d, dict) and d.get("ticker")][:8]
+    except Exception:
+        _scan_tickers = ["SPY", "QQQ"]
+    all_tickers = list(dict.fromkeys(_pins + _extra + _scan_tickers))[:20]
+    if not all_tickers:
+        return []
+
+    # ── Batch daily bars via yfinance (22 days → ATR + prev H/L/C + avg vol) ─
+    yf_bars: dict[str, list] = {}
+    try:
+        import yfinance as _yf
+        _today = _dt.date.today()
+        _start = (_today - _dt.timedelta(days=35)).strftime("%Y-%m-%d")
+        _end   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+
+        def _dl():
+            return _yf.download(all_tickers, start=_start, end=_end,
+                                interval="1d", progress=False, auto_adjust=True,
+                                group_by="ticker")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+            _raw = _ex.submit(_dl).result(timeout=20)
+
+        if not _raw.empty:
+            if hasattr(_raw.columns, "levels") and len(all_tickers) > 1:
+                # Multi-ticker: MultiIndex (field, ticker)
+                for _t in all_tickers:
+                    try:
+                        _df = _raw[_t].dropna(subset=["Close"])
+                        if not _df.empty:
+                            yf_bars[_t] = _df[["Open","High","Low","Close","Volume"]].tail(22).rename(
+                                columns={"Open":"o","High":"h","Low":"l","Close":"c","Volume":"v"}
+                            ).to_dict("records")
+                    except Exception:
+                        pass
+            else:
+                # Single ticker — plain DataFrame
+                _t = all_tickers[0]
+                _df = _raw.dropna(subset=["Close"])
+                if not _df.empty:
+                    yf_bars[_t] = _df[["Open","High","Low","Close","Volume"]].tail(22).rename(
+                        columns={"Open":"o","High":"h","Low":"l","Close":"c","Volume":"v"}
+                    ).to_dict("records")
+    except Exception:
+        pass  # proceed with Alpaca-only data
+
+    # ── Alpaca snapshots: live price, change_pct, today's volume ─────────────
+    try:
+        from broker import get_clients as _gc
+        _alp, _ = _gc()
+        _snaps = _alp.get_snapshots(all_tickers) or {}
+    except Exception:
+        _snaps = {}
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    _ETF_SET = {"SPY","QQQ","IWM","DIA","XLE","GLD","XLK","XLF","XLV","XLY","SMH"}
+    _pin_set = set(_pins)
+
+    def _calc_atr(bars: list) -> float:
+        if len(bars) < 2:
+            return 0.0
+        trs = []
+        for i in range(1, min(15, len(bars))):
+            h = float(bars[i].get("h", 0) or 0)
+            l = float(bars[i].get("l", 0) or 0)
+            pc = float(bars[i-1].get("c", 0) or 0)
+            trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+        return round(sum(trs[-14:]) / min(len(trs), 14), 2) if trs else 0.0
+
+    def _grade(gap: float, rvol: float, atr: float, etf: bool) -> str:
+        ag = abs(gap)
+        gmin = 0.5 if etf else 1.0
+        if ag >= 2.0 and rvol >= 2.5 and atr >= 1.5: return "A+"
+        if ag >= gmin  and rvol >= 2.0 and atr >= 1.0: return "A"
+        if ag >= gmin * 0.5 and rvol >= 1.5:           return "B"
+        if ag >= gmin * 0.25:                           return "C"
+        return "Watch"
+
+    # ── Per-ticker processing ─────────────────────────────────────────────────
+    results = []
+    for rank, ticker in enumerate(all_tickers, 1):
+        try:
+            snap  = _snaps.get(ticker, {})
+            bars  = yf_bars.get(ticker, [])
+            is_etf = ticker in _ETF_SET
+
+            price       = float(snap.get("price",      0) or 0)
+            change_pct  = float(snap.get("change_pct", 0) or 0)
+            daily_vol   = float(snap.get("daily_vol",  0) or 0)
+            prev_close_snap = float(snap.get("prev_close", 0) or 0)
+
+            # Previous day's OHLCV from yfinance bars[-2] (bars[-1] may be partial today)
+            prev_high = prev_low = prev_close = avg_vol_20d = 0.0
+            atr_val   = 0.0
+            if len(bars) >= 2:
+                _pb       = bars[-2]   # yesterday's complete bar
+                prev_high = float(_pb.get("h", 0) or 0)
+                prev_low  = float(_pb.get("l", 0) or 0)
+                prev_close = float(_pb.get("c", 0) or 0)
+                _vols     = [float(b.get("v", 0) or 0) for b in bars[:-1]]
+                avg_vol_20d = sum(_vols[-20:]) / max(len(_vols[-20:]), 1)
+                atr_val   = _calc_atr(bars)
+
+            # Prefer Alpaca prev_close if yfinance didn't return enough bars
+            if prev_close <= 0:
+                prev_close = prev_close_snap
+
+            gap_pct = (price - prev_close) / prev_close * 100 if (price > 0 and prev_close > 0) else change_pct
+
+            # Time-normalized RVOL
+            rvol = 0.0
+            if avg_vol_20d > 0 and daily_vol > 0:
+                _now_et   = _dt.datetime.utcnow() - _dt.timedelta(hours=4)
+                _open_et  = _now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+                _elapsed  = max(1.0, (_now_et - _open_et).total_seconds() / 60.0)
+                _expected = max(avg_vol_20d * min(_elapsed / 390.0, 1.0), avg_vol_20d / 78.0)
+                rvol      = round(daily_vol / _expected, 1)
+
+            grade     = _grade(gap_pct, rvol, atr_val, is_etf)
+            direction = "calls" if gap_pct > 0.3 else "puts" if gap_pct < -0.3 else "neutral"
+
+            # Key levels (sorted ascending)
+            key_levels = []
+            def _kl(label, px, typ):
+                if px > 0:
+                    key_levels.append({"label": label, "price": round(px, 2), "type": typ})
+            if atr_val > 0 and price > 0:
+                _kl("-1× ATR", price - atr_val, "stop")
+            _kl("Prev Day Low",   prev_low,   "support")
+            _kl("Prev Close",     prev_close, "reference")
+            _kl("Current Price",  price,      "current")
+            _kl("Prev Day High",  prev_high,  "resistance")
+            if atr_val > 0 and price > 0:
+                _kl("+1× ATR", price + atr_val, "target")
+            key_levels.sort(key=lambda x: x["price"])
+
+            # Trade plan notes
+            def _plan(d):
+                if d == "calls":
+                    _entry = round(price + atr_val * 0.10, 2) if atr_val else price
+                    _stop  = round(price - atr_val * 0.50, 2) if atr_val else price * 0.98
+                    _t1    = round(price + atr_val * 0.75, 2) if atr_val else price * 1.015
+                    _t2    = round(max(prev_high, price + atr_val * 1.5), 2)
+                    return (
+                        f"Wait for ORB (9:30–9:40). Break above ORB high near ${_entry:.2f} with volume.",
+                        f"Below ORB low (~${_stop:.2f})",
+                        f"T1 ${_t1:.2f} · T2 ${_t2:.2f} (prev high / +1.5×ATR)"
+                    )
+                elif d == "puts":
+                    _entry = round(price - atr_val * 0.10, 2) if atr_val else price
+                    _stop  = round(price + atr_val * 0.50, 2) if atr_val else price * 1.02
+                    _t1    = round(price - atr_val * 0.75, 2) if atr_val else price * 0.985
+                    _t2    = round(min(prev_low if prev_low else price - atr_val * 1.5, price - atr_val * 1.5), 2)
+                    return (
+                        f"Wait for ORB (9:30–9:40). Break below ORB low near ${_entry:.2f} with volume.",
+                        f"Above ORB high (~${_stop:.2f})",
+                        f"T1 ${_t1:.2f} · T2 ${_t2:.2f} (prev low / -1.5×ATR)"
+                    )
+                return (
+                    "No clear gap. Wait for ORB to define the range before entry.",
+                    "Use ORB-based stop.",
+                    "Use ORB-based target."
+                )
+
+            entry_note, stop_note, target_note = _plan(direction)
+
+            ag = abs(gap_pct)
+            if grade in ("A+", "A"):
+                setup_notes = (f"Strong {'gap up' if gap_pct > 0 else 'gap down'} ({ag:.1f}%) with "
+                               f"{'elevated' if rvol >= 2 else 'above-average'} volume. "
+                               f"High-probability ORB setup — wait for the 9:40 break with confirmation.")
+            elif grade == "B":
+                setup_notes = (f"Moderate setup, {ag:.1f}% gap. Volume needs to confirm direction "
+                               f"at the open. Proceed only with a clean ORB break.")
+            elif grade == "C":
+                setup_notes = (f"Weak setup, small gap ({ag:.1f}%). Only trade if volume surges "
+                               f"significantly at the open — don't force it.")
+            else:
+                setup_notes = ("No significant gap or volume premarket. Monitor for intraday "
+                               "catalysts but avoid forcing an ORB setup on a flat open.")
+
+            results.append({
+                "ticker": ticker, "price": round(price, 2),
+                "prev_close": round(prev_close, 2), "prev_high": round(prev_high, 2),
+                "prev_low": round(prev_low, 2), "gap_pct": round(gap_pct, 2),
+                "atr": round(atr_val, 2), "atr_pct": round(atr_val / price * 100, 2) if price > 0 else 0.0,
+                "avg_vol_20d": int(avg_vol_20d), "daily_vol": int(daily_vol),
+                "rvol": rvol, "implied_move_pct": round(atr_val / price * 100, 2) if price > 0 else 0.0,
+                "grade": grade, "direction": direction,
+                "entry_note": entry_note, "stop_note": stop_note, "target_note": target_note,
+                "key_levels": key_levels, "setup_notes": setup_notes,
+                "is_pinned": ticker in _pin_set, "rank": rank,
+            })
+        except Exception:
+            results.append({
+                "ticker": ticker, "price": 0, "prev_close": 0, "prev_high": 0, "prev_low": 0,
+                "gap_pct": 0, "atr": 0, "atr_pct": 0, "avg_vol_20d": 0, "daily_vol": 0,
+                "rvol": 0, "implied_move_pct": 0, "grade": "Watch", "direction": "neutral",
+                "entry_note": "", "stop_note": "", "target_note": "",
+                "key_levels": [], "setup_notes": "Data unavailable.",
+                "is_pinned": ticker in _pin_set, "rank": rank,
+            })
+
+    return results
 
 
 @router.post("/scan-now")
