@@ -11,17 +11,19 @@
  *   7. Entry hour      — win rate by hour of day
  *   8. Calendar        — monthly heatmap at bottom
  */
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ComposedChart, Bar, Line,
   BarChart, Bar as RBar,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell,
+  XAxis, YAxis, Tooltip as ChartTooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell,
 } from "recharts";
 import { api } from "../lib/api";
 import { useThemeStore } from "../store/theme";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
+import { Tooltip } from "../components/Tooltip";
+import { GLOSSARY } from "../lib/glossary";
 
 // ── Exit reason categorisation (frontend only) ────────────────────────────────
 type ExitGroup = "target" | "timecap" | "signal" | "stop" | "cutoff" | "other";
@@ -123,7 +125,7 @@ function CalendarMonth({
 
 // ── Small reusable pieces ──────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color }: {
-  label: string; value: string; sub?: string; color?: string;
+  label: React.ReactNode; value: string; sub?: string; color?: string;
 }) {
   return (
     <div className="card px-4 py-3 flex flex-col gap-0.5" style={{ minWidth: 0 }}>
@@ -268,11 +270,11 @@ export function Performance() {
           value={`${totalPnl>=0?"+":""}$${Math.abs(totalPnl).toFixed(2)}`}
           sub={`${totalTrades} trades`}
           color={totalPnl>=0 ? posColor : negColor} />
-        <StatCard label="Win Rate"
+        <StatCard label={<Tooltip text={GLOSSARY["Win Rate"]}>Win Rate</Tooltip>}
           value={`${winRate}%`}
           sub={`Streak: ${streak}`}
           color={winRate>=50 ? posColor : "var(--ink)"} />
-        <StatCard label="Profit Factor"
+        <StatCard label={<Tooltip text={GLOSSARY["Profit Factor"]}>Profit Factor</Tooltip>}
           value={String(profitFactor)}
           sub="gross wins ÷ gross losses"
           color={Number(profitFactor)>=2 ? posColor : Number(profitFactor)>=1 ? "var(--ink)" : negColor} />
@@ -298,7 +300,7 @@ export function Performance() {
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: tickColor }} />
               <YAxis tick={{ fontSize: 10, fill: tickColor }}
                      tickFormatter={(v) => `$${v}`} />
-              <Tooltip
+              <ChartTooltip
                 contentStyle={{ background: dark?"#161b22":"#fff",
                   border: `1px solid ${dark?"#30363d":"#e2e5ed"}`, borderRadius:8, fontSize:12 }}
                 formatter={(v: unknown, name: unknown) =>
@@ -328,8 +330,8 @@ export function Performance() {
                 <tr>
                   <th>Strategy</th>
                   <th className="text-right">Trades</th>
-                  <th className="text-right">Win%</th>
-                  <th className="text-right">PF</th>
+                  <th className="text-right"><Tooltip text={GLOSSARY["Win Rate"]}>Win%</Tooltip></th>
+                  <th className="text-right"><Tooltip text={GLOSSARY["Profit Factor"]}>PF</Tooltip></th>
                   <th className="text-right">Avg Win</th>
                   <th className="text-right">Avg Loss</th>
                   <th className="text-right">Total P&L</th>
@@ -556,7 +558,7 @@ export function Performance() {
                 <XAxis dataKey="label" tick={{ fontSize: 9, fill: tickColor }} />
                 <YAxis domain={[0,100]} tick={{ fontSize: 9, fill: tickColor }}
                        tickFormatter={(v) => `${v}%`} />
-                <Tooltip
+                <ChartTooltip
                   formatter={(v: unknown, n: unknown) => [
                     n==="win_rate" ? `${(v as number).toFixed(1)}%` : `$${(v as number).toFixed(2)}`,
                     n==="win_rate" ? "Win Rate" : "Avg P&L",

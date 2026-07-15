@@ -332,6 +332,8 @@ const TAG_BADGE: Record<string, string> = {
 
 import { useState, useMemo } from "react";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
+import { Tooltip } from "../components/Tooltip";
+import { GLOSSARY } from "../lib/glossary";
 
 // ── How It Works — comprehensive bot explainer ────────────────────────────────
 const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }[] = [
@@ -712,19 +714,26 @@ export function Playbooks() {
                 className="rounded-lg px-3 py-2 flex flex-col gap-1"
                 style={{ background: "var(--muted)" }}
               >
-                {s.tuning.map((t) => (
-                  <div key={t.param} className="flex gap-2 text-xs">
-                    <span
-                      className="shrink-0 font-mono"
-                      style={{ color: "var(--ink-muted)", width: 130 }}
-                    >
-                      {t.param}
-                    </span>
-                    <span className="font-mono font-semibold" style={{ color: "var(--accent)" }}>
-                      {t.value}
-                    </span>
-                  </div>
-                ))}
+                {s.tuning.map((t) => {
+                  const tip =
+                    t.param.startsWith("RVOL") ? GLOSSARY.RVOL :
+                    t.param.startsWith("ATR")  ? GLOSSARY.ATR  :
+                    t.param === "VWAP"         ? GLOSSARY.VWAP :
+                    "";
+                  return (
+                    <div key={t.param} className="flex gap-2 text-xs">
+                      <span
+                        className="shrink-0 font-mono"
+                        style={{ color: "var(--ink-muted)", width: 130 }}
+                      >
+                        {tip ? <Tooltip text={tip}>{t.param}</Tooltip> : t.param}
+                      </span>
+                      <span className="font-mono font-semibold" style={{ color: "var(--accent)" }}>
+                        {t.value}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -754,13 +763,21 @@ export function Playbooks() {
           className="card p-4 grid gap-x-8 gap-y-1.5"
           style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}
         >
-          {GLOBAL_PARAMS.map((g) => (
+          {GLOBAL_PARAMS.map((g) => {
+            const gTip =
+              g.param.startsWith("RVOL")      ? GLOSSARY.RVOL       :
+              g.param.startsWith("ATR")       ? GLOSSARY.ATR        :
+              g.param.includes("Stage 1")     ? GLOSSARY["Stage 1"] :
+              g.param.includes("Stage 2") || g.param.includes("trail") ? GLOSSARY["ATR Trail"] :
+              g.param.startsWith("VWAP")      ? GLOSSARY.VWAP       :
+              "";
+            return (
             <div key={g.param} className="flex gap-2 text-xs items-baseline">
               <span
                 className="shrink-0 font-mono"
                 style={{ color: "var(--ink-muted)", width: 148 }}
               >
-                {g.param}
+                {gTip ? <Tooltip text={gTip}>{g.param}</Tooltip> : g.param}
               </span>
               <span className="font-mono font-semibold" style={{ color: "var(--accent)" }}>
                 {g.value}
@@ -771,7 +788,8 @@ export function Playbooks() {
                 </span>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

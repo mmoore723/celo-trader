@@ -7,6 +7,8 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Trade, type ScannerResult, type PremarketTicker } from "../lib/api";
 import { useBotStore } from "../store/bot";
+import { Tooltip } from "../components/Tooltip";
+import { GLOSSARY } from "../lib/glossary";
 
 function fmt(n: number) {
   return `${n >= 0 ? "+" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -240,7 +242,7 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
           className="text-[10px] font-bold px-2 py-0.5 rounded-full"
           style={{ color: dirColor, background: "var(--muted)" }}
         >
-          {dirLabel}
+          <Tooltip text={GLOSSARY.Direction}>{dirLabel}</Tooltip>
         </span>
         <span
           className="num text-sm font-semibold ml-auto"
@@ -253,15 +255,17 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
       {/* Stats grid */}
       <div className="grid grid-cols-3 gap-1.5">
         {([
-          { label: "RVOL",       value: `${pm.rvol.toFixed(2)}×`,         color: pm.rvol >= 2 ? "var(--positive)" : pm.rvol >= 1.5 ? "#ffd740" : "var(--ink)" },
-          { label: "ATR",        value: `$${pm.atr.toFixed(2)}`,           color: "var(--ink)" },
-          { label: "ATR%",       value: `${pm.atr_pct.toFixed(2)}%`,       color: "var(--ink)" },
-          { label: "Prev Close", value: `$${pm.prev_close.toFixed(2)}`,    color: "var(--ink-muted)" },
-          { label: "Prev High",  value: `$${pm.prev_high.toFixed(2)}`,     color: "var(--positive)" },
-          { label: "Prev Low",   value: `$${pm.prev_low.toFixed(2)}`,      color: "var(--negative)" },
-        ] as {label:string;value:string;color:string}[]).map(s => (
+          { label: "RVOL",       tip: GLOSSARY.RVOL,    value: `${pm.rvol.toFixed(2)}×`,         color: pm.rvol >= 2 ? "var(--positive)" : pm.rvol >= 1.5 ? "#ffd740" : "var(--ink)" },
+          { label: "ATR",        tip: GLOSSARY.ATR,     value: `$${pm.atr.toFixed(2)}`,           color: "var(--ink)" },
+          { label: "ATR%",       tip: GLOSSARY["ATR%"], value: `${pm.atr_pct.toFixed(2)}%`,       color: "var(--ink)" },
+          { label: "Prev Close", tip: "",               value: `$${pm.prev_close.toFixed(2)}`,    color: "var(--ink-muted)" },
+          { label: "Prev High",  tip: "",               value: `$${pm.prev_high.toFixed(2)}`,     color: "var(--positive)" },
+          { label: "Prev Low",   tip: "",               value: `$${pm.prev_low.toFixed(2)}`,      color: "var(--negative)" },
+        ] as {label:string;tip:string;value:string;color:string}[]).map(s => (
           <div key={s.label} className="rounded-md px-2 py-1.5 flex flex-col" style={{ background: "var(--muted)" }}>
-            <span className="text-[9px] uppercase tracking-wide" style={{ color: "var(--ink-faint)" }}>{s.label}</span>
+            <span className="text-[9px] uppercase tracking-wide" style={{ color: "var(--ink-faint)" }}>
+              {s.tip ? <Tooltip text={s.tip}>{s.label}</Tooltip> : s.label}
+            </span>
             <span className="text-xs num font-semibold" style={{ color: s.color }}>{s.value}</span>
           </div>
         ))}
