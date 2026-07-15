@@ -289,6 +289,37 @@ export function Performance() {
           sub={`Worst: $${(perf?.worst_day??0).toFixed(0)}`} />
       </div>
 
+      {/* ── Calendar heatmap — at top for quick date overview ───────────── */}
+      {Object.keys(pnlMap).length > 0 && (
+        <div className="card p-4">
+          <Hdr title="Monthly Calendar" sub="Daily P&L colour intensity" />
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:24 }}>
+            {[1, 0].map((offset) => {
+              const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+              return (
+                <CalendarMonth key={offset}
+                  year={d.getFullYear()} month={d.getMonth()}
+                  pnlMap={pnlMap} maxAbs={calMaxAbs} dark={dark} />
+              );
+            })}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:12,
+            color:"var(--ink-faint)", fontSize:10 }}>
+            <span>Loss</span>
+            {[1, 0.5, 0.1].map((i) => (
+              <div key={i} style={{ width:12, height:12, borderRadius:2,
+                background: pnlColor(-calMaxAbs*i, calMaxAbs, dark) }} />
+            ))}
+            <div style={{ width:12, height:12, borderRadius:2, background:dark?"#21262d":"#f0f2f7" }} />
+            {[0.1, 0.5, 1].map((i) => (
+              <div key={i} style={{ width:12, height:12, borderRadius:2,
+                background: pnlColor(calMaxAbs*i, calMaxAbs, dark) }} />
+            ))}
+            <span>Profit</span>
+          </div>
+        </div>
+      )}
+
       {/* ── Daily P&L bars + cumulative equity line ───────────────────────── */}
       {dailyChart.length > 0 && (
         <div className="card p-4">
@@ -380,37 +411,6 @@ export function Performance() {
                 })}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── Calendar heatmap ─────────────────────────────────────────────── */}
-      {Object.keys(pnlMap).length > 0 && (
-        <div className="card p-4">
-          <Hdr title="Monthly Calendar" sub="Daily P&L colour intensity" />
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:24 }}>
-            {[1, 0].map((offset) => {
-              const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-              return (
-                <CalendarMonth key={offset}
-                  year={d.getFullYear()} month={d.getMonth()}
-                  pnlMap={pnlMap} maxAbs={calMaxAbs} dark={dark} />
-              );
-            })}
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:12,
-            color:"var(--ink-faint)", fontSize:10 }}>
-            <span>Loss</span>
-            {[1, 0.5, 0.1].map((i) => (
-              <div key={i} style={{ width:12, height:12, borderRadius:2,
-                background: pnlColor(-calMaxAbs*i, calMaxAbs, dark) }} />
-            ))}
-            <div style={{ width:12, height:12, borderRadius:2, background:dark?"#21262d":"#f0f2f7" }} />
-            {[0.1, 0.5, 1].map((i) => (
-              <div key={i} style={{ width:12, height:12, borderRadius:2,
-                background: pnlColor(calMaxAbs*i, calMaxAbs, dark) }} />
-            ))}
-            <span>Profit</span>
           </div>
         </div>
       )}
