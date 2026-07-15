@@ -246,18 +246,18 @@ export function Performance() {
   const lineColor = dark ? "#58a6ff" : "#2563eb";
 
   // Top-level stats
-  const totalPnl   = perf?.total_pnl ?? 0;
   const winRate    = perf?.win_rate ?? 0;
   const avgWin     = perf?.avg_win ?? 0;
   const avgLoss    = perf?.avg_loss ?? 0;
   const totalTrades= perf?.total_trades ?? 0;
   const streak     = perf?.current_streak ?? 0;
-  // Profit factor from perf-level averages (wins × avg_win / losses × avg_loss)
-  const wins       = Math.round(winRate / 100 * totalTrades);
-  const losses     = totalTrades - wins;
-  const grossWins  = wins * avgWin;
-  const grossLoss  = losses * Math.abs(avgLoss);
-  const profitFactor = grossLoss > 0 ? (grossWins / grossLoss).toFixed(2) : "∞";
+  // Edge ratio: avg win ÷ avg loss (avg_loss is negative)
+  const edgeRatio  = avgLoss < 0 ? (avgWin / Math.abs(avgLoss)).toFixed(1) : null;
+  // Total P&L: prefer Alpaca actual fills, fall back to bot DB
+  const alpacaTotalPnl = alpacaDailyRaw.length > 0
+    ? alpacaDailyRaw.reduce((s, d) => s + d.pnl, 0)
+    : null;
+  const displayPnl = alpacaTotalPnl ?? (perf?.total_pnl ?? 0);
 
   const byStrategy = analytics?.by_strategy ?? [];
   const byTicker   = analytics?.by_ticker   ?? [];
@@ -279,29 +279,55 @@ export function Performance() {
       </div>
 
       {/* ── Key stats strip ───────────────────────────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}
-           className="sm:grid-cols-6">
-        <StatCard label="Total P&L"
-          value={`${totalPnl>=0?"+":""}$${Math.abs(totalPnl).toFixed(2)}`}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}
+           className="sm:grid-cols-4">
+
+        {/* Win Rate */}
+        <StatCard
+          label={<Tooltip text={GLOSSARY["Win Rate"]}>Win Rate</Tooltip>}
+          value={`${winRate.toFixed(1)}%`}
           sub={`${totalTrades} trades`}
-          color={totalPnl>=0 ? posColor : negColor} />
-        <StatCard label={<Tooltip text={GLOSSARY["Win Rate"]}>Win Rate</Tooltip>}
-          value={`${winRate}%`}
-          sub={`Streak: ${streak}`}
-          color={winRate>=50 ? posColor : "var(--ink)"} />
-        <StatCard label={<Tooltip text={GLOSSARY["Profit Factor"]}>Profit Factor</Tooltip>}
-          value={String(profitFactor)}
-          sub="gross wins ÷ gross losses"
-          color={Number(profitFactor)>=2 ? posColor : Number(profitFactor)>=1 ? "var(--ink)" : negColor} />
-        <StatCard label="Avg Win"
-          value={`+$${avgWin.toFixed(2)}`}
-          color={posColor} />
-        <StatCard label="Avg Loss"
-          value={`$${avgLoss.toFixed(2)}`}
-          color={negColor} />
-        <StatCard label="Best / Worst Day"
-          value={`+$${(perf?.best_day??0).toFixed(0)}`}
-          sub={`Worst: $${(perf?.worst_day??0).toFixed(0)}`} />
+          color={winRate >= 50 ? posColor : "var(--ink)"}
+        />
+
+        {/* Edge Ratio */}
+        <StatCard
+          label="Edge Ratio"
+          value={edgeRatio ? `${edgeRatio}×` : "—"}
+          sub={edgeRatio ? `avg win ${edgeRatio}× avg loss` : "no closed trades"}
+          color={edgeRatio && Number(edgeRatio) >= 2 ? posColor : "var(--ink)"}
+        />
+
+        {/* Total P&L — Alpaca actual if available */}
+        <div className="card px-4 py-3 flex flex-col gap-0.5" style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, color: "var(--ink-muted)" }}>Total P&L</span>
+            <span style={{
+              fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 99,
+              background: usingAlpaca ? "rgba(38,166,154,0.12)" : "rgba(239,83,80,0.12)",
+              color: usingAlpaca ? "#26a69a" : "#ef5350",
+            }}>
+              {usingAlpaca ? "✓ Alpaca" : "⚠ est."}
+            </span>
+          </div>
+          <span style={{
+            fontSize: 20, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+            color: displayPnl >= 0 ? posColor : negColor,
+          }}>
+            {displayPnl >= 0 ? "+" : ""}${Math.abs(displayPnl).toFixed(2)}
+          </span>
+          <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>
+            {usingAlpaca ? "actual fills" : "bot estimates"}
+          </span>
+        </div>
+
+        {/* Streak */}
+        <StatCard
+          label="Streak"
+          value={streak > 0 ? `W${streak}` : streak < 0 ? `L${Math.abs(streak)}` : "—"}
+          sub={streak > 0 ? "consecutive wins" : streak < 0 ? "consecutive losses" : "break even"}
+          color={streak > 0 ? posColor : streak < 0 ? negColor : "var(--ink)"}
+        />
       </div>
 
       {/* ── Calendar heatmap — at top for quick date overview ───────────── */}

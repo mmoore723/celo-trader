@@ -120,13 +120,19 @@ def get_performance(mode: str = Query("paper")) -> PerformanceStats:
             win_rate=float(d.get("win_rate", 0)),
         ))
 
-    # Streak
+    # Streak — positive = consecutive wins, negative = consecutive losses
     streak = 0
     for p in reversed(pnls):
         if p > 0:
-            streak += 1
+            if streak >= 0:
+                streak += 1
+            else:
+                break
         else:
-            break
+            if streak <= 0:
+                streak -= 1
+            else:
+                break
 
     return PerformanceStats(
         total_pnl=round(sum(pnls), 2),
