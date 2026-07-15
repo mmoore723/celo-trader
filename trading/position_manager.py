@@ -325,6 +325,7 @@ def _manage_open_position(
             "last_position_narration_minute": None,
             # Adaptive state machine
             "atr_trail_stop":            None,
+            "initial_atr_stop":          None,   # ATR-based stop set on first tick; replaces fixed 20% hard stop
             "vwap_breached_bars":        0,     # consecutive 1-min bars below/above VWAP (fallback)
             "vwap_5m_breached_bars":     0,     # consecutive 5-min bars below/above VWAP (primary)
             "peak_underlying":           None,  # highest underlying close for trail calc
@@ -521,6 +522,25 @@ def _manage_open_position(
             # Uses 5-min ATR when available (less noisy than 1-min), falls back to 1-min.
             # WARMUP GUARD: don't arm until _MIN_TRAIL_WARMUP_MIN minutes elapsed.
             _atr = _compute_atr(df_5m) if (df_5m is not None and len(df_5m) >= 15) else _compute_atr(df_under)
+
+            # ── Initial ATR stop (computed once; replaces fixed 20% hard stop) ────
+            # On the very first tick with ATR data, derive a stop based on how much
+            # the underlying actually moves — not a fixed % of option premium.
+            # 2.5× ATR = "normal volatility range"; the stop is outside that noise band.
+            # Bounded: never tighter than 15% below entry (noise floor) and
+            # never wider than 30% below entry (max acceptable initial loss).
+            if _atr is not None and ps.get("initial_atr_stop") is None:
+                _init_mult    = 2.5
+                _atr_opt_stop = entry_price - _init_mult * _atr * _DELTA_APPROX
+                ps["initial_atr_stop"] = round(
+                    max(entry_price * 0.70, min(entry_price * 0.85, _atr_opt_stop)), 4
+                )
+                logger.info(
+                    "[%s] Initial ATR stop set: ATR=%.4f × %.1f× → opt_stop=%.4f (final=%.4f, bounds=[%.4f, %.4f])",
+                    ticker, _atr, _init_mult, _atr_opt_stop,
+                    ps["initial_atr_stop"], entry_price * 0.70, entry_price * 0.85,
+                )
+
             # PROFIT GATE: only arm the ATR trail once the option is at least
             # 15% above entry. Before that the underlying has barely moved and the
             # stop would sit at entry price — any wig fires the trail at a loss.
@@ -632,6 +652,7 @@ def _manage_open_position(
                 "min_price":                 ps.get("min_price"),  # MAE tracking
                 "entry_time":                entry_time_iso,
                 "atr_trail_stop":            atr_trail_stop,
+                "initial_atr_stop":          ps.get("initial_atr_stop"),
                 "vwap_breached_bars":        ps.get("vwap_breached_bars", 0),
                 "trend_dead":                trend_dead,
             }
@@ -676,6 +697,12 @@ def _manage_open_position(
             else ps.get("vwap_breached_bars", 0) >= 1
         )
 
+        # Use the armed ATR trail if available; fall back to the initial ATR stop
+        # during warmup (first 5 min / before +15% gain). This replaces the
+        # fixed entry×0.80 hard stop with an ATR-scaled distance so normal
+        # underlying volatility doesn't trigger an immediate exit.
+        _effective_atr_stop = atr_trail_stop or ps.get("initial_atr_stop")
+
         should_exit, reason = _em._risk.should_exit(
             entry_price, current_price,
             entry_time      = entry_time,
@@ -684,7 +711,7 @@ def _manage_open_position(
             stage1_be_price = stage1_be_price,
             peak_price      = ps.get("peak_price"),   # MFE for giveback rule
             struct_stop_price = _struct_stop,
-            atr_trail_stop  = atr_trail_stop,
+            atr_trail_stop  = _effective_atr_stop,    # initial or armed ATR stop
             vwap            = vwap,
             vwap_breached   = _vwap_breached_any,     # any breach (≥1 bar)
             trend_dead      = trend_dead,
