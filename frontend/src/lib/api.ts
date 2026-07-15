@@ -342,7 +342,7 @@ export const api = {
     reconcile:   (date?: string) => request<ReconcileResponse>(`/api/trades/reconcile${date ? `?date=${date}` : ""}`),
   },
   market: {
-    bars:    (ticker: string, tf="5Min", limit=200) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}`),
+    bars:    (ticker: string, tf="5Min", limit=400) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}`),
     quotes:  (tickers: string) => request<Quote[]>(`/api/market/quotes?tickers=${tickers}`),
     scanner:   () => request<ScannerResult[]>("/api/market/scanner"),
     premarket: (tickers?: string) => request<PremarketTicker[]>(

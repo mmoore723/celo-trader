@@ -38,6 +38,7 @@ import type {
   AutoscaleInfo,
 } from "lightweight-charts";
 import type { Bar, Trade, ChartAnnotation } from "../../lib/api";
+import type { SimulationOverlay, ReplayTrade } from "../../lib/chart_types";
 import { useThemeStore } from "../../store/theme";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -69,6 +70,10 @@ interface Props {
   ticker?: string;
   /** Bot-generated overlays from strategy_router — zones, hlines, markers */
   annotations?: ChartAnnotation[];
+  /** Pre-trade simulation: show projected ORB zone, entry trigger, targets, stop */
+  simulationOverlay?: SimulationOverlay;
+  /** Historical replay: show entry/exit/MFE/MAE markers for a closed trade */
+  replayTrade?: ReplayTrade;
 }
 
 // ─── Color palette ────────────────────────────────────────────────────────────
@@ -295,6 +300,8 @@ export function TradingChart({
   height = 420,
   ticker,
   annotations = [],
+  simulationOverlay,
+  replayTrade,
 }: Props) {
   // ── DOM container refs ───────────────────────────────────────────────────
   const containerRef     = useRef<HTMLDivElement>(null);
@@ -330,6 +337,22 @@ export function TradingChart({
 
   // Mutable ref so the autoscaleInfoProvider closure always reads current OR values
   const orRef = useRef<{ high: number | null; low: number | null }>({ high: null, low: null });
+
+  // Shaded R:R zone overlay — positioned HTML div over the chart canvas.
+  // Lightweight-charts doesn't have a native fill-between-prices primitive.
+  // We use priceToCoordinate() + an abs-positioned div that resyncs on every
+  // visible-range change (pan/zoom) so the zones track price levels correctly.
+  const zoneOverlayRef = useRef<HTMLDivElement | null>(null);
+
+  // Simulation / replay price-line refs (cleared on each update)
+  const simPriceLineRefs = useRef<IPriceLine[]>([]);
+
+  // Mutable refs so syncZones (wired inside chart-creation effect) always reads
+  // the latest positionLevels and simulationOverlay without stale closure issues.
+  const posLevelsRef  = useRef(positionLevels);
+  const simOverlayRef = useRef(simulationOverlay);
+  useEffect(() => { posLevelsRef.current  = positionLevels;   }, [positionLevels]);
+  useEffect(() => { simOverlayRef.current = simulationOverlay; }, [simulationOverlay]);
 
   // Tooltip div ref
   const tooltipRef = useRef<HTMLDivElement | null>(null);
@@ -553,6 +576,48 @@ export function TradingChart({
       });
     }
 
+    // ── Shaded R:R zone: reposition abs div on every pan / zoom ──────────
+    // priceToCoordinate() returns pixel Y within the chart canvas.
+    // The overlay div is positioned absolutely within the same containerRef parent.
+    function syncZones() {
+      const zoneEl  = zoneOverlayRef.current;
+      const cSeries = candleRef.current;
+      if (!zoneEl || !cSeries) return;
+      zoneEl.innerHTML = "";
+
+      // Use refs so this closure always gets the latest prop values even
+      // though it's registered once at chart-creation time.
+      const pl  = posLevelsRef.current;
+      const sim = simOverlayRef.current;
+
+      // Helper: draw a colored band between two price levels
+      const band = (pA: number, pB: number, color: string) => {
+        const y1 = cSeries.priceToCoordinate(pA);
+        const y2 = cSeries.priceToCoordinate(pB);
+        if (y1 == null || y2 == null) return;
+        const top = Math.min(y1, y2);
+        const h   = Math.max(1, Math.abs(y2 - y1));
+        const d   = document.createElement("div");
+        d.style.cssText = `position:absolute;left:0;right:52px;top:${top}px;height:${h}px;background:${color};pointer-events:none;z-index:1;`;
+        zoneEl.appendChild(d);
+      };
+
+      // R:R shaded zones for live position
+      if (pl?.entry && pl.entry > 0) {
+        if (pl.stop   && pl.stop   > 0) band(pl.entry, pl.stop,   "rgba(239,83,80,0.09)");
+        if (pl.target && pl.target > 0) band(pl.entry, pl.target, "rgba(38,166,154,0.09)");
+      }
+
+      // Simulation overlay zones
+      if (sim) {
+        band(sim.orbHigh, sim.orbLow,        "rgba(156,163,175,0.12)");   // ORB reference (gray)
+        band(sim.entryTrigger, sim.stage1Px, "rgba(38,166,154,0.12)");   // reward (green)
+        band(sim.entryTrigger, sim.stopPx,   "rgba(239,83,80,0.12)");    // risk   (red)
+      }
+    }
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(syncZones);
+
     // ── Time-scale sync: main chart → sub-panels ──────────────────────────
     // Use TIME-range sync (not logical/bar-index range) so that sub-panels
     // with fewer data points (MACD starts at bar 34; RSI at bar 14) still
@@ -594,6 +659,7 @@ export function TradingChart({
       priceLineRefs.current    = [];
       orPriceLineRefs.current  = [];
       annPriceLineRefs.current = [];
+      simPriceLineRefs.current = [];
 
       rsiChartRef.current?.remove();
       rsiChartRef.current  = null;
@@ -839,6 +905,77 @@ export function TradingChart({
       }
     }
 
+    // ── Simulation overlay price lines ───────────────────────────────────────
+    // Clear previous sim lines before redrawing
+    if (candleRef.current) {
+      for (const pl of simPriceLineRefs.current) {
+        try { candleRef.current.removePriceLine(pl); } catch (_) {}
+      }
+      simPriceLineRefs.current = [];
+    }
+
+    if (simulationOverlay && candleRef.current) {
+      const sim = simulationOverlay;
+      const isCall = sim.direction === "calls";
+      const defs = [
+        { price: sim.orbHigh,       color: "#9ca3af", label: "OR High (ref)",   dash: LineStyle.Dashed },
+        { price: sim.orbLow,        color: "#9ca3af", label: "OR Low (ref)",    dash: LineStyle.Dashed },
+        { price: sim.currentPx,     color: "#f59e0b", label: "Pre-mkt Now",     dash: LineStyle.Dotted },
+        { price: sim.entryTrigger,  color: isCall ? C.up : C.down,
+                                    label: `Entry Trigger (${isCall ? "ORB break ↑" : "ORB break ↓"})`,
+                                    dash: LineStyle.Solid },
+        { price: sim.stage1Px,      color: "#26a69a", label: `Stage 1 Target (+ATR×0.5)`, dash: LineStyle.Dashed },
+        { price: sim.stopPx,        color: "#ef5350", label: `Stop (-ATR×0.3)`,            dash: LineStyle.Dashed },
+      ];
+      for (const d of defs) {
+        if (!d.price || d.price <= 0) continue;
+        try {
+          const pl = candleRef.current.createPriceLine({
+            price: d.price, color: d.color, lineWidth: d.dash === LineStyle.Solid ? 2 : 1,
+            lineStyle: d.dash, axisLabelVisible: true, title: d.label,
+          });
+          simPriceLineRefs.current.push(pl);
+        } catch (_) {}
+      }
+    }
+
+    // ── Replay mode: enhanced entry / MFE / MAE / exit markers ──────────────
+    // replayTrade augments the normal `trades` marker set with MFE/MAE visual cues.
+    // The base entry/exit markers are already added via the `trades` prop loop above.
+    // Here we add an additional MFE marker and MAE marker.
+    if (replayTrade && candleRef.current) {
+      const rt = replayTrade;
+      // Projected MFE price line (peak option price shown as a labeled line)
+      if (rt.peak_option_px != null) {
+        try {
+          const mfePct = ((rt.peak_option_px - rt.entry_option_px) / rt.entry_option_px * 100);
+          const pl = candleRef.current.createPriceLine({
+            price: rt.peak_option_px,
+            color: "#a78bfa",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `MFE option ${rt.peak_option_px.toFixed(2)} (+${mfePct.toFixed(0)}%)`,
+          });
+          simPriceLineRefs.current.push(pl);
+        } catch (_) {}
+      }
+      if (rt.mae_option_px != null) {
+        try {
+          const maePct = ((rt.mae_option_px - rt.entry_option_px) / rt.entry_option_px * 100);
+          const pl = candleRef.current.createPriceLine({
+            price: rt.mae_option_px,
+            color: "#f87171",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `MAE option ${rt.mae_option_px.toFixed(2)} (${maePct.toFixed(0)}%)`,
+          });
+          simPriceLineRefs.current.push(pl);
+        } catch (_) {}
+      }
+    }
+
     // ── RSI data (must be set BEFORE main fitContent so syncHandler finds data) ─
     if (showRsi && rsiSeriesRef.current) {
       const rsiValues = calcRSI(closes, 14);
@@ -880,9 +1017,44 @@ export function TradingChart({
     rsiChartRef.current?.timeScale().fitContent();
     macdChartRef.current?.timeScale().fitContent();
 
-  }, [bars, trades, annotations, showVwap, showVwapBands, showOR, showSwings, orHigh, orLow, positionLevels, showRsi, showMacd]);
+  }, [bars, trades, annotations, showVwap, showVwapBands, showOR, showSwings, orHigh, orLow, positionLevels, showRsi, showMacd, simulationOverlay, replayTrade]);
   // NOTE: C (color object) intentionally not in deps — color changes trigger a full
   // chart recreation via the `dark` dep in the chart-creation effect above.
+
+  // ── Sync shaded zones when position or simulation overlay data changes ───
+  // syncZones() is also called on every pan/zoom via subscribeVisibleLogicalRangeChange.
+  // This effect handles changes WITHOUT a viewport event (e.g. position opens mid-session).
+  // Uses the same refs as syncZones so the logic stays in one place.
+  useEffect(() => {
+    const cSeries = candleRef.current;
+    const zoneEl  = zoneOverlayRef.current;
+    if (!cSeries || !zoneEl) return;
+
+    zoneEl.innerHTML = "";
+    const band = (pA: number, pB: number, color: string) => {
+      const y1 = cSeries.priceToCoordinate(pA);
+      const y2 = cSeries.priceToCoordinate(pB);
+      if (y1 == null || y2 == null) return;
+      const top = Math.min(y1, y2);
+      const h   = Math.max(1, Math.abs(y2 - y1));
+      const d   = document.createElement("div");
+      d.style.cssText = `position:absolute;left:0;right:52px;top:${top}px;height:${h}px;background:${color};pointer-events:none;z-index:1;`;
+      zoneEl.appendChild(d);
+    };
+
+    const pl  = positionLevels;
+    const sim = simulationOverlay;
+    if (pl?.entry && pl.entry > 0) {
+      if (pl.stop   && pl.stop   > 0) band(pl.entry, pl.stop,   "rgba(239,83,80,0.09)");
+      if (pl.target && pl.target > 0) band(pl.entry, pl.target, "rgba(38,166,154,0.09)");
+    }
+    if (sim) {
+      band(sim.orbHigh, sim.orbLow,        "rgba(156,163,175,0.12)");
+      band(sim.entryTrigger, sim.stage1Px, "rgba(38,166,154,0.12)");
+      band(sim.entryTrigger, sim.stopPx,   "rgba(239,83,80,0.12)");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positionLevels, simulationOverlay, bars]);
 
   // ── Crosshair: OHLC legend + trade tooltip ───────────────────────────────
   // deps include dark/height/showRsi/showMacd so we resubscribe when the chart
@@ -1135,6 +1307,43 @@ export function TradingChart({
 
         {/* Position indicator card */}
         {showPositionCard && posCard}
+
+        {/* Simulation mode banner */}
+        {simulationOverlay && (
+          <div style={{
+            position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)",
+            zIndex: 30, background: "rgba(245,158,11,0.15)",
+            border: "1px solid #f59e0b", borderRadius: 6,
+            padding: "3px 14px", fontSize: 10, fontWeight: 700,
+            color: "#f59e0b", letterSpacing: "0.08em", pointerEvents: "none",
+          }}>
+            📊 SIMULATION — {simulationOverlay.direction.toUpperCase()} · Grade {simulationOverlay.grade} · ATR ${simulationOverlay.atr.toFixed(2)}
+          </div>
+        )}
+
+        {/* Replay mode banner */}
+        {replayTrade && (
+          <div style={{
+            position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)",
+            zIndex: 30, background: "rgba(167,139,250,0.15)",
+            border: "1px solid #a78bfa", borderRadius: 6,
+            padding: "3px 14px", fontSize: 10, fontWeight: 700,
+            color: "#a78bfa", letterSpacing: "0.08em", pointerEvents: "none",
+          }}>
+            ⏪ REPLAY — Entry ${replayTrade.entry_option_px.toFixed(2)}
+            {replayTrade.pnl != null && (
+              <span style={{ color: replayTrade.pnl >= 0 ? "#26a69a" : "#ef5350", marginLeft: 8 }}>
+                {replayTrade.pnl >= 0 ? "+" : ""}${replayTrade.pnl.toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Shaded R:R zone overlay — updated via syncZones() on pan/zoom */}
+        <div
+          ref={zoneOverlayRef}
+          style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}
+        />
 
         {/* Main chart canvas */}
         <div ref={containerRef} className="w-full h-full" />

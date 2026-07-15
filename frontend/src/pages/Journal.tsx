@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import { ChevronDown, ChevronRight, Download, AlertTriangle, CheckCircle } from "lucide-react";
 import { api, type Trade, type ReconcileResponse, type ReconcileRow } from "../lib/api";
+import { ChartModal } from "../components/charts/ChartModal";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 
@@ -41,7 +42,7 @@ function fmtDuration(entry?: string, exit?: string): string {
 /**
  * Expandable efficiency detail panel — shows full raw exit reason, not the normalized short label.
  */
-function TradeDetail({ t }: { t: Trade }) {
+function TradeDetail({ t, onViewChart }: { t: Trade; onViewChart: () => void }) {
   const ep  = t.entry_price;
   const xp  = t.exit_price ?? ep;
   const pp  = t.peak_price ?? xp;
@@ -146,6 +147,19 @@ function TradeDetail({ t }: { t: Trade }) {
               {t.exit_reason ?? "—"}
             </strong></div>
           </div>
+
+          {/* View on Chart button */}
+          <button
+            onClick={onViewChart}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 12px", borderRadius: 6, cursor: "pointer",
+              background: "rgba(167,139,250,0.10)", border: "1px solid rgba(167,139,250,0.35)",
+              color: "#a78bfa", fontSize: 11, fontWeight: 600, width: "fit-content",
+            }}
+          >
+            ⏪ View on Chart
+          </button>
 
           {/* Narrative + post-trade recap */}
           <div className="text-xs flex-1" style={{ color: "var(--ink-muted)", lineHeight: 1.5, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -442,6 +456,7 @@ export function Journal() {
   const [customFrom,  setCustomFrom]  = useState<string>("");
   const [stratFilter, setStratFilter] = useState<string>("all");  // strategy filter
   const [expandedId,  setExpandedId]  = useState<number | null>(null);
+  const [replayTrade, setReplayTrade] = useState<Trade | null>(null);
   const [page,        setPage]        = useState(0);
   const PAGE_SIZE = 20;
   const qc = useQueryClient();
@@ -502,6 +517,7 @@ export function Journal() {
   const negColor = "var(--negative)";
 
   return (
+    <>
     <div className="p-4 flex flex-col gap-4">
       {/* Top-level tab switcher */}
       <div className="flex gap-1">
@@ -732,7 +748,7 @@ export function Journal() {
                           )}
                         </td>
                       </tr>,
-                      ...(isExpanded && hasDetail ? [<TradeDetail key={`detail-${t.id}`} t={t} />] : []),
+                      ...(isExpanded && hasDetail ? [<TradeDetail key={`detail-${t.id}`} t={t} onViewChart={() => setReplayTrade(t)} />] : []),
                     ];
                   })
                 )}
@@ -773,5 +789,17 @@ export function Journal() {
       </div>
       )}
     </div>
+
+    {/* Replay chart modal — opened from "View on Chart" in trade detail */}
+    {replayTrade && (
+      <ChartModal
+        open
+        onClose={() => setReplayTrade(null)}
+        ticker={replayTrade.ticker}
+        mode="replay"
+        trade={replayTrade}
+      />
+    )}
+    </>
   );
 }

@@ -5,7 +5,7 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Radio, Bot } from "lucide-react";
-import { KChart } from "../components/charts/KChart";
+import { TradingChart } from "../components/charts/TradingChart";
 import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
 import { api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle } from "../lib/api";
@@ -14,12 +14,7 @@ const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
 type Period = "1D" | "5D" | "1M" | "3M";
 
-const PERIOD_MS: Record<Period, number> = {
-  "1D":  1  * 24 * 60 * 60 * 1000,
-  "5D":  5  * 24 * 60 * 60 * 1000,
-  "1M":  30 * 24 * 60 * 60 * 1000,
-  "3M":  90 * 24 * 60 * 60 * 1000,
-};
+// PERIOD_MS was used by KChart for windowing; TradingChart handles it internally
 
 function barLimitForPeriod(tf: string, period: Period): number {
   const barsPerDay: Record<string, number> = {
@@ -208,7 +203,6 @@ export function LiveTrading() {
     contracts: openTickerTrade.contracts    ?? undefined,
   } : undefined;
 
-  const visibleFrom = useMemo(() => Date.now() - PERIOD_MS[period], [period]);
 
   const lastClose = bars[bars.length - 1]?.close ?? 0;
   const orHighRaw  = or?.high ?? 0;
@@ -433,16 +427,16 @@ export function LiveTrading() {
             <div className="flex-1" />
             {barsLoading && <RefreshCw size={13} className="animate-spin text-ink-muted" />}
           </div>
-          <KChart
+          <TradingChart
             bars={bars}
-            tf={tf}
             trades={tickerTrades}
-            visibleFrom={visibleFrom}
             showVwap={showVwap}
             showVwapBands={showVwapBands}
             showOR={showOR}
             showSwings={showSwings}
             showPositionCard={showPositionCard}
+            showRsi
+            showMacd
             orHigh={safeOrHigh}
             orLow={safeOrLow}
             positionLevels={positionLevels}

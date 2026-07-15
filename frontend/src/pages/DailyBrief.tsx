@@ -9,6 +9,8 @@ import { api, type Trade, type ScannerResult, type PremarketTicker } from "../li
 import { useBotStore } from "../store/bot";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
+import { ChartModal } from "../components/charts/ChartModal";
+import type { SimulationOverlay } from "../lib/chart_types";
 
 function fmt(n: number) {
   return `${n >= 0 ? "+" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -219,7 +221,7 @@ function PostMarketReport({ trades }: { trades: Trade[] }) {
 }
 
 // ── Rich Premarket Detail Pane ─────────────────────────────────────────────────
-function PremarketDetail({ pm }: { pm: PremarketTicker }) {
+function PremarketDetail({ pm, onSimulate }: { pm: PremarketTicker; onSimulate: () => void }) {
   const range    = pm.prev_high - pm.prev_low;
   const pricePos = range > 0 ? Math.max(0, Math.min(100, ((pm.price - pm.prev_low) / range) * 100)) : 50;
   const closePos = range > 0 ? Math.max(0, Math.min(100, ((pm.prev_close - pm.prev_low) / range) * 100)) : 50;
@@ -320,6 +322,19 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
         </p>
       </div>
 
+      {/* Simulate on Chart button */}
+      <button
+        onClick={onSimulate}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          width: "100%", padding: "8px 16px", borderRadius: 8, cursor: "pointer",
+          background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)",
+          color: "#f59e0b", fontSize: 12, fontWeight: 600, letterSpacing: "0.03em",
+        }}
+      >
+        📊 Simulate Trade on Chart
+      </button>
+
       {/* Key levels */}
       {pm.key_levels.length > 0 && (
         <div className="rounded-md overflow-hidden" style={{ background: "var(--muted)" }}>
@@ -400,6 +415,24 @@ export function DailyBrief() {
   const [briefTab, setBriefTab]   = useState<"premarket" | "postmarket">(
     new Date().getHours() >= 16 ? "postmarket" : "premarket"
   );
+  const [simTicker, setSimTicker] = useState<string | null>(null);
+
+  // Build SimulationOverlay from a PremarketTicker's data
+  function buildSim(pm: PremarketTicker): SimulationOverlay {
+    const isCall = pm.direction === "calls";
+    const entry  = isCall ? pm.prev_high : pm.prev_low;
+    return {
+      direction:    pm.direction === "puts" ? "puts" : "calls",
+      grade:        pm.grade,
+      orbHigh:      pm.prev_high,
+      orbLow:       pm.prev_low,
+      entryTrigger: entry,
+      stage1Px:     isCall ? entry + pm.atr * 0.5 : entry - pm.atr * 0.5,
+      stopPx:       isCall ? entry - pm.atr * 0.3 : entry + pm.atr * 0.3,
+      currentPx:    pm.price,
+      atr:          pm.atr,
+    };
+  }
 
   // Auto-select first ticker when data arrives
   useEffect(() => {
@@ -431,6 +464,7 @@ export function DailyBrief() {
   const selectedScan = scanner.find((s: ScannerResult) => s.ticker === selected) ?? null;
 
   return (
+    <>
     <div className="p-4 flex flex-col gap-4 max-w-4xl">
 
       {/* Header */}
@@ -552,7 +586,7 @@ export function DailyBrief() {
                     <p className="text-sm" style={{ color: "var(--ink-muted)" }}>Select a ticker to see details.</p>
                   ) : selectedPm ? (
                     /* Rich premarket report */
-                    <PremarketDetail pm={selectedPm} />
+                    <PremarketDetail pm={selectedPm} onSimulate={() => setSimTicker(selectedPm.ticker)} />
                   ) : selectedScan ? (
                     /* Fallback: scanner data only */
                     <div className="flex flex-col gap-4">
@@ -681,5 +715,21 @@ export function DailyBrief() {
       )}
 
     </div>
+
+    {/* Simulation chart modal — triggered by "Simulate Trade on Chart" button */}
+    {simTicker && (() => {
+      const pm = pmMap.get(simTicker);
+      if (!pm) return null;
+      return (
+        <ChartModal
+          open
+          onClose={() => setSimTicker(null)}
+          ticker={simTicker}
+          mode="simulation"
+          simulationOverlay={buildSim(pm)}
+        />
+      );
+    })()}
+    </>
   );
 }
