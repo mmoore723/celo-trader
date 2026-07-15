@@ -717,11 +717,14 @@ class Backtester:
                 raw_signals.sort(key=lambda s: s.confidence, reverse=True)
 
             # ── Entry window gate (mirrors live TRADING_WINDOWS 2026-07-15) ──
-            # Entries only 9:35–11:30 ET; exits/management still run all session.
+            # Two sessions: 9:30–11:30 (opening edge) + 14:00–15:45 (afternoon
+            # trend / power hour). Lunch chop blocked. Exits still run all day.
             if raw_signals:
                 _wgt = bar_slice.iloc[-1].get("time", ts)
                 _wgm = (_wgt.hour * 60 + _wgt.minute) if hasattr(_wgt, "hour") else 600
-                if not (9 * 60 + 35 <= _wgm <= 11 * 60 + 30):
+                _in_am = 9 * 60 + 30  <= _wgm <= 11 * 60 + 30
+                _in_pm = 14 * 60      <= _wgm <= 15 * 60 + 45
+                if not (_in_am or _in_pm):
                     raw_signals = []
 
             # ── Large-session-move gate (gap/momentum-day filter) ────────────

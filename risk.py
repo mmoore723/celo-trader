@@ -180,27 +180,6 @@ def get_todays_realized_pnl() -> float:
         return 0.0
 
 
-def get_todays_closed_pnls() -> list[float]:
-    """
-    Today's closed-trade P&Ls ordered by exit time (oldest → newest).
-    Used by the daily circuit breakers (max trades/day, consecutive losses).
-    """
-    today = date.today().isoformat()
-    try:
-        with db_mutex:
-            with get_conn() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT realized_pnl FROM trades
-                    WHERE status = 'closed' AND date(exit_time) = ?
-                    ORDER BY exit_time ASC
-                    """,
-                    (today,),
-                ).fetchall()
-            return [float(r[0] or 0) for r in rows]
-    except Exception as e:
-        logger.error("get_todays_closed_pnls failed: %s", e)
-        return []
 
 
 def persist_peak_price(trade_id: int, peak_price: float) -> None:
@@ -758,23 +737,9 @@ class RiskManager:
                     )
             return False, f"Daily loss limit (today: ${todays_pnl:.2f})"
 
-        # ── Daily circuit breakers (2026-07-15 audit) ─────────────────────────
-        # Overtrading pays the spread on every round trip. Cap entries per day
-        # and stop after a losing streak — no strategy edge survives revenge churn.
-        from config import MAX_TRADES_PER_DAY, MAX_CONSEC_LOSSES
-        _today_pnls = get_todays_closed_pnls()
-        if len(_today_pnls) >= MAX_TRADES_PER_DAY:
-            return False, (f"Daily trade cap reached "
-                           f"({len(_today_pnls)}/{MAX_TRADES_PER_DAY} trades today)")
-        _consec_losses = 0
-        for _p in reversed(_today_pnls):
-            if _p < 0:
-                _consec_losses += 1
-            else:
-                break
-        if _consec_losses >= MAX_CONSEC_LOSSES:
-            return False, (f"{_consec_losses} consecutive losses — "
-                           f"done entering for today")
+        # NOTE 2026-07-15: per user instruction, NO per-day trade cap and NO
+        # consecutive-loss halt. The only daily limits are the loss caps above
+        # (DB-sum soft/hard limits + Alpaca equity-based 10% hard cap).
 
         if not self.is_trading_window(now):
             return False, "Outside trading window"

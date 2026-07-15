@@ -203,12 +203,6 @@ MOMENTUM_DEAD_MIN    = 15        # earliest bar at which momentum-death check fi
 # "dead". Require a real adverse move too: option must be down at least this %.
 MOMENTUM_DEAD_LOSS_PCT = 0.10    # option must be down ≥10% for momentum-dead to fire
 
-# ── Daily circuit breakers (2026-07-15 audit) ────────────────────────────────
-# Hard limits on churn: overtrading pays the bid-ask spread on every round trip.
-# 14+ trades/day on a sub-$1k account was converting spread into losses ~10x/day.
-MAX_TRADES_PER_DAY   = 5         # max NEW entries per session (exits unaffected)
-MAX_CONSEC_LOSSES    = 3         # stop entering after N consecutive losing closes
-
 # ── Early momentum stop ───────────────────────────────────────────────────────
 # If a trade is down within the first EARLY_TIMEBOX_MIN window, exit.
 # Was 12% — but 5 DTE 1.5% OTM options with ~0.20 delta lose 12% from only
@@ -259,15 +253,22 @@ EARNINGS_BLACKOUT_DAYS   = 2
 COMMISSION_PER_CONTRACT = 0.65
 
 # Trading windows (ET) — ENTRIES ONLY. Position management/exits run all session.
-# 2026-07-15 audit: full-day entries caused midday churn — momentum_dead_exit fired
-# on nearly every 11:30–15:00 entry (declining midday volume reads as "dead" RVOL),
-# each churn paying the bid-ask spread twice. Entries are now restricted to the
-# morning session where volume, range, and strategy edge actually exist.
+# 2026-07-15 research-backed two-session schedule:
+#   9:30–11:30  — opening range session: ~70% of intraday edge (ORB, VWAP_PB,
+#                 BOS/MSS, FVG). ORB 15-min range backtests ~56% WR; VWAP pullback
+#                 setups strongest after the first 30 min.
+#   14:00–15:45 — afternoon trend/power-hour session: trend continuation and
+#                 AFT_REV edge; second-most profitable hour after the open.
+#                 Ends 15:45 so fills complete before the 15:55 hard cutoff.
+# BLOCKED 11:30–14:00 — lunch chop: lowest volume, weakest edge; this is where
+# the 07-15 momentum_dead churn losses concentrated.
 TRADING_WINDOWS_PHASE1 = [
-    ("09:35", "11:30"),   # Morning session only — skip first 5 min of chaos
+    ("09:30", "11:30"),   # Opening session
+    ("14:00", "15:45"),   # Afternoon trend / power hour
 ]
 TRADING_WINDOWS_PHASE2 = [
-    ("09:35", "11:30"),   # Same window at all account sizes
+    ("09:30", "11:30"),
+    ("14:00", "15:45"),
 ]
 # Active windows — auto-selected based on account balance
 # trading_logic.py reads get_trading_windows() each tick
