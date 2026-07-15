@@ -198,6 +198,16 @@ MOMENTUM_DEAD_RVOL   = 0.70      # RVOL floor — below this = institutional par
                                  # 0.70 = 30% below average. Previous 1.0 fired on RVOL 0.95+
                                  # which is nearly normal volume — premature exits on valid setups.
 MOMENTUM_DEAD_MIN    = 15        # earliest bar at which momentum-death check fires (min)
+# 2026-07-15 audit: momentum_dead was firing on ANY losing trade because intraday
+# volume declines mechanically after the open — rvol<0.70 midday is normal, not
+# "dead". Require a real adverse move too: option must be down at least this %.
+MOMENTUM_DEAD_LOSS_PCT = 0.10    # option must be down ≥10% for momentum-dead to fire
+
+# ── Daily circuit breakers (2026-07-15 audit) ────────────────────────────────
+# Hard limits on churn: overtrading pays the bid-ask spread on every round trip.
+# 14+ trades/day on a sub-$1k account was converting spread into losses ~10x/day.
+MAX_TRADES_PER_DAY   = 5         # max NEW entries per session (exits unaffected)
+MAX_CONSEC_LOSSES    = 3         # stop entering after N consecutive losing closes
 
 # ── Early momentum stop ───────────────────────────────────────────────────────
 # If a trade is down within the first EARLY_TIMEBOX_MIN window, exit.
@@ -233,7 +243,10 @@ DEFAULT_TAKE_PROFIT_PCT = 1.00  # 100% take profit on option premium
 REQUIRE_MTF_AGREEMENT = True   # default ON — user can disable in Risk Settings
 MIN_OPEN_INTEREST     = 150
 MAX_BID_ASK_SPREAD    = 0.50   # max spread — $0.02 was unrealistically tight for stock options
-MIN_CONTRACT_COST     = 0.05   # min option premium ($5 per contract — avoids zero-value junk)
+# 2026-07-15 audit: raised $0.05 → $0.80. Sub-$0.50 contracts (e.g. XLE $0.36 puts)
+# have spreads that are 5-15% of premium — a guaranteed round-trip loss before the
+# trade even moves. Cheap premium buckets showed the worst avg P&L per trade.
+MIN_CONTRACT_COST     = 0.80   # min option premium — avoids spread-death on cheap contracts
 MAX_CONTRACT_COST     = 10.00  # max option premium — raised from $5 to fit JPM/NVDA/AAPL ATM chains
 VOLUME_FILTER_MULTIPLIER = 1.2
 EARNINGS_BLACKOUT_DAYS   = 2
@@ -245,14 +258,16 @@ EARNINGS_BLACKOUT_DAYS   = 2
 # paper_trading = False in close_trade().
 COMMISSION_PER_CONTRACT = 0.65
 
-# Trading windows (ET) — full session: 09:30 open through 16:00 close
-# Both phases use the same full-day window so afternoon momentum setups
-# (e.g. 1:00–3:30 PM breakdowns/breakouts) are never blocked.
+# Trading windows (ET) — ENTRIES ONLY. Position management/exits run all session.
+# 2026-07-15 audit: full-day entries caused midday churn — momentum_dead_exit fired
+# on nearly every 11:30–15:00 entry (declining midday volume reads as "dead" RVOL),
+# each churn paying the bid-ask spread twice. Entries are now restricted to the
+# morning session where volume, range, and strategy edge actually exist.
 TRADING_WINDOWS_PHASE1 = [
-    ("09:30", "16:00"),   # Full session — morning ORB through closing momentum
+    ("09:35", "11:30"),   # Morning session only — skip first 5 min of chaos
 ]
 TRADING_WINDOWS_PHASE2 = [
-    ("09:30", "16:00"),   # Full session — same; no phase split needed
+    ("09:35", "11:30"),   # Same window at all account sizes
 ]
 # Active windows — auto-selected based on account balance
 # trading_logic.py reads get_trading_windows() each tick
@@ -313,7 +328,9 @@ _DEFAULTS = {
     # entry.py / strategy_router.py so the user can tune live without touching code.
     "orb_stage1_gain_pct":   50,    # Stage-1 profit target as % of entry (50 = +50%)
     "orb_stop_loss_pct":     20,    # Option premium stop-loss as % of entry (20 = -20%)
-    "spread_gate_pct":       25,    # Max bid-ask spread as % of mid (25 = 25%)
+    # 2026-07-15 audit: 25% was far too loose — a 25% spread is an instant ~12%
+    # loss at entry. 8% max keeps round-trip spread cost survivable.
+    "spread_gate_pct":       8,     # Max bid-ask spread as % of mid (8 = 8%)
     "vol_roc_threshold":     0.50,  # Volume ROC veto threshold (0.50 = 50% of prior vol)
 
     # Filters

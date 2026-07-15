@@ -579,12 +579,21 @@ def _manage_open_position(
                     atr_trail_stop = _new_trail
                     ps["atr_trail_stop"] = atr_trail_stop
 
-            # RVOL proxy for momentum-death exit check in risk.py
-            # Raw current/avg volume from the underlying bars (no indicators needed).
+            # RVOL proxy for momentum-death exit check in risk.py.
+            # 2026-07-15 audit: was current 1-min vol ÷ 20-bar mean — intraday volume
+            # declines mechanically after the open, so this drifted below 0.70 nearly
+            # every midday trade ("it's lunchtime" ≠ "momentum died"). Now uses 5-min
+            # bars over a short window (last bar ÷ median of prior 4) which compares
+            # against the recent regime instead of the whole morning.
             try:
-                _curr_vol = float(df_under["volume"].iloc[-1])
-                _avg_vol  = float(df_under["volume"].iloc[-20:].mean()) if len(df_under) >= 5 else _curr_vol
-                _rvol_for_exit = _curr_vol / _avg_vol if _avg_vol > 0 else 0.0
+                if df_5m is not None and len(df_5m) >= 5:
+                    _v5       = df_5m["volume"].astype(float)
+                    _curr_vol = float(_v5.iloc[-1])
+                    _base_vol = float(_v5.iloc[-5:-1].median())
+                else:
+                    _curr_vol = float(df_under["volume"].iloc[-1])
+                    _base_vol = float(df_under["volume"].iloc[-20:].mean()) if len(df_under) >= 5 else _curr_vol
+                _rvol_for_exit = _curr_vol / _base_vol if _base_vol > 0 else 0.0
             except Exception:
                 _rvol_for_exit = 0.0
 

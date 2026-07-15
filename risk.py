@@ -156,6 +156,11 @@ def get_todays_realized_pnl() -> float:
     """
     Read today's realized P&L directly from the database with an operational thread lock.
     """
+    # CRITICAL FIX 2026-07-15: removed "AND paper = 0". The DB file is already
+    # mode-separated (trades_paper.db vs trades_live.db), so in paper mode every
+    # row has paper=1 and this filter made the function ALWAYS return $0.00 —
+    # the daily loss limit and 10% hard-cap kill lock NEVER fired in paper mode.
+    # (Confirmed 2026-07-15: -34% single-day loss with no halt.)
     today = date.today().isoformat()
     try:
         with db_mutex:
@@ -166,7 +171,6 @@ def get_todays_realized_pnl() -> float:
                     FROM trades
                     WHERE status = 'closed'
                       AND date(exit_time) = ?
-                      AND paper = 0
                     """,
                     (today,),
                 ).fetchone()
@@ -174,6 +178,29 @@ def get_todays_realized_pnl() -> float:
     except Exception as e:
         logger.error("get_todays_realized_pnl failed: %s", e)
         return 0.0
+
+
+def get_todays_closed_pnls() -> list[float]:
+    """
+    Today's closed-trade P&Ls ordered by exit time (oldest → newest).
+    Used by the daily circuit breakers (max trades/day, consecutive losses).
+    """
+    today = date.today().isoformat()
+    try:
+        with db_mutex:
+            with get_conn() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT realized_pnl FROM trades
+                    WHERE status = 'closed' AND date(exit_time) = ?
+                    ORDER BY exit_time ASC
+                    """,
+                    (today,),
+                ).fetchall()
+            return [float(r[0] or 0) for r in rows]
+    except Exception as e:
+        logger.error("get_todays_closed_pnls failed: %s", e)
+        return []
 
 
 def persist_peak_price(trade_id: int, peak_price: float) -> None:
@@ -677,6 +704,34 @@ class RiskManager:
         soft_threshold = -(account_balance * settings.get("max_daily_loss_pct", 0.10))
         effective_threshold = max(hard_threshold, soft_threshold)        # max = least negative
 
+        # ── Equity-based daily loss check (2026-07-15 audit) ──────────────────
+        # The DB-sum check below relies on the bot's own recorded fills, which
+        # historically under-reported losses. This check uses the TRUTH: actual
+        # Alpaca equity vs the equity captured at day start. Whichever check
+        # trips first halts trading.
+        _equity_drawdown = 0.0
+        try:
+            from trading.state import LIVE_STATE as _LS
+            _day_start = float(_LS.get("day_start_balance") or 0)
+            if _day_start > 0 and account_balance > 0:
+                _equity_drawdown = account_balance - _day_start
+                if _equity_drawdown <= -(_day_start * DAILY_LOSS_HARD_CAP_PCT):
+                    if not self.daily_limit_hit:
+                        self.daily_limit_hit = True
+                        expires = set_kill_lock()
+                        log_event(
+                            "CRITICAL", "risk",
+                            f"KILL LOCK SET — Alpaca equity down "
+                            f"${-_equity_drawdown:.2f} from day start "
+                            f"(${_day_start:.2f} → ${account_balance:.2f}), breaching "
+                            f"the 10% hard cap. Trading frozen until "
+                            f"{expires.strftime('%Y-%m-%d %H:%M')} UTC.",
+                        )
+                    return False, (f"Daily loss limit — equity down "
+                                   f"${-_equity_drawdown:.2f} from day start")
+        except Exception as _eq_ex:
+            logger.debug("equity drawdown check skipped: %s", _eq_ex)
+
         if self.daily_limit_hit or todays_pnl <= effective_threshold:
             if not self.daily_limit_hit:
                 self.daily_limit_hit = True
@@ -702,6 +757,24 @@ class RiskManager:
                         f"Trading frozen until {expires.strftime('%Y-%m-%d %H:%M')} UTC.",
                     )
             return False, f"Daily loss limit (today: ${todays_pnl:.2f})"
+
+        # ── Daily circuit breakers (2026-07-15 audit) ─────────────────────────
+        # Overtrading pays the spread on every round trip. Cap entries per day
+        # and stop after a losing streak — no strategy edge survives revenge churn.
+        from config import MAX_TRADES_PER_DAY, MAX_CONSEC_LOSSES
+        _today_pnls = get_todays_closed_pnls()
+        if len(_today_pnls) >= MAX_TRADES_PER_DAY:
+            return False, (f"Daily trade cap reached "
+                           f"({len(_today_pnls)}/{MAX_TRADES_PER_DAY} trades today)")
+        _consec_losses = 0
+        for _p in reversed(_today_pnls):
+            if _p < 0:
+                _consec_losses += 1
+            else:
+                break
+        if _consec_losses >= MAX_CONSEC_LOSSES:
+            return False, (f"{_consec_losses} consecutive losses — "
+                           f"done entering for today")
 
         if not self.is_trading_window(now):
             return False, "Outside trading window"
@@ -1124,14 +1197,20 @@ class RiskManager:
         # the trade is losing, institutional participation is gone. Exit before
         # the 60-min hard cap to stop theta decay on dead setups.
         # Both conditions required — dead RVOL alone doesn't kill a working trade.
+        # 2026-07-15 audit fix: "current_price < entry_price" fired on trades down
+        # 1 cent, and intraday volume mechanically declines after the open so
+        # rvol<0.70 midday is NORMAL, not "momentum dead". Require a genuine
+        # adverse move (down ≥ MOMENTUM_DEAD_LOSS_PCT) before cutting the trade.
+        from config import MOMENTUM_DEAD_LOSS_PCT as _MDL
         if (not stage1_done
                 and rvol > 0.0
                 and rvol < MOMENTUM_DEAD_RVOL
                 and elapsed_minutes >= MOMENTUM_DEAD_MIN
-                and current_price < entry_price):
+                and current_price <= entry_price * (1.0 - _MDL)):
             return True, (
                 f"momentum_dead_exit "
-                f"(rvol={rvol:.2f}<{MOMENTUM_DEAD_RVOL:.1f} losing held={elapsed_minutes:.1f}min)"
+                f"(rvol={rvol:.2f}<{MOMENTUM_DEAD_RVOL:.1f} "
+                f"down {((current_price/entry_price)-1)*100:.1f}% held={elapsed_minutes:.1f}min)"
             )
 
         # Hard cap: 60 min for flat/losing trades (extended from 30 — momentum-death

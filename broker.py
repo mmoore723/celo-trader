@@ -1087,9 +1087,11 @@ class AlpacaClient:
                 except Exception as _me:
                     logger.warning("paper_market_fallback_failed: %s", _me)
 
-            # Last resort: if market order also failed, record at limit price
-            # (this should almost never happen on a paper account)
-            fill_px = limit_price or 0
+            # Last resort: if market order also failed, record at the WORST-CASE
+            # price (ask for buys, bid for sells via step_to_price) — never the
+            # optimistic mid. Recording mid here was a source of bot-vs-Alpaca
+            # P&L divergence. (Should almost never happen on a paper account.)
+            fill_px = step_to_price or limit_price or 0
             log_event("WARNING", "order",
                       f"⚠️ Market fallback also failed — recording at ${fill_px:.2f} as last resort.")
             logger.warning("paper_order_last_resort_fill: order=%s fill_px=%.4f", order_id, fill_px)

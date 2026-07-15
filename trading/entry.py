@@ -996,19 +996,25 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             _self_vwap_data = _cvwap_self(_df_today_1m)
             _self_vwap  = float(_self_vwap_data["vwap"].iloc[-1]) if "vwap" in _self_vwap_data.columns else 0.0
             _self_close = float(_df_today_1m["close"].iloc[-1]) if not _df_today_1m.empty else 0.0
+            # 2026-07-15 audit: was a direction FLIP (CALL→PUT) that kept the
+            # original strategy's entry timing — e.g. a VWAP-pullback long flipped
+            # into buying puts at support. Incoherent. Now a VETO: if the signal
+            # direction disagrees with the ticker's VWAP posture, skip the trade.
             if _self_vwap > 0:
                 if direction == "bullish" and _self_close < _self_vwap:
                     log_event("INFO", "bar_eval",
-                              f"🔄 [{ticker}] CALL → PUT flip — {ticker} (${_self_close:.2f}) "
+                              f"⚪ [{ticker}] Skipping CALL — {ticker} (${_self_close:.2f}) "
                               f"is BELOW its own VWAP (${_self_vwap:.2f}). "
-                              f"Macro is bearish; trading PUT.")
-                    direction = "bearish"
+                              f"Signal conflicts with macro posture.")
+                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence)
+                    return
                 elif direction == "bearish" and _self_close > _self_vwap:
                     log_event("INFO", "bar_eval",
-                              f"🔄 [{ticker}] PUT → CALL flip — {ticker} (${_self_close:.2f}) "
+                              f"⚪ [{ticker}] Skipping PUT — {ticker} (${_self_close:.2f}) "
                               f"is ABOVE its own VWAP (${_self_vwap:.2f}). "
-                              f"Macro is bullish; trading CALL.")
-                    direction = "bullish"
+                              f"Signal conflicts with macro posture.")
+                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence)
+                    return
                 else:
                     logger.debug(
                         "self_vwap_aligned ticker=%s direction=%s close=%.2f vwap=%.2f",
@@ -1062,20 +1068,24 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             except Exception as _yf_ex:
                 logger.debug("SPY yfinance fallback failed (%s): %s", ticker, _yf_ex)
 
-        # ── Apply direction flip based on SPY VWAP ───────────────────────────
+        # ── SPY VWAP macro VETO (2026-07-15 audit: was a direction flip) ──────
+        # Flipping direction while keeping the strategy's entry timing inverted
+        # the strategy's premise. Now: macro disagreement = no trade.
         if _spy_vwap > 0:
             if direction == "bullish" and _spy_close < _spy_vwap:
                 log_event("INFO", "bar_eval",
-                          f"🔄 [{ticker}] CALL → PUT flip — SPY (${_spy_close:.2f}) "
+                          f"⚪ [{ticker}] Skipping CALL — SPY (${_spy_close:.2f}) "
                           f"is BELOW VWAP (${_spy_vwap:.2f}). "
-                          f"Macro is bearish; aligning signal direction to PUT.")
-                direction = "bearish"
+                          f"Signal conflicts with macro posture.")
+                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence)
+                return
             elif direction == "bearish" and _spy_close > _spy_vwap:
                 log_event("INFO", "bar_eval",
-                          f"🔄 [{ticker}] PUT → CALL flip — SPY (${_spy_close:.2f}) "
+                          f"⚪ [{ticker}] Skipping PUT — SPY (${_spy_close:.2f}) "
                           f"is ABOVE VWAP (${_spy_vwap:.2f}). "
-                          f"Macro is bullish; aligning signal direction to CALL.")
-                direction = "bullish"
+                          f"Signal conflicts with macro posture.")
+                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence)
+                return
             else:
                 logger.debug(
                     "spy_vwap_gate_aligned ticker=%s direction=%s "

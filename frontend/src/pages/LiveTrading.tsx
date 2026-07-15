@@ -577,6 +577,37 @@ export function LiveTrading() {
               </p>
             ) : (
               evalLog.map((ev: any, i: number) => {
+                // Rejected evaluations (no contract) — compact skip row instead of
+                // the meaningless "1c @ $0.00 → $0.00" template.
+                if (ev.rejected) {
+                  const reasonLabel: Record<string, string> = {
+                    no_signal:        "no setup",
+                    below_confidence: "low confidence",
+                    zero_contracts:   "can't size 1 contract",
+                    spread_too_wide:  "spread too wide",
+                    rr_too_low:       "R:R too low",
+                    macro_vwap_veto:  "macro VWAP conflict",
+                  };
+                  return (
+                    <div key={i}
+                      className="w-full px-3 py-1 border-b"
+                      style={{ borderColor: "var(--border)", fontFamily: "JetBrains Mono, monospace",
+                               fontSize: 10, display: "flex", alignItems: "center", gap: 6,
+                               opacity: 0.65 }}>
+                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{ev.ts ?? ""}</span>
+                      <span style={{ color: "var(--ink-muted)", fontWeight: 600 }}>{ev.ticker}</span>
+                      <span style={{
+                        fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
+                        background: "rgba(139,148,158,0.15)", color: "var(--ink-muted)",
+                      }}>SKIP</span>
+                      <span style={{ color: "var(--ink-muted)" }}>
+                        {reasonLabel[ev.reason] ?? ev.reason}
+                        {ev.strategy ? ` · ${ev.strategy}` : ""}
+                        {ev.confidence ? ` · conf ${(ev.confidence * 100).toFixed(0)}%` : ""}
+                      </span>
+                    </div>
+                  );
+                }
                 const isCall = (ev.opt_type ?? "").toLowerCase() === "call";
                 const stk    = ev.strike != null
                   ? `$${ev.strike % 1 === 0 ? ev.strike.toFixed(0) : ev.strike.toFixed(2)}`

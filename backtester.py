@@ -577,11 +577,14 @@ class Backtester:
                 _bar_range  = max(_bar_high_px - _bar_low_px, 0.0001)
                 _bar_body   = abs(close - float(bar.get("open", close)))
                 _candle_has_momentum = (_bar_body / _bar_range) > 0.40  # >40% body = directional move
+                # 2026-07-15 audit (matches live risk.py): require a genuine adverse
+                # move (down ≥ MOMENTUM_DEAD_LOSS_PCT), not just any 1-cent loss.
+                from config import MOMENTUM_DEAD_LOSS_PCT as _MDL_BT
                 if (not stage1_done
                         and _bar_rvol > 0.0
                         and _bar_rvol < MOMENTUM_DEAD_RVOL      # 0.70 — truly dead volume
                         and elapsed_min >= MOMENTUM_DEAD_MIN
-                        and opt_price < entry_price
+                        and opt_price <= entry_price * (1.0 - _MDL_BT)
                         and not _candle_has_momentum):           # candle confirms dead action
                     exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
                     pnl = self._close_bt_trade(
@@ -712,6 +715,14 @@ class Backtester:
                     _bt_bonus = min(0.05, (_bt_agree_cnt - 1) * 0.03)
                     raw_signals[0].confidence = min(0.95, raw_signals[0].confidence + _bt_bonus)
                 raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+
+            # ── Entry window gate (mirrors live TRADING_WINDOWS 2026-07-15) ──
+            # Entries only 9:35–11:30 ET; exits/management still run all session.
+            if raw_signals:
+                _wgt = bar_slice.iloc[-1].get("time", ts)
+                _wgm = (_wgt.hour * 60 + _wgt.minute) if hasattr(_wgt, "hour") else 600
+                if not (9 * 60 + 35 <= _wgm <= 11 * 60 + 30):
+                    raw_signals = []
 
             # ── Large-session-move gate (gap/momentum-day filter) ────────────
             # Mirrors strategy_router: counter-trend signals before 13:00 ET
