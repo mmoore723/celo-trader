@@ -21,7 +21,7 @@ export interface TermsSection {
   allCaps?: boolean;   // true → render in uppercase (CFTC/SEC required blocks)
 }
 
-export const TERMS_VERSION = "1.0";
+export const TERMS_VERSION = "1.1";
 export const TERMS_DATE    = "July 2026";
 
 export const SECTIONS: TermsSection[] = [
@@ -232,8 +232,45 @@ export const SECTIONS: TermsSection[] = [
       'periodically.',
   },
   {
+    id: "service-availability",
+    heading: "17. Service Availability and Scheduled Maintenance",
+    body:
+      'The Operator reserves the right to suspend, restrict, or take the Software offline at ' +
+      'any time and for any duration, including for scheduled maintenance, emergency repairs, ' +
+      'security patches, infrastructure upgrades, regulatory compliance reviews, or when the ' +
+      'Software\'s trading performance falls below acceptable thresholds and maintenance is ' +
+      'required to investigate or remediate issues. The Operator will make reasonable efforts ' +
+      'to provide advance notice of planned downtime where practicable, but is under no ' +
+      'obligation to do so. Downtime — whether planned or unplanned — may result in missed ' +
+      'trade signals, open positions that cannot be managed by the Software, or loss of ' +
+      'connectivity to your Brokerage Account. You agree that the Operator shall not be ' +
+      'liable for any financial loss, missed opportunity, or adverse trading outcome resulting ' +
+      'from any period of Software downtime, maintenance, or suspension, regardless of cause. ' +
+      'You are solely responsible for monitoring your open positions and Brokerage Account ' +
+      'during any period of Software downtime.',
+  },
+  {
+    id: "no-refund",
+    heading: "18. No Refund Policy",
+    allCaps: false,
+    body:
+      'ALL PAYMENTS MADE FOR ACCESS TO THE SOFTWARE ARE FINAL AND NON-REFUNDABLE. This ' +
+      'includes, without limitation: fees paid during periods of Software downtime, outage, ' +
+      'or reduced functionality; fees paid during periods when the Software experienced trading ' +
+      'losses, missed signals, or performed below your expectations; fees paid during periods ' +
+      'of scheduled or unscheduled maintenance; fees paid for any subscription period in which ' +
+      'you chose not to use the Software; and any fees paid prior to a decision to stop using ' +
+      'the Software. The Operator does not offer credits, refunds, or fee adjustments for any ' +
+      'reason, including but not limited to trading losses, bot failures, connectivity issues, ' +
+      'third-party service outages, or dissatisfaction with performance. By purchasing access ' +
+      'to the Software, you acknowledge that trading results are inherently uncertain and that ' +
+      'the Software\'s failure to generate profits — or its generation of losses — does not ' +
+      'entitle you to any refund of fees paid. If you have questions about billing, contact ' +
+      'support before purchasing.',
+  },
+  {
     id: "miscellaneous",
-    heading: "17. Miscellaneous",
+    heading: "19. Miscellaneous",
     body:
       'Severability: If any provision of this Agreement is held invalid or unenforceable, ' +
       'the remaining provisions shall remain in full force. Entire Agreement: This Agreement ' +
