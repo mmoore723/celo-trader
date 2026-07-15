@@ -531,3 +531,52 @@ def reconcile_trades(
         trades                = reconcile_rows,
         unmatched_alpaca_orders = unmatched,
     )
+
+
+# ── Alpaca actual daily P&L ───────────────────────────────────────────────────
+# Queries Alpaca's portfolio history for REAL daily P&L (actual fills, not bot
+# estimates). Used by the Performance calendar so it shows truth, not assumed fills.
+
+@router.get("/alpaca-daily-pnl")
+def get_alpaca_daily_pnl():
+    """
+    Returns daily P&L from Alpaca's portfolio/history endpoint.
+    This is what the account ACTUALLY made/lost each day — distinct from the bot DB
+    which uses paper_assumed_fill prices (mid at order time, not actual fill prices).
+    Returns: list of {date: "YYYY-MM-DD", pnl: float}
+    """
+    from datetime import datetime
+    import logging
+    import requests as _req
+
+    _log = logging.getLogger("celo_trader.api")
+
+    try:
+        from broker import AlpacaClient
+        client = AlpacaClient()
+        # portfolio/history: period=3M, daily bars, exclude extended hours
+        resp = _req.get(
+            f"{client.base}/v2/account/portfolio/history",
+            headers=client.headers,
+            params={"period": "3M", "timeframe": "1D", "extended_hours": "false"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        timestamps  = data.get("timestamp") or []
+        profit_loss = data.get("profit_loss") or []
+
+        result = []
+        for ts, pnl in zip(timestamps, profit_loss):
+            if pnl is None:
+                continue
+            # Alpaca returns timestamps in UTC epoch seconds
+            date_str = datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
+            result.append({"date": date_str, "pnl": round(float(pnl), 2)})
+
+        return result
+
+    except Exception as e:
+        _log.warning("alpaca_daily_pnl failed: %s", e)
+        return []  # graceful fallback — frontend falls back to bot DB

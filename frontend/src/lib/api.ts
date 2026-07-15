@@ -335,11 +335,13 @@ export const api = {
     annotations:   (ticker: string) => request<ChartAnnotation[]>(`/api/bot/annotations/${ticker}`),
   },
   trades: {
-    list:        (mode="paper", status="all") => request<TradeListResponse>(`/api/trades?mode=${mode}&status=${status}`),
-    open:        () => request<Trade[]>("/api/trades/open"),
-    performance: (mode="paper") => request<PerformanceStats>(`/api/trades/performance?mode=${mode}`),
-    analytics:   (mode="paper") => request<TradeAnalytics>(`/api/trades/analytics?mode=${mode}`),
-    reconcile:   (date?: string) => request<ReconcileResponse>(`/api/trades/reconcile${date ? `?date=${date}` : ""}`),
+    list:          (mode="paper", status="all") => request<TradeListResponse>(`/api/trades?mode=${mode}&status=${status}`),
+    open:          () => request<Trade[]>("/api/trades/open"),
+    performance:   (mode="paper") => request<PerformanceStats>(`/api/trades/performance?mode=${mode}`),
+    analytics:     (mode="paper") => request<TradeAnalytics>(`/api/trades/analytics?mode=${mode}`),
+    reconcile:     (date?: string) => request<ReconcileResponse>(`/api/trades/reconcile${date ? `?date=${date}` : ""}`),
+    /** Actual daily P&L from Alpaca portfolio history — truth, not bot estimates */
+    alpacaDailyPnl: () => request<{date:string; pnl:number}[]>("/api/trades/alpaca-daily-pnl"),
   },
   market: {
     bars:    (ticker: string, tf="5Min", limit=400) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}`),

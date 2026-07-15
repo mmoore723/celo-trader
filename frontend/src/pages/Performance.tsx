@@ -167,6 +167,15 @@ export function Performance() {
     retry: false,
   });
 
+  // Actual Alpaca daily P&L — truth from portfolio/history, not bot assumed fills.
+  // Silently falls back to bot DB data if unavailable (circuit open, key missing, etc.)
+  const { data: alpacaDailyRaw = [] } = useQuery({
+    queryKey: ["alpaca-daily-pnl"],
+    queryFn:  () => api.trades.alpacaDailyPnl(),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+
   // ── All useMemo calls before any conditional return (Rules of Hooks) ─────────
 
   // Daily chart data: bars for daily P&L + cumulative equity line
@@ -213,13 +222,19 @@ export function Performance() {
     return Math.max(gross, 1);
   }, [analytics]);
 
-  // Calendar pnl map
-  const { pnlMap, calMaxAbs } = useMemo(() => {
+  // Calendar pnl map — prefer Alpaca portfolio/history (actual fills) over bot DB
+  const { pnlMap, calMaxAbs, usingAlpaca } = useMemo(() => {
     const m: Record<string, number> = {};
+    // Use Alpaca data if available (non-empty), else fall back to bot DB
+    if (alpacaDailyRaw.length > 0) {
+      for (const d of alpacaDailyRaw) m[d.date] = d.pnl;
+      const maxAbs = Math.max(1, ...Object.values(m).map(Math.abs));
+      return { pnlMap: m, calMaxAbs: maxAbs, usingAlpaca: true };
+    }
     for (const d of (perf?.daily_summaries ?? [])) m[d.date] = d.pnl;
     const maxAbs = Math.max(1, ...Object.values(m).map(Math.abs));
-    return { pnlMap: m, calMaxAbs: maxAbs };
-  }, [perf]);
+    return { pnlMap: m, calMaxAbs: maxAbs, usingAlpaca: false };
+  }, [alpacaDailyRaw, perf]);
 
   if (isLoading && !perf) return <PageLoader label="Performance" />;
 
@@ -292,7 +307,19 @@ export function Performance() {
       {/* ── Calendar heatmap — at top for quick date overview ───────────── */}
       {Object.keys(pnlMap).length > 0 && (
         <div className="card p-4">
-          <Hdr title="Monthly Calendar" sub="Daily P&L colour intensity" />
+          <div className="mb-3 flex items-center gap-2 flex-wrap">
+            <div>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", marginBottom: 2 }}>Monthly Calendar</h3>
+              <p style={{ fontSize: 11, color: "var(--ink-muted)" }}>Daily P&L colour intensity</p>
+            </div>
+            <span style={{
+              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
+              background: usingAlpaca ? "rgba(38,166,154,0.12)" : "rgba(239,83,80,0.12)",
+              color: usingAlpaca ? "#26a69a" : "#ef5350",
+            }}>
+              {usingAlpaca ? "✓ Actual Alpaca fills" : "⚠ Bot estimates (Alpaca unavailable)"}
+            </span>
+          </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:24 }}>
             {[1, 0].map((offset) => {
               const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
