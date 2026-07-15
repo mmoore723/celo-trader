@@ -86,7 +86,7 @@ html, body, #root {
 
 .app-topbar  { grid-area: topbar; }
 .app-sidebar { grid-area: sidebar; }
-.app-main    { grid-area: main; overflow-y: auto; background: var(--panel); }
+.app-main    { grid-area: main; overflow-y: auto; background: var(--panel); position: relative; z-index: 1; }
 
 /* ── Card ───────────────────────────────────────────────────────────────── */
 .card {
