@@ -125,6 +125,24 @@ function AdminGuard() {
 function AuthGate() {
   const { isAuthenticated, loading, user } = useAuth();
 
+  // Poll /api/bot/status to detect maintenance mode for non-admin users.
+  // Admins always see the full app so they can clear the maintenance flag.
+  const [maint, setMaint] = useState<{ active: boolean; message: string } | null>(null);
+  useEffect(() => {
+    if (!isAuthenticated || user?.is_admin) return;
+    function check() {
+      fetch("/api/bot/status", { credentials: "include" })
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (d) setMaint({ active: !!d.maintenance_mode, message: d.maintenance_message ?? "" });
+        })
+        .catch(() => {});
+    }
+    check();
+    const t = setInterval(check, 30_000);
+    return () => clearInterval(t);
+  }, [isAuthenticated, user?.is_admin]);
+
   // Still checking session cookie → branded loading screen
   if (loading) return <Maintenance mode="connecting" />;
 
@@ -133,6 +151,16 @@ function AuthGate() {
 
   // Logged in but ToS not accepted (or older version) → show Terms gate
   if (!user?.terms_accepted) return <Terms />;
+
+  // Maintenance mode active → non-admin users see the maintenance screen
+  if (maint?.active && !user?.is_admin) {
+    return (
+      <Maintenance
+        mode="maintenance"
+        message={maint.message || "We'll be back soon. No trades are affected."}
+      />
+    );
+  }
 
   // Authenticated + ToS accepted → full app
   return <AppShell />;

@@ -1,8 +1,8 @@
 /**
- * Admin.tsx — User management page (admin only). Mobile-responsive.
+ * Admin.tsx — User management + Emergency Controls (admin only). Mobile-responsive.
  */
 import { useState, useEffect } from "react";
-import { UserPlus, Link2, Trash2, RefreshCw, KeyRound } from "lucide-react";
+import { UserPlus, Link2, Trash2, RefreshCw, KeyRound, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { PasswordChecklist, isPasswordValid } from "../components/PasswordChecklist";
 
@@ -30,6 +30,70 @@ export function Admin() {
   const [inviteExp, setInviteExp]   = useState<number>(48);
   const [inviting, setInviting]     = useState(false);
   const [copied, setCopied]         = useState(false);
+
+  // ── Emergency / Maintenance state ─────────────────────────────────────────
+  const [maintActive,  setMaintActive]  = useState(false);
+  const [maintMessage, setMaintMessage] = useState("");
+  const [maintWorking, setMaintWorking] = useState(false);
+  const [maintResult,  setMaintResult]  = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Load current maintenance status on mount
+  useEffect(() => {
+    fetch("/api/admin/maintenance/status", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) { setMaintActive(d.active); setMaintMessage(d.message || ""); } })
+      .catch(() => {});
+  }, []);
+
+  async function enableMaintenance() {
+    const msg = maintMessage.trim();
+    const confirmed = window.confirm(
+      "⚠️ EMERGENCY CLOSE ALL TRADES & HALT BOT\n\n" +
+      "This will:\n" +
+      "  • Immediately stop the trading loop\n" +
+      "  • Close ALL open positions at market price\n" +
+      "  • Show the maintenance screen to all users\n" +
+      "  • Block the bot from being started\n\n" +
+      "Continue?"
+    );
+    if (!confirmed) return;
+    setMaintWorking(true);
+    setMaintResult(null);
+    try {
+      const r = await fetch("/api/admin/maintenance/enable", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Failed");
+      setMaintActive(true);
+      setMaintResult({ ok: true, msg: "✅ Maintenance mode active. All positions closed." });
+    } catch (e: any) {
+      setMaintResult({ ok: false, msg: e.message || "Failed to enable maintenance mode" });
+    } finally {
+      setMaintWorking(false);
+    }
+  }
+
+  async function disableMaintenance() {
+    setMaintWorking(true);
+    setMaintResult(null);
+    try {
+      const r = await fetch("/api/admin/maintenance/disable", {
+        method: "POST", credentials: "include",
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Failed");
+      setMaintActive(false);
+      setMaintMessage("");
+      setMaintResult({ ok: true, msg: "✅ Maintenance cleared. You can now restart the bot." });
+    } catch (e: any) {
+      setMaintResult({ ok: false, msg: e.message || "Failed to clear maintenance mode" });
+    } finally {
+      setMaintWorking(false);
+    }
+  }
 
   async function loadUsers() {
     setLoading(true);
@@ -143,11 +207,118 @@ export function Admin() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>
-          User Management
+          Admin
         </h2>
         <button className="btn btn-ghost" onClick={loadUsers}>
           <RefreshCw size={13} />
         </button>
+      </div>
+
+      {/* ── Emergency Controls ──────────────────────────────────────────── */}
+      <div
+        className="card p-4 flex flex-col gap-3"
+        style={{
+          borderColor: maintActive ? "rgba(251,113,133,0.4)" : "rgba(255,255,255,0.06)",
+          background:  maintActive ? "rgba(239,68,68,0.06)" : undefined,
+        }}
+      >
+        {/* Section header + status badge */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--ink)" }}>
+            <AlertTriangle size={15} color={maintActive ? "#f87171" : "var(--ink-muted)"} />
+            Emergency Controls
+          </h3>
+          <span
+            className="text-xs font-semibold px-2 py-0.5 rounded-full"
+            style={{
+              background: maintActive ? "rgba(239,68,68,0.15)" : "rgba(0,200,83,0.12)",
+              color:      maintActive ? "#f87171" : "#00c853",
+              border:     `1px solid ${maintActive ? "rgba(239,68,68,0.3)" : "rgba(0,200,83,0.25)"}`,
+            }}
+          >
+            {maintActive ? "🔴 MAINTENANCE ACTIVE" : "✅ BOT OPERATIONAL"}
+          </span>
+        </div>
+
+        <p className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+          {maintActive
+            ? "The bot is halted and all users see the maintenance screen. Type a new message below and save, or clear maintenance when ready."
+            : "Use ONLY when the bot needs to be taken offline. This immediately closes all open positions and locks out all users until you clear it."}
+        </p>
+
+        {/* Message / ETA input */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>
+            Message shown to users (e.g. "Back online by 3 PM ET" or "Estimated downtime: 1–2 hours")
+          </label>
+          <textarea
+            className="input"
+            rows={2}
+            style={{ fontSize: 13, resize: "vertical" }}
+            placeholder="Describe the issue or give an estimated return time…"
+            value={maintMessage}
+            onChange={e => setMaintMessage(e.target.value)}
+          />
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-2 flex-wrap">
+          {!maintActive ? (
+            <button
+              className="btn flex items-center gap-2"
+              style={{
+                background: "#dc2626", color: "#fff", border: "none",
+                fontWeight: 700, flex: 1, minWidth: 200,
+              }}
+              onClick={enableMaintenance}
+              disabled={maintWorking}
+            >
+              <AlertTriangle size={14} />
+              {maintWorking ? "Closing positions…" : "🔴 Emergency Close All & Halt"}
+            </button>
+          ) : (
+            <>
+              {/* Update message without disabling */}
+              <button
+                className="btn btn-ghost flex items-center gap-2"
+                style={{ flex: 1, minWidth: 140 }}
+                onClick={async () => {
+                  setMaintWorking(true);
+                  try {
+                    // Re-enable with new message to update it
+                    const r = await fetch("/api/admin/maintenance/enable", {
+                      method: "POST", credentials: "include",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ message: maintMessage.trim() }),
+                    });
+                    if (r.ok) setMaintResult({ ok: true, msg: "Message updated." });
+                  } catch { /* ignore */ } finally { setMaintWorking(false); }
+                }}
+                disabled={maintWorking}
+              >
+                Save Message
+              </button>
+              <button
+                className="btn flex items-center gap-2"
+                style={{
+                  background: "#00c853", color: "#000", border: "none",
+                  fontWeight: 700, flex: 1, minWidth: 140,
+                }}
+                onClick={disableMaintenance}
+                disabled={maintWorking}
+              >
+                <CheckCircle2 size={14} />
+                {maintWorking ? "Clearing…" : "✅ Clear — Bring Bot Back Online"}
+              </button>
+            </>
+          )}
+        </div>
+
+        {maintResult && (
+          <p className="text-xs" style={{ color: maintResult.ok ? "#00c853" : "#f87171" }}>
+            {maintResult.msg}
+          </p>
+        )}
       </div>
 
       {/* Users list — card-per-user on mobile, table on larger screens */}

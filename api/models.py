@@ -31,6 +31,9 @@ class BotStatus(BaseModel):
     last_eval_contracts: Optional[int] = None
     last_eval_opt_type: Optional[str] = None
     last_eval_ticker: Optional[str] = None
+    # Maintenance mode — set by admin to halt all trading and show maintenance screen
+    maintenance_mode: bool = False
+    maintenance_message: str = ""
 
 
 class BotActionResponse(BaseModel):

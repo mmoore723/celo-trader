@@ -37,6 +37,10 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class MaintenanceRequest(BaseModel):
+    message: str = ""   # shown on maintenance screen, e.g. "Back online at 3 PM ET"
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/users")
@@ -88,6 +92,78 @@ async def reset_user_password(user_id: str, request: Request, body: ResetPasswor
         raise HTTPException(404, "User not found")
     logger.info("Admin %s reset password for user_id=%s", request.state.username, user_id)
     return {"ok": True}
+
+
+# ── Maintenance mode ──────────────────────────────────────────────────────────
+
+@router.get("/maintenance/status")
+async def get_maintenance_status(request: Request):
+    """Return current maintenance mode state (admin only)."""
+    _require_admin(request)
+    from config import get_settings
+    s = get_settings()
+    return {
+        "active":  bool(s.get("maintenance_mode", False)),
+        "message": str(s.get("maintenance_message", "")),
+    }
+
+
+@router.post("/maintenance/enable")
+async def enable_maintenance(request: Request, body: MaintenanceRequest):
+    """
+    Emergency maintenance mode:
+      1. Stops the bot loop immediately.
+      2. Closes every open position at the broker.
+      3. Writes maintenance_mode=True + message to settings so:
+         - /api/bot/start is blocked for all users.
+         - Non-admin users see the maintenance screen.
+    """
+    _require_admin(request)
+    from trading.loop import stop_loop
+    from trading.controls import panic_close_all
+    from config import save_settings
+
+    # Stop the trading loop first so no new orders are placed
+    try:
+        stop_loop()
+    except Exception as e:
+        logger.warning("enable_maintenance: stop_loop error: %s", e)
+
+    # Emergency-close any open positions
+    try:
+        panic_close_all()
+    except Exception as e:
+        logger.warning("enable_maintenance: panic_close_all error: %s", e)
+
+    # Persist the flag — bot.py checks this before allowing start
+    save_settings({
+        "maintenance_mode":    True,
+        "maintenance_message": body.message.strip(),
+    })
+
+    logger.info(
+        "🔧 MAINTENANCE MODE ENABLED by %s — message: %s",
+        request.state.username, body.message.strip() or "(none)"
+    )
+    return {"ok": True, "message": "Maintenance mode active. All positions closed."}
+
+
+@router.post("/maintenance/disable")
+async def disable_maintenance(request: Request):
+    """
+    Clear maintenance mode. Bot can be started normally after this.
+    Does NOT automatically restart the bot — admin must press Start Bot.
+    """
+    _require_admin(request)
+    from config import save_settings
+
+    save_settings({
+        "maintenance_mode":    False,
+        "maintenance_message": "",
+    })
+
+    logger.info("✅ MAINTENANCE MODE CLEARED by %s", request.state.username)
+    return {"ok": True, "message": "Maintenance mode cleared. You can now restart the bot."}
 
 
 @router.post("/invite")

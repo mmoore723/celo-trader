@@ -82,6 +82,8 @@ def get_status(request: Request) -> BotStatus:
         last_eval_contracts=state.get("last_eval_contracts") if state.get("last_eval_contracts") is not None else _state.get("last_eval_contracts"),
         last_eval_opt_type=state.get("last_eval_opt_type") or _state.get("last_eval_opt_type"),
         last_eval_ticker=state.get("last_eval_ticker") or _state.get("last_eval_ticker"),
+        maintenance_mode=bool(settings.get("maintenance_mode", False)),
+        maintenance_message=str(settings.get("maintenance_message", "")),
     )
 
 
@@ -97,6 +99,13 @@ def start_bot(request: Request) -> BotActionResponse:
     # Never overwrite it here — read whatever the user last saved.
     settings = get_settings()
     mode     = "paper" if settings.get("paper_trading", True) else "live"
+
+    # Block start during maintenance — admin must clear it first
+    if settings.get("maintenance_mode", False):
+        return BotActionResponse(
+            ok=False,
+            message="🔧 System is in maintenance mode. Clear it from the Admin page before starting the bot."
+        )
 
     lock_held = not lock.acquire(blocking=False)
     if lock_held:

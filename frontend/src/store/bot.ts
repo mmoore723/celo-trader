@@ -50,6 +50,9 @@ export interface BotStatus {
   // Scanner watchlist — full list of tickers the bot is cycling through
   scan_watchlist: string[] | null;
   current_scan_idx: number | null;
+  // Maintenance mode — set by admin from Emergency Controls
+  maintenance_mode: boolean;
+  maintenance_message: string;
 }
 
 export interface LogEntry {

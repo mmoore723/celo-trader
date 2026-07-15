@@ -81,17 +81,21 @@ export function Maintenance({ mode = "connecting", message }: MaintenanceProps) 
 
         {isMaintenance && (
           <>
-            <p style={styles.maintTitle}>Down for scheduled maintenance</p>
-            {message && <p style={styles.maintMsg}>{message}</p>}
+            {/* Orange maintenance badge */}
+            <div style={styles.maintBadge}>🔧 BOT IN MAINTENANCE</div>
 
-            {/* Progress bar */}
+            <p style={styles.maintTitle}>Trading is temporarily offline</p>
+
+            {/* Admin's custom message — shown large and clear */}
+            {message && (
+              <div style={styles.maintMsgBox}>
+                <p style={styles.maintMsg}>{message}</p>
+              </div>
+            )}
+
+            {/* Animated progress bar */}
             <div style={styles.progressTrack}>
-              <div
-                style={{
-                  ...styles.progressBar,
-                  width: `${barPct}%`,
-                }}
-              />
+              <div style={{ ...styles.progressBar, width: `${barPct}%` }} />
             </div>
           </>
         )}
@@ -100,7 +104,7 @@ export function Maintenance({ mode = "connecting", message }: MaintenanceProps) 
         <p style={styles.footer}>
           {isConnecting
             ? "Establishing secure connection…"
-            : "We'll be back shortly. No trades are affected."}
+            : "Your account and positions are safe. Check back soon."}
         </p>
       </div>
 
@@ -178,18 +182,41 @@ const styles: Record<string, React.CSSProperties> = {
     fontVariantNumeric: "tabular-nums",
     minWidth:       200,
   },
+  maintBadge: {
+    display:        "inline-block",
+    margin:         "0 0 16px",
+    padding:        "5px 14px",
+    borderRadius:   999,
+    background:     "rgba(251,146,60,0.12)",
+    border:         "1px solid rgba(251,146,60,0.35)",
+    color:          "#fb923c",
+    fontSize:       12,
+    fontWeight:     700,
+    letterSpacing:  "0.06em",
+  },
   maintTitle: {
-    margin:         "0 0 8px",
+    margin:         "0 0 16px",
     fontSize:       18,
     fontWeight:     600,
     color:          "#e2e8f0",
     textAlign:      "center",
   },
+  maintMsgBox: {
+    background:     "rgba(255,255,255,0.04)",
+    border:         "1px solid rgba(255,255,255,0.08)",
+    borderRadius:   10,
+    padding:        "12px 20px",
+    marginBottom:   24,
+    maxWidth:       320,
+    width:          "100%",
+  },
   maintMsg: {
-    margin:         "0 0 24px",
-    fontSize:       13,
-    color:          "#64748b",
+    margin:         0,
+    fontSize:       15,
+    fontWeight:     500,
+    color:          "#cbd5e1",
     textAlign:      "center",
+    lineHeight:     1.5,
   },
   progressTrack: {
     width:          280,
