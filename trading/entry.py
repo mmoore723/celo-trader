@@ -789,10 +789,20 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Any flag absent from settings defaults to True (all on by default).
     _strat_cfg = get_settings()
     # Per-strategy default: True = on unless user disabled it in Settings.
-    # VWAP_PB and TREND_CONT default OFF — 3-month backtest audit (2026-07-15)
+    # 2026-07-15/16 backtest audits (SPY/QQQ/NVDA, 3mo, post-ADX-gate):
+    #   TREND_CONT re-enabled — +$39-41/trade, 58% WR, consistent across runs.
+    #   Same 3-month sample both times though — re-audit on 6mo before
+    #   trusting this as fully confirmed.
+    #   VWAP_PB stays off — even after the 5-gate rework (blowthrough,
+    #   touch proximity, slope, ADX) it's still -$99/trade. A/B-tested a
+    #   proposed loosening (ab_test_vwap_pb.py): it did WORSE, -$168/trade.
+    #   AFT_REV added to disabled list — 0-for-4 across runs, -$127/trade,
+    #   75% of exits hit the 60-min time_box (see diag_aft_rev.py). Needs a
+    #   coherent rework (not just parameter loosening) before re-testing.
     _STRAT_DEFAULTS = {
-        "strategy_vwap_enabled":  False,   # VWAP_PB  — audit: -$135.01/trade
-        "strategy_tcont_enabled": False,   # TREND_CONT — audit: -$59.11/trade
+        "strategy_vwap_enabled":  False,   # VWAP_PB   — audit: -$99/trade (post-rework)
+        "strategy_tcont_enabled": True,    # TREND_CONT — audit: +$41/trade, re-enabled
+        "strategy_aft_enabled":   False,   # AFT_REV   — audit: -$127/trade, 0-for-4
     }
     _enabled: set[str] = {
         sid for sid, key in (

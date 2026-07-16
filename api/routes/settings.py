@@ -22,14 +22,15 @@ def get_settings_endpoint() -> Settings:
         watchlist=list(s.get("watchlist", ["SPY"])),
         # All strategy flags use the strategy_*_enabled keys that entry.py reads
         orb_enabled=bool(s.get("strategy_orb_enabled", True)),
-        # VWAP_PB + TREND_CONT default OFF — 2026-07-15 audit: -$135.01 and
-        # -$59.11 expectancy per trade. Must match entry.py _STRAT_DEFAULTS.
+        # VWAP_PB stays OFF (audit: -$99/trade post-rework). TREND_CONT
+        # re-enabled 2026-07-16 (audit: +$41/trade). Must match entry.py
+        # _STRAT_DEFAULTS — see that comment for the full audit history.
         vwap_pullback_enabled=bool(s.get("strategy_vwap_enabled", False)),
         fvg_enabled=bool(s.get("strategy_fvg_enabled", True)),
         bos_mss_enabled=bool(s.get("strategy_bos_enabled", True)),
         chan_break_enabled=bool(s.get("strategy_chan_enabled", True)),
         mid_brk_enabled=bool(s.get("strategy_mid_enabled", True)),
-        trend_cont_enabled=bool(s.get("strategy_tcont_enabled", False)),
+        trend_cont_enabled=bool(s.get("strategy_tcont_enabled", True)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
         orb_stage1_gain_pct=float(s.get("orb_stage1_gain_pct", 50)),
@@ -51,7 +52,7 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_bos_enabled"]   = data.pop("bos_mss_enabled", True)
     data["strategy_chan_enabled"]   = data.pop("chan_break_enabled", True)
     data["strategy_mid_enabled"]    = data.pop("mid_brk_enabled", True)
-    data["strategy_tcont_enabled"]  = data.pop("trend_cont_enabled", True)
+    data["strategy_tcont_enabled"]  = data.pop("trend_cont_enabled", True)   # re-enabled 2026-07-16
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw
     # the user's setting and always fell through to the bootstrap 5% auto-tier.
