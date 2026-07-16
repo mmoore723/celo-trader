@@ -54,7 +54,9 @@ FAST_RECOVERY_MIN_BODY_PCT = 0.40   # candle body/range ratio required to count 
 # defended touch from a touch that's actually a continuation candle in
 # disguise. See ab_test_candlestick_filter.py before flipping this live.
 CANDLESTICK_FILTER_ENABLED = False
-CANDLESTICK_MIN_WICK_RATIO = 2.0
+CANDLESTICK_MIN_WICK_RATIO = 1.5   # loosened from 2.0 (2026-07-16) — first pass produced
+                                   # 0 trades, conflicting with the 0.2% touch-proximity
+                                   # band; 1.5x lets shorter genuine wicks still qualify.
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
