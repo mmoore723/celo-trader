@@ -737,6 +737,7 @@ class AlpacaClient:
         order_type: str = "limit",
         limit_price: Optional[float] = None,
         step_to_price: Optional[float] = None,  # buy: step UP to ask; sell: step DOWN to bid
+        position_intent: Optional[str] = None,  # 'buy_to_open' | 'sell_to_close' (FIX 2026-07-16)
     ) -> Optional[dict]:
         """
         Submit an options order via Alpaca v2 OPTIONS endpoint.
@@ -747,6 +748,15 @@ class AlpacaClient:
         valid for order_class "mleg" (multi-leg spreads); sending it for a
         single-leg order is rejected by Alpaca with 422 Unprocessable Entity
         (this was the cause of the JPM order failure on 2026-06-11).
+
+        FIX 2026-07-16: Every caller here was sending only side="sell" with
+        no position_intent, so Alpaca could not always match the order to an
+        existing long position and priced it as a NEW naked/cash-secured
+        short instead of a close — this is why an XLE exit was rejected
+        needing $54,810 in buying power on a $728 account. Explicit
+        position_intent ("buy_to_open" on entries, "sell_to_close" on exits)
+        removes the ambiguity. Passing it is optional (None = old behavior)
+        so any caller not yet updated keeps working exactly as before.
 
         Alpaca options docs (valid single-leg payload examples):
         https://docs.alpaca.markets/docs/options-orders
@@ -761,6 +771,8 @@ class AlpacaClient:
             "side":          side,
             "time_in_force": "day",
         }
+        if position_intent:
+            payload["position_intent"] = position_intent
 
         # Options orders should always be limit to avoid bad fills
         if order_type == "limit" and limit_price:

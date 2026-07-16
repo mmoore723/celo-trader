@@ -63,11 +63,13 @@ def close_trade_by_id(trade_id: int) -> dict:
       - Trade Journal per-row "Close" button
       - Open Positions table "Close" button
 
-    Strategy: use place_option_order(sell) — the same path the trading loop
-    uses for all exits — instead of the DELETE /v2/positions endpoint, which
-    fails silently for paper-trading options accounts. If the broker sell
-    order fails we still close the DB record (with a warning) so the dashboard
-    doesn't get stuck showing a phantom position.
+    Strategy: use place_option_order(sell, position_intent="sell_to_close") —
+    the same path the trading loop uses for all exits — instead of the
+    DELETE /v2/positions endpoint, which fails silently for paper-trading
+    options accounts. If the broker sell order is rejected or never confirms
+    a fill, the DB record is LEFT OPEN and an error is returned (2026-07-16:
+    previously this silently marked the DB trade closed even on a rejected
+    order, causing a bot-DB-vs-broker mismatch — see position_intent fix).
 
     Returns: {"ok": bool, "message": str, "pnl": float | None}
     """
@@ -98,26 +100,39 @@ def close_trade_by_id(trade_id: int) -> dict:
     # ── Place a market sell order (same as _close_position) ───────────────────
     # This works for both paper and live accounts. The old DELETE-endpoint path
     # failed silently on paper trading options and blocked the DB close.
+    #
+    # FIX 2026-07-16: two bugs fixed together here.
+    #   1. No position_intent was sent, so Alpaca could misclassify this as
+    #      OPENING a new naked/cash-secured short instead of closing the
+    #      existing long — the same bug that stalled a live XLE exit.
+    #   2. broker_ok was set True right after the call regardless of whether
+    #      `fill` came back None (order rejected/never confirmed) — since
+    #      place_option_order() catches its own errors internally and
+    #      returns None rather than raising, the except block below almost
+    #      never actually fires on a real rejection. That meant a rejected
+    #      order still marked the DB trade closed, silently reintroducing a
+    #      bot-DB-vs-broker mismatch. broker_ok now only True when Alpaca
+    #      actually confirmed a fill — mirrors the safe pattern already used
+    #      in position_manager.py's _close_position (leave trade open, retry,
+    #      never fake a close).
     fill_price = exit_price
     broker_ok  = False
     try:
         fill = alpaca.place_option_order(
-            symbol     = trade["contract_symbol"],
-            qty        = trade["contracts"],
-            side       = "sell",
-            order_type = "market",
+            symbol          = trade["contract_symbol"],
+            qty             = trade["contracts"],
+            side            = "sell",
+            order_type      = "market",
+            position_intent = "sell_to_close",
         )
-        broker_ok = True
+        broker_ok = fill is not None
         if fill and fill.get("filled_avg_price"):
             fill_price = float(fill["filled_avg_price"])
     except Exception as e:
         logger.warning(
-            "close_trade_by_id [%s]: broker sell order failed (%s) — "
-            "closing DB record anyway (paper=%s)", trade_id, e, paper
+            "close_trade_by_id [%s]: broker sell order failed (%s)", trade_id, e
         )
-        # In paper trading the position state is local; we still want the DB
-        # record closed even if the broker call didn't confirm.
-        broker_ok = paper   # treat as OK in paper mode so we don't leave it stuck
+        broker_ok = False
 
     if not broker_ok:
         msg = (f"Could not place sell order for {trade['contract_symbol']} "

@@ -753,12 +753,13 @@ def _manage_open_position(
                 )
             # Limit sell at mid; live steps down to bid after 5s if not taken.
             fill = alpaca.place_option_order(
-                symbol        = trade["contract_symbol"],
-                qty           = half_contracts,
-                side          = "sell",
-                order_type    = "limit",
-                limit_price   = current_price,   # mid price
-                step_to_price = bid_price,        # step down to bid on live
+                symbol          = trade["contract_symbol"],
+                qty             = half_contracts,
+                side            = "sell",
+                order_type      = "limit",
+                limit_price     = current_price,   # mid price
+                step_to_price   = bid_price,        # step down to bid on live
+                position_intent = "sell_to_close",
             )
 
             if fill is None:
@@ -860,12 +861,13 @@ def _close_position(
     # Limit sell at mid-price (exit_price = quote["mid"]) — same favorable fill
     # as paper trading.  On live, if not filled in 5s, _wait_for_fill steps DOWN
     fill = alpaca.place_option_order(
-        symbol         = trade["contract_symbol"],
-        qty            = trade["contracts"],
-        side           = "sell",
-        order_type     = "limit",
-        limit_price    = exit_price,   # mid price
-        step_to_price  = bid_price,    # step down to bid on live if mid not taken
+        symbol          = trade["contract_symbol"],
+        qty             = trade["contracts"],
+        side            = "sell",
+        order_type      = "limit",
+        limit_price     = exit_price,   # mid price
+        step_to_price   = bid_price,    # step down to bid on live if mid not taken
+        position_intent = "sell_to_close",
     )
 
     # If the exit order didn't fill at all, leave the trade open and retry next tick.

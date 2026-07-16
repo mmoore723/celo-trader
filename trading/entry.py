@@ -1276,12 +1276,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
               f"(ask ${_order_ask:.2f}) — potential saving ${_spread_save:.2f} "
               f"on {n_contracts} contract(s). Will step up to ask if not filled in 5s.")
     order = alpaca.place_option_order(
-        symbol         = contract["symbol"],
-        qty            = n_contracts,
-        side           = "buy",
-        order_type     = "limit",
-        limit_price    = _order_mid,
-        step_to_price  = _order_ask,
+        symbol          = contract["symbol"],
+        qty             = n_contracts,
+        side            = "buy",
+        order_type      = "limit",
+        limit_price     = _order_mid,
+        step_to_price   = _order_ask,
+        position_intent = "buy_to_open",
     )
 
     # FIX S1: Only record trade if order actually filled
