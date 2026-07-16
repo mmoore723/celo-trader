@@ -26,6 +26,7 @@ from strategies.base import (
     _get_dynamic_rvol_threshold,
     _rvol_threshold_reason,
 )
+from candlestick_patterns import is_hammer, is_shooting_star
 
 logger = logging.getLogger("celo_trader.strategies.vwap_pb")
 
@@ -44,6 +45,16 @@ STRATEGY_ID = "VWAP_PB"
 BLOWTHROUGH_MIN_BARS  = 5      # of last 5 bars required on the correct side of VWAP
 FAST_RECOVERY_ENABLED = False  # allow pierce-then-instant-reclaim as an exception
 FAST_RECOVERY_MIN_BODY_PCT = 0.40   # candle body/range ratio required to count as "instant momentum"
+
+# ── Candlestick rejection filter (2026-07-16) ────────────────────────────────
+# OFF by default. When enabled, the VWAP-touch bar (prev) must show a genuine
+# rejection candle — hammer for bullish touches, shooting star for bearish —
+# not just a bar that happens to sit near the level. Rule-based (OHLC wick/body
+# ratios), NOT machine learning; see candlestick_patterns.py. Distinguishes a
+# defended touch from a touch that's actually a continuation candle in
+# disguise. See ab_test_candlestick_filter.py before flipping this live.
+CANDLESTICK_FILTER_ENABLED = False
+CANDLESTICK_MIN_WICK_RATIO = 2.0
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
@@ -148,6 +159,10 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         p_low  >= p_vwap * (1.0 - _TOUCH_PCT)          # ...within 0.2% (tap, not pierce)
     )
     _bull_fast_recovery = _fast_recovery_bull()
+    _bull_rejection_ok = (
+        not CANDLESTICK_FILTER_ENABLED
+        or is_hammer(prev, min_wick_ratio=CANDLESTICK_MIN_WICK_RATIO)
+    )
 
     _bull_conditions = (
         c_close > c_ema50 and
@@ -155,6 +170,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         _ema50_rising and                              # EMA50 actually trending up
         _vwap_rising and                               # never buy a descending VWAP
         (_bull_touch or _bull_fast_recovery) and
+        _bull_rejection_ok and                          # touch bar must be a hammer, if enabled
         c_close > c_vwap and
         c_rvol >= rvol_min_bull
     )
@@ -196,6 +212,10 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         p_high <= p_vwap * (1.0 + _TOUCH_PCT)          # ...within 0.2% (tap, not pierce)
     )
     _bear_fast_recovery = _fast_recovery_bear()
+    _bear_rejection_ok = (
+        not CANDLESTICK_FILTER_ENABLED
+        or is_shooting_star(prev, min_wick_ratio=CANDLESTICK_MIN_WICK_RATIO)
+    )
 
     _bear_conditions = (
         c_close < c_ema50 and
@@ -203,6 +223,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         _ema50_falling and                             # EMA50 actually trending down
         _vwap_falling and                              # never short an ascending VWAP
         (_bear_touch or _bear_fast_recovery) and
+        _bear_rejection_ok and                          # touch bar must be a shooting star, if enabled
         c_close < c_vwap and
         c_rvol >= rvol_min_bear
     )
