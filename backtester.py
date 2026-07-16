@@ -31,12 +31,12 @@ from risk import RiskManager
 
 # Router quality-gate constants — import directly so the backtester
 # always stays in sync when these values are tuned in strategy_router.py
-from strategy_router import (
-    _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY,
-    _ADX_MIN, _ADX_GATED_STRATEGIES, compute_adx_series,
-)
+from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY
 import regime_manager as _regime_mgr
-from regime_manager import compute_regime_series, regime_allows
+from regime_manager import (
+    compute_regime_series, regime_allows,
+    ADX_MIN, ADX_GATED_STRATEGIES, compute_adx_series,
+)
 from strategies.base import MarketStructureAnalyzer
 
 logger = logging.getLogger("celo_trader.backtester")
@@ -605,11 +605,11 @@ class Backtester:
             _bar_adx = (float(_bar_adx_raw)
                         if _bar_adx_raw is not None and pd.notna(_bar_adx_raw)
                         else None)
-            _chop_regime = _bar_adx is not None and _bar_adx < _ADX_MIN
+            _chop_regime = _bar_adx is not None and _bar_adx < ADX_MIN
 
             raw_signals = []
             for strategy_id, fn in evaluators:
-                if _chop_regime and strategy_id in _ADX_GATED_STRATEGIES:
+                if _chop_regime and strategy_id in ADX_GATED_STRATEGIES:
                     self._diag["adx_gated"] = self._diag.get("adx_gated", 0) + 1
                     continue   # chop regime — breakout strategy gated
                 try:
