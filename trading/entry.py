@@ -854,6 +854,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Read the per-strategy enable flags saved by the Risk Settings form.
     # Any flag absent from settings defaults to True (all on by default).
     _strat_cfg = get_settings()
+    # Per-strategy default: True = on unless user disabled it in Settings.
+    # VWAP_PB and TREND_CONT default OFF — 3-month backtest audit (2026-07-15)
+    # showed deeply negative expectancy (-$135.01 and -$59.11 per trade).
+    # They chase moves without a regime gate; re-enable only after re-audit.
+    _STRAT_DEFAULTS = {
+        "strategy_vwap_enabled":  False,   # VWAP_PB  — audit: -$135.01/trade
+        "strategy_tcont_enabled": False,   # TREND_CONT — audit: -$59.11/trade
+    }
     _enabled: set[str] = {
         sid for sid, key in (
             ("INST_ORB",   "strategy_orb_enabled"),
@@ -865,7 +873,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("TREND_CONT", "strategy_tcont_enabled"),
             ("CHAN_BREAK",  "strategy_chan_enabled"),
         )
-        if _strat_cfg.get(key, True)
+        if _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, True))
     }
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled or None)
     if not _signals:

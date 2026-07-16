@@ -64,7 +64,10 @@ from risk import RiskManager
 
 # Router quality-gate constants — import directly so the backtester
 # always stays in sync when these values are tuned in strategy_router.py
-from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY
+from strategy_router import (
+    _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY,
+    _ADX_MIN, _ADX_GATED_STRATEGIES, compute_adx_series,
+)
 from strategies.base import MarketStructureAnalyzer
 
 logger = logging.getLogger("celo_trader.backtester")
@@ -380,6 +383,16 @@ class Backtester:
             # ("CHAN_BREAK", _chan_break.evaluate),  # disabled — 0% WR, needs root-cause fix
         ]
 
+        # ── ADX(14) regime series — mirrors live router gate (2026-07-15) ────
+        # Computed once over the full multi-day df (continuity across days,
+        # same as live which sees 15 days of history). Mapped back per-bar.
+        try:
+            _adx_s = compute_adx_series(df)
+            if _adx_s is not None:
+                df["adx"] = _adx_s.reindex(df["time"].dt.floor("5min")).to_numpy()
+        except Exception as _adx_ex:
+            logger.debug("ADX series unavailable — gate fails open: %s", _adx_ex)
+
         for trade_date in unique_days:
             day_all = df[df["_date"] == trade_date].reset_index(drop=True)
             session_mask = (
@@ -628,8 +641,19 @@ class Backtester:
             # ── Signal detection ──────────────────────────────────────────────
             bar_slice = day_df.iloc[:idx + 1]
 
+            # ── ADX regime gate — skip breakout strategies in chop (< 25) ────
+            # Fail-open on NaN/missing ADX, matching live route_signals().
+            _bar_adx_raw = bar.get("adx") if "adx" in day_df.columns else None
+            _bar_adx = (float(_bar_adx_raw)
+                        if _bar_adx_raw is not None and pd.notna(_bar_adx_raw)
+                        else None)
+            _chop_regime = _bar_adx is not None and _bar_adx < _ADX_MIN
+
             raw_signals = []
             for strategy_id, fn in evaluators:
+                if _chop_regime and strategy_id in _ADX_GATED_STRATEGIES:
+                    self._diag["adx_gated"] = self._diag.get("adx_gated", 0) + 1
+                    continue   # chop regime — breakout strategy gated
                 try:
                     sig = fn(bar_slice, ticker=self.ticker)
                     if sig is not None:

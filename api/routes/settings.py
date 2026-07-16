@@ -22,12 +22,14 @@ def get_settings_endpoint() -> Settings:
         watchlist=list(s.get("watchlist", ["SPY"])),
         # All strategy flags use the strategy_*_enabled keys that entry.py reads
         orb_enabled=bool(s.get("strategy_orb_enabled", True)),
-        vwap_pullback_enabled=bool(s.get("strategy_vwap_enabled", True)),
+        # VWAP_PB + TREND_CONT default OFF — 2026-07-15 audit: -$135.01 and
+        # -$59.11 expectancy per trade. Must match entry.py _STRAT_DEFAULTS.
+        vwap_pullback_enabled=bool(s.get("strategy_vwap_enabled", False)),
         fvg_enabled=bool(s.get("strategy_fvg_enabled", True)),
         bos_mss_enabled=bool(s.get("strategy_bos_enabled", True)),
         chan_break_enabled=bool(s.get("strategy_chan_enabled", True)),
         mid_brk_enabled=bool(s.get("strategy_mid_enabled", True)),
-        trend_cont_enabled=bool(s.get("strategy_tcont_enabled", True)),
+        trend_cont_enabled=bool(s.get("strategy_tcont_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
         orb_stage1_gain_pct=float(s.get("orb_stage1_gain_pct", 50)),
