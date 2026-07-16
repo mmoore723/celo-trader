@@ -2,8 +2,12 @@
 strategies/vwap_pb.py — VWAP Pullback (VWAP_PB)
 
 Trend-continuation pullback to VWAP:
-  Bullish: EMA50 trending up, price dips to VWAP on prior bar then reclaims it.
-  Bearish: EMA50 trending down, price bounces to VWAP on prior bar then rejects.
+  Bullish: EMA50 + VWAP both rising, price taps VWAP (within 0.2%) then reclaims.
+  Bearish: EMA50 + VWAP both falling, price taps VWAP then rejects.
+
+Entry gates (2026-07-15 rework after 10% WR audit):
+  • 5-of-5 blowthrough guard  • 0.2% touch proximity  • VWAP slope
+  • EMA50 slope  • ADX ≥ 25 regime (enforced in strategy_router)
 
 Session: 09:45–EOD  (skips opening chaos)
 """
@@ -59,31 +63,41 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     msa_ok_bull  = msa.confirmed_higher_low()
     msa_ok_bear  = msa.confirmed_lower_high()
 
-    # ── Blowthrough guard ─────────────────────────────────────────────────────
-    # A true VWAP pullback requires price to have been ABOVE VWAP (bullish) or
-    # BELOW VWAP (bearish) for the majority of recent bars before the touch.
-    # Without this, the strategy fires when price is crashing THROUGH VWAP
-    # (a continuation move, not a pullback), which produces losing entries.
-    # We require ≥ 3 of the last 5 bars (loosened from 4) on the correct side.
+    # ── Blowthrough guard (2026-07-15 rework: 5-of-5, was 3-of-5) ─────────────
+    # A true pullback needs price on the correct side of VWAP for ALL recent
+    # bars — a single opposing bar means price is crashing THROUGH the level.
     _lookback_bars = today.iloc[-6:-1] if len(today) >= 6 else today.iloc[:-1]
 
     def _was_above_vwap(bars: pd.DataFrame) -> bool:
-        """True if ≥ 3 of the last 5 bars had close > vwap (price was trending above)."""
-        if len(bars) < 3:
+        """True only if ALL of the last 5 bars closed above vwap."""
+        if len(bars) < 5:
             return False
         _closes = bars["close"].values
         _vwaps  = bars["vwap"].values if "vwap" in bars.columns else [c_vwap] * len(bars)
-        _above  = sum(float(c) > float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
-        return _above >= 3
+        return all(float(c) > float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
 
     def _was_below_vwap(bars: pd.DataFrame) -> bool:
-        """True if ≥ 3 of the last 5 bars had close < vwap (price was trending below)."""
-        if len(bars) < 3:
+        """True only if ALL of the last 5 bars closed below vwap."""
+        if len(bars) < 5:
             return False
         _closes = bars["close"].values
         _vwaps  = bars["vwap"].values if "vwap" in bars.columns else [c_vwap] * len(bars)
-        _below  = sum(float(c) < float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
-        return _below >= 3
+        return all(float(c) < float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
+
+    # ── Trend-direction gates (2026-07-15 rework) ─────────────────────────────
+    # VWAP slope: don't buy pullbacks to a descending VWAP (distribution) or
+    # short bounces off an ascending one. EMA50 slope: level check alone isn't
+    # a trend — the docstring promise "EMA50 trending up/down" now enforced.
+    _TOUCH_PCT = 0.002   # prev bar must tap within 0.2% of VWAP — a real touch
+    if len(today) >= 6:
+        _vwap_5ago  = float(today["vwap"].iloc[-6])  if not pd.isna(today["vwap"].iloc[-6])  else c_vwap
+        _ema50_5ago = float(today["ema50"].iloc[-6]) if not pd.isna(today["ema50"].iloc[-6]) else c_ema50
+    else:
+        _vwap_5ago, _ema50_5ago = c_vwap, c_ema50
+    _vwap_rising   = c_vwap  > _vwap_5ago
+    _vwap_falling  = c_vwap  < _vwap_5ago
+    _ema50_rising  = c_ema50 > _ema50_5ago
+    _ema50_falling = c_ema50 < _ema50_5ago
 
     # ── Bullish pullback ──────────────────────────────────────────────────────
     rvol_min_bull = _get_dynamic_rvol_threshold(
@@ -92,7 +106,10 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     _bull_conditions = (
         c_close > c_ema50 and
         c_vwap  > c_ema50 and
-        p_low  <= p_vwap and
+        _ema50_rising and                              # EMA50 actually trending up
+        _vwap_rising and                               # never buy a descending VWAP
+        p_low  <= p_vwap and                           # prev bar touched VWAP...
+        p_low  >= p_vwap * (1.0 - _TOUCH_PCT) and      # ...within 0.2% (tap, not pierce)
         c_close > c_vwap and
         c_rvol >= rvol_min_bull
     )
@@ -101,7 +118,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                      ticker)
 
     if _bull_conditions and _was_above_vwap(_lookback_bars):
-        proximity  = max(0.0, 1.0 - abs(p_low - p_vwap) / max(p_vwap * 0.005, 0.01))
+        proximity  = max(0.0, 1.0 - abs(p_low - p_vwap) / max(p_vwap * _TOUCH_PCT, 0.01))
         confidence = min(0.82, 0.60 + proximity * 0.15 + min(c_rvol - rvol_min_bull, 1.0) * 0.07)
         logger.info("[%s] VWAP_PB bullish RVOL=%.2f (min=%.2f msa=%s) conf=%.2f",
                     ticker, c_rvol, rvol_min_bull, msa_ok_bull, confidence)
@@ -131,7 +148,10 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     _bear_conditions = (
         c_close < c_ema50 and
         c_vwap  < c_ema50 and
-        p_high >= p_vwap and
+        _ema50_falling and                             # EMA50 actually trending down
+        _vwap_falling and                              # never short an ascending VWAP
+        p_high >= p_vwap and                           # prev bar touched VWAP...
+        p_high <= p_vwap * (1.0 + _TOUCH_PCT) and      # ...within 0.2% (tap, not pierce)
         c_close < c_vwap and
         c_rvol >= rvol_min_bear
     )
@@ -140,7 +160,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                      ticker)
 
     if _bear_conditions and _was_below_vwap(_lookback_bars):
-        proximity  = max(0.0, 1.0 - abs(p_high - p_vwap) / max(p_vwap * 0.005, 0.01))
+        proximity  = max(0.0, 1.0 - abs(p_high - p_vwap) / max(p_vwap * _TOUCH_PCT, 0.01))
         confidence = min(0.82, 0.60 + proximity * 0.15 + min(c_rvol - rvol_min_bear, 1.0) * 0.07)
         logger.info("[%s] VWAP_PB bearish RVOL=%.2f (min=%.2f msa=%s) conf=%.2f",
                     ticker, c_rvol, rvol_min_bear, msa_ok_bear, confidence)

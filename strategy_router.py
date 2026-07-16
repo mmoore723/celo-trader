@@ -192,7 +192,9 @@ def _build_indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
 # 5-min bars below 25 = mean-reverting chop — raw breakouts get stopped out
 _ADX_PERIOD           = 14
 _ADX_MIN              = 25.0
-_ADX_GATED_STRATEGIES = {"INST_ORB", "MID_BRK", "TREND_CONT", "CHAN_BREAK"}
+_ADX_GATED_STRATEGIES = {"INST_ORB", "MID_BRK", "TREND_CONT", "CHAN_BREAK", "VWAP_PB"}
+# VWAP_PB added 2026-07-15: it's trend-CONTINUATION, not mean-reversion —
+# in low-ADX chop, VWAP acts as an attractor, not support (10% WR in audit).
 
 
 def compute_adx_series(df: pd.DataFrame, period: int = _ADX_PERIOD) -> "pd.Series | None":
