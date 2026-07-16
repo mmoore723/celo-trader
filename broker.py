@@ -50,7 +50,6 @@ def _local_market_is_open() -> bool:
 # ── Audit-log debounce ────────────────────────────────────────────────────────
 # Prevents the same API error flooding the system_events table on every
 # auto-refresh cycle.  Key = (event_type, module, url_base); value = epoch when
-# it was last written to the DB.  Errors are only re-logged after DEBOUNCE_S.
 _audit_debounce: dict = {}
 _AUDIT_DEBOUNCE_S = 300   # 5 minutes between identical DB error entries
 
@@ -107,8 +106,6 @@ def _retry(fn, retries: int = 3, delay: float = 0.5):
 # ── Alpaca circuit breaker ────────────────────────────────────────────────────
 # After _CB_THRESHOLD consecutive connection failures, all Alpaca calls return
 # immediately (no network attempt) until _CB_COOLDOWN seconds have elapsed.
-# This prevents the tick loop from generating log spam and burning CPU during
-# outages.  State is module-level so it persists across AlpacaClient instances.
 
 _CB_THRESHOLD   = 3      # consecutive failures before opening the circuit
 _CB_COOLDOWN    = 300    # seconds to wait before probing again (5 min — was 60s,
@@ -156,7 +153,6 @@ class AlpacaClient:
     def __init__(self):
         # Read live/paper mode + API keys from user-scoped settings so switching
         # the UI toggle or saving new credentials takes effect on the next bot
-        # start without touching .env or restarting the server.
         from config import get_settings as _gs, ALPACA_PAPER as _env_paper, get_api_keys as _gak
         _s     = _gs()
         _keys  = _gak()   # decrypts user-specific credentials, falls back to .env
@@ -186,8 +182,6 @@ class AlpacaClient:
     def _get(self, url: str, params: dict = None) -> dict:
         # Circuit open — skip the network call entirely.
         # Raise _AlpacaCircuitOpenError (not ConnectionError) so callers can
-        # distinguish "CB protecting us" from a real network failure and skip
-        # silently instead of logging an ERROR every 5 minutes.
         if _cb_is_open():
             logger.debug("alpaca_cb_skip url=%s reset_at=%.0f", url, _cb_open_until)
             raise _AlpacaCircuitOpenError(
@@ -218,16 +212,11 @@ class AlpacaClient:
             _e_str = str(e)
             # 403 Forbidden = free-tier SIP feed blocked — handled silently by callers.
             # 429 Too Many Requests = rate-limit hit — transient, not actionable by user.
-            # Neither should flood the audit log.
             if "403" not in _e_str and "Forbidden" not in _e_str \
                     and "429" not in _e_str and "Too Many Requests" not in _e_str:
                 _debounced_log("ERROR", "broker.alpaca", f"GET {url} failed: {e}")
             # Capture Alpaca's actual response body on HTTP errors (e.g. 401) so
             # bot.log shows *why* the request was rejected — "Unauthorized" alone
-            # doesn't distinguish a bad key, an unconfirmed account, or a network
-            # intermediary (proxy/VPN) intercepting the request. Truncated to
-            # avoid log bloat; the JSON formatter's secret-redaction still
-            # applies to this field.
             _resp_body = None
             _resp = getattr(e, "response", None)
             if _resp is not None:
@@ -255,12 +244,6 @@ class AlpacaClient:
                       f"Check your internet or API key. ({type(e).__name__})")
             # FIX: capture Alpaca's actual response body on HTTP errors, mirroring
             # _get() above. A bare "403 Client Error: Forbidden for url: .../orders"
-            # gives no actionable information — Alpaca's JSON body usually says
-            # *why* the order was rejected (e.g. account restricted from trading,
-            # options trading not approved at this level, insufficient buying
-            # power). Without this, 403s on every order placement are
-            # indistinguishable from a bad API key. Truncated to avoid log bloat;
-            # the JSON formatter's secret-redaction still applies to this field.
             _resp_body = None
             _resp = getattr(e, "response", None)
             if _resp is not None:
@@ -300,10 +283,6 @@ class AlpacaClient:
             "cash":         float(data.get("cash", 0)),
             # FIX 2026-06-15: this key was missing entirely, so every caller's
             # `acct.get("options_buying_power", 0)` silently fell back to its
-            # default of 0 — the dashboard's "Options Buying Power" card and
-            # the entry-sizing logic in trading_logic.py have been showing/
-            # using a hardcoded 0.0 regardless of the REAL value Alpaca
-            # returns in this field. Now actually read it from Alpaca.
             "options_buying_power": float(data.get("options_buying_power", 0)),
         }
 
@@ -347,9 +326,6 @@ class AlpacaClient:
 
         # For daily bars Alpaca only returns the current partial bar without a start date
         # Explicitly request 6 months back to get full historical daily data
-        # Always request IEX feed — free-tier Alpaca keys 403 on SIP.
-        # NOTE: IEX feed does NOT support session=extended — that param causes 400.
-        # Extended hours bars come from yfinance in the chart API endpoint.
         params = {"timeframe": tf, "limit": limit, "adjustment": "split", "feed": "iex"}
         if tf == "1Day":
             start = (_dt.datetime.utcnow() - _dt.timedelta(days=180)).strftime("%Y-%m-%d")
@@ -357,15 +333,6 @@ class AlpacaClient:
         else:
             # FIX 2026-06-20: intraday timeframes (5Min/15Min/1Hour) had NO start
             # date at all — Alpaca's implicit default window without one is too
-            # narrow, and on a day with no trading yet/at all (e.g. a weekend, or
-            # before the first bar of a session prints) it has nothing to return
-            # and responds with "bars": null (not []) for a successful 200. That
-            # null then crashed the len() call below instead of being treated as
-            # a normal empty result. Surfaced by playbook_examples.py failing on
-            # all 5 tickers when run on a Saturday. Giving every intraday request
-            # an explicit lookback (sized to comfortably cover `limit` bars across
-            # weekends/holidays) makes the response deterministic regardless of
-            # what day this is called on.
             _bars_per_day = {"5Min": 78, "15Min": 26, "1Hour": 7}.get(tf, 78)
             _trading_days_needed = max(1, -(-limit // _bars_per_day))  # ceil division
             # Pad 1.6x for weekends/holidays, plus a flat 5-day floor so small
@@ -378,9 +345,6 @@ class AlpacaClient:
             resp = self._get(url, params)
             # FIX 2026-06-20: resp.get("bars", []) only applies the [] default when
             # the "bars" KEY IS MISSING. Alpaca can return the key present with a
-            # literal null value ({"bars": null, ...}) for a successful empty
-            # result — `.get()` then returns None, not [], and len(None) crashes.
-            # `or []` catches both "key missing" and "key present but None".
             bars = resp.get("bars") or []
             logger.debug("Got %d bars for %s %s", len(bars), symbol, timeframe)
             return bars, False          # success — possibly empty list
@@ -428,9 +392,6 @@ class AlpacaClient:
         # Extended trading day: pre-market 04:00 → post-market 20:00 ET.
         # We only roll back to the previous day if it's before 04:00 today
         # (truly overnight — no meaningful bar data yet).
-        # Between 04:00 and 09:30: show today's pre-market bars.
-        # Between 09:30 and 16:00: regular session (ORB window).
-        # Between 16:01 and 20:00: show today's post-market bars.
         session_date = now_et.date()
         if ET is not None:
             _pm_start_today = ET.localize(
@@ -478,7 +439,6 @@ class AlpacaClient:
 
         # Choose feed based on data plan.  Free plan: skip SIP entirely to avoid
         # a guaranteed 403 round-trip; use IEX (regular session only).
-        # Premium plan: try SIP first (extended hours + pre-market included).
         from config import get_settings as _gs_broker
         _is_premium = _gs_broker().get("alpaca_data_plan", "free") == "premium"
         _initial_feed = "sip" if _is_premium else "iex"
@@ -584,8 +544,7 @@ class AlpacaClient:
 
         # ── Attempt 2: previous trading day (full extended hours) ─────────────
         # Current day has no data yet (holiday, weekend edge case, API delay).
-        # Pull the previous day's full extended session (04:00–20:00) so the
-        # chart always has visible candlestick data including its pre/post market.
+        # Pull the previous day's full extended session (04:00-20:00) for gap calc.
         try:
             prev_date = session_date - _dt.timedelta(days=1)
             while prev_date.weekday() >= 5:          # skip Saturday / Sunday
@@ -632,10 +591,6 @@ class AlpacaClient:
         # ── Attempt 4: yfinance — circuit breaker open OR bars don't cover 9:30 ──
         # Alpaca IEX on the free plan sometimes returns only recent bars when the
         # bot starts mid-session, leaving the 9:30–9:40 opening-range window empty.
-        # This causes "Opening range incomplete: 1/3 bars" on every tick and
-        # prevents the ORB strategy (and any other OR-dependent strategy) from
-        # evaluating correctly.  yfinance 1m bars always cover the full regular
-        # session from open to current time — use them as a reliable supplement.
         _need_yf = err   # definitely needed if Alpaca failed entirely
         if not err and bars:
             # Check if the OR window (9:30–9:40 ET) is covered.  bars_to_df
@@ -835,7 +790,6 @@ class AlpacaClient:
 
             # FIX S1: Poll for fill confirmation — don't record trade on pending.
             # Pass limit_price so paper fallback can use it for confirmed_fill_price.
-            # Pass step_to_price: buys step UP mid→ask; sells step DOWN mid→bid.
             confirmed = self._wait_for_fill(order_id, limit_price=limit_price,
                                             step_to_price=step_to_price, side=side,
                                             symbol=symbol, qty=qty)
@@ -859,11 +813,6 @@ class AlpacaClient:
             # FIX: surface Alpaca's ACTUAL rejection reason in the human-readable
             # audit log, instead of just the Python exception type (e.g.
             # "HTTPError"). Previously a 403 "insufficient options buying power"
-            # looked identical in the dashboard's audit feed to a network outage
-            # or bad API key — the user had no way to know WHY orders were
-            # failing without reading raw JSON logs. Alpaca's error body (now
-            # captured by _post() above) usually contains a "message" field
-            # plus, for buying-power rejections, "options_buying_power" and
             # "cost_basis" — pull those out for a specific, actionable message.
             _reason = type(e).__name__
             _resp = getattr(e, "response", None)
@@ -899,12 +848,6 @@ class AlpacaClient:
 
             # FIX 2026-06-15 GHOST PREVENTION: the exception above means
             # self._post() raised BEFORE returning an order_id, so we have no
-            # order_id to cancel directly. But on 2026-06-15, several orders
-            # that raised a 403 here were nonetheless ACCEPTED by Alpaca as
-            # resting limit orders — they later filled hours later as ghost
-            # positions with no stop-loss/profit-target/time-box. Search for
-            # any resting order on this symbol and cancel it so a "failed"
-            # order can never silently fill unsupervised.
             try:
                 _orphans = self.get_open_orders(symbol=symbol)
                 for _o in _orphans:
@@ -971,7 +914,6 @@ class AlpacaClient:
             # ── Live spread-crossing step after 5 seconds ─────────────────────
             # BUY:  step UP   mid → ask  (cross the ask to guarantee entry)
             # SELL: step DOWN mid → bid  (cross the bid to guarantee exit)
-            # Only fires once; only on live; only when step_to_price was supplied.
             _is_buy  = side.lower() == "buy"
             _step_ok = (
                 step_to_price is not None
@@ -1040,9 +982,6 @@ class AlpacaClient:
         if is_paper:
             # Limit order didn't fill in 10s — cancel it and place a market order
             # so we record the REAL fill price from Alpaca's paper simulator.
-            # The old "paper_assumed_fill" shortcut used the intended limit price
-            # while Alpaca's order sat open or got canceled at a worse price later,
-            # creating a large P&L discrepancy between the bot's DB and the account.
             log_event("INFO", "order",
                       f"📝 Paper limit order pending after {effective_wait}s — "
                       f"cancelling and re-submitting as market to get real fill price.")
@@ -1088,9 +1027,7 @@ class AlpacaClient:
                     logger.warning("paper_market_fallback_failed: %s", _me)
 
             # Last resort: if market order also failed, record at the WORST-CASE
-            # price (ask for buys, bid for sells via step_to_price) — never the
-            # optimistic mid. Recording mid here was a source of bot-vs-Alpaca
-            # P&L divergence. (Should almost never happen on a paper account.)
+            # Record worst-case fill price (ask for buys, bid for sells) — never mid.
             fill_px = step_to_price or limit_price or 0
             log_event("WARNING", "order",
                       f"⚠️ Market fallback also failed — recording at ${fill_px:.2f} as last resort.")
@@ -1146,9 +1083,7 @@ class AlpacaClient:
     # ── Single-position close (NEW 2026-06-15 — Trade Journal close button) ──
     # close_all_positions() above liquidates EVERYTHING (panic button). This
     # method closes just ONE position by its OCC option symbol, via
-    # DELETE /v2/positions/{symbol} — used by the Trade Journal's per-row
     # "Close Position" button so the user can close individual untracked/
-    # ghost positions one at a time instead of an all-or-nothing panic close.
     def close_position(self, symbol: str) -> bool:
         """
         Close a single open position by its OCC option symbol.
@@ -1171,11 +1106,7 @@ class AlpacaClient:
 
     # ── Orphaned-order cleanup (FIX 2026-06-15 ghost positions) ───────────────
     # On 2026-06-15 a 403 response to a /v2/orders POST was treated as "order
-    # never placed" (place_option_order returned None, nothing written to the
-    # DB) — but Alpaca had actually ACCEPTED the order as a resting limit order,
-    # which then filled hours later, unsupervised, as a "ghost" position with
-    # no stop-loss/profit-target/time-box. These two methods let callers find
-    # and cancel any such resting orders so they can never silently fill again.
+    # Order never placed (returned None) — nothing to reconcile.
 
     def get_open_orders(self, symbol: Optional[str] = None) -> list[dict]:
         """
@@ -1250,9 +1181,6 @@ class TradierClient:
                     return {}   # safe empty dict; callers check .get() with defaults
                 # Tradier occasionally returns an HTML error page or XML quota
                 # response (especially on free-tier rate limits) that causes
-                # r.json() to raise JSONDecodeError: "Expecting value: line 1 col 1".
-                # Catch it, log the raw body for debugging, and return {} so the
-                # caller's .get() chain returns its default instead of crashing.
                 try:
                     return r.json()
                 except Exception as _jde:
@@ -1260,9 +1188,6 @@ class TradierClient:
                     _body  = r.text[:300]
                     # Detect the specific case where Tradier (or a proxy in front of
                     # it) silently redirected us to its ReadMe.io-hosted docs/marketing
-                    # site instead of returning JSON from the API host. This happens
-                    # with an invalid/expired token or an endpoint not entitled on the
-                    # current plan — it is NOT transient, so retrying changes nothing.
                     _is_docs_redirect = (
                         "text/html" in _ctype.lower()
                         or _body.lstrip().lower().startswith(("<!doctype", "<html"))

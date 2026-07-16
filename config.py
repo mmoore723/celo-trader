@@ -78,19 +78,11 @@ STARTING_CAPITAL = 5000.0
 # ── Concurrent position limit ─────────────────────────────────────────────────
 # Maximum number of option positions the bot will hold open at the same time.
 # Chosen by the user (2026-06-15) for a ~$5,000 account — lets the bot diversify
-# across two setups instead of being all-or-nothing in one trade, without
-# over-extending a small account's buying power across too many positions.
 MAX_CONCURRENT_POSITIONS = 2
 
 # ── 4-Tier Risk System ────────────────────────────────────────────────────────
 # Growth mode ON:
 #   balance < $5k   → Tier 4: 5%  (bootstrap — floors at 2 contracts when in this zone)
-#   $5k–$25k        → Tier 3: 3%  (aggressive growth)
-#   $25k–$50k       → Tier 2: 2%  (moderate transition)
-#   balance ≥ $50k  → Tier 1: 1%  (auto-downgrade to preservation)
-# Growth mode OFF (any balance) → Tier 1: 1%
-# Daily loss hard cap is ALWAYS 10% — never overridden.
-# At 5% on $2k: ~$109 risk/trade · ~2 full stops fires the 10% kill lock.
 
 DAILY_LOSS_HARD_CAP_PCT   = 0.10   # 10% hard cap — non-negotiable, always enforced
 BOOTSTRAP_RISK_PCT        = 0.05   # Tier 4: bootstrap 5% sub-$5k (reference constant)
@@ -105,15 +97,7 @@ KILL_LOCK_HOURS           = 24     # hours to lock trading after daily hard cap 
 # ── R:R (Reward:Risk) Threshold Tiers ─────────────────────────────────────────
 # The pre-entry R:R gate (RiskManager.evaluate_rr) compares the trade's computed
 # reward:risk ratio against a minimum threshold. With the bot's fixed exit
-# parameters (ORB_STAGE1_GAIN=0.50, ORB_STOP_PCT=0.30, SLIPPAGE_PCT=0.05) the
-# R:R is ALWAYS ~1.269 — a constant, not a per-trade variable. A flat 1.6
-# minimum therefore blocks 100% of trades on a small account.
-#
-# rr_ratio_mode (user_settings.json):
 #   "auto"          → (DEFAULT) balance-based switch — uses MIN_RR_RATIO_SMALL_ACCOUNT
-#                      while balance < GROWTH_RISK_BOUNDARY_BOOT (sub-$5k bootstrap
-#                      tier), then automatically switches to
-#                      MIN_RR_RATIO_PROFESSIONAL once balance crosses that boundary.
 #   "small_account" → always use MIN_RR_RATIO_SMALL_ACCOUNT (1.2), regardless of balance.
 #   "professional"  → always use MIN_RR_RATIO_PROFESSIONAL (1.6), regardless of balance.
 MIN_RR_RATIO_SMALL_ACCOUNT = 1.2   # relaxed gate for sub-$5k bootstrap accounts
@@ -122,9 +106,6 @@ MIN_RR_RATIO_PROFESSIONAL  = 1.6   # standard gate once account graduates past b
 # ── Manual risk override ──────────────────────────────────────────────────────
 # When risk_per_trade is present in user_settings.json this value takes
 # precedence over the automatic balance-based tier logic in get_risk_tier().
-# None (default) means "let the tier system decide".
-# Accepted range: 0 < val <= 0.25 (i.e. up to 25%).
-# Populated automatically by settings save (risk_pct % / 100).
 RISK_PER_TRADE: float | None = None
 
 
@@ -185,14 +166,11 @@ LARGE_CAP_TICKERS = LIQUID_TICKERS
 # ── Hard-locked scanner universe (refactor 2026-06-16) ───────────────────────
 # Only scan these 5 tickers. All have the tightest bid/ask spreads, deepest
 # options chains on Tradier's free tier, and the highest intraday volume.
-# No dynamic RVOL-ranked universe — keeps the bot focused and reduces noise.
 TICKER_UNIVERSE = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA"]
 
 # ── Tiered time-box constants ────────────────────────────────────────────────
 # Flat/losing trades are killed at EARLY_TIMEBOX_MIN to stop theta decay.
 # MOMENTUM_DEAD_RVOL: if RVOL drops below this threshold AND the trade is
-# losing, exit early — momentum has died and holding only burns theta.
-# Both checks must pass: dead RVOL alone doesn't kill a trade that's working.
 EARLY_TIMEBOX_MIN    = 60        # hard cap for flat/losing trades (extended from 30)
 MOMENTUM_DEAD_RVOL   = 0.70      # RVOL floor — below this = institutional participation gone
                                  # 0.70 = 30% below average. Previous 1.0 fired on RVOL 0.95+
@@ -206,9 +184,6 @@ MOMENTUM_DEAD_LOSS_PCT = 0.10    # option must be down ≥10% for momentum-dead 
 # ── Early momentum stop ───────────────────────────────────────────────────────
 # If a trade is down within the first EARLY_TIMEBOX_MIN window, exit.
 # Was 12% — but 5 DTE 1.5% OTM options with ~0.20 delta lose 12% from only
-# a 0.22% adverse underlying move (SPY normal noise). Raised to 20% to match
-# the hard stop floor so the early stop no longer creates a tighter-than-stop
-# hair-trigger within the first hour. The dynamic hard stop (Exit 2) handles it.
 EARLY_STOP_PCT    = 0.20         # -20% momentum stop (matches hard stop floor)
 
 # ── Stage 2 trailing stop floor (refactor 2026-06-16) ────────────────────────
@@ -238,8 +213,7 @@ REQUIRE_MTF_AGREEMENT = True   # default ON — user can disable in Risk Setting
 MIN_OPEN_INTEREST     = 150
 MAX_BID_ASK_SPREAD    = 0.50   # max spread — $0.02 was unrealistically tight for stock options
 # 2026-07-15 audit: raised $0.05 → $0.80. Sub-$0.50 contracts (e.g. XLE $0.36 puts)
-# have spreads that are 5-15% of premium — a guaranteed round-trip loss before the
-# trade even moves. Cheap premium buckets showed the worst avg P&L per trade.
+# have spreads of 5-15% of premium — a guaranteed round-trip loss.
 MIN_CONTRACT_COST     = 0.80   # min option premium — avoids spread-death on cheap contracts
 MAX_CONTRACT_COST     = 10.00  # max option premium — raised from $5 to fit JPM/NVDA/AAPL ATM chains
 VOLUME_FILTER_MULTIPLIER = 1.2
@@ -248,20 +222,11 @@ EARNINGS_BLACKOUT_DAYS   = 2
 # ── Commission (live trading only) ────────────────────────────────────────────
 # Alpaca charges $0.65 per contract per leg.  Each round-trip (entry + exit)
 # costs 2 legs, so total per trade = contracts × $0.65 × 2.
-# Paper trading has zero commission — this constant is only applied when
 # paper_trading = False in close_trade().
 COMMISSION_PER_CONTRACT = 0.65
 
 # Trading windows (ET) — ENTRIES ONLY. Position management/exits run all session.
-# 2026-07-15 research-backed two-session schedule:
-#   9:30–11:30  — opening range session: ~70% of intraday edge (ORB, VWAP_PB,
-#                 BOS/MSS, FVG). ORB 15-min range backtests ~56% WR; VWAP pullback
-#                 setups strongest after the first 30 min.
-#   14:00–15:45 — afternoon trend/power-hour session: trend continuation and
-#                 AFT_REV edge; second-most profitable hour after the open.
-#                 Ends 15:45 so fills complete before the 15:55 hard cutoff.
-# BLOCKED 11:30–14:00 — lunch chop: lowest volume, weakest edge; this is where
-# the 07-15 momentum_dead churn losses concentrated.
+# Two-session schedule: opening range + power hour; lunch chop blocked.
 TRADING_WINDOWS_PHASE1 = [
     ("09:30", "11:30"),   # Opening session
     ("14:00", "15:45"),   # Afternoon trend / power hour

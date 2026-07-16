@@ -520,15 +520,11 @@ def _manage_open_position(
 
             # ATR-based trailing stop in underlying space.
             # Uses 5-min ATR when available (less noisy than 1-min), falls back to 1-min.
-            # WARMUP GUARD: don't arm until _MIN_TRAIL_WARMUP_MIN minutes elapsed.
             _atr = _compute_atr(df_5m) if (df_5m is not None and len(df_5m) >= 15) else _compute_atr(df_under)
 
             # ── Initial ATR stop (computed once; replaces fixed 20% hard stop) ────
             # On the very first tick with ATR data, derive a stop based on how much
             # the underlying actually moves — not a fixed % of option premium.
-            # 2.5× ATR = "normal volatility range"; the stop is outside that noise band.
-            # Bounded: never tighter than 15% below entry (noise floor) and
-            # never wider than 30% below entry (max acceptable initial loss).
             if _atr is not None and ps.get("initial_atr_stop") is None:
                 _init_mult    = 2.5
                 _atr_opt_stop = entry_price - _init_mult * _atr * _DELTA_APPROX
@@ -542,8 +538,7 @@ def _manage_open_position(
                 )
 
             # PROFIT GATE: only arm the ATR trail once the option is at least
-            # 15% above entry. Before that the underlying has barely moved and the
-            # stop would sit at entry price — any wig fires the trail at a loss.
+            # Trail arms only after +15% gain — before that it's stopped by noise.
             _opt_gain_pct = (current_price - entry_price) / entry_price if entry_price else 0.0
             _trail_profit_gate = _opt_gain_pct >= 0.15
             if (_atr is not None
@@ -581,10 +576,6 @@ def _manage_open_position(
 
             # RVOL proxy for momentum-death exit check in risk.py.
             # 2026-07-15 audit: was current 1-min vol ÷ 20-bar mean — intraday volume
-            # declines mechanically after the open, so this drifted below 0.70 nearly
-            # every midday trade ("it's lunchtime" ≠ "momentum died"). Now uses 5-min
-            # bars over a short window (last bar ÷ median of prior 4) which compares
-            # against the recent regime instead of the whole morning.
             try:
                 if df_5m is not None and len(df_5m) >= 5:
                     _v5       = df_5m["volume"].astype(float)
@@ -707,9 +698,7 @@ def _manage_open_position(
         )
 
         # Use the armed ATR trail if available; fall back to the initial ATR stop
-        # during warmup (first 5 min / before +15% gain). This replaces the
-        # fixed entry×0.80 hard stop with an ATR-scaled distance so normal
-        # underlying volatility doesn't trigger an immediate exit.
+        # Suppressed during warmup (first 5 min / before +15% gain).
         _effective_atr_stop = atr_trail_stop or ps.get("initial_atr_stop")
 
         should_exit, reason = _em._risk.should_exit(
@@ -870,7 +859,6 @@ def _close_position(
         logger.info("[PAPER] SELL %s @ $%.4f (%s)", trade["contract_symbol"], exit_price, reason)
     # Limit sell at mid-price (exit_price = quote["mid"]) — same favorable fill
     # as paper trading.  On live, if not filled in 5s, _wait_for_fill steps DOWN
-    # to bid_price to guarantee execution and prevent a stuck open position.
     fill = alpaca.place_option_order(
         symbol         = trade["contract_symbol"],
         qty            = trade["contracts"],
@@ -881,8 +869,7 @@ def _close_position(
     )
 
     # If the exit order didn't fill at all, leave the trade open and retry next tick.
-    # Previously this fell through to close_trade() using the intended mid-price,
-    # recording a false "closed" entry in the DB while Alpaca still held the position.
+    # Record actual worst-case exit fill, not the intended mid-price.
     if fill is None:
         log_event("WARNING", "trading_logic",
                   f"⚠️ [{trade['contract_symbol']}] Exit order did not fill — "
@@ -1037,7 +1024,6 @@ def _close_position(
     # ── Per-ticker post-loss quality gate ────────────────────────────────────
     # After a loss, record exit price/direction for the 0.3% displacement check
     # in entry.py.  Also set a STRUCTURAL cooldown keyed by ticker:strategy_id
-    # so re-entry requires actual market conditions to reset, not just a timer.
     _strat_id = trade.get("strategy_id", "")
     if pnl < 0 and _closed_ticker:
         LIVE_STATE.setdefault("ticker_loss_context", {})[_closed_ticker] = {

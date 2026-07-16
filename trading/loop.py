@@ -67,7 +67,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
 
     # Use this user's state dict instead of the global LIVE_STATE alias.
     # All code inside this function that previously used LIVE_STATE now uses
-    # _US, which is the per-user dict from the USER_STATES registry.
     _US = get_user_state(user_id)
 
     # Resolve stop event for this user
@@ -100,7 +99,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
 
     # Day-start balance: persist per calendar date so mid-session bot restarts
     # don't overwrite the true opening value with the current (already-traded) balance.
-    # Key: "day_start_YYYY-MM-DD" in settings — only written on first start of the day.
     from config import save_settings as _save_dsb
     import datetime as _dt_dsb
     _today_key = f"day_start_{_dt_dsb.date.today().isoformat()}"
@@ -148,9 +146,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     # ── Watchlist restoration on mid-session restart ──────────────────────────
     # If the bot restarts after the 9:00–11:30 scan window, is_scan_window()
     # returns False and the scan block in the main loop never runs, leaving
-    # scan_watchlist empty and _tick() with nothing to evaluate.
-    # Fix: on startup, check daily_universe.json — if today's scan already ran,
-    # restore it immediately so the bot can resume trading without a full rescan.
     if not LIVE_STATE.get("scan_watchlist"):
         try:
             from scanner import _read_daily_universe, _et_now as _scanner_et
@@ -160,7 +155,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             if _du.get("date") == _today_str and _du.get("universe"):
                 # Today's scan already ran — restore it, prepending settings
                 # watchlist pins so user-pinned tickers (e.g. AMZN, TSLA) are
-                # ALWAYS included even if they didn't rank in the morning scan.
                 _pins_r = [
                     t.upper().strip()
                     for t in (_get_s_wl().get("watchlist") or [])
@@ -267,7 +261,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             # ── Daily scan ───────────────────────────────────────────────────
             # Run if: scan hasn't run today AND we're in the scan window.
             # Also run if scan_watchlist is empty regardless of time — this
-            # catches the edge case where the restore above produced no results.
             _needs_scan = (
                 not LIVE_STATE.get("scanner_ran_today") and is_scan_window()
             ) or not LIVE_STATE.get("scan_watchlist")
@@ -276,7 +269,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                     wl = run_scan(alpaca, max_tickers=10)
                     # Always prepend user's settings pins so tickers like XLE
                     # stay in the watchlist even if the scanner didn't rank them.
-                    # dict.fromkeys preserves order and deduplicates.
                     try:
                         from config import get_settings as _get_scan_pins
                         _pins = [t.upper().strip() for t in (_get_scan_pins().get("watchlist") or []) if t.strip()]
@@ -309,8 +301,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             # ── Refresh account balance + recompute session P&L ─────────────
             # Balance is fetched from Alpaca once per batch cycle (every ~60s)
             # so the dashboard always shows current equity.
-            # session_pnl is derived from real equity delta — not DB trade sums —
-            # so it matches Alpaca's account value regardless of fill-price bugs.
             try:
                 _acct_tick = alpaca.get_account()
                 _bal_tick  = float(_acct_tick.get("equity", 0)) if _acct_tick else 0
@@ -330,10 +320,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             # ── Batch-evaluate ALL watchlist tickers once per bar ────────────
             # Old design: one ticker per 10-second tick.  With 10 tickers the
             # cycle took ~100 s, so each ticker was only seen every 1.5 bars.
-            # New design: run _tick() for each ticker in one pass, then sleep
-            # to the next 60-second bar boundary.  Every ticker now gets one
-            # evaluation per new 1-minute candle — no missed bars, no stale
-            # re-evaluations, ~40% fewer redundant API calls.
             _wl_batch = LIVE_STATE.get("scan_watchlist") or ["SPY", "QQQ"]
             for _bi in range(len(_wl_batch)):
                 if _stop.is_set():
@@ -378,10 +364,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
         # ── Sleep until the next 60-second bar boundary ───────────────────────
         # Inside the trading window: sleep to the start of the next 1-minute
         # candle so every tick sees fresh bars.  Floor at 5 s so a slow pass
-        # never blocks for a whole minute when already near the boundary.
-        # Outside the trading window: sleep 60 s (rate-limit API when idle).
-        # Wrapped in try/except — any exception here used to silently exit
-        # the while loop (it was outside the inner try/except), causing the
         # "Trading loop stopped" log with no error message.
         try:
             _now_et_sl = _now_et()
@@ -406,7 +388,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
 
     # Only log "stopped" when the stop was intentional (_stop_event was set).
     # Unexpected exits (exceptions escaping the loop body) are already logged
-    # as errors above — an extra "Trading loop stopped" would be misleading.
     if _stop.is_set():
         logger.info("Trading loop stopped")
     else:

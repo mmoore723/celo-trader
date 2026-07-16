@@ -44,8 +44,7 @@ _ETF_SET = {"SPY", "QQQ", "IWM", "DIA", "XLE", "GLD",
 
 # ── Hard blacklist — leveraged/inverse ETFs, VIX products ────────────────────
 # TSLT (2× TSLA), TSLL (1.5× TSLA), NVDL (2× NVDA) etc. are explicitly
-# blocked — the leverage multiplier inflates RVOL scores artificially, and
-# their option chains are thin or absent on Tradier's free tier.
+# blocked — leveraged ETFs inflate RVOL scores artificially.
 TICKER_BLACKLIST: set[str] = {
     "SQQQ", "TQQQ", "SPXS", "SPXU", "UPRO", "SDS", "SSO",
     "UVXY", "SVXY", "VXX", "VIXY", "LABD", "LABU",
@@ -58,20 +57,7 @@ TICKER_BLACKLIST: set[str] = {
 
 # ── Dynamic scan pool: ~140 liquid, optionable US stocks ─────────────────────
 # Every ticker in this list must be able to pass the gap + volume + ATR filters
-# on an active day. Names that structurally can't gap 1-4% (bond ETFs, REITs,
-# low-beta telecoms) or that trade consistently below $10 (SOFI, LCID) are
-# excluded here — they waste API quota every morning.
-#
-# REMOVED vs. first draft:
-#   TLT, HYG, LQD — bond ETFs; almost never gap 1-4% on normal days
-#   SLV            — lower volume/liquidity than GLD; redundant
-#   AMT, PLD, EQIX — REITs; slow movers, no ORB edge
-#   T, VZ          — telecom stalwarts; historically < 0.5% beta, rarely gap
-#   SOFI, LCID     — trade below $10; always fail the price filter
-#
-# ADDED:
-#   SMH  — VanEck Semiconductor ETF; high volume, deep options, gaps on macro
-#   GME  — gaps frequently on news/options flow with >5× RVOL; meets all filters
+# Names that structurally can't gap 1-4% are excluded from the scan.
 LIQUID_POOL: list[str] = [
     # ── Index + sector ETFs ───────────────────────────────────────────────
     # Deep options chains, penny-wide spreads on Tradier free tier.
@@ -334,7 +320,6 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
     # ── Inject user-pinned tickers from Settings watchlist ───────────────────
     # Tickers the user pinned in Settings > Watchlist are always evaluated and
     # always appear in the final list — they bypass the gap/RVOL filters so a
-    # slower mover the user wants tracked doesn't get silently dropped.
     try:
         from config import get_settings as _get_s
         _user_pins = [
@@ -405,10 +390,7 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
     # ── Steps 3-6: Daily bars → avg vol, ATR, RVOL, score ────────────────────
     #
     # Probe Alpaca daily bars once before the per-ticker loop.
-    # When the circuit breaker is open, ALL individual get_bars("1Day") calls
     # return ([], True) — causing 0 survivors even though snapshots succeeded.
-    # Fix: if the probe fails, batch-download daily bars for ALL candidates via
-    # yfinance in one shot (~1 s for 40 tickers) and use that as the source.
     # ──────────────────────────────────────────────────────────────────────────
     _yf_daily_cache: dict[str, list[dict]] = {}
     _probe_bars, _probe_err = alpaca.get_bars("SPY", "1Day", limit=3)
@@ -498,14 +480,6 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
             # ── RVOL vs time-normalized expected volume ───────────────────
             # At 9:31 elapsed_pct = 1/390 = 0.003, making expected_vol tiny
             # and inflating RVOL to 7–10× for virtually every stock (noise).
-            # Fix:
-            #   1. Floor expected_vol at 1 five-min bar (avg_daily_vol / 78)
-            #      so the denominator is never unrealistically small.
-            #   2. After 5 min: require RVOL >= 2.5× (real threshold).
-            #      Before 5 min: require at least 1 full five-min bar's worth of
-            #      shares traded (any real activity, not stray prints).
-            #   3. Cap RVOL at 20× for the score so early-session spikes don't
-            #      dominate gap_pct and ATR in the ranking.
             elapsed_pct  = min(elapsed_min / 390.0, 1.0)
             one_bar_vol  = avg_daily_vol / 78   # expected shares in one 5-min bar
             expected_vol = max(avg_daily_vol * elapsed_pct, one_bar_vol)
@@ -533,8 +507,6 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
             # ── Affordability filter: de-rank tickers that would always bust the
             # risk budget.  Estimate: ATM option premium ≈ 0.5 × daily ATR.
             # If the stop loss on 1 contract (premium × 30% × 100 shares) exceeds
-            # the risk budget, the bot will return 0 contracts every tick and skip
-            # this ticker all session — move it to the bottom now.
             try:
                 from config import get_settings as _get_s_aff
                 _s_aff = _get_s_aff()

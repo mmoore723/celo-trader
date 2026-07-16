@@ -1,46 +1,13 @@
 """
 backtester.py — Full-Strategy Historical Simulation Engine.
 
-Architecture
-────────────
-Replays N months of historical 5-min OHLCV bars through ALL 8 live strategy
-modules using the SAME quality gates the live bot applies:
-  • 78% confidence floor  (strategy_router._MIN_CONFIDENCE)
-  • Conflict veto         (strategy_router._CONFLICT_VETO_BAND)
-  • Contract-based sizing (risk.RiskManager.calculate_contracts — same 4-tier ladder)
-  • Matched exit logic    (early momentum stop, stage-2 floor, 30/90-min time caps)
+Replays N months of historical 5-min OHLCV bars through all live strategy
+modules using the SAME quality gates, sizing, and exit logic as the live bot
+(confidence floor, conflict veto, ADX regime gate, session windows, 4-tier
+risk ladder, staged exits, 5% slippage per side).
 
-Strategies simulated
-────────────────────
-  INST_ORB   — Opening Range Breakout
-  BOS_MSS    — Break of Structure / Market Structure Shift
-  VWAP_PB    — VWAP Pullback
-  FVG        — Fair Value Gap
-  MID_BRK    — Midday Breakout
-  AFT_REV    — After-hours Reversal
-  TREND_CONT — Trend Continuation
-  CHAN_BREAK  — Channel Breakout
-
-Trade mechanics (now mirroring live bot)
-────────────────────────────────────────
-  Signal  : All 8 evaluate() run; filtered by confidence floor + conflict veto
-  Sizing  : calculate_contracts() — same 4-tier risk ladder as live bot
-            Optional risk_pct override lets you test any flat rate
-  Options : Weekly contracts (5 DTE), ticker-specific IV
-  Stop    : 20% hard stop, tightened dynamically every 15 min (floor 10%)
-  Early   : −EARLY_STOP_PCT (12%) within first EARLY_TIMEBOX_MIN window
-  Stage 1 : Sell 50% of contracts at +50% premium gain
-  Stage 2 : Trailing stop floor at entry × (1 + STAGE2_TRAIL_PCT = 1.15)
-  Time-box: momentum_dead_exit fires early if RVOL < 1.0 AND losing AND ≥ 15 min
-            60 min hard cap for flat/losing (extended from 30 min)
-            90 min for winners (stage1 IS done) — ORB_TIME_BOX_WINNER
-  Fills   : Entry at ask (+5% slippage), exit at bid (−5% slippage)
-
-Output
-──────
-- Overall P&L / win rate / Sharpe / drawdown
-- Per-strategy breakdown
-- Daily P&L / exit reason breakdown / trade log (with contract counts)
+Output: overall P&L / win rate / Sharpe / drawdown, per-strategy breakdown,
+daily P&L, exit-reason breakdown, and full trade log.
 """
 
 import logging
@@ -135,8 +102,6 @@ def _estimate_option_price(
 
 # OTM offset used when simulating strikes — 1.5% from the current stock price.
 # The live bot buys weekly OTM options in the $2–4 range; the old "first $0.50
-# above stock" was essentially ATM on high-price tickers (SPY $732 → $732.50),
-# which inflated the model price to ~$5.78 and blocked sizing at small balances.
 _SIMULATED_OTM_PCT: float = 0.015   # 1.5% OTM
 
 
@@ -228,9 +193,6 @@ class Backtester:
         # Floor to 1 contract if we can afford the PREMIUM (notional check).
         # The risk-based floor (risk_per_contract <= total_risk) is too strict
         # for small accounts trading expensive underlyings like SPY — the live
-        # bot uses real broker prices which are often cheaper than the BS model,
-        # so it can enter where the model says 0.  Match that behavior here by
-        # allowing 1 contract whenever 1 contract's notional fits the cap.
         if contracts == 0 and (entry_px * 100) <= max_notional:
             contracts = 1
 
@@ -367,11 +329,6 @@ class Backtester:
 
         # NOTE: BOS_MSS intentionally excluded — matches live strategy_router.py.
         # Liquidity sweep detection was merged into FVG as a confidence modifier;
-        # keeping both causes double-voting on the same institutional move.
-        #
-        # CHAN_BREAK temporarily disabled: 0% WR on 7 trades (-$383.60) in
-        # Apr–Jun 2026 backtest. Strategy is catching false breakouts in volatile
-        # trending markets. Re-enable once root cause is diagnosed.
         _EVALUATORS_CACHED = [
             ("INST_ORB",   _inst_orb.evaluate),
             ("VWAP_PB",    _vwap_pb.evaluate),
@@ -471,13 +428,7 @@ class Backtester:
 
                 # ── Intrabar price simulation ─────────────────────────────────
                 # Checking only the bar CLOSE misses what happened on the HIGH/LOW.
-                # A stop hit on the candle low gets skipped; a target hit on the
-                # candle high gets missed. Use bar extremes for realistic fills.
-                #
-                #   CALL: underlying high  → option best (profits)
-                #         underlying low   → option worst (stop risk)
-                #   PUT:  underlying low   → option best (profits — put goes up)
-                #         underlying high  → option worst (stop risk — put goes down)
+                # Conservative bar-path assumption: stops checked before targets.
                 _bar_high_px = float(bar.get("high", close))
                 _bar_low_px  = float(bar.get("low",  close))
 
@@ -499,7 +450,6 @@ class Backtester:
                 # ── Exit 1: Early momentum stop (uses bar WORST — realistic fill) ─
                 # If the worst intrabar option price is down > EARLY_STOP_PCT (12%)
                 # within the first EARLY_TIMEBOX_MIN, the setup failed — exit
-                # at worst price (what the stop would realistically fill at).
                 if (not stage1_done
                         and elapsed_min <= EARLY_TIMEBOX_MIN
                         and _opt_bar_worst <= entry_price * (1.0 - EARLY_STOP_PCT)):
@@ -516,8 +466,6 @@ class Backtester:
                 # ── Exit 2: Dynamic hard stop (uses bar WORST — realistic fill) ──
                 # Tightens 5pp every 15 min (theta decay protection):
                 #   0–14 min  → 20% stop
-                #   15–29 min → 15% stop
-                #   ≥30 min   → floor 10%
                 elapsed_steps  = int(elapsed_min / self.STOP_TIGHTEN_INTERVAL)
                 dynamic_sl_pct = max(
                     self.ORB_STOP_PCT - elapsed_steps * self.STOP_TIGHTEN_STEP,
@@ -583,9 +531,6 @@ class Backtester:
                 # Fires when RVOL is genuinely dead (< 0.70 = 30%+ below avg),
                 # the trade is losing, and the CANDLE ITSELF shows no momentum
                 # (small body = doji/spinning top confirms dead price action).
-                # Previously fired at RVOL < 1.0 which hit 0.95+ RVOL bars —
-                # nearly normal volume. Also had no candle structure check,
-                # so it exited on valid setups that just had a weak-volume bar.
                 _bar_rvol = float(day_df.iloc[idx].get("rvol", 0.0)) if "rvol" in day_df.columns else 0.0
                 _bar_range  = max(_bar_high_px - _bar_low_px, 0.0001)
                 _bar_body   = abs(close - float(bar.get("open", close)))
@@ -712,7 +657,6 @@ class Backtester:
             # ── Intraday VWAP slope — weighted 20% factor (mirrors router) ──────
             # VWAP trend = 20% of signal strength. Against flow → ×0.80.
             # High-momentum signals (0.87+) survive; marginal ones at 0.74 drop
-            # to 0.59 and get filtered. Replaces flat -0.04 which over-fired.
             if raw_signals and len(bar_slice) >= 12 and "vwap" in bar_slice.columns:
                 _bt_vwap_now   = float(bar_slice.iloc[-1].get("vwap", 0) or 0)
                 _bt_vwap_10    = float(bar_slice.iloc[-10].get("vwap", _bt_vwap_now) or _bt_vwap_now)

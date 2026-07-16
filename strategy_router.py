@@ -14,23 +14,11 @@ Strategy IDs (seven active):
   TREND_CONT  — strategies/trend_cont.py (09:45–14:30)
   CHAN_BREAK  — strategies/chan_break.py (09:45–14:00)
 
-  BOS_MSS (strategies/bos_mss.py) — DISABLED.
-  Liquidity sweep detection (the core BOS_MSS gate) was merged into FVG as a
-  soft confidence modifier. FVG with a confirmed prior-swing sweep fires at up
-  to 0.90 confidence; without a sweep it fires at up to 0.75. Running both as
-  separate evaluators was redundant — a BOS creates the FVG, so they were
-  double-voting on the same institutional move.
+  BOS_MSS (strategies/bos_mss.py) — DISABLED; its sweep detection was merged
+  into FVG as a confidence modifier (running both double-voted the same move).
 
 All signals pass through RiskManager gates in risk.py before entry:
   • 1% risk rule  • 1.6 R:R minimum  • 20% hard stop  • time-box exit
-
-Changes vs. pre-refactor strategy_router.py
-────────────────────────────────────────────
-• Each _eval_* function moved to its own module under strategies/
-• Shared primitives (Signal, MSA, RVOL helpers) live in strategies/base.py
-• INST_ORB + BOS_MSS include: per-ticker cooldown, MFE gate, VWAP flip fix
-• route_signals() now passes ticker= to each evaluator (needed for cooldown)
-• This file is now < 200 lines; easy to read and change
 """
 
 from __future__ import annotations
@@ -59,8 +47,7 @@ logger = logging.getLogger("celo_trader.strategy_router")
 
 # ── Router quality gates ───────────────────────────────────────────────────────
 # Confidence floor: strategies score 0.75 at baseline with zero bonuses.
-# Anything ≤ 0.77 is a marginal signal with no meaningful RVOL/body/recency edge —
-# drop it rather than picking "best of weak."
+# Anything below is a marginal signal with no meaningful edge — drop it.
 _MIN_CONFIDENCE = 0.74   # confidence floor — below this is noise, not edge
 
 # Conflict veto window: if the top two signals disagree on direction AND their
@@ -69,12 +56,6 @@ _CONFLICT_VETO_BAND = 0.05
 
 # Session bias penalty: applied when a signal goes against the session's own
 # price action. This is a confidence tax, not a direction block.
-# The penalty is DYNAMIC based on current RVOL:
-#   RVOL > 1.5 → -0.02  (high-volume days support counter-trend V-reversals)
-#   RVOL 1.0–1.5 → -0.05 (normal days, standard penalty)
-#   RVOL < 1.0  → -0.10  (low-volume days chop you to death counter-trend)
-# Strong setups with real volume still clear the floor; weak counter-session
-# signals on quiet days get filtered out aggressively.
 _SESSION_BIAS_PENALTY = 0.05  # fallback default (overridden dynamically below)
 
 
@@ -209,8 +190,6 @@ def _build_indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
 # ── ADX regime gate (2026-07-15 audit) ───────────────────────────────────────
 # Breakout/continuation strategies need a TRENDING regime to work. ADX(14) on
 # 5-min bars below 25 = mean-reverting chop — raw breakouts get stopped out
-# repeatedly. Mean-reversion strategies (AFT_REV, VWAP_PB, FVG, IFVG) are NOT
-# gated: they want range conditions.
 _ADX_PERIOD           = 14
 _ADX_MIN              = 25.0
 _ADX_GATED_STRATEGIES = {"INST_ORB", "MID_BRK", "TREND_CONT", "CHAN_BREAK"}
@@ -297,10 +276,6 @@ def route_signals(
 
     # Evaluator table — (strategy_id, module.evaluate)
     # Each module's evaluate() self-gates on its own session window.
-    # NOTE: BOS_MSS is intentionally absent. Its liquidity sweep detection was
-    # merged into FVG as a confidence modifier (see strategies/fvg.py). Keeping
-    # both active caused double-voting on the same institutional move — a break
-    # of structure IS what creates the fair value gap.
     _all_evaluators = [
         ("INST_ORB",   inst_orb.evaluate),
         ("VWAP_PB",    vwap_pb.evaluate),
@@ -364,14 +339,7 @@ def route_signals(
 
     # ── Session bias penalty ──────────────────────────────────────────────────
     # Compare current price to the session open price only.
-    # VWAP is intentionally excluded — individual strategies already gate on VWAP,
-    # so using it here is redundant and creates a no-op for strategies that require
-    # close > vwap (VWAP_PB bullish can never also have close < vwap).
-    # Session open is new information: none of the strategies check whether price
-    # is above or below where the day STARTED. If we've given up the opening level,
-    # the session character is bearish regardless of short-term VWAP positioning.
-    #   Bearish session: close < session_open → bullish signals penalized
-    #   Bullish session: close > session_open → bearish signals penalized
+    # VWAP is intentionally excluded — individual strategies already gate on it.
     if signals and len(today) >= 2:
         _first_bar    = today.iloc[0]
         _last_bar     = today.iloc[-1]
@@ -422,11 +390,6 @@ def route_signals(
     # ── Intraday VWAP trend — weighted 20% factor ────────────────────────────
     # VWAP slope is ONE input, not a binary gate. It contributes 20% weight to
     # signal confidence; the strategy's own technical edge provides 80%.
-    # Against flow → confidence × 0.80 (20% VWAP component drops to 0).
-    # High-momentum signals (0.87+) survive (0.87 × 0.80 = 0.70, clears 0.65
-    # confluence floor); weak marginal signals at 0.74 drop to 0.59 and are
-    # filtered — which is correct behaviour. Flat penalty (-0.04) was over-firing
-    # on range days where 0.74 signals were valid but the "slope" was noise.
     if signals and len(today) >= 12:
         _vwap_now   = float(today.iloc[-1].get("vwap", 0) or 0)
         _vwap_10    = float(today.iloc[-10].get("vwap", _vwap_now) or _vwap_now)
@@ -464,10 +427,6 @@ def route_signals(
     # ── Confluence bonus ───────────────────────────────────────────────────────
     # When 2+ independent strategies agree on direction, this is the highest-
     # probability setup. Reward it with a confidence bonus so strong multi-
-    # strategy confluence entries clear the floor even after bias penalties.
-    # Research: confluence filters push intraday options WR from 46% → 65%+.
-    #   2 strategies agree → +0.03 boost
-    #   3+ strategies agree → +0.05 boost (capped)
     if signals:
         _top_dir     = signals[0].direction
         _agree_count = sum(1 for _s in signals if _s.direction == _top_dir)
@@ -490,11 +449,7 @@ def route_signals(
     # ── Large-session-move gate (gap / momentum-day filter) ──────────────────
     # If the session has already moved ±1.5%+ from the opening bar, it is a
     # gap or momentum day. Counter-trend entries before 13:00 ET are high-risk:
-    # institutional order flow is committed to the direction, options are priced
     # for continuation, and mean-reversion fades typically get run over.
-    # Cap those signals below the confidence floor so they cannot execute.
-    # Exception: after 13:00 ET, AFT_REV is DESIGNED to catch reversals on
-    # big-move days — the filter stops before the afternoon window.
     if signals and len(today) >= 2:
         _so        = float(today.iloc[0].get("open", today.iloc[0]["close"]))
         _sc        = float(today.iloc[-1]["close"])
@@ -521,18 +476,6 @@ def route_signals(
     # ── Directional consensus filter — the direction decision ────────────────
     # This is the core fix for wrong-direction trading. Three independent
     # indicators must ALL agree before a direction is considered "established":
-    #
-    #   1. Price vs VWAP       — where is price relative to intraday mean?
-    #   2. VWAP slope 20 bars  — which way is institutional money flowing?
-    #   3. MSA swing structure — are we making HH/HL (up) or LH/LL (down)?
-    #
-    # When all three agree AND RVOL ≥ 1.5× (institutions are driving this):
-    #   3/3 bullish → block ALL put signals. Money prints on calls only.
-    #   3/3 bearish → block ALL call signals. Money prints on puts only.
-    #
-    # This is not a penalty. It is a direction decision. In a crash day (April
-    # 2026: -5% at open, VWAP declining, LH/LL structure), the bot should ONLY
-    # be looking for put entries — not taking calls because a 5-min bounce
     # "looked like" a VWAP pullback recovery.
     if signals and len(today) >= 20:
         _dc_last   = today.iloc[-1]
@@ -562,9 +505,6 @@ def route_signals(
         # Hard block ONLY on unanimous 3/3 — all three must agree before we fully
         # block the opposite direction. 2/3 agreement is too common on normal days
         # (price>VWAP + positive slope = 2/3 bullish almost constantly) and was
-        # wiping out valid counter-trend signals (AFT_REV, MID_BRK) while also
-        # leaving no valid same-direction signals after other filters fired.
-        # Rule: 3/3 → hard block. 2/3 → soft ×0.80 penalty only.
         _dc_before = len(signals)
         if _bull_score == 3:
             signals = [s for s in signals if s.direction == "bullish"]
@@ -644,7 +584,6 @@ def route_signals(
     # ── Volume ROC gate (false signal filter) ────────────────────────────────
     # Prevent entries when buying pressure is already fading.
     # Compares avg volume of last 3 bars vs prior 3 bars.
-    # If recent vol < 65% of prior vol, momentum is dying → veto all signals.
     if signals and len(today) >= 6:
         _recent_vol = today["volume"].iloc[-3:].mean()
         _prior_vol  = today["volume"].iloc[-6:-3].mean()

@@ -16,8 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 # HIGH RISK WARNING fires at most ONCE PER SESSION (per service start).
-# Previously capped at 5 minutes — still noisy for a user who checks the
-# dashboard periodically. Session-scoped flag is reset when the service restarts.
+# Cache window keeps repeated dashboard checks from spamming the API.
 _bootstrap_warn_shown: bool = False
 
 from config import (
@@ -158,8 +157,6 @@ def get_todays_realized_pnl() -> float:
     """
     # CRITICAL FIX 2026-07-15: removed "AND paper = 0". The DB file is already
     # mode-separated (trades_paper.db vs trades_live.db), so in paper mode every
-    # row has paper=1 and this filter made the function ALWAYS return $0.00 —
-    # the daily loss limit and 10% hard-cap kill lock NEVER fired in paper mode.
     # (Confirmed 2026-07-15: -34% single-day loss with no halt.)
     today = date.today().isoformat()
     try:
@@ -274,12 +271,6 @@ class RiskManager:
     # ── ORB Risk Model (tiered) ───────────────────────────────────────────────
     # Position size = (Equity × RISK_PCT) / (Premium × 0.30)
     #
-    # Growth mode ON  + balance < $50k  → RISK_PCT = 3%
-    # Growth mode ON  + balance >= $50k → RISK_PCT = 1% (auto-downgrade)
-    # Growth mode OFF                   → RISK_PCT = 1%
-    #
-    # The result is always floored to 1 (we enter if we can afford ≥ 1 contract)
-    # or 0 if even 1 contract would risk more than the RISK_PCT budget.
 
     ORB_STOP_PCT        = 0.20   # initial stop-loss = 20% of premium (tightened from 30%
                                  # — smaller hole to dig out of on a <$5k account)
@@ -296,10 +287,6 @@ class RiskManager:
     # ── Dynamic stop tightening (theta decay protection) ─────────────────────
     # Stop tightens 5 percentage-points every 15 minutes:
     #   0–14 min  → 20% stop (initial — tightened from 30%)
-    #   15–29 min → 15% stop
-    #   ≥30 min   → floor (10%) — never goes below STOP_FLOOR_PCT
-    #   ≥45 min   → time-box exits flat/losing trades entirely
-    #   ≥90 min   → time-box exits winners (stage1_done=True)
     STOP_TIGHTEN_INTERVAL = 15   # minutes between each tightening step
     STOP_TIGHTEN_STEP     = 0.05 # 5pp reduction per step
     STOP_FLOOR_PCT        = 0.10 # never tighten below 10% (avoid noise-triggered exits)
@@ -307,10 +294,6 @@ class RiskManager:
     # ── Profit lock — REMOVED ────────────────────────────────────────────────
     # The profit lock (trigger at +12%, floor at +10%) created 0.19:1 R:R:
     #   Exit at floor with slippage: entry×1.10×0.95 = +4.5% actual gain
-    #   vs stop loss at -20%: entry×0.80×0.95 = -24% actual loss
-    # That requires 84%+ WR just to break even. Stage 1 at +50% (1.98:1 R:R)
-    # is the correct profit take — break-even at 34% WR.
-    # Constants kept for API compatibility (position_manager may reference them).
     PROFIT_LOCK_PCT       = 0.50   # sentinel: same as stage 1 — effectively disabled
     PROFIT_LOCK_TRAIL_PCT = 0.40   # sentinel: floor well below stage 1 target
 
@@ -422,7 +405,6 @@ class RiskManager:
 
         # Bootstrap floors at 2 contracts if the premium fits within the notional cap.
         # Applies regardless of manual risk_per_trade override.
-        # Falls back to 1 contract if 2 don't fit (e.g. $5+ premium).
         if _in_bootstrap:
             if contracts < 2 and (option_ask * 100 * 2) <= max_notional:
                 contracts = 2
@@ -677,8 +659,6 @@ class RiskManager:
         # ── Daily loss enforcement ─────────────────────────────────────────────
         # Two thresholds:
         #   1. HARD CAP: 10% of equity — always enforced; triggers 24h kill lock.
-        #   2. SOFT LIMIT: user-configurable (defaults to 10%, can be tightened).
-        # Whichever is more conservative triggers first.
         hard_threshold = -(account_balance * DAILY_LOSS_HARD_CAP_PCT)   # always -10%
         soft_threshold = -(account_balance * settings.get("max_daily_loss_pct", 0.10))
         effective_threshold = max(hard_threshold, soft_threshold)        # max = least negative
@@ -686,8 +666,6 @@ class RiskManager:
         # ── Equity-based daily loss check (2026-07-15 audit) ──────────────────
         # The DB-sum check below relies on the bot's own recorded fills, which
         # historically under-reported losses. This check uses the TRUTH: actual
-        # Alpaca equity vs the equity captured at day start. Whichever check
-        # trips first halts trading.
         _equity_drawdown = 0.0
         try:
             from trading.state import LIVE_STATE as _LS
@@ -846,9 +824,6 @@ class RiskManager:
         # Validity guard: if the structural swing is at or above the entry price
         # (i.e. the swing pivot is within noise distance of the current price),
         # the implied option stop would be ≥ entry — that would trigger immediately.
-        # In that case discard the structural stop and fall back to the static 30%.
-        # Previously used `min(struct_stop, entry_price * 0.99)` which set the stop
-        # at 1% below entry — far too tight for options and caused 1-minute stop-outs.
         if struct_stop >= entry_price:
             result = static_stop
         else:
@@ -1066,7 +1041,6 @@ class RiskManager:
         # ── 2. ATR / swing trailing stop ──────────────────────────────────────
         # Replaces the old fixed-percentage dynamic stop.
         # Position manager ratchets this tighter as price moves in our favour.
-        # Falls back to 20% hard stop if no ATR data available yet.
         if atr_trail_stop is not None:
             if current_price <= atr_trail_stop:
                 return True, (
@@ -1082,9 +1056,6 @@ class RiskManager:
         # ── 3. VWAP breach + confirmed trend breakdown ────────────────────────
         # Only exits when BOTH conditions are met:
         #   a) Price has been below (call) or above (put) VWAP for ≥2 bars (tracked
-        #      by position_manager via vwap_breached_bars counter → sets trend_dead)
-        #   b) The trend is actually dead: ADX<20 OR EMA stack misaligned
-        # This prevents exiting on every VWAP dip when momentum is still intact.
         if vwap is not None and trend_dead:
             vwap_broken = (
                 (direction == "bullish" and current_price < vwap * 0.9990) or   # option well below VWAP equivalent
@@ -1093,14 +1064,12 @@ class RiskManager:
             # For options, proxy the VWAP check via the already-computed trend_dead
             # flag from position_manager (which checked the underlying, not the option)
             # trend_dead=True means VWAP has been breached for ≥2 bars AND the trend
-            # indicators confirm deterioration. Exit regardless of option price.
             _ = vwap_broken   # referenced above for clarity but trend_dead is the gate
             return True, f"vwap_trend_dead (trend_dead=True direction={direction})"
 
         # ── 3b. VWAP breach while profitable — take the money ────────────────
         # If we're already +5% profitable and VWAP gets breached (even without
         # full trend death), lock in the gain now rather than waiting for ADX/EMA
-        # to confirm. A winning trade that loses VWAP is a sign the move is done.
         if (not stage1_done
                 and vwap_breached
                 and current_price > entry_price * 1.05):
@@ -1113,8 +1082,6 @@ class RiskManager:
         # ── 3c. Peak-giveback exit ────────────────────────────────────────────
         # If trade reached +20% at peak and has given back >40% of that gain,
         # exit the runner. Captures most of the move without watching it evaporate.
-        # Only active when stage1 is NOT done yet (full position still on).
-        # After stage1, the ATR trail handles the runner.
         if (not stage1_done
                 and peak_price is not None
                 and peak_price >= entry_price * 1.20):  # was up ≥20%
@@ -1160,12 +1127,6 @@ class RiskManager:
 
         # Momentum-death early exit: if RVOL has dropped below threshold AND
         # the trade is losing, institutional participation is gone. Exit before
-        # the 60-min hard cap to stop theta decay on dead setups.
-        # Both conditions required — dead RVOL alone doesn't kill a working trade.
-        # 2026-07-15 audit fix: "current_price < entry_price" fired on trades down
-        # 1 cent, and intraday volume mechanically declines after the open so
-        # rvol<0.70 midday is NORMAL, not "momentum dead". Require a genuine
-        # adverse move (down ≥ MOMENTUM_DEAD_LOSS_PCT) before cutting the trade.
         from config import MOMENTUM_DEAD_LOSS_PCT as _MDL
         if (not stage1_done
                 and rvol > 0.0

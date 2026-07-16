@@ -81,7 +81,6 @@ logger = logging.getLogger("celo_trader.trading_logic")
 
 # Trade-scoped adapter — reset each time a new position opens.
 # _tick() modifies this with `global _trade_log`; position_manager.py reads it
-# via deferred `from trading import entry as _em; _em._trade_log`.
 _trade_log: logging.Logger = logger
 
 # RiskManager instance — set by loop.py via `import trading.entry as _em; _em._risk = ...`
@@ -291,7 +290,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── CRITICAL: ticker and status must be initialized before ANY branch ─────
     # Python treats any variable assigned ANYWHERE in a function as local
     # throughout the entire scope. Without this plain assignment first, every
-    # log_event() call before the ticker-selection block raises UnboundLocalError.
     ticker = None                          # overwritten at ticker-selection block
     LIVE_STATE["status"] = "scanning"      # reset here so bot_state.json write
     # below never lags with a stale "standby" value from the previous tick.
@@ -299,8 +297,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # ── Daily session reset ───────────────────────────────────────────────────
     # If the calendar date has changed since the last tick, reset session P&L
-    # to 0 and recalculate from today's closed trades only.  Without this the
-    # bot carries Friday's P&L into Monday morning when running continuously.
+    # Reset to 0 and recalculate from today's closed trades only.
     from datetime import date as _date
     _today_str = _date.today().isoformat()
     if LIVE_STATE.get("_session_date") != _today_str:
@@ -322,10 +319,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _hb.write_text(str(_tm.time()))
 
     # Fast local time check BEFORE any Alpaca API call.
-    # If we're clearly outside extended hours (8 PM – 4 AM ET), skip the
-    # Alpaca is_market_open() call entirely — it's guaranteed False and
-    # making the request every 60 s all night generates spurious alpaca_get_failed
-    # errors that pollute the Bot Thinking / Network panel.
+    # Outside extended hours (8 PM - 4 AM ET), skip the market-status call.
     _now_local = _now_et()
     _hm_local  = _now_local.hour * 60 + _now_local.minute
     _is_weekend = _now_local.weekday() >= 5   # Saturday=5, Sunday=6
@@ -345,10 +339,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     if not market_open:
         # Check whether the market is GENUINELY closed vs. an API glitch.
         # Alpaca's /v2/clock endpoint occasionally returns False during live
-        # hours (network blip, 403, timeout).  If local ET time says we're
-        # mid-session (9:30–16:00), override the API result and continue — a
-        # false "market closed" response used to wipe scan_watchlist and return
-        # early, freezing the bot for the rest of the day.
         _now_hm_tick = _now_et().hour * 60 + _now_et().minute
         _genuinely_closed = _now_hm_tick >= 16 * 60 or _now_hm_tick < 9 * 60 + 30
 
@@ -428,7 +418,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # FIX: capture Alpaca's options buying power so the dashboard can show
         # it on the Live Trading page and orders that are about to be rejected
         # for "insufficient options buying power" aren't a total surprise.
-        # Falls back to whatever was last known if this field is ever absent.
         LIVE_STATE["options_buying_power"] = (
             float(acct.get("options_buying_power", 0)) if acct
             else LIVE_STATE.get("options_buying_power", 0)
@@ -442,7 +431,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Reconciliation: catch positions Alpaca holds that the bot doesn't know
     # about (see _check_ghost_positions docstring for the 2026-06-15 incident
     # that motivated this). Stored in LIVE_STATE so the market-closed branch
-    # above can also persist the last-known value.
     LIVE_STATE["ghost_position_alert"] = _check_ghost_positions(alpaca)
 
     # ── Write shared state file so dashboard reads live bot state ─────────────
@@ -451,9 +439,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _is_paper = _gs().get("paper_trading", True)
     # Preserve eval_log across ticks using LIVE_STATE (in-memory).
     # File-read was racy: an intermediate write at line ~1133 could put
-    # eval_log:[] back in the file between the eval_log write (line ~1168)
-    # and this read, silently dropping every signal.  LIVE_STATE is updated
-    # atomically in the same thread so there is no race.
     _preserved_eval_log = LIVE_STATE.get("eval_log", [])
     try:
         _json.dump({
@@ -499,10 +484,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             # ── Risk-sizing visibility ────────────────────────────────────────
             # risk_budget_usd:        $ the bot will lose if the 30% stop hits
             #                         on 1 contract (balance x effective_risk_pct).
-            # max_affordable_premium: highest raw ask price the bot can size to
-            #                         >=1 contract right now — SIZING_ZERO fires
-            #                         above this. Shown proactively so the user
-            #                         never has to ask "why did sizing return 0".
             "risk_budget_usd":        round(balance * _risk.effective_risk_pct(balance), 2) if _risk else 0.0,
             "max_affordable_premium": _risk.max_affordable_premium(balance) if _risk else 0.0,
             # Most recently evaluated contract (set when the bot looks at a
@@ -523,12 +504,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Manage existing position(s) ────────────────────────────────────────────
     # NEW (MAX_CONCURRENT_POSITIONS): manage ALL open trades (up to the limit),
     # not just a single one. The orphaned-order sweep runs first so any resting
-    # order left behind by a failed/partial fill from a prior tick can never
-    # silently fill later as an unsupervised ghost position.
     # ── 3:55 PM ET hard session cutoff ───────────────────────────────────────
-    # At or after 3:55 PM ET: cancel all pending orders and market-close all
-    # open positions, then return.  This prevents holding through the final
-    # auction where bid/ask spreads blow out and fills become unpredictable.
     # SESSION_HARD_CUTOFF_HM = (15, 55) from config.
     _et_now_cut = _now_et()
     _cutoff_minutes = SESSION_HARD_CUTOFF_HM[0] * 60 + SESSION_HARD_CUTOFF_HM[1]
@@ -573,18 +549,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # FIX 2026-06-15: the 7 positions recovered from the ghost-position
     # reconciliation (strategy_id == "RECOVERED_UNTRACKED") were inserted with
     # entry_time = the moment they were recovered, NOT their real entry time.
-    # If _manage_open_position() ran on them, the 45-min time-box / dynamic
-    # stop tightening would start counting from that recovery moment and
-    # could force-close a legacy position at an arbitrary point unrelated to
-    # the ORB strategy that (might have) opened it. Worse, with all 7 counted
-    # against MAX_CONCURRENT_POSITIONS=2, the entry gate below would NEVER
-    # free up — the bot would be permanently blocked from new trades "for the
-    # day" (and every day after) until a human manually closed 6 of them.
-    #
-    # These legacy positions are still visible (with a per-row "Close
-    # Position" button) on the Trade Journal page — they're just excluded
-    # from the bot's own automated management/gating, which only applies to
-    # positions THIS bot opened.
+    # Recovered untracked positions are excluded from automated management.
     _bot_trades = [t for t in open_trades if t.get("strategy_id") != "RECOVERED_UNTRACKED"]
     LIVE_STATE["open_trade"] = _bot_trades[0] if _bot_trades else None
 
@@ -596,9 +561,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Price-only update for RECOVERED_UNTRACKED trades ─────────────────────
     # These trades are excluded from _manage_open_position (so automated
     # stop/time-box/stage1 logic never fires on them), but the dashboard's
-    # Trade Journal needs a live current_option_price to show unrealised P&L.
-    # Fetch a Tradier quote for each one and write ONLY the price into
-    # bot_state.json["open_positions"] — no management actions taken.
     import json as _json_rec
     _state_path_rec = __import__("pathlib").Path(__file__).resolve().parent / "bot_state.json"
     _recovered_trades = [t for t in open_trades if t.get("strategy_id") == "RECOVERED_UNTRACKED"]
@@ -642,9 +604,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # ── Pre-trade gate ─────────────────────────────────────────────────────────
     # NEW (MAX_CONCURRENT_POSITIONS): if a slot is free but the bot is still
-    # holding a position in the OTHER slot, reflect "in_trade" for the
-    # dashboard — but don't return; fall through to evaluate a new entry for
-    # the free slot below.
+    # If holding a position in the OTHER slot, still reflect "in_trade".
     LIVE_STATE["status"] = "in_trade" if _bot_trades else "scanning"
     settings = get_settings()
 
@@ -657,8 +617,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # Pass ET time explicitly — risk.py's is_trading_window() defaults to
     # datetime.now() which is UTC on EC2, making the 9:30–16:00 ET window
-    # appear expired at 1 PM ET (= 5 PM UTC > 16:00). This caused the bot to
-    # block all trades during market hours with "Outside trading window".
     allowed, reason = _risk.can_trade(balance, has_open_position=False, now=_now_et())
     if not allowed:
         logger.debug("Trading blocked: %s", reason)
@@ -696,10 +654,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Ticker selection — cycle through scan watchlist ───────────────────────
     # The watchlist is populated by the pre-market scan (or on-demand below).
     # Each tick advances to the next ticker; the bot evaluates each for an ORB
-    # signal so all 5 top movers are checked before any is re-scanned.
-    # Strip blacklisted tickers (leveraged/inverse ETFs) from any cached watchlist.
-    # The scanner already filters these, but a stale LIVE_STATE from a pre-fix
-    # session may still contain SQQQ/TQQQ — remove them here as a hard guard.
     from scanner import TICKER_BLACKLIST as _BL
     watchlist = [t for t in (LIVE_STATE.get("scan_watchlist") or []) if t not in _BL]
     if not watchlist:
@@ -726,21 +680,15 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # FIX 2026-06-22 (direct request): the per-ticker session-long loss
     # cooldown ("Fix 1") that used to gate here is removed — see the matching
-    # comment where trades close, a few thousand lines down, for the
-    # rationale and the known risk being accepted.
 
     # ── Fix 2 (new): Same-ticker concurrent position guard ───────────────────
     # MAX_CONCURRENT_POSITIONS=2 is for DIVERSIFICATION — two different stocks,
     # not two legs on the same stock.  Without this guard, both slots can open
     # the same ticker simultaneously (SPY+SPY, NVDA+NVDA), doubling exposure
-    # to a losing trade.  Confirmed from 2026-06-18 audit: SPY 111+112 cost
-    # -$63 combined; NVDA 115+116 cost -$23 combined.
     _open_tickers = {t.get("ticker", "") for t in LIVE_STATE.get("open_trades", [])}
     if ticker in _open_tickers:
         # Still narrate the open position every bar so the THINKING panel shows
         # live position status for NVDA/SPY even though no new entry is taken.
-        # Fetch 1-min bars here — the position narration branch in
-        # _log_bar_thinking uses them for price, RVOL, and stop distance.
         try:
             _pos_bars, _pos_err, _ = alpaca.get_session_bars(ticker, "1Min")
             if _pos_bars and not _pos_err:
@@ -754,7 +702,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # After a profitable close, block the same ticker for WIN_COOLDOWN_MINUTES
     # (10 min).  This prevents the pattern of winning on AAPL then immediately
     # chasing back in 12 seconds later and giving the win back — confirmed as
-    # AAPL 103→105 (+$22 → -$45) and SPY 110→111 (+$41 → -$42) on 2026-06-18.
     _WIN_COOLDOWN_MINUTES = 10
     _win_cooldowns = LIVE_STATE.get("ticker_win_cooldown") or {}
     if ticker in _win_cooldowns:
@@ -776,12 +723,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Re-entry gate ─────────────────────────────────────────────────────────
     # Bot may re-enter the same ticker after cooldowns expire.  Quality gates:
     #   • loss cooldown (Fix 1): blocks re-entry after any losing trade
-    #   • concurrent ticker guard (Fix 2): no doubling down on same stock
-    #   • win cooldown (Fix 3): 10-min wait after a profitable exit
-    #   • RVOL floor (≥1.0× absolute minimum, set in strategy_router)
-    #   • SPY VWAP macro gate: wrong-way entries flipped/blocked
-    #   • Signal confidence and R:R gate must pass on every entry
-    # See re-entry quality analysis (2026-06-18 audit) for improvement context.
 
     # ── Earnings check — respects earnings_filter_enabled toggle ─────────────
     try:
@@ -798,9 +739,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Fetch today's 1-min session bars for signal detection ────────────────
     # Switched from 5Min → 1Min so all 8 strategies (BOS/MSS, FVG, VWAP PB,
     # Channel Break, etc.) detect structure shifts at the exact candle they
-    # occur rather than up to 4 minutes late.  RVOL and vol_sma windows in
-    # strategy_router.py are calibrated for 1-min bars (100-bar SMA = ~100 min
-    # of intraday context, matching the old 20-bar × 5-min = 100-min window).
     try:
         bars_5m, is_error, is_live = alpaca.get_session_bars(ticker, "1Min")
     except Exception as e:
@@ -824,10 +762,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Augment with historical 5-min bars for cross-day RVOL baseline ───────
     # Alpaca's free IEX tier caps 1Min historical pulls at ~400 bars (today
     # only).  Requesting 7800 1Min bars would either 403 or silently return
-    # far fewer bars, breaking RVOL.  Instead we pull 5Min bars (~15 days of
-    # history = 1500 bars × 5 min each) — the free tier supports these — and
-    # prepend them strictly for RVOL context.  Strategy signals are evaluated
-    # on today's 1Min bars alone (df5 is sliced back below).
+    # 5Min history bars (free-tier friendly) prepended for RVOL context only.
     _df_today_1m = df5.copy()   # save today's 1Min bars before augment
     try:
         _hist_bars, _hist_err = alpaca.get_bars(ticker, "5Min", limit=1500)  # ~15 days
@@ -839,7 +774,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             if not _df_hist.empty:
                 # Augmented df used only by RVOL compute inside route_signals.
                 # route_signals() receives df_rvol_aug; strategy evaluation is
-                # done on the 1Min slice passed as the first positional arg.
                 df5 = pd.concat([_df_hist, _df_today_1m], ignore_index=True).sort_values("time").reset_index(drop=True)
     except Exception as _hist_ex:
         logger.debug("Historical bar augment skipped (%s): %s", ticker, _hist_ex)
@@ -856,8 +790,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _strat_cfg = get_settings()
     # Per-strategy default: True = on unless user disabled it in Settings.
     # VWAP_PB and TREND_CONT default OFF — 3-month backtest audit (2026-07-15)
-    # showed deeply negative expectancy (-$135.01 and -$59.11 per trade).
-    # They chase moves without a regime gate; re-enable only after re-audit.
     _STRAT_DEFAULTS = {
         "strategy_vwap_enabled":  False,   # VWAP_PB  — audit: -$135.01/trade
         "strategy_tcont_enabled": False,   # TREND_CONT — audit: -$59.11/trade
@@ -880,7 +812,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         LIVE_STATE["last_signal"] = None
         # Log WHY no signal — the bar_eval entry already covers the ORB gate
         # reasoning; this adds a higher-level "no strategy qualified" note so
-        # the audit log always shows something on every tick.
         try:
             _last_bar_t = str(df5["time"].iloc[-1]) if not df5.empty else "?"
             log_event("INFO", "bar_eval",
@@ -901,7 +832,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Minimum confidence gate ───────────────────────────────────────────────
     # Blocks low-conviction signals (e.g. a single weak strategy with <55%
     # confidence while all others returned nothing). This is a hard quality
-    # floor — even a passing R:R ratio can be noise on a sub-threshold signal.
     _MIN_CONFIDENCE = 0.55
     if _top.confidence < _MIN_CONFIDENCE:
         log_event("INFO", "bar_eval",
@@ -934,10 +864,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Flip-direction enforcement ────────────────────────────────────────────
     # When flip_eligible, we prefer the OPPOSITE direction of the stopped trade
     # but we do NOT hard-block a valid signal — market structure always wins.
-    #
-    # Why: a stale flip token (e.g. "bullish" required from yesterday's stop)
-    # would block a perfectly valid ORB SHORT on a bearish open.  We log the
-    # mismatch and proceed rather than killing the entry.
     if LIVE_STATE.get("flip_eligible"):
         required_flip = LIVE_STATE.get("flip_direction")
         if direction != required_flip:
@@ -982,22 +908,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── SPY VWAP direction gate ───────────────────────────────────────────────
     # Before entering a CALL, confirm SPY is trading ABOVE its intraday VWAP.
     # If SPY is below VWAP the broad market is in a bearish posture; bullish
-    # options setups on individual names face strong macro headwinds and fail
-    # at a much higher rate.  PUT entries are allowed regardless of VWAP.
-    # EXCEPTION: flip trades pass through (they're directional reversals, and
-    # blocking a bearish flip on a bullish-VWAP day still makes sense, but a
-    # bullish flip when SPY < VWAP should be blocked — so the filter applies
-    # to ALL bullish entries including flips).
     # ── SPY macro VWAP check — flip direction rather than block ──────────────
-    # If the signal is bullish but SPY is trading BELOW its intraday VWAP,
-    # the broad market is in a bearish posture.  Rather than sitting on our
-    # hands, we flip the trade to a PUT — the macro tailwind is bearish and
-    # we should align with it.  Symmetric: if signal is bearish but SPY is
-    # ABOVE VWAP (bullish macro), flip to CALL.
-    # For SPY/QQQ (Phase 1 tickers): apply the same VWAP flip using the
-    # ticker's OWN bars — we already fetched them above as _df_today_1m.
-    # Previously this block was skipped entirely for SPY/QQQ, so the bot
-    # never took puts on bearish days when only trading these two tickers.
     if ticker.upper() in ("SPY", "QQQ"):
         try:
             from signals import compute_vwap_bands as _cvwap_self
@@ -1006,8 +917,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             _self_close = float(_df_today_1m["close"].iloc[-1]) if not _df_today_1m.empty else 0.0
             # 2026-07-15 audit: was a direction FLIP (CALL→PUT) that kept the
             # original strategy's entry timing — e.g. a VWAP-pullback long flipped
-            # into buying puts at support. Incoherent. Now a VETO: if the signal
-            # direction disagrees with the ticker's VWAP posture, skip the trade.
             if _self_vwap > 0:
                 if direction == "bullish" and _self_close < _self_vwap:
                     log_event("INFO", "bar_eval",
@@ -1113,11 +1022,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     opt_type = "call" if direction == "bullish" else "put"
     # Budget cap now SCALES with the account: max_spend = balance × max_position_dollars_pct.
     # max_position_dollars_pct (15) was previously a dead setting — $750 was a
-    # one-time snapshot of 15% of a $5,000 balance, hardcoded as a flat dollar
-    # figure. Recomputing it live each tick means the cap grows with the
-    # account instead of becoming an ever-shrinking % of equity over time.
-    # Falls back to the old flat "max_position_dollars" only if the % setting
-    # is missing entirely.
     _cap_pct  = settings.get("max_position_dollars_pct")
     if _cap_pct:
         max_spend = balance * (_cap_pct / 100.0)
@@ -1194,9 +1098,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         )
         # Spell out the RISK vs PRICE distinction so this isn't confused with the
         # max_position_dollars / "over_budget" cost cap above. SIZING_ZERO fires
-        # when the dollar amount you'd LOSE if the 30% stop hits exceeds your
-        # risk_per_trade budget — even if the contract's premium itself is
-        # comfortably affordable.
         _risk_pct          = _risk.effective_risk_pct(balance)
         _risk_per_contract = eff_entry * _risk.ORB_STOP_PCT * 100
         _risk_budget       = balance * _risk_pct
@@ -1213,9 +1114,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Total-position-cost cap (tier-aware notional cap) ─────────────────────
     # calculate_contracts() already has a built-in notional cap (45%/30%/20% of
     # balance). The old secondary clamp used max_spend (15% of balance = $267 on
-    # a $1,778 account) which is tighter than the bootstrap tier's 45% notional
-    # cap ($800), causing the risk model to approve 2 contracts but this clamp
-    # to force it back to 1. Fix: mirror the same tier percentages here.
     _in_bs_clamp = bool(settings.get("growth_mode", False)) and \
                    balance < float(settings.get("growth_risk_boundary_boot", 5000.0))
     _eff_rp_clamp = _risk.effective_risk_pct(balance)
@@ -1275,9 +1173,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Spread gate: skip if bid-ask spread > 10% of mid price ───────────────
     # Wide spreads mean we pay an immediate 5–10% toll just getting in and out.
     # On a small account that single spread can wipe a whole risk-budget unit.
-    # select_contract() already gates on MAX_BID_ASK_SPREAD ($0.50 absolute),
-    # but a $0.50 spread on a $1.00 contract is 50% — devastating.  This
-    # percentage check catches cheap contracts with wide relative spreads.
     _c_bid = float(contract.get("bid", 0) or 0)
     _c_ask = float(contract.get("ask", 0) or ask_price)
     _c_mid = (_c_bid + _c_ask) / 2 if _c_bid > 0 else _c_ask
@@ -1347,16 +1242,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # Always route through the broker — the paper/live destination is controlled
     # by ALPACA_BASE_URL in .env (paper-api.alpaca.markets vs api.alpaca.markets).
-    # The `paper` flag only tags logs and selects which DB file to write to;
-    # it must NOT skip the broker call, otherwise trades never appear in the
-    # Alpaca paper account.
-    # Fix 3: duplicate-order guard — prevent placing the same order twice in
-    # the same minute.  Before this fix every signal generated 2 identical BUY
-    # log lines at the same second because both the plain-text handler and the
-    # JSON handler emitted the event, and the entry code was called twice per
-    # tick (once from each logger path).  Checking the (contract, HH:MM) key
-    # is a cheap idempotency guard that blocks the second placement without
-    # requiring a lock.
     _entry_key = (contract["symbol"], _now_et().strftime("%H:%M"))
     if LIVE_STATE.get("_last_order_key") == _entry_key:
         logger.warning(
@@ -1372,11 +1257,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # in the same minute sees the lock immediately.
     LIVE_STATE["_last_order_key"] = _entry_key
     # Smart limit order: submit at the mid-price (bid+ask)/2 first — the same
-    # favorable price paper trading fills at. If the market is moving and the
-    # mid isn't taken within 5 seconds, _wait_for_fill steps the limit up to
-    # the raw ask (step_to_price) to guarantee execution.
-    # eff_entry (ask + 5% slippage) is intentionally kept conservative for all
-    # risk/sizing calculations — actual fill will be equal to or better than that.
+    # Paper fills at a less favorable price than mid — record worst case.
     _order_mid   = round(_c_mid, 2)   # best-case: fill at mid
     _order_ask   = round(ask_price, 2) # worst-case step-up: fill at ask
     _spread_save = round((_order_ask - _order_mid) * n_contracts * 100, 2)
@@ -1443,7 +1324,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # NEW (MAX_CONCURRENT_POSITIONS): re-read ALL open trades from the DB so
     # open_trades/open_trade reflect this new position alongside any other
-    # already-open position.
     LIVE_STATE["open_trades"]      = get_open_trades()
     LIVE_STATE["open_trade"]       = LIVE_STATE["open_trades"][0] if LIVE_STATE["open_trades"] else None
     LIVE_STATE["status"]           = "in_trade"
@@ -1460,7 +1340,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Per-position live-management state (NEW — MAX_CONCURRENT_POSITIONS) ──
     # Each open trade gets its OWN peak/stage/stop tracking so a 2nd concurrent
     # position's stage/stop progress can never overwrite the 1st's (and vice
-    # versa). _manage_open_position() reads/writes this dict keyed by trade_id.
     LIVE_STATE["positions"][trade_id] = {
         "peak_price":                confirmed_price,
         "entry_time":                entry_utc.isoformat(),
@@ -1476,7 +1355,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Structural stop: convert entry_bar_high/low → option stop price ───────
     # VWAP_PB bearish and CHAN_BREAK bearish signals carry entry_bar_high in meta.
     # We compute the implied option stop once at entry (delta approx 0.40) so
-    # _manage_open_position can enforce it each tick without another API call.
     _signal_meta      = _top.meta if hasattr(_top, "meta") and _top.meta else {}
     _entry_bar_stop   = _signal_meta.get("entry_bar_high") or _signal_meta.get("entry_bar_low")
     _struct_stop_opt  = None
