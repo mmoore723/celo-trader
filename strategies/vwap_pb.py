@@ -31,6 +31,20 @@ logger = logging.getLogger("celo_trader.strategies.vwap_pb")
 
 STRATEGY_ID = "VWAP_PB"
 
+# ── A/B test knobs (2026-07-15) ───────────────────────────────────────────────
+# LIVE DEFAULT stays strict (5-of-5, no fast-recovery exception) — the 5-of-5
+# guard is what cut VWAP_PB's audit loss from -$4,305/29 trades to -$495/5
+# trades. A proposal came in to loosen back to 3-of-5 plus a "fast recovery"
+# exception (allow entry when price pierced below VWAP then reclaimed
+# instantly with momentum). That pattern is indistinguishable from the
+# blowthrough crashes the guard exists to block, so it is NOT enabled by
+# default. audit_strategies.py can flip these to A/B test before any live
+# change is made — do not flip BLOWTHROUGH_MIN_BARS or FAST_RECOVERY_ENABLED
+# directly in production without a passing backtest first.
+BLOWTHROUGH_MIN_BARS  = 5      # of last 5 bars required on the correct side of VWAP
+FAST_RECOVERY_ENABLED = False  # allow pierce-then-instant-reclaim as an exception
+FAST_RECOVERY_MIN_BODY_PCT = 0.40   # candle body/range ratio required to count as "instant momentum"
+
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     if len(today) < 8:
@@ -63,26 +77,52 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     msa_ok_bull  = msa.confirmed_higher_low()
     msa_ok_bear  = msa.confirmed_lower_high()
 
-    # ── Blowthrough guard (2026-07-15 rework: 5-of-5, was 3-of-5) ─────────────
-    # A true pullback needs price on the correct side of VWAP for ALL recent
-    # bars — a single opposing bar means price is crashing THROUGH the level.
+    # ── Blowthrough guard ──────────────────────────────────────────────────────
+    # A true pullback needs price on the correct side of VWAP for BLOWTHROUGH_MIN_BARS
+    # of the last 5 bars. Fewer opposing bars allowed = looser = catches more
+    # setups but also more crash-through moves. See A/B knobs above.
     _lookback_bars = today.iloc[-6:-1] if len(today) >= 6 else today.iloc[:-1]
 
     def _was_above_vwap(bars: pd.DataFrame) -> bool:
-        """True only if ALL of the last 5 bars closed above vwap."""
+        """True if >= BLOWTHROUGH_MIN_BARS of the last 5 bars closed above vwap."""
         if len(bars) < 5:
             return False
         _closes = bars["close"].values
         _vwaps  = bars["vwap"].values if "vwap" in bars.columns else [c_vwap] * len(bars)
-        return all(float(c) > float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
+        _n_above = sum(float(c) > float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
+        return _n_above >= BLOWTHROUGH_MIN_BARS
 
     def _was_below_vwap(bars: pd.DataFrame) -> bool:
-        """True only if ALL of the last 5 bars closed below vwap."""
+        """True if >= BLOWTHROUGH_MIN_BARS of the last 5 bars closed below vwap."""
         if len(bars) < 5:
             return False
         _closes = bars["close"].values
         _vwaps  = bars["vwap"].values if "vwap" in bars.columns else [c_vwap] * len(bars)
-        return all(float(c) < float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
+        _n_below = sum(float(c) < float(v) for c, v in zip(_closes, _vwaps) if not pd.isna(v))
+        return _n_below >= BLOWTHROUGH_MIN_BARS
+
+    def _fast_recovery_bull() -> bool:
+        """
+        Exception path: prev bar pierced meaningfully below VWAP, but current
+        bar reclaimed with a strong-bodied candle (real momentum, not a
+        1-tick wobble). Only used when FAST_RECOVERY_ENABLED is True.
+        """
+        if not FAST_RECOVERY_ENABLED:
+            return False
+        _pierced = p_low < p_vwap * (1.0 - _TOUCH_PCT)   # beyond the normal touch band
+        _range = max(float(curr["high"]) - float(curr["low"]), 0.0001)
+        _body  = abs(c_close - float(curr.get("open", c_close)))
+        _strong_body = (_body / _range) > FAST_RECOVERY_MIN_BODY_PCT
+        return _pierced and c_close > c_vwap and _strong_body
+
+    def _fast_recovery_bear() -> bool:
+        if not FAST_RECOVERY_ENABLED:
+            return False
+        _pierced = p_high > p_vwap * (1.0 + _TOUCH_PCT)
+        _range = max(float(curr["high"]) - float(curr["low"]), 0.0001)
+        _body  = abs(c_close - float(curr.get("open", c_close)))
+        _strong_body = (_body / _range) > FAST_RECOVERY_MIN_BODY_PCT
+        return _pierced and c_close < c_vwap and _strong_body
 
     # ── Trend-direction gates (2026-07-15 rework) ─────────────────────────────
     # VWAP slope: don't buy pullbacks to a descending VWAP (distribution) or
@@ -103,21 +143,27 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     rvol_min_bull = _get_dynamic_rvol_threshold(
         bar_min, c_close, None, c_vwap, STRATEGY_ID, msa_confirmed=msa_ok_bull)
 
+    _bull_touch = (
+        p_low  <= p_vwap and                           # prev bar touched VWAP...
+        p_low  >= p_vwap * (1.0 - _TOUCH_PCT)          # ...within 0.2% (tap, not pierce)
+    )
+    _bull_fast_recovery = _fast_recovery_bull()
+
     _bull_conditions = (
         c_close > c_ema50 and
         c_vwap  > c_ema50 and
         _ema50_rising and                              # EMA50 actually trending up
         _vwap_rising and                               # never buy a descending VWAP
-        p_low  <= p_vwap and                           # prev bar touched VWAP...
-        p_low  >= p_vwap * (1.0 - _TOUCH_PCT) and      # ...within 0.2% (tap, not pierce)
+        (_bull_touch or _bull_fast_recovery) and
         c_close > c_vwap and
         c_rvol >= rvol_min_bull
     )
-    if _bull_conditions and not _was_above_vwap(_lookback_bars):
+    _bull_blowthrough_ok = _bull_fast_recovery or _was_above_vwap(_lookback_bars)
+    if _bull_conditions and not _bull_blowthrough_ok:
         logger.debug("[%s] VWAP_PB bullish: blowthrough detected — price crashed through VWAP, not a pullback",
                      ticker)
 
-    if _bull_conditions and _was_above_vwap(_lookback_bars):
+    if _bull_conditions and _bull_blowthrough_ok:
         proximity  = max(0.0, 1.0 - abs(p_low - p_vwap) / max(p_vwap * _TOUCH_PCT, 0.01))
         confidence = min(0.82, 0.60 + proximity * 0.15 + min(c_rvol - rvol_min_bull, 1.0) * 0.07)
         logger.info("[%s] VWAP_PB bullish RVOL=%.2f (min=%.2f msa=%s) conf=%.2f",
@@ -145,21 +191,27 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     rvol_min_bear = _get_dynamic_rvol_threshold(
         bar_min, c_close, None, c_vwap, STRATEGY_ID, msa_confirmed=msa_ok_bear)
 
+    _bear_touch = (
+        p_high >= p_vwap and                           # prev bar touched VWAP...
+        p_high <= p_vwap * (1.0 + _TOUCH_PCT)          # ...within 0.2% (tap, not pierce)
+    )
+    _bear_fast_recovery = _fast_recovery_bear()
+
     _bear_conditions = (
         c_close < c_ema50 and
         c_vwap  < c_ema50 and
         _ema50_falling and                             # EMA50 actually trending down
         _vwap_falling and                              # never short an ascending VWAP
-        p_high >= p_vwap and                           # prev bar touched VWAP...
-        p_high <= p_vwap * (1.0 + _TOUCH_PCT) and      # ...within 0.2% (tap, not pierce)
+        (_bear_touch or _bear_fast_recovery) and
         c_close < c_vwap and
         c_rvol >= rvol_min_bear
     )
-    if _bear_conditions and not _was_below_vwap(_lookback_bars):
+    _bear_blowthrough_ok = _bear_fast_recovery or _was_below_vwap(_lookback_bars)
+    if _bear_conditions and not _bear_blowthrough_ok:
         logger.debug("[%s] VWAP_PB bearish: blowthrough detected — price crashed through VWAP, not a pullback",
                      ticker)
 
-    if _bear_conditions and _was_below_vwap(_lookback_bars):
+    if _bear_conditions and _bear_blowthrough_ok:
         proximity  = max(0.0, 1.0 - abs(p_high - p_vwap) / max(p_vwap * _TOUCH_PCT, 0.01))
         confidence = min(0.82, 0.60 + proximity * 0.15 + min(c_rvol - rvol_min_bear, 1.0) * 0.07)
         logger.info("[%s] VWAP_PB bearish RVOL=%.2f (min=%.2f msa=%s) conf=%.2f",
