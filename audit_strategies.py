@@ -55,9 +55,9 @@ def main() -> None:
         breakdown = result.get("strategy_breakdown") or {}
         per_ticker_lines.append(
             f"{ticker}: {result.get('total_trades', 0)} trades, "
-            f"return {result.get('total_return_pct', 0):+.1f}%, "
-            f"win rate {result.get('win_rate_pct', 0):.0f}%, "
-            f"max DD {result.get('max_drawdown_pct', 0):.1f}%"
+            f"return {result.get('total_return', 0):+.1f}%, "
+            f"win rate {result.get('win_rate', 0) * 100:.0f}%, "
+            f"max DD {result.get('max_drawdown', 0):.1f}%"
         )
         for sid, row in breakdown.items():
             agg[sid]["trades"] += int(row.get("trades", 0))
