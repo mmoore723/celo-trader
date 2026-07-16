@@ -42,6 +42,8 @@ from strategies.base import Signal, MarketStructureAnalyzer  # noqa: F401
 
 # ── Strategy evaluator modules ────────────────────────────────────────────────
 from strategies import inst_orb, bos_mss, vwap_pb, fvg, ifvg, mid_brk, aft_rev, trend_cont, chan_break
+import regime_manager as _regime_mgr
+from regime_manager import compute_regime, regime_allows
 
 logger = logging.getLogger("celo_trader.strategy_router")
 
@@ -336,6 +338,22 @@ def route_signals(
                 )
         except Exception as exc:
             logger.warning("Strategy %s raised: %s", strategy_id, exc, exc_info=True)
+
+    # ── Regime gate (2026-07-16, OFF by default) ──────────────────────────────
+    # See regime_manager.py. Only active if explicitly enabled — does nothing
+    # to live trading until a passing A/B backtest justifies flipping it on.
+    if _regime_mgr.REGIME_GATE_ENABLED and signals:
+        _regime = compute_regime(df)
+        if _regime != "neutral":
+            _before = len(signals)
+            signals = [s for s in signals if regime_allows(s.strategy_id, s.direction, _regime)]
+            if len(signals) != _before:
+                try:
+                    _db_log("INFO", "bar_eval",
+                            f"⚪ [{ticker}] Regime={_regime} filtered "
+                            f"{_before - len(signals)} counter-regime signal(s).")
+                except Exception:
+                    pass
 
     signals.sort(key=lambda s: s.confidence, reverse=True)
 

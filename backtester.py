@@ -35,6 +35,8 @@ from strategy_router import (
     _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY,
     _ADX_MIN, _ADX_GATED_STRATEGIES, compute_adx_series,
 )
+import regime_manager as _regime_mgr
+from regime_manager import compute_regime_series, regime_allows
 from strategies.base import MarketStructureAnalyzer
 
 logger = logging.getLogger("celo_trader.backtester")
@@ -349,6 +351,17 @@ class Backtester:
                 df["adx"] = _adx_s.reindex(df["time"].dt.floor("5min")).to_numpy()
         except Exception as _adx_ex:
             logger.debug("ADX series unavailable — gate fails open: %s", _adx_ex)
+
+        # ── Regime series (2026-07-16, OFF by default — see regime_manager.py) ──
+        # Precomputed regardless of the flag so ab_test_regime_manager.py can
+        # flip _regime_mgr.REGIME_GATE_ENABLED between runs without re-fetching
+        # data. Costs nothing when the flag is off — simply unused.
+        try:
+            _regime_s = compute_regime_series(df)
+            if _regime_s is not None:
+                df["regime"] = _regime_s.reindex(df["time"].dt.floor("15min")).to_numpy()
+        except Exception as _regime_ex:
+            logger.debug("Regime series unavailable — gate fails open: %s", _regime_ex)
 
         for trade_date in unique_days:
             day_all = df[df["_date"] == trade_date].reset_index(drop=True)
@@ -683,6 +696,14 @@ class Backtester:
                     _bt_bonus = min(0.05, (_bt_agree_cnt - 1) * 0.03)
                     raw_signals[0].confidence = min(0.95, raw_signals[0].confidence + _bt_bonus)
                 raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+
+            # ── Regime gate (2026-07-16, OFF by default — see regime_manager.py) ──
+            if raw_signals and _regime_mgr.REGIME_GATE_ENABLED and "regime" in day_df.columns:
+                _bt_regime_raw = bar.get("regime")
+                _bt_regime = str(_bt_regime_raw) if _bt_regime_raw and pd.notna(_bt_regime_raw) else "neutral"
+                if _bt_regime != "neutral":
+                    raw_signals = [s for s in raw_signals
+                                   if regime_allows(s.strategy_id, s.direction, _bt_regime)]
 
             # ── Entry window gate (mirrors live TRADING_WINDOWS 2026-07-15) ──
             # Two sessions: 9:30–11:30 (opening edge) + 14:00–15:45 (afternoon
