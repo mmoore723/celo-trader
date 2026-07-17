@@ -31,7 +31,7 @@ export interface ChartReplayHandle {
 type Props = KChartProps;
 
 export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartReplay(
-  { bars, trades = [], ...rest },
+  { bars, trades = [], ticker, tf, ...rest },
   ref
 ) {
   // idx === bars.length means "caught up to live" — the normal, default state.
@@ -48,13 +48,38 @@ export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartRe
     if (wasAtLive.current) setIdx(bars.length);
   }, [bars.length]);
 
+  // FIX 2026-07-17: switching ticker or timeframe used to leave `idx` at
+  // whatever it was mid-replay. A scrub position from the PREVIOUS bars
+  // array (different ticker/tf = different length and meaning entirely)
+  // doesn't carry over meaningfully — the visible result was the TF/ticker
+  // buttons looking like they'd stopped responding (confirmed from the
+  // recording: clicking 1m/5m/15m/1h did nothing until navigating away and
+  // back, which just force-remounts this component and resets its state).
+  // Always jump to live on ticker/tf change instead of silently keeping a
+  // stale, now-meaningless index.
+  const prevKey = useRef(`${ticker}|${tf}`);
+  useEffect(() => {
+    const key = `${ticker}|${tf}`;
+    if (key !== prevKey.current) {
+      prevKey.current = key;
+      wasAtLive.current = true;
+      setPlay(false);
+      setIdx(bars.length);
+    }
+  }, [ticker, tf, bars.length]);
+
   // Playback tick — steps one bar forward per interval, interval shrinks as
-  // speed increases. Stops automatically at the end of the loaded history.
+  // speed increases, floored at 300ms. FIX 2026-07-17: at 4x/8x the old
+  // 500/speed formula pushed new data every 125ms/62.5ms — faster than
+  // KChart's candle pane + built-in RSI/MACD indicator panes could redraw in
+  // lockstep, so the panes visibly fell out of sync (confirmed from the
+  // recording: candles frozen at one time range while RSI/MACD had already
+  // moved on to a later one). The floor keeps every pane repainting together.
   useEffect(() => {
     if (!playing) return;
     if (idx >= bars.length) { setPlay(false); return; }
     const t = setTimeout(() => setIdx((i) => Math.min(i + 1, bars.length)),
-                          500 / SPEEDS[speedIdx]);
+                          Math.max(300, 500 / SPEEDS[speedIdx]));
     return () => clearTimeout(t);
   }, [playing, idx, bars.length, speedIdx]);
 
@@ -99,7 +124,7 @@ export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartRe
 
   return (
     <div className="flex flex-col w-full">
-      <KChart bars={visibleBars} trades={visibleTrades} {...rest} />
+      <KChart bars={visibleBars} trades={visibleTrades} ticker={ticker} tf={tf} {...rest} />
 
       {/* Scrub bar — only meaningful once there's more than a handful of bars */}
       {bars.length > 5 && (
