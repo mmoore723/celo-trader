@@ -4,16 +4,22 @@ strategies/trend_cont.py — Trend Continuation (TREND_CONT)
 Session: 09:45–14:30 ET | Direction: both
 
 Enters on LH re-entry (bearish) or HL re-entry (bullish) — the second/third
-entry AFTER trend has already been proven.  The pivot must be within 20 bars
+entry AFTER trend has already been proven.  The pivot must be within 10 bars
 (fresh, not stale).
 
 Gates:
   1. Session: 09:45–14:30 ET
   2. RVOL ≥ 1.2× (trend already proven; lower threshold than ORB)
   3. MSA confirmed downtrend + LH  OR  uptrend + HL
-  4. Pivot ≤ 20 bars old
+  4. Pivot ≤ 10 bars old
   5. Current bar closes below LH close (bearish) or above HL close (bullish)
   6. VWAP alignment (soft — blocks but logs)
+
+2026-07-17: _MAX_BARS tightened 20 -> 10. diag_trend_cont_features.py found
+a real gap between winning and losing trades: winners re-entered on a fresh
+pivot (avg 4 bars ago), losers on a stale one (avg 9 bars ago). A/B tested
+via ab_test_trend_cont_maxbars.py: 20 bars = 58.3% WR, +$41.25/trade;
+10 bars = 70.0% WR, +$73.01/trade. Shipped after the improvement confirmed.
 """
 
 from __future__ import annotations
@@ -31,7 +37,7 @@ logger = logging.getLogger("celo_trader.strategies.trend_cont")
 STRATEGY_ID = "TREND_CONT"
 
 _RVOL_MIN   = 1.2
-_MAX_BARS   = 20
+_MAX_BARS   = 10   # tightened from 20 (2026-07-17) — see module docstring
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
