@@ -478,44 +478,61 @@ export function KChart({
       return;
     }
 
-    const tfMsR: Record<string, number> = {
-      "1Min": 60_000, "5Min": 300_000, "15Min": 900_000, "1Hour": 3_600_000,
-    };
-    const barDurR = tfMsR[tf] ?? 300_000;
-    const lastTsR = new Date(bars[bars.length - 1].time).getTime() + barDurR * 500;
-    const bg = dark ? "#131722" : "#ffffff";
+    // BUG FOUND 2026-07-19: the mask never appeared in testing even though
+    // revealUntil was set correctly. Root cause — the SAME klinecharts quirk
+    // documented on the heavy effect above: "overlays created synchronously
+    // in the same tick [as a pending repaint] get silently cleared when that
+    // repaint flushes." This effect can land in the same tick as the heavy
+    // effect's applyNewData/scrollToRealTime cycle (e.g. the very first tick
+    // a replay starts), which was silently wiping the mask every time. A
+    // short delay — same fix the heavy effect already uses, just shorter
+    // since there's no data reload to wait for here — makes it land after
+    // that repaint instead of during it.
+    const t = setTimeout(() => {
+      const cc = chartRef.current;
+      if (!cc) return;
 
-    const maskPane = (groupId: string, paneId: string | undefined, lo: number, hi: number) => {
+      const tfMsR: Record<string, number> = {
+        "1Min": 60_000, "5Min": 300_000, "15Min": 900_000, "1Hour": 3_600_000,
+      };
+      const barDurR = tfMsR[tf] ?? 300_000;
+      const lastTsR = new Date(bars[bars.length - 1].time).getTime() + barDurR * 500;
+      const bg = dark ? "#131722" : "#ffffff";
+
+      const maskPane = (groupId: string, paneId: string | undefined, lo: number, hi: number) => {
+        try {
+          cc.createOverlay({
+            name: "rect", groupId, lock: true,
+            points: [{ timestamp: revealUntil, value: lo }, { timestamp: lastTsR, value: hi }],
+            needDefaultYAxisFigure: false,
+            styles: { polygon: { style: "fill", color: bg }, line: { color: "transparent", size: 0 } },
+          }, paneId);
+        } catch (_) {}
+      };
+
+      // Candle/volume/RSI/MACD each have their own y-axis scale, so each pane
+      // needs mask bounds in ITS OWN units, not price units.
+      const priceMaxR = Math.max(...bars.map((b) => b.high)) * 1.02;
+      const priceMinR = Math.min(...bars.map((b) => b.low))  * 0.98;
+      maskPane("reveal_candle", undefined, priceMinR, priceMaxR);
+
+      const maxVol = Math.max(...bars.map((b) => b.volume ?? 0), 1) * 1.1;
+      maskPane("reveal_vol", "vol_pane", 0, maxVol);
+      if (showRsi)  maskPane("reveal_rsi",  "rsi_pane",  0, 100);
+      if (showMacd) maskPane("reveal_macd", "macd_pane", -1_000_000, 1_000_000);
+
+      drawTradeOverlays(cc);
+
+      // Cheap viewport nudge — not a data reload — with a little headroom
+      // past the reveal point so it doesn't feel like hitting a wall.
       try {
-        c.createOverlay({
-          name: "rect", groupId, lock: true,
-          points: [{ timestamp: revealUntil, value: lo }, { timestamp: lastTsR, value: hi }],
-          needDefaultYAxisFigure: false,
-          styles: { polygon: { style: "fill", color: bg }, line: { color: "transparent", size: 0 } },
-        }, paneId);
+        let revealIdx = bars.findIndex((b) => new Date(b.time).getTime() > revealUntil);
+        if (revealIdx === -1) revealIdx = bars.length - 1;
+        cc.scrollToDataIndex(Math.min(bars.length - 1, revealIdx + 20));
       } catch (_) {}
-    };
+    }, 60);
 
-    // Candle/volume/RSI/MACD each have their own y-axis scale, so each pane
-    // needs mask bounds in ITS OWN units, not price units.
-    const priceMaxR = Math.max(...bars.map((b) => b.high)) * 1.02;
-    const priceMinR = Math.min(...bars.map((b) => b.low))  * 0.98;
-    maskPane("reveal_candle", undefined, priceMinR, priceMaxR);
-
-    const maxVol = Math.max(...bars.map((b) => b.volume ?? 0), 1) * 1.1;
-    maskPane("reveal_vol", "vol_pane", 0, maxVol);
-    if (showRsi)  maskPane("reveal_rsi",  "rsi_pane",  0, 100);
-    if (showMacd) maskPane("reveal_macd", "macd_pane", -1_000_000, 1_000_000);
-
-    drawTradeOverlays(c);
-
-    // Cheap viewport nudge — not a data reload — with a little headroom past
-    // the reveal point so it doesn't feel like scrolling right up against a wall.
-    try {
-      let revealIdx = bars.findIndex((b) => new Date(b.time).getTime() > revealUntil);
-      if (revealIdx === -1) revealIdx = bars.length - 1;
-      c.scrollToDataIndex(Math.min(bars.length - 1, revealIdx + 20));
-    } catch (_) {}
+    return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealUntil, bars, trades, tf, dark, showRsi, showMacd]);
 
