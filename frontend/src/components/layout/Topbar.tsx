@@ -75,12 +75,22 @@ export function Topbar() {
       {/* Divider */}
       <div className="h-5 w-px" style={{ background: "var(--border)" }} />
 
-      {/* Bot status pill */}
+      {/* Bot status pill.
+          FIX 2026-07-17: "LIVE" here used to mean "the bot process is actively
+          running" — a completely different thing from the account trading mode
+          (PAPER vs LIVE money) shown elsewhere (e.g. the Session P&L card).
+          Reusing the word "LIVE" for two unrelated concepts read as a direct
+          contradiction ("it says LIVE up top but PAPER down there — which is
+          it?"). Account mode is now ALWAYS shown first and unambiguously;
+          bot process state is a separate "Running/Idle/Pre-Market/Closed" pill. */}
       <div className="flex items-center gap-2 shrink-0">
+        <span className={`badge ${mode === "live" ? "badge-red" : "badge-yellow"}`}>
+          {mode.toUpperCase()}
+        </span>
         {running ? (
-          <span className="badge badge-green">LIVE</span>
+          <span className="badge badge-green">RUNNING</span>
         ) : marketOpen ? (
-          <span className="badge badge-yellow">{mode.toUpperCase()}</span>
+          <span className="badge badge-gray">IDLE</span>
         ) : preMarket ? (
           <span className="badge badge-yellow hidden sm:inline-flex">PRE-MARKET</span>
         ) : (

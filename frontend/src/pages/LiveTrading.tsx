@@ -20,8 +20,12 @@ function barLimitForPeriod(tf: string, period: Period): number {
   const barsPerDay: Record<string, number> = {
     "1Min": 420, "5Min": 90, "15Min": 30, "1Hour": 8,
   };
+  // FIX 2026-07-17: "1D" was loading 3 trading days of bars (not 1) — the
+  // multiplier below was 3, so selecting "1D" actually rendered 7/15, 7/16,
+  // AND 7/17 together, which is also what made the swing HH/LH/LL labels look
+  // packed/illegible (3x the bars in view = 3x the detected pivots).
   const tradingDays: Record<Period, number> = {
-    "1D": 3, "5D": 8, "1M": 25, "3M": 70,
+    "1D": 1, "5D": 8, "1M": 25, "3M": 70,
   };
   return Math.min(2000, Math.max(40, Math.ceil((barsPerDay[tf] ?? 90) * (tradingDays[period] ?? 3))));
 }
@@ -213,7 +217,14 @@ export function LiveTrading() {
   const safeOrHigh = orInRange ? orHighRaw : undefined;
   const safeOrLow  = orInRange ? orLowRaw  : undefined;
 
-  const evalLog: any[] = (status as any)?.eval_log ?? [];
+  // FIX 2026-07-17: "no_signal" (no setup found at all) used to render as a
+  // compact-but-still-visible "SKIP · no setup" row. That's the single most
+  // common evaluation outcome (most bars have no setup), so it drowned out
+  // the genuinely informative skip reasons (low confidence, spread too wide,
+  // R:R too low, etc.) — dropped entirely per explicit ask instead of just
+  // compacted.
+  const evalLog: any[] = ((status as any)?.eval_log ?? [])
+    .filter((ev: any) => !(ev.rejected && ev.reason === "no_signal"));
   const latestSignal    = evalLog[0] ?? null;
   const scannerColor    = (changePct: number) =>
     changePct >= 0 ? "var(--positive)" : "var(--negative)";
