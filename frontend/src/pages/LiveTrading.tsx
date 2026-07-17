@@ -5,7 +5,7 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Radio, Bot } from "lucide-react";
-import { KChart } from "../components/charts/KChart";
+import { ChartReplay, type ChartReplayHandle } from "../components/charts/ChartReplay";
 import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
 import { api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle } from "../lib/api";
@@ -99,9 +99,21 @@ export function LiveTrading() {
   const logSnapshotRef  = useRef<typeof logs>([]);
   const [logTab,         setLogTab]           = useState<"thinking" | "network">("thinking");
   const [tradeDrawerId,  setTradeDrawerId]    = useState<number | null>(null);
+  const chartReplayRef  = useRef<ChartReplayHandle>(null);
 
   const { status, logs } = useBotStore();
   const { } = useUIStore();
+
+  // "Watch this setup" — jump the chart's scrub position to just before a
+  // Signal History / Bot Focus entry and auto-play from there (chart refactor
+  // Phase 3). Eval log entries only carry a display-only "HH:MM:SS" string
+  // (no date), but every entry is from today on this live cockpit, so
+  // today's date + that time gives a real timestamp the replay can seek to.
+  function watchAt(ts?: string) {
+    if (!ts) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    chartReplayRef.current?.jumpToTime(`${todayStr}T${ts}`);
+  }
 
   const barsRefetchMs = tf === "1Min" ? 15_000 : tf === "5Min" ? 30_000 : 60_000;
 
@@ -306,8 +318,16 @@ export function LiveTrading() {
             )}
           </div>
           {latestSignal && (
-            <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+            <span className="text-[10px] flex items-center gap-2" style={{ color: "var(--ink-faint)" }}>
               {latestSignal.ts}  ·  tap row to copy
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ padding: "1px 6px", fontSize: 9 }}
+                title="Watch this setup on the chart"
+                onClick={(e) => { e.stopPropagation(); watchAt(latestSignal.ts); }}
+              >
+                ▶ Watch
+              </button>
             </span>
           )}
         </div>
@@ -440,12 +460,12 @@ export function LiveTrading() {
           </div>
           {/* Swapped from the old TradingChart to KChart 2026-07-17 — this is the
               chart engine that actually has the real shaded R:R bracket and
-              actual-trade markers (Phases 1-2 of the refactor); TradingChart
-              only ever had a floating DOM stat card, never a real long/short
-              tool. showSwings/showPositionCard/currentOptionPrice are passed
-              through for forward-compat but KChart doesn't render them yet —
-              swing labels + the live P&L card are the fast-follow noted above. */}
-          <KChart
+              actual-trade markers (Phases 1-2 of the refactor). Wrapped in
+              ChartReplay (Phase 3) for the scrub bar / play-pause-speed /
+              "Watch this setup" jump-to-time — KChart itself is unchanged,
+              ChartReplay just slices bars/trades down to the scrub position. */}
+          <ChartReplay
+            ref={chartReplayRef}
             bars={bars}
             trades={tickerTrades}
             showVwap={showVwap}
@@ -624,6 +644,14 @@ export function LiveTrading() {
                         {ev.strategy ? ` · ${ev.strategy}` : ""}
                         {ev.confidence ? ` · conf ${(ev.confidence * 100).toFixed(0)}%` : ""}
                       </span>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: "0px 5px", fontSize: 8, marginLeft: "auto" }}
+                        title="Watch this moment on the chart"
+                        onClick={(e) => { e.stopPropagation(); watchAt(ev.ts); }}
+                      >
+                        ▶
+                      </button>
                     </div>
                   );
                 }
@@ -662,6 +690,17 @@ export function LiveTrading() {
                         color: isSignal ? "var(--warning)" : "var(--positive)",
                       }}>
                         {isSignal ? "MANUAL" : "AUTO"}
+                      </span>
+                      {/* Watch this setup — jumps the chart's scrub position to this
+                          moment and auto-plays (chart refactor Phase 3). A <span>, not
+                          a nested <button>, since this whole row is already a <button>. */}
+                      <span
+                        role="button"
+                        style={{ fontSize: 9, color: "var(--accent)", cursor: "pointer", padding: "0 2px" }}
+                        title="Watch this setup on the chart"
+                        onClick={(e) => { e.stopPropagation(); watchAt(ev.ts); }}
+                      >
+                        ▶
                       </span>
                     </div>
                     <div style={{ display: "flex", gap: 8, color: "var(--ink-muted)" }}>
