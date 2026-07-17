@@ -140,6 +140,24 @@ function makeStyles(dark: boolean) {
   };
 }
 
+// ── Nearest-bar lookup for trade markers ──────────────────────────────────────
+// Trades carry real ISO entry_time/exit_time strings; bars are discrete 5/15/60-min
+// candles, so a trade's exact timestamp rarely lands exactly on a bar. This finds
+// the closest actual bar (by absolute time distance) so markers always sit on a
+// real candle instead of floating at a non-existent timestamp.
+function nearestBar(bars: Bar[], isoTime?: string): Bar | null {
+  if (!isoTime || bars.length === 0) return null;
+  const target = new Date(isoTime).getTime();
+  if (Number.isNaN(target)) return null;
+  let best: Bar | null = null;
+  let bestDiff = Infinity;
+  for (const b of bars) {
+    const diff = Math.abs(new Date(b.time).getTime() - target);
+    if (diff < bestDiff) { bestDiff = diff; best = b; }
+  }
+  return best;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export function KChart({
   bars,
@@ -359,7 +377,7 @@ export function KChart({
       applyOverlays(chart);
     }
 
-  }, [bars, tf, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, annotations]);
+  }, [bars, tf, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, annotations, trades]);
 
   // ── applyOverlays: VWAP indicator + all overlay groups ───────────────────
   // Extracted so it can be called both from setTimeout (after bar render) and
@@ -409,6 +427,7 @@ export function KChart({
     try { c.removeOverlay({ groupId: "edu" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "ann" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "sep" }); } catch (_) { /* no-op */ }
+    try { c.removeOverlay({ groupId: "trade" }); } catch (_) { /* no-op */ }
 
     // ── Day separators (chart refactor Phase 1) ────────────────────────────
     // Bars are regular-session-only (9:30-16:00 ET) by design — extended
@@ -558,6 +577,54 @@ export function KChart({
     // "horizontalStraightLine" is the correct KLineChart v9 name.
     if (positionLevels) {
       const ep = positionLevels.entry;
+
+      // Full TradingView-style bracket for the LIVE open position — shaded
+      // green (entry→target) / red (entry→stop) zones spanning the visible
+      // chart, drawn BEFORE the price lines so the lines sit on top. This prop
+      // has no entry-time field (unlike historical Trade rows below, which
+      // anchor to their own real entry_time/exit_time), so it spans the full
+      // loaded bar range rather than a specific window.
+      if (ep && ep > 0 && bars.length > 0) {
+        const firstTs = new Date(bars[0].time).getTime();
+        const lastTs  = new Date(bars[bars.length - 1].time).getTime();
+        if (positionLevels.target && positionLevels.target > 0) {
+          try {
+            c.createOverlay({
+              name: "rect", groupId: "pos", lock: true,
+              points: [{ timestamp: firstTs, value: ep }, { timestamp: lastTs, value: positionLevels.target }],
+              needDefaultYAxisFigure: false,
+              styles: { polygon: { style: "fill", color: `${up}20` }, line: { color: "transparent", size: 0 } },
+            });
+          } catch (_) {}
+        }
+        if (positionLevels.stop && positionLevels.stop > 0) {
+          try {
+            c.createOverlay({
+              name: "rect", groupId: "pos", lock: true,
+              points: [{ timestamp: firstTs, value: ep }, { timestamp: lastTs, value: positionLevels.stop }],
+              needDefaultYAxisFigure: false,
+              styles: { polygon: { style: "fill", color: `${dn}20` }, line: { color: "transparent", size: 0 } },
+            });
+          } catch (_) {}
+        }
+        // R:R ratio label pinned to the entry line's left edge
+        if (positionLevels.stop && positionLevels.target) {
+          const risk   = Math.abs(ep - positionLevels.stop);
+          const reward = Math.abs(positionLevels.target - ep);
+          const rr     = risk > 0 ? reward / risk : null;
+          if (rr != null) {
+            try {
+              c.createOverlay({
+                name: "simpleAnnotation", groupId: "pos", lock: true,
+                points: [{ timestamp: firstTs, value: ep }, { timestamp: firstTs, value: ep }],
+                extendData: `R:R ${rr.toFixed(2)}`,
+                styles: { text: { color: "#eab308", size: 10, family: "monospace", backgroundColor: "transparent" } },
+              });
+            } catch (_) {}
+          }
+        }
+      }
+
       const LEVELS = [
         { val: ep,                            col: "#eab308", sz: 2 },
         { val: positionLevels.stop,           col: dn,        sz: 1 },
@@ -574,6 +641,91 @@ export function KChart({
             needDefaultYAxisFigure: true,
           });
         } catch (_) {}
+      });
+    }
+
+    // ── Trade markers + per-trade R:R bracket (chart refactor Phase 2) ──────
+    // Per user's explicit answer, markers fire for ACTUAL trades only — no
+    // clutter from filtered-out/rejected signals. buyMarker/sellMarker/
+    // exitMarker overlays were already built and registered in
+    // kchartIndicators.ts in an earlier session but never wired to real data —
+    // wiring them here for the first time.
+    if (bars.length > 0 && trades.length > 0) {
+      trades.forEach((t) => {
+        const isLong    = t.direction !== "short";
+        const entryBar  = nearestBar(bars, t.entry_time);
+        const exitBar   = t.exit_time ? nearestBar(bars, t.exit_time) : null;
+
+        if (entryBar) {
+          const entryTs = new Date(entryBar.time).getTime();
+          try {
+            c.createOverlay({
+              name: isLong ? "buyMarker" : "sellMarker",
+              groupId: "trade", lock: true,
+              points: [{ timestamp: entryTs, value: isLong ? entryBar.low : entryBar.high }],
+              extendData: t.strategy_id ?? (isLong ? "BUY" : "SELL"),
+              needDefaultYAxisFigure: false,
+            });
+          } catch (_) {}
+        }
+        if (exitBar) {
+          const exitTs = new Date(exitBar.time).getTime();
+          try {
+            c.createOverlay({
+              name: "exitMarker", groupId: "trade", lock: true,
+              points: [{ timestamp: exitTs, value: exitBar.close }],
+              needDefaultYAxisFigure: false,
+            });
+          } catch (_) {}
+        }
+
+        // Bracket: shaded green (entry→target) / red (entry→stop) zone spanning
+        // the trade's real time-in-trade (entry bar → exit bar, or → last bar
+        // if still open) — the "Full TradingView bracket" the user asked for.
+        if (entryBar && t.entry_price) {
+          const startTs = new Date(entryBar.time).getTime();
+          const endTs   = exitBar
+            ? new Date(exitBar.time).getTime()
+            : new Date(bars[bars.length - 1].time).getTime();
+          const rectEndTs = Math.max(endTs, startTs);
+          const ep = t.entry_price;
+
+          if (t.target_price) {
+            try {
+              c.createOverlay({
+                name: "rect", groupId: "trade", lock: true,
+                points: [{ timestamp: startTs, value: ep }, { timestamp: rectEndTs, value: t.target_price }],
+                needDefaultYAxisFigure: false,
+                styles: { polygon: { style: "fill", color: `${up}30` }, line: { color: "transparent", size: 0 } },
+              });
+            } catch (_) {}
+          }
+          if (t.stop_price) {
+            try {
+              c.createOverlay({
+                name: "rect", groupId: "trade", lock: true,
+                points: [{ timestamp: startTs, value: ep }, { timestamp: rectEndTs, value: t.stop_price }],
+                needDefaultYAxisFigure: false,
+                styles: { polygon: { style: "fill", color: `${dn}30` }, line: { color: "transparent", size: 0 } },
+              });
+            } catch (_) {}
+          }
+          if (t.stop_price && t.target_price) {
+            const risk   = Math.abs(ep - t.stop_price);
+            const reward = Math.abs(t.target_price - ep);
+            const rr     = risk > 0 ? reward / risk : null;
+            if (rr != null) {
+              try {
+                c.createOverlay({
+                  name: "simpleAnnotation", groupId: "trade", lock: true,
+                  points: [{ timestamp: startTs, value: ep }, { timestamp: startTs, value: ep }],
+                  extendData: `R:R ${rr.toFixed(2)}`,
+                  styles: { text: { color: text, size: 10, family: "monospace", backgroundColor: "transparent" } },
+                });
+              } catch (_) {}
+            }
+          }
+        }
       });
     }
 
@@ -609,10 +761,11 @@ export function KChart({
     }
   }
 
-  // trades/visibleFrom props kept on interface so parent doesn't need to change.
-  // Trade markers temporarily disabled (custom overlay was corrupting KLineChart).
-  // visibleFrom scroll disabled (scrollToTimestamp put it at RIGHT edge, backwards).
-  void trades; void visibleFrom;
+  // trades are now rendered as real overlays inside applyOverlays() above
+  // (chart refactor Phase 2). visibleFrom scroll remains disabled — an earlier
+  // attempt at scrollToTimestamp put the target at the RIGHT edge (backwards) —
+  // that's still an open item, not part of this phase.
+  void visibleFrom;
 
   // Wheel zoom is registered inside the chart-init useEffect above,
   // so it's automatically cleaned up when the chart is destroyed.
@@ -790,6 +943,27 @@ export function KChart({
                              border:`1px dashed ${up}55` }} />
               OR Zone <span style={{ opacity:0.6, fontSize:9 }}>(9:30–10:00 AM)</span>
             </span>
+          )}
+          {/* Trade markers — actual trades only (chart refactor Phase 2) */}
+          {trades.length > 0 && (
+            <>
+              <span className="flex items-center gap-1">
+                <span style={{ color: up, fontWeight: 700 }}>▲</span>
+                Entry
+              </span>
+              <span className="flex items-center gap-1">
+                <span style={{ display:"inline-block", width:10, height:10, borderRadius:"50%",
+                               border:"2px solid #f59e0b", background:"#f59e0b44" }} />
+                Exit
+              </span>
+              <span className="flex items-center gap-1">
+                <span style={{ display:"inline-block", width:14, height:8,
+                               background:`${up}30`, borderRadius:2 }} />
+                <span style={{ display:"inline-block", width:14, height:8,
+                               background:`${dn}30`, borderRadius:2, marginLeft:-6 }} />
+                R:R Bracket
+              </span>
+            </>
           )}
           {/* Bot scanning status / annotation legend */}
           {annotations.length === 0 ? (
