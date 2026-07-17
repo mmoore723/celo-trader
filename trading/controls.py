@@ -135,6 +135,35 @@ def close_trade_by_id(trade_id: int) -> dict:
         broker_ok = False
 
     if not broker_ok:
+        # FIX 2026-07-17: if Alpaca's rejection is its specific "no matching
+        # position" signature, this trade never actually filled there in the
+        # first place (a fabricated/never-filled entry) — no amount of
+        # retrying the close (or the user re-clicking Close) will ever
+        # succeed. Auto-reconcile at $0 P&L instead of leaving the user
+        # stuck clicking a button that can never work.
+        from broker import is_phantom_position_rejection
+        if is_phantom_position_rejection(getattr(alpaca, "last_rejection_reason", None)):
+            pnl = close_trade(
+                trade_id             = trade["id"],
+                exit_price           = trade["entry_price"],
+                exit_time            = _now_et(),
+                exit_reason          = "auto_reconciled_no_broker_position",
+                confirmed_fill_price = trade["entry_price"],
+            )
+            log_event(
+                "ERROR", "trading_logic",
+                f"🔧 Trade #{trade_id} ({trade['contract_symbol']}) — Alpaca has no "
+                f"matching position, meaning the entry never actually filled there. "
+                f"Auto-closed at $0 P&L instead of leaving it stuck.",
+            )
+            _refresh_session_pnl()
+            return {
+                "ok": True,
+                "message": (f"{trade['contract_symbol']} was never actually filled at "
+                            f"the broker — auto-closed at $0 P&L."),
+                "pnl": pnl,
+            }
+
         msg = (f"Could not place sell order for {trade['contract_symbol']} "
                f"at the broker — DB record NOT closed. Check the audit log.")
         log_event("ERROR", "trading_logic",

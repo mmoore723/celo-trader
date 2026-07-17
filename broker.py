@@ -147,6 +147,27 @@ def _cb_is_open() -> bool:
 
 # ── Alpaca client ─────────────────────────────────────────────────────────────
 
+def is_phantom_position_rejection(reason: Optional[str]) -> bool:
+    """
+    True only for the one Alpaca rejection message that unambiguously means
+    "you don't actually hold this position" — i.e. a sell_to_close order
+    where Alpaca infers sell_to_open because it has no matching long to
+    close against. This is NOT a transient/retry-worthy failure (unlike
+    e.g. insufficient buying power, which might resolve on its own) —
+    retrying it will never succeed, so callers should stop retrying and
+    reconcile the DB trade instead of looping forever.
+
+    FIX 2026-07-17: built after trade #163 (INTC $120 call) got stuck
+    retrying an exit every ~1s for hours — the position was fabricated by
+    the now-fixed paper-fill bug and never existed at the broker, so no
+    amount of retrying the close would ever succeed.
+    """
+    if not reason:
+        return False
+    r = reason.lower()
+    return "position intent mismatch" in r and "sell_to_open" in r
+
+
 class AlpacaClient:
     """Alpaca REST API v2 — equity bars, account data, paper/live options orders."""
 
@@ -176,6 +197,12 @@ class AlpacaClient:
             "AlpacaClient: routing to %s (paper_trading=%s)",
             self.base, _paper,
         )
+        # FIX 2026-07-17: set by place_option_order() whenever an order is
+        # rejected, so callers can tell WHY a fill didn't happen (e.g. Alpaca
+        # genuinely has no matching position to close vs. a transient/retry-
+        # worthy failure) without changing place_option_order's None-on-no-fill
+        # return contract. See is_phantom_position_rejection() below.
+        self.last_rejection_reason: Optional[str] = None
 
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 
@@ -765,6 +792,10 @@ class AlpacaClient:
             logger.warning("Alpaca keys missing — order not sent")
             return None
 
+        # Reset from any previous call so a stale reason can never be misread
+        # by this call's caller if this attempt doesn't hit the except block.
+        self.last_rejection_reason = None
+
         payload: dict = {
             "symbol":        symbol,
             "qty":           str(qty),
@@ -845,6 +876,12 @@ class AlpacaClient:
                         _reason = _msg
                 except Exception:
                     pass
+            # Stored (not raised) so existing callers keep working unchanged —
+            # they still just check `if fill is None`. Callers that specifically
+            # need to distinguish "Alpaca truly has no matching position" (not
+            # a transient/retry-worthy rejection) can check this afterward via
+            # is_phantom_position_rejection(alpaca.last_rejection_reason).
+            self.last_rejection_reason = _reason
             log_event("ERROR", "order",
                       f"🔴 [{symbol}] Order rejected — {_reason}. No position opened.")
             logger.error(

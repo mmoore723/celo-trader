@@ -42,6 +42,57 @@ from trading.state import LIVE_STATE, _now_et, _ET_TZ, _BOT_ROOT
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
+
+def _reconcile_if_phantom(alpaca: "AlpacaClient", trade: dict) -> bool:
+    """
+    Call right after an exit order comes back None (fill is None). If the
+    rejection was Alpaca's specific "no matching position" signature, this
+    trade was never actually opened at the broker — a fabricated/never-filled
+    entry — and retrying the close will NEVER succeed no matter how many
+    times we try. Auto-closes the DB row at $0 P&L instead of looping
+    forever. Returns True if it reconciled (caller should stop, not fall
+    through to the normal "stays open, will retry" path).
+
+    FIX 2026-07-17: built after trade #163 (INTC $120 call, entered by the
+    now-fixed paper-fill-fabrication bug) retried its exit every ~1s for
+    hours straight, hammering Alpaca with a doomed sell_to_close order.
+    """
+    from broker import is_phantom_position_rejection
+    if not is_phantom_position_rejection(getattr(alpaca, "last_rejection_reason", None)):
+        return False
+
+    from database import close_trade, log_event, get_open_trades
+
+    entry_px = trade.get("entry_price", 0) or 0
+    close_trade(
+        trade_id             = trade["id"],
+        exit_price            = entry_px,
+        exit_time             = _now_et(),
+        exit_reason           = "auto_reconciled_no_broker_position",
+        confirmed_fill_price  = entry_px,
+        paper                 = trade.get("paper", True),
+    )
+    log_event(
+        "ERROR", "trading_logic",
+        f"🔧 [{trade.get('ticker', '?')}] {trade['contract_symbol']} — Alpaca has "
+        f"no matching position for this trade, meaning the entry never actually "
+        f"filled there. Auto-closed at $0 P&L instead of retrying forever. "
+        f"Check Alpaca's Positions/Orders tabs if you want to verify.",
+    )
+    logger.error(
+        "phantom_position_auto_reconciled",
+        extra={
+            "event": "phantom_position_auto_reconciled",
+            "trade_id": trade["id"],
+            "symbol": trade["contract_symbol"],
+        },
+    )
+    LIVE_STATE["open_trades"] = get_open_trades()
+    LIVE_STATE["open_trade"]  = LIVE_STATE["open_trades"][0] if LIVE_STATE["open_trades"] else None
+    LIVE_STATE.get("positions", {}).pop(trade["id"], None)
+    return True
+
+
 # ── ATR / swing trailing stop constants ──────────────────────────────────────
 _ATR_TRAIL_MULTIPLIER = 2.0   # baseline ATR trail multiplier (dynamically adjusted below)
 _DELTA_APPROX         = 0.40  # approximate option delta for underlying→option conversion
@@ -763,6 +814,8 @@ def _manage_open_position(
             )
 
             if fill is None:
+                if _reconcile_if_phantom(alpaca, trade):
+                    return
                 log_event(
                     "WARNING", "trading_logic",
                     f"🟡 [{trade['contract_symbol']}] Stage-1 profit-take order "
@@ -873,6 +926,8 @@ def _close_position(
     # If the exit order didn't fill at all, leave the trade open and retry next tick.
     # Record actual worst-case exit fill, not the intended mid-price.
     if fill is None:
+        if _reconcile_if_phantom(alpaca, trade):
+            return
         log_event("WARNING", "trading_logic",
                   f"⚠️ [{trade['contract_symbol']}] Exit order did not fill — "
                   f"trade stays open, will retry next tick.")
