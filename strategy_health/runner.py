@@ -115,16 +115,27 @@ def run_daily_audit(alpaca: Optional[AlpacaClient] = None,
     rule_summary = build_narrative(aggregate)
     ai_summary   = build_ai_narrative(aggregate)   # None if no API key / call failed
 
-    try:
-        save_strategy_audit({
-            "audit_date":   aggregate["date"],
-            "tickers":      ",".join(scanned),
-            "aggregate":    aggregate,
-            "rule_summary": rule_summary,
-            "ai_summary":   ai_summary,
-        })
-    except Exception as exc:
-        logger.error("strategy_health: failed to save audit: %s", exc)
+    # FIX 2026-07-17: don't persist a row when no ticker produced a valid
+    # trading day (audit_date stayed None -> "unknown"). A saved "unknown"
+    # row has no useful data AND used to permanently mask every real dated
+    # audit in get_latest_strategy_audit()'s sort (see the fix there). Just
+    # log it and skip the save — nothing worth keeping happened this run.
+    if audit_date is None:
+        logger.warning(
+            "strategy_health: no valid trading day found for any of %d ticker(s) — "
+            "not saving an audit row", len(tickers)
+        )
+    else:
+        try:
+            save_strategy_audit({
+                "audit_date":   aggregate["date"],
+                "tickers":      ",".join(scanned),
+                "aggregate":    aggregate,
+                "rule_summary": rule_summary,
+                "ai_summary":   ai_summary,
+            })
+        except Exception as exc:
+            logger.error("strategy_health: failed to save audit: %s", exc)
 
     logger.info("strategy_health: audit complete for %s (%d ticker(s), %d strategies)",
                 aggregate["date"], len(scanned), len(per_strategy))

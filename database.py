@@ -733,11 +733,22 @@ def save_strategy_audit(row: dict) -> None:
 
 
 def get_latest_strategy_audit() -> Optional[dict]:
-    """Most recent audit row, with aggregate_json decoded back to a dict."""
+    """Most recent audit row, with aggregate_json decoded back to a dict.
+
+    FIX 2026-07-17: this used to ORDER BY audit_date DESC, but audit_date can
+    be the literal string "unknown" (runner.py falls back to it when no
+    ticker produced a valid trading day that run — e.g. a data-fetch hiccup).
+    "unknown" sorts AFTER any real "YYYY-MM-DD" string alphabetically, so one
+    bad/empty run would permanently outrank every real dated audit forever,
+    even ones that ran much later — exactly what caused the Strategy Health
+    page to show "Audit for unknown — 0 tickers" while a real audit for that
+    same day sat one row below it in history. created_at is always a real,
+    reliably-sortable ISO timestamp regardless of what audit_date holds.
+    """
     import json as _json
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM strategy_audits ORDER BY audit_date DESC LIMIT 1"
+            "SELECT * FROM strategy_audits ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
     if not row:
         return None
@@ -755,7 +766,7 @@ def get_strategy_audit_history(limit: int = 30) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT audit_date, created_at, tickers, rule_summary, ai_summary "
-            "FROM strategy_audits ORDER BY audit_date DESC LIMIT ?",
+            "FROM strategy_audits ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
