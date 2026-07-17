@@ -408,6 +408,67 @@ export function KChart({
     try { c.removeOverlay({ groupId: "pos" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "edu" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "ann" }); } catch (_) { /* no-op */ }
+    try { c.removeOverlay({ groupId: "sep" }); } catch (_) { /* no-op */ }
+
+    // ── Day separators (chart refactor Phase 1) ────────────────────────────
+    // Bars are regular-session-only (9:30-16:00 ET) by design — extended
+    // hours were deliberately excluded earlier (caused chart-spike/data-
+    // quality bugs), so there's no dead time between sessions to "shade."
+    // What actually fixes "can't tell where one trading day ends and the
+    // next begins" is a thin vertical marker + date label at the first bar
+    // of each new day. Anchored to REAL bar timestamps (like the OR zone's
+    // findBar() technique) so it's guaranteed to land on an actual bar,
+    // never an empty/non-existent timestamp.
+    if (bars.length > 1) {
+      const tfMsSep: Record<string, number> = {
+        "1Min": 60_000, "5Min": 300_000, "15Min": 900_000, "1Hour": 3_600_000,
+      };
+      const barDurSep = tfMsSep[tf] ?? 300_000;
+      const allHighs  = bars.map((b) => b.high);
+      const allLows   = bars.map((b) => b.low);
+      const priceMax  = Math.max(...allHighs) * 1.01;
+      const priceMin  = Math.min(...allLows)  * 0.99;
+
+      let lastDateStr = "";
+      bars.forEach((b) => {
+        const d = new Date(b.time);
+        const dateStr = d.toDateString();
+        if (dateStr !== lastDateStr) {
+          if (lastDateStr !== "") {   // skip the very first day — no "previous" to separate from
+            const ts = d.getTime();
+            try {
+              c.createOverlay({
+                name: "rect", groupId: "sep", lock: true,
+                points: [
+                  { timestamp: ts - barDurSep * 0.15, value: priceMin },
+                  { timestamp: ts + barDurSep * 0.15, value: priceMax },
+                ],
+                needDefaultYAxisFigure: false,
+                styles: {
+                  polygon: { style: "fill", color: border },
+                  line:    { color: "transparent", size: 0 },
+                },
+              });
+            } catch (_) {}
+            // Date label just above the candle pane, left-aligned to the separator.
+            // simpleAnnotation's totalStep is 2 even though createPointFigures only
+            // reads coordinates[0] — pass the same point twice to satisfy it safely.
+            try {
+              c.createOverlay({
+                name: "simpleAnnotation", groupId: "sep", lock: true,
+                points: [{ timestamp: ts, value: priceMax }, { timestamp: ts, value: priceMax }],
+                extendData: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+                styles: {
+                  text: { color: text, size: 10, family: "monospace",
+                          backgroundColor: "transparent", paddingLeft: 4, paddingTop: 2 },
+                },
+              });
+            } catch (_) {}
+          }
+          lastDateStr = dateStr;
+        }
+      });
+    }
 
     // Opening Range horizontal lines
     if (showOR) {
