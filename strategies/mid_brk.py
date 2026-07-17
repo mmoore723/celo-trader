@@ -48,6 +48,15 @@ CONSOLIDATION_RANGE_ENABLED = False
 CONSOLIDATION_END_HOUR      = 10
 CONSOLIDATION_END_MINUTE    = 15
 
+# ── Session window (2026-07-17) ───────────────────────────────────────────────
+# Named constants instead of a hardcoded literal so diag/ab_test scripts can
+# flip _SESSION_END_MIN the same way trend_cont.py's _MAX_BARS gets A/B'd.
+# Investigating whether cutting off at 13:00 misses real afternoon breakdowns
+# (2026-07-16 SPY's real move didn't clear either reference level until after
+# this window closed). See diag_mid_brk_session_scan.py before changing.
+_SESSION_START_MIN = 10 * 60 + 30   # 10:30 ET
+_SESSION_END_MIN    = 13 * 60        # 13:00 ET
+
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     if len(today) < 10:
@@ -59,8 +68,8 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         bar_time = pd.Timestamp(bar_time)
     bar_min = bar_time.hour * 60 + bar_time.minute
 
-    # Gate 1: session window 10:30–13:00
-    if not (10 * 60 + 30 <= bar_min <= 13 * 60):
+    # Gate 1: session window (default 10:30–13:00, see _SESSION_* constants above)
+    if not (_SESSION_START_MIN <= bar_min <= _SESSION_END_MIN):
         return None
 
     if CONSOLIDATION_RANGE_ENABLED:
