@@ -137,6 +137,42 @@ export interface TradeListResponse {
   win_rate: number;
 }
 
+// ── Strategy Health (built-in audit — replaces one-off diag scripts) ───────
+
+export interface StrategyFunnelRow {
+  raw_signals: number;
+  router_survivors: number;
+  worked_raw: number;
+  worked_survivors: number;
+  actual_trades: number;
+  actual_wins: number;
+  actual_pnl: number;
+}
+
+export interface StrategyHealthAggregate {
+  date: string;
+  tickers_scanned: string[];
+  per_strategy: Record<string, StrategyFunnelRow>;
+}
+
+export interface StrategyHealthAudit {
+  available: boolean;
+  audit_date?: string;
+  created_at?: string;
+  tickers?: string;
+  aggregate?: StrategyHealthAggregate;
+  rule_summary?: string;
+  ai_summary?: string | null;
+}
+
+export interface StrategyHealthHistoryRow {
+  audit_date: string;
+  created_at: string;
+  tickers: string;
+  rule_summary: string;
+  ai_summary: string | null;
+}
+
 // ── Reconciliation types ──────────────────────────────────────────────────────
 export interface AlpacaOrder {
   order_id: string;
@@ -380,5 +416,10 @@ export const api = {
           ...(riskPct   !== undefined ? { risk_pct:   riskPct   } : {}),
         }),
       }),
+  },
+  strategyHealth: {
+    latest:  () => request<StrategyHealthAudit>("/api/strategy-health/latest"),
+    history: (limit = 30) => request<{audits: StrategyHealthHistoryRow[]}>(`/api/strategy-health/history?limit=${limit}`),
+    run:     () => request<StrategyHealthAudit & {ok: boolean}>("/api/strategy-health/run", { method: "POST" }),
   },
 };
