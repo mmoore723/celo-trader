@@ -65,6 +65,22 @@ _CONFLICT_VETO_BAND = 0.05
 # dynamically per-tick in router_gates.apply_session_bias_penalty().
 _SESSION_BIAS_PENALTY = 0.05
 
+# ── Active evaluator table (single source of truth) ───────────────────────────
+# Extracted 2026-07-17 so strategy_health/engine.py can call the exact same
+# raw evaluate() functions the live router uses, instead of hand-duplicating
+# this list and risking drift if a strategy is added/removed/disabled here.
+# NOTE: BOS_MSS intentionally absent — see module docstring.
+ACTIVE_STRATEGIES = [
+    ("INST_ORB",   inst_orb.evaluate),
+    ("VWAP_PB",    vwap_pb.evaluate),
+    ("FVG",        fvg.evaluate),
+    ("IFVG",       ifvg.evaluate),
+    ("MID_BRK",    mid_brk.evaluate),
+    ("AFT_REV",    aft_rev.evaluate),
+    ("TREND_CONT", trend_cont.evaluate),
+    # ("CHAN_BREAK", chan_break.evaluate),  # disabled — 0% WR in backtests, needs fix
+]
+
 
 # ── Indicator frame builder ───────────────────────────────────────────────────
 
@@ -144,17 +160,8 @@ def route_signals(
         return []
 
     # Evaluator table — each module's evaluate() self-gates on its own session
-    # window. NOTE: BOS_MSS intentionally absent — see module docstring.
-    _all_evaluators = [
-        ("INST_ORB",   inst_orb.evaluate),
-        ("VWAP_PB",    vwap_pb.evaluate),
-        ("FVG",        fvg.evaluate),
-        ("IFVG",       ifvg.evaluate),    # Inverted FVG — zone-flip reversal
-        ("MID_BRK",    mid_brk.evaluate),
-        ("AFT_REV",    aft_rev.evaluate),
-        ("TREND_CONT", trend_cont.evaluate),
-        # ("CHAN_BREAK", chan_break.evaluate),  # disabled — 0% WR in backtests, needs fix
-    ]
+    # window. See ACTIVE_STRATEGIES above (single source of truth).
+    _all_evaluators = ACTIVE_STRATEGIES
     evaluators = (
         [(sid, fn) for sid, fn in _all_evaluators if sid in enabled_strategies]
         if enabled_strategies is not None

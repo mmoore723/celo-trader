@@ -51,6 +51,34 @@ def run_trading_loop(user_id: str = "admin", poll_interval: int = 10) -> None:
         _lock.release()
 
 
+def _run_nightly_strategy_audit_once(alpaca) -> None:
+    """
+    Trigger the built-in strategy health audit (strategy_health/runner.py)
+    once per calendar day, right as the bot enters after-hours sleep.
+    Runs in a background thread so a slow audit never delays the deep-sleep
+    loop or blocks Stop Bot from responding. Deduped via a saved settings
+    key so a mid-evening bot restart doesn't re-run the same day's audit.
+    """
+    import threading
+    from config import get_settings, save_settings
+
+    today_str = date.today().isoformat()
+    if get_settings().get("last_strategy_audit_date") == today_str:
+        return   # already ran today
+
+    def _worker() -> None:
+        try:
+            from strategy_health.runner import run_daily_audit
+            from database import log_event as _le
+            run_daily_audit(alpaca)
+            save_settings({"last_strategy_audit_date": today_str})
+            _le("INFO", "trading_logic", "📊 Nightly strategy health audit complete — see Strategy Health page.")
+        except Exception as exc:
+            logger.warning("Nightly strategy audit failed (non-fatal): %s", exc)
+
+    threading.Thread(target=_worker, daemon=True, name="strategy-health-audit").start()
+
+
 def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> None:
     """Inner body of the trading loop — called exclusively from run_trading_loop()."""
     import trading.entry as _em
@@ -247,6 +275,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                         f"🌙 Markets closed — bot resting until 8:00 AM ET "
                         f"({_wake.strftime('%a %b %d')}). No API calls during this window.",
                     )
+                    _run_nightly_strategy_audit_once(alpaca)
 
                 # Sleep up to 5 min at a time so Stop Bot stays responsive.
                 _stop_event.wait(timeout=min(300, _secs_until_wake))

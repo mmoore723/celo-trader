@@ -67,6 +67,11 @@ TRADIER_BASE_URL   = os.getenv("TRADIER_BASE_URL", "https://api.tradier.com/v1")
 TRADIER_ACCOUNT_ID = os.getenv("TRADIER_ACCOUNT_ID", "")
 POLYGON_API_KEY    = os.getenv("POLYGON_API_KEY", "")
 
+# Optional — only used by strategy_health/ai_narrator.py for the nightly
+# strategy audit's LLM summary. Empty = feature silently skips itself and
+# falls back to the free rule-based narrator (strategy_health/narrator.py).
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
 ALERT_EMAIL       = os.getenv("ALERT_EMAIL", "")
 ALERT_SMTP_HOST   = os.getenv("ALERT_SMTP_HOST", "smtp.gmail.com")
 ALERT_SMTP_PORT   = int(os.getenv("ALERT_SMTP_PORT", "587"))

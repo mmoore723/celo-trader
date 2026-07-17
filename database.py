@@ -83,6 +83,18 @@ CREATE TABLE IF NOT EXISTS system_events (
 );
 """
 
+_CREATE_STRATEGY_AUDITS = """
+CREATE TABLE IF NOT EXISTS strategy_audits (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_date    TEXT    NOT NULL,   -- YYYY-MM-DD, the trading day audited
+    created_at    TEXT    NOT NULL,   -- ISO datetime the audit ran
+    tickers       TEXT,               -- comma-separated tickers scanned
+    aggregate_json TEXT   NOT NULL,   -- full per-strategy funnel dict, JSON-encoded
+    rule_summary  TEXT,               -- free, rule-based plain-English summary
+    ai_summary    TEXT                -- optional Claude-generated summary (NULL if no API key)
+);
+"""
+
 
 # ── Connection context manager ────────────────────────────────────────────────
 
@@ -167,6 +179,7 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_TRADES)
         conn.execute(_CREATE_DAILY_SUMMARY)
         conn.execute(_CREATE_SYSTEM_EVENTS)
+        conn.execute(_CREATE_STRATEGY_AUDITS)
         # ── Migrations ────────────────────────────────────────────────────────
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
         if "strategy_id" not in _cols:
@@ -685,3 +698,64 @@ def get_statistics() -> dict:
         "max_drawdown": max_dd,
         "total_pnl":    sum(pnls),
     }
+
+
+# ── Strategy health audits (strategy_health/ package) ─────────────────────────
+# Replaces the one-off diag_*.py / ab_test_*.py scripts with a permanent,
+# DB-backed daily audit: raw signals vs what survived the router, vs what
+# actually traded. One row per calendar day audited.
+
+def save_strategy_audit(row: dict) -> None:
+    """
+    row keys: audit_date, tickers, aggregate (dict), rule_summary, ai_summary.
+    Uses INSERT OR REPLACE keyed on audit_date so re-running the same day's
+    audit (e.g. manual on-demand re-run) overwrites rather than duplicates.
+    """
+    import json as _json
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM strategy_audits WHERE audit_date = ?",
+            (row["audit_date"],),
+        )
+        conn.execute(
+            "INSERT INTO strategy_audits "
+            "(audit_date, created_at, tickers, aggregate_json, rule_summary, ai_summary) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                row["audit_date"],
+                _now_et().isoformat(),
+                row.get("tickers", ""),
+                _json.dumps(row["aggregate"], default=str),
+                row.get("rule_summary"),
+                row.get("ai_summary"),
+            ),
+        )
+
+
+def get_latest_strategy_audit() -> Optional[dict]:
+    """Most recent audit row, with aggregate_json decoded back to a dict."""
+    import json as _json
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM strategy_audits ORDER BY audit_date DESC LIMIT 1"
+        ).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    try:
+        result["aggregate"] = _json.loads(result.pop("aggregate_json"))
+    except Exception:
+        result["aggregate"] = {}
+    return result
+
+
+def get_strategy_audit_history(limit: int = 30) -> list[dict]:
+    """Recent audits, newest first, WITHOUT the full aggregate JSON (keeps
+    the history list endpoint light — callers fetch the latest for detail)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT audit_date, created_at, tickers, rule_summary, ai_summary "
+            "FROM strategy_audits ORDER BY audit_date DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
