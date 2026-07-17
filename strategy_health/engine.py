@@ -32,15 +32,47 @@ FORWARD_BARS   = 12   # 12 x 5-min = 60 minutes, same proxy used across diag_*.p
 
 
 def _fetch_bars(alpaca: AlpacaClient, ticker: str) -> pd.DataFrame:
-    """Real Alpaca bars only — this runs live in production, no yfinance fallback."""
+    """
+    yfinance FIRST, Alpaca as fallback — same order as every diag_*.py script
+    this week, and for the same reason: Alpaca's free/IEX data feed has no
+    bars at all for ETFs like SPY/QQQ (see requirements.txt's note on this).
+    An earlier version of this function was Alpaca-only on the assumption
+    that "this runs live in production" made yfinance unnecessary — that was
+    wrong and caused every ticker to come back empty (0 tickers scanned).
+    """
+    import datetime as _dt
+    df = pd.DataFrame()
     try:
-        raw, is_error = alpaca.get_bars(ticker, "5Min", limit=_BARS_LOOKBACK)
-        if is_error or not raw:
-            return pd.DataFrame()
-        return bars_to_df(raw)
+        import yfinance as yf
+        _today   = _dt.date.today()
+        _start_d = (_today - _dt.timedelta(days=59)).strftime("%Y-%m-%d")
+        _end_d   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+        raw = yf.download(ticker, start=_start_d, end=_end_d, interval="5m",
+                           progress=False, auto_adjust=True)
+        if not raw.empty:
+            if hasattr(raw.columns, "get_level_values"):
+                raw.columns = raw.columns.get_level_values(0)
+            raw = raw.rename(columns={"Open": "open", "High": "high", "Low": "low",
+                                       "Close": "close", "Volume": "volume"})
+            raw.index.name = "time"
+            raw = raw.reset_index()
+            raw["time"] = (pd.to_datetime(raw["time"], utc=True)
+                            .dt.tz_convert("America/New_York").dt.tz_localize(None))
+            df = raw[["time", "open", "high", "low", "close", "volume"]].copy()
     except Exception as exc:
-        logger.warning("strategy_health: bar fetch failed for %s: %s", ticker, exc)
-        return pd.DataFrame()
+        logger.debug("strategy_health: yfinance fetch failed for %s: %s", ticker, exc)
+
+    if df.empty:
+        try:
+            raw2, is_error = alpaca.get_bars(ticker, "5Min", limit=_BARS_LOOKBACK)
+            if not is_error and raw2:
+                df = bars_to_df(raw2)
+        except Exception as exc:
+            logger.warning("strategy_health: Alpaca fallback fetch failed for %s: %s", ticker, exc)
+
+    if df.empty:
+        logger.warning("strategy_health: no bar data available for %s from either source", ticker)
+    return df
 
 
 def audit_ticker(alpaca: AlpacaClient, ticker: str) -> Optional[dict]:

@@ -1038,17 +1038,21 @@ class AlpacaClient:
                 except Exception as _me:
                     logger.warning("paper_market_fallback_failed: %s", _me)
 
-            # Last resort: if market order also failed, record at the WORST-CASE
-            # Record worst-case fill price (ask for buys, bid for sells) — never mid.
-            fill_px = step_to_price or limit_price or 0
-            log_event("WARNING", "order",
-                      f"⚠️ Market fallback also failed — recording at ${fill_px:.2f} as last resort.")
-            logger.warning("paper_order_last_resort_fill: order=%s fill_px=%.4f", order_id, fill_px)
-            return {
-                "id":                   order_id,
-                "status":               "paper_market_fallback_failed",
-                "confirmed_fill_price": fill_px,
-            }
+            # FIX 2026-07-17: this used to fabricate a "confirmed" fill here even
+            # though nothing actually filled — the dict's own status field said
+            # "paper_market_fallback_failed" but callers only check truthiness,
+            # not status, so a canceled/never-filled order got recorded as a
+            # real open trade anyway (confirmed live: XLE trade #146 — Alpaca's
+            # order history showed the limit canceled with NO fill ever, yet
+            # our DB had a full "open position" at that canceled price/size).
+            # Live mode already returns None on an unconfirmed fill (see the
+            # `else` branch below) — paper mode must do the same instead of
+            # ever inventing a trade that never happened.
+            log_event("ERROR", "order",
+                      f"🔴 [{symbol}] Market fallback did not confirm filled — "
+                      f"no position recorded. Will look for the next setup.")
+            logger.error("paper_market_fallback_unconfirmed: order=%s — returning None, no phantom trade", order_id)
+            return None
         else:
             # Live: order didn't fill in 30s — cancel to prevent ghost positions.
             log_event("WARNING", "order",
