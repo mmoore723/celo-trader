@@ -5,7 +5,7 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Radio, Bot } from "lucide-react";
-import { TradingChart } from "../components/charts/TradingChart";
+import { KChart } from "../components/charts/KChart";
 import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
 import { api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle } from "../lib/api";
@@ -438,7 +438,14 @@ export function LiveTrading() {
             <div className="flex-1" />
             {barsLoading && <RefreshCw size={13} className="animate-spin text-ink-muted" />}
           </div>
-          <TradingChart
+          {/* Swapped from the old TradingChart to KChart 2026-07-17 — this is the
+              chart engine that actually has the real shaded R:R bracket and
+              actual-trade markers (Phases 1-2 of the refactor); TradingChart
+              only ever had a floating DOM stat card, never a real long/short
+              tool. showSwings/showPositionCard/currentOptionPrice are passed
+              through for forward-compat but KChart doesn't render them yet —
+              swing labels + the live P&L card are the fast-follow noted above. */}
+          <KChart
             bars={bars}
             trades={tickerTrades}
             showVwap={showVwap}
@@ -457,6 +464,7 @@ export function LiveTrading() {
                 : null
             }
             ticker={ticker}
+            tf={tf}
             height={500}
             annotations={annotations}
           />

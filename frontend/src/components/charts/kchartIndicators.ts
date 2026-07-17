@@ -128,4 +128,33 @@ export function registerCustomIndicators() {
       ];
     },
   } as any);
+
+  // ── Swing structure label — small text only (HH/LH/HL/LL), no shape ──────
+  // Ported from the old TradingChart.tsx swing detector (chart refactor
+  // fast-follow, 2026-07-17). Deliberately text-only (unlike buy/sell/exit
+  // markers) so it doesn't compound visual clutter with real trade markers —
+  // pivots are frequent, a triangle per pivot would be illegible.
+  registerOverlay({
+    name: "swingLabel",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay }: any) => {
+      if (!coordinates[0]) return [];
+      const { x, y } = coordinates[0];
+      const data  = (overlay.extendData ?? {}) as { label?: string; color?: string; above?: boolean };
+      const label = data.label ?? "";
+      const color = data.color ?? "#888888";
+      const above = data.above !== false;
+      return [
+        {
+          type: "text",
+          ignoreEvent: true,
+          attrs: { x, y: above ? y - 6 : y + 6, text: label, align: "center", baseline: above ? "bottom" : "top" },
+          styles: { color, size: 9, family: "monospace", style: "fill" },
+        },
+      ];
+    },
+  } as any);
 }

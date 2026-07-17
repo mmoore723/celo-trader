@@ -140,6 +140,59 @@ function makeStyles(dark: boolean) {
   };
 }
 
+// ── Swing structure detection: HH / HL / LH / LL ──────────────────────────────
+// Ported from the old TradingChart.tsx (chart-swap fast-follow, 2026-07-17) —
+// same pivot-comparison algorithm, adapted to this file's Bar shape (time is a
+// plain ISO string here, not a lightweight-charts Time value).
+interface SwingPoint {
+  idx: number;
+  price: number;
+  kind: "SH" | "SL";
+  label: string; // HH | LH | HL | LL | SH | SL (first occurrence)
+}
+
+function detectSwings(bars: Bar[], lookback = 3): SwingPoint[] {
+  const rawHighs: { idx: number; price: number }[] = [];
+  const rawLows:  { idx: number; price: number }[] = [];
+
+  for (let i = lookback; i < bars.length - lookback; i++) {
+    const b = bars[i];
+    let isHigh = true, isLow = true;
+    for (let j = i - lookback; j <= i + lookback; j++) {
+      if (j === i) continue;
+      if (bars[j].high >= b.high) isHigh = false;
+      if (bars[j].low  <= b.low)  isLow  = false;
+    }
+    if (isHigh) rawHighs.push({ idx: i, price: b.high });
+    if (isLow)  rawLows.push( { idx: i, price: b.low  });
+  }
+
+  const out: SwingPoint[] = [];
+
+  let prevHighPrice: number | null = null;
+  for (const h of rawHighs) {
+    let label: string;
+    if (prevHighPrice === null)       label = "SH";
+    else if (h.price > prevHighPrice) label = "HH";
+    else                              label = "LH";
+    prevHighPrice = h.price;
+    out.push({ ...h, kind: "SH", label });
+  }
+
+  let prevLowPrice: number | null = null;
+  for (const l of rawLows) {
+    let label: string;
+    if (prevLowPrice === null)       label = "SL";
+    else if (l.price > prevLowPrice) label = "HL";
+    else                             label = "LL";
+    prevLowPrice = l.price;
+    out.push({ ...l, kind: "SL", label });
+  }
+
+  out.sort((a, b) => a.idx - b.idx);
+  return out;
+}
+
 // ── Nearest-bar lookup for trade markers ──────────────────────────────────────
 // Trades carry real ISO entry_time/exit_time strings; bars are discrete 5/15/60-min
 // candles, so a trade's exact timestamp rarely lands exactly on a bar. This finds
@@ -165,11 +218,14 @@ export function KChart({
   showVwap = true,
   showVwapBands = true,
   showOR = true,
+  showSwings = true,
+  showPositionCard = true,
   showRsi = true,
   showMacd = true,
   orHigh,
   orLow,
   positionLevels,
+  currentOptionPrice = null,
   height = 420,
   ticker,
   visibleFrom,
@@ -377,7 +433,7 @@ export function KChart({
       applyOverlays(chart);
     }
 
-  }, [bars, tf, showVwap, showVwapBands, showOR, orHigh, orLow, positionLevels, annotations, trades]);
+  }, [bars, tf, showVwap, showVwapBands, showOR, showSwings, orHigh, orLow, positionLevels, annotations, trades]);
 
   // ── applyOverlays: VWAP indicator + all overlay groups ───────────────────
   // Extracted so it can be called both from setTimeout (after bar render) and
@@ -428,6 +484,7 @@ export function KChart({
     try { c.removeOverlay({ groupId: "ann" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "sep" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "trade" }); } catch (_) { /* no-op */ }
+    try { c.removeOverlay({ groupId: "swing" }); } catch (_) { /* no-op */ }
 
     // ── Day separators (chart refactor Phase 1) ────────────────────────────
     // Bars are regular-session-only (9:30-16:00 ET) by design — extended
@@ -486,6 +543,28 @@ export function KChart({
           }
           lastDateStr = dateStr;
         }
+      });
+    }
+
+    // ── Swing structure labels — HH/LH/HL/LL (chart-swap fast-follow) ────────
+    // Text-only, no shape — same lookback=3 pivot algorithm the old chart used.
+    if (showSwings && bars.length > 6) {
+      const swings = detectSwings(bars, 3);
+      swings.forEach((sw) => {
+        const bar = bars[sw.idx];
+        if (!bar) return;
+        const isHighSide = sw.kind === "SH";
+        // HH/LH sit above the bar's high; HL/LL sit below the bar's low —
+        // matches the old chart's placement so it reads the same way.
+        const color = (sw.label === "HH" || sw.label === "HL") ? up : dn;
+        try {
+          c.createOverlay({
+            name: "swingLabel", groupId: "swing", lock: true,
+            points: [{ timestamp: new Date(bar.time).getTime(), value: isHighSide ? bar.high : bar.low }],
+            extendData: { label: sw.label, color, above: isHighSide },
+            needDefaultYAxisFigure: false,
+          });
+        } catch (_) {}
       });
     }
 
@@ -1014,6 +1093,56 @@ export function KChart({
             style={{ opacity: 0, color: text, transition: "opacity 0.1s", pointerEvents: "none" }}
           />
         </div>
+
+        {/* Live open-position P&L card — chart-swap fast-follow (2026-07-17),
+            ported from the old TradingChart.tsx's posCard. The real bracket
+            visual now lives on the chart itself (see applyOverlays' "pos"
+            group); this small card just surfaces the live unrealized $ / %
+            that the shaded rects alone can't show. */}
+        {showPositionCard && positionLevels?.entry && positionLevels.entry > 0 && (() => {
+          const pl = positionLevels;
+          const isLong = (pl.direction ?? "long") === "long";
+          const unrealPnl = (currentOptionPrice != null && pl.contracts)
+            ? (currentOptionPrice - pl.entry!) * pl.contracts * 100 : null;
+          const unrealPct = (currentOptionPrice != null)
+            ? (currentOptionPrice - pl.entry!) / pl.entry! * 100 : null;
+          const pnlColor = unrealPnl == null ? text : unrealPnl >= 0 ? up : dn;
+          return (
+            <div
+              className="absolute z-10"
+              style={{ top: 36, left: 8, fontFamily: "monospace", fontSize: 11,
+                       display: "flex", flexDirection: "column", gap: 3, pointerEvents: "none" }}
+            >
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                background: isLong ? `${up}30` : `${dn}30`,
+                border: `1px solid ${isLong ? up : dn}`, borderRadius: 4, padding: "3px 8px",
+                color: isLong ? up : dn, fontWeight: 700, fontSize: 10, letterSpacing: "0.06em",
+                width: "fit-content",
+              }}>
+                {isLong ? "▲ LONG" : "▼ SHORT"}
+                {pl.contracts ? ` · ${pl.contracts}×` : ""}
+              </div>
+              {unrealPnl != null && (
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  background: unrealPnl >= 0 ? `${up}18` : `${dn}18`,
+                  border: `1px solid ${pnlColor}55`, borderRadius: 4, padding: "2px 8px",
+                  width: "fit-content",
+                }}>
+                  <span style={{ color: pnlColor, fontWeight: 700, fontSize: 12 }}>
+                    {unrealPnl >= 0 ? "+" : ""}${unrealPnl.toFixed(2)}
+                  </span>
+                  {unrealPct != null && (
+                    <span style={{ color: pnlColor, opacity: 0.75, fontSize: 9 }}>
+                      ({unrealPct >= 0 ? "+" : ""}{unrealPct.toFixed(1)}%)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* KLineChart mount point — must have explicit 100% dimensions */}
         <div
