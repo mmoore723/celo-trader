@@ -84,7 +84,15 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                     lh_depth_pct = (prior_sh["price"] - lh["price"]) / prior_sh["price"]
                     depth_bonus  = min(0.06, lh_depth_pct * 20)
                     rvol_bonus   = min(0.08, (rvol - _RVOL_MIN) * 0.06)
-                    confidence   = min(0.82, 0.65 + rvol_bonus + depth_bonus)
+                    # Base raised 0.65 -> 0.72 (2026-07-17): router's _MIN_CONFIDENCE
+                    # floor is 0.74, and this strategy already requires 5 stacked
+                    # confirmations (RVOL, MSA structure, fresh pivot, EMA50, VWAP)
+                    # before returning a Signal at all — a 0.65 base meant most real,
+                    # RVOL-confirmed setups scored 0.67-0.72 and were silently killed
+                    # by the floor. Verified against live SPY data on 2026-07-16: 6
+                    # genuine bearish continuation signals fired, 5 of 6 (conf 0.67-
+                    # 0.72) were below the floor and never became trades.
+                    confidence   = min(0.82, 0.72 + rvol_bonus + depth_bonus)
                     logger.info(
                         "[%s] TREND_CONT bearish LH re-entry: prior_SH=%.2f LH=%.2f "
                         "close=%.2f RVOL=%.2f bars_ago=%d conf=%.2f",
@@ -131,7 +139,9 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                     hl_rise_pct = (hl["price"] - prior_sl["price"]) / prior_sl["price"]
                     rise_bonus  = min(0.06, hl_rise_pct * 20)
                     rvol_bonus  = min(0.08, (rvol - _RVOL_MIN) * 0.06)
-                    confidence  = min(0.82, 0.65 + rvol_bonus + rise_bonus)
+                    # Base raised 0.65 -> 0.72 — see matching note in the bearish
+                    # branch above; same fix, mirrored for the bullish HL re-entry.
+                    confidence  = min(0.82, 0.72 + rvol_bonus + rise_bonus)
                     logger.info(
                         "[%s] TREND_CONT bullish HL re-entry: prior_SL=%.2f HL=%.2f "
                         "close=%.2f RVOL=%.2f bars_ago=%d conf=%.2f",
