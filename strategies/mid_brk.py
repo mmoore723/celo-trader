@@ -24,7 +24,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from signals import get_opening_range
+from signals import get_opening_range, get_consolidation_range
 from strategies.base import (
     Signal,
     MarketStructureAnalyzer,
@@ -35,6 +35,18 @@ from strategies.base import (
 logger = logging.getLogger("celo_trader.strategies.mid_brk")
 
 STRATEGY_ID = "MID_BRK"
+
+# ── Consolidation-range reference (2026-07-17) ────────────────────────────────
+# OFF by default. The mechanical 15-min opening range can sit well below where
+# price actually builds its real morning base — on 2026-07-16 SPY consolidated
+# ~753.5-753.9 for 45 min before breaking down, but the 15-min OR low (751.13)
+# wasn't touched until after MID_BRK's session window had already closed, so
+# the strategy structurally could not catch the real move. When enabled, uses
+# the high/low of 09:30-CONSOLIDATION_END_MIN instead of the raw 15-min OR.
+# See ab_test_mid_brk_consolidation.py before flipping this live.
+CONSOLIDATION_RANGE_ENABLED = False
+CONSOLIDATION_END_HOUR      = 10
+CONSOLIDATION_END_MINUTE    = 15
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
@@ -51,7 +63,11 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     if not (10 * 60 + 30 <= bar_min <= 13 * 60):
         return None
 
-    or_info = get_opening_range(today)
+    if CONSOLIDATION_RANGE_ENABLED:
+        or_info = get_consolidation_range(
+            today, CONSOLIDATION_END_HOUR, CONSOLIDATION_END_MINUTE)
+    else:
+        or_info = get_opening_range(today)
     if or_info is None:
         return None
 
