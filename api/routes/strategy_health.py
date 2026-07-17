@@ -41,9 +41,16 @@ def run_now() -> dict:
     try:
         from broker import get_clients
         from strategy_health.runner import run_daily_audit
+        from database import get_latest_strategy_audit
         alpaca, _ = get_clients()
-        result = run_daily_audit(alpaca)
-        return {"ok": True, **result}
+        run_daily_audit(alpaca)
+        # Re-read from the DB rather than returning run_daily_audit()'s raw
+        # return value directly — guarantees this response has the EXACT
+        # same shape as GET /latest (nested "aggregate" key, audit_date,
+        # tickers, etc). Two hand-built response shapes previously drifted
+        # apart and crashed the frontend (shown.aggregate was undefined).
+        audit = get_latest_strategy_audit()
+        return {"ok": True, "available": audit is not None, **(audit or {})}
     except Exception as e:
         logger.exception("strategy_health on-demand run failed")
         raise HTTPException(status_code=500, detail=str(e))

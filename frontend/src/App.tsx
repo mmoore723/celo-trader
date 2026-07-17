@@ -28,6 +28,7 @@ import { Login }           from "./pages/Login";
 import { Terms }           from "./pages/Terms";
 import { Maintenance }     from "./pages/Maintenance";
 import { ApiSetupModal }   from "./components/ApiSetupModal";
+import { ErrorBoundary }   from "./components/ErrorBoundary";
 import { useState, useEffect } from "react";
 
 const qc = new QueryClient({
@@ -93,6 +94,7 @@ function AppShell() {
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>
+        <ErrorBoundary>
         <Routes>
           <Route path="/"            element={<DailyBrief />} />
           <Route path="/trading"     element={<LiveTrading />} />
@@ -106,6 +108,7 @@ function AppShell() {
           {/* Read-only terms view for already-accepted users */}
           <Route path="/terms"       element={<Terms viewOnly />} />
         </Routes>
+        </ErrorBoundary>
       </main>
       <TickerBar />
     </div>

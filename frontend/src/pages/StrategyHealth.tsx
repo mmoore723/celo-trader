@@ -141,16 +141,18 @@ export function StrategyHealth() {
         </div>
       )}
 
-      {!latest?.available && !runNow.data ? (
-        <div className="card" style={{ padding: 20, textAlign: "center", color: "var(--ink-muted)" }}>
-          No audit has run yet. It will run automatically tonight after close, or press
-          "Run Audit Now" to see today's signal funnel immediately.
-        </div>
-      ) : (
-        (() => {
-          const shown = runNow.data ?? latest!;
-          const agg = shown.aggregate!;
+      {(() => {
+        const shown = runNow.data ?? latest;
+        const agg = shown?.aggregate;
+        if (!shown?.available || !agg) {
           return (
+            <div className="card" style={{ padding: 20, textAlign: "center", color: "var(--ink-muted)" }}>
+              No audit has run yet. It will run automatically tonight after close, or press
+              "Run Audit Now" to see today's signal funnel immediately.
+            </div>
+          );
+        }
+        return (
             <>
               <div className="card" style={{ padding: 16 }}>
                 <div style={{ fontSize: 12, color: "var(--ink-faint)", marginBottom: 8 }}>
@@ -181,9 +183,8 @@ export function StrategyHealth() {
                 <FunnelTable perStrategy={agg.per_strategy} />
               </div>
             </>
-          );
-        })()
-      )}
+        );
+      })()}
 
       <div className="card" style={{ padding: 16 }}>
         <button
