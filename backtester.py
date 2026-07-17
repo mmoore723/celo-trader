@@ -527,6 +527,14 @@ class Backtester:
                             "entry_hour":    entry_bar_time.hour,
                             "held_minutes":  round(elapsed_min, 1),
                             "date":          entry_date_str,
+                            # 2026-07-17: this path bypasses _close_bt_trade() and
+                            # was missing these — every stage1 exit showed up as
+                            # RVOL=0.00/conf=0.00 in feature analysis, which is a
+                            # data gap, not a real reading. Fixed to match the
+                            # other 7 trade-recording sites.
+                            "entry_confidence": active_confidence,
+                            "entry_rvol":        active_rvol,
+                            "entry_meta":        active_meta,
                         })
                         remaining_contracts = contracts - s1_contracts
                         stage1_done         = True
