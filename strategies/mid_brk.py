@@ -96,11 +96,14 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     trend_bonus = 0.05 if trend == "downtrend" else 0.0
     breakdown_pct = (or_low - close) / or_low
     mag_bonus     = min(0.04, breakdown_pct * 5)
-    # Base raised 0.65 -> 0.72 (2026-07-17): same fix as trend_cont.py — router's
-    # _MIN_CONFIDENCE floor is 0.74, and a 0.65 base meant most real breakdown
-    # signals never cleared it despite already passing 6 stacked gates (OR
-    # breakdown, VWAP, confirmed Lower High, dynamic RVOL).
-    confidence    = min(0.86, 0.72 + min(rvol - 1.0, 2.0) * 0.04 + trend_bonus + mag_bonus)
+    # REVERTED 2026-07-17: raised 0.65 -> 0.72 alongside the same change in
+    # trend_cont.py, on the hypothesis that the router's 0.74 confidence floor
+    # was wrongly killing good signals. Backtest disproved that for TREND_CONT
+    # (24 trades / 29% WR / -$39.59 expectancy after the change, was +$41
+    # before) — reverting MID_BRK too rather than leave an unverified change
+    # live on a now-falsified premise. Only 1 trade in the test window, too
+    # few to judge MID_BRK specifically either way.
+    confidence    = min(0.86, 0.65 + min(rvol - 1.0, 2.0) * 0.04 + trend_bonus + mag_bonus)
 
     logger.info("[%s] MID_BRK bearish close=%.2f or_low=%.2f RVOL=%.2f trend=%s conf=%.2f",
                 ticker, close, or_low, rvol, trend, confidence)
