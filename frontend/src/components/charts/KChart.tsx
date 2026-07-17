@@ -49,6 +49,23 @@ export interface KChartProps {
   ticker?: string;
   /** Epoch ms — chart scrolls so this timestamp appears at the left edge */
   visibleFrom?: number;
+  /**
+   * Epoch ms — replay cutoff. When set, everything after this timestamp is
+   * hidden behind an opaque mask on every pane (candle/vol/RSI/MACD) instead
+   * of being removed from the chart's data. Undefined/null = normal full/live
+   * view. Chart-replay redesign (2026-07-19): ChartReplay used to slice the
+   * `bars`/`trades` arrays down to the scrub position and re-feed the whole
+   * shorter array into this component on every tick — that re-triggered the
+   * full data-load effect (applyNewData + the 150ms-delayed scroll/resize/
+   * overlay cycle below) every single tick, which is what caused the candle
+   * pane and the RSI/MACD sub-panes to visibly fall out of sync. Masking a
+   * stable, always-full dataset instead means the heavy effect only runs on
+   * real data changes (ticker/tf switch, new bars arriving) — replay ticking
+   * now only touches a lightweight overlay + viewport move (see the
+   * `revealUntil` effect below), which can't desync the panes because it
+   * never touches the underlying data at all.
+   */
+  revealUntil?: number;
   /** Active timeframe — used to set natural bar spacing ("1Min"|"5Min"|"15Min"|"1Hour") */
   tf?: string;
   /** Bot-generated overlays: FVG zones, BOS hlines, signal/veto markers */
@@ -229,6 +246,7 @@ export function KChart({
   height = 420,
   ticker,
   visibleFrom,
+  revealUntil,
   tf = "5Min",
   annotations = [],
 }: KChartProps) {
@@ -435,6 +453,169 @@ export function KChart({
 
   }, [bars, tf, showVwap, showVwapBands, showOR, showSwings, orHigh, orLow, positionLevels, annotations, trades]);
 
+  // ── Replay mask + viewport follow (chart-replay redesign, 2026-07-19) ────
+  // Deliberately separate from the heavy effect above and deliberately does
+  // NOT call applyNewData. `bars`/`trades` are expected to be the FULL,
+  // stable dataset now (ChartReplay no longer slices them) — this effect only
+  // does work when `revealUntil` changes (once per replay tick): paint an
+  // opaque mask over every pane from revealUntil onward, and nudge the
+  // viewport with scrollToDataIndex. Neither touches the chart's underlying
+  // data or triggers indicator recalculation, so RSI/MACD/VOL cannot fall out
+  // of step with the candle pane the way they did with the old slice-and-
+  // refeed approach.
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+
+    ["reveal_candle", "reveal_vol", "reveal_rsi", "reveal_macd"].forEach((g) => {
+      try { c.removeOverlay({ groupId: g }); } catch (_) {}
+    });
+
+    if (revealUntil == null || bars.length === 0) {
+      // Live / full view — no mask. Still redraw trade markers unfiltered in
+      // case this fired right after leaving replay (goLive).
+      drawTradeOverlays(c);
+      return;
+    }
+
+    const tfMsR: Record<string, number> = {
+      "1Min": 60_000, "5Min": 300_000, "15Min": 900_000, "1Hour": 3_600_000,
+    };
+    const barDurR = tfMsR[tf] ?? 300_000;
+    const lastTsR = new Date(bars[bars.length - 1].time).getTime() + barDurR * 500;
+    const bg = dark ? "#131722" : "#ffffff";
+
+    const maskPane = (groupId: string, paneId: string | undefined, lo: number, hi: number) => {
+      try {
+        c.createOverlay({
+          name: "rect", groupId, lock: true,
+          points: [{ timestamp: revealUntil, value: lo }, { timestamp: lastTsR, value: hi }],
+          needDefaultYAxisFigure: false,
+          styles: { polygon: { style: "fill", color: bg }, line: { color: "transparent", size: 0 } },
+        }, paneId);
+      } catch (_) {}
+    };
+
+    // Candle/volume/RSI/MACD each have their own y-axis scale, so each pane
+    // needs mask bounds in ITS OWN units, not price units.
+    const priceMaxR = Math.max(...bars.map((b) => b.high)) * 1.02;
+    const priceMinR = Math.min(...bars.map((b) => b.low))  * 0.98;
+    maskPane("reveal_candle", undefined, priceMinR, priceMaxR);
+
+    const maxVol = Math.max(...bars.map((b) => b.volume ?? 0), 1) * 1.1;
+    maskPane("reveal_vol", "vol_pane", 0, maxVol);
+    if (showRsi)  maskPane("reveal_rsi",  "rsi_pane",  0, 100);
+    if (showMacd) maskPane("reveal_macd", "macd_pane", -1_000_000, 1_000_000);
+
+    drawTradeOverlays(c);
+
+    // Cheap viewport nudge — not a data reload — with a little headroom past
+    // the reveal point so it doesn't feel like scrolling right up against a wall.
+    try {
+      let revealIdx = bars.findIndex((b) => new Date(b.time).getTime() > revealUntil);
+      if (revealIdx === -1) revealIdx = bars.length - 1;
+      c.scrollToDataIndex(Math.min(bars.length - 1, revealIdx + 20));
+    } catch (_) {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealUntil, bars, trades, tf, dark, showRsi, showMacd]);
+
+  // ── Trade markers + per-trade R:R bracket (chart refactor Phase 2) ────────
+  // Per user's explicit answer, markers fire for ACTUAL trades only — no
+  // clutter from filtered-out/rejected signals.
+  //
+  // Extracted into its own function (chart-replay redesign, 2026-07-19) so
+  // BOTH the full applyOverlays() pass (data load / ticker/tf switch) AND the
+  // lightweight revealUntil effect (every replay tick) can redraw just this
+  // one overlay group without touching VWAP/OR/swings/annotations/day-
+  // separators at all. When `revealUntil` is set, only trades whose entry
+  // happened at or before that point are drawn — same "don't spoil the
+  // outcome" behavior the old ChartReplay had, just computed here instead of
+  // by pre-filtering the trades array upstream.
+  function drawTradeOverlays(c: any) {
+    try { c.removeOverlay({ groupId: "trade" }); } catch (_) {}
+    if (bars.length === 0 || trades.length === 0) return;
+    const visible = revealUntil == null
+      ? trades
+      : trades.filter((t) => t.entry_time && new Date(t.entry_time).getTime() <= revealUntil);
+
+    visible.forEach((t) => {
+      const isLong    = t.direction !== "short";
+      const entryBar  = nearestBar(bars, t.entry_time);
+      const exitBar   = t.exit_time ? nearestBar(bars, t.exit_time) : null;
+
+      if (entryBar) {
+        const entryTs = new Date(entryBar.time).getTime();
+        try {
+          c.createOverlay({
+            name: isLong ? "buyMarker" : "sellMarker",
+            groupId: "trade", lock: true,
+            points: [{ timestamp: entryTs, value: isLong ? entryBar.low : entryBar.high }],
+            extendData: t.strategy_id ?? (isLong ? "BUY" : "SELL"),
+            needDefaultYAxisFigure: false,
+          });
+        } catch (_) {}
+      }
+      if (exitBar) {
+        const exitTs = new Date(exitBar.time).getTime();
+        try {
+          c.createOverlay({
+            name: "exitMarker", groupId: "trade", lock: true,
+            points: [{ timestamp: exitTs, value: exitBar.close }],
+            needDefaultYAxisFigure: false,
+          });
+        } catch (_) {}
+      }
+
+      // Bracket: shaded green (entry→target) / red (entry→stop) zone spanning
+      // the trade's real time-in-trade (entry bar → exit bar, or → last bar
+      // if still open) — the "Full TradingView bracket" the user asked for.
+      if (entryBar && t.entry_price) {
+        const startTs = new Date(entryBar.time).getTime();
+        const endTs   = exitBar
+          ? new Date(exitBar.time).getTime()
+          : new Date(bars[bars.length - 1].time).getTime();
+        const rectEndTs = Math.max(endTs, startTs);
+        const ep = t.entry_price;
+
+        if (t.target_price) {
+          try {
+            c.createOverlay({
+              name: "rect", groupId: "trade", lock: true,
+              points: [{ timestamp: startTs, value: ep }, { timestamp: rectEndTs, value: t.target_price }],
+              needDefaultYAxisFigure: false,
+              styles: { polygon: { style: "fill", color: `${up}30` }, line: { color: "transparent", size: 0 } },
+            });
+          } catch (_) {}
+        }
+        if (t.stop_price) {
+          try {
+            c.createOverlay({
+              name: "rect", groupId: "trade", lock: true,
+              points: [{ timestamp: startTs, value: ep }, { timestamp: rectEndTs, value: t.stop_price }],
+              needDefaultYAxisFigure: false,
+              styles: { polygon: { style: "fill", color: `${dn}30` }, line: { color: "transparent", size: 0 } },
+            });
+          } catch (_) {}
+        }
+        if (t.stop_price && t.target_price) {
+          const risk   = Math.abs(ep - t.stop_price);
+          const reward = Math.abs(t.target_price - ep);
+          const rr     = risk > 0 ? reward / risk : null;
+          if (rr != null) {
+            try {
+              c.createOverlay({
+                name: "simpleAnnotation", groupId: "trade", lock: true,
+                points: [{ timestamp: startTs, value: ep }, { timestamp: startTs, value: ep }],
+                extendData: `R:R ${rr.toFixed(2)}`,
+                styles: { text: { color: text, size: 10, family: "monospace", backgroundColor: "transparent" } },
+              });
+            } catch (_) {}
+          }
+        }
+      }
+    });
+  }
+
   // ── applyOverlays: VWAP indicator + all overlay groups ───────────────────
   // Extracted so it can be called both from setTimeout (after bar render) and
   // directly (when bars is empty).  Uses chartRef.current not a captured `chart`
@@ -483,7 +664,6 @@ export function KChart({
     try { c.removeOverlay({ groupId: "edu" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "ann" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "sep" }); } catch (_) { /* no-op */ }
-    try { c.removeOverlay({ groupId: "trade" }); } catch (_) { /* no-op */ }
     try { c.removeOverlay({ groupId: "swing" }); } catch (_) { /* no-op */ }
 
     // ── Day separators (chart refactor Phase 1) ────────────────────────────
@@ -723,90 +903,9 @@ export function KChart({
       });
     }
 
-    // ── Trade markers + per-trade R:R bracket (chart refactor Phase 2) ──────
-    // Per user's explicit answer, markers fire for ACTUAL trades only — no
-    // clutter from filtered-out/rejected signals. buyMarker/sellMarker/
-    // exitMarker overlays were already built and registered in
-    // kchartIndicators.ts in an earlier session but never wired to real data —
-    // wiring them here for the first time.
-    if (bars.length > 0 && trades.length > 0) {
-      trades.forEach((t) => {
-        const isLong    = t.direction !== "short";
-        const entryBar  = nearestBar(bars, t.entry_time);
-        const exitBar   = t.exit_time ? nearestBar(bars, t.exit_time) : null;
-
-        if (entryBar) {
-          const entryTs = new Date(entryBar.time).getTime();
-          try {
-            c.createOverlay({
-              name: isLong ? "buyMarker" : "sellMarker",
-              groupId: "trade", lock: true,
-              points: [{ timestamp: entryTs, value: isLong ? entryBar.low : entryBar.high }],
-              extendData: t.strategy_id ?? (isLong ? "BUY" : "SELL"),
-              needDefaultYAxisFigure: false,
-            });
-          } catch (_) {}
-        }
-        if (exitBar) {
-          const exitTs = new Date(exitBar.time).getTime();
-          try {
-            c.createOverlay({
-              name: "exitMarker", groupId: "trade", lock: true,
-              points: [{ timestamp: exitTs, value: exitBar.close }],
-              needDefaultYAxisFigure: false,
-            });
-          } catch (_) {}
-        }
-
-        // Bracket: shaded green (entry→target) / red (entry→stop) zone spanning
-        // the trade's real time-in-trade (entry bar → exit bar, or → last bar
-        // if still open) — the "Full TradingView bracket" the user asked for.
-        if (entryBar && t.entry_price) {
-          const startTs = new Date(entryBar.time).getTime();
-          const endTs   = exitBar
-            ? new Date(exitBar.time).getTime()
-            : new Date(bars[bars.length - 1].time).getTime();
-          const rectEndTs = Math.max(endTs, startTs);
-          const ep = t.entry_price;
-
-          if (t.target_price) {
-            try {
-              c.createOverlay({
-                name: "rect", groupId: "trade", lock: true,
-                points: [{ timestamp: startTs, value: ep }, { timestamp: rectEndTs, value: t.target_price }],
-                needDefaultYAxisFigure: false,
-                styles: { polygon: { style: "fill", color: `${up}30` }, line: { color: "transparent", size: 0 } },
-              });
-            } catch (_) {}
-          }
-          if (t.stop_price) {
-            try {
-              c.createOverlay({
-                name: "rect", groupId: "trade", lock: true,
-                points: [{ timestamp: startTs, value: ep }, { timestamp: rectEndTs, value: t.stop_price }],
-                needDefaultYAxisFigure: false,
-                styles: { polygon: { style: "fill", color: `${dn}30` }, line: { color: "transparent", size: 0 } },
-              });
-            } catch (_) {}
-          }
-          if (t.stop_price && t.target_price) {
-            const risk   = Math.abs(ep - t.stop_price);
-            const reward = Math.abs(t.target_price - ep);
-            const rr     = risk > 0 ? reward / risk : null;
-            if (rr != null) {
-              try {
-                c.createOverlay({
-                  name: "simpleAnnotation", groupId: "trade", lock: true,
-                  points: [{ timestamp: startTs, value: ep }, { timestamp: startTs, value: ep }],
-                  extendData: `R:R ${rr.toFixed(2)}`,
-                  styles: { text: { color: text, size: 10, family: "monospace", backgroundColor: "transparent" } },
-                });
-              } catch (_) {}
-            }
-          }
-        }
-      });
-    }
+    // Trade markers + R:R bracket — drawn by drawTradeOverlays() below, which
+    // also handles the revealUntil-filtered redraw on every replay tick.
+    drawTradeOverlays(c);
 
     // ── Bot annotation overlays (hline / zone) ──────────────────────────────
     // hline → horizontalStraightLine at ann.price

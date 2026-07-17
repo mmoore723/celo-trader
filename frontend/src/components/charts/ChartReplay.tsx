@@ -2,20 +2,25 @@
  * ChartReplay.tsx — Phase 3 of the chart refactor: a scrub-bar replay engine
  * wrapped around KChart.
  *
- * Two modes the user explicitly asked for ("Both"):
- *   1. Manual scrub — drag the slider or hit Play to step bar-by-bar through
- *      the loaded history at 1x/2x/4x/8x speed, watching candles/markers/
- *      the R:R bracket reveal progressively instead of seeing the whole day
- *      dumped on screen at once.
- *   2. "Watch this setup" — jumpToTime() snaps the scrub position to just
- *      before a specific signal's timestamp and starts auto-playing from
- *      there, so a single signal from the log can be replayed in isolation.
+ * REDESIGNED 2026-07-19. The original version sliced `bars`/`trades` down to
+ * the scrub position and re-fed the shorter arrays into KChart on every tick.
+ * That re-triggered KChart's entire data-load effect (applyNewData + a
+ * 150ms-delayed scroll/resize/overlay cycle) every tick, which is what caused
+ * the candle pane and the RSI/MACD sub-panes to visibly show different time
+ * ranges at once — confirmed from a screen recording, and NOT fixed by two
+ * follow-up patches (a ticker/tf reset guard, then flooring the tick interval
+ * at 300ms), because neither patch touched the actual cause: repeated
+ * whole-array re-feeds.
  *
- * How it works: KChart itself doesn't know about replay — this component
- * just slices `bars` (and any `trades` whose entry lands after the visible
- * cutoff) down to the current scrub position before handing them to KChart,
- * exactly the same props KChart already accepts. No changes needed inside
- * KChart for this to work.
+ * This version never slices anything. KChart always receives the full,
+ * stable `bars`/`trades` arrays — so its heavy data-load effect only runs
+ * when the real data changes (ticker/tf switch, new bars arriving), never on
+ * a replay tick. Replay position is instead passed down as `revealUntil`
+ * (an epoch-ms cutoff); KChart itself masks everything after that point on
+ * every pane and does a cheap viewport nudge — see the `revealUntil` effect
+ * in KChart.tsx. Since RSI/MACD/VOL are computed once against the full,
+ * unchanging dataset, they can no longer fall out of sync with the candle
+ * pane the way they did before.
  */
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
 import { Play, Pause, SkipForward } from "lucide-react";
@@ -35,7 +40,7 @@ export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartRe
   ref
 ) {
   // idx === bars.length means "caught up to live" — the normal, default state.
-  // Anything less is a replay position.
+  // Anything less is a replay position (how many bars are revealed so far).
   const [idx, setIdx]       = useState(bars.length);
   const [playing, setPlay]  = useState(false);
   const [speedIdx, setSpeedIdx] = useState(0);
@@ -48,15 +53,10 @@ export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartRe
     if (wasAtLive.current) setIdx(bars.length);
   }, [bars.length]);
 
-  // FIX 2026-07-17: switching ticker or timeframe used to leave `idx` at
-  // whatever it was mid-replay. A scrub position from the PREVIOUS bars
-  // array (different ticker/tf = different length and meaning entirely)
-  // doesn't carry over meaningfully — the visible result was the TF/ticker
-  // buttons looking like they'd stopped responding (confirmed from the
-  // recording: clicking 1m/5m/15m/1h did nothing until navigating away and
-  // back, which just force-remounts this component and resets its state).
-  // Always jump to live on ticker/tf change instead of silently keeping a
-  // stale, now-meaningless index.
+  // Switching ticker or timeframe means `idx` was meaningful for a totally
+  // different bars array — always jump to live rather than keep a stale,
+  // now-meaningless index (this was the cause of TF/ticker buttons looking
+  // unresponsive mid-replay).
   const prevKey = useRef(`${ticker}|${tf}`);
   useEffect(() => {
     const key = `${ticker}|${tf}`;
@@ -68,18 +68,15 @@ export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartRe
     }
   }, [ticker, tf, bars.length]);
 
-  // Playback tick — steps one bar forward per interval, interval shrinks as
-  // speed increases, floored at 300ms. FIX 2026-07-17: at 4x/8x the old
-  // 500/speed formula pushed new data every 125ms/62.5ms — faster than
-  // KChart's candle pane + built-in RSI/MACD indicator panes could redraw in
-  // lockstep, so the panes visibly fell out of sync (confirmed from the
-  // recording: candles frozen at one time range while RSI/MACD had already
-  // moved on to a later one). The floor keeps every pane repainting together.
+  // Playback tick — steps one bar forward per interval. No longer needs to be
+  // throttled to protect chart redraw timing (that redraw no longer happens
+  // per-tick at all — see file header), so this floor is just for
+  // human-watchable pacing.
   useEffect(() => {
     if (!playing) return;
     if (idx >= bars.length) { setPlay(false); return; }
     const t = setTimeout(() => setIdx((i) => Math.min(i + 1, bars.length)),
-                          Math.max(300, 500 / SPEEDS[speedIdx]));
+                          Math.max(120, 500 / SPEEDS[speedIdx]));
     return () => clearTimeout(t);
   }, [playing, idx, bars.length, speedIdx]);
 
@@ -99,16 +96,11 @@ export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartRe
   }), [bars]);
 
   const atLive = idx >= bars.length;
-  const visibleBars = bars.slice(0, Math.max(1, idx));
-  const cutoffTs = visibleBars.length
-    ? new Date(visibleBars[visibleBars.length - 1].time).getTime()
-    : 0;
-  // Trade markers/bracket only appear once the replay has reached that
-  // trade's entry — keeps "watch it happen" honest instead of spoiling the
-  // outcome before the scrub position gets there.
-  const visibleTrades = atLive
-    ? trades
-    : trades.filter((t) => t.entry_time && new Date(t.entry_time).getTime() <= cutoffTs);
+  const cutoffBar = bars[Math.max(0, idx - 1)];
+  // Epoch-ms cutoff handed to KChart. undefined = normal live view (no mask).
+  // Trade-marker filtering and the future mask are both computed inside
+  // KChart from this one value — nothing gets sliced here anymore.
+  const revealUntil = atLive || !cutoffBar ? undefined : new Date(cutoffBar.time).getTime();
 
   function goLive() {
     wasAtLive.current = true;
@@ -124,7 +116,7 @@ export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartRe
 
   return (
     <div className="flex flex-col w-full">
-      <KChart bars={visibleBars} trades={visibleTrades} ticker={ticker} tf={tf} {...rest} />
+      <KChart bars={bars} trades={trades} ticker={ticker} tf={tf} revealUntil={revealUntil} {...rest} />
 
       {/* Scrub bar — only meaningful once there's more than a handful of bars */}
       {bars.length > 5 && (
@@ -150,7 +142,7 @@ export const ChartReplay = forwardRef<ChartReplayHandle, Props>(function ChartRe
           <span style={{ color: "var(--ink-muted)", minWidth: 62, textAlign: "right", fontFamily: "monospace" }}>
             {atLive
               ? "● LIVE"
-              : new Date(visibleBars[visibleBars.length - 1]?.time ?? 0).toLocaleTimeString("en-US",
+              : new Date(cutoffBar?.time ?? 0).toLocaleTimeString("en-US",
                   { hour: "numeric", minute: "2-digit" })}
           </span>
           <div className="flex gap-0.5">
