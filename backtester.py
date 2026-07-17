@@ -424,6 +424,12 @@ class Backtester:
         session_pnl           = 0.0
         active_strategy       = "UNKNOWN"
         entry_date_str        = day_str
+        # Captured at entry so post-hoc analysis can correlate win/loss with
+        # what the signal actually looked like (RVOL, confidence, strategy-
+        # specific meta like lh_depth_pct/bars_ago) — see diag_trend_cont_features.py
+        active_confidence     = 0.0
+        active_rvol           = 0.0
+        active_meta: dict     = {}
 
         for idx in range(4, len(day_df)):
             bar   = day_df.iloc[idx]
@@ -471,6 +477,7 @@ class Backtester:
                         entry_price, exit_px, remaining_contracts, option_type,
                         "early_momentum_stop", ts.hour, round(elapsed_min, 1),
                         active_strategy, entry_date_str,
+                        active_confidence, active_rvol, active_meta,
                     )
                     session_pnl += pnl
                     in_trade = False
@@ -492,6 +499,7 @@ class Backtester:
                         entry_price, exit_px, remaining_contracts, option_type,
                         "stop_loss", ts.hour, round(elapsed_min, 1),
                         active_strategy, entry_date_str,
+                        active_confidence, active_rvol, active_meta,
                     )
                     session_pnl += pnl
                     in_trade = False
@@ -535,6 +543,7 @@ class Backtester:
                             entry_price, exit_px, remaining_contracts, option_type,
                             "stage2_trail_floor", ts.hour, round(elapsed_min, 1),
                             active_strategy, entry_date_str,
+                            active_confidence, active_rvol, active_meta,
                         )
                         session_pnl += pnl
                         in_trade = False
@@ -562,6 +571,7 @@ class Backtester:
                         entry_price, exit_px, remaining_contracts, option_type,
                         f"momentum_dead_exit (rvol={_bar_rvol:.2f})", ts.hour, round(elapsed_min, 1),
                         active_strategy, entry_date_str,
+                        active_confidence, active_rvol, active_meta,
                     )
                     session_pnl += pnl
                     in_trade = False
@@ -576,6 +586,7 @@ class Backtester:
                         entry_price, exit_px, remaining_contracts, option_type,
                         f"time_box_{EARLY_TIMEBOX_MIN}m", ts.hour, round(elapsed_min, 1),
                         active_strategy, entry_date_str,
+                        active_confidence, active_rvol, active_meta,
                     )
                     session_pnl += pnl
                     in_trade = False
@@ -589,6 +600,7 @@ class Backtester:
                         entry_price, exit_px, remaining_contracts, option_type,
                         "time_box_90m", ts.hour, round(elapsed_min, 1),
                         active_strategy, entry_date_str,
+                        active_confidence, active_rvol, active_meta,
                     )
                     session_pnl += pnl
                     in_trade = False
@@ -793,6 +805,9 @@ class Backtester:
             signal    = signals[0]
             direction = signal.direction
             strat_id  = signal.strategy_id
+            _entry_confidence = signal.confidence
+            _entry_rvol       = signal.rvol
+            _entry_meta       = dict(signal.meta or {})
 
             # Direction filter
             opt_type_str = "call" if direction == "bullish" else "put"
@@ -832,6 +847,9 @@ class Backtester:
             stage1_done         = False
             active_strategy     = strat_id
             entry_date_str      = day_str
+            active_confidence   = _entry_confidence
+            active_rvol         = _entry_rvol
+            active_meta         = _entry_meta
             peak_opt_price      = entry_opt_px   # tracks highest option price for profit lock
 
         # ── EOD: force-close any open position ───────────────────────────────
@@ -848,6 +866,7 @@ class Backtester:
                 entry_price, eod_price, remaining_contracts, option_type,
                 "eod", eod_time.hour if not isinstance(eod_time, float) else 15,
                 round(elapsed, 1), active_strategy, entry_date_str,
+                active_confidence, active_rvol, active_meta,
             )
             session_pnl += pnl
 
@@ -866,12 +885,20 @@ class Backtester:
         held_minutes: float = 0.0,
         strategy_id: str = "UNKNOWN",
         date: str = "",
+        confidence: float = 0.0,
+        rvol: float = 0.0,
+        meta: Optional[dict] = None,
     ) -> float:
         """
         Record a simulated trade and return its P&L.
 
         P&L uses real contract math: (exit - entry) × contracts × 100
         This is what the live bot computes in database.close_trade().
+
+        confidence/rvol/meta (added 2026-07-17) capture what the ENTRY signal
+        looked like — needed to find what actually distinguishes winning
+        trades from losing ones within a strategy, instead of guessing at a
+        single confidence-threshold knob. See diag_trend_cont_features.py.
         """
         if entry_price <= 0.0 or n_contracts <= 0:
             return 0.0
@@ -888,6 +915,9 @@ class Backtester:
             "entry_hour":    entry_hour,
             "held_minutes":  held_minutes,
             "date":          date,
+            "entry_confidence": confidence,
+            "entry_rvol":        rvol,
+            "entry_meta":        meta or {},
         })
         return pnl
 
