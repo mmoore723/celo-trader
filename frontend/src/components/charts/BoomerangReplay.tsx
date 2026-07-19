@@ -84,7 +84,9 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
 
   useImperativeHandle(ref, () => ({
     jumpToTime(isoTime: string, stopAtIso?: string) {
-      if (bars.length === 0) return;
+      // TEMP DEBUG — remove once the whole-week-instead-of-one-day bug is confirmed fixed.
+      console.log("[BoomerangReplay] jumpToTime called", { isoTime, stopAtIso, barsLength: bars.length, firstBar: bars[0]?.time, lastBar: bars[bars.length - 1]?.time });
+      if (bars.length === 0) { console.log("[BoomerangReplay] bailing — bars.length is 0"); return; }
       let entryIdx = bars.findIndex((b) => new Date(b.time).getTime() >= new Date(isoTime).getTime());
       if (entryIdx === -1) entryIdx = bars.length - 1;
       const start = Math.max(0, entryIdx - LEAD_IN_BARS);
@@ -95,6 +97,9 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
         if (exitIdx === -1) exitIdx = bars.length;
         stop = Math.min(bars.length, exitIdx + TAIL_BARS);
       }
+
+      // TEMP DEBUG
+      console.log("[BoomerangReplay] computed", { entryIdx, start, stop });
 
       wasAtLive.current = false;
       setStartIdx(start);
