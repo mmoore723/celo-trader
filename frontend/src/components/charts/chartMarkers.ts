@@ -5,14 +5,33 @@
  * per-file line limit.
  */
 import { createSeriesMarkers } from "lightweight-charts";
-import type { ISeriesApi, SeriesMarker, Time } from "lightweight-charts";
+import type { ISeriesApi, ISeriesMarkersPluginApi, SeriesMarker, Time } from "lightweight-charts";
 import type { OverlayInputs } from "./chartOverlays";
 import type { ChartPalette } from "./palette";
 import { detectSwings, classifyStructure } from "./marketStructure";
 import { gradeBar } from "./executionGrade";
 import { toEpochTime } from "./zoneBands";
 
-export function buildAndApplyMarkers(candle: ISeriesApi<"Candlestick">, input: OverlayInputs, P: ChartPalette) {
+/**
+ * Builds the marker set and pushes it to the chart. `existing` is the
+ * marker-primitive handle from the PREVIOUS call (or null on first call).
+ * createSeriesMarkers() attaches a brand-new primitive to the series every
+ * time it's invoked — it does not replace one that's already attached. Since
+ * apply() (and therefore this function) runs on every bars/annotations tick
+ * during replay playback, calling createSeriesMarkers() fresh each time was
+ * stacking a new, independent marker set on top of the series every ~125-
+ * 500ms without ever removing the old ones — after a replay ran for a while,
+ * dozens of overlapping generations of labels were all still being drawn at
+ * once, which is what produced the illegible pile-up of BOS/CHoCH/swing
+ * labels. Fix: create the primitive once, then reuse it via .setMarkers()
+ * on every subsequent call — the library's own recommended update pattern.
+ */
+export function buildAndApplyMarkers(
+  candle: ISeriesApi<"Candlestick">,
+  input: OverlayInputs,
+  P: ChartPalette,
+  existing: ISeriesMarkersPluginApi<Time> | null,
+): ISeriesMarkersPluginApi<Time> {
   const markers: SeriesMarker<Time>[] = [];
 
   for (const t of input.trades) {
@@ -96,5 +115,10 @@ export function buildAndApplyMarkers(candle: ISeriesApi<"Candlestick">, input: O
   }
 
   markers.sort((a, b) => (a.time as number) - (b.time as number));
-  createSeriesMarkers(candle, markers);
+
+  if (existing) {
+    existing.setMarkers(markers);
+    return existing;
+  }
+  return createSeriesMarkers(candle, markers);
 }

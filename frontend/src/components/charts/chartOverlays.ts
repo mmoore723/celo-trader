@@ -8,7 +8,7 @@
  * teaching content (what gets drawn and why) aren't tangled together.
  */
 import { createSeriesMarkers, LineSeries, LineStyle } from "lightweight-charts";
-import type { IChartApi, ISeriesApi, IPriceLine, Time } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, ISeriesMarkersPluginApi, IPriceLine, Time } from "lightweight-charts";
 import type { Bar, Trade, ChartAnnotation } from "../../lib/api";
 import type { PositionLevels } from "./chartTypes";
 import type { SimulationOverlay, ReplayTrade } from "../../lib/chart_types";
@@ -42,6 +42,10 @@ export class OverlayManager {
   private zoneMgr: ZoneBandManager;
   private palette: ChartPalette;
   private chart: IChartApi;
+  // Single reused marker-primitive handle — see chartMarkers.ts header comment
+  // for why this must be reused (via .setMarkers()) rather than recreated
+  // on every apply() call.
+  private markersPrimitive: ISeriesMarkersPluginApi<Time> | null = null;
 
   constructor(chart: IChartApi, candle: ISeriesApi<"Candlestick">, palette: ChartPalette) {
     this.chart = chart;
@@ -94,7 +98,12 @@ export class OverlayManager {
     this.clearPriceLines();
     const zoneSpecs: Parameters<ZoneBandManager["sync"]>[0] = [];
 
-    if (input.bars.length === 0) { this.zoneMgr.sync([]); createSeriesMarkers(this.candle, []); return; }
+    if (input.bars.length === 0) {
+      this.zoneMgr.sync([]);
+      if (this.markersPrimitive) this.markersPrimitive.setMarkers([]);
+      else this.markersPrimitive = createSeriesMarkers(this.candle, []);
+      return;
+    }
     const firstT = toEpochTime(input.bars[0].time);
     const lastT = toEpochTime(input.bars[input.bars.length - 1].time);
 
@@ -165,12 +174,16 @@ export class OverlayManager {
     }
 
     this.zoneMgr.sync(zoneSpecs);
-    buildAndApplyMarkers(this.candle, input, P);
+    this.markersPrimitive = buildAndApplyMarkers(this.candle, input, P, this.markersPrimitive);
   }
 
   destroy() {
     this.clearPriceLines();
     this.zoneMgr.destroy();
+    if (this.markersPrimitive) {
+      try { this.markersPrimitive.detach(); } catch { /* series/chart already disposed */ }
+      this.markersPrimitive = null;
+    }
     for (const key of Object.keys(this.vwapLines) as (keyof typeof this.vwapLines)[]) {
       const s = this.vwapLines[key];
       if (s) { try { this.chart.removeSeries(s); } catch { /* chart already disposed */ } }
