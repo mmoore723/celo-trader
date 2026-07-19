@@ -114,3 +114,68 @@ def build_exit_snapshot(
         "elapsed_minutes":      round(elapsed_minutes, 1),
         "multi_timeframe_notes": list(mtf_notes or []),
     }
+
+
+def build_decision_snapshot(
+    *,
+    ticker: str,
+    strategy_id: str,
+    direction: str,
+    confidence: float,
+    rvol: float,
+    contract_symbol: str,
+    option_type: str,
+    strike: float,
+    expiry: str,
+    n_contracts: int,
+    entry_price: float,
+    rr_ratio: float,
+    paper: bool,
+    rsi: Optional[float] = None,
+    macd_hist: Optional[list] = None,
+    adx: Optional[float] = None,
+    ema_aligned: Optional[bool] = None,
+    trend_1h_bias: Optional[str] = None,
+    trade_id: Optional[int] = None,
+) -> dict:
+    """
+    Package one PRE-entry decision-support review's already-computed data
+    for the LLM prompt (phase 2 — ai_reasoning/decision_support.py).
+
+    Same shape as build_entry_snapshot(), minus stop/target (not yet
+    calculated at this point in trading/entry.py — decision support runs
+    BEFORE the order exists, one step earlier than narrate_entry()) and PLUS
+    the pre-entry multi-timeframe features (rsi, macd_hist, adx, ema_aligned,
+    trend_1h_bias). Those come from trading/mtf_features.py — the SAME
+    functions position_manager.py's exit engine already uses, so entry-side
+    and exit-side readings of "is this ticker's momentum aligned right now"
+    can never quietly drift out of sync with each other.
+
+    Every MTF field is Optional. None means it genuinely wasn't computed at
+    this point in the tick (see trading/entry.py's call site for which
+    fields that applies to, e.g. trend_1h_bias is skipped to avoid a new
+    blocking API call in the entry path) — the model should treat a None
+    field as "unavailable", not as a neutral or zero reading.
+    """
+    return {
+        "event":           "entry_review",
+        "ticker":          ticker,
+        "trade_id":        trade_id,
+        "strategy_id":     strategy_id,
+        "direction":       direction,
+        "confidence":      round(confidence, 3),
+        "rvol":            round(rvol, 2),
+        "contract_symbol": contract_symbol,
+        "option_type":     option_type,
+        "strike":          strike,
+        "expiry":          expiry,
+        "n_contracts":     n_contracts,
+        "entry_price":     round(entry_price, 4),
+        "rr_ratio":        rr_ratio,
+        "paper_trading":   paper,
+        "rsi":             round(rsi, 2) if rsi is not None else None,
+        "macd_hist":       [round(v, 5) for v in macd_hist] if macd_hist else None,
+        "adx":             round(adx, 2) if adx is not None else None,
+        "ema_aligned":     ema_aligned,
+        "trend_1h_bias":   trend_1h_bias,
+    }

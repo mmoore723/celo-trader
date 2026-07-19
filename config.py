@@ -124,6 +124,14 @@ AI_NARRATION_TIMEOUT_SEC = int(os.getenv("AI_NARRATION_TIMEOUT_SEC", "10"))
 # expose live capital to it.
 AI_DECISION_SUPPORT_ENABLED      = os.getenv("AI_DECISION_SUPPORT_ENABLED", "false").lower() == "true"
 AI_DECISION_SUPPORT_ENABLED_LIVE = os.getenv("AI_DECISION_SUPPORT_ENABLED_LIVE", "false").lower() == "true"
+# Decision support (phase 2) is SYNCHRONOUS and sits in the entry path
+# (unlike narration's fire-and-forget daemon thread), so its timeout bounds
+# real trade latency, not just a stray thread's lifetime — kept short.
+AI_DECISION_TIMEOUT_SEC = int(os.getenv("AI_DECISION_TIMEOUT_SEC", "4"))
+# Sonnet, not Haiku — this is a real quality gate that can veto/narrow a
+# live-capital trade (once the flags above are flipped on), unlike phase 1's
+# plain-English narration. Worth the extra latency/cost for better judgment.
+AI_DECISION_MODEL = os.getenv("AI_DECISION_MODEL", "claude-sonnet-4-5-20250929")
 
 ALERT_EMAIL       = os.getenv("ALERT_EMAIL", "")
 ALERT_SMTP_HOST   = os.getenv("ALERT_SMTP_HOST", "smtp.gmail.com")

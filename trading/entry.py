@@ -1259,6 +1259,94 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         )
         return
 
+    # ── AI reasoning layer (phase 2 — decision support) ───────────────────────
+    # Runs AFTER every deterministic gate has cleared (R:R, spread, sizing,
+    # slippage-adjusted target) and BEFORE signal_only_mode / order placement —
+    # the same "all gates cleared, about to commit" moment phase 1's
+    # narrate_entry() was scoped for, one step earlier since no order exists
+    # yet. Two independent flags gate this: AI_DECISION_SUPPORT_ENABLED must be
+    # on for ANY trade to be reviewed; AI_DECISION_SUPPORT_ENABLED_LIVE must
+    # ALSO be on for a LIVE trade specifically — so a single flag flip can
+    # never expose live capital to this. Both are False today; this block is
+    # fully wired but inert until the user turns them on deliberately.
+    from config import AI_DECISION_SUPPORT_ENABLED, AI_DECISION_SUPPORT_ENABLED_LIVE
+    _is_paper_trade = settings.get("paper_trading", True)
+    if AI_DECISION_SUPPORT_ENABLED:
+        if (not _is_paper_trade) and not AI_DECISION_SUPPORT_ENABLED_LIVE:
+            # Live trade but the live-specific switch is off — proceed exactly
+            # as if decision support didn't exist, but log why it was skipped.
+            log_event("INFO", "bar_eval",
+                      f"⚪ [{ticker}] AI decision support skipped — live trade "
+                      f"and AI_DECISION_SUPPORT_ENABLED_LIVE is off.")
+        else:
+            _ds_result = None
+            try:
+                from trading.mtf_features import (
+                    compute_rsi, compute_macd_hist, compute_adx, ema_stack_aligned,
+                )
+                # NOTE: using _df1m (today's clean 1-minute-only bars), NOT df5.
+                # By this point df5 has been reassigned (see the historical-bar
+                # augment above) to a concat of historical 5-min bars + today's
+                # 1-min bars for RVOL purposes only — splicing two bar periods
+                # together breaks the uniform-period assumption every EMA-based
+                # indicator here relies on (RSI/MACD/ADX/EMA-stack). _df1m is
+                # the single-timeframe frame already sitting in memory with
+                # zero extra API calls, so this is free AND more correct.
+                _ds_rsi       = compute_rsi(_df1m)
+                _ds_macd_hist = compute_macd_hist(_df1m)
+                _ds_adx       = compute_adx(_df1m)
+                _ds_ema_align = ema_stack_aligned(_df1m, direction)
+                # trend_1h_bias intentionally skipped — no 1-hour frame is
+                # already in memory here, and fetching one would add a new
+                # blocking Alpaca API call to the synchronous entry path.
+                # Latency safety over feature completeness, per design brief.
+                _ds_trend_1h  = None
+
+                from ai_reasoning.decision_support import review_entry
+                _ds_result = review_entry(
+                    ticker=ticker, strategy_id=strategy_id, direction=direction,
+                    confidence=_top.confidence, rvol=entry_rvol,
+                    contract_symbol=contract["symbol"], option_type=opt_type,
+                    strike=contract.get("strike"), expiry=contract.get("expiry", ""),
+                    n_contracts=n_contracts, entry_price=eff_entry,
+                    rr_ratio=rr_audit["R_R_Ratio"], paper=_is_paper_trade,
+                    rsi=_ds_rsi, macd_hist=_ds_macd_hist, adx=_ds_adx,
+                    ema_aligned=_ds_ema_align, trend_1h_bias=_ds_trend_1h,
+                )
+            except Exception as _ds_ex:
+                # review_entry() already fails open internally — this outer
+                # try/except is a second, independent safety net in case the
+                # import or the MTF feature computation above raises before
+                # review_entry() is even reached. Never let this block a
+                # trade the deterministic system already approved.
+                logger.warning("AI decision support call failed (non-fatal, trade proceeds): %s", _ds_ex)
+                _ds_result = None
+
+            if _ds_result is not None and _ds_result.action == "veto":
+                log_event("INFO", "bar_eval",
+                          f"🟣 [{ticker}] AI decision support VETO — "
+                          f"{_ds_result.rationale or 'no reason given'}")
+                _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence)
+                return
+            elif _ds_result is not None and _ds_result.action == "reduce_size":
+                _ds_resized = int(n_contracts * _ds_result.size_multiplier)
+                if _ds_resized < 1:
+                    # Floored to 0 contracts — treat as a veto rather than
+                    # place a 0-contract order.
+                    log_event("INFO", "bar_eval",
+                              f"🟣 [{ticker}] AI decision support reduced size to 0 "
+                              f"contracts — treating as VETO. {_ds_result.rationale or ''}")
+                    _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence)
+                    return
+                elif _ds_resized < n_contracts:
+                    log_event("INFO", "bar_eval",
+                              f"🟣 [{ticker}] AI decision support reduced size: "
+                              f"{n_contracts} → {_ds_resized} contracts. {_ds_result.rationale or ''}")
+                    n_contracts = _ds_resized
+                    _US["last_eval_contracts"] = n_contracts
+                # else: multiplier didn't actually change the integer contract
+                # count (e.g. 2c × 0.9 still floors to 2) — nothing to apply.
+
     # ── Signal-only mode gate ─────────────────────────────────────────────────
     # All quality checks passed. If signal_only_mode is on, broadcast the alert
     # but skip execution — user enters the trade manually in their broker.
