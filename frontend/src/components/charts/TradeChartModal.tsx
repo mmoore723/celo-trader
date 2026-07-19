@@ -57,7 +57,7 @@ export function TradeChartModal(props: Props) {
       replayRef.current?.jumpToTime(props.trade.entry_time, props.trade.exit_time);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, props.mode, bars.length]);
+  }, [open, props.mode, tf, bars.length]);
 
   if (!open) return null;
   const replayTrade = props.mode === "replay" ? toReplayTrade(props.trade) : undefined;
@@ -93,6 +93,7 @@ export function TradeChartModal(props: Props) {
             <BoomerangReplay
               ref={replayRef}
               mode="historical"
+              resetKey={`${ticker}|${tf}`}
               bars={bars} trades={tradesForChart} ticker={ticker}
               height={chartHeight} showOR={false} showSwings showStructure
               replayTrade={replayTrade}
