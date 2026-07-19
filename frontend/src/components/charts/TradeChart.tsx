@@ -46,6 +46,8 @@ export interface TradeChartProps {
   currentOptionPrice?: number | null;
   /** How many of `bars` to actually display — undefined/omitted = all of them (live/full view). */
   revealCount?: number;
+  /** Left edge of the visible window (bar index) — undefined/omitted = 0 (from the start). */
+  revealStart?: number;
 }
 
 export function TradeChart({
@@ -54,7 +56,7 @@ export function TradeChart({
   showStructure = true, showPremiumDiscount = false, showKillzones = false, showExecutionGrade = true,
   showRsi = true, showMacd = true,
   orHigh, orLow, positionLevels, simulationOverlay, replayTrade,
-  height = 420, ticker, revealCount,
+  height = 420, ticker, revealCount, revealStart,
   showPositionCard = true, currentOptionPrice = null,
 }: TradeChartProps) {
   const mainRef = useRef<HTMLDivElement>(null);
@@ -67,9 +69,15 @@ export function TradeChart({
 
   const { refs, setBars } = useChartCore(mainRef, rsiRef, macdRef, palette, { height, showRsi, showMacd });
 
-  // Visible slice for replay. Trades/annotations are filtered to the same
-  // cutoff so "don't spoil the outcome" holds for markers too.
-  const visibleBars = revealCount != null ? bars.slice(0, Math.max(1, revealCount)) : bars;
+  // Visible slice for replay — bounded on BOTH sides. `revealStart` (e.g.
+  // entry-15 from a boomerang jump) keeps prior days/sessions out of view;
+  // without it, "reveal up to revealCount" alone still includes everything
+  // from bar 0, which is what caused a trade near the tail of a multi-day
+  // fetch window to render the whole week instead of just its own session.
+  // Trades/annotations are filtered to the same cutoff so "don't spoil the
+  // outcome" holds for markers too.
+  const start = revealStart ?? 0;
+  const visibleBars = revealCount != null ? bars.slice(start, Math.max(start + 1, revealCount)) : bars;
   const cutoffTime = revealCount != null ? visibleBars[visibleBars.length - 1]?.time : undefined;
   const visibleTrades = cutoffTime ? trades.filter((t) => t.entry_time && t.entry_time <= cutoffTime) : trades;
   const visibleAnnotations = cutoffTime ? annotations.filter((a) => a.ts <= cutoffTime) : annotations;
@@ -92,7 +100,7 @@ export function TradeChart({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    bars, trades, annotations, revealCount, showVwap, showVwapBands, showOR, showSwings,
+    bars, trades, annotations, revealCount, revealStart, showVwap, showVwapBands, showOR, showSwings,
     showStructure, showPremiumDiscount, showKillzones, showExecutionGrade,
     orHigh, orLow, positionLevels, simulationOverlay, replayTrade,
   ]);

@@ -43,6 +43,12 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
   { bars, mode = "live", resetKey, narrationEvents, staticNarration, ...rest }, ref,
 ) {
   const [idx, setIdx] = useState(bars.length);
+  // Left edge of the visible window. 0 = show from the start of the fetched
+  // bars (default/live view). A boomerang jump moves this to entry-15 so the
+  // reveal is bounded on BOTH sides — without this, "reveal up to idx" alone
+  // still includes everything from bar 0, which is why a trade near the tail
+  // of a multi-day fetch window used to show the whole week instead of one day.
+  const [startIdx, setStartIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(0);
   const [stopAtIdx, setStopAtIdx] = useState<number | null>(null);
@@ -63,6 +69,7 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
       wasAtLive.current = true;
       setPlaying(false);
       setStopAtIdx(null);
+      setStartIdx(0);
       setIdx(bars.length);
     }
   }, [resetKey, bars.length]);
@@ -78,9 +85,9 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
   useImperativeHandle(ref, () => ({
     jumpToTime(isoTime: string, stopAtIso?: string) {
       if (bars.length === 0) return;
-      let landIdx = bars.findIndex((b) => new Date(b.time).getTime() >= new Date(isoTime).getTime());
-      if (landIdx === -1) landIdx = bars.length;
-      landIdx = Math.max(1, landIdx - LEAD_IN_BARS);
+      let entryIdx = bars.findIndex((b) => new Date(b.time).getTime() >= new Date(isoTime).getTime());
+      if (entryIdx === -1) entryIdx = bars.length - 1;
+      const start = Math.max(0, entryIdx - LEAD_IN_BARS);
 
       let stop: number | null = null;
       if (stopAtIso) {
@@ -90,8 +97,11 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
       }
 
       wasAtLive.current = false;
+      setStartIdx(start);
       setStopAtIdx(stop);
-      setIdx(landIdx);
+      // Reveal the 15-bar lead-in + entry bar immediately (not one bar at a
+      // time) — playback then grows the right edge forward from here.
+      setIdx(Math.min(bars.length, entryIdx + 1));
       setPlaying(true);
     },
   }), [bars]);
@@ -102,6 +112,7 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
   function goLive() {
     wasAtLive.current = true;
     setStopAtIdx(null);
+    setStartIdx(0);
     setIdx(bars.length);
     setPlaying(false);
   }
@@ -127,7 +138,7 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
 
   return (
     <div className="flex flex-col w-full">
-      <TradeChart bars={bars} revealCount={idx} {...rest} />
+      <TradeChart bars={bars} revealCount={idx} revealStart={startIdx} {...rest} />
 
       {narrationText && (
         <div className="px-3 py-1.5 text-[12px] italic border-t" style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--ink-muted)" }}>
@@ -140,7 +151,7 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
           <button className="btn btn-ghost btn-sm" title={playing ? "Pause" : "Play"} onClick={() => setPlaying((p) => !p)}>
             {playing ? <Pause size={13} /> : <Play size={13} />}
           </button>
-          <input type="range" min={1} max={bars.length} value={idx} onChange={(e) => onScrub(Number(e.target.value))} style={{ flex: 1, accentColor: "var(--accent)" }} />
+          <input type="range" min={startIdx + 1} max={bars.length} value={idx} onChange={(e) => onScrub(Number(e.target.value))} style={{ flex: 1, accentColor: "var(--accent)" }} />
           <span style={{ color: "var(--ink-muted)", minWidth: 62, textAlign: "right", fontFamily: "monospace" }}>
             {atLive ? "● LIVE" : new Date(cutoffBar?.time ?? 0).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
           </span>
