@@ -27,6 +27,12 @@ def get_settings_endpoint() -> Settings:
         # _STRAT_DEFAULTS — see that comment for the full audit history.
         vwap_pullback_enabled=bool(s.get("strategy_vwap_enabled", False)),
         fvg_enabled=bool(s.get("strategy_fvg_enabled", True)),
+        # IFVG — wired 2026-07-18. Was previously missing from both this GET
+        # endpoint and the POST mapping below, so the Settings.ifvg_enabled
+        # model field (defaults True) was never actually read from or saved
+        # to storage; entry.py's enable-flag tuple also lacked an entry for
+        # it, so the strategy could never fire regardless of this field.
+        ifvg_enabled=bool(s.get("strategy_ifvg_enabled", True)),
         bos_mss_enabled=bool(s.get("strategy_bos_enabled", True)),
         chan_break_enabled=bool(s.get("strategy_chan_enabled", True)),
         mid_brk_enabled=bool(s.get("strategy_mid_enabled", True)),
@@ -49,6 +55,7 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_orb_enabled"]   = data.pop("orb_enabled", True)
     data["strategy_vwap_enabled"]  = data.pop("vwap_pullback_enabled", True)
     data["strategy_fvg_enabled"]   = data.pop("fvg_enabled", True)
+    data["strategy_ifvg_enabled"]  = data.pop("ifvg_enabled", True)   # wired 2026-07-18
     data["strategy_bos_enabled"]   = data.pop("bos_mss_enabled", True)
     data["strategy_chan_enabled"]   = data.pop("chan_break_enabled", True)
     data["strategy_mid_enabled"]    = data.pop("mid_brk_enabled", True)
@@ -67,8 +74,13 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     save_settings(current)
 
     # ── Hot-reload watchlist into the running bot ─────────────────────────────
-    # Inject new pinned tickers into LIVE_STATE immediately so the bot picks
-    # them up on the next tick without waiting for tomorrow's pre-market scan.
+    # Inject new pinned tickers into this user's state immediately so the bot
+    # picks them up on the next tick without waiting for tomorrow's pre-market
+    # scan.
+    # FIX: previously wrote to the global LIVE_STATE alias (admin's state) —
+    # a non-admin user saving their watchlist silently patched admin's bot
+    # instead of their own. get_user_state() resolves the requesting user via
+    # the auth ContextVar (already set for this request by require_auth).
     try:
         from scanner import TICKER_BLACKLIST
         new_pins = [
@@ -77,12 +89,13 @@ def save_settings_endpoint(payload: Settings) -> Settings:
             if t.strip() and t.strip().upper() not in TICKER_BLACKLIST
         ]
         if new_pins:
-            from trading.state import LIVE_STATE
-            existing = list(LIVE_STATE.get("scan_watchlist") or [])
+            from trading.state import get_user_state
+            _US = get_user_state()
+            existing = list(_US.get("scan_watchlist") or [])
             merged   = list(dict.fromkeys(new_pins + existing))  # pins first, deduped
-            LIVE_STATE["scan_watchlist"] = merged
+            _US["scan_watchlist"] = merged
             # Invalidate today's cached scan so the next full rescore includes the new tickers
-            LIVE_STATE["scanner_ran_today"] = False
+            _US["scanner_ran_today"] = False
     except Exception:
         pass  # bot may not be running — non-fatal
 

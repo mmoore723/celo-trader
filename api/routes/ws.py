@@ -10,19 +10,29 @@ Clients connect to /ws/live and receive JSON messages every second:
 from __future__ import annotations
 import asyncio
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from jose import jwt, JWTError
+
+from api.middleware.auth import JWT_ALGORITHM, COOKIE_NAME
 
 _ET = ZoneInfo("America/New_York")
 
 router = APIRouter(tags=["websocket"])
 
-_BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "bot_state.json"
-_LOG_PATH       = Path(__file__).resolve().parents[2] / "log" / "bot.log"
+_LOG_PATH = Path(__file__).resolve().parents[2] / "log" / "bot.log"
+# KNOWN GAP: bot.log is a single shared file for every user (see
+# logger_config.py) — _tail_log() below broadcasts lines from bot.log
+# regardless of which user generated them, so a connected client currently
+# sees every user's log activity, not just their own. Fixing this requires
+# per-user log files in logger_config.py, which is a larger, separate change
+# from the auth fix below (this endpoint previously had NO auth at all —
+# anyone could connect and watch admin's dashboard with no session cookie).
 
 # Track connected clients
 _clients: set[WebSocket] = set()
@@ -38,10 +48,36 @@ async def _broadcast(msg: dict) -> None:
     _clients.difference_update(dead)
 
 
-def _read_state() -> dict:
+def _authenticate_ws(ws: WebSocket) -> str | None:
+    """
+    Decode the session cookie from the WebSocket handshake and return the
+    authenticated user_id, or None if missing/invalid.
+
+    FIX: this endpoint previously had no auth at all (see api/main.py comment
+    "WebSocket — no cookie auth") — any client could connect to /ws/live and
+    watch admin's live bot_state.json/log feed with no session cookie
+    whatsoever. WebSocket connections don't go through FastAPI's normal
+    Depends(require_auth) dependency chain, so we decode the same JWT cookie
+    manually here, mirroring api/middleware/auth.py::require_auth exactly
+    (same secret env var, same algorithm, same cookie name).
+    """
+    token = ws.cookies.get(COOKIE_NAME)
+    if not token:
+        return None
+    secret = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
     try:
-        if _BOT_STATE_PATH.exists():
-            return json.loads(_BOT_STATE_PATH.read_text())
+        payload = jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        return None
+    return payload.get("sub", "admin")
+
+
+def _read_state(user_id: str) -> dict:
+    from config import get_bot_state_path
+    try:
+        _path = get_bot_state_path(user_id)
+        if _path.exists():
+            return json.loads(_path.read_text())
     except Exception:
         pass
     return {}
@@ -134,6 +170,13 @@ def _tail_log(n: int = 10) -> list[dict]:  # was 30 — 10 is enough context
 
 @router.websocket("/ws/live")
 async def websocket_live(ws: WebSocket) -> None:
+    user_id = _authenticate_ws(ws)
+    if user_id is None:
+        # Close before accept — 4401 is a custom app-level code in the 4000-4999
+        # range reserved for application use (mirrors HTTP 401 Unauthorized).
+        await ws.close(code=4401, reason="Not authenticated")
+        return
+
     await ws.accept()
     _clients.add(ws)
 
@@ -163,7 +206,7 @@ async def websocket_live(ws: WebSocket) -> None:
     try:
         while True:
             # 1. Bot state update
-            state = _read_state()
+            state = _read_state(user_id)
             # Remap current_ticker → ticker so BotStatus.ticker populates Bot Focus.
             # bot_state.json writes "current_ticker"; the TypeScript BotStatus interface
             # and LiveTrading.tsx both read status.ticker — without this remap Bot Focus

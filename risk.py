@@ -269,7 +269,10 @@ class RiskManager:
         return pct, max_dollars
 
     # ── ORB Risk Model (tiered) ───────────────────────────────────────────────
-    # Position size = (Equity × RISK_PCT) / (Premium × 0.30)
+    # Position size = (Equity × RISK_PCT) / (Premium × ORB_STOP_PCT)
+    # NOTE 2026-07-18: this comment used to say "× 0.30" — stale since
+    # ORB_STOP_PCT was tightened from 0.30 to 0.20. Referencing the constant
+    # name here instead of a literal so this can't drift out of sync again.
     #
 
     ORB_STOP_PCT        = 0.20   # initial stop-loss = 20% of premium (tightened from 30%
@@ -277,7 +280,13 @@ class RiskManager:
     ORB_RISK_PCT        = 0.01   # baseline risk % — used for R:R display / logging
     ORB_STAGE1_PCT      = 0.50   # sell 50% of contracts at stage-1 target
     ORB_STAGE1_GAIN     = 0.25   # +25% gain threshold for stage-1 exit (lowered from +50%)
-    ORB_TIME_BOX        = 45     # flat/losing hard cap (stage1 NOT done)
+    # NOTE 2026-07-18: ORB_TIME_BOX below is UNUSED — grepped the repo, nothing
+    # reads it. The real flat/losing time cap is config.py's EARLY_TIMEBOX_MIN
+    # (currently 60 min), read directly in evaluate_exit_conditions() below.
+    # Left in place rather than deleted (no evidence anything external depends
+    # on it, but this is live-money code — deleting isn't worth the tiny risk
+    # for a comment-sync pass). Don't trust this constant's value.
+    ORB_TIME_BOX        = 45     # UNUSED — see note above; real cap is config.EARLY_TIMEBOX_MIN
     ORB_TIME_BOX_WINNER = 90     # extended cap when stage1 IS done (let winners run)
 
     # ── 1.5× Profit-Factor enforcement ───────────────────────────────────────
@@ -364,10 +373,13 @@ class RiskManager:
         """
         ORB tiered risk model.
 
-        Formula: floor( (equity × RISK_PCT) / (premium × 0.30 × 100) )
+        Formula: floor( (equity × RISK_PCT) / (premium × ORB_STOP_PCT × 100) )
+        (ORB_STOP_PCT = 0.20 as of 2026-07-18 — this docstring previously said
+        "× 0.30", left over from before the stop was tightened. Referencing
+        the constant name instead of a literal now so it can't go stale again.)
 
         RISK_PCT is 3% when growth_mode is ON and balance < $50k, else 1%.
-        A single contract risks: premium × 0.30 × 100 dollars.
+        A single contract risks: premium × ORB_STOP_PCT × 100 dollars.
         Minimum 1 contract if the premium fits within the notional cap (30% growth / 20% conservative).
         Returns 0 only when the single-contract premium exceeds the notional cap.
         """
@@ -668,8 +680,14 @@ class RiskManager:
         # historically under-reported losses. This check uses the TRUTH: actual
         _equity_drawdown = 0.0
         try:
-            from trading.state import LIVE_STATE as _LS
-            _day_start = float(_LS.get("day_start_balance") or 0)
+            # FIX: previously read trading.state.LIVE_STATE directly — the
+            # global admin-only alias — so every user's kill-lock decision
+            # was made off ADMIN's day_start_balance regardless of whose
+            # RiskManager instance this was. get_user_state() resolves fresh
+            # via the ContextVar snapshot this thread was started with (see
+            # trading/state.py::_default_user_id), so it's correct per-user.
+            from trading.state import get_user_state
+            _day_start = float(get_user_state().get("day_start_balance") or 0)
             if _day_start > 0 and account_balance > 0:
                 _equity_drawdown = account_balance - _day_start
                 if _equity_drawdown <= -(_day_start * DAILY_LOSS_HARD_CAP_PCT):
@@ -984,6 +1002,11 @@ class RiskManager:
         struct_stop_price: Optional[float] = None,  # entry_bar_high/low-derived option stop
         # Adaptive exit params — supplied by position_manager's bar analysis
         atr_trail_stop: Optional[float] = None,     # tighter of 1.5×ATR or swing stop (option price)
+        trail_armed: bool = False,                  # True = atr_trail_stop is the REAL armed
+                                                     # trail; False = it's the initial_atr_stop
+                                                     # fallback (trail hasn't armed yet). Added
+                                                     # 2026-07-18 so the exit reason string can
+                                                     # tell these apart — see note below.
         vwap: Optional[float] = None,               # current underlying VWAP
         vwap_breached: bool = False,                # True when VWAP breached ≥1 bar (no trend_dead required)
         trend_dead: bool = False,                   # ADX<20 OR EMA stack misaligned
@@ -1000,7 +1023,8 @@ class RiskManager:
           4. Stage 1 target   — +50% option gain → partial exit signal
           5. Stage 2 trail    — entry×1.15 locked-profit floor on the runner
           6. Hard stop safety — 20% below entry (absolute net)
-          7. Time cap (last resort) — 90m winners / 20m flat-losers
+          7. Time cap (last resort) — 90m winners / config.EARLY_TIMEBOX_MIN
+             flat-losers (currently 60m; see config.py, not this docstring)
 
         Time caps are LAST RESORT only. Structure-based exits (2, 3) should fire
         before the clock ever becomes relevant for a correctly-entered trade.
@@ -1041,10 +1065,20 @@ class RiskManager:
         # ── 2. ATR / swing trailing stop ──────────────────────────────────────
         # Replaces the old fixed-percentage dynamic stop.
         # Position manager ratchets this tighter as price moves in our favour.
+        #
+        # FIX 2026-07-18: this used to always return reason "atr_trail_stop"
+        # regardless of whether the REAL armed trail fired or the static
+        # initial_atr_stop fallback did (position_manager.py substitutes the
+        # latter in before the trail can arm — needs 5min + 15% gain warmup).
+        # diag_instant_reversals.py found live trades that stopped out in
+        # 0-2 min at 0% MFE all mislabeled "atr_trail_stop" in the journal,
+        # making an entry-timing question look like a trailing-stop failure.
+        # `trail_armed` (passed from position_manager.py) now disambiguates.
         if atr_trail_stop is not None:
             if current_price <= atr_trail_stop:
+                _reason = "atr_trail_stop" if trail_armed else "initial_atr_stop"
                 return True, (
-                    f"atr_trail_stop "
+                    f"{_reason} "
                     f"(trail={atr_trail_stop:.4f} current={current_price:.4f})"
                 )
         else:
@@ -1109,9 +1143,14 @@ class RiskManager:
                     f"(floor={stage1_be_price:.4f} current={current_price:.4f})"
                 )
 
-        # ── 6. Early momentum stop (first 20 min only, before stage 1) ───────
-        # Fast failure detection: if the trade is down -12% within 20 min,
-        # the setup failed. Exit before theta decay compounds the loss.
+        # ── 6. Early momentum stop (first EARLY_TIMEBOX_MIN, before stage 1) ─
+        # Fast failure detection: if the trade is down EARLY_STOP_PCT within
+        # EARLY_TIMEBOX_MIN, the setup failed. Exit before theta decay
+        # compounds the loss. NOTE 2026-07-18: this comment used to say
+        # "-12% within 20 min" — stale; config.py's live values are
+        # EARLY_TIMEBOX_MIN=60 and EARLY_STOP_PCT=0.20 (-20%). Naming the
+        # constants here instead of literals so this can't drift again —
+        # check config.py for the current numbers, not this comment.
         if not stage1_done and elapsed_minutes <= EARLY_TIMEBOX_MIN:
             early_stop = entry_price * (1.0 - EARLY_STOP_PCT)
             if current_price <= early_stop:
@@ -1166,6 +1205,7 @@ class RiskManager:
         struct_stop_price: Optional[float] = None,
         # Adaptive exit params (new)
         atr_trail_stop: Optional[float] = None,
+        trail_armed: bool = False,                  # 2026-07-18: see evaluate_exit_conditions
         vwap: Optional[float] = None,
         vwap_breached: bool = False,                # True when VWAP breached ≥1 bar
         trend_dead: bool = False,
@@ -1180,6 +1220,7 @@ class RiskManager:
             peak_price=peak_price,
             struct_stop_price=struct_stop_price,
             atr_trail_stop=atr_trail_stop,
+            trail_armed=trail_armed,
             vwap=vwap,
             vwap_breached=vwap_breached,
             trend_dead=trend_dead,
