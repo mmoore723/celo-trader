@@ -74,6 +74,17 @@ class Trade(BaseModel):
     stage1_done: Optional[bool]
     mode: Optional[str]           # "paper" | "live" — derived from paper int column
     recap: Optional[str] = None   # auto-generated post-trade recap narrative
+    # Snapshot of the bot's own chart annotations (FVG zones, BOS/TREND_CONT
+    # levels, signal markers) captured at entry + exit time — see
+    # database.py::close_trade()'s annotations_json merge. Loosely typed
+    # (same shape as the live /api/bot/annotations/{ticker} endpoint, which
+    # is also untyped dicts) rather than a strict schema, since this is a
+    # straight pass-through of whatever trading/annotations.py emitted.
+    annotations: Optional[list[dict[str, Any]]] = None
+    # {"1Min": "with"|"against"|"neutral", "5Min": ..., "15Min": ..., "1Hour": ...} —
+    # higher-timeframe trend agreement at entry, saved best-effort after the
+    # trade was recorded. See trading/mtf_features.py::compute_mtf_alignment().
+    mtf_bias: Optional[dict[str, str]] = None
 
 
 class TradeListResponse(BaseModel):

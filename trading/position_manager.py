@@ -57,6 +57,27 @@ from trading.mtf_features import (
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
+def _snapshot_exit_annotations(ticker: str) -> Optional[str]:
+    """
+    Thin, defensive wrapper around trading.annotations.snapshot_annotations()
+    for every close_trade() call site in this file. Captures the bot's own
+    chart annotations (BOS levels, exit markers, etc.) at the moment of exit
+    so Journal replay can show why the trade closed, not just that it did —
+    see database.py::close_trade()'s annotations_json merge for how this
+    combines with whatever was already saved at entry.
+
+    Never raises: a failed snapshot must never block closing a live trade.
+    """
+    if not ticker:
+        return None
+    try:
+        from trading.annotations import snapshot_annotations  # noqa: PLC0415
+        return snapshot_annotations(ticker)
+    except Exception:
+        logger.warning("Exit annotation snapshot failed for %s — trade will close with no new annotations", ticker, exc_info=True)
+        return None
+
+
 def _reconcile_if_phantom(alpaca: "AlpacaClient", trade: dict) -> bool:
     """
     Call right after an exit order comes back None (fill is None). If the
@@ -86,6 +107,7 @@ def _reconcile_if_phantom(alpaca: "AlpacaClient", trade: dict) -> bool:
         exit_reason           = "auto_reconciled_no_broker_position",
         confirmed_fill_price  = entry_px,
         paper                 = trade.get("paper", True),
+        annotations_json      = _snapshot_exit_annotations(trade.get("ticker", "")),
     )
     log_event(
         "ERROR", "trading_logic",
@@ -758,6 +780,9 @@ def _manage_open_position(
             fill_price = float(fill.get("confirmed_fill_price") or fill.get("filled_avg_price") or current_price)
 
             from database import insert_trade, close_trade, get_conn
+            # This partial row is a synthetic "half sold" trade — carry over
+            # the SAME annotations_json as the parent position rather than a
+            # fresh snapshot, since its entry story is the parent's entry.
             partial_id = insert_trade(
                 ticker          = trade["ticker"],
                 contract_symbol = trade["contract_symbol"],
@@ -770,6 +795,7 @@ def _manage_open_position(
                 entry_reason    = trade.get("entry_reason", ""),
                 paper           = paper,
                 strategy_id     = trade.get("strategy_id", "INST_ORB"),
+                annotations_json= trade.get("annotations_json"),
             )
             partial_pnl = close_trade(
                 trade_id             = partial_id,
@@ -778,6 +804,7 @@ def _manage_open_position(
                 exit_reason          = "stage1_50pct_profit_take",
                 confirmed_fill_price = fill_price,
                 paper                = paper,
+                annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
             )
 
             with get_conn() as _conn:
@@ -939,6 +966,7 @@ def _close_position(
         mae_price            = _min_px,
         paper                = paper,
         recap                = _recap,
+        annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
     )
 
     # Human-readable close narrative

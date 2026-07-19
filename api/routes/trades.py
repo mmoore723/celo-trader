@@ -2,6 +2,8 @@
 api/routes/trades.py — Trade journal and performance data.
 """
 from __future__ import annotations
+import json as _json
+import logging
 from datetime import date as _date
 from fastapi import APIRouter, Query
 from api.models import (
@@ -11,6 +13,36 @@ from api.models import (
 )
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
+logger = logging.getLogger("celo_trader.api.trades")
+
+
+def _parse_annotations(raw: object) -> list[dict] | None:
+    """
+    Parse the trades.annotations_json column into a list of dicts for the
+    API response. Never raises — a malformed/legacy blob (or the column
+    being NULL on trades from before this feature existed) just means no
+    annotations for this trade, not a broken Journal page.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = _json.loads(raw)
+        return parsed if isinstance(parsed, list) else None
+    except Exception:
+        logger.warning("Malformed annotations_json on a trade row — returning no annotations", exc_info=True)
+        return None
+
+
+def _parse_mtf_bias(raw: object) -> dict | None:
+    """Parse trades.mtf_bias_json the same defensive way as annotations above."""
+    if not raw:
+        return None
+    try:
+        parsed = _json.loads(raw)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        logger.warning("Malformed mtf_bias_json on a trade row — returning no MTF data", exc_info=True)
+        return None
 
 
 def _row_to_trade(row: dict) -> Trade:
@@ -67,6 +99,8 @@ def _row_to_trade(row: dict) -> Trade:
         stage1_done=bool(row.get("stage1_done", False)),
         mode=mode,
         recap=row.get("recap"),
+        annotations=_parse_annotations(row.get("annotations_json")),
+        mtf_bias=_parse_mtf_bias(row.get("mtf_bias_json")),
     )
 
 

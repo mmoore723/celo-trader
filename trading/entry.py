@@ -1424,6 +1424,19 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _stop_px   = round(_risk.dynamic_stop_price(confirmed_price, entry_utc), 4)
     _target_px = round(_risk.stage1_exit_price(confirmed_price), 4)
 
+    # Snapshot the bot's own reasoning (FVG zones, BOS/TREND_CONT levels, the
+    # signal marker that fired) onto the trade so Journal's replay can show
+    # WHY this entry happened on any future day — the live annotation buffer
+    # this reads from is capped and gets overwritten as the session goes on,
+    # so this is the only durable copy. Wrapped defensively: a bad snapshot
+    # must never block recording the trade itself.
+    try:
+        from trading.annotations import snapshot_annotations  # noqa: PLC0415
+        _entry_annotations_json = snapshot_annotations(ticker)
+    except Exception:
+        logger.warning("Entry annotation snapshot failed for %s — trade will save with no annotations", ticker, exc_info=True)
+        _entry_annotations_json = None
+
     trade_id = insert_trade(
         ticker          = ticker,
         contract_symbol = contract["symbol"],
@@ -1438,6 +1451,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         strategy_id     = _US.get("last_strategy_id", "INST_ORB"),
         stop_price      = _stop_px,
         target_price    = _target_px,
+        annotations_json= _entry_annotations_json,
     )
 
     # Re-run R:R audit with real trade_id — final structured log record
@@ -1499,6 +1513,21 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _US["positions"][trade_id]["struct_stop_price"] = _struct_stop_opt
 
     persist_peak_price(trade_id, confirmed_price)
+
+    # ── MTF alignment snapshot (teaching overlay, best-effort) ────────────────
+    # Runs AFTER the trade is already recorded and all critical position state
+    # above is set — 3 extra API calls (5Min/15Min/1Hour) must never delay
+    # recording the trade itself or risk the entry in any way. Fully wrapped;
+    # a failure here just means the Journal's MTF heat map shows "unknown"
+    # for this trade, nothing more.
+    try:
+        from trading.mtf_features import compute_mtf_alignment
+        from database import save_mtf_bias
+        import json as _json
+        _mtf_bias = compute_mtf_alignment(alpaca, ticker, direction, df_1m=df5)
+        save_mtf_bias(trade_id, _json.dumps(_mtf_bias))
+    except Exception:
+        logger.warning("MTF alignment snapshot failed for trade %d — Journal will show 'unknown'", trade_id, exc_info=True)
 
     # Bind trade context so all subsequent log lines include trade metadata
     try:

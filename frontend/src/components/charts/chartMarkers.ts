@@ -41,6 +41,60 @@ export function buildAndApplyMarkers(candle: ISeriesApi<"Candlestick">, input: O
     }
   }
 
+  // FVG/IFVG fill percentage — how much of the gap price re-entered before
+  // reversing, computed straight from the zone's own price_low/price_high
+  // (already captured by the bot at signal time) plus the bars already on
+  // screen. No backend change needed: this is pure frontend arithmetic on
+  // data that was already flowing through.
+  for (const ann of input.annotations) {
+    if (ann.type !== "zone" || !ann.strategy?.includes("FVG") || ann.price_low == null || ann.price_high == null) continue;
+    const gapLow = ann.price_low, gapHigh = ann.price_high;
+    const gapSize = gapHigh - gapLow;
+    if (gapSize <= 0) continue;
+    const annMs = new Date(ann.ts).getTime();
+    const isBullish = ann.direction === "bullish";
+    let deepestPct = 0;
+    let deepestBar: typeof input.bars[number] | null = null;
+    for (const b of input.bars) {
+      if (new Date(b.time).getTime() <= annMs) continue;   // only bars after the gap formed
+      // Bullish FVG: price is expected to dip back DOWN into the gap from
+      // above — fill % measured from the top edge downward. Bearish is the
+      // mirror image (price rallies UP into the gap from below).
+      const pct = isBullish
+        ? Math.max(0, Math.min(100, ((gapHigh - b.low) / gapSize) * 100))
+        : Math.max(0, Math.min(100, ((b.high - gapLow) / gapSize) * 100));
+      if (pct > deepestPct) { deepestPct = pct; deepestBar = b; }
+    }
+    if (deepestBar && deepestPct > 0) {
+      markers.push({
+        time: toEpochTime(deepestBar.time), position: isBullish ? "belowBar" : "aboveBar",
+        color: ann.color, shape: "circle", text: `FVG ${Math.round(deepestPct)}% filled`, size: 1,
+      });
+    }
+  }
+
+  // Execution grade pinned to the bot's own BOS_MSS structure-break level —
+  // NOT the frontend's own swing-detector BOS/CHoCH labels above, which are
+  // a generic teaching overlay. This one is grounded in the bot's actual
+  // signal: find the candle where BOS_MSS fired and grade THAT bar, so the
+  // strength badge sits on the real break, not just any swing point.
+  if (input.showExecutionGrade) {
+    for (const ann of input.annotations) {
+      if (ann.type !== "hline" || ann.strategy !== "BOS_MSS") continue;
+      const annMs = new Date(ann.ts).getTime();
+      const bosBar = input.bars.find((b) => new Date(b.time).getTime() >= annMs) ?? input.bars[input.bars.length - 1];
+      if (!bosBar) continue;
+      const grade = gradeBar(bosBar);
+      if (!grade) continue;
+      const isBullish = ann.direction === "bullish";
+      markers.push({
+        time: toEpochTime(bosBar.time), position: isBullish ? "belowBar" : "aboveBar",
+        color: grade.grade === "strong" ? P.structureUp : grade.grade === "moderate" ? P.stop : P.structureDown,
+        shape: "circle", text: `BOS · ${grade.grade} (${grade.label})`, size: 1,
+      });
+    }
+  }
+
   markers.sort((a, b) => (a.time as number) - (b.time as number));
   createSeriesMarkers(candle, markers);
 }

@@ -25,6 +25,7 @@ function toReplayTrade(t: Trade): ReplayTrade {
     peak_option_px: t.peak_price, mae_option_px: t.mae_price,
     direction: t.direction === "short" ? "short" : "long",
     exit_reason: t.exit_reason, pnl: t.pnl, contracts: t.contracts,
+    mtfBias: t.mtf_bias,
   };
 }
 function tradeDateStr(t: Trade): string {
@@ -95,6 +96,7 @@ export function TradeChartModal(props: Props) {
               mode="historical"
               resetKey={`${ticker}|${tf}`}
               bars={bars} trades={tradesForChart} ticker={ticker}
+              annotations={props.trade.annotations ?? []}
               height={chartHeight} showOR={false} showSwings showStructure
               replayTrade={replayTrade}
               staticNarration={props.trade.recap}

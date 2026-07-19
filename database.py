@@ -236,6 +236,16 @@ def _init_db_at(db_path: Path) -> None:
             # copied from is ephemeral and gets overwritten).
             conn.execute("ALTER TABLE trades ADD COLUMN annotations_json TEXT")
             logger.info("Migration: added annotations_json column to %s", db_path.name)
+        if "mtf_bias_json" not in _cols:
+            # JSON dict of {"1Min": "with"|"against"|"neutral", "5Min": ..., ...} —
+            # higher-timeframe trend agreement at entry, for Journal's MTF
+            # alignment heat map. Teaching overlay only — see
+            # trading/mtf_features.py::compute_mtf_alignment(). Saved as a
+            # best-effort follow-up AFTER insert_trade() succeeds, so this
+            # column can be NULL even on a fully valid trade if that lookup
+            # failed or was skipped — treat NULL as "unknown", not an error.
+            conn.execute("ALTER TABLE trades ADD COLUMN mtf_bias_json TEXT")
+            logger.info("Migration: added mtf_bias_json column to %s", db_path.name)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -454,6 +464,28 @@ def insert_trade(
     return trade_id
 
 
+def save_mtf_bias(trade_id: int, mtf_bias_json: Optional[str]) -> None:
+    """
+    Save the multi-timeframe alignment snapshot computed by
+    trading/mtf_features.py::compute_mtf_alignment() onto an already-recorded
+    trade. Deliberately a separate, tiny UPDATE rather than a param on
+    insert_trade() — the MTF fetch needs 3 extra API calls, and the trade
+    itself must be recorded FIRST regardless of whether that lookup
+    succeeds. Called by trading/entry.py only after insert_trade() has
+    already returned successfully.
+
+    Never raises: a failed save here must not affect a trade that already
+    exists in the database. Logs a warning and returns on any error.
+    """
+    if not mtf_bias_json:
+        return
+    try:
+        with get_conn() as conn:
+            conn.execute("UPDATE trades SET mtf_bias_json = ? WHERE id = ?", (mtf_bias_json, trade_id))
+    except Exception:
+        logger.warning("save_mtf_bias failed for trade %d — trade itself is unaffected", trade_id, exc_info=True)
+
+
 def close_trade(
     trade_id: int,
     exit_price: float,
@@ -464,6 +496,7 @@ def close_trade(
     mae_price: Optional[float] = None,    # MAE: lowest  option mid-price seen during trade
     paper: bool = True,                   # False → deduct Alpaca commission from P&L
     recap: Optional[str] = None,          # Auto-generated trade recap stored in DB
+    annotations_json: Optional[str] = None,  # JSON snapshot of exit-time chart annotations
 ) -> float:
     """
     Mark a trade closed and compute realised P&L.
@@ -478,7 +511,7 @@ def close_trade(
 
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT entry_price, contracts FROM trades WHERE id = ?", (trade_id,)
+            "SELECT entry_price, contracts, annotations_json FROM trades WHERE id = ?", (trade_id,)
         ).fetchone()
         if row is None:
             raise ValueError(f"Trade id {trade_id} not found in database")
@@ -494,16 +527,21 @@ def close_trade(
             realized_pnl = realized_pnl - commission
             logger.debug("Commission deducted: contracts=%d commission=$%.2f", contracts, commission)
 
+        # Merge exit-time annotations with whatever was already saved at entry
+        # (rather than overwrite) so the trade keeps its FULL story — why it
+        # opened AND why it closed. See _merge_annotations_json above.
+        merged_annotations = _merge_annotations_json(row["annotations_json"], annotations_json)
+
         conn.execute(
             """
             UPDATE trades
             SET exit_price = ?, exit_time = ?, exit_reason = ?,
                 realized_pnl = ?, status = 'closed',
-                peak_price = ?, mae_price = ?, recap = ?
+                peak_price = ?, mae_price = ?, recap = ?, annotations_json = ?
             WHERE id = ?
             """,
             (actual_exit, _to_et_isoformat(exit_time), exit_reason,
-             realized_pnl, peak_price, mae_price, recap, trade_id),
+             realized_pnl, peak_price, mae_price, recap, merged_annotations, trade_id),
         )
 
     logger.info(

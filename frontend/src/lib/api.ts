@@ -66,6 +66,14 @@ export interface Trade {
   stage1_done?: boolean;
   mode?: string;
   recap?: string;           // auto-generated post-trade recap narrative
+  // Bot's own chart annotations (FVG zones, BOS/TREND_CONT levels, signal
+  // markers) captured at entry + exit time — same shape as ChartAnnotation
+  // below, but persisted per-trade so Journal replay works for any past day
+  // (the live /api/bot/annotations feed is ephemeral and gets overwritten).
+  annotations?: ChartAnnotation[];
+  // Higher-timeframe trend agreement at entry — "with" | "against" | "neutral"
+  // per timeframe, saved best-effort after the trade was recorded.
+  mtf_bias?: Record<string, "with" | "against" | "neutral">;
 }
 
 // ── Analytics ──────────────────────────────────────────────────────────────

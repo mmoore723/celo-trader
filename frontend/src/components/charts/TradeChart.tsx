@@ -159,6 +159,28 @@ export function TradeChart({
           </div>
         )}
 
+        {/* MTF alignment heat strip — did 1m/5m/15m/1h trend agree with this
+            entry's direction? Teaching overlay only, from Trade.mtf_bias
+            (see trading/mtf_features.py::compute_mtf_alignment()). Absent
+            (undefined) for trades recorded before this feature existed, or
+            if the best-effort lookup failed at entry — shows nothing rather
+            than a misleading "neutral" row in that case. */}
+        {replayTrade?.mtfBias && (
+          <div className="absolute z-20" style={{ top: 8, right: 8, display: "flex", gap: 3, pointerEvents: "none" }}>
+            {(["1Min", "5Min", "15Min", "1Hour"] as const).map((tf) => {
+              const bias = replayTrade.mtfBias?.[tf];
+              if (!bias) return null;
+              const color = bias === "with" ? palette.up : bias === "against" ? palette.down : palette.text;
+              const bg = bias === "with" ? "rgba(38,166,154,0.15)" : bias === "against" ? "rgba(239,83,80,0.15)" : "rgba(148,163,184,0.15)";
+              return (
+                <div key={tf} title={`${tf}: ${bias}`} style={{ fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 4, background: bg, color, border: `1px solid ${color}55` }}>
+                  {tf.replace("Min", "m").replace("Hour", "h")}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div ref={mainRef} className="w-full h-full" />
       </div>
 

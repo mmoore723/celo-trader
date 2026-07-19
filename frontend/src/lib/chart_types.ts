@@ -30,4 +30,6 @@ export interface ReplayTrade {
   exit_reason?: string;
   pnl?: number;
   contracts?: number;
+  // Higher-timeframe trend agreement at entry — see Trade.mtf_bias in api.ts.
+  mtfBias?: Record<string, "with" | "against" | "neutral">;
 }
