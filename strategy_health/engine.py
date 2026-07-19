@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from contextlib import contextmanager
 from typing import Optional
 
 import pandas as pd
@@ -29,6 +30,34 @@ logger = logging.getLogger("celo_trader.strategy_health.engine")
 # enough history for RVOL(10-day) and ADX(14) baselines plus the target day.
 _BARS_LOOKBACK = 1500
 FORWARD_BARS   = 12   # 12 x 5-min = 60 minutes, same proxy used across diag_*.py
+
+# Loggers whose per-bar narration (e.g. "breakout detected", "bounce failed",
+# "chop regime") is meant for a live trading session, not a bar-by-bar replay
+# of a whole day. Every strategies/*.py module logs under
+# "celo_trader.strategies.<name>", so raising the *parent* logger's level
+# silences all of them without editing seven separate strategy files.
+_NOISY_LOGGER_NAMES = ("celo_trader.strategy_router", "celo_trader.strategies")
+
+
+@contextmanager
+def _quiet_strategy_logging():
+    """
+    Temporarily raise the strategy/router loggers to WARNING so this
+    module's bar-by-bar replay (hundreds of route_signals()/evaluate()
+    calls per ticker) doesn't flood bot.log — and, since the dashboard's
+    THINKING panel tails bot.log, doesn't make a nightly audit look like
+    live in-market decisions. Restores the original levels afterward, and
+    always restores even if the replay loop raises.
+    """
+    loggers = [logging.getLogger(name) for name in _NOISY_LOGGER_NAMES]
+    previous_levels = [lg.level for lg in loggers]
+    try:
+        for lg in loggers:
+            lg.setLevel(logging.WARNING)
+        yield
+    finally:
+        for lg, level in zip(loggers, previous_levels):
+            lg.setLevel(level)
 
 
 def _fetch_bars(alpaca: AlpacaClient, ticker: str) -> pd.DataFrame:
@@ -108,51 +137,52 @@ def audit_ticker(alpaca: AlpacaClient, ticker: str) -> Optional[dict]:
         "_raw_conf_sum": 0.0, "worked_raw": 0, "worked_survivors": 0,
     })
 
-    for i in range(10, len(day_df)):
-        bar_time = day_df.iloc[i]["time"]
-        df_upto  = df[df["time"] <= bar_time].reset_index(drop=True)
+    with _quiet_strategy_logging():
+        for i in range(10, len(day_df)):
+            bar_time = day_df.iloc[i]["time"]
+            df_upto  = df[df["time"] <= bar_time].reset_index(drop=True)
 
-        # ── Real, unmodified pipeline: what actually survives to be tradeable ──
-        try:
-            survivors = _router.route_signals(df_upto, ticker=ticker)
-        except Exception as exc:
-            logger.debug("route_signals failed at %s %s: %s", ticker, bar_time, exc)
-            survivors = []
-        survivor_ids = {s.strategy_id for s in survivors}
-
-        # ── Raw: each strategy's own evaluate(), bypassing every router gate ──
-        today_frame = _router._build_indicator_frame(df_upto)
-        if today_frame.empty:
-            continue
-
-        fwd_idx  = i + FORWARD_BARS
-        fwd_pct  = None
-        if fwd_idx < len(day_df):
-            entry_px = float(day_df.iloc[i]["close"])
-            fwd_px   = float(day_df.iloc[fwd_idx]["close"])
-            fwd_pct  = (fwd_px - entry_px) / entry_px * 100
-
-        for strategy_id, fn in _router.ACTIVE_STRATEGIES:
+            # ── Real, unmodified pipeline: what actually survives to be tradeable ──
             try:
-                sig = fn(today_frame, ticker=ticker)
-            except Exception:
+                survivors = _router.route_signals(df_upto, ticker=ticker, quiet=True)
+            except Exception as exc:
+                logger.debug("route_signals failed at %s %s: %s", ticker, bar_time, exc)
+                survivors = []
+            survivor_ids = {s.strategy_id for s in survivors}
+
+            # ── Raw: each strategy's own evaluate(), bypassing every router gate ──
+            today_frame = _router._build_indicator_frame(df_upto)
+            if today_frame.empty:
                 continue
-            if sig is None:
-                continue
 
-            row = per_strategy[strategy_id]
-            row["raw_signals"] += 1
-            row["_raw_conf_sum"] += sig.confidence
+            fwd_idx  = i + FORWARD_BARS
+            fwd_pct  = None
+            if fwd_idx < len(day_df):
+                entry_px = float(day_df.iloc[i]["close"])
+                fwd_px   = float(day_df.iloc[fwd_idx]["close"])
+                fwd_pct  = (fwd_px - entry_px) / entry_px * 100
 
-            if fwd_pct is not None:
-                agreed = (fwd_pct > 0.10) if sig.direction == "bullish" else (fwd_pct < -0.10)
-                if agreed:
-                    row["worked_raw"] += 1
-                    if strategy_id in survivor_ids:
-                        row["worked_survivors"] += 1
+            for strategy_id, fn in _router.ACTIVE_STRATEGIES:
+                try:
+                    sig = fn(today_frame, ticker=ticker)
+                except Exception:
+                    continue
+                if sig is None:
+                    continue
 
-            if strategy_id in survivor_ids:
-                row["router_survivors"] += 1
+                row = per_strategy[strategy_id]
+                row["raw_signals"] += 1
+                row["_raw_conf_sum"] += sig.confidence
+
+                if fwd_pct is not None:
+                    agreed = (fwd_pct > 0.10) if sig.direction == "bullish" else (fwd_pct < -0.10)
+                    if agreed:
+                        row["worked_raw"] += 1
+                        if strategy_id in survivor_ids:
+                            row["worked_survivors"] += 1
+
+                if strategy_id in survivor_ids:
+                    row["router_survivors"] += 1
 
     # Finalize averages, drop the private accumulator
     result: dict = {}

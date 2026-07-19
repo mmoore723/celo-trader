@@ -131,6 +131,7 @@ def route_signals(
     df: pd.DataFrame,
     ticker: str,
     enabled_strategies: "set[str] | None" = None,
+    quiet: bool = False,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -140,6 +141,13 @@ def route_signals(
         ticker              : Symbol string (log context + cooldown keying)
         enabled_strategies  : Optional set of strategy IDs to run.
                               If None, all eight run.
+        quiet               : If True, skip the "bar_eval" DB narration
+                              (e.g. the ADX chop-regime notice) written via
+                              _db_log(). Used by strategy_health/engine.py's
+                              historical replay so a nightly audit doesn't
+                              write hundreds of bar-by-bar rows into the same
+                              event log the live THINKING panel reads from.
+                              Never set True on the live trading path.
 
     Returns:
         list[Signal] sorted by confidence descending (may be empty).
@@ -176,13 +184,14 @@ def route_signals(
         if _gated:
             evaluators = [(sid, fn) for sid, fn in evaluators
                           if sid not in ADX_GATED_STRATEGIES]
-            try:
-                _db_log("INFO", "bar_eval",
-                        f"⚪ [{ticker}] ADX {_adx_now:.0f} < {ADX_MIN:.0f} — chop regime. "
-                        f"Breakout strategies gated: {', '.join(_gated)}. "
-                        f"Mean-reversion strategies still active.")
-            except Exception:
-                pass
+            if not quiet:
+                try:
+                    _db_log("INFO", "bar_eval",
+                            f"⚪ [{ticker}] ADX {_adx_now:.0f} < {ADX_MIN:.0f} — chop regime. "
+                            f"Breakout strategies gated: {', '.join(_gated)}. "
+                            f"Mean-reversion strategies still active.")
+                except Exception:
+                    pass
     if not evaluators:
         return []
 
