@@ -95,6 +95,30 @@ CREATE TABLE IF NOT EXISTS strategy_audits (
 );
 """
 
+# ai_reasoning_log — every prompt/response the AI reasoning layer sends or
+# receives, win or lose. Written by ai_reasoning/narrator.py (phase 1,
+# event_type='entry_narration'/'exit_narration') and, once approved,
+# ai_reasoning/decision_support.py (phase 2, event_type='entry_veto'). This
+# is the full replay trail the user asked for before any decision-support
+# power over live trades is considered — every call is logged here
+# regardless of success, timeout, or error, never only the successful ones.
+_CREATE_AI_REASONING_LOG = """
+CREATE TABLE IF NOT EXISTS ai_reasoning_log (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                     TEXT    NOT NULL,   -- ISO datetime (ET) the call was made
+    event_type             TEXT    NOT NULL,   -- 'entry_narration' | 'exit_narration' | 'entry_veto'
+    ticker                 TEXT    NOT NULL,
+    trade_id               INTEGER,            -- FK to trades.id where applicable (NULL if not yet inserted)
+    feature_snapshot_json  TEXT    NOT NULL,   -- exact input dict sent to the model, JSON-encoded
+    prompt                 TEXT    NOT NULL,   -- full system+user prompt text, for replay
+    response_text          TEXT,               -- raw model output (NULL on failure/timeout)
+    latency_ms             INTEGER,
+    model                  TEXT,
+    error                  TEXT,               -- non-NULL if the call failed, timed out, or was skipped
+    applied                INTEGER NOT NULL DEFAULT 0   -- phase 2 only: was a veto/resize actually acted on
+);
+"""
+
 
 # ── Connection context manager ────────────────────────────────────────────────
 
@@ -180,6 +204,7 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_DAILY_SUMMARY)
         conn.execute(_CREATE_SYSTEM_EVENTS)
         conn.execute(_CREATE_STRATEGY_AUDITS)
+        conn.execute(_CREATE_AI_REASONING_LOG)
         # ── Migrations ────────────────────────────────────────────────────────
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
         if "strategy_id" not in _cols:
@@ -655,6 +680,52 @@ def log_event(level: str, component: str, message: str) -> None:
         _evt_logger.warning(message)
     else:
         _evt_logger.info(message)
+
+
+# ── AI reasoning replay log ───────────────────────────────────────────────────
+
+def log_ai_reasoning(
+    event_type: str,
+    ticker: str,
+    feature_snapshot: dict,
+    prompt: str,
+    response_text: Optional[str] = None,
+    latency_ms: Optional[int] = None,
+    model: Optional[str] = None,
+    error: Optional[str] = None,
+    trade_id: Optional[int] = None,
+    applied: bool = False,
+) -> None:
+    """
+    Persist one AI reasoning call to ai_reasoning_log — narration today
+    (event_type='entry_narration'/'exit_narration'), decision-support later
+    (event_type='entry_veto').
+
+    Called on EVERY call attempt, success or not — a timeout or API error
+    still gets a row (error set, response_text NULL) so the replay trail the
+    user asked for is complete, not just a highlight reel of the calls that
+    worked. Never raises: a logging failure must never be allowed to affect
+    the trade the call was about.
+    """
+    import json as _json
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """INSERT INTO ai_reasoning_log
+                   (ts, event_type, ticker, trade_id, feature_snapshot_json,
+                    prompt, response_text, latency_ms, model, error, applied)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    _now_et().isoformat(), event_type, ticker, trade_id,
+                    _json.dumps(feature_snapshot, default=str),
+                    prompt, response_text, latency_ms, model, error,
+                    1 if applied else 0,
+                ),
+            )
+    except Exception as exc:
+        # Non-fatal by design — see module docstring in ai_reasoning/client.py
+        # for why nothing in this layer is allowed to raise into the trading loop.
+        logger.warning("log_ai_reasoning: failed to persist (non-fatal): %s", exc)
 
 
 # ── Aggregate statistics ───────────────────────────────────────────────────────

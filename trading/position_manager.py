@@ -13,10 +13,14 @@ Exit hierarchy (checked in order each tick):
   4. Stage-1 profit target — +50% option gain → sell 50%, arm trailing stop
   5. Stage-2 trail floor  — remainder stops at entry×1.15 (locked-profit floor)
   6. Hard stop safety net — 20% below entry (tightens from 30 to 20%)
-  7. Time cap of last resort — 90 min for winners, 20 min for flat/losing
-     (safety net only; structure-based exits should fire first)
+  7. Time cap of last resort — 90 min for winners, config.EARLY_TIMEBOX_MIN
+     (currently 60 min) for flat/losing (safety net only; structure-based
+     exits should fire first). NOTE 2026-07-18: this used to say "20 min" —
+     stale; the live value is set in config.py, not here, so it won't drift
+     out of sync with this comment again.
 
-Per-position state machine keys (stored in LIVE_STATE["positions"][trade_id]):
+Per-position state machine keys (stored in this user's state["positions"][trade_id],
+see trading/state.py::get_user_state):
   stage             : "s1" | "s2"
   phase             : "trending" | "vwap_watch" | "exit_pending"
   peak_price_opt    : highest option mid-price seen since entry
@@ -38,7 +42,17 @@ from typing import Optional
 import pandas as pd
 import numpy as np
 
-from trading.state import LIVE_STATE, _now_et, _ET_TZ, _BOT_ROOT
+from trading.state import (
+    get_user_state, get_user_risk, get_user_trade_log, set_user_trade_log,
+    _now_et, _ET_TZ,
+)
+from config import get_bot_state_path
+# RSI / MACD / ADX / EMA-stack / 1h-trend-bias — moved to trading/mtf_features.py
+# (2026-07-18) so the entry path can share the exact same functions instead of
+# a second, potentially-drifting copy. See that module's docstring for why.
+from trading.mtf_features import (
+    compute_adx, ema_stack_aligned, compute_rsi, compute_macd_hist, trend_bias_1h,
+)
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -57,6 +71,7 @@ def _reconcile_if_phantom(alpaca: "AlpacaClient", trade: dict) -> bool:
     now-fixed paper-fill-fabrication bug) retried its exit every ~1s for
     hours straight, hammering Alpaca with a doomed sell_to_close order.
     """
+    _US = get_user_state()
     from broker import is_phantom_position_rejection
     if not is_phantom_position_rejection(getattr(alpaca, "last_rejection_reason", None)):
         return False
@@ -87,9 +102,9 @@ def _reconcile_if_phantom(alpaca: "AlpacaClient", trade: dict) -> bool:
             "symbol": trade["contract_symbol"],
         },
     )
-    LIVE_STATE["open_trades"] = get_open_trades()
-    LIVE_STATE["open_trade"]  = LIVE_STATE["open_trades"][0] if LIVE_STATE["open_trades"] else None
-    LIVE_STATE.get("positions", {}).pop(trade["id"], None)
+    _US["open_trades"] = get_open_trades()
+    _US["open_trade"]  = _US["open_trades"][0] if _US["open_trades"] else None
+    _US.get("positions", {}).pop(trade["id"], None)
     return True
 
 
@@ -100,9 +115,8 @@ _SWING_LOOKBACK       = 20    # bars to look back for swing high/low
 
 # ── VWAP breach + trend breakdown constants ───────────────────────────────────
 _ADX_WEAK_THRESHOLD   = 20    # ADX < 20 → trend has no directional strength
-_EMA_FAST             = 8
-_EMA_MID              = 21
-_EMA_SLOW             = 50
+# _EMA_FAST/_EMA_MID/_EMA_SLOW moved to trading/mtf_features.py (only used by
+# ema_stack_aligned, which now lives there too).
 _VWAP_BREACH_BARS     = 5     # 1-min VWAP breach bars (fallback if 5-min unavailable)
 _VWAP_5M_BREACH_BARS  = 2     # 5-min VWAP breach bars (cleaner structural signal)
 
@@ -128,6 +142,10 @@ _15M_SWING_PROX_PCT    = 0.003  # within 0.3% of 15-min swing level = near resis
 
 
 # ── Indicator helpers ─────────────────────────────────────────────────────────
+# NOTE: compute_adx / ema_stack_aligned / compute_rsi / compute_macd_hist /
+# trend_bias_1h used to be defined here as module-private functions. They now
+# live in trading/mtf_features.py (imported above) — this file only keeps the
+# indicator helpers that are specific to the ATR/swing trailing-stop math.
 
 def _compute_atr(df: pd.DataFrame, period: int = 14) -> Optional[float]:
     """14-bar ATR on 1-min underlying bars."""
@@ -142,79 +160,6 @@ def _compute_atr(df: pd.DataFrame, period: int = 14) -> Optional[float]:
         return atr if atr > 0 else None
     except Exception:
         return None
-
-
-def _compute_adx(df: pd.DataFrame, period: int = 14) -> Optional[float]:
-    """
-    Wilder's ADX on 1-min bars.
-    ADX < 20 = no directional trend (choppy / ranging).
-    """
-    try:
-        if len(df) < period * 2:
-            return None
-        high  = df["high"].values.astype(float)
-        low   = df["low"].values.astype(float)
-        close = df["close"].values.astype(float)
-
-        # True Range
-        tr = np.maximum(
-            high[1:] - low[1:],
-            np.maximum(np.abs(high[1:] - close[:-1]), np.abs(low[1:] - close[:-1]))
-        )
-
-        # Directional movement
-        plus_dm  = np.where((high[1:] - high[:-1]) > (low[:-1] - low[1:]),
-                             np.maximum(high[1:] - high[:-1], 0), 0)
-        minus_dm = np.where((low[:-1] - low[1:]) > (high[1:] - high[:-1]),
-                             np.maximum(low[:-1] - low[1:], 0), 0)
-
-        # Wilder smoothing (EMA with alpha = 1/period)
-        def wilder_smooth(arr, n):
-            out = np.zeros(len(arr))
-            out[0] = arr[:n].sum()
-            for i in range(1, len(arr)):
-                out[i] = out[i-1] - out[i-1] / n + arr[i]
-            return out
-
-        atr_w  = wilder_smooth(tr, period)
-        pdm_w  = wilder_smooth(plus_dm, period)
-        mdm_w  = wilder_smooth(minus_dm, period)
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            pdi    = np.where(atr_w > 0, 100 * pdm_w / atr_w, 0)
-            mdi    = np.where(atr_w > 0, 100 * mdm_w / atr_w, 0)
-            dx_den = pdi + mdi
-            dx     = np.where(dx_den > 0, 100 * np.abs(pdi - mdi) / dx_den, 0)
-
-        adx_w  = wilder_smooth(dx[period:], period)
-        return float(adx_w[-1]) if len(adx_w) > 0 else None
-    except Exception as ex:
-        logger.debug("ADX computation failed: %s", ex)
-        return None
-
-
-def _ema_stack_aligned(df: pd.DataFrame, direction: str) -> bool:
-    """
-    True if the EMA stack is aligned in the trade direction.
-
-    Bullish (CALL): EMA8 > EMA21 > EMA50 — all stacked up
-    Bearish (PUT) : EMA8 < EMA21 < EMA50 — all stacked down
-
-    Misalignment means the trend is breaking down and VWAP breach is meaningful.
-    """
-    try:
-        if len(df) < _EMA_SLOW + 5:
-            return True   # insufficient data → assume aligned (don't exit prematurely)
-        close = df["close"]
-        ema8  = float(close.ewm(span=_EMA_FAST, adjust=False).mean().iloc[-1])
-        ema21 = float(close.ewm(span=_EMA_MID,  adjust=False).mean().iloc[-1])
-        ema50 = float(close.ewm(span=_EMA_SLOW, adjust=False).mean().iloc[-1])
-        if direction == "bullish":
-            return ema8 > ema21 > ema50
-        else:
-            return ema8 < ema21 < ema50
-    except Exception:
-        return True
 
 
 def _compute_vwap(df: pd.DataFrame) -> Optional[float]:
@@ -273,63 +218,6 @@ def _underlying_stop_to_option(
     return round(max(option_stop, hard_floor, 0.01), 4)
 
 
-# ── Multi-timeframe helpers ───────────────────────────────────────────────────
-
-def _compute_rsi(df: pd.DataFrame, period: int = 14) -> Optional[float]:
-    """RSI on the most recent bar. Returns None if insufficient history."""
-    try:
-        if len(df) < period + 2:
-            return None
-        close = df["close"].astype(float)
-        delta = close.diff()
-        gain  = delta.clip(lower=0)
-        loss  = (-delta).clip(lower=0)
-        avg_g = gain.ewm(alpha=1.0 / period, adjust=False).mean()
-        avg_l = loss.ewm(alpha=1.0 / period, adjust=False).mean()
-        rs    = avg_g / avg_l.replace(0, np.nan)
-        rsi   = 100.0 - (100.0 / (1.0 + rs))
-        val   = float(rsi.iloc[-1])
-        return val if not np.isnan(val) else None
-    except Exception:
-        return None
-
-
-def _compute_macd_hist(df: pd.DataFrame,
-                       fast: int = 12, slow: int = 26, sig: int = 9) -> list:
-    """Returns last 3 MACD histogram values (most recent last). Empty list if not enough data."""
-    try:
-        if len(df) < slow + sig:
-            return []
-        close     = df["close"].astype(float)
-        ema_fast  = close.ewm(span=fast, adjust=False).mean()
-        ema_slow  = close.ewm(span=slow, adjust=False).mean()
-        macd_line = ema_fast - ema_slow
-        sig_line  = macd_line.ewm(span=sig, adjust=False).mean()
-        hist      = (macd_line - sig_line).tolist()
-        return hist[-3:]
-    except Exception:
-        return []
-
-
-def _1h_trend_bias(df_1h: pd.DataFrame, direction: str) -> str:
-    """
-    Check if 1-hour EMA20 supports the trade direction.
-    Returns "with", "against", or "neutral" (insufficient data).
-    """
-    try:
-        if df_1h is None or len(df_1h) < 22:
-            return "neutral"
-        close  = df_1h["close"].astype(float)
-        ema20  = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
-        price  = float(close.iloc[-1])
-        if direction == "bullish":
-            return "with" if price > ema20 else "against"
-        else:
-            return "with" if price < ema20 else "against"
-    except Exception:
-        return "neutral"
-
-
 # ── Main position manager ─────────────────────────────────────────────────────
 
 def _manage_open_position(
@@ -345,7 +233,12 @@ def _manage_open_position(
     current P&L) and the underlying's 1-min bars (for structural analysis).
     All exit decisions are made against chart structure, not a clock.
     """
-    from trading import entry as _em
+    # FIX: previously read the RiskManager/trade-logger off `trading.entry`'s
+    # module-level globals via `_risk`/`_trade_log` — shared by every
+    # user's thread. Now resolved fresh per user (see trading/state.py).
+    _US        = get_user_state()
+    _risk      = get_user_risk()
+    _trade_log = get_user_trade_log()
 
     try:
         # ── Option quote ──────────────────────────────────────────────────────
@@ -363,13 +256,13 @@ def _manage_open_position(
         direction     = "bullish" if option_type == "call" else "bearish"
 
         # ── Per-position state ────────────────────────────────────────────────
-        ps = LIVE_STATE["positions"].setdefault(trade_id, {
+        ps = _US["positions"].setdefault(trade_id, {
             "peak_price":                None,   # MFE: highest option price seen
             "min_price":                 None,   # MAE: lowest  option price seen (adverse)
             "entry_time":                trade.get("entry_time"),
             "stage1_done":               False,
             "stage1_be_price":           None,
-            "current_stop_pct":          _em._risk.ORB_STOP_PCT if _em._risk else 0.20,
+            "current_stop_pct":          _risk.ORB_STOP_PCT if _risk else 0.20,
             "struct_stop_price":         None,
             "current_option_price":      None,
             "current_option_price_time": None,
@@ -510,7 +403,7 @@ def _manage_open_position(
         _mtf_notes: list[str] = []
 
         # 1-hour trend bias: gives runners more room when aligned, tightens when opposing
-        _1h_bias = _1h_trend_bias(df_1h, direction)
+        _1h_bias = trend_bias_1h(df_1h, direction)
         if _1h_bias == "with":
             _dynamic_trail_mult = _TRAIL_MULT_1H_WITH   # 2.5×
             _mtf_notes.append(f"1h_trend=WITH({_TRAIL_MULT_1H_WITH}×)")
@@ -520,7 +413,7 @@ def _manage_open_position(
 
         if df_5m is not None and not df_5m.empty:
             # 5-min RSI exhaustion: caps trail very tight regardless of other signals
-            _5m_rsi = _compute_rsi(df_5m)
+            _5m_rsi = compute_rsi(df_5m)
             _rsi_exhausted = (
                 (_5m_rsi is not None and direction == "bullish" and _5m_rsi >= _RSI_EXHAUST_CALL) or
                 (_5m_rsi is not None and direction == "bearish" and _5m_rsi <= _RSI_EXHAUST_PUT)
@@ -530,7 +423,7 @@ def _manage_open_position(
                 _mtf_notes.append(f"5m_rsi_exhaust={_5m_rsi:.0f}({_TRAIL_MULT_TIGHT}×)")
 
             # 5-min MACD histogram declining for ≥ 2 bars = momentum fading
-            _macd_hist = _compute_macd_hist(df_5m)
+            _macd_hist = compute_macd_hist(df_5m)
             if len(_macd_hist) >= _MACD_FADE_BARS:
                 _macd_fading = all(
                     _macd_hist[-(i + 1)] < _macd_hist[-(i + 2)]
@@ -664,8 +557,8 @@ def _manage_open_position(
             if _vwap_breached:
                 # Prefer 5-min bars for ADX/EMA check (less noise than 1-min)
                 _df_for_trend = df_5m if (df_5m is not None and len(df_5m) >= 55) else df_under
-                _adx    = _compute_adx(_df_for_trend)
-                _ema_ok = _ema_stack_aligned(_df_for_trend, direction)
+                _adx    = compute_adx(_df_for_trend)
+                _ema_ok = ema_stack_aligned(_df_for_trend, direction)
                 adx_weak   = (_adx is not None and _adx < _ADX_WEAK_THRESHOLD)
                 ema_broken = not _ema_ok
                 # Require BOTH conditions — ADX<20 alone is common during normal
@@ -675,13 +568,13 @@ def _manage_open_position(
         # Persist current stop for dashboard visibility
         _current_stop_pct_display = (
             round(1.0 - atr_trail_stop / entry_price, 4) if atr_trail_stop else
-            (_em._risk.ORB_STOP_PCT if _em._risk else 0.20)
+            (_risk.ORB_STOP_PCT if _risk else 0.20)
         )
         ps["current_stop_pct"] = _current_stop_pct_display
 
         # ── Write to bot_state.json ───────────────────────────────────────────
         import json as _json_m
-        _state_path_m = _BOT_ROOT / "bot_state.json"
+        _state_path_m = get_bot_state_path()
         try:
             _existing = {}
             if _state_path_m.exists():
@@ -712,7 +605,7 @@ def _manage_open_position(
             _existing["current_option_price"]       = current_price
             _existing["current_option_price_time"]  = ps["current_option_price_time"]
             # Always carry the latest session_pnl so the WebSocket never reads a stale value
-            _existing["session_pnl"]                = LIVE_STATE.get("session_pnl", 0.0)
+            _existing["session_pnl"]                = _US.get("session_pnl", 0.0)
             with open(_state_path_m, "w") as _f:
                 _json_m.dump(_existing, _f)
         except Exception:
@@ -750,9 +643,19 @@ def _manage_open_position(
 
         # Use the armed ATR trail if available; fall back to the initial ATR stop
         # Suppressed during warmup (first 5 min / before +15% gain).
+        # FIX 2026-07-18: `atr_trail_stop` (the local var, armed trail from
+        # ps["atr_trail_stop"]) and the initial-stop fallback used to be
+        # merged into one value before reaching risk.py, which logged BOTH
+        # cases as reason "atr_trail_stop" — mislabeling instant stop-outs
+        # (the static initial stop firing in the first few minutes, before
+        # the real trail can arm) as trailing-stop failures. Per
+        # diag_instant_reversals.py's finding on 3 live trades that stopped
+        # out in 0-2 min at 0% MFE. `_trail_is_armed` now tells risk.py which
+        # case this actually is so the reason string can differ.
+        _trail_is_armed     = atr_trail_stop is not None
         _effective_atr_stop = atr_trail_stop or ps.get("initial_atr_stop")
 
-        should_exit, reason = _em._risk.should_exit(
+        should_exit, reason = _risk.should_exit(
             entry_price, current_price,
             entry_time      = entry_time,
             now             = now_et,
@@ -761,6 +664,7 @@ def _manage_open_position(
             peak_price      = ps.get("peak_price"),   # MFE for giveback rule
             struct_stop_price = _struct_stop,
             atr_trail_stop  = _effective_atr_stop,    # initial or armed ATR stop
+            trail_armed     = _trail_is_armed,        # which case the above actually is
             vwap            = vwap,
             vwap_breached   = _vwap_breached_any,     # any breach (≥1 bar)
             trend_dead      = trend_dead,
@@ -770,6 +674,34 @@ def _manage_open_position(
 
         if not should_exit:
             return
+
+        # ── AI reasoning layer (phase 1 — narration only) ─────────────────────
+        # Fire-and-forget, fires exactly once per real exit decision (this is
+        # inside the `if should_exit:` branch, not on every holding tick).
+        # narrate_exit() spawns a daemon thread and returns immediately (or
+        # no-ops instantly if AI_REASONING_ENABLED is off) — never adds
+        # latency here, and has zero effect on the exit that's about to run.
+        try:
+            from ai_reasoning.narrator import narrate_exit
+            _elapsed_min = (
+                (now_et - entry_time).total_seconds() / 60 if entry_time else 0.0
+            )
+            narrate_exit(
+                ticker           = ticker,
+                trade_id         = trade_id,
+                contract_symbol  = trade["contract_symbol"],
+                strategy_id      = trade.get("strategy_id"),
+                direction        = direction,
+                reason           = reason,
+                entry_price      = entry_price,
+                current_price    = current_price,
+                elapsed_minutes  = _elapsed_min,
+                mtf_notes        = _mtf_notes,
+                peak_price       = ps.get("peak_price"),
+                min_price        = ps.get("min_price"),
+            )
+        except Exception as _ai_ex:
+            logger.debug("ai_reasoning narrate_exit dispatch failed (non-fatal): %s", _ai_ex)
 
         # ── Stage 1: sell 50%, arm trailing stop on remainder ────────────────
         if reason.startswith("stage1"):
@@ -793,7 +725,7 @@ def _manage_open_position(
             paper    = settings.get("paper_trading", True)
 
             if paper:
-                _em._trade_log.info(
+                _trade_log.info(
                     "stage1_partial_exit",
                     extra={
                         "event":          "stage1_partial_exit",
@@ -884,7 +816,11 @@ def _close_position(
     reason: str,
     bid_price: Optional[float] = None,
 ) -> None:
-    from trading import entry as _em
+    # Same fix as _manage_open_position above — resolve per-user state/risk/
+    # logger fresh instead of reading trading.entry's module-level globals.
+    _US        = get_user_state()
+    _risk      = get_user_risk()
+    _trade_log = get_user_trade_log()
 
     from config import (
         get_settings, get_risk_tier,
@@ -900,7 +836,7 @@ def _close_position(
     settings = get_settings()
     paper    = settings.get("paper_trading", True)
 
-    _balance_close  = LIVE_STATE.get("account_balance", STARTING_CAPITAL)
+    _balance_close  = _US.get("account_balance", STARTING_CAPITAL)
     _rpct_close     = get_risk_tier(_balance_close)
     _tier_label = (
         "Tier4_5pct" if _rpct_close >= BOOTSTRAP_RISK_PCT else
@@ -939,7 +875,7 @@ def _close_position(
 
     # Pull MFE (peak_price) and MAE (min_price) from live position state so they
     # get saved to the DB and appear in the Journal's efficiency columns.
-    _trade_ps = LIVE_STATE["positions"].get(trade["id"], {})
+    _trade_ps = _US["positions"].get(trade["id"], {})
     _peak_px  = _trade_ps.get("peak_price")   # MFE: highest option mid-price seen
     _min_px   = _trade_ps.get("min_price")    # MAE: lowest  option mid-price seen
 
@@ -956,6 +892,11 @@ def _close_position(
         "stage2_break_even":        "Stop-to-breakeven triggered — the remainder exited at no loss after Stage 1 ran",
         "stage2_trail_stop":        "Trailing stop activated after locking in profit — price pulled back and the floor was hit",
         "atr_trail_stop":           "ATR/swing trailing stop tightened and triggered as price pulled back from the high",
+        # Added 2026-07-18 alongside the reason-string fix in risk.py — this is
+        # the static initial stop firing before the real trail could arm (needs
+        # 5min + 15% gain warmup), NOT a trailing-stop failure. Was previously
+        # mislabeled "atr_trail_stop" — see diag_instant_reversals.py.
+        "initial_atr_stop":         "Initial ATR-based stop hit early — the trade moved against us before the trailing stop could arm",
         "vwap_trend_dead":          "VWAP breach plus trend breakdown confirmed — bot exited to avoid a larger loss",
         "structural_stop_bar_high": "Structural stop hit at the rejection level — the setup invalidated",
         "time_cap_loser":           "20-minute time cap hit without a confirming move — flat/losing trade closed to free capital",
@@ -1011,6 +952,7 @@ def _close_position(
             "stage2_break_even":         "remainder hit break-even stop",
             "stage2_trail_stop":         "trail stop triggered (locked profit floor)",
             "atr_trail_stop":            "ATR/swing trailing stop hit",
+            "initial_atr_stop":          "initial ATR stop hit early (before trail could arm)",
             "vwap_trend_dead":           "VWAP breach + trend breakdown confirmed",
             "structural_stop_bar_high":  "structural stop (rejection level) hit",
             "time_cap_loser":            "20-min cap (flat/losing — no setup confirmation)",
@@ -1036,18 +978,18 @@ def _close_position(
     if pnl > 0:
         try:
             reserved = record_sweep(pnl, trade["id"])
-            LIVE_STATE["last_tax_sweep"] = reserved
+            _US["last_tax_sweep"] = reserved
         except Exception as e:
             logger.error("Tax sweep failed: %s", e)
 
     try:
-        _em._risk.record_pnl(pnl, account_balance=LIVE_STATE["account_balance"])
+        _risk.record_pnl(pnl, account_balance=_US["account_balance"])
     except DailyLossLimitReached:
         raise
 
     # Recompute session P&L from DB
     try:
-        LIVE_STATE["session_pnl"] = sum(
+        _US["session_pnl"] = sum(
             (t.get("realized_pnl") or 0)
             for t in get_all_trades(limit=100)
             if (t.get("exit_time") or "")[:10] == date.today().isoformat()
@@ -1060,20 +1002,20 @@ def _close_position(
     _closed_direction = "bullish" if _closed_opt_type == "call" else "bearish"
 
     # Clear per-trade state
-    LIVE_STATE["positions"].pop(trade["id"], None)
+    _US["positions"].pop(trade["id"], None)
 
     _remaining_open               = get_open_trades()
-    LIVE_STATE["open_trades"]     = _remaining_open
-    LIVE_STATE["open_trade"]      = _remaining_open[0] if _remaining_open else None
-    LIVE_STATE["status"]          = "in_trade" if _remaining_open else "scanning"
-    LIVE_STATE["last_direction"]        = _closed_direction
-    LIVE_STATE["last_trade_closed_time"]= closed_utc.isoformat()
+    _US["open_trades"]     = _remaining_open
+    _US["open_trade"]      = _remaining_open[0] if _remaining_open else None
+    _US["status"]          = "in_trade" if _remaining_open else "scanning"
+    _US["last_direction"]        = _closed_direction
+    _US["last_trade_closed_time"]= closed_utc.isoformat()
 
     _closed_ticker = trade.get("ticker", "")
     if pnl > 0 and _closed_ticker:
         _WIN_COOLDOWN_MIN = 10
         _win_expires = _now_et() + timedelta(minutes=_WIN_COOLDOWN_MIN)
-        LIVE_STATE.setdefault("ticker_win_cooldown", {})[_closed_ticker] = _win_expires
+        _US.setdefault("ticker_win_cooldown", {})[_closed_ticker] = _win_expires
         log_event("INFO", "trading_logic",
                   f"⏱ [{_closed_ticker}] Post-win cooldown {_WIN_COOLDOWN_MIN} min "
                   f"(pnl=${pnl:+.2f}). No re-entry until {_win_expires.strftime('%H:%M')} ET.")
@@ -1083,11 +1025,11 @@ def _close_position(
     # in entry.py.  Also set a STRUCTURAL cooldown keyed by ticker:strategy_id
     _strat_id = trade.get("strategy_id", "")
     if pnl < 0 and _closed_ticker:
-        LIVE_STATE.setdefault("ticker_loss_context", {})[_closed_ticker] = {
+        _US.setdefault("ticker_loss_context", {})[_closed_ticker] = {
             "exit_price":   exit_price,
             "direction":    _closed_direction,
             "strategy_id":  _strat_id,
-            "loss_count":   LIVE_STATE.get("ticker_loss_context", {}).get(
+            "loss_count":   _US.get("ticker_loss_context", {}).get(
                                 _closed_ticker, {}).get("loss_count", 0) + 1,
         }
 
@@ -1095,7 +1037,7 @@ def _close_position(
     # Remove from bot_state.json open_positions
     try:
         import json as _json_cl
-        _state_path_cl = _BOT_ROOT / "bot_state.json"
+        _state_path_cl = get_bot_state_path()
         if _state_path_cl.exists():
             with open(_state_path_cl) as _f:
                 _existing_cl = _json_cl.load(_f)
@@ -1113,18 +1055,18 @@ def _close_position(
     _flip_setting_enabled = bool(_gs().get("flip_trading_enabled", True))
     if _is_hard_stop and _flip_setting_enabled:
         _flip_dir = "bearish" if _closed_direction == "bullish" else "bullish"
-        LIVE_STATE["flip_eligible"]  = True
-        LIVE_STATE["flip_direction"] = _flip_dir
-        LIVE_STATE["flip_ticker"]    = _closed_ticker
+        _US["flip_eligible"]  = True
+        _US["flip_direction"] = _flip_dir
+        _US["flip_ticker"]    = _closed_ticker
         log_event("INFO", "trading_logic",
                   f"🟡 Flip armed — stopped out {_closed_direction}. "
                   f"Watching for {_flip_dir} retest entry.")
     else:
-        LIVE_STATE["flip_eligible"]  = False
-        LIVE_STATE["flip_direction"] = None
-        LIVE_STATE["flip_ticker"]    = None
+        _US["flip_eligible"]  = False
+        _US["flip_direction"] = None
+        _US["flip_ticker"]    = None
 
-    _em._trade_log.info(
+    _trade_log.info(
         "trade_closed",
         extra={
             "event":                   "trade_closed",
@@ -1138,6 +1080,6 @@ def _close_position(
             "flip_armed":   _is_hard_stop and _flip_setting_enabled,
         },
     )
-    if hasattr(_em._trade_log, "clear_context"):
-        _em._trade_log.clear_context()
-    _em._trade_log = logger
+    if hasattr(_trade_log, "clear_context"):
+        _trade_log.clear_context()
+    set_user_trade_log(logger)   # trade closed — reset this user's logger to plain

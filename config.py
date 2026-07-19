@@ -54,6 +54,30 @@ def get_db_path(user_id: str | None = None) -> Path:
     _name = "trades_paper.db" if _paper else "trades_live.db"
     return _dir / _name
 
+
+_LEGACY_BOT_STATE_PATH = BASE_DIR / "bot_state.json"  # pre-multi-user location
+
+
+def get_bot_state_path(user_id: str | None = None) -> Path:
+    """
+    Return the per-user bot_state.json path (user_data/{user_id}/bot_state.json),
+    creating the user's data directory if needed.
+
+    One-time migration: the very first time this is called for a user whose
+    per-user file doesn't exist yet, if the legacy root-level bot_state.json
+    exists, copy it in so existing "admin" state (account balance, open
+    positions, etc.) isn't silently lost when this ships. Only ever applies
+    once per user — after the copy, the per-user file is authoritative and
+    the legacy file is left untouched (read-only fallback, never written).
+    """
+    _path = get_user_data_dir(user_id) / "bot_state.json"
+    if not _path.exists() and _LEGACY_BOT_STATE_PATH.exists():
+        try:
+            _path.write_text(_LEGACY_BOT_STATE_PATH.read_text())
+        except Exception:
+            pass  # non-fatal — worst case the user starts with a fresh state file
+    return _path
+
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
 ALPACA_PAPER      = os.getenv("ALPACA_PAPER", "true").lower() == "true"
@@ -67,10 +91,39 @@ TRADIER_BASE_URL   = os.getenv("TRADIER_BASE_URL", "https://api.tradier.com/v1")
 TRADIER_ACCOUNT_ID = os.getenv("TRADIER_ACCOUNT_ID", "")
 POLYGON_API_KEY    = os.getenv("POLYGON_API_KEY", "")
 
-# Optional — only used by strategy_health/ai_narrator.py for the nightly
-# strategy audit's LLM summary. Empty = feature silently skips itself and
-# falls back to the free rule-based narrator (strategy_health/narrator.py).
+# Optional — used by strategy_health/ai_narrator.py (nightly audit summary)
+# AND ai_reasoning/ (per-trade narration + phase-2 decision support below).
+# Empty = every AI feature in the app silently skips itself and falls back
+# to its free rule-based equivalent — nothing here is ever load-bearing.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+# ── AI reasoning layer (ai_reasoning/) ────────────────────────────────────────
+# Phase 1: narration only. Feeds the feature snapshot the bot ALREADY computed
+# for an entry/exit to Claude, purely to generate plain-English rationale for
+# the THINKING panel/journal. Never gates a trade — narration runs on a
+# background thread and its result (or failure) has zero effect on trading
+# logic. Off by default; flip on once ANTHROPIC_API_KEY is set and you want
+# to see it in action.
+AI_REASONING_ENABLED     = os.getenv("AI_REASONING_ENABLED", "false").lower() == "true"
+# Haiku, not Sonnet — this fires on every entry AND every exit (dozens/day
+# once phase-2 tickers are added), unlike ai_narrator.py's once-daily Sonnet
+# call. Plain-English rationale doesn't need frontier reasoning; Sonnet is
+# reserved for phase-2 decision support where the stakes are higher.
+AI_NARRATION_MODEL       = os.getenv("AI_NARRATION_MODEL", "claude-haiku-4-5-20251001")
+# Generous on purpose: narration calls run fire-and-forget on a daemon thread
+# (see ai_reasoning/narrator.py) and never block the trading loop, so this
+# timeout only bounds how long a stray thread can live, not trade latency.
+AI_NARRATION_TIMEOUT_SEC = int(os.getenv("AI_NARRATION_TIMEOUT_SEC", "10"))
+
+# Phase 2 (decision support — veto/narrow an already-approved trade) is NOT
+# implemented yet; these two flags exist so the plumbing added here doesn't
+# need revisiting later, but both stay hard off until that phase is built
+# and separately approved. AI_DECISION_SUPPORT_ENABLED_LIVE is a SECOND,
+# independent switch — decision support only ever runs in paper trading
+# unless BOTH flags are true, so a single accidental flag flip can never
+# expose live capital to it.
+AI_DECISION_SUPPORT_ENABLED      = os.getenv("AI_DECISION_SUPPORT_ENABLED", "false").lower() == "true"
+AI_DECISION_SUPPORT_ENABLED_LIVE = os.getenv("AI_DECISION_SUPPORT_ENABLED_LIVE", "false").lower() == "true"
 
 ALERT_EMAIL       = os.getenv("ALERT_EMAIL", "")
 ALERT_SMTP_HOST   = os.getenv("ALERT_SMTP_HOST", "smtp.gmail.com")
