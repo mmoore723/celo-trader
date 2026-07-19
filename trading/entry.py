@@ -47,6 +47,7 @@ from config import (
     MAX_CONCURRENT_POSITIONS,
     SESSION_HARD_CUTOFF_HM,
     STAGE2_TRAIL_PCT,
+    get_bot_state_path,
 )
 from broker import AlpacaClient, TradierClient, get_clients
 from signals import (
@@ -69,7 +70,8 @@ from tax_engine import record_sweep
 
 # ── State / shared globals (from state.py) ────────────────────────────────────
 from trading.state import (
-    LIVE_STATE, _now_et, _ET_TZ,
+    get_user_state, get_user_risk, get_user_trade_log, set_user_trade_log,
+    _now_et, _ET_TZ,
     _DATA_GAP_WARN_MINUTES, _DATA_GAP_PAUSE_MINUTES, _update_data_gap,
 )
 
@@ -79,13 +81,20 @@ from trading.position_manager import _manage_open_position, _close_position
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
-# Trade-scoped adapter — reset each time a new position opens.
-# _tick() modifies this with `global _trade_log`; position_manager.py reads it
-_trade_log: logging.Logger = logger
+# NOTE: _trade_log was previously a module-level global here (`_trade_log:
+# logging.Logger = logger`), reassigned via `global _trade_log` whenever a
+# new position opened, and read by position_manager.py via `_em._trade_log`.
+# Removed for the same reason as _risk below — replaced by
+# trading.state.get_user_trade_log()/set_user_trade_log().
 
-# RiskManager instance — set by loop.py via `import trading.entry as _em; _em._risk = ...`
-# _tick() modifies this with `global _risk`.
-_risk: Optional[RiskManager] = None
+# NOTE: _risk was previously a module-level global here (`_risk: Optional[
+# RiskManager] = None`), set once per process by loop.py via
+# `_em._risk = RiskManager(...)`. Removed — every user's bot loop runs in its
+# own thread, so a single shared instance meant two concurrent users' trades
+# could be sized/risk-gated using EACH OTHER's account balance and stop %.
+# Replaced by trading.state.get_user_risk()/set_user_risk(), a dict keyed by
+# user_id. _tick() now does `_risk = get_user_risk()` fresh each call instead
+# of reading this module global.
 
 
 # ── Ticker selection ──────────────────────────────────────────────────────────
@@ -260,6 +269,7 @@ def _skip_log(ticker: str, reason: str, *,
                    "spread_too_wide" | "rr_too_low"
     """
     import json as _skj
+    _US = get_user_state()
     try:
         _entry: dict = {
             "ts":       _now_et().strftime("%H:%M:%S"),
@@ -270,13 +280,13 @@ def _skip_log(ticker: str, reason: str, *,
         if strategy:    _entry["strategy"]   = strategy
         if confidence:  _entry["confidence"] = round(confidence, 2)
         if rr:          _entry["rr"]         = round(rr, 2)
-        _log = list(LIVE_STATE.get("eval_log", []))
+        _log = list(_US.get("eval_log", []))
         _log.insert(0, _entry)
-        LIVE_STATE["eval_log"] = _log[:10]
-        _sp = Path(__file__).resolve().parent / "bot_state.json"
+        _US["eval_log"] = _log[:10]
+        _sp = get_bot_state_path()
         with open(_sp) as _f:
             _bs = _skj.load(_f)
-        _bs["eval_log"] = LIVE_STATE["eval_log"]
+        _bs["eval_log"] = _US["eval_log"]
         _skj.dump(_bs, open(_sp, "w"))
     except Exception:
         pass   # non-critical — dashboard still shows whatever was last written
@@ -285,27 +295,36 @@ def _skip_log(ticker: str, reason: str, *,
 # ── Per-tick evaluation ───────────────────────────────────────────────────────
 
 def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
-    global _risk
+    # FIX: _risk used to be a `global _risk` module attribute in this file,
+    # set once by loop.py (`_em._risk = RiskManager(...)`) — shared by every
+    # user's thread. Two users' bots running at once would size/risk-gate
+    # trades using WHICHEVER user's RiskManager was set most recently. _US
+    # was the equivalent bug for LIVE_STATE. Both are now resolved fresh each
+    # tick via the ContextVar snapshot each user's loop thread was started
+    # with (see trading/state.py::_default_user_id), so this function is
+    # correct regardless of how many users' loops are running concurrently.
+    _US   = get_user_state()
+    _risk = get_user_risk()
 
     # ── CRITICAL: ticker and status must be initialized before ANY branch ─────
     # Python treats any variable assigned ANYWHERE in a function as local
     # throughout the entire scope. Without this plain assignment first, every
     ticker = None                          # overwritten at ticker-selection block
-    LIVE_STATE["status"] = "scanning"      # reset here so bot_state.json write
+    _US["status"] = "scanning"      # reset here so bot_state.json write
     # below never lags with a stale "standby" value from the previous tick.
-    LIVE_STATE["last_update"] = _now_et().isoformat()
+    _US["last_update"] = _now_et().isoformat()
 
     # ── Daily session reset ───────────────────────────────────────────────────
     # If the calendar date has changed since the last tick, reset session P&L
     # Reset to 0 and recalculate from today's closed trades only.
     from datetime import date as _date
     _today_str = _date.today().isoformat()
-    if LIVE_STATE.get("_session_date") != _today_str:
-        LIVE_STATE["_session_date"]      = _today_str
-        LIVE_STATE["session_pnl"]        = 0.0
-        LIVE_STATE["scanner_ran_today"]  = False
-        LIVE_STATE["orb_entered_today"]  = set()
-        LIVE_STATE["ticker_win_cooldown"] = {}
+    if _US.get("_session_date") != _today_str:
+        _US["_session_date"]      = _today_str
+        _US["session_pnl"]        = 0.0
+        _US["scanner_ran_today"]  = False
+        _US["orb_entered_today"]  = set()
+        _US["ticker_win_cooldown"] = {}
         # Recalculate from DB in case trades were closed earlier today
         from trading.controls import _refresh_session_pnl
         _refresh_session_pnl()
@@ -327,14 +346,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     if _is_weekend or not _extended_hours:
         # Definitely closed — no need to call Alpaca
         market_open = False
-        LIVE_STATE["market_open"] = False
+        _US["market_open"] = False
     else:
         market_open = alpaca.is_market_open()
-        LIVE_STATE["market_open"] = market_open
+        _US["market_open"] = market_open
 
     # Always write state so dashboard knows bot is alive even when market closed
     import json as _json, time as _time
-    _state_path = Path(__file__).resolve().parent / "bot_state.json"
+    _state_path = get_bot_state_path()
 
     if not market_open:
         # Check whether the market is GENUINELY closed vs. an API glitch.
@@ -346,31 +365,31 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             # API says closed but local clock says we're mid-session.
             # Override market_open and fall through to normal tick processing.
             market_open = True
-            LIVE_STATE["market_open"] = True
+            _US["market_open"] = True
             logger.debug("is_market_open()=False overridden — local ET %02d:%02d is "
                          "within session (9:30–16:00); API glitch assumed",
                          _now_hm_tick // 60, _now_hm_tick % 60)
         else:
             # Genuinely outside market hours — do the full closed-session write
             # and return early so no trading logic runs overnight / pre-market.
-            LIVE_STATE["status"] = "market_closed"
-            LIVE_STATE["orb_triggered"]     = False
-            LIVE_STATE["flip_eligible"]     = False
-            LIVE_STATE["flip_direction"]    = None
-            LIVE_STATE["flip_ticker"]       = None
-            LIVE_STATE["scanner_ran_today"] = False   # allow fresh scan tomorrow
-            LIVE_STATE["scan_watchlist"]    = []
-            LIVE_STATE["scan_idx"]          = 0
+            _US["status"] = "market_closed"
+            _US["orb_triggered"]     = False
+            _US["flip_eligible"]     = False
+            _US["flip_direction"]    = None
+            _US["flip_ticker"]       = None
+            _US["scanner_ran_today"] = False   # allow fresh scan tomorrow
+            _US["scan_watchlist"]    = []
+            _US["scan_idx"]          = 0
             logger.debug("Market closed — session flags reset for tomorrow")
             try:
-                _mc_balance = (LIVE_STATE.get("account_balance") or
+                _mc_balance = (_US.get("account_balance") or
                                get_settings().get("last_known_balance", STARTING_CAPITAL))
                 _json.dump({
                     "running":                True,
                     "account_balance":        _mc_balance,
-                    "options_buying_power":   LIVE_STATE.get("options_buying_power", 0),
-                    "ghost_position_alert":   LIVE_STATE.get("ghost_position_alert"),
-                    "session_pnl":            LIVE_STATE.get("session_pnl", 0),
+                    "options_buying_power":   _US.get("options_buying_power", 0),
+                    "ghost_position_alert":   _US.get("ghost_position_alert"),
+                    "session_pnl":            _US.get("session_pnl", 0),
                     "status":                 "market_closed",
                     "current_ticker":         None,
                     "last_signal":            None,
@@ -383,20 +402,20 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     "flip_eligible":          False,
                     "flip_direction":         None,
                     "flip_ticker":            None,
-                    "last_direction":         LIVE_STATE.get("last_direction"),
-                    "last_trade_closed_time": LIVE_STATE.get("last_trade_closed_time"),
-                    "network_ok":             LIVE_STATE.get("network_ok", True),
+                    "last_direction":         _US.get("last_direction"),
+                    "last_trade_closed_time": _US.get("last_trade_closed_time"),
+                    "network_ok":             _US.get("network_ok", True),
                     "risk_budget_usd":        round(_mc_balance * _risk.effective_risk_pct(_mc_balance), 2) if _risk else 0.0,
                     "max_affordable_premium": _risk.max_affordable_premium(_mc_balance) if _risk else 0.0,
-                    "last_eval_ticker":       LIVE_STATE.get("last_eval_ticker"),
-                    "last_eval_opt_type":     LIVE_STATE.get("last_eval_opt_type"),
-                    "last_eval_premium":      LIVE_STATE.get("last_eval_premium"),
-                    "last_eval_eff_entry":    LIVE_STATE.get("last_eval_eff_entry"),
-                    "last_eval_time":         LIVE_STATE.get("last_eval_time"),
-                    "last_eval_expiry":       LIVE_STATE.get("last_eval_expiry"),
-                    "last_eval_strike":       LIVE_STATE.get("last_eval_strike"),
-                    "current_option_price":      LIVE_STATE.get("current_option_price"),
-                    "current_option_price_time": LIVE_STATE.get("current_option_price_time"),
+                    "last_eval_ticker":       _US.get("last_eval_ticker"),
+                    "last_eval_opt_type":     _US.get("last_eval_opt_type"),
+                    "last_eval_premium":      _US.get("last_eval_premium"),
+                    "last_eval_eff_entry":    _US.get("last_eval_eff_entry"),
+                    "last_eval_time":         _US.get("last_eval_time"),
+                    "last_eval_expiry":       _US.get("last_eval_expiry"),
+                    "last_eval_strike":       _US.get("last_eval_strike"),
+                    "current_option_price":      _US.get("current_option_price"),
+                    "current_option_price_time": _US.get("current_option_price_time"),
                 }, open(_state_path, "w"))
             except Exception:
                 pass
@@ -413,61 +432,61 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         else:
             from config import save_settings as _save
             _save({"last_known_balance": round(balance, 2)})
-        LIVE_STATE["account_balance"] = balance
-        LIVE_STATE["network_ok"]      = True
+        _US["account_balance"] = balance
+        _US["network_ok"]      = True
         # FIX: capture Alpaca's options buying power so the dashboard can show
         # it on the Live Trading page and orders that are about to be rejected
         # for "insufficient options buying power" aren't a total surprise.
-        LIVE_STATE["options_buying_power"] = (
+        _US["options_buying_power"] = (
             float(acct.get("options_buying_power", 0)) if acct
-            else LIVE_STATE.get("options_buying_power", 0)
+            else _US.get("options_buying_power", 0)
         )
     except Exception as e:
         logger.error("Balance fetch failed: %s — using last known balance", e)
         balance = float(get_settings().get("last_known_balance", STARTING_CAPITAL))
-        LIVE_STATE["account_balance"] = balance
-        LIVE_STATE["network_ok"]      = not _alpaca_circuit_open()
+        _US["account_balance"] = balance
+        _US["network_ok"]      = not _alpaca_circuit_open()
 
     # ── Reconciliation: catch positions Alpaca holds that the bot doesn't know
     # about (see _check_ghost_positions docstring for the 2026-06-15 incident
-    # that motivated this). Stored in LIVE_STATE so the market-closed branch
-    LIVE_STATE["ghost_position_alert"] = _check_ghost_positions(alpaca)
+    # that motivated this). Stored in _US so the market-closed branch
+    _US["ghost_position_alert"] = _check_ghost_positions(alpaca)
 
     # ── Write shared state file so dashboard reads live bot state ─────────────
     from config import get_risk_tier as _grt, DAILY_LOSS_HARD_CAP_PCT as _DLHCP, get_settings as _gs
     _kill_locked, _kill_reason = check_kill_lock()
     _is_paper = _gs().get("paper_trading", True)
-    # Preserve eval_log across ticks using LIVE_STATE (in-memory).
+    # Preserve eval_log across ticks using _US (in-memory).
     # File-read was racy: an intermediate write at line ~1133 could put
-    _preserved_eval_log = LIVE_STATE.get("eval_log", [])
+    _preserved_eval_log = _US.get("eval_log", [])
     try:
         _json.dump({
             "running":                True,
             "mode":                   "paper" if _is_paper else "live",
-            "account_balance":        LIVE_STATE.get("account_balance", 0),
-            "options_buying_power":   LIVE_STATE.get("options_buying_power", 0),
-            "ghost_position_alert":   LIVE_STATE.get("ghost_position_alert"),
-            "session_pnl":            LIVE_STATE.get("session_pnl", 0),
-            "status":                 LIVE_STATE.get("status", "idle"),
-            "current_ticker":         LIVE_STATE.get("current_ticker"),
-            "last_signal":            LIVE_STATE.get("last_signal"),
-            "last_strategy_id":       LIVE_STATE.get("last_strategy_id"),
-            "market_open":            LIVE_STATE.get("market_open", False),
+            "account_balance":        _US.get("account_balance", 0),
+            "options_buying_power":   _US.get("options_buying_power", 0),
+            "ghost_position_alert":   _US.get("ghost_position_alert"),
+            "session_pnl":            _US.get("session_pnl", 0),
+            "status":                 _US.get("status", "idle"),
+            "current_ticker":         _US.get("current_ticker"),
+            "last_signal":            _US.get("last_signal"),
+            "last_strategy_id":       _US.get("last_strategy_id"),
+            "market_open":            _US.get("market_open", False),
             "last_update":            _time.strftime("%H:%M:%S"),
             # ORB-specific fields — dashboard 45-min countdown & stop display
-            "entry_time":             LIVE_STATE.get("entry_time"),
-            "stage1_done":            LIVE_STATE.get("stage1_done", False),
-            "stage1_be_price":        LIVE_STATE.get("stage1_be_price"),
-            "orb_triggered":          LIVE_STATE.get("orb_triggered", False),
-            "current_stop_pct":       LIVE_STATE.get("current_stop_pct", _risk.ORB_STOP_PCT if _risk else 0.30),
+            "entry_time":             _US.get("entry_time"),
+            "stage1_done":            _US.get("stage1_done", False),
+            "stage1_be_price":        _US.get("stage1_be_price"),
+            "orb_triggered":          _US.get("orb_triggered", False),
+            "current_stop_pct":       _US.get("current_stop_pct", _risk.ORB_STOP_PCT if _risk else 0.30),
             # Flip-trade fields
-            "flip_eligible":          LIVE_STATE.get("flip_eligible", False),
-            "flip_direction":         LIVE_STATE.get("flip_direction"),
-            "last_direction":         LIVE_STATE.get("last_direction"),
-            "last_trade_closed_time": LIVE_STATE.get("last_trade_closed_time"),
+            "flip_eligible":          _US.get("flip_eligible", False),
+            "flip_direction":         _US.get("flip_direction"),
+            "last_direction":         _US.get("last_direction"),
+            "last_trade_closed_time": _US.get("last_trade_closed_time"),
             # Scanner fields — visible in dashboard
-            "scan_watchlist":         LIVE_STATE.get("scan_watchlist", []),
-            "current_scan_idx":       LIVE_STATE.get("scan_idx", 0),
+            "scan_watchlist":         _US.get("scan_watchlist", []),
+            "current_scan_idx":       _US.get("scan_idx", 0),
             # Growth mode / risk tier
             "risk_pct":               _grt(balance),
             "growth_mode":            _grt(balance) > 0.01,
@@ -476,11 +495,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "kill_locked":            _kill_locked,
             "kill_lock_reason":       _kill_reason,
             # Network health — False when Alpaca circuit breaker is open
-            "network_ok":             LIVE_STATE.get("network_ok", True),
+            "network_ok":             _US.get("network_ok", True),
             # Data-gap watchdog — how long (minutes) since the last clean bar fetch.
             # 0 = healthy.  ≥5 = bot was blind; dashboard shows a warning banner.
-            "data_gap_minutes":          LIVE_STATE.get("data_gap_minutes", 0),
-            "last_successful_bar_fetch": LIVE_STATE.get("last_successful_bar_fetch"),
+            "data_gap_minutes":          _US.get("data_gap_minutes", 0),
+            "last_successful_bar_fetch": _US.get("last_successful_bar_fetch"),
             # ── Risk-sizing visibility ────────────────────────────────────────
             # risk_budget_usd:        $ the bot will lose if the 30% stop hits
             #                         on 1 contract (balance x effective_risk_pct).
@@ -488,13 +507,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "max_affordable_premium": _risk.max_affordable_premium(balance) if _risk else 0.0,
             # Most recently evaluated contract (set when the bot looks at a
             # specific option to size/enter — persists until the next evaluation).
-            "last_eval_ticker":       LIVE_STATE.get("last_eval_ticker"),
-            "last_eval_opt_type":     LIVE_STATE.get("last_eval_opt_type"),
-            "last_eval_premium":      LIVE_STATE.get("last_eval_premium"),
-            "last_eval_eff_entry":    LIVE_STATE.get("last_eval_eff_entry"),
-            "last_eval_time":         LIVE_STATE.get("last_eval_time"),
-            "last_eval_expiry":       LIVE_STATE.get("last_eval_expiry"),
-            "last_eval_strike":       LIVE_STATE.get("last_eval_strike"),
+            "last_eval_ticker":       _US.get("last_eval_ticker"),
+            "last_eval_opt_type":     _US.get("last_eval_opt_type"),
+            "last_eval_premium":      _US.get("last_eval_premium"),
+            "last_eval_eff_entry":    _US.get("last_eval_eff_entry"),
+            "last_eval_time":         _US.get("last_eval_time"),
+            "last_eval_expiry":       _US.get("last_eval_expiry"),
+            "last_eval_strike":       _US.get("last_eval_strike"),
             # Persist eval_log across ticks — wiped every tick otherwise
             "eval_log":               _preserved_eval_log,
         }, open(_state_path, "w"))
@@ -539,11 +558,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         except Exception as _cut_ex:
             logger.error("Session cutoff sweep failed: %s", _cut_ex)
 
-        LIVE_STATE["status"] = "session_cutoff"
+        _US["status"] = "session_cutoff"
         return   # no new entries after 3:55 PM
 
     open_trades = get_open_trades()
-    LIVE_STATE["open_trades"] = open_trades
+    _US["open_trades"] = open_trades
 
     # ── Exclude RECOVERED_UNTRACKED legacy positions from active management ──
     # FIX 2026-06-15: the 7 positions recovered from the ghost-position
@@ -551,7 +570,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # entry_time = the moment they were recovered, NOT their real entry time.
     # Recovered untracked positions are excluded from automated management.
     _bot_trades = [t for t in open_trades if t.get("strategy_id") != "RECOVERED_UNTRACKED"]
-    LIVE_STATE["open_trade"] = _bot_trades[0] if _bot_trades else None
+    _US["open_trade"] = _bot_trades[0] if _bot_trades else None
 
     _sweep_orphaned_orders(alpaca, _bot_trades)
 
@@ -562,7 +581,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # These trades are excluded from _manage_open_position (so automated
     # stop/time-box/stage1 logic never fires on them), but the dashboard's
     import json as _json_rec
-    _state_path_rec = __import__("pathlib").Path(__file__).resolve().parent / "bot_state.json"
+    _state_path_rec = get_bot_state_path()
     _recovered_trades = [t for t in open_trades if t.get("strategy_id") == "RECOVERED_UNTRACKED"]
     if _recovered_trades:
         try:
@@ -599,13 +618,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     if len(_bot_trades) >= MAX_CONCURRENT_POSITIONS:
         # All position slots are full — nothing left to do this tick except
         # manage the existing position(s) above.
-        LIVE_STATE["status"] = "in_trade"
+        _US["status"] = "in_trade"
         return
 
     # ── Pre-trade gate ─────────────────────────────────────────────────────────
     # NEW (MAX_CONCURRENT_POSITIONS): if a slot is free but the bot is still
     # If holding a position in the OTHER slot, still reflect "in_trade".
-    LIVE_STATE["status"] = "in_trade" if _bot_trades else "scanning"
+    _US["status"] = "in_trade" if _bot_trades else "scanning"
     settings = get_settings()
 
     # ── Sync user-editable trade parameters into the live risk manager ────────
@@ -621,13 +640,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     if not allowed:
         logger.debug("Trading blocked: %s", reason)
         if "limit" in reason.lower() or "kill" in reason.lower():
-            LIVE_STATE["status"] = "halted"
+            _US["status"] = "halted"
         elif "window" in reason.lower():
             # Show a specific standby state so the UI doesn't claim "idle" while
             # the bot is actually alive and waiting for the next session window.
-            LIVE_STATE["status"] = "standby"
+            _US["status"] = "standby"
         else:
-            LIVE_STATE["status"] = "idle"
+            _US["status"] = "idle"
         # Translate the internal reason code into a human-readable message
         _r = reason.lower()
         if "kill" in _r or "kill_lock" in _r:
@@ -655,7 +674,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # The watchlist is populated by the pre-market scan (or on-demand below).
     # Each tick advances to the next ticker; the bot evaluates each for an ORB
     from scanner import TICKER_BLACKLIST as _BL
-    watchlist = [t for t in (LIVE_STATE.get("scan_watchlist") or []) if t not in _BL]
+    watchlist = [t for t in (_US.get("scan_watchlist") or []) if t not in _BL]
     if not watchlist:
         # Watchlist empty: run an on-demand scan (missed pre-market, or first boot)
         try:
@@ -664,18 +683,18 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             watchlist = get_watchlist()  # read from disk; falls back to SPY/QQQ
         if not watchlist:
             watchlist = ["SPY", "QQQ"]
-        LIVE_STATE["scan_watchlist"]    = watchlist
-        LIVE_STATE["scan_idx"]          = 0
-        LIVE_STATE["scanner_ran_today"] = True
+        _US["scan_watchlist"]    = watchlist
+        _US["scan_idx"]          = 0
+        _US["scanner_ran_today"] = True
         logger.info("on_demand_scan_done", extra={
             "event": "on_demand_scan_done", "watchlist": watchlist,
         })
 
     # Advance to next ticker in round-robin
-    idx    = LIVE_STATE.get("scan_idx", 0) % len(watchlist)
+    idx    = _US.get("scan_idx", 0) % len(watchlist)
     ticker = watchlist[idx]
-    LIVE_STATE["scan_idx"]         = (idx + 1) % len(watchlist)
-    LIVE_STATE["current_ticker"]   = ticker
+    _US["scan_idx"]         = (idx + 1) % len(watchlist)
+    _US["current_ticker"]   = ticker
     logger.debug("Scanning ticker %s (%d/%d)", ticker, idx + 1, len(watchlist))
 
     # FIX 2026-06-22 (direct request): the per-ticker session-long loss
@@ -685,7 +704,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # MAX_CONCURRENT_POSITIONS=2 is for DIVERSIFICATION — two different stocks,
     # not two legs on the same stock.  Without this guard, both slots can open
     # the same ticker simultaneously (SPY+SPY, NVDA+NVDA), doubling exposure
-    _open_tickers = {t.get("ticker", "") for t in LIVE_STATE.get("open_trades", [])}
+    _open_tickers = {t.get("ticker", "") for t in _US.get("open_trades", [])}
     if ticker in _open_tickers:
         # Still narrate the open position every bar so the THINKING panel shows
         # live position status for NVDA/SPY even though no new entry is taken.
@@ -703,7 +722,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # (10 min).  This prevents the pattern of winning on AAPL then immediately
     # chasing back in 12 seconds later and giving the win back — confirmed as
     _WIN_COOLDOWN_MINUTES = 10
-    _win_cooldowns = LIVE_STATE.get("ticker_win_cooldown") or {}
+    _win_cooldowns = _US.get("ticker_win_cooldown") or {}
     if ticker in _win_cooldowns:
         _win_expires = _win_cooldowns[ticker]
         _now_check   = _now_et()
@@ -716,7 +735,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         else:
             # Cooldown expired — remove it so the dict doesn't grow unbounded
             try:
-                del LIVE_STATE["ticker_win_cooldown"][ticker]
+                del _US["ticker_win_cooldown"][ticker]
             except (KeyError, TypeError):
                 pass
 
@@ -753,10 +772,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # ── Successful fetch — reset watchdog ─────────────────────────────────────
     _now_fetch = _now_et()
-    LIVE_STATE["last_successful_bar_fetch"] = _now_fetch.isoformat()
-    LIVE_STATE["data_gap_minutes"]          = 0
+    _US["last_successful_bar_fetch"] = _now_fetch.isoformat()
+    _US["data_gap_minutes"]          = 0
 
-    LIVE_STATE["bars_5m"] = bars_5m   # key name kept for compatibility
+    _US["bars_5m"] = bars_5m   # key name kept for compatibility
     df5 = bars_to_df(bars_5m)
 
     # ── Augment with historical 5-min bars for cross-day RVOL baseline ───────
@@ -819,7 +838,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     }
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled or None)
     if not _signals:
-        LIVE_STATE["last_signal"] = None
+        _US["last_signal"] = None
         # Log WHY no signal — the bar_eval entry already covers the ORB gate
         # reasoning; this adds a higher-level "no strategy qualified" note so
         try:
@@ -836,8 +855,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     direction   = _top.direction      # "bullish" | "bearish"
     entry_rvol  = _top.rvol           # Entry_Volume_Multiplier for audit log
     strategy_id = _top.strategy_id   # "INST_ORB" | "BOS_MSS" | "VWAP_PB" | "FVG"
-    LIVE_STATE["last_signal"]     = direction
-    LIVE_STATE["last_strategy_id"]= strategy_id
+    _US["last_signal"]     = direction
+    _US["last_strategy_id"]= strategy_id
 
     # ── Minimum confidence gate ───────────────────────────────────────────────
     # Blocks low-conviction signals (e.g. a single weak strategy with <55%
@@ -855,7 +874,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── 0.3% price displacement gate (all strategies) ────────────────────────
     # After any loss, price must move at least 0.3% from the exit level before
     # the same ticker can be re-entered.  Ensures the failed setup has resolved.
-    _loss_ctx = (LIVE_STATE.get("ticker_loss_context") or {}).get(ticker)
+    _loss_ctx = (_US.get("ticker_loss_context") or {}).get(ticker)
     if _loss_ctx:
         _last_exit_price = _loss_ctx.get("exit_price", 0)
         try:
@@ -874,8 +893,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Flip-direction enforcement ────────────────────────────────────────────
     # When flip_eligible, we prefer the OPPOSITE direction of the stopped trade
     # but we do NOT hard-block a valid signal — market structure always wins.
-    if LIVE_STATE.get("flip_eligible"):
-        required_flip = LIVE_STATE.get("flip_direction")
+    if _US.get("flip_eligible"):
+        required_flip = _US.get("flip_direction")
         if direction != required_flip:
             logger.info(
                 "Flip mismatch — signal=%s required=%s; proceeding with signal "
@@ -886,9 +905,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"[{ticker}] Flip preference was {required_flip} but "
                       f"signal is {direction} — market structure wins, entering.")
             # Clear the stale flip token so it doesn't keep logging on every tick
-            LIVE_STATE["flip_eligible"]  = False
-            LIVE_STATE["flip_direction"] = None
-            LIVE_STATE["flip_ticker"]    = None
+            _US["flip_eligible"]  = False
+            _US["flip_direction"] = None
+            _US["flip_ticker"]    = None
         else:
             logger.info(
                 "flip_signal_confirmed",
@@ -896,7 +915,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     "event":          "flip_signal_confirmed",
                     "ticker":         ticker,
                     "flip_direction": direction,
-                    "prev_direction": LIVE_STATE.get("last_direction"),
+                    "prev_direction": _US.get("last_direction"),
                 },
             )
 
@@ -910,7 +929,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "direction":   direction,
             "Strategy_ID": strategy_id,
             "confidence":  round(_top.confidence, 3),
-            "is_flip":     bool(LIVE_STATE.get("flip_eligible")),
+            "is_flip":     bool(_US.get("flip_eligible")),
             "status":      "PENDING_RR_GATE",
         },
     )
@@ -1071,16 +1090,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # ── Record what the bot is currently looking at, for the dashboard ───────
     # Surfaces the live contract premium + affordability ceiling proactively
-    # (without the user having to ask) by writing them into LIVE_STATE and
+    # (without the user having to ask) by writing them into _US and
     # patching bot_state.json immediately, instead of waiting for next tick.
-    LIVE_STATE["last_eval_ticker"]           = ticker
-    LIVE_STATE["last_eval_opt_type"]         = opt_type
-    LIVE_STATE["last_eval_premium"]          = ask_price
-    LIVE_STATE["last_eval_eff_entry"]        = eff_entry
-    LIVE_STATE["last_eval_time"]             = _time.strftime("%H:%M:%S")
-    LIVE_STATE["last_eval_expiry"]           = contract.get("expiry")
-    LIVE_STATE["last_eval_strike"]           = contract.get("strike")
-    LIVE_STATE["last_eval_contract_symbol"]  = contract.get("symbol")
+    _US["last_eval_ticker"]           = ticker
+    _US["last_eval_opt_type"]         = opt_type
+    _US["last_eval_premium"]          = ask_price
+    _US["last_eval_eff_entry"]        = eff_entry
+    _US["last_eval_time"]             = _time.strftime("%H:%M:%S")
+    _US["last_eval_expiry"]           = contract.get("expiry")
+    _US["last_eval_strike"]           = contract.get("strike")
+    _US["last_eval_contract_symbol"]  = contract.get("symbol")
     try:
         with open(_state_path) as _f:
             _bs = _json.load(_f)
@@ -1088,10 +1107,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _bs["last_eval_opt_type"]            = opt_type
         _bs["last_eval_premium"]             = ask_price
         _bs["last_eval_eff_entry"]           = eff_entry
-        _bs["last_eval_time"]                = LIVE_STATE["last_eval_time"]
-        _bs["last_eval_expiry"]              = LIVE_STATE["last_eval_expiry"]
-        _bs["last_eval_strike"]              = LIVE_STATE["last_eval_strike"]
-        _bs["last_eval_contract_symbol"]     = LIVE_STATE["last_eval_contract_symbol"]
+        _bs["last_eval_time"]                = _US["last_eval_time"]
+        _bs["last_eval_expiry"]              = _US["last_eval_expiry"]
+        _bs["last_eval_strike"]              = _US["last_eval_strike"]
+        _bs["last_eval_contract_symbol"]     = _US["last_eval_contract_symbol"]
         _bs["risk_budget_usd"]               = round(balance * _risk.effective_risk_pct(balance), 2)
         _bs["max_affordable_premium"]        = _risk.max_affordable_premium(balance)
         _json.dump(_bs, open(_state_path, "w"))
@@ -1147,7 +1166,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Persist contract count AFTER clamp so dashboard shows actual count ─────
     # (Previously written before the clamp, so the eval log showed 2c while the
     # bot actually traded 1c — now both reflect the same post-clamp number.)
-    LIVE_STATE["last_eval_contracts"] = n_contracts
+    _US["last_eval_contracts"] = n_contracts
     try:
         with open(_state_path) as _f:
             _bs_c = _json.load(_f)
@@ -1159,7 +1178,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _s1_target = round(eff_entry * 1.5, 2)
         _profit    = round(eff_entry * 0.5 * n_contracts * 100, 2)
         _new_entry = {
-            "ts":        LIVE_STATE.get("last_eval_time", ""),
+            "ts":        _US.get("last_eval_time", ""),
             "ticker":    ticker,
             "opt_type":  opt_type,
             "strike":    contract.get("strike"),
@@ -1172,10 +1191,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             # "signal" = manual mode alert (bot won't execute), "auto" = bot will execute
             "mode":      "signal" if settings.get("signal_only_mode", False) else "auto",
         }
-        _log = list(LIVE_STATE.get("eval_log", []))  # read from memory, not file
+        _log = list(_US.get("eval_log", []))  # read from memory, not file
         _log.insert(0, _new_entry)                    # newest first
-        LIVE_STATE["eval_log"] = _log[:10]            # update in-memory copy first
-        _bs_c["eval_log"]      = LIVE_STATE["eval_log"]
+        _US["eval_log"] = _log[:10]            # update in-memory copy first
+        _bs_c["eval_log"]      = _US["eval_log"]
         _json.dump(_bs_c, open(_state_path, "w"))
     except Exception:
         pass  # non-critical — next full tick write will catch up
@@ -1253,7 +1272,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Always route through the broker — the paper/live destination is controlled
     # by ALPACA_BASE_URL in .env (paper-api.alpaca.markets vs api.alpaca.markets).
     _entry_key = (contract["symbol"], _now_et().strftime("%H:%M"))
-    if LIVE_STATE.get("_last_order_key") == _entry_key:
+    if _US.get("_last_order_key") == _entry_key:
         logger.warning(
             "Duplicate order blocked — same contract+minute as last order: %s",
             contract["symbol"],
@@ -1265,7 +1284,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     n_contracts, contract["symbol"], ask_price, eff_entry, direction)
     # Stamp the key BEFORE placing so a concurrent tick that reaches here
     # in the same minute sees the lock immediately.
-    LIVE_STATE["_last_order_key"] = _entry_key
+    _US["_last_order_key"] = _entry_key
     # Smart limit order: submit at the mid-price (bid+ask)/2 first — the same
     # Paper fills at a less favorable price than mid — record worst case.
     _order_mid   = round(_c_mid, 2)   # best-case: fill at mid
@@ -1320,7 +1339,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         entry_time      = entry_utc,
         entry_reason    = f"ORB {direction} | R:R={rr_audit['R_R_Ratio']}",
         paper           = paper,
-        strategy_id     = LIVE_STATE.get("last_strategy_id", "INST_ORB"),
+        strategy_id     = _US.get("last_strategy_id", "INST_ORB"),
         stop_price      = _stop_px,
         target_price    = _target_px,
     )
@@ -1335,23 +1354,23 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # NEW (MAX_CONCURRENT_POSITIONS): re-read ALL open trades from the DB so
     # open_trades/open_trade reflect this new position alongside any other
-    LIVE_STATE["open_trades"]      = get_open_trades()
-    LIVE_STATE["open_trade"]       = LIVE_STATE["open_trades"][0] if LIVE_STATE["open_trades"] else None
-    LIVE_STATE["status"]           = "in_trade"
-    LIVE_STATE["orb_triggered"]    = True   # blocks further entries unless flip armed
-    LIVE_STATE["last_direction"]   = direction
+    _US["open_trades"]      = get_open_trades()
+    _US["open_trade"]       = _US["open_trades"][0] if _US["open_trades"] else None
+    _US["status"]           = "in_trade"
+    _US["orb_triggered"]    = True   # blocks further entries unless flip armed
+    _US["last_direction"]   = direction
     # Consume the flip token — after entering the flip trade, no more re-entries
-    LIVE_STATE["flip_eligible"]    = False
-    LIVE_STATE["flip_direction"]   = None
-    LIVE_STATE["flip_ticker"]      = None
+    _US["flip_eligible"]    = False
+    _US["flip_direction"]   = None
+    _US["flip_ticker"]      = None
     # Fix 2: mark this ticker as having had an ORB entry this session so the
     # bot won't re-enter the same ORB breakout after the trade closes.
-    LIVE_STATE.setdefault("orb_entered_today", set()).add(ticker)
+    _US.setdefault("orb_entered_today", set()).add(ticker)
 
     # ── Per-position live-management state (NEW — MAX_CONCURRENT_POSITIONS) ──
     # Each open trade gets its OWN peak/stage/stop tracking so a 2nd concurrent
     # position's stage/stop progress can never overwrite the 1st's (and vice
-    LIVE_STATE["positions"][trade_id] = {
+    _US["positions"][trade_id] = {
         "peak_price":                confirmed_price,
         "entry_time":                entry_utc.isoformat(),
         "stage1_done":               False,
@@ -1381,21 +1400,21 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             )
         except Exception as _sse:
             logger.warning("structural_stop_from_level failed: %s", _sse)
-    LIVE_STATE["positions"][trade_id]["struct_stop_price"] = _struct_stop_opt
+    _US["positions"][trade_id]["struct_stop_price"] = _struct_stop_opt
 
     persist_peak_price(trade_id, confirmed_price)
 
     # Bind trade context so all subsequent log lines include trade metadata
-    global _trade_log
     try:
         from logger_config import get_trade_logger
-        _trade_log = get_trade_logger(
+        set_user_trade_log(get_trade_logger(
             ticker=ticker,
             contract_symbol=contract["symbol"],
             session_id=str(trade_id),
-        )
+        ))
     except Exception:
-        _trade_log = logger
+        set_user_trade_log(logger)
+    _trade_log = get_user_trade_log()
 
     # Determine risk tier label for this trade
     _active_risk_pct = _risk.effective_risk_pct(balance)
@@ -1415,7 +1434,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "Risk_Tier_Used":          _tier_label,
             "R_R_Ratio":               rr_audit["R_R_Ratio"],
             "Entry_Volume_Multiplier": round(entry_rvol, 2),
-            "Strategy_ID":             LIVE_STATE.get("last_strategy_id", "INST_ORB"),
+            "Strategy_ID":             _US.get("last_strategy_id", "INST_ORB"),
             # ── Full trade context ─────────────────────────────────────────
             "ticker":           ticker,
             "contract_symbol":  contract["symbol"],
@@ -1446,7 +1465,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "CHAN_BREAK": "Channel Rejection",
             "MID_BRK":   "Mid-Day Breakdown",
             "TREND_CONT":"Trend Continuation",
-        }.get(LIVE_STATE.get("last_strategy_id", "INST_ORB"), "ORB")
+        }.get(_US.get("last_strategy_id", "INST_ORB"), "ORB")
         _stop_px  = round(_risk.dynamic_stop_price(confirmed_price, entry_utc), 2)
         _tgt_px   = round(_risk.stage1_exit_price(confirmed_price), 2)
         _mode_tag = "[PAPER] " if paper else ""

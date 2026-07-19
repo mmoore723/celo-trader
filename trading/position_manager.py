@@ -16,7 +16,8 @@ Exit hierarchy (checked in order each tick):
   7. Time cap of last resort — 90 min for winners, 20 min for flat/losing
      (safety net only; structure-based exits should fire first)
 
-Per-position state machine keys (stored in LIVE_STATE["positions"][trade_id]):
+Per-position state machine keys (stored in this user's state["positions"][trade_id],
+see trading/state.py::get_user_state):
   stage             : "s1" | "s2"
   phase             : "trending" | "vwap_watch" | "exit_pending"
   peak_price_opt    : highest option mid-price seen since entry
@@ -38,7 +39,11 @@ from typing import Optional
 import pandas as pd
 import numpy as np
 
-from trading.state import LIVE_STATE, _now_et, _ET_TZ, _BOT_ROOT
+from trading.state import (
+    get_user_state, get_user_risk, get_user_trade_log, set_user_trade_log,
+    _now_et, _ET_TZ,
+)
+from config import get_bot_state_path
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -57,6 +62,7 @@ def _reconcile_if_phantom(alpaca: "AlpacaClient", trade: dict) -> bool:
     now-fixed paper-fill-fabrication bug) retried its exit every ~1s for
     hours straight, hammering Alpaca with a doomed sell_to_close order.
     """
+    _US = get_user_state()
     from broker import is_phantom_position_rejection
     if not is_phantom_position_rejection(getattr(alpaca, "last_rejection_reason", None)):
         return False
@@ -87,9 +93,9 @@ def _reconcile_if_phantom(alpaca: "AlpacaClient", trade: dict) -> bool:
             "symbol": trade["contract_symbol"],
         },
     )
-    LIVE_STATE["open_trades"] = get_open_trades()
-    LIVE_STATE["open_trade"]  = LIVE_STATE["open_trades"][0] if LIVE_STATE["open_trades"] else None
-    LIVE_STATE.get("positions", {}).pop(trade["id"], None)
+    _US["open_trades"] = get_open_trades()
+    _US["open_trade"]  = _US["open_trades"][0] if _US["open_trades"] else None
+    _US.get("positions", {}).pop(trade["id"], None)
     return True
 
 
@@ -345,7 +351,12 @@ def _manage_open_position(
     current P&L) and the underlying's 1-min bars (for structural analysis).
     All exit decisions are made against chart structure, not a clock.
     """
-    from trading import entry as _em
+    # FIX: previously read the RiskManager/trade-logger off `trading.entry`'s
+    # module-level globals via `_risk`/`_trade_log` — shared by every
+    # user's thread. Now resolved fresh per user (see trading/state.py).
+    _US        = get_user_state()
+    _risk      = get_user_risk()
+    _trade_log = get_user_trade_log()
 
     try:
         # ── Option quote ──────────────────────────────────────────────────────
@@ -363,13 +374,13 @@ def _manage_open_position(
         direction     = "bullish" if option_type == "call" else "bearish"
 
         # ── Per-position state ────────────────────────────────────────────────
-        ps = LIVE_STATE["positions"].setdefault(trade_id, {
+        ps = _US["positions"].setdefault(trade_id, {
             "peak_price":                None,   # MFE: highest option price seen
             "min_price":                 None,   # MAE: lowest  option price seen (adverse)
             "entry_time":                trade.get("entry_time"),
             "stage1_done":               False,
             "stage1_be_price":           None,
-            "current_stop_pct":          _em._risk.ORB_STOP_PCT if _em._risk else 0.20,
+            "current_stop_pct":          _risk.ORB_STOP_PCT if _risk else 0.20,
             "struct_stop_price":         None,
             "current_option_price":      None,
             "current_option_price_time": None,
@@ -675,13 +686,13 @@ def _manage_open_position(
         # Persist current stop for dashboard visibility
         _current_stop_pct_display = (
             round(1.0 - atr_trail_stop / entry_price, 4) if atr_trail_stop else
-            (_em._risk.ORB_STOP_PCT if _em._risk else 0.20)
+            (_risk.ORB_STOP_PCT if _risk else 0.20)
         )
         ps["current_stop_pct"] = _current_stop_pct_display
 
         # ── Write to bot_state.json ───────────────────────────────────────────
         import json as _json_m
-        _state_path_m = _BOT_ROOT / "bot_state.json"
+        _state_path_m = get_bot_state_path()
         try:
             _existing = {}
             if _state_path_m.exists():
@@ -712,7 +723,7 @@ def _manage_open_position(
             _existing["current_option_price"]       = current_price
             _existing["current_option_price_time"]  = ps["current_option_price_time"]
             # Always carry the latest session_pnl so the WebSocket never reads a stale value
-            _existing["session_pnl"]                = LIVE_STATE.get("session_pnl", 0.0)
+            _existing["session_pnl"]                = _US.get("session_pnl", 0.0)
             with open(_state_path_m, "w") as _f:
                 _json_m.dump(_existing, _f)
         except Exception:
@@ -752,7 +763,7 @@ def _manage_open_position(
         # Suppressed during warmup (first 5 min / before +15% gain).
         _effective_atr_stop = atr_trail_stop or ps.get("initial_atr_stop")
 
-        should_exit, reason = _em._risk.should_exit(
+        should_exit, reason = _risk.should_exit(
             entry_price, current_price,
             entry_time      = entry_time,
             now             = now_et,
@@ -793,7 +804,7 @@ def _manage_open_position(
             paper    = settings.get("paper_trading", True)
 
             if paper:
-                _em._trade_log.info(
+                _trade_log.info(
                     "stage1_partial_exit",
                     extra={
                         "event":          "stage1_partial_exit",
@@ -884,7 +895,11 @@ def _close_position(
     reason: str,
     bid_price: Optional[float] = None,
 ) -> None:
-    from trading import entry as _em
+    # Same fix as _manage_open_position above — resolve per-user state/risk/
+    # logger fresh instead of reading trading.entry's module-level globals.
+    _US        = get_user_state()
+    _risk      = get_user_risk()
+    _trade_log = get_user_trade_log()
 
     from config import (
         get_settings, get_risk_tier,
@@ -900,7 +915,7 @@ def _close_position(
     settings = get_settings()
     paper    = settings.get("paper_trading", True)
 
-    _balance_close  = LIVE_STATE.get("account_balance", STARTING_CAPITAL)
+    _balance_close  = _US.get("account_balance", STARTING_CAPITAL)
     _rpct_close     = get_risk_tier(_balance_close)
     _tier_label = (
         "Tier4_5pct" if _rpct_close >= BOOTSTRAP_RISK_PCT else
@@ -939,7 +954,7 @@ def _close_position(
 
     # Pull MFE (peak_price) and MAE (min_price) from live position state so they
     # get saved to the DB and appear in the Journal's efficiency columns.
-    _trade_ps = LIVE_STATE["positions"].get(trade["id"], {})
+    _trade_ps = _US["positions"].get(trade["id"], {})
     _peak_px  = _trade_ps.get("peak_price")   # MFE: highest option mid-price seen
     _min_px   = _trade_ps.get("min_price")    # MAE: lowest  option mid-price seen
 
@@ -1036,18 +1051,18 @@ def _close_position(
     if pnl > 0:
         try:
             reserved = record_sweep(pnl, trade["id"])
-            LIVE_STATE["last_tax_sweep"] = reserved
+            _US["last_tax_sweep"] = reserved
         except Exception as e:
             logger.error("Tax sweep failed: %s", e)
 
     try:
-        _em._risk.record_pnl(pnl, account_balance=LIVE_STATE["account_balance"])
+        _risk.record_pnl(pnl, account_balance=_US["account_balance"])
     except DailyLossLimitReached:
         raise
 
     # Recompute session P&L from DB
     try:
-        LIVE_STATE["session_pnl"] = sum(
+        _US["session_pnl"] = sum(
             (t.get("realized_pnl") or 0)
             for t in get_all_trades(limit=100)
             if (t.get("exit_time") or "")[:10] == date.today().isoformat()
@@ -1060,20 +1075,20 @@ def _close_position(
     _closed_direction = "bullish" if _closed_opt_type == "call" else "bearish"
 
     # Clear per-trade state
-    LIVE_STATE["positions"].pop(trade["id"], None)
+    _US["positions"].pop(trade["id"], None)
 
     _remaining_open               = get_open_trades()
-    LIVE_STATE["open_trades"]     = _remaining_open
-    LIVE_STATE["open_trade"]      = _remaining_open[0] if _remaining_open else None
-    LIVE_STATE["status"]          = "in_trade" if _remaining_open else "scanning"
-    LIVE_STATE["last_direction"]        = _closed_direction
-    LIVE_STATE["last_trade_closed_time"]= closed_utc.isoformat()
+    _US["open_trades"]     = _remaining_open
+    _US["open_trade"]      = _remaining_open[0] if _remaining_open else None
+    _US["status"]          = "in_trade" if _remaining_open else "scanning"
+    _US["last_direction"]        = _closed_direction
+    _US["last_trade_closed_time"]= closed_utc.isoformat()
 
     _closed_ticker = trade.get("ticker", "")
     if pnl > 0 and _closed_ticker:
         _WIN_COOLDOWN_MIN = 10
         _win_expires = _now_et() + timedelta(minutes=_WIN_COOLDOWN_MIN)
-        LIVE_STATE.setdefault("ticker_win_cooldown", {})[_closed_ticker] = _win_expires
+        _US.setdefault("ticker_win_cooldown", {})[_closed_ticker] = _win_expires
         log_event("INFO", "trading_logic",
                   f"⏱ [{_closed_ticker}] Post-win cooldown {_WIN_COOLDOWN_MIN} min "
                   f"(pnl=${pnl:+.2f}). No re-entry until {_win_expires.strftime('%H:%M')} ET.")
@@ -1083,11 +1098,11 @@ def _close_position(
     # in entry.py.  Also set a STRUCTURAL cooldown keyed by ticker:strategy_id
     _strat_id = trade.get("strategy_id", "")
     if pnl < 0 and _closed_ticker:
-        LIVE_STATE.setdefault("ticker_loss_context", {})[_closed_ticker] = {
+        _US.setdefault("ticker_loss_context", {})[_closed_ticker] = {
             "exit_price":   exit_price,
             "direction":    _closed_direction,
             "strategy_id":  _strat_id,
-            "loss_count":   LIVE_STATE.get("ticker_loss_context", {}).get(
+            "loss_count":   _US.get("ticker_loss_context", {}).get(
                                 _closed_ticker, {}).get("loss_count", 0) + 1,
         }
 
@@ -1095,7 +1110,7 @@ def _close_position(
     # Remove from bot_state.json open_positions
     try:
         import json as _json_cl
-        _state_path_cl = _BOT_ROOT / "bot_state.json"
+        _state_path_cl = get_bot_state_path()
         if _state_path_cl.exists():
             with open(_state_path_cl) as _f:
                 _existing_cl = _json_cl.load(_f)
@@ -1113,18 +1128,18 @@ def _close_position(
     _flip_setting_enabled = bool(_gs().get("flip_trading_enabled", True))
     if _is_hard_stop and _flip_setting_enabled:
         _flip_dir = "bearish" if _closed_direction == "bullish" else "bullish"
-        LIVE_STATE["flip_eligible"]  = True
-        LIVE_STATE["flip_direction"] = _flip_dir
-        LIVE_STATE["flip_ticker"]    = _closed_ticker
+        _US["flip_eligible"]  = True
+        _US["flip_direction"] = _flip_dir
+        _US["flip_ticker"]    = _closed_ticker
         log_event("INFO", "trading_logic",
                   f"🟡 Flip armed — stopped out {_closed_direction}. "
                   f"Watching for {_flip_dir} retest entry.")
     else:
-        LIVE_STATE["flip_eligible"]  = False
-        LIVE_STATE["flip_direction"] = None
-        LIVE_STATE["flip_ticker"]    = None
+        _US["flip_eligible"]  = False
+        _US["flip_direction"] = None
+        _US["flip_ticker"]    = None
 
-    _em._trade_log.info(
+    _trade_log.info(
         "trade_closed",
         extra={
             "event":                   "trade_closed",
@@ -1138,6 +1153,6 @@ def _close_position(
             "flip_armed":   _is_hard_stop and _flip_setting_enabled,
         },
     )
-    if hasattr(_em._trade_log, "clear_context"):
-        _em._trade_log.clear_context()
-    _em._trade_log = logger
+    if hasattr(_trade_log, "clear_context"):
+        _trade_log.clear_context()
+    set_user_trade_log(logger)   # trade closed — reset this user's logger to plain

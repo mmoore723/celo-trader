@@ -2,8 +2,9 @@
 trading/annotations.py — Real-time chart annotation emitter.
 
 Writes bot-detected patterns (FVG zones, BOS levels, signal markers, veto markers)
-to LIVE_STATE["chart_annotations"][ticker] so the frontend can overlay them on the
-price chart as the trading day progresses.
+to this user's state["chart_annotations"][ticker] (see trading/state.py::
+get_user_state) so the frontend can overlay them on the price chart as the
+trading day progresses.
 
 Annotation types:
   "hline"  — horizontal price line (BOS level, TREND_CONT swing level, OR mid)
@@ -50,9 +51,16 @@ def emit_annotation(
     price_high: float | None = None,   # for zone (top edge)
     direction: str | None = None,      # "bullish" | "bearish"
 ) -> None:
-    """Append one chart annotation to LIVE_STATE for the given ticker."""
+    """Append one chart annotation to this user's state for the given ticker.
+
+    FIX: previously wrote to the global LIVE_STATE alias (admin's state) via
+    a late import — every user's bot-detected chart overlays landed on
+    admin's dashboard instead of their own. Now resolves the calling user's
+    own state fresh (ContextVar-based — see trading/state.py::get_user_state).
+    """
     # Late import — avoids circular dependency at module load time
-    from trading.state import LIVE_STATE  # noqa: PLC0415
+    from trading.state import get_user_state  # noqa: PLC0415
+    _US = get_user_state()
 
     # Resolve color: explicit > strategy+direction > strategy alone > default
     _key = f"{strategy}_{direction}" if direction else strategy
@@ -74,15 +82,15 @@ def emit_annotation(
     if price_high is not None:
         ann["price_high"] = round(float(price_high), 4)
 
-    if "chart_annotations" not in LIVE_STATE:
-        LIVE_STATE["chart_annotations"] = {}
+    if "chart_annotations" not in _US:
+        _US["chart_annotations"] = {}
 
-    bucket: list = LIVE_STATE["chart_annotations"].setdefault(ticker.upper(), [])
+    bucket: list = _US["chart_annotations"].setdefault(ticker.upper(), [])
     bucket.append(ann)
 
     # Cap — drop oldest entries
     if len(bucket) > _MAX_ANNOTATIONS:
-        LIVE_STATE["chart_annotations"][ticker.upper()] = bucket[-_MAX_ANNOTATIONS:]
+        _US["chart_annotations"][ticker.upper()] = bucket[-_MAX_ANNOTATIONS:]
 
 
 def emit_signal_annotation(ticker: str, sig: Any, today: Any) -> None:
@@ -158,10 +166,11 @@ def emit_signal_annotation(ticker: str, sig: Any, today: Any) -> None:
 
 def clear_annotations(ticker: str | None = None) -> None:
     """Remove annotations for one ticker, or all tickers if ticker is None."""
-    from trading.state import LIVE_STATE  # noqa: PLC0415
-    if "chart_annotations" not in LIVE_STATE:
+    from trading.state import get_user_state  # noqa: PLC0415
+    _US = get_user_state()
+    if "chart_annotations" not in _US:
         return
     if ticker is None:
-        LIVE_STATE["chart_annotations"] = {}
+        _US["chart_annotations"] = {}
     else:
-        LIVE_STATE["chart_annotations"].pop(ticker.upper(), None)
+        _US["chart_annotations"].pop(ticker.upper(), None)

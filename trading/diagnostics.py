@@ -13,12 +13,14 @@ import logging
 import re
 from typing import Optional
 
-from trading.state import LIVE_STATE, _now_et
+from trading.state import get_user_state, get_user_risk, _now_et, _default_user_id
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
-# Module-level flag so _check_ghost_positions only alerts ONCE per ghost event
-_ghost_alert_logged = False
+# FIX: was a single module-level bool, shared by every user's thread — one
+# user's ghost-position alert being acknowledged would silently suppress a
+# DIFFERENT user's still-unresolved ghost alert. Now keyed per user.
+_ghost_alert_logged: dict[str, bool] = {}
 
 
 def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) -> None:
@@ -38,6 +40,7 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
         if df1m is None or df1m.empty:
             return
 
+        _US = get_user_state()
         import pandas as _pd
         from signals import (
             get_opening_range  as _get_or,
@@ -60,9 +63,9 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
         # Per-ticker key so NVDA and SPY each get one log per bar close, even
         # when both are in the watchlist and processed on the same tick cycle.
         _guard_key = f"last_1m_bar_time_{ticker}"
-        if LIVE_STATE.get(_guard_key) == bar_time_str:
+        if _US.get(_guard_key) == bar_time_str:
             return
-        LIVE_STATE[_guard_key] = bar_time_str
+        _US[_guard_key] = bar_time_str
 
         close = float(last_bar["close"])
         bar_t = bar_time_str[11:16]   # "HH:MM"
@@ -92,7 +95,7 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
         # ─────────────────────────────────────────────────────────────────────
         # BRANCH A: IN A TRADE on this ticker — narrate the live position
         # ─────────────────────────────────────────────────────────────────────
-        _all_open = LIVE_STATE.get("open_trades") or []
+        _all_open = _US.get("open_trades") or []
         _ticker_trade = next(
             (t for t in _all_open
              if t.get("ticker") == ticker
@@ -102,18 +105,18 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
 
         if _ticker_trade:
             _tid         = _ticker_trade.get("id")
-            _pos_state   = LIVE_STATE.get("positions", {}).get(_tid, {})
+            _pos_state   = _US.get("positions", {}).get(_tid, {})
             _entry_px    = float(_ticker_trade.get("entry_price") or 0)
             _opt_type    = (_ticker_trade.get("option_type") or "call").upper()
             _n_contracts = int(_ticker_trade.get("contracts") or 1)
             _strategy    = _ticker_trade.get("strategy_id", "INST_ORB")
-            _stage1_done = _pos_state.get("stage1_done", LIVE_STATE.get("stage1_done", False))
+            _stage1_done = _pos_state.get("stage1_done", _US.get("stage1_done", False))
             _stop_pct    = float(_pos_state.get("current_stop_pct") or 0.20)
 
             # Option price — use the last-known value from per-position state
             _cur_opt = float(
                 _pos_state.get("current_option_price")
-                or LIVE_STATE.get("current_option_price")
+                or _US.get("current_option_price")
                 or _entry_px
             )
             _pnl_pct  = ((_cur_opt - _entry_px) / _entry_px * 100) if _entry_px > 0 else 0.0
@@ -129,7 +132,7 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
             # Stage 1 target (100% gain at 1×R)
             _s1_tgt = round(_entry_px * 1.50, 2)    # default 50% gain
             try:
-                from trading.entry import _risk as _ar
+                _ar = get_user_risk()
                 if _ar:
                     _s1_tgt = round(_ar.stage1_exit_price(_entry_px), 2)
             except Exception:
@@ -183,8 +186,8 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
             _last_min = _pos_state.get("last_position_narration_minute")
             if _last_min == bar_t:
                 return
-            if _tid and _tid in LIVE_STATE.get("positions", {}):
-                LIVE_STATE["positions"][_tid]["last_position_narration_minute"] = bar_t
+            if _tid and _tid in _US.get("positions", {}):
+                _US["positions"][_tid]["last_position_narration_minute"] = bar_t
 
             # Position zone descriptor
             if _cushion > _entry_px * 0.10:
@@ -392,7 +395,7 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
       2. TRUE GHOST: no DB record at all.
          Action → auto-adopt into the journal; alert only if adoption fails.
     """
-    global _ghost_alert_logged
+    _uid = _default_user_id()
 
     from database import log_event, get_open_trades, insert_trade, get_conn
 
@@ -406,7 +409,7 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
     ghosts     = [p for p in positions if p.get("symbol") not in db_symbols]
 
     if not ghosts:
-        _ghost_alert_logged = False
+        _ghost_alert_logged[_uid] = False
         return None
 
     # ── Classify each ghost ───────────────────────────────────────────────────
@@ -446,7 +449,7 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
     # ── Auto-adopt TRUE ghosts into the journal ───────────────────────────────
     true_ghosts = [p for p in ghosts if p.get("symbol") not in failed_close_symbols]
     if not true_ghosts:
-        _ghost_alert_logged = False
+        _ghost_alert_logged[_uid] = False
         return None
 
     still_unrecorded = []
@@ -495,10 +498,10 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
             still_unrecorded.append(p)
 
     if not still_unrecorded:
-        _ghost_alert_logged = False
+        _ghost_alert_logged[_uid] = False
         return None
 
-    if not _ghost_alert_logged:
+    if not _ghost_alert_logged.get(_uid, False):
         for p in still_unrecorded:
             logger.critical(
                 "ghost_position_detected",
@@ -517,7 +520,7 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
                 f"(unrecognised symbol format). Check Alpaca Positions tab and "
                 f"close it manually if needed."
             )
-        _ghost_alert_logged = True
+        _ghost_alert_logged[_uid] = True
 
     return {
         "detected_at": _now_et().isoformat(),

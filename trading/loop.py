@@ -18,9 +18,10 @@ from pathlib import Path
 from typing import Optional
 
 from trading.state import (
-    LIVE_STATE, _now_et, _stop_event, _bot_loop_lock, _BOT_ROOT,
-    _get_stop_event, _get_lock, get_user_state,
+    _now_et,
+    _get_stop_event, _get_lock, get_user_state, set_user_risk,
 )
+from config import get_bot_state_path
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -28,9 +29,26 @@ logger = logging.getLogger("celo_trader.trading_logic")
 def run_trading_loop(user_id: str = "admin", poll_interval: int = 10) -> None:
     """
     Singleton-guarded entry point.  One trading loop per user at a time.
-    Called via ctx.run() from bot.py so the ContextVar (user identity) is
-    already set and propagates into all downstream helpers.
+
+    api/routes/bot.py::start_bot() spawns this via contextvars.copy_context()
+    so the auth ContextVar (user identity) is already correct in this thread
+    before this function even runs. BUT this function is also called from
+    api/main.py's service-restart auto-resume path via a plain
+    threading.Thread (no request in flight there to copy a context from) —
+    so we explicitly (re)establish the ContextVar identity here ourselves,
+    rather than assuming the caller already did it. This is what every
+    downstream `get_user_state()` / `get_user_risk()` / `get_user_trade_log()`
+    call (with no explicit user_id) resolves against, so getting this right
+    is what makes the whole per-user state fix actually correct — without it,
+    a bot resumed via the auto-start path would silently run against admin's
+    state/risk/logger regardless of which user's loop this is.
     """
+    try:
+        from auth.context import set_current_user
+        set_current_user(user_id, username=user_id, is_admin=False)
+    except Exception as _ctx_err:
+        logger.warning("run_trading_loop: could not set user context: %s", _ctx_err)
+
     _lock  = _get_lock(user_id)
     _stop  = _get_stop_event(user_id)
     if not _lock.acquire(blocking=False):
@@ -81,8 +99,6 @@ def _run_nightly_strategy_audit_once(alpaca) -> None:
 
 def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> None:
     """Inner body of the trading loop — called exclusively from run_trading_loop()."""
-    import trading.entry as _em
-
     from broker import get_clients
     from config import get_settings, STARTING_CAPITAL, get_trading_windows as _gtw
     from database import init_db, log_event, get_all_trades
@@ -93,8 +109,14 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     from trading.diagnostics import _check_ghost_positions
     from trading.controls import _panic_close_all_positions
 
-    # Use this user's state dict instead of the global LIVE_STATE alias.
-    # All code inside this function that previously used LIVE_STATE now uses
+    # This user's own state dict — see trading/state.py::get_user_state.
+    # FIX: this function used to ALSO mirror every write into the global
+    # LIVE_STATE alias ("to keep it in sync for the admin user") — meaning a
+    # non-admin user's loop silently overwrote the admin dashboard's balance,
+    # P&L, watchlist, and status on every tick. Nothing else in the codebase
+    # reads that alias anymore (entry.py/position_manager.py/diagnostics.py/
+    # annotations.py all resolve get_user_state() fresh per-call now), so the
+    # dual-write is gone — this loop only ever touches its own user's state.
     _US = get_user_state(user_id)
 
     # Resolve stop event for this user
@@ -108,7 +130,6 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     _is_paper   = _settings.get("paper_trading", True)
     _trade_mode = "paper" if _is_paper else "live"
     _US["mode"] = _trade_mode
-    LIVE_STATE["mode"] = _trade_mode   # keep global alias in sync for admin user
 
     try:
         acct    = alpaca.get_account()
@@ -122,8 +143,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
         logger.error("Cannot fetch account balance: %s", e)
         balance = float(get_settings().get("last_known_balance", STARTING_CAPITAL))
 
-    _US["account_balance"]  = balance
-    LIVE_STATE["account_balance"] = balance
+    _US["account_balance"] = balance
 
     # Day-start balance: persist per calendar date so mid-session bot restarts
     # don't overwrite the true opening value with the current (already-traded) balance.
@@ -138,8 +158,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
         # First start of the day — lock in today's opening Alpaca equity
         day_start_balance = balance
         _save_dsb({_today_key: round(day_start_balance, 2)})
-    _US["day_start_balance"]        = day_start_balance
-    LIVE_STATE["day_start_balance"] = day_start_balance
+    _US["day_start_balance"] = day_start_balance
 
     try:
         _US["session_pnl"] = sum(
@@ -150,18 +169,19 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     except Exception as e:
         logger.error("Could not recompute session_pnl from DB at startup: %s", e)
         _US["session_pnl"] = 0.0
-    LIVE_STATE["session_pnl"] = _US["session_pnl"]
 
-    _em._risk = RiskManager(account_balance=balance)
+    # FIX: was `_em._risk = RiskManager(...)` — a module-level global on
+    # trading.entry shared by every user's thread (see trading/state.py's
+    # get_user_risk/set_user_risk docstring for the full explanation).
+    set_user_risk(RiskManager(account_balance=balance), user_id)
     logger.info("bot_started", extra={"event": "bot_started", "account_balance": round(balance, 2)})
     log_event("INFO", "trading_logic", f"🟢 Bot started [{user_id}]. Account balance: ${balance:.2f}")
     _US["running"] = True
-    LIVE_STATE["running"] = True
 
     # ── Startup reconciliation ────────────────────────────────────────────────
     try:
         _startup_ghost = _check_ghost_positions(alpaca)
-        LIVE_STATE["ghost_position_alert"] = _startup_ghost
+        _US["ghost_position_alert"] = _startup_ghost
         if _startup_ghost:
             log_event(
                 "WARNING", "trading_logic",
@@ -174,7 +194,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     # ── Watchlist restoration on mid-session restart ──────────────────────────
     # If the bot restarts after the 9:00–11:30 scan window, is_scan_window()
     # returns False and the scan block in the main loop never runs, leaving
-    if not LIVE_STATE.get("scan_watchlist"):
+    if not _US.get("scan_watchlist"):
         try:
             from scanner import _read_daily_universe, _et_now as _scanner_et
             from config import get_settings as _get_s_wl
@@ -189,9 +209,9 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                     if t.strip()
                 ]
                 _restored_wl = list(dict.fromkeys(_pins_r + _du["universe"]))
-                LIVE_STATE["scan_watchlist"]    = _restored_wl
-                LIVE_STATE["scanner_ran_today"] = True
-                LIVE_STATE["current_ticker"]    = _restored_wl[0]
+                _US["scan_watchlist"]    = _restored_wl
+                _US["scanner_ran_today"] = True
+                _US["current_ticker"]    = _restored_wl[0]
                 log_event("INFO", "scanner",
                           f"🔄 Restored today's scan watchlist after restart: "
                           f"{', '.join(_restored_wl)}")
@@ -199,22 +219,22 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 # No daily universe yet — seed from settings watchlist + anchors
                 _pins = [t.upper().strip() for t in (_get_s_wl().get("watchlist") or []) if t.strip()]
                 _seed = list(dict.fromkeys(_pins + ["SPY", "QQQ"]))[:10]
-                LIVE_STATE["scan_watchlist"]    = _seed
-                LIVE_STATE["scanner_ran_today"] = False   # force rescan when window opens
-                LIVE_STATE["current_ticker"]    = _seed[0]
+                _US["scan_watchlist"]    = _seed
+                _US["scanner_ran_today"] = False   # force rescan when window opens
+                _US["current_ticker"]    = _seed[0]
                 log_event("INFO", "scanner",
                           f"🔄 No daily universe yet — seeding watchlist: {', '.join(_seed)}")
         except Exception as _wl_err:
             logger.warning("Watchlist restore failed: %s — using anchors", _wl_err)
-            LIVE_STATE["scan_watchlist"]    = ["SPY", "QQQ"]
-            LIVE_STATE["current_ticker"]    = "SPY"
-            LIVE_STATE["scanner_ran_today"] = False
+            _US["scan_watchlist"]    = ["SPY", "QQQ"]
+            _US["current_ticker"]    = "SPY"
+            _US["scanner_ran_today"] = False
 
     # Write initial bot_state.json, carrying forward last-known option price.
     _prev_opt_px      = None
     _prev_opt_px_time = None
     try:
-        _state_path_start = _BOT_ROOT / "bot_state.json"
+        _state_path_start = get_bot_state_path(user_id)
         if _state_path_start.exists():
             with open(_state_path_start) as _f:
                 _prev_state = json.load(_f)
@@ -225,19 +245,19 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             # them all (capped at 10) — stale entries are displaced by new ones quickly.
             _prev_eval = _prev_state.get("eval_log", [])
             if _prev_eval:
-                LIVE_STATE["eval_log"] = _prev_eval
+                _US["eval_log"] = _prev_eval
     except Exception:
         pass
-    LIVE_STATE["current_option_price"]      = _prev_opt_px
-    LIVE_STATE["current_option_price_time"] = _prev_opt_px_time
+    _US["current_option_price"]      = _prev_opt_px
+    _US["current_option_price_time"] = _prev_opt_px_time
     try:
-        _state_path_start = _BOT_ROOT / "bot_state.json"
+        _state_path_start = get_bot_state_path(user_id)
         json.dump({
             "running":              True,
             "auto_start_disabled":  False,   # clear explicit-stop flag on fresh start
             "mode":                 _trade_mode,   # "paper" or "live" — shown in dashboard
             "account_balance":      float(balance),
-            "session_pnl":          LIVE_STATE.get("session_pnl", 0.0),
+            "session_pnl":          _US.get("session_pnl", 0.0),
             "status":               "starting",
             "current_ticker":       None,
             "last_signal":          None,
@@ -268,8 +288,8 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 _secs_until_wake = max(60, (_wake - _now_et()).total_seconds())
 
                 # Log once when we first enter after-hours.
-                if not LIVE_STATE.get("_after_hours_sleeping"):
-                    LIVE_STATE["_after_hours_sleeping"] = True
+                if not _US.get("_after_hours_sleeping"):
+                    _US["_after_hours_sleeping"] = True
                     log_event(
                         "INFO", "trading_logic",
                         f"🌙 Markets closed — bot resting until 8:00 AM ET "
@@ -278,12 +298,17 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                     _run_nightly_strategy_audit_once(alpaca)
 
                 # Sleep up to 5 min at a time so Stop Bot stays responsive.
-                _stop_event.wait(timeout=min(300, _secs_until_wake))
+                # FIX: this used to wait on the module-level admin-only
+                # _stop_event instead of this user's own _stop — a non-admin
+                # user's Stop button wouldn't wake their thread during
+                # after-hours sleep, and admin's Stop would wrongly wake
+                # everyone else's.
+                _stop.wait(timeout=min(300, _secs_until_wake))
                 continue   # skip scan + _tick entirely
 
             # Waking up from after-hours — log once.
-            if LIVE_STATE.get("_after_hours_sleeping"):
-                LIVE_STATE["_after_hours_sleeping"] = False
+            if _US.get("_after_hours_sleeping"):
+                _US["_after_hours_sleeping"] = False
                 log_event("INFO", "trading_logic",
                           "🌅 Good morning — resuming pre-market watch.")
 
@@ -291,8 +316,8 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             # Run if: scan hasn't run today AND we're in the scan window.
             # Also run if scan_watchlist is empty regardless of time — this
             _needs_scan = (
-                not LIVE_STATE.get("scanner_ran_today") and is_scan_window()
-            ) or not LIVE_STATE.get("scan_watchlist")
+                not _US.get("scanner_ran_today") and is_scan_window()
+            ) or not _US.get("scan_watchlist")
             if _needs_scan:
                 try:
                     wl = run_scan(alpaca, max_tickers=10)
@@ -304,15 +329,15 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                         wl = list(dict.fromkeys(_pins + wl))
                     except Exception:
                         pass
-                    LIVE_STATE["scan_watchlist"] = wl
-                    LIVE_STATE["scan_idx"]       = 0
+                    _US["scan_watchlist"] = wl
+                    _US["scan_idx"]       = 0
                     if wl:
-                        LIVE_STATE["current_ticker"] = wl[0]
+                        _US["current_ticker"] = wl[0]
 
                     from scanner import _read_daily_universe, _et_now as _scanner_et_now
                     _du = _read_daily_universe()
                     _full_scan_ran = (_du.get("date") == _scanner_et_now().strftime("%Y-%m-%d"))
-                    LIVE_STATE["scanner_ran_today"] = _full_scan_ran
+                    _US["scanner_ran_today"] = _full_scan_ran
 
                     _label = "🟢 Scan complete" if _full_scan_ran else "🟡 Pre-market (waiting for 9:30 open)"
                     logger.info("scan_tick", extra={
@@ -323,9 +348,9 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                               f"{_label}. Watchlist: {', '.join(wl)}")
                 except Exception as _ex:
                     logger.warning("Pre-market scan failed: %s — using anchors", _ex)
-                    LIVE_STATE["scan_watchlist"]    = ["SPY", "QQQ"]
-                    LIVE_STATE["scanner_ran_today"] = False
-                    LIVE_STATE["current_ticker"]    = "SPY"
+                    _US["scan_watchlist"]    = ["SPY", "QQQ"]
+                    _US["scanner_ran_today"] = False
+                    _US["current_ticker"]    = "SPY"
 
             # ── Refresh account balance + recompute session P&L ─────────────
             # Balance is fetched from Alpaca once per batch cycle (every ~60s)
@@ -334,12 +359,10 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 _acct_tick = alpaca.get_account()
                 _bal_tick  = float(_acct_tick.get("equity", 0)) if _acct_tick else 0
                 if _bal_tick > 0:
-                    _US["account_balance"]         = _bal_tick
-                    LIVE_STATE["account_balance"]  = _bal_tick
-                    _dsb = LIVE_STATE.get("day_start_balance") or _bal_tick
+                    _US["account_balance"] = _bal_tick
+                    _dsb = _US.get("day_start_balance") or _bal_tick
                     _spnl = round(_bal_tick - _dsb, 2)
-                    _US["session_pnl"]             = _spnl
-                    LIVE_STATE["session_pnl"]      = _spnl
+                    _US["session_pnl"] = _spnl
                     # Persist so the WebSocket + bot_state.json stay in sync
                     from config import save_settings as _save_bal
                     _save_bal({"last_known_balance": round(_bal_tick, 2)})
@@ -349,14 +372,14 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             # ── Batch-evaluate ALL watchlist tickers once per bar ────────────
             # Old design: one ticker per 10-second tick.  With 10 tickers the
             # cycle took ~100 s, so each ticker was only seen every 1.5 bars.
-            _wl_batch = LIVE_STATE.get("scan_watchlist") or ["SPY", "QQQ"]
+            _wl_batch = _US.get("scan_watchlist") or ["SPY", "QQQ"]
             for _bi in range(len(_wl_batch)):
                 if _stop.is_set():
                     break
                 _tick(alpaca, tradier)
 
         except DailyLossLimitReached as e:
-            LIVE_STATE["status"] = "kill_locked"
+            _US["status"] = "kill_locked"
             send_alert("DAILY LOSS LIMIT — KILL LOCK ACTIVE", str(e))
             try:
                 _panic_close_all_positions(alpaca, tradier, user_id=user_id)
@@ -375,17 +398,17 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                       f"🔴 Unexpected error in trading loop: {type(e).__name__}. "
                       f"Bot will retry on next tick. ({e})")
             send_alert("CRITICAL ERROR", str(e))
-            LIVE_STATE["status"]      = "error"
-            LIVE_STATE["last_update"] = _now_et().isoformat()
+            _US["status"]      = "error"
+            _US["last_update"] = _now_et().isoformat()
             try:
                 json.dump({
                     "running":    True,
                     "status":     "error",
                     "last_error": str(e)[:200],
-                    "last_update": LIVE_STATE["last_update"],
-                    "account_balance": LIVE_STATE.get("account_balance", 0),
-                    "market_open": LIVE_STATE.get("market_open", False),
-                }, open(_BOT_ROOT / "bot_state.json", "w"))
+                    "last_update": _US["last_update"],
+                    "account_balance": _US.get("account_balance", 0),
+                    "market_open": _US.get("market_open", False),
+                }, open(get_bot_state_path(user_id), "w"))
             except Exception:
                 pass
             _stop.wait(timeout=30)
@@ -397,7 +420,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
         try:
             _now_et_sl = _now_et()
             _hm        = _now_et_sl.hour * 60 + _now_et_sl.minute
-            _balance   = LIVE_STATE.get("account_balance", 0)
+            _balance   = _US.get("account_balance", 0)
             _windows   = _gtw(_balance)
             _in_window = any(
                 int(s.split(":")[0]) * 60 + int(s.split(":")[1]) <= _hm <=
@@ -413,7 +436,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 _stop.wait(timeout=60)
         except Exception as _sleep_err:
             logger.warning("Smart sleep error (non-fatal): %s", _sleep_err)
-            _stop_event.wait(timeout=poll_interval)
+            _stop.wait(timeout=poll_interval)
 
     # Only log "stopped" when the stop was intentional (_stop_event was set).
     # Unexpected exits (exceptions escaping the loop body) are already logged
@@ -442,7 +465,6 @@ def stop_loop(user_id: str = "admin") -> None:
     except Exception:
         pass
     try:
-        from config import get_bot_state_path
         _state_path = get_bot_state_path(user_id)
         if _state_path.exists():
             _st = json.loads(_state_path.read_text())

@@ -668,8 +668,14 @@ class RiskManager:
         # historically under-reported losses. This check uses the TRUTH: actual
         _equity_drawdown = 0.0
         try:
-            from trading.state import LIVE_STATE as _LS
-            _day_start = float(_LS.get("day_start_balance") or 0)
+            # FIX: previously read trading.state.LIVE_STATE directly — the
+            # global admin-only alias — so every user's kill-lock decision
+            # was made off ADMIN's day_start_balance regardless of whose
+            # RiskManager instance this was. get_user_state() resolves fresh
+            # via the ContextVar snapshot this thread was started with (see
+            # trading/state.py::_default_user_id), so it's correct per-user.
+            from trading.state import get_user_state
+            _day_start = float(get_user_state().get("day_start_balance") or 0)
             if _day_start > 0 and account_balance > 0:
                 _equity_drawdown = account_balance - _day_start
                 if _equity_drawdown <= -(_day_start * DAILY_LOSS_HARD_CAP_PCT):

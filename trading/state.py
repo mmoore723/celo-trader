@@ -1,11 +1,19 @@
 """
-trading/state.py — Shared mutable state for the entire trading subsystem.
+trading/state.py — Per-user mutable state for the entire trading subsystem.
 
-Every other trading/ module imports from here.  Using a single module-level
-dict (LIVE_STATE) means all sub-modules that do
-    from trading.state import LIVE_STATE
-receive the SAME dict object — mutations in one module are immediately
-visible everywhere else.  No copies, no desync.
+Every other trading/ module imports from here. USER_STATES[user_id] holds
+each user's isolated state dict; get_user_state() (optionally called with
+no argument) resolves the CURRENT user via the auth ContextVar snapshot the
+calling thread was started with (see _default_user_id below), so any module
+that does `_US = get_user_state()` gets that same live dict — mutations are
+immediately visible everywhere else that resolves the same user_id. No
+copies, no desync, and (unlike the old single-global-dict design) no
+cross-user leakage either.
+
+LIVE_STATE below is a backward-compat alias that ALWAYS points at the admin
+user's dict specifically — nothing in this codebase should import it
+directly anymore; it's kept only in case an external tool/script still
+reaches for it directly.
 """
 
 import logging
@@ -103,6 +111,30 @@ def set_user_risk(risk_mgr: object, user_id: str | None = None) -> None:
     _USER_RISK[uid] = risk_mgr
 
 
+# ── Per-user trade-scoped logger adapter ──────────────────────────────────────
+# FIX: same shape of bug as _risk above, but for the contextual logger adapter
+# bound while a trade is open (adds ticker/contract/trade-id context to every
+# log line). Was a module-level `_trade_log` global in trading/entry.py,
+# reassigned by whichever user's trade opened most recently — a second
+# concurrent user's log lines could get tagged with the first user's trade
+# context. Lower severity than _risk (only affects log readability, not order
+# execution/sizing) but fixed the same way for consistency.
+_USER_TRADE_LOG: dict[str, logging.Logger] = {}
+
+
+def get_user_trade_log(user_id: str | None = None) -> logging.Logger:
+    """Return the given (or current) user's trade-scoped logger, defaulting
+    to the plain module logger if no trade is currently open for them."""
+    uid = user_id or _default_user_id()
+    return _USER_TRADE_LOG.get(uid, logger)
+
+
+def set_user_trade_log(log: logging.Logger, user_id: str | None = None) -> None:
+    """Set the given (or current) user's trade-scoped logger."""
+    uid = user_id or _default_user_id()
+    _USER_TRADE_LOG[uid] = log
+
+
 # ── Per-user live state ────────────────────────────────────────────────────────
 # USER_STATES[user_id] is each user's isolated bot state dict.
 # LIVE_STATE is a backward-compat alias pointing to USER_STATES["admin"].
@@ -195,14 +227,23 @@ def _update_data_gap() -> None:
     """
     Called on every FAILED bar fetch.  Updates data_gap_minutes and emits a
     one-time warning the first time the gap crosses _DATA_GAP_WARN_MINUTES.
+
+    FIX: previously read/wrote the global LIVE_STATE alias (admin's state)
+    directly — every user's data-gap watchdog was tracking admin's bar-fetch
+    history instead of their own. get_user_state() resolves fresh via the
+    ContextVar snapshot the calling thread was started with, so this is
+    correct regardless of which user's loop calls it (called from
+    trading/entry.py::_tick(), which always runs inside the correct
+    per-user thread).
     """
     # Defer database import to avoid heavy import at module load time
     from database import log_event
+    _US = get_user_state()
 
-    last_str = LIVE_STATE.get("last_successful_bar_fetch")
+    last_str = _US.get("last_successful_bar_fetch")
     if last_str is None:
-        LIVE_STATE["last_successful_bar_fetch"] = _now_et().isoformat()
-        LIVE_STATE["data_gap_minutes"] = 0
+        _US["last_successful_bar_fetch"] = _now_et().isoformat()
+        _US["data_gap_minutes"] = 0
         return
 
     try:
@@ -213,8 +254,8 @@ def _update_data_gap() -> None:
     except Exception:
         gap = 0
 
-    prev_gap = LIVE_STATE.get("data_gap_minutes", 0)
-    LIVE_STATE["data_gap_minutes"] = gap
+    prev_gap = _US.get("data_gap_minutes", 0)
+    _US["data_gap_minutes"] = gap
 
     if gap >= _DATA_GAP_WARN_MINUTES and prev_gap < _DATA_GAP_WARN_MINUTES:
         log_event("WARNING", "network_watchdog",

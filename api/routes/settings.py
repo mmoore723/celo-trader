@@ -67,8 +67,13 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     save_settings(current)
 
     # ── Hot-reload watchlist into the running bot ─────────────────────────────
-    # Inject new pinned tickers into LIVE_STATE immediately so the bot picks
-    # them up on the next tick without waiting for tomorrow's pre-market scan.
+    # Inject new pinned tickers into this user's state immediately so the bot
+    # picks them up on the next tick without waiting for tomorrow's pre-market
+    # scan.
+    # FIX: previously wrote to the global LIVE_STATE alias (admin's state) —
+    # a non-admin user saving their watchlist silently patched admin's bot
+    # instead of their own. get_user_state() resolves the requesting user via
+    # the auth ContextVar (already set for this request by require_auth).
     try:
         from scanner import TICKER_BLACKLIST
         new_pins = [
@@ -77,12 +82,13 @@ def save_settings_endpoint(payload: Settings) -> Settings:
             if t.strip() and t.strip().upper() not in TICKER_BLACKLIST
         ]
         if new_pins:
-            from trading.state import LIVE_STATE
-            existing = list(LIVE_STATE.get("scan_watchlist") or [])
+            from trading.state import get_user_state
+            _US = get_user_state()
+            existing = list(_US.get("scan_watchlist") or [])
             merged   = list(dict.fromkeys(new_pins + existing))  # pins first, deduped
-            LIVE_STATE["scan_watchlist"] = merged
+            _US["scan_watchlist"] = merged
             # Invalidate today's cached scan so the next full rescore includes the new tickers
-            LIVE_STATE["scanner_ran_today"] = False
+            _US["scanner_ran_today"] = False
     except Exception:
         pass  # bot may not be running — non-fatal
 
