@@ -227,6 +227,15 @@ def _init_db_at(db_path: Path) -> None:
         if "recap" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN recap TEXT")
             logger.info("Migration: added recap column to %s", db_path.name)
+        if "annotations_json" not in _cols:
+            # JSON-encoded list of the bot's own chart annotations (FVG zones,
+            # BOS/TREND_CONT levels, entry/exit markers) captured at entry and
+            # exit time — see trading/annotations.py::snapshot_annotations().
+            # Lets Journal replay show WHY a trade fired, not just that it did,
+            # for trades from any past day (the live annotation buffer this is
+            # copied from is ephemeral and gets overwritten).
+            conn.execute("ALTER TABLE trades ADD COLUMN annotations_json TEXT")
+            logger.info("Migration: added annotations_json column to %s", db_path.name)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -382,6 +391,28 @@ def _to_et_isoformat(dt: datetime) -> str:
     return dt.replace(tzinfo=None).isoformat()
 
 
+def _merge_annotations_json(existing: Optional[str], new: Optional[str]) -> Optional[str]:
+    """
+    Combine two JSON-encoded annotation lists (e.g. entry-time + exit-time
+    snapshots) into one, deduped by the annotation's own "id" field.
+    Never raises — malformed/missing JSON on either side is treated as empty
+    so a bad snapshot can never block a trade write. Returns None if both
+    sides end up empty (nothing to store).
+    """
+    import json as _json
+    items: dict[str, dict] = {}
+    for _blob in (existing, new):
+        if not _blob:
+            continue
+        try:
+            for _ann in _json.loads(_blob):
+                _key = _ann.get("id") or f"{_ann.get('ts')}_{_ann.get('strategy')}"
+                items[_key] = _ann
+        except Exception:
+            logger.warning("Skipping malformed annotations_json blob during merge", exc_info=True)
+    return _json.dumps(list(items.values())) if items else None
+
+
 def insert_trade(
     ticker: str,
     contract_symbol: str,
@@ -396,6 +427,7 @@ def insert_trade(
     strategy_id: str = "INST_ORB",   # which router strategy generated this signal
     stop_price: Optional[float] = None,    # option premium stop-loss level at entry
     target_price: Optional[float] = None,  # Stage-1 target at entry
+    annotations_json: Optional[str] = None,  # JSON snapshot of entry-time chart annotations
 ) -> int:
     """
     Insert an open trade.  Returns the new row id so we can update it on close.
@@ -405,14 +437,14 @@ def insert_trade(
         INSERT INTO trades
             (ticker, contract_symbol, option_type, strike, expiry,
              contracts, entry_price, entry_time, entry_reason,
-             status, paper, strategy_id, stop_price, target_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+             status, paper, strategy_id, stop_price, target_price, annotations_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
     """
     with get_conn() as conn:
         cur = conn.execute(sql, (
             ticker, contract_symbol, option_type, strike, expiry,
             contracts, entry_price, _to_et_isoformat(entry_time), entry_reason,
-            1 if paper else 0, strategy_id, stop_price, target_price,
+            1 if paper else 0, strategy_id, stop_price, target_price, annotations_json,
         ))
         trade_id = cur.lastrowid
     logger.info(
