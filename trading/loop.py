@@ -359,7 +359,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             LIVE_STATE["status"] = "kill_locked"
             send_alert("DAILY LOSS LIMIT — KILL LOCK ACTIVE", str(e))
             try:
-                _panic_close_all_positions(alpaca, tradier)
+                _panic_close_all_positions(alpaca, tradier, user_id=user_id)
             except Exception as _ce:
                 logger.error("Panic close on kill lock failed: %s", _ce)
             logger.warning("kill_lock_sleep: trading halted for 24h")
@@ -424,10 +424,16 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
 
 
 def stop_loop(user_id: str = "admin") -> None:
-    """Signal the loop for a given user to exit."""
+    """Signal the loop for a given user to exit.
+
+    FIX: this used to also unconditionally set the global LIVE_STATE alias
+    (== admin's state) "running" = False and write the single shared root
+    bot_state.json — so any user's Stop button also marked admin's dashboard
+    stopped, and wrote to a file only admin's session actually read. Now
+    scoped entirely to the calling user's own state and state file.
+    """
     _get_stop_event(user_id).set()
     get_user_state(user_id)["running"] = False
-    LIVE_STATE["running"] = False
     # Log to the database so the THINKING panel shows confirmation that the bot
     # actually received the stop signal (not just a network disconnect).
     try:
@@ -436,7 +442,8 @@ def stop_loop(user_id: str = "admin") -> None:
     except Exception:
         pass
     try:
-        _state_path = _BOT_ROOT / "bot_state.json"
+        from config import get_bot_state_path
+        _state_path = get_bot_state_path(user_id)
         if _state_path.exists():
             _st = json.loads(_state_path.read_text())
             _st["running"] = False

@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import threading
 import contextvars
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -19,13 +18,20 @@ from api.models import BotStatus, BotActionResponse
 
 router = APIRouter(prefix="/api/bot", tags=["bot"])
 
-_BOT_STATE_PATH = Path(__file__).resolve().parents[2] / "bot_state.json"
 
-
-def _read_bot_state() -> dict[str, Any]:
+def _read_bot_state(user_id: str = "admin") -> dict[str, Any]:
+    """
+    FIX: this used to always read the single shared root-level bot_state.json
+    regardless of which user was asking — a non-admin user's dashboard showed
+    admin's balance/positions/status. Now reads that user's own state file
+    (see config.get_bot_state_path, which migrates admin's legacy root file
+    in automatically the first time it's called for "admin").
+    """
     try:
-        if _BOT_STATE_PATH.exists():
-            return json.loads(_BOT_STATE_PATH.read_text())
+        from config import get_bot_state_path
+        _path = get_bot_state_path(user_id)
+        if _path.exists():
+            return json.loads(_path.read_text())
     except Exception:
         pass
     return {}
@@ -41,7 +47,7 @@ def get_status(request: Request) -> BotStatus:
     from config import get_settings, STARTING_CAPITAL
 
     user_id  = _get_uid(request)
-    state    = _read_bot_state()
+    state    = _read_bot_state(user_id)
     settings = get_settings()
     _state   = get_user_state(user_id)
 
@@ -130,23 +136,23 @@ def start_bot(request: Request) -> BotActionResponse:
 
 
 @router.post("/stop", response_model=BotActionResponse)
-def stop_bot() -> BotActionResponse:
+def stop_bot(request: Request) -> BotActionResponse:
     from trading.loop import stop_loop
-    stop_loop()
+    stop_loop(_get_uid(request))
     return BotActionResponse(ok=True, message="Bot stop signal sent")
 
 
 @router.post("/panic", response_model=BotActionResponse)
-def panic_close() -> BotActionResponse:
+def panic_close(request: Request) -> BotActionResponse:
     from trading.controls import panic_close_all
-    panic_close_all()
+    panic_close_all(_get_uid(request))
     return BotActionResponse(ok=True, message="Panic close triggered")
 
 
 @router.post("/reset", response_model=BotActionResponse)
-def reset_session() -> BotActionResponse:
+def reset_session(request: Request) -> BotActionResponse:
     from trading.state import reset_session_state
-    reset_session_state()
+    reset_session_state(_get_uid(request))
     return BotActionResponse(ok=True, message="Session state reset")
 
 
@@ -178,23 +184,27 @@ def get_trade_events(trade_id: int) -> list[dict]:
 
 
 @router.get("/annotations/{ticker}")
-def get_chart_annotations(ticker: str) -> list[dict]:
+def get_chart_annotations(ticker: str, request: Request) -> list[dict]:
     """
     Return all chart annotations accumulated by the bot for the given ticker
     this session.  Used by the frontend to overlay bot-detected patterns
     (FVG zones, BOS levels, signal/veto markers) on the price chart.
-    Annotations live in LIVE_STATE["chart_annotations"][TICKER].
+    Annotations live in this user's state["chart_annotations"][TICKER].
+
+    FIX: previously always read the global LIVE_STATE alias (admin's
+    annotations) regardless of who was asking.
     """
-    from trading.state import LIVE_STATE
-    anns = LIVE_STATE.get("chart_annotations", {}).get(ticker.upper(), [])
+    from trading.state import get_user_state
+    _state = get_user_state(_get_uid(request))
+    anns = _state.get("chart_annotations", {}).get(ticker.upper(), [])
     return list(anns)
 
 
 @router.post("/close/{trade_id}", response_model=BotActionResponse)
-def close_trade(trade_id: int) -> BotActionResponse:
+def close_trade(trade_id: int, request: Request) -> BotActionResponse:
     from trading.controls import close_trade_by_id
     try:
-        close_trade_by_id(trade_id)
+        close_trade_by_id(trade_id, _get_uid(request))
         return BotActionResponse(ok=True, message=f"Close signal sent for trade {trade_id}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

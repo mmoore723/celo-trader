@@ -14,34 +14,56 @@ import json
 import logging
 from datetime import datetime, date
 
-from trading.state import LIVE_STATE, _now_et, _BOT_ROOT
+from trading.state import _now_et, get_user_state
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
-def _refresh_session_pnl() -> float:
+def _default_user_id() -> str:
     """
-    Recompute LIVE_STATE["session_pnl"] from the DB and immediately flush it
-    to bot_state.json so the WebSocket picks up the correct value.
+    Resolve the calling user the same way config.py does: read the
+    request-scoped ContextVar set by api/middleware/auth.py, falling back to
+    "admin" for background-thread/single-user code paths.
+    """
+    try:
+        from auth.context import get_current_user_id
+        return get_current_user_id()
+    except Exception:
+        return "admin"
+
+
+def _refresh_session_pnl(user_id: str | None = None) -> float:
+    """
+    Recompute the given user's session_pnl from the DB and immediately flush
+    it to that user's bot_state.json so the WebSocket picks up the correct
+    value.
 
     Called by every close path that doesn't go through _close_position
     (panic_close_all, close_trade_by_id, _panic_close_all_positions).
+
+    FIX: previously always read/wrote the global LIVE_STATE alias (admin's
+    state) and the single shared root bot_state.json — any user's manual
+    close/panic action recomputed and displayed ADMIN's P&L, not their own.
     """
+    from config import get_bot_state_path
+    uid = user_id or _default_user_id()
+    _US = get_user_state(uid)
+
     from database import get_all_trades
     try:
         pnl = sum(
             (t.get("realized_pnl") or 0)
-            for t in get_all_trades(limit=200)
+            for t in get_all_trades(limit=200, user_id=uid)
             if (t.get("exit_time") or "")[:10] == date.today().isoformat()
         )
-        LIVE_STATE["session_pnl"] = pnl
+        _US["session_pnl"] = pnl
     except Exception as e:
-        logger.warning("_refresh_session_pnl: DB query failed: %s", e)
-        pnl = LIVE_STATE.get("session_pnl", 0.0)
+        logger.warning("_refresh_session_pnl[%s]: DB query failed: %s", uid, e)
+        pnl = _US.get("session_pnl", 0.0)
 
-    # Flush to bot_state.json so the WebSocket doesn't read a stale value
+    # Flush to this user's bot_state.json so the WebSocket doesn't read a stale value
     try:
-        _path = _BOT_ROOT / "bot_state.json"
+        _path = get_bot_state_path(uid)
         _state = {}
         if _path.exists():
             with open(_path) as _f:
@@ -50,12 +72,12 @@ def _refresh_session_pnl() -> float:
         with open(_path, "w") as _f:
             json.dump(_state, _f)
     except Exception as e:
-        logger.warning("_refresh_session_pnl: bot_state.json write failed: %s", e)
+        logger.warning("_refresh_session_pnl[%s]: bot_state.json write failed: %s", uid, e)
 
     return pnl
 
 
-def close_trade_by_id(trade_id: int) -> dict:
+def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
     """
     Close ONE specific open trade by its database id.
 
@@ -76,6 +98,9 @@ def close_trade_by_id(trade_id: int) -> dict:
     from broker import get_clients
     from config import get_settings
     from database import log_event, close_trade, get_open_trades
+
+    uid = user_id or _default_user_id()
+    _US = get_user_state(uid)
 
     alpaca, tradier = get_clients()
     settings = get_settings()
@@ -156,7 +181,7 @@ def close_trade_by_id(trade_id: int) -> dict:
                 f"matching position, meaning the entry never actually filled there. "
                 f"Auto-closed at $0 P&L instead of leaving it stuck.",
             )
-            _refresh_session_pnl()
+            _refresh_session_pnl(uid)
             return {
                 "ok": True,
                 "message": (f"{trade['contract_symbol']} was never actually filled at "
@@ -195,24 +220,25 @@ def close_trade_by_id(trade_id: int) -> dict:
         f"@ ${fill_price:.2f}. P&L: {'+' if pnl >= 0 else ''}${pnl:.2f}.",
     )
 
-    # ── Refresh session P&L + LIVE_STATE ─────────────────────────────────────
-    _refresh_session_pnl()
-    LIVE_STATE["positions"].pop(trade_id, None)
-    _remaining_open           = get_open_trades()
-    LIVE_STATE["open_trades"] = _remaining_open
-    LIVE_STATE["open_trade"]  = _remaining_open[0] if _remaining_open else None
-    LIVE_STATE["status"]      = "in_trade" if _remaining_open else "scanning"
+    # ── Refresh session P&L + this user's state ──────────────────────────────
+    _refresh_session_pnl(uid)
+    _US["positions"].pop(trade_id, None)
+    _remaining_open      = get_open_trades()
+    _US["open_trades"]   = _remaining_open
+    _US["open_trade"]    = _remaining_open[0] if _remaining_open else None
+    _US["status"]        = "in_trade" if _remaining_open else "scanning"
 
-    # Remove from bot_state.json open_positions
+    # Remove from this user's bot_state.json open_positions
     try:
-        _state_path_cb = _BOT_ROOT / "bot_state.json"
+        from config import get_bot_state_path
+        _state_path_cb = get_bot_state_path(uid)
         if _state_path_cb.exists():
             with open(_state_path_cb) as _f:
                 _existing_cb = json.load(_f)
             _open_positions_cb = _existing_cb.get("open_positions") or {}
             _open_positions_cb.pop(str(trade_id), None)
             _existing_cb["open_positions"] = _open_positions_cb
-            _existing_cb["session_pnl"]    = LIVE_STATE.get("session_pnl", 0.0)
+            _existing_cb["session_pnl"]    = _US.get("session_pnl", 0.0)
             with open(_state_path_cb, "w") as _f:
                 json.dump(_existing_cb, _f)
     except Exception:
@@ -253,14 +279,22 @@ def manual_close_position() -> None:
         _close_position(alpaca, trade, exit_price, reason="manual")
 
 
-def panic_close_all() -> None:
+def panic_close_all(user_id: str | None = None) -> None:
     """
     Emergency flatten — closes all broker positions and marks all open DB
     trades as closed.
+
+    FIX: previously always wrote the global LIVE_STATE alias (admin's state)
+    — any user's panic button correctly closed THEIR OWN broker positions
+    (broker/DB calls resolve per-user via the auth ContextVar already) but
+    then displayed the "halted" status on admin's dashboard instead of theirs.
     """
     from broker import get_clients
     from database import get_open_trades, close_trade
     from database import log_event
+
+    uid = user_id or _default_user_id()
+    _US = get_user_state(uid)
 
     alpaca, _ = get_clients()
     alpaca.close_all_positions()
@@ -273,22 +307,27 @@ def panic_close_all() -> None:
             exit_px = trade["entry_price"]
         close_trade(trade["id"], exit_price=exit_px,
                     exit_time=_now_et(), exit_reason="panic")
-    LIVE_STATE["status"] = "halted"
-    LIVE_STATE["open_trades"] = []
-    LIVE_STATE["open_trade"]  = None
-    LIVE_STATE["positions"]   = {}
+    _US["status"]      = "halted"
+    _US["open_trades"] = []
+    _US["open_trade"]  = None
+    _US["positions"]   = {}
     # Recompute and flush session_pnl — panic bypasses _close_position
-    _refresh_session_pnl()
+    _refresh_session_pnl(uid)
     log_event("WARNING", "trading_logic",
               "🔴 Emergency close triggered — all positions have been closed.")
 
 
-def _panic_close_all_positions(alpaca: "AlpacaClient", tradier: "TradierClient") -> None:
+def _panic_close_all_positions(
+    alpaca: "AlpacaClient", tradier: "TradierClient", user_id: str | None = None,
+) -> None:
     """
     Internal variant called by the kill-lock handler in loop.py.
     Closes all broker positions and marks any open DB trade(s) as force-closed.
     """
     from database import log_event, get_open_trades, close_trade
+
+    uid = user_id or _default_user_id()
+    _US = get_user_state(uid)
 
     try:
         alpaca.close_all_positions()
@@ -307,12 +346,12 @@ def _panic_close_all_positions(alpaca: "AlpacaClient", tradier: "TradierClient")
             exit_time   = _now_et(),
             exit_reason = "kill_lock_force_close",
         )
-    LIVE_STATE["status"]       = "kill_locked"
-    LIVE_STATE["open_trade"]   = None
-    LIVE_STATE["open_trades"]  = []
-    LIVE_STATE["positions"]    = {}
+    _US["status"]      = "kill_locked"
+    _US["open_trade"]  = None
+    _US["open_trades"] = []
+    _US["positions"]   = {}
     # Recompute and flush session_pnl — kill-lock bypasses _close_position
-    _refresh_session_pnl()
+    _refresh_session_pnl(uid)
     log_event("CRITICAL", "trading_logic",
               "🔴 Daily loss limit hit — all positions closed. "
               "Trading is frozen for 24 hours to protect your account.")

@@ -61,9 +61,47 @@ def _get_lock(user_id: str = "admin") -> threading.Lock:
 _stop_event    = _get_stop_event("admin")
 _bot_loop_lock = _get_lock("admin")
 
-# ── RiskManager instance (set in loop.py, read everywhere) ───────────────────
-# Imported lazily to avoid heavy circular imports at module load time.
-_risk = None   # type: Optional[object]
+
+def _default_user_id() -> str:
+    """
+    Resolve the calling user from the request-scoped ContextVar set by
+    api/middleware/auth.py, falling back to "admin" for background-thread
+    or single-user code paths where no request context exists.
+
+    Background trading-loop threads are started via contextvars.copy_context()
+    (see api/routes/bot.py::start_bot), which snapshots this ContextVar at
+    thread-start time — so a call made from inside a user's own loop thread
+    resolves to *that* user for the thread's entire lifetime, not whichever
+    request happens to be in flight at the moment of the call.
+    """
+    try:
+        from auth.context import get_current_user_id
+        return get_current_user_id()
+    except Exception:
+        return "admin"
+
+
+# ── Per-user RiskManager instances (set in loop.py, read in entry.py) ────────
+# FIX: this used to be a single module-level `_risk` global in trading/entry.py,
+# overwritten by whichever user's bot started most recently — two users running
+# concurrently would size and risk-gate trades using EACH OTHER's RiskManager
+# (wrong account balance, wrong stop %, wrong daily-loss threshold). Now keyed
+# per user, same pattern as _USER_STOP_EVENTS/_USER_LOCKS above.
+_USER_RISK: dict[str, object] = {}   # type: dict[str, "RiskManager"]
+
+
+def get_user_risk(user_id: str | None = None) -> Optional[object]:
+    """Return the given (or current) user's RiskManager instance, or None if
+    their loop hasn't started one yet."""
+    uid = user_id or _default_user_id()
+    return _USER_RISK.get(uid)
+
+
+def set_user_risk(risk_mgr: object, user_id: str | None = None) -> None:
+    """Set the given (or current) user's RiskManager instance."""
+    uid = user_id or _default_user_id()
+    _USER_RISK[uid] = risk_mgr
+
 
 # ── Per-user live state ────────────────────────────────────────────────────────
 # USER_STATES[user_id] is each user's isolated bot state dict.
@@ -126,11 +164,23 @@ def _make_initial_state() -> dict:
 USER_STATES: dict[str, dict] = {}
 
 
-def get_user_state(user_id: str = "admin") -> dict:
-    """Return (creating if needed) the live state dict for a given user."""
-    if user_id not in USER_STATES:
-        USER_STATES[user_id] = _make_initial_state()
-    return USER_STATES[user_id]
+def get_user_state(user_id: str | None = None) -> dict:
+    """
+    Return (creating if needed) the live state dict for a given user.
+
+    FIX: user_id now defaults to the ContextVar-resolved current user (via
+    _default_user_id()) instead of hardcoded "admin". This means any call
+    site that does `get_user_state()` with no argument — from a request
+    handler, or from inside a user's own copy_context()'d loop thread —
+    automatically resolves to the correct user without needing user_id
+    threaded through every intermediate function signature. Passing an
+    explicit user_id still works exactly as before for callers that already
+    have it in hand (e.g. api/routes/bot.py).
+    """
+    uid = user_id or _default_user_id()
+    if uid not in USER_STATES:
+        USER_STATES[uid] = _make_initial_state()
+    return USER_STATES[uid]
 
 
 # Backward-compat: LIVE_STATE always refers to the admin user's state.
@@ -175,36 +225,42 @@ def _update_data_gap() -> None:
         logger.warning("Data gap watchdog: %d minutes without a clean bar fetch", gap)
 
 
-def reset_session_state() -> None:
+def reset_session_state(user_id: str = "admin") -> None:
     """
-    Hard-reset LIVE_STATE and purge the SIM trade cache from session_state
-    whenever the paper/live trading mode is toggled.
+    Hard-reset the given user's state and purge the SIM trade cache from
+    session_state whenever the paper/live trading mode is toggled.
+
+    FIX: previously hardcoded to the global LIVE_STATE alias (== admin's
+    state) regardless of which user's "Reset Session" button was clicked —
+    a non-admin user's reset silently reset the admin account instead of
+    their own. Now resolves the caller's own state dict.
     """
-    LIVE_STATE["open_trade"]             = None
-    LIVE_STATE["open_trades"]            = []
-    LIVE_STATE["positions"]              = {}
-    LIVE_STATE["session_pnl"]            = 0.0
-    LIVE_STATE["status"]                 = "idle"
-    LIVE_STATE["last_signal"]            = None
-    LIVE_STATE["entry_time"]             = None
-    LIVE_STATE["stage1_done"]            = False
-    LIVE_STATE["stage1_be_price"]        = None
-    LIVE_STATE["orb_triggered"]          = False
-    LIVE_STATE["flip_eligible"]          = False
-    LIVE_STATE["flip_direction"]         = None
-    LIVE_STATE["flip_ticker"]            = None
-    LIVE_STATE["last_direction"]         = None
-    LIVE_STATE["last_trade_closed_time"] = None
-    LIVE_STATE["peak_price"]             = None
-    LIVE_STATE["current_stop_pct"]       = RiskManager.ORB_STOP_PCT
-    LIVE_STATE["struct_stop_price"]      = None
-    LIVE_STATE["scanner_ran_today"]      = False
-    LIVE_STATE["scan_watchlist"]         = []
-    LIVE_STATE["scan_idx"]               = 0
-    LIVE_STATE["ticker_win_cooldown"]    = {}
-    LIVE_STATE["orb_entered_today"]      = set()
-    LIVE_STATE["_last_order_key"]        = None
+    _US = get_user_state(user_id)
+    _US["open_trade"]             = None
+    _US["open_trades"]            = []
+    _US["positions"]              = {}
+    _US["session_pnl"]            = 0.0
+    _US["status"]                 = "idle"
+    _US["last_signal"]            = None
+    _US["entry_time"]             = None
+    _US["stage1_done"]            = False
+    _US["stage1_be_price"]        = None
+    _US["orb_triggered"]          = False
+    _US["flip_eligible"]          = False
+    _US["flip_direction"]         = None
+    _US["flip_ticker"]            = None
+    _US["last_direction"]         = None
+    _US["last_trade_closed_time"] = None
+    _US["peak_price"]             = None
+    _US["current_stop_pct"]       = RiskManager.ORB_STOP_PCT
+    _US["struct_stop_price"]      = None
+    _US["scanner_ran_today"]      = False
+    _US["scan_watchlist"]         = []
+    _US["scan_idx"]               = 0
+    _US["ticker_win_cooldown"]    = {}
+    _US["orb_entered_today"]      = set()
+    _US["_last_order_key"]        = None
     logger.info(
         "session_state_reset",
-        extra={"event": "session_state_reset", "reason": "paper_trading_mode_toggle"},
+        extra={"event": "session_state_reset", "reason": "paper_trading_mode_toggle", "user_id": user_id},
     )
