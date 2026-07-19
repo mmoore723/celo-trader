@@ -54,6 +54,30 @@ def get_db_path(user_id: str | None = None) -> Path:
     _name = "trades_paper.db" if _paper else "trades_live.db"
     return _dir / _name
 
+
+_LEGACY_BOT_STATE_PATH = BASE_DIR / "bot_state.json"  # pre-multi-user location
+
+
+def get_bot_state_path(user_id: str | None = None) -> Path:
+    """
+    Return the per-user bot_state.json path (user_data/{user_id}/bot_state.json),
+    creating the user's data directory if needed.
+
+    One-time migration: the very first time this is called for a user whose
+    per-user file doesn't exist yet, if the legacy root-level bot_state.json
+    exists, copy it in so existing "admin" state (account balance, open
+    positions, etc.) isn't silently lost when this ships. Only ever applies
+    once per user — after the copy, the per-user file is authoritative and
+    the legacy file is left untouched (read-only fallback, never written).
+    """
+    _path = get_user_data_dir(user_id) / "bot_state.json"
+    if not _path.exists() and _LEGACY_BOT_STATE_PATH.exists():
+        try:
+            _path.write_text(_LEGACY_BOT_STATE_PATH.read_text())
+        except Exception:
+            pass  # non-fatal — worst case the user starts with a fresh state file
+    return _path
+
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
 ALPACA_PAPER      = os.getenv("ALPACA_PAPER", "true").lower() == "true"
