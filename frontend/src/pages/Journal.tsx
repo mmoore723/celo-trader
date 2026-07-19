@@ -9,7 +9,7 @@ import {
 } from "recharts";
 import { ChevronDown, ChevronRight, Download, AlertTriangle, CheckCircle } from "lucide-react";
 import { api, type Trade, type ReconcileResponse, type ReconcileRow } from "../lib/api";
-import { ChartModal } from "../components/charts/ChartModal";
+import { TradeChartModal as ChartModal } from "../components/charts/TradeChartModal";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 

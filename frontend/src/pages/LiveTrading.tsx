@@ -5,7 +5,7 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Radio, Bot } from "lucide-react";
-import { ChartReplay, type ChartReplayHandle } from "../components/charts/ChartReplay";
+import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
 import { api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle } from "../lib/api";
@@ -99,7 +99,7 @@ export function LiveTrading() {
   const logSnapshotRef  = useRef<typeof logs>([]);
   const [logTab,         setLogTab]           = useState<"thinking" | "network">("thinking");
   const [tradeDrawerId,  setTradeDrawerId]    = useState<number | null>(null);
-  const chartReplayRef  = useRef<ChartReplayHandle>(null);
+  const chartReplayRef  = useRef<BoomerangReplayHandle>(null);
 
   const { status, logs } = useBotStore();
   const { } = useUIStore();
@@ -219,6 +219,16 @@ export function LiveTrading() {
     contracts: openTickerTrade.contracts    ?? undefined,
   } : undefined;
 
+  // Narration for the boomerang replay's caption strip — reuses the same
+  // trade-events endpoint the trade drawer already uses, scoped to whichever
+  // trade is currently open on this ticker (if any). No new backend endpoint.
+  const { data: narrationEvents = [] } = useQuery({
+    queryKey: ["trade-narration", openTickerTrade?.id],
+    queryFn: () => api.bot.tradeEvents(openTickerTrade!.id),
+    enabled: openTickerTrade != null,
+    refetchInterval: 5_000,
+    select: (rows) => rows.map((r) => ({ ts: r.ts, message: r.message })),
+  });
 
   const lastClose = bars[bars.length - 1]?.close ?? 0;
   const orHighRaw  = or?.high ?? 0;
@@ -458,14 +468,15 @@ export function LiveTrading() {
             <div className="flex-1" />
             {barsLoading && <RefreshCw size={13} className="animate-spin text-ink-muted" />}
           </div>
-          {/* Swapped from the old TradingChart to KChart 2026-07-17 — this is the
-              chart engine that actually has the real shaded R:R bracket and
-              actual-trade markers (Phases 1-2 of the refactor). Wrapped in
-              ChartReplay (Phase 3) for the scrub bar / play-pause-speed /
-              "Watch this setup" jump-to-time — KChart itself is unchanged,
-              ChartReplay just slices bars/trades down to the scrub position. */}
-          <ChartReplay
+          {/* Rebuilt 2026-07-19 on the new single chart engine (TradeChart +
+              BoomerangReplay) — replaces the old KChart/ChartReplay pair.
+              Native lightweight-charts pan/zoom/timeframe switching (no
+              custom wheel/resize workarounds), real shaded zones, and the
+              "Watch this setup" boomerang jump-to-time with narration. */}
+          <BoomerangReplay
             ref={chartReplayRef}
+            mode="live"
+            resetKey={`${ticker}|${tf}`}
             bars={bars}
             trades={tickerTrades}
             showVwap={showVwap}
@@ -484,9 +495,9 @@ export function LiveTrading() {
                 : null
             }
             ticker={ticker}
-            tf={tf}
             height={500}
             annotations={annotations}
+            narrationEvents={narrationEvents}
           />
         </div>
 

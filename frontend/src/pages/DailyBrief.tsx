@@ -9,7 +9,7 @@ import { api, type Trade, type ScannerResult, type PremarketTicker } from "../li
 import { useBotStore } from "../store/bot";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
-import { ChartModal } from "../components/charts/ChartModal";
+import { TradeChartModal as ChartModal } from "../components/charts/TradeChartModal";
 import type { SimulationOverlay } from "../lib/chart_types";
 
 function fmt(n: number) {
