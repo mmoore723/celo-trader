@@ -826,10 +826,19 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # field already defaulting True. Added below, defaulting to True (on) per
     # explicit user decision 2026-07-18 — this is a first live test of this
     # strategy, not a re-enable; it has no prior live/paper track record.
+    #
+    # 2026-07-20: VWAP_PB and AFT_REV flipped back to True per explicit user
+    # decision. Their prior -$99/trade and -$127/trade (0-for-4) audit
+    # numbers were generated BEFORE two trade-recording bug fixes (7d31c52
+    # "paper-mode fill confirmation fabricated fake trades", 07-17; 2c350de
+    # "close_trade_by_id() false-positive", 07-16) — those numbers are not
+    # trustworthy and should not have been driving an off-by-default policy.
+    # Stated policy going forward: every strategy is ON by default; the user
+    # opts individual ones OFF via Settings, not the other way around.
     _STRAT_DEFAULTS = {
-        "strategy_vwap_enabled":  False,   # VWAP_PB   — audit: -$99/trade (post-rework)
+        "strategy_vwap_enabled":  True,    # VWAP_PB   — re-enabled 2026-07-20, prior audit predates fill-recording fixes
         "strategy_tcont_enabled": True,    # TREND_CONT — audit: +$41/trade, re-enabled
-        "strategy_aft_enabled":   False,   # AFT_REV   — audit: -$127/trade, 0-for-4
+        "strategy_aft_enabled":   True,    # AFT_REV   — re-enabled 2026-07-20, prior audit predates fill-recording fixes
         "strategy_ifvg_enabled":  True,    # IFVG — newly wired 2026-07-18, no track record yet
     }
     _enabled: set[str] = {
@@ -1267,8 +1276,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # yet. Two independent flags gate this: AI_DECISION_SUPPORT_ENABLED must be
     # on for ANY trade to be reviewed; AI_DECISION_SUPPORT_ENABLED_LIVE must
     # ALSO be on for a LIVE trade specifically — so a single flag flip can
-    # never expose live capital to this. Both are False today; this block is
-    # fully wired but inert until the user turns them on deliberately.
+    # never expose live capital to this. As of 2026-07-20, ENABLED defaults
+    # True (paper trading only) per explicit user decision; ENABLED_LIVE
+    # stays False until paper-mode results are reviewed.
     from config import AI_DECISION_SUPPORT_ENABLED, AI_DECISION_SUPPORT_ENABLED_LIVE
     _is_paper_trade = settings.get("paper_trading", True)
     if AI_DECISION_SUPPORT_ENABLED:
@@ -1418,6 +1428,36 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # (returned by paper_assumed_fill path in _wait_for_fill) also falls back to ask.
     confirmed_price = order.get("confirmed_fill_price") or ask_price
     entry_utc       = _now_et()   # tz-aware ET — stored as ET ISO in DB
+
+    # FIX 2026-07-20 (Alpaca fills audit): broker.py's _wait_for_fill now
+    # always reports the REAL filled_qty (previously a partial fill either
+    # vanished as None or got silently recorded at the full REQUESTED size).
+    # Record the position at the size that ACTUALLY filled, not the size we
+    # asked for — otherwise the DB shows more contracts open than Alpaca
+    # really holds, which throws off risk sizing and P&L on this trade.
+    _filled_qty = int(order.get("filled_qty") or n_contracts)
+    if _filled_qty != n_contracts:
+        log_event(
+            "WARNING", "order",
+            f"🟡 [{ticker}] Only {_filled_qty} of {n_contracts} requested "
+            f"contract(s) actually filled — recording the position at the "
+            f"REAL size, not the requested size."
+        )
+        logger.warning(
+            "partial_fill_entry: symbol=%s requested=%d filled=%d",
+            contract["symbol"], n_contracts, _filled_qty,
+        )
+        n_contracts = _filled_qty
+    if n_contracts < 1:
+        logger.error(
+            "partial_fill_zero_entry",
+            extra={"event": "partial_fill_zero_entry", "ticker": ticker,
+                   "contract_symbol": contract["symbol"]},
+        )
+        log_event("ERROR", "order",
+                  f"🔴 [{ticker}] Order reported as filled but 0 contracts "
+                  f"actually filled — no position recorded.")
+        return
 
     # ── Record to database ────────────────────────────────────────────────────
     # Compute stop/target at entry — stored so the chart can show the position overlay

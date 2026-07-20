@@ -168,6 +168,32 @@ def is_phantom_position_rejection(reason: Optional[str]) -> bool:
     return "position intent mismatch" in r and "sell_to_open" in r
 
 
+def _extract_partial_fill(order: dict, fallback_price: Optional[float]) -> Optional[dict]:
+    """
+    Build a usable fill-result dict for an order that ended in a non-"filled"
+    terminal state (canceled/expired/rejected/etc.) but still has SOME real
+    fill on it. Returns None if filled_qty is 0 — i.e. truly nothing filled,
+    safe for callers to treat as a no-op.
+
+    FIX 2026-07-20 (Alpaca fills audit): `_wait_for_fill` previously only
+    recognized `status == "filled"` as "something filled" — any other status
+    (including "partially_filled" that later got cancelled/expired) was
+    treated as if NOTHING happened. But a partial fill is a REAL position at
+    the broker; dropping it silently caused the bot's records to diverge from
+    Alpaca (either missing the position entirely, or, on retry, resubmitting
+    the full original qty on top of it). This helper is the single place that
+    decides "is there a real partial fill here worth keeping."
+    """
+    filled_qty = int(float(order.get("filled_qty") or 0))
+    if filled_qty <= 0:
+        return None
+    filled_price = float(order.get("filled_avg_price") or fallback_price or 0)
+    order["confirmed_fill_price"] = filled_price
+    order["filled_qty"] = filled_qty
+    order["partial_fill"] = True
+    return order
+
+
 class AlpacaClient:
     """Alpaca REST API v2 — equity bars, account data, paper/live options orders."""
 
@@ -944,7 +970,8 @@ class AlpacaClient:
         """
         if not order_id or order_id == "paper_simulated":
             return {"id": order_id, "status": "filled",
-                    "confirmed_fill_price": limit_price or 0}
+                    "confirmed_fill_price": limit_price or 0,
+                    "filled_qty": qty or 0, "partial_fill": False}
 
         # Detect paper vs live from current settings (not frozen URL) so a mode
         # switch between bot restarts is reflected immediately.
@@ -1018,8 +1045,35 @@ class AlpacaClient:
                               f"✅ Order filled @ ${filled_price:.2f}{_fill_note} — position recorded.")
                     logger.info("Order %s filled @ $%.4f", order_id, filled_price)
                     order["confirmed_fill_price"] = filled_price
+                    # FIX 2026-07-20 (Alpaca fills audit): always report the
+                    # REAL filled_qty, falling back to the requested qty only
+                    # if Alpaca's response omits it — "filled" should mean the
+                    # full requested qty, but callers should read this field
+                    # rather than assume it.
+                    order["filled_qty"] = int(float(order.get("filled_qty") or qty or 0))
+                    order["partial_fill"] = False
                     return order
                 if status in terminal_states:
+                    # FIX 2026-07-20 (Alpaca fills audit): an order can reach a
+                    # terminal state (canceled/expired/etc.) AFTER having
+                    # partially filled — e.g. Alpaca cancels the remainder at
+                    # day-end. Previously this branch returned None regardless,
+                    # which meant a REAL partial position at the broker was
+                    # completely invisible to the bot. Surface it instead.
+                    _partial = _extract_partial_fill(order, limit_price)
+                    if _partial:
+                        log_event(
+                            "WARNING", "order",
+                            f"🟡 Order ended '{status}' but {_partial['filled_qty']} "
+                            f"contract(s) already filled @ "
+                            f"${_partial['confirmed_fill_price']:.2f} — recording "
+                            f"the REAL partial position, not discarding it."
+                        )
+                        logger.warning(
+                            "partial_fill_terminal: order=%s status=%s filled_qty=%s",
+                            order_id, status, _partial["filled_qty"],
+                        )
+                        return _partial
                     log_event("WARNING", "order",
                               f"⚠️ Order ended with status '{status}' — no position opened.")
                     logger.warning("Order %s ended with status: %s", order_id, status)
@@ -1039,11 +1093,55 @@ class AlpacaClient:
             except Exception as _ce:
                 logger.warning("paper_limit_cancel_failed order=%s: %s", order_id, _ce)
 
-            if symbol and qty:
+            # FIX 2026-07-20 (Alpaca fills audit): the original limit order may
+            # have PARTIALLY filled before we cancelled it — cancelling only
+            # cancels the unfilled remainder, the filled portion is a REAL
+            # position at the broker. Previously this code unconditionally
+            # submitted a market order for the FULL original qty, which meant
+            # a partial fill + a full-size market fill could double up the
+            # position at the broker while the DB only ever recorded the
+            # market order's (smaller, wrong) size. Read back the cancelled
+            # order's actual filled_qty and only submit the REMAINDER.
+            _orig_filled_qty   = 0
+            _orig_filled_price = None
+            try:
+                _orig_final = self._get(f"{self.base}/v2/orders/{order_id}")
+                _orig_filled_qty   = int(float(_orig_final.get("filled_qty") or 0))
+                _orig_filled_price = float(_orig_final.get("filled_avg_price") or 0) or None
+            except Exception as _ge:
+                logger.warning("paper_orig_order_refetch_failed order=%s: %s", order_id, _ge)
+
+            if _orig_filled_qty > 0:
+                log_event(
+                    "WARNING", "order",
+                    f"🟡 [{symbol}] {_orig_filled_qty} contract(s) already filled "
+                    f"@ ${_orig_filled_price or 0:.2f} before cancel — only ordering "
+                    f"the remainder at market, not the full original qty."
+                )
+                logger.warning(
+                    "paper_partial_before_cancel: order=%s filled_qty=%s requested=%s",
+                    order_id, _orig_filled_qty, qty,
+                )
+
+            _remaining_qty = (qty - _orig_filled_qty) if qty else qty
+
+            if _remaining_qty is not None and _remaining_qty <= 0 and _orig_filled_qty > 0:
+                # The original limit order actually fully filled right before
+                # our cancel landed (a timing race) — nothing left to order.
+                _orig_final["confirmed_fill_price"] = _orig_filled_price or limit_price or 0
+                _orig_final["filled_qty"]  = _orig_filled_qty
+                _orig_final["status"]      = "filled"
+                _orig_final["partial_fill"] = False
+                log_event("INFO", "order",
+                          f"✅ [{symbol}] Original limit order fully filled just before "
+                          f"cancel took effect — no market fallback needed.")
+                return _orig_final
+
+            if symbol and _remaining_qty:
                 try:
                     mkt_payload = {
                         "symbol":        symbol,
-                        "qty":           str(qty),
+                        "qty":           str(_remaining_qty),
                         "side":          side,
                         "type":          "market",
                         "time_in_force": "day",
@@ -1051,22 +1149,41 @@ class AlpacaClient:
                     mkt_order    = self._post(f"{self.base}/v2/orders", mkt_payload)
                     mkt_order_id = mkt_order.get("id", "")
                     log_event("INFO", "order",
-                              f"📤 [{symbol}] Market fallback sent (ID: {mkt_order_id[:8]}…). "
-                              f"Waiting for fill…")
+                              f"📤 [{symbol}] Market fallback sent for {_remaining_qty} "
+                              f"contract(s) (ID: {mkt_order_id[:8]}…). Waiting for fill…")
                     # Poll up to 30s for the market fill — paper markets fill fast
                     for _ in range(30):
                         time.sleep(1)
                         try:
                             mkt_status = self._get(f"{self.base}/v2/orders/{mkt_order_id}")
                             if mkt_status.get("status") == "filled":
-                                filled_price = float(
+                                _mkt_filled_qty = int(float(
+                                    mkt_status.get("filled_qty") or _remaining_qty or 0
+                                ))
+                                _mkt_price = float(
                                     mkt_status.get("filled_avg_price") or limit_price or 0
                                 )
+                                # Weighted-average price across the original
+                                # partial fill (if any) + this market fill, so
+                                # confirmed_fill_price reflects the REAL blended
+                                # cost basis of the combined position.
+                                _total_qty = _orig_filled_qty + _mkt_filled_qty
+                                if _orig_filled_qty > 0 and _orig_filled_price and _total_qty > 0:
+                                    filled_price = (
+                                        (_orig_filled_qty * _orig_filled_price)
+                                        + (_mkt_filled_qty * _mkt_price)
+                                    ) / _total_qty
+                                else:
+                                    filled_price = _mkt_price
                                 log_event("INFO", "order",
-                                          f"✅ Market fallback filled @ ${filled_price:.2f}")
-                                logger.info("paper_market_fill: order=%s fill=%.4f",
-                                            mkt_order_id, filled_price)
+                                          f"✅ Market fallback filled @ ${_mkt_price:.2f} "
+                                          f"(blended position price ${filled_price:.2f} "
+                                          f"across {_total_qty} contract(s))")
+                                logger.info("paper_market_fill: order=%s fill=%.4f total_qty=%s",
+                                            mkt_order_id, filled_price, _total_qty)
                                 mkt_status["confirmed_fill_price"] = filled_price
+                                mkt_status["filled_qty"] = _total_qty
+                                mkt_status["partial_fill"] = _orig_filled_qty > 0
                                 return mkt_status
                             if mkt_status.get("status") in terminal_states:
                                 break
@@ -1085,6 +1202,32 @@ class AlpacaClient:
             # Live mode already returns None on an unconfirmed fill (see the
             # `else` branch below) — paper mode must do the same instead of
             # ever inventing a trade that never happened.
+            #
+            # FIX 2026-07-20 (Alpaca fills audit): "market fallback didn't
+            # confirm" is NOT the same as "nothing filled" if the ORIGINAL
+            # limit order had a partial fill before we cancelled it — that
+            # partial fill is still a real position at the broker and must
+            # not be dropped just because the follow-up market order failed.
+            if _orig_filled_qty > 0:
+                log_event(
+                    "WARNING", "order",
+                    f"🟡 [{symbol}] Market fallback failed, but {_orig_filled_qty} "
+                    f"contract(s) from the original order already filled @ "
+                    f"${_orig_filled_price or 0:.2f} — recording that REAL partial "
+                    f"position instead of discarding it."
+                )
+                logger.warning(
+                    "paper_partial_fill_market_fallback_failed: order=%s filled_qty=%s",
+                    order_id, _orig_filled_qty,
+                )
+                return {
+                    "id": order_id,
+                    "status": "partially_filled",
+                    "confirmed_fill_price": _orig_filled_price or limit_price or 0,
+                    "filled_qty": _orig_filled_qty,
+                    "partial_fill": True,
+                }
+
             log_event("ERROR", "order",
                       f"🔴 [{symbol}] Market fallback did not confirm filled — "
                       f"no position recorded. Will look for the next setup.")
@@ -1106,6 +1249,31 @@ class AlpacaClient:
                     )
             except Exception as _ce:
                 logger.warning("Failed to cancel timed-out order %s: %s", order_id, _ce)
+
+            # FIX 2026-07-20 (Alpaca fills audit): cancelling a live order only
+            # cancels the UNFILLED remainder — if it had partially filled
+            # before the cancel landed, that fill is a real position at the
+            # broker. Re-fetch the order once more to check, instead of
+            # unconditionally returning None (which previously made a real
+            # partial live position invisible to the bot).
+            try:
+                _final = self._get(f"{self.base}/v2/orders/{order_id}")
+                _partial = _extract_partial_fill(_final, limit_price)
+                if _partial:
+                    log_event(
+                        "WARNING", "order",
+                        f"🟡 Live order timed out and was cancelled, but "
+                        f"{_partial['filled_qty']} contract(s) already filled @ "
+                        f"${_partial['confirmed_fill_price']:.2f} before cancel — "
+                        f"recording the REAL partial position."
+                    )
+                    logger.warning(
+                        "partial_fill_live_timeout: order=%s filled_qty=%s",
+                        order_id, _partial["filled_qty"],
+                    )
+                    return _partial
+            except Exception as _fe:
+                logger.warning("live_timeout_refetch_failed order=%s: %s", order_id, _fe)
             return None
 
     # ── Panic close (FIX M2: retry wrapper) ──────────────────────────────────

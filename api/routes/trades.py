@@ -432,7 +432,14 @@ def reconcile_trades(
     alp_sells: dict = defaultdict(list)
 
     for o in alpaca_orders:
-        if o.get("status") != "filled":
+        # FIX 2026-07-20 (Alpaca fills audit): an order that partially filled
+        # and then got canceled/expired never reaches status=="filled", so
+        # this view previously excluded it entirely even though it represents
+        # a REAL fill at the broker — exactly the case the broker.py fill-
+        # handling bugs produce. Include any order with a nonzero filled_qty,
+        # not only ones that reached the terminal "filled" status.
+        _fqty_check = int(float(o.get("filled_qty") or 0))
+        if o.get("status") != "filled" and _fqty_check <= 0:
             continue
         sym   = o.get("symbol", "")
         side  = o.get("side", "")
@@ -536,10 +543,14 @@ def reconcile_trades(
             has_gap         = has_gap,
         ))
 
-    # ── 8. Collect unmatched Alpaca filled orders ─────────────────────────────
+    # ── 8. Collect unmatched Alpaca filled (or partially-filled) orders ───────
+    # FIX 2026-07-20 (Alpaca fills audit): same reasoning as step 6 above —
+    # a partially-filled-then-canceled order needs to show up here as
+    # "unmatched" (that's the whole point of this view), not be silently
+    # dropped because it never reached status=="filled".
     unmatched: list[AlpacaOrder] = []
     for o in alpaca_orders:
-        if o.get("status") != "filled":
+        if o.get("status") != "filled" and int(float(o.get("filled_qty") or 0)) <= 0:
             continue
         if o.get("id") in matched_order_ids:
             continue

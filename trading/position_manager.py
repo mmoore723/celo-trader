@@ -779,6 +779,36 @@ def _manage_open_position(
 
             fill_price = float(fill.get("confirmed_fill_price") or fill.get("filled_avg_price") or current_price)
 
+            # FIX 2026-07-20 (Alpaca fills audit): broker.py may now return a
+            # PARTIAL fill result (fewer contracts than requested) instead of
+            # either None or a full fill. Use the REAL filled_qty here so the
+            # synthetic "sold" row and the parent's remaining-contracts count
+            # both match what Alpaca actually did — previously this always
+            # assumed exactly half_contracts sold, which would silently
+            # overstate the sale and understate the remaining open size.
+            _sold_qty = int(fill.get("filled_qty") or half_contracts)
+            if _sold_qty > half_contracts:
+                _sold_qty = half_contracts  # defensive clamp, should never exceed request
+            if _sold_qty != half_contracts:
+                log_event(
+                    "WARNING", "trading_logic",
+                    f"🟡 [{trade['contract_symbol']}] Stage-1 profit-take only sold "
+                    f"{_sold_qty} of {half_contracts} intended contract(s) — "
+                    f"recording the REAL sold size.",
+                )
+                logger.warning(
+                    "partial_fill_stage1: trade_id=%s requested=%d filled=%d",
+                    trade["id"], half_contracts, _sold_qty,
+                )
+            if _sold_qty < 1:
+                log_event(
+                    "WARNING", "trading_logic",
+                    f"🟡 [{trade['contract_symbol']}] Stage-1 profit-take reported "
+                    f"filled but 0 contracts actually sold — leaving position at "
+                    f"full size, will retry next tick.",
+                )
+                return
+
             from database import insert_trade, close_trade, get_conn
             # This partial row is a synthetic "half sold" trade — carry over
             # the SAME annotations_json as the parent position rather than a
@@ -789,7 +819,7 @@ def _manage_open_position(
                 option_type     = trade["option_type"],
                 strike          = trade["strike"],
                 expiry          = trade["expiry"],
-                contracts       = half_contracts,
+                contracts       = _sold_qty,
                 entry_price     = entry_price,
                 entry_time      = trade["entry_time"] if isinstance(trade["entry_time"], datetime) else datetime.fromisoformat(trade["entry_time"]),
                 entry_reason    = trade.get("entry_reason", ""),
@@ -810,13 +840,13 @@ def _manage_open_position(
             with get_conn() as _conn:
                 _conn.execute(
                     "UPDATE trades SET contracts = ? WHERE id = ?",
-                    (trade["contracts"] - half_contracts, trade["id"]),
+                    (trade["contracts"] - _sold_qty, trade["id"]),
                 )
 
             log_event(
                 "INFO", "trading_logic",
-                f"🟢 Took 50% profit — sold {half_contracts} contract"
-                f"{'s' if half_contracts > 1 else ''} at ${fill_price:.2f} "
+                f"🟢 Took 50% profit — sold {_sold_qty} contract"
+                f"{'s' if _sold_qty != 1 else ''} at ${fill_price:.2f} "
                 f"(+${partial_pnl:.2f}). ATR/swing trailing stop now active on remainder.",
             )
 
@@ -899,6 +929,71 @@ def _close_position(
     # Use actual broker fill price; fall back to mid only if broker didn't report one
     fill_price = float(fill.get("confirmed_fill_price") or
                        fill.get("filled_avg_price") or exit_price)
+
+    # FIX 2026-07-20 (Alpaca fills audit): broker.py may now return a PARTIAL
+    # fill result for an exit order (fewer contracts closed than requested)
+    # instead of either None or a full fill. Previously this whole function
+    # assumed a "not None" fill meant ALL of trade["contracts"] closed, and
+    # called close_trade() on the full row — which marks the trade "closed"
+    # in the DB while Alpaca still holds a real, smaller remainder open. That
+    # remainder would then never be tracked/monitored/risk-managed again.
+    # Mirror the stage-1 partial-exit pattern: record only what actually
+    # closed, shrink the parent row's contracts, and leave it OPEN so the
+    # next tick's _manage_open_position re-evaluates the true remainder.
+    _closed_qty = int(fill.get("filled_qty") or trade["contracts"])
+    if _closed_qty < 1:
+        log_event(
+            "WARNING", "trading_logic",
+            f"🟡 [{trade['contract_symbol']}] Exit order reported filled but 0 "
+            f"contracts actually closed — trade stays open, will retry next tick.",
+        )
+        return
+    if _closed_qty < trade["contracts"]:
+        _remaining_qty = trade["contracts"] - _closed_qty
+        log_event(
+            "WARNING", "trading_logic",
+            f"🟡 [{trade['contract_symbol']}] Exit only filled {_closed_qty} of "
+            f"{trade['contracts']} contract(s) — closing the filled portion and "
+            f"leaving {_remaining_qty} contract(s) open, will retry the "
+            f"remainder next tick.",
+        )
+        logger.warning(
+            "partial_fill_exit: trade_id=%s requested=%d filled=%d",
+            trade["id"], trade["contracts"], _closed_qty,
+        )
+        from database import insert_trade, get_conn
+        _trade_ps_partial = _US["positions"].get(trade["id"], {})
+        partial_id = insert_trade(
+            ticker          = trade["ticker"],
+            contract_symbol = trade["contract_symbol"],
+            option_type     = trade["option_type"],
+            strike          = trade["strike"],
+            expiry          = trade["expiry"],
+            contracts       = _closed_qty,
+            entry_price     = trade.get("entry_price", 0),
+            entry_time      = trade["entry_time"] if isinstance(trade["entry_time"], datetime) else datetime.fromisoformat(trade["entry_time"]),
+            entry_reason    = trade.get("entry_reason", ""),
+            paper           = paper,
+            strategy_id     = trade.get("strategy_id", "INST_ORB"),
+            annotations_json= trade.get("annotations_json"),
+        )
+        close_trade(
+            trade_id             = partial_id,
+            exit_price           = exit_price,
+            exit_time            = _now_et(),
+            exit_reason          = reason,
+            confirmed_fill_price = fill_price,
+            peak_price           = _trade_ps_partial.get("peak_price"),
+            mae_price            = _trade_ps_partial.get("min_price"),
+            paper                = paper,
+            annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
+        )
+        with get_conn() as _conn:
+            _conn.execute(
+                "UPDATE trades SET contracts = ? WHERE id = ?",
+                (_remaining_qty, trade["id"]),
+            )
+        return
 
     # Pull MFE (peak_price) and MAE (min_price) from live position state so they
     # get saved to the DB and appear in the Journal's efficiency columns.
