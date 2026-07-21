@@ -539,11 +539,22 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 except Exception as _ce:
                     logger.warning("Cutoff: failed to cancel order %s: %s", _ord.get("id"), _ce)
 
-            # Force-close all bot-managed open positions
+            # Force-close ALL open positions, including RECOVERED_UNTRACKED ones.
+            #
+            # FIX 2026-07-20: RECOVERED_UNTRACKED positions (ghost positions
+            # auto-adopted from Alpaca by trading/diagnostics.py) are still
+            # correctly excluded from the normal per-tick _manage_open_position
+            # loop below — their fake entry_time (set to recovery time, not
+            # real entry time) would misfire time-based stop/time-box logic.
+            # But that reasoning doesn't apply here: the 3:55pm cutoff doesn't
+            # use entry_time at all, it just flattens everything to avoid
+            # after-hours exposure. Previously this loop skipped them entirely,
+            # so once a position got auto-adopted it would NEVER close
+            # automatically — not from a stop, not from a time cap, not even
+            # at end of day — leaving it open indefinitely until someone
+            # manually clicked "Close" in the Trade Journal.
             _cutoff_trades = get_open_trades()
             for _ct in _cutoff_trades:
-                if _ct.get("strategy_id") == "RECOVERED_UNTRACKED":
-                    continue
                 try:
                     _cq  = tradier.get_option_quote(_ct.get("contract_symbol", ""))
                     _cx  = _cq.get("mid", _ct.get("entry_price", 0)) if _cq else _ct.get("entry_price", 0)
@@ -564,56 +575,35 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     open_trades = get_open_trades()
     _US["open_trades"] = open_trades
 
-    # ── Exclude RECOVERED_UNTRACKED legacy positions from active management ──
-    # FIX 2026-06-15: the 7 positions recovered from the ghost-position
-    # reconciliation (strategy_id == "RECOVERED_UNTRACKED") were inserted with
-    # entry_time = the moment they were recovered, NOT their real entry time.
-    # Recovered untracked positions are excluded from automated management.
+    # ── RECOVERED_UNTRACKED positions are now FULLY managed, same as everything
+    # else ─────────────────────────────────────────────────────────────────
+    # FIX 2026-07-20: the 2026-06-15 fix excluded recovered/ghost positions
+    # from _manage_open_position entirely — no stop-loss, no time-cap, no
+    # stage-1 profit-take, and (separately) no EOD flatten — because their
+    # entry_time is set to the moment they were recovered, not their real
+    # entry time, which would throw off time-based exits. But these are REAL
+    # money-affecting positions, not test data, and "no automated risk
+    # management at all" is a much worse outcome than "the time-cap clock
+    # starts a bit late." Price-based stops (structural/ATR trail) don't
+    # depend on entry_time at all, so they work correctly from the first
+    # tick regardless. They also used to get a bespoke price-only update
+    # written to a separate JSON file instead of the normal in-memory
+    # position state the dashboard actually reads from — which is why they
+    # showed "—" for live price/P&L instead of real numbers. Folding them
+    # into the standard loop fixes both problems at once.
+    #
+    # RECOVERED_UNTRACKED trades still don't count against the
+    # MAX_CONCURRENT_POSITIONS entry gate below (they weren't opened by that
+    # gate's own logic — see database.py::get_open_trades()), so `_bot_trades`
+    # is kept for that count, but the management loop now runs over EVERY
+    # open trade.
     _bot_trades = [t for t in open_trades if t.get("strategy_id") != "RECOVERED_UNTRACKED"]
-    _US["open_trade"] = _bot_trades[0] if _bot_trades else None
+    _US["open_trade"] = open_trades[0] if open_trades else None
 
     _sweep_orphaned_orders(alpaca, _bot_trades)
 
-    for _open_trade in _bot_trades:
+    for _open_trade in open_trades:
         _manage_open_position(alpaca, tradier, _open_trade, balance)
-
-    # ── Price-only update for RECOVERED_UNTRACKED trades ─────────────────────
-    # These trades are excluded from _manage_open_position (so automated
-    # stop/time-box/stage1 logic never fires on them), but the dashboard's
-    import json as _json_rec
-    _state_path_rec = get_bot_state_path()
-    _recovered_trades = [t for t in open_trades if t.get("strategy_id") == "RECOVERED_UNTRACKED"]
-    if _recovered_trades:
-        try:
-            _rec_state = {}
-            if _state_path_rec.exists():
-                with open(_state_path_rec) as _f:
-                    _rec_state = _json_rec.load(_f)
-            _rec_positions = _rec_state.get("open_positions") or {}
-            for _rt in _recovered_trades:
-                try:
-                    _rq = tradier.get_option_quote(_rt["contract_symbol"])
-                    if _rq and _rq.get("mid", 0) > 0:
-                        _rt_id = str(_rt["id"])
-                        _existing_entry = _rec_positions.get(_rt_id) or {}
-                        _existing_entry.update({
-                            "trade_id":                  _rt["id"],
-                            "contract_symbol":           _rt["contract_symbol"],
-                            "ticker":                    _rt["ticker"],
-                            "option_type":               _rt["option_type"],
-                            "entry_price":               _rt["entry_price"],
-                            "contracts":                 _rt["contracts"],
-                            "current_option_price":      _rq["mid"],
-                            "current_option_price_time": _now_et().strftime("%H:%M:%S"),
-                        })
-                        _rec_positions[_rt_id] = _existing_entry
-                except Exception:
-                    pass
-            _rec_state["open_positions"] = _rec_positions
-            with open(_state_path_rec, "w") as _f:
-                _json_rec.dump(_rec_state, _f)
-        except Exception:
-            pass
 
     if len(_bot_trades) >= MAX_CONCURRENT_POSITIONS:
         # All position slots are full — nothing left to do this tick except
