@@ -412,6 +412,11 @@ def _manage_open_position(
         trend_dead: bool                 = False
         _rvol_for_exit: float            = 0.0   # passed to momentum-death check in risk.py
 
+        # Dynamic stage1 trigger inputs (2026-07-21) — populated below if
+        # ATR/5m data is available; risk.py fails open to the flat % if not.
+        _atr_target_price: Optional[float] = None
+        _momentum_fading: bool             = False
+
         # Trade age in minutes — used to gate the ATR trail warmup
         _trade_age_min = (
             (now_et - entry_time).total_seconds() / 60
@@ -446,14 +451,26 @@ def _manage_open_position(
 
             # 5-min MACD histogram declining for ≥ 2 bars = momentum fading
             _macd_hist = compute_macd_hist(df_5m)
-            if len(_macd_hist) >= _MACD_FADE_BARS:
-                _macd_fading = all(
-                    _macd_hist[-(i + 1)] < _macd_hist[-(i + 2)]
-                    for i in range(_MACD_FADE_BARS - 1)
-                )
-                if _macd_fading:
-                    _dynamic_trail_mult = min(_dynamic_trail_mult, _TRAIL_MULT_1H_AGAINST)  # 1.5×
-                    _mtf_notes.append(f"5m_macd_fade({_TRAIL_MULT_1H_AGAINST}×)")
+            _macd_fading = len(_macd_hist) >= _MACD_FADE_BARS and all(
+                _macd_hist[-(i + 1)] < _macd_hist[-(i + 2)]
+                for i in range(_MACD_FADE_BARS - 1)
+            )
+            if _macd_fading:
+                _dynamic_trail_mult = min(_dynamic_trail_mult, _TRAIL_MULT_1H_AGAINST)  # 1.5×
+                _mtf_notes.append(f"5m_macd_fade({_TRAIL_MULT_1H_AGAINST}×)")
+
+            # Reused for the dynamic stage1 trigger (risk.py) — same RSI/MACD
+            # signals already computed above for the trail multiplier, not
+            # recomputed a second time.
+            # 2026-07-21: OR vs AND is now settings-driven (STAGE1_MOMENTUM_
+            # REQUIRE_BOTH) — diagnosis found the OR combination let either
+            # signal alone fire the stage1 exit at just +10% gain, never
+            # letting the ATR target get a chance. AND is an untested
+            # candidate, not yet the default — see ab_test_momentum_fade_tuning.py.
+            _momentum_fading = (
+                (_rsi_exhausted and _macd_fading) if (_risk and _risk.STAGE1_MOMENTUM_REQUIRE_BOTH)
+                else (_rsi_exhausted or _macd_fading)
+            )
 
             # 5-min VWAP breach tracking (cleaner signal than 1-min)
             _5m_vwap = _compute_vwap(df_5m)
@@ -487,6 +504,13 @@ def _manage_open_position(
             # ATR-based trailing stop in underlying space.
             # Uses 5-min ATR when available (less noisy than 1-min), falls back to 1-min.
             _atr = _compute_atr(df_5m) if (df_5m is not None and len(df_5m) >= 15) else _compute_atr(df_under)
+
+            # Dynamic stage1 target (2026-07-21): ATR-scaled, recomputed every
+            # tick same as the trail — NOT frozen at entry, so it adapts as
+            # volatility changes through the trade. risk.py fails open to the
+            # flat % (ORB_STAGE1_GAIN) whenever this stays None (no ATR yet).
+            if _atr is not None and _risk:
+                _atr_target_price = entry_price + _risk.STAGE1_ATR_TARGET_MULT * _atr * _DELTA_APPROX
 
             # ── Initial ATR stop (computed once; replaces fixed 20% hard stop) ────
             # On the very first tick with ATR data, derive a stop based on how much
@@ -692,38 +716,26 @@ def _manage_open_position(
             trend_dead      = trend_dead,
             direction       = direction,
             rvol            = _rvol_for_exit,
+            atr_target_price = _atr_target_price,   # dynamic stage1 trigger (2026-07-21)
+            momentum_fading  = _momentum_fading,
         )
 
         if not should_exit:
             return
 
-        # ── AI reasoning layer (phase 1 — narration only) ─────────────────────
-        # Fire-and-forget, fires exactly once per real exit decision (this is
-        # inside the `if should_exit:` branch, not on every holding tick).
-        # narrate_exit() spawns a daemon thread and returns immediately (or
-        # no-ops instantly if AI_REASONING_ENABLED is off) — never adds
-        # latency here, and has zero effect on the exit that's about to run.
-        try:
-            from ai_reasoning.narrator import narrate_exit
-            _elapsed_min = (
-                (now_et - entry_time).total_seconds() / 60 if entry_time else 0.0
-            )
-            narrate_exit(
-                ticker           = ticker,
-                trade_id         = trade_id,
-                contract_symbol  = trade["contract_symbol"],
-                strategy_id      = trade.get("strategy_id"),
-                direction        = direction,
-                reason           = reason,
-                entry_price      = entry_price,
-                current_price    = current_price,
-                elapsed_minutes  = _elapsed_min,
-                mtf_notes        = _mtf_notes,
-                peak_price       = ps.get("peak_price"),
-                min_price        = ps.get("min_price"),
-            )
-        except Exception as _ai_ex:
-            logger.debug("ai_reasoning narrate_exit dispatch failed (non-fatal): %s", _ai_ex)
+        # NOTE: AI reasoning narration for this exit decision does NOT fire
+        # here anymore. It used to fire right at this point (as soon as
+        # should_exit()==True), which was a bug: if the close order below is
+        # slow to fill, gets rejected, or is retried, should_exit() keeps
+        # returning True on every following tick and this point gets
+        # re-reached repeatedly for a position that never actually closed —
+        # confirmed in production (2026-07-20/21): one trade generated 167
+        # duplicate exit-narration calls over 20 minutes because its close
+        # order never confirmed. narrate_exit() is now called ONLY after a
+        # close_trade() call actually confirms — see _close_position() below
+        # and the stage-1 partial-exit branch a few lines down — same
+        # "narrate after confirmation, not after intent" pattern narrate_entry()
+        # already used correctly in trading/entry.py.
 
         # ── Stage 1: sell 50%, arm trailing stop on remainder ────────────────
         if reason.startswith("stage1"):
@@ -737,9 +749,14 @@ def _manage_open_position(
                     f"{trade['contracts']} contract(s) held, taking full exit "
                     f"(can't split a single contract). Closing now.",
                 )
+                # 2026-07-21: preserve the REAL trigger tag (ATR target /
+                # momentum fade / volume fade / static fallback) instead of
+                # a hardcoded generic label — same fix as backtester.py's
+                # matching bug, needed now that stage1 has 4 possible
+                # sub-reasons instead of one flat %.
                 _close_position(alpaca, trade, current_price,
-                                "stage1_50pct_full_exit_single_contract",
-                                bid_price=bid_price)
+                                f"{reason.split(' ')[0]}_full_exit_single_contract",
+                                bid_price=bid_price, mtf_notes=_mtf_notes)
                 return
 
             from config import get_settings
@@ -831,7 +848,7 @@ def _manage_open_position(
                 trade_id             = partial_id,
                 exit_price           = fill_price,
                 exit_time            = _now_et().replace(tzinfo=None),
-                exit_reason          = "stage1_50pct_profit_take",
+                exit_reason          = f"{reason.split(' ')[0]}_profit_take",  # 2026-07-21: real trigger tag, not hardcoded
                 confirmed_fill_price = fill_price,
                 paper                = paper,
                 annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
@@ -850,13 +867,46 @@ def _manage_open_position(
                 f"(+${partial_pnl:.2f}). ATR/swing trailing stop now active on remainder.",
             )
 
+            # ── AI reasoning layer (phase 1 — narration only) ─────────────────
+            # Fires HERE, after close_trade() above confirmed the partial fill
+            # actually happened — not back when should_exit() first went True.
+            # partial_id is the trade row that actually closed (this sold
+            # half), so that's what trade_id references, not the still-open
+            # parent. Fire-and-forget: no-ops instantly if disabled, never
+            # adds latency, zero effect on the trade that already executed.
+            try:
+                from ai_reasoning.narrator import narrate_exit
+                _elapsed_min = (
+                    (now_et - entry_time).total_seconds() / 60 if entry_time else 0.0
+                )
+                narrate_exit(
+                    ticker           = ticker,
+                    trade_id         = partial_id,
+                    contract_symbol  = trade["contract_symbol"],
+                    strategy_id      = trade.get("strategy_id"),
+                    direction        = direction,
+                    reason           = reason,
+                    entry_price      = entry_price,
+                    current_price    = fill_price,
+                    elapsed_minutes  = _elapsed_min,
+                    mtf_notes        = _mtf_notes,
+                    peak_price       = ps.get("peak_price"),
+                    min_price        = ps.get("min_price"),
+                )
+            except Exception as _ai_ex:
+                logger.debug("ai_reasoning narrate_exit dispatch failed (non-fatal): %s", _ai_ex)
+
             from config import STAGE2_TRAIL_PCT
             ps["stage1_done"]     = True
             ps["stage1_be_price"] = round(entry_price * (1.0 + STAGE2_TRAIL_PCT), 4)
 
         else:
-            # Full exit for all other reasons
-            _close_position(alpaca, trade, current_price, reason, bid_price=bid_price)
+            # Full exit for all other reasons. mtf_notes threaded through so
+            # _close_position() can narrate the confirmed close itself, once
+            # it's actually confirmed — see that function for why this can't
+            # just be narrated here before we know the close order succeeded.
+            _close_position(alpaca, trade, current_price, reason,
+                             bid_price=bid_price, mtf_notes=_mtf_notes)
 
     except Exception as e:
         from database import log_event
@@ -872,6 +922,7 @@ def _close_position(
     exit_price: float,
     reason: str,
     bid_price: Optional[float] = None,
+    mtf_notes: Optional[list] = None,
 ) -> None:
     # Same fix as _manage_open_position above — resolve per-user state/risk/
     # logger fresh instead of reading trading.entry's module-level globals.
@@ -988,6 +1039,38 @@ def _close_position(
             paper                = paper,
             annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
         )
+
+        # ── AI reasoning layer (phase 1 — narration only) ─────────────────────
+        # Fires HERE, after close_trade() above confirmed the filled portion
+        # actually closed — partial_id is the row that closed, so that's the
+        # trade_id referenced, not the parent (which stays open for the
+        # unfilled remainder and will get its own narration when IT closes).
+        try:
+            from ai_reasoning.narrator import narrate_exit
+            _pf_direction = "bullish" if (trade.get("option_type") or "call").lower() == "call" else "bearish"
+            _pf_elapsed_min = 0.0
+            try:
+                _pf_entry_dt = trade["entry_time"] if isinstance(trade["entry_time"], datetime) else datetime.fromisoformat(str(trade["entry_time"]))
+                _pf_elapsed_min = (_now_et().replace(tzinfo=None) - _pf_entry_dt.replace(tzinfo=None)).total_seconds() / 60
+            except Exception:
+                pass
+            narrate_exit(
+                ticker           = trade.get("ticker", "?"),
+                trade_id         = partial_id,
+                contract_symbol  = trade["contract_symbol"],
+                strategy_id      = trade.get("strategy_id"),
+                direction        = _pf_direction,
+                reason           = reason,
+                entry_price      = trade.get("entry_price", 0),
+                current_price    = fill_price,
+                elapsed_minutes  = _pf_elapsed_min,
+                mtf_notes        = mtf_notes,
+                peak_price       = _trade_ps_partial.get("peak_price"),
+                min_price        = _trade_ps_partial.get("min_price"),
+            )
+        except Exception as _ai_ex:
+            logger.debug("ai_reasoning narrate_exit dispatch failed (non-fatal): %s", _ai_ex)
+
         with get_conn() as _conn:
             _conn.execute(
                 "UPDATE trades SET contracts = ? WHERE id = ?",
@@ -1010,7 +1093,11 @@ def _close_position(
     _strat_r    = trade.get("strategy_id", "?")
     _opt_r      = (trade.get("option_type") or "option").upper()
     _REASON_MAP = {
-        "stage1_50pct":             "Stage 1 profit target (+50%) was hit — bot locked in half the position and moved the stop to breakeven",
+        # 2026-07-21: was "stage1_50pct" only — stage1 now has 4 possible
+        # dynamic sub-triggers (ATR target / momentum fade / volume fade /
+        # static-% fallback), so this matches any of them via the shared
+        # "stage1" substring rather than the one flat-% string.
+        "stage1":                   "Stage 1 profit-lock hit (dynamic trigger) — bot locked in half the position and moved the stop to breakeven",
         "stage2_break_even":        "Stop-to-breakeven triggered — the remainder exited at no loss after Stage 1 ran",
         "stage2_trail_stop":        "Trailing stop activated after locking in profit — price pulled back and the floor was hit",
         "atr_trail_stop":           "ATR/swing trailing stop tightened and triggered as price pulled back from the high",
@@ -1071,7 +1158,9 @@ def _close_position(
         _entry_px     = trade.get("entry_price", 0)
         _pnl_sign     = "+" if pnl >= 0 else ""
         _reason_map   = {
-            "stage1_50pct":              "first profit target hit (+50%)",
+            # 2026-07-21: see _REASON_MAP note above — matches any stage1
+            # dynamic sub-trigger, not just the old flat +50%.
+            "stage1":                    "first profit target hit (dynamic trigger)",
             "stage2_break_even":         "remainder hit break-even stop",
             "stage2_trail_stop":         "trail stop triggered (locked profit floor)",
             "atr_trail_stop":            "ATR/swing trailing stop hit",
@@ -1097,6 +1186,33 @@ def _close_position(
         )
     except Exception:
         pass
+
+    # ── AI reasoning layer (phase 1 — narration only) ─────────────────────────
+    # Fires HERE, after close_trade() above confirmed the full exit actually
+    # happened — not back when should_exit() first went True (that was the
+    # bug: a slow/rejected/retried close order would re-trigger narration on
+    # every following tick for a position that never actually closed).
+    # _dur_secs was already computed above for the post-trade recap — reused
+    # here instead of recomputing the same elapsed-time math a second time.
+    try:
+        from ai_reasoning.narrator import narrate_exit
+        _close_direction = "bullish" if (trade.get("option_type") or "call").lower() == "call" else "bearish"
+        narrate_exit(
+            ticker           = trade.get("ticker", "?"),
+            trade_id         = trade["id"],
+            contract_symbol  = trade["contract_symbol"],
+            strategy_id      = trade.get("strategy_id"),
+            direction        = _close_direction,
+            reason           = reason,
+            entry_price      = _entry_px,
+            current_price    = fill_price,
+            elapsed_minutes  = _dur_secs / 60.0,
+            mtf_notes        = mtf_notes,
+            peak_price       = _peak_px,
+            min_price        = _min_px,
+        )
+    except Exception as _ai_ex:
+        logger.debug("ai_reasoning narrate_exit dispatch failed (non-fatal): %s", _ai_ex)
 
     if pnl > 0:
         try:
