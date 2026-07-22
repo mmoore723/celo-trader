@@ -157,6 +157,27 @@ export interface StrategyFunnelRow {
   actual_pnl: number;
 }
 
+// ── AI reasoning replay log ────────────────────────────────────────────────
+// Full prompt/response trail for every AI call (narration + decision
+// support), win or lose, error or not. Added 2026-07-20 so the user can
+// audit exactly what was sent to and received from the model — verifying
+// against hallucination/prompt drift, not trusting a summary.
+export interface AiReasoningEntry {
+  id: number;
+  ts: string;
+  event_type: "entry_narration" | "exit_narration" | "entry_veto"
+    | "daily_audit_summary" | "weekly_audit_summary" | string;
+  ticker: string;
+  trade_id: number | null;
+  feature_snapshot_json: string;   // JSON-encoded — parse for the exact input dict
+  prompt: string;                  // full system+user prompt text, verbatim
+  response_text: string | null;    // raw model output, verbatim (null on failure)
+  latency_ms: number | null;
+  model: string | null;
+  error: string | null;
+  applied: number;   // 1 if a veto/resize was actually acted on (phase 2 only)
+}
+
 export interface StrategyHealthAggregate {
   date: string;
   tickers_scanned: string[];
@@ -179,6 +200,39 @@ export interface StrategyHealthHistoryRow {
   tickers: string;
   rule_summary: string;
   ai_summary: string | null;
+}
+
+// ── Weekly strategy review (added 2026-07-20) ──────────────────────────────
+// Same page as the daily audit, different time horizon — rolls up the
+// trailing week's daily audits + real closed trades (win rate, exit-reason
+// mix, realized R:R) into one view, with an AI layer specifically asked for
+// a concrete, testable recommendation rather than a daily summary.
+export interface StrategyRiskMathRow {
+  n: number;
+  win_rate_pct: number;
+  avg_pnl: number;
+  total_pnl: number;
+  avg_win: number;
+  avg_loss: number;
+  realized_rr: number | null;
+  exit_reasons: Record<string, number>;
+}
+
+export interface WeeklyAggregate {
+  week_label: string;
+  window_days: number;
+  daily_audits_included: string[];
+  per_strategy_funnel: Record<string, StrategyFunnelRow>;
+  per_strategy_risk_math: Record<string, StrategyRiskMathRow>;
+}
+
+export interface WeeklyReview {
+  available: boolean;
+  audit_date?: string;   // ISO year-week label, e.g. "2026-W29"
+  created_at?: string;
+  aggregate?: WeeklyAggregate;
+  rule_summary?: string;
+  ai_summary?: string | null;
 }
 
 // ── Reconciliation types ──────────────────────────────────────────────────────
@@ -295,6 +349,7 @@ export interface AppSettings {
   chan_break_enabled: boolean;
   mid_brk_enabled: boolean;
   trend_cont_enabled: boolean;
+  aft_rev_enabled: boolean;    // Afternoon Reversal — added to Settings 2026-07-20
   signal_only_mode?: boolean;  // true = signal alerts only, bot does NOT place orders
   display_timezone?: string;   // e.g. "America/New_York" | "America/Chicago" | "America/Los_Angeles"
   // Trade parameters — user-tunable without touching code
@@ -429,5 +484,22 @@ export const api = {
     latest:  () => request<StrategyHealthAudit>("/api/strategy-health/latest"),
     history: (limit = 30) => request<{audits: StrategyHealthHistoryRow[]}>(`/api/strategy-health/history?limit=${limit}`),
     run:     () => request<StrategyHealthAudit & {ok: boolean}>("/api/strategy-health/run", { method: "POST" }),
+    weeklyLatest:  () => request<WeeklyReview>("/api/strategy-health/weekly/latest"),
+    weeklyHistory: (limit = 12) => request<{audits: StrategyHealthHistoryRow[]}>(`/api/strategy-health/weekly/history?limit=${limit}`),
+    weeklyRun:     () => request<WeeklyReview & {ok: boolean}>("/api/strategy-health/weekly/run", { method: "POST" }),
+  },
+  aiReasoning: {
+    log: (opts?: { limit?: number; eventType?: string; ticker?: string; onlyErrors?: boolean }) => {
+      const params = new URLSearchParams();
+      if (opts?.limit)      params.set("limit", String(opts.limit));
+      if (opts?.eventType)  params.set("event_type", opts.eventType);
+      if (opts?.ticker)     params.set("ticker", opts.ticker);
+      if (opts?.onlyErrors) params.set("only_errors", "true");
+      const qs = params.toString();
+      return request<{ entries: AiReasoningEntry[]; count: number }>(
+        `/api/ai-reasoning/log${qs ? `?${qs}` : ""}`
+      );
+    },
+    entry: (id: number) => request<AiReasoningEntry>(`/api/ai-reasoning/log/${id}`),
   },
 };

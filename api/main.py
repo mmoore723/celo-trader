@@ -127,7 +127,7 @@ app.add_middleware(
 # ── Register API routes ───────────────────────────────────────────────────────
 # Auth is enforced via Depends(require_auth) on each protected router.
 # /api/auth/* routes have no dependency — they are always public.
-from api.routes import bot, market, trades, settings, ws, backtest, admin, strategy_health
+from api.routes import bot, market, trades, settings, ws, backtest, admin, strategy_health, ai_reasoning
 import api.routes.auth as auth_routes
 
 _auth = [Depends(require_auth)]
@@ -141,6 +141,7 @@ app.include_router(admin.router,    dependencies=_auth)             # admin — 
 app.include_router(ws.router)                                       # WebSocket — no cookie auth
 app.include_router(backtest.router,        dependencies=_auth)
 app.include_router(strategy_health.router, dependencies=_auth)
+app.include_router(ai_reasoning.router,    dependencies=_auth)
 
 # ── Serve built React frontend ────────────────────────────────────────────────
 _DIST = _ROOT / "frontend" / "dist"

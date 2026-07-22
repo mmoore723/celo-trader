@@ -22,6 +22,7 @@ import { Backtest }        from "./pages/Backtest";
 import { Playbooks }       from "./pages/Playbooks";
 import { DailyBrief }      from "./pages/DailyBrief";
 import { StrategyHealth }  from "./pages/StrategyHealth";
+import { AiReasoning }     from "./pages/AiReasoning";
 import { Admin }           from "./pages/Admin";
 import { Register }        from "./pages/Register";
 import { Login }           from "./pages/Login";
@@ -102,6 +103,7 @@ function AppShell() {
           <Route path="/journal"     element={<Journal />} />
           <Route path="/backtest"    element={<Backtest />} />
           <Route path="/strategy-health" element={<StrategyHealth />} />
+          <Route path="/ai-reasoning" element={<AiReasoning />} />
           <Route path="/playbooks"   element={<Playbooks />} />
           <Route path="/settings"    element={<Settings />} />
           <Route path="/admin"       element={<AdminGuard />} />
