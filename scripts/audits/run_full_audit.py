@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, needed after this script's move into scripts/<subdir>/
 import time
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed

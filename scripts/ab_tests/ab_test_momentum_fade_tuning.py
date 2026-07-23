@@ -28,6 +28,8 @@ Usage:
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, needed after this script's move into scripts/<subdir>/
 
 from broker import AlpacaClient
 import backtest_exit_sim

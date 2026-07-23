@@ -21,9 +21,11 @@ Usage:
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, needed after this script's move into scripts/<subdir>/
 
 from broker import AlpacaClient
-import backtester
+import strategy_router
 from backtester import Backtester
 
 DEFAULT_TICKERS = ["SPY", "QQQ", "NVDA"]
@@ -55,23 +57,26 @@ def main() -> None:
     tickers = sys.argv[2:] or DEFAULT_TICKERS
     alpaca  = AlpacaClient()
 
-    # backtester.py does `from regime_manager import ... ADX_GATED_STRATEGIES`,
-    # binding its own module-level name — patch THAT (not regime_manager's),
-    # since that's the name backtester's signal loop actually reads on every
-    # bar (see backtester.py: "if _chop_regime and strategy_id in
-    # ADX_GATED_STRATEGIES").
-    _orig = backtester.ADX_GATED_STRATEGIES
+    # CORRECTED 2026-07-23: this used to patch backtester.ADX_GATED_STRATEGIES,
+    # but backtester.py no longer imports that name directly (only ADX_MIN +
+    # compute_adx_series) since entry detection was rewritten to run through
+    # strategy_router.route_signals() at 1-min resolution. The actual gate
+    # check now lives in strategy_router.py's route_signals() (`if sid in
+    # ADX_GATED_STRATEGIES`), reading its OWN module-level name — that's the
+    # one that has to be patched for this to do anything. Old target caused
+    # AttributeError: module 'backtester' has no attribute 'ADX_GATED_STRATEGIES'.
+    _orig = strategy_router.ADX_GATED_STRATEGIES
     try:
         print("\n=== VARIANT A: MID_BRK ADX-gated (current live default) ===")
-        backtester.ADX_GATED_STRATEGIES = _orig   # unchanged — MID_BRK included
+        strategy_router.ADX_GATED_STRATEGIES = _orig   # unchanged — MID_BRK included
         old_result = _run_variant(alpaca, tickers, months, "ADX-gated")
 
         print("\n=== VARIANT B: MID_BRK exempted from the ADX>=25 gate ===")
-        backtester.ADX_GATED_STRATEGIES = _orig - {"MID_BRK"}
+        strategy_router.ADX_GATED_STRATEGIES = _orig - {"MID_BRK"}
         new_result = _run_variant(alpaca, tickers, months, "ADX-exempt")
     finally:
         # Always restore — this script must never leave live behavior changed
-        backtester.ADX_GATED_STRATEGIES = _orig
+        strategy_router.ADX_GATED_STRATEGIES = _orig
 
     def _report(name: str, d: dict) -> None:
         n   = d["trades"]

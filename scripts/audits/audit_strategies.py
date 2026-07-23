@@ -19,6 +19,8 @@ Read the table like this:
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, needed after this script's move into scripts/<subdir>/
 from collections import defaultdict
 
 from broker import AlpacaClient
