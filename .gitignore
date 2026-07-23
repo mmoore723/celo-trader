@@ -19,3 +19,7 @@ scanner_state.json
 _debug_harness_unused/
 
 
+
+# Generated audit cache (regenerable, not source)
+audit_reports/_cache/
+audit_reports/_data_cache/

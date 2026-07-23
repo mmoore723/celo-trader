@@ -280,6 +280,43 @@ class RiskManager:
     ORB_RISK_PCT        = 0.01   # baseline risk % — used for R:R display / logging
     ORB_STAGE1_PCT      = 0.50   # sell 50% of contracts at stage-1 target
     ORB_STAGE1_GAIN     = 0.25   # +25% gain threshold for stage-1 exit (lowered from +50%)
+                                 # NOTE 2026-07-21: no longer the primary stage-1 trigger —
+                                 # see STAGE1_DYNAMIC_ENABLED block below. Kept as the
+                                 # fail-open fallback for when ATR data is unavailable.
+
+    # ── Dynamic stage1 trigger (2026-07-21) ──────────────────────────────────
+    # ab_test_stage1_target.py tested the flat % above at 50/30/20% and found
+    # ALL THREE negative expectancy, with ~0 winning trades ever reaching the
+    # static target — the number wasn't the problem, a single fixed number
+    # is. Replaced with a per-trade trigger that fires on whichever condition
+    # hits first: an ATR-scaled target (volatility-adjusted, not flat %),
+    # momentum fading (RSI exhaustion / MACD rollover), or volume fading
+    # (RVOL collapse after being elevated) — each of the latter two gated by
+    # a minimum gain floor so they can't fire on entry noise. Research basis
+    # (10+ sources per CLAUDE.md rule 9, chat log 2026-07-21): ATR-scaled
+    # partial profit-taking at 1.5-2.5x ATR is standard scale-out practice;
+    # RVOL/momentum confirmation before locking is the standard approach;
+    # a single fixed % threshold is flagged across multiple sources as an
+    # overfitting risk on one backtest window.
+    #
+    # Caller (position_manager.py live, backtest_exit_sim.py in backtests)
+    # precomputes atr_target_price + momentum_fading and passes them in —
+    # this class never computes indicators itself, same convention as
+    # atr_trail_stop/trend_dead below.
+    STAGE1_DYNAMIC_ENABLED     = True   # kill-switch — False reverts to the flat % above
+    STAGE1_ATR_TARGET_MULT     = 2.0    # ATR multiplier for the dynamic target (1.5-2.5x per research)
+    STAGE1_MIN_LOCK_FLOOR_PCT  = 0.10   # min gain before momentum/volume fade can trigger early lock
+    STAGE1_RVOL_FADE_THRESHOLD = 1.0    # RVOL below this after being elevated = crowd left
+    # DIAGNOSIS 2026-07-21 (ab_test_stage1_dynamic.py, exit-reason breakdown
+    # after the mislabeling bug above was fixed): ALL 11 stage1 exits in that
+    # run were momentum_fade, ZERO were ATR target/volume fade/static
+    # fallback. At only +10% gain required, either RSI exhaustion OR MACD
+    # fade alone is enough to fire — too easy to trip on a minor wobble
+    # before the 2x-ATR target ever gets a chance. STAGE1_MOMENTUM_REQUIRE_
+    # BOTH switches the OR to an AND (both signals must agree); combined
+    # with a higher STAGE1_MIN_LOCK_FLOOR_PCT this is the next candidate
+    # to A/B test, not yet the live default — see ab_test_momentum_fade_tuning.py.
+    STAGE1_MOMENTUM_REQUIRE_BOTH = False   # False=OR (current), True=AND (untested candidate)
     # NOTE 2026-07-18: ORB_TIME_BOX below is UNUSED — grepped the repo, nothing
     # reads it. The real flat/losing time cap is config.py's EARLY_TIMEBOX_MIN
     # (currently 60 min), read directly in evaluate_exit_conditions() below.
@@ -1012,6 +1049,10 @@ class RiskManager:
         trend_dead: bool = False,                   # ADX<20 OR EMA stack misaligned
         direction: str = "bullish",                 # trade direction (for VWAP side check)
         rvol: float = 0.0,                          # current bar RVOL (for momentum-death check)
+        # Dynamic stage1 trigger inputs (2026-07-21) — precomputed by caller,
+        # this function never touches raw bars/indicators directly.
+        atr_target_price: Optional[float] = None,   # ATR-scaled stage1 target (option price)
+        momentum_fading: bool = False,              # RSI exhaustion OR 5m MACD rollover
     ) -> tuple[bool, str]:
         """
         Adaptive exit engine — structure-driven, not time-driven.
@@ -1129,11 +1170,33 @@ class RiskManager:
                     f"gave_back={giveback_pct*100:.0f}% of gain)"
                 )
 
-        # ── 4. Stage 1: +25% profit target ───────────────────────────────────
+        # ── 4. Stage 1: dynamic profit-lock trigger ──────────────────────────
+        # Fires on whichever condition hits first — ATR-scaled target
+        # (primary), momentum fade, or volume fade (both gated by a minimum
+        # gain floor). Falls back to the flat % only when ATR data is
+        # missing or STAGE1_DYNAMIC_ENABLED is False (fail-open, same
+        # pattern as the ATR trail's own fallback above).
         if not stage1_done:
-            s1 = self.stage1_exit_price(entry_price)
-            if current_price >= s1:
-                return True, f"stage1_50pct (target={s1:.4f} current={current_price:.4f})"
+            gain_pct = (current_price - entry_price) / entry_price if entry_price else 0.0
+
+            if self.STAGE1_DYNAMIC_ENABLED and atr_target_price is not None:
+                if current_price >= atr_target_price:
+                    return True, (
+                        f"stage1_atr_target "
+                        f"(target={atr_target_price:.4f} current={current_price:.4f} +{gain_pct*100:.1f}%)"
+                    )
+                if gain_pct >= self.STAGE1_MIN_LOCK_FLOOR_PCT:
+                    if momentum_fading:
+                        return True, f"stage1_momentum_fade (+{gain_pct*100:.1f}%)"
+                    if rvol > 0.0 and rvol < self.STAGE1_RVOL_FADE_THRESHOLD:
+                        return True, (
+                            f"stage1_volume_fade (rvol={rvol:.2f} +{gain_pct*100:.1f}%)"
+                        )
+            else:
+                # Fail-open fallback: no ATR data, or dynamic disabled entirely
+                s1 = self.stage1_exit_price(entry_price)
+                if current_price >= s1:
+                    return True, f"stage1_static_fallback (target={s1:.4f} current={current_price:.4f})"
 
         # ── 5. Stage 2: locked-profit trail stop ─────────────────────────────
         if stage1_done and stage1_be_price is not None:
@@ -1211,6 +1274,9 @@ class RiskManager:
         trend_dead: bool = False,
         direction: str = "bullish",
         rvol: float = 0.0,
+        # Dynamic stage1 trigger inputs (2026-07-21) — see evaluate_exit_conditions
+        atr_target_price: Optional[float] = None,
+        momentum_fading: bool = False,
     ) -> tuple[bool, str]:
         """Preferred alias for evaluate_exit_conditions — used in position_manager."""
         return self.evaluate_exit_conditions(
@@ -1226,4 +1292,6 @@ class RiskManager:
             trend_dead=trend_dead,
             direction=direction,
             rvol=rvol,
+            atr_target_price=atr_target_price,
+            momentum_fading=momentum_fading,
         )

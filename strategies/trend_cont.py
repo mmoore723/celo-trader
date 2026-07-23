@@ -20,6 +20,16 @@ a real gap between winning and losing trades: winners re-entered on a fresh
 pivot (avg 4 bars ago), losers on a stale one (avg 9 bars ago). A/B tested
 via ab_test_trend_cont_maxbars.py: 20 bars = 58.3% WR, +$41.25/trade;
 10 bars = 70.0% WR, +$73.01/trade. Shipped after the improvement confirmed.
+
+2026-07-21: run_full_audit.py (post window-fix, backtester-fidelity-fix) still
+showed TREND_CONT at -$35.71/trade expectancy, 35% WR (n=26). The win/loss
+gap is now WITHIN the existing 10-bar cap: winners re-enter on an even
+fresher pivot (avg 4.4 bars ago) than losers (avg 6.0), and winners' pullback
+is roughly 2x deeper (lh_depth_pct/hl_rise_pct avg ~1.1%) than losers'
+(~0.6%). _MAX_BARS tightened 10 -> 6 and a minimum depth/rise floor added
+below, both as HYPOTHESES pending ab_test_v2_fixes.py confirmation —
+do not treat these as validated until that backtest comes back positive,
+per the same standard the 07-17 change was held to.
 """
 
 from __future__ import annotations
@@ -37,7 +47,20 @@ logger = logging.getLogger("celo_trader.strategies.trend_cont")
 STRATEGY_ID = "TREND_CONT"
 
 _RVOL_MIN   = 1.2
-_MAX_BARS   = 10   # tightened from 20 (2026-07-17) — see module docstring
+_MAX_BARS   = 6    # tightened from 10 (2026-07-21, pending A/B) — see module docstring
+_MIN_DEPTH_PCT = 0.70   # min lh_depth_pct/hl_rise_pct, in % (2026-07-21, pending A/B)
+
+# ── Structural stop reference (2026-07-22, A/B tested — see result below) ─────
+# Which level to hand off as entry_bar_high/low for the exit engine's
+# structural stop. ab_test_structural_stop_mode.py ran all 4 (SPY/QQQ, 2mo,
+# post RR/RVOL bug fixes): prior_swing won clearly, beating even "none"
+# (ATR-only). pivot and entry_bar (tighter) were both worse. Shipped as
+# default 2026-07-22.
+#   "prior_swing" — the swing BEFORE the LH/HL (wider) — DEFAULT, A/B winner
+#   "pivot"       — the LH/HL price this signal re-enters on (was default)
+#   "entry_bar"   — this bar's own high/low (tightest, mirrors INST_ORB) — worst
+#   "none"        — no structural stop; ATR fallback only (pre-2026-07-21 behavior)
+STRUCT_STOP_MODE = "prior_swing"
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
@@ -88,6 +111,12 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                     logger.debug("[%s] TREND_CONT bearish: close %.2f > EMA50 %.2f — micro-trend bounce, skipped", ticker, close, ema50)
                 elif vwap is None or close < vwap:
                     lh_depth_pct = (prior_sh["price"] - lh["price"]) / prior_sh["price"]
+                    if lh_depth_pct * 100 < _MIN_DEPTH_PCT:
+                        logger.debug(
+                            "[%s] TREND_CONT bearish: lh_depth_pct %.2f%% < %.2f%% — pullback too shallow",
+                            ticker, lh_depth_pct * 100, _MIN_DEPTH_PCT,
+                        )
+                        return None
                     depth_bonus  = min(0.06, lh_depth_pct * 20)
                     rvol_bonus   = min(0.08, (rvol - _RVOL_MIN) * 0.06)
                     # REVERTED 2026-07-17: base was raised 0.65 -> 0.72 on the
@@ -104,6 +133,19 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                         "close=%.2f RVOL=%.2f bars_ago=%d conf=%.2f",
                         ticker, prior_sh["price"], lh["price"], close, rvol, bars_ago, confidence,
                     )
+                    # Structural stop (2026-07-21, research-backed) — this IS a
+                    # confirmation/re-entry trade, exactly the case every source
+                    # says should carry a tight stop just beyond the pivot that
+                    # confirmed it, not the wide ATR fallback it was silently
+                    # getting. STRUCT_STOP_MODE picks which level (see constant).
+                    if STRUCT_STOP_MODE == "pivot":
+                        _struct_ref = lh["price"]
+                    elif STRUCT_STOP_MODE == "prior_swing":
+                        _struct_ref = prior_sh["price"]
+                    elif STRUCT_STOP_MODE == "entry_bar":
+                        _struct_ref = float(last_bar["high"])
+                    else:   # "none"
+                        _struct_ref = None
                     return Signal(
                         strategy_id = STRATEGY_ID,
                         direction   = "bearish",
@@ -116,6 +158,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                             "prior_sh":      prior_sh["price"],
                             "bars_ago":      bars_ago,
                             "lh_depth_pct":  round(lh_depth_pct * 100, 2),
+                            "entry_bar_high": _struct_ref,
                         },
                     )
                 else:
@@ -143,6 +186,12 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                     logger.debug("[%s] TREND_CONT bullish: close %.2f < EMA50 %.2f — bounce below MA, skipped", ticker, close, ema50)
                 elif vwap is None or close > vwap:
                     hl_rise_pct = (hl["price"] - prior_sl["price"]) / prior_sl["price"]
+                    if hl_rise_pct * 100 < _MIN_DEPTH_PCT:
+                        logger.debug(
+                            "[%s] TREND_CONT bullish: hl_rise_pct %.2f%% < %.2f%% — pullback too shallow",
+                            ticker, hl_rise_pct * 100, _MIN_DEPTH_PCT,
+                        )
+                        return None
                     rise_bonus  = min(0.06, hl_rise_pct * 20)
                     rvol_bonus  = min(0.08, (rvol - _RVOL_MIN) * 0.06)
                     # REVERTED 2026-07-17 — see matching note in the bearish branch
@@ -154,6 +203,17 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                         "close=%.2f RVOL=%.2f bars_ago=%d conf=%.2f",
                         ticker, prior_sl["price"], hl["price"], close, rvol, bars_ago, confidence,
                     )
+                    # Structural stop (2026-07-21, research-backed) — same
+                    # reasoning as the bearish branch above: stop belongs just
+                    # beyond the pivot that confirmed this re-entry.
+                    if STRUCT_STOP_MODE == "pivot":
+                        _struct_ref = hl["price"]
+                    elif STRUCT_STOP_MODE == "prior_swing":
+                        _struct_ref = prior_sl["price"]
+                    elif STRUCT_STOP_MODE == "entry_bar":
+                        _struct_ref = float(last_bar["low"])
+                    else:   # "none"
+                        _struct_ref = None
                     return Signal(
                         strategy_id = STRATEGY_ID,
                         direction   = "bullish",
@@ -166,6 +226,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                             "prior_sl":     prior_sl["price"],
                             "bars_ago":     bars_ago,
                             "hl_rise_pct":  round(hl_rise_pct * 100, 2),
+                            "entry_bar_low": _struct_ref,
                         },
                     )
                 else:

@@ -16,8 +16,9 @@ from typing import Optional
 from broker import AlpacaClient
 from database import get_conn, save_strategy_audit
 from strategy_health.engine import audit_ticker
-from strategy_health.narrator import build_narrative
-from strategy_health.ai_narrator import build_ai_narrative
+from strategy_health.narrator import build_narrative, build_weekly_narrative
+from strategy_health.ai_narrator import build_ai_narrative, build_weekly_ai_narrative
+from strategy_health.weekly import build_weekly_aggregate
 
 logger = logging.getLogger("celo_trader.strategy_health.runner")
 
@@ -139,6 +140,39 @@ def run_daily_audit(alpaca: Optional[AlpacaClient] = None,
 
     logger.info("strategy_health: audit complete for %s (%d ticker(s), %d strategies)",
                 aggregate["date"], len(scanned), len(per_strategy))
+
+    aggregate["rule_summary"] = rule_summary
+    aggregate["ai_summary"]   = ai_summary
+    return aggregate
+
+
+def run_weekly_review(days: int = 7) -> dict:
+    """
+    Roll the trailing `days` of daily audits + real closed trades into one
+    weekly view and save it (audit_type='weekly', keyed on the ISO
+    year-week so re-running the same week overwrites rather than
+    duplicates). See strategy_health/weekly.py for what's aggregated and
+    ai_narrator.build_weekly_ai_narrative for the recommendation prompt.
+    """
+    aggregate = build_weekly_aggregate(days=days)
+
+    rule_summary = build_weekly_narrative(aggregate)
+    ai_summary   = build_weekly_ai_narrative(aggregate)   # None if no API key / call failed
+
+    try:
+        save_strategy_audit({
+            "audit_date":   aggregate["week_label"],
+            "audit_type":   "weekly",
+            "tickers":      "",   # weekly view isn't ticker-scoped — it's strategy-scoped
+            "aggregate":    aggregate,
+            "rule_summary": rule_summary,
+            "ai_summary":   ai_summary,
+        })
+    except Exception as exc:
+        logger.error("strategy_health: failed to save weekly review: %s", exc)
+
+    logger.info("strategy_health: weekly review complete for %s (%d daily audits rolled up)",
+                aggregate["week_label"], len(aggregate["daily_audits_included"]))
 
     aggregate["rule_summary"] = rule_summary
     aggregate["ai_summary"]   = ai_summary

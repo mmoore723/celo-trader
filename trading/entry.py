@@ -398,7 +398,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     "entry_time":             None,
                     "stage1_done":            False,
                     "orb_triggered":          False,
-                    "current_stop_pct":       _risk.ORB_STOP_PCT if _risk else 0.30,
+                    # CLEANUP 2026-07-22 (full-audit finding 1.6): 0.30 was the
+                    # pre-2026-07-18 stop value, stale vs. today's 0.20 — only
+                    # fires when _risk isn't initialized yet (dashboard display
+                    # only, no trading impact), but no reason to leave it wrong.
+                    "current_stop_pct":       _risk.ORB_STOP_PCT if _risk else float(get_settings().get("orb_stop_loss_pct", 20)) / 100.0,
                     "flip_eligible":          False,
                     "flip_direction":         None,
                     "flip_ticker":            None,
@@ -623,6 +627,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     if _risk:
         _risk.ORB_STAGE1_GAIN = float(settings.get("orb_stage1_gain_pct", 50)) / 100.0
         _risk.ORB_STOP_PCT    = float(settings.get("orb_stop_loss_pct",   20)) / 100.0
+        # Dynamic stage1 trigger overrides (2026-07-21) — same sync-every-tick
+        # pattern as the two lines above, so Settings changes take effect
+        # within seconds without a bot restart.
+        _risk.STAGE1_DYNAMIC_ENABLED     = bool(settings.get("stage1_dynamic_enabled", True))
+        _risk.STAGE1_ATR_TARGET_MULT     = float(settings.get("stage1_atr_target_mult", 2.0))
+        _risk.STAGE1_MIN_LOCK_FLOOR_PCT  = float(settings.get("stage1_min_lock_floor_pct", 10)) / 100.0
+        _risk.STAGE1_RVOL_FADE_THRESHOLD = float(settings.get("stage1_rvol_fade_threshold", 1.0))
+        _risk.STAGE1_MOMENTUM_REQUIRE_BOTH = bool(settings.get("stage1_momentum_require_both", False))
 
     # Pass ET time explicitly — risk.py's is_trading_window() defaults to
     # datetime.now() which is UTC on EC2, making the 9:30–16:00 ET window
@@ -1214,7 +1226,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _c_mid = (_c_bid + _c_ask) / 2 if _c_bid > 0 else _c_ask
     if _c_mid > 0:
         _spread_pct = (_c_ask - _c_bid) / _c_mid
-        _spread_max = float(settings.get("spread_gate_pct", 25)) / 100.0
+        _spread_max = float(settings.get("spread_gate_pct", 8)) / 100.0   # was stale 25, fixed 2026-07-22
         if _spread_pct > _spread_max:   # user-configurable via Settings → Trade Parameters
             log_event("INFO", "bar_eval",
                       f"🟡 [{ticker}] Skipping — bid-ask spread is "

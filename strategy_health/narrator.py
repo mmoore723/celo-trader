@@ -85,3 +85,37 @@ def build_narrative(aggregate: dict) -> str:
         lines.append(piece)
 
     return "\n".join(lines)
+
+
+def build_weekly_narrative(aggregate: dict) -> str:
+    """
+    Rule-based (free) summary of a weekly rollup — see weekly.py for the
+    aggregate shape (per_strategy_funnel + per_strategy_risk_math).
+    """
+    lines: list[str] = []
+    week = aggregate.get("week_label", "this week")
+    days_included = aggregate.get("daily_audits_included", [])
+    lines.append(f"Weekly review for {week} — {len(days_included)} daily audit(s) rolled up.")
+
+    risk_math = aggregate.get("per_strategy_risk_math", {})
+    if not risk_math:
+        lines.append("No closed trades in this window — nothing to evaluate yet.")
+        return "\n".join(lines)
+
+    for sid, d in sorted(risk_math.items(), key=lambda kv: -kv[1].get("n", 0)):
+        name = _STRAT_NAMES.get(sid, sid)
+        n = d.get("n", 0)
+        if n == 0:
+            continue
+        piece = (
+            f"• {name} ({sid}): {n} closed trade(s), {d.get('win_rate_pct', 0):.0f}% win rate, "
+            f"${d.get('avg_pnl', 0):+.2f}/trade avg (${d.get('total_pnl', 0):+.2f} total)."
+        )
+        rr = d.get("realized_rr")
+        if rr is not None:
+            piece += f" Realized win:loss ${d.get('avg_win',0):.2f}:${abs(d.get('avg_loss',0)):.2f} ({rr}x)."
+        if n < 10:
+            piece += " Sample still thin (<10 trades) — read cautiously."
+        lines.append(piece)
+
+    return "\n".join(lines)

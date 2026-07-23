@@ -145,12 +145,21 @@ class Settings(BaseModel):
     chan_break_enabled: bool = True
     mid_brk_enabled: bool = True
     trend_cont_enabled: bool = True
+    aft_rev_enabled: bool = True   # Afternoon Reversal — added 2026-07-20, was previously
+                                    # not exposed in Settings at all (no way to toggle it)
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────
     orb_stage1_gain_pct: float = 50.0   # Stage-1 profit target as % of entry
     orb_stop_loss_pct:   float = 20.0   # Option premium stop-loss as % of entry
-    spread_gate_pct:     float = 25.0   # Max bid-ask spread as % of mid
+    spread_gate_pct:     float = 8.0    # Max bid-ask spread as % of mid (tightened
+                                          # from 25 on 2026-07-XX per config.py's
+                                          # _DEFAULTS — this model default was stale,
+                                          # fixed 2026-07-22 audit)
     vol_roc_threshold:   float = 0.50   # Volume ROC veto threshold
+    simplified_exit_mode: bool = True   # 2026-07-22: 3-rule exit (hard stop /
+                                          # 3.0x chandelier trail / time cap) vs
+                                          # the full 9+-condition engine. See
+                                          # ab_test_exit_complexity.py.
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────

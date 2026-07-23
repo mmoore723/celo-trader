@@ -86,7 +86,8 @@ CREATE TABLE IF NOT EXISTS system_events (
 _CREATE_STRATEGY_AUDITS = """
 CREATE TABLE IF NOT EXISTS strategy_audits (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    audit_date    TEXT    NOT NULL,   -- YYYY-MM-DD, the trading day audited
+    audit_date    TEXT    NOT NULL,   -- YYYY-MM-DD (daily) or ISO year-week e.g. "2026-W29" (weekly)
+    audit_type    TEXT    NOT NULL DEFAULT 'daily',  -- 'daily' | 'weekly' — added 2026-07-20
     created_at    TEXT    NOT NULL,   -- ISO datetime the audit ran
     tickers       TEXT,               -- comma-separated tickers scanned
     aggregate_json TEXT   NOT NULL,   -- full per-strategy funnel dict, JSON-encoded
@@ -236,6 +237,13 @@ def _init_db_at(db_path: Path) -> None:
             # copied from is ephemeral and gets overwritten).
             conn.execute("ALTER TABLE trades ADD COLUMN annotations_json TEXT")
             logger.info("Migration: added annotations_json column to %s", db_path.name)
+        _audit_cols = {row[1] for row in conn.execute("PRAGMA table_info(strategy_audits)")}
+        if "audit_type" not in _audit_cols:
+            # Existing rows are all from the daily audit (weekly didn't exist
+            # yet), so backfill them explicitly rather than leaving NULL.
+            conn.execute("ALTER TABLE strategy_audits ADD COLUMN audit_type TEXT DEFAULT 'daily'")
+            conn.execute("UPDATE strategy_audits SET audit_type = 'daily' WHERE audit_type IS NULL")
+            logger.info("Migration: added audit_type column to strategy_audits in %s", db_path.name)
         if "mtf_bias_json" not in _cols:
             # JSON dict of {"1Min": "with"|"against"|"neutral", "5Min": ..., ...} —
             # higher-timeframe trend agreement at entry, for Journal's MTF
@@ -798,6 +806,47 @@ def log_ai_reasoning(
         logger.warning("log_ai_reasoning: failed to persist (non-fatal): %s", exc)
 
 
+def get_ai_reasoning_log(
+    limit: int = 100,
+    event_type: Optional[str] = None,
+    ticker: Optional[str] = None,
+    only_errors: bool = False,
+) -> list[dict]:
+    """
+    Read back the full prompt/response replay trail from ai_reasoning_log,
+    newest first. Added 2026-07-20 per explicit user request — the table has
+    logged every AI call since phase 1 shipped, but nothing ever read it back
+    for the user to audit. Every row includes the exact prompt text sent and
+    the raw model response, so this is a literal replay, not a summary —
+    the point is verifying the model isn't hallucinating or being steered by
+    a bad prompt, not trusting a paraphrase of what it said.
+    """
+    with get_conn() as conn:
+        query = "SELECT * FROM ai_reasoning_log WHERE 1=1"
+        params: list = []
+        if event_type:
+            query += " AND event_type = ?"
+            params.append(event_type)
+        if ticker:
+            query += " AND ticker = ?"
+            params.append(ticker.upper())
+        if only_errors:
+            query += " AND error IS NOT NULL"
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_ai_reasoning_entry(entry_id: int) -> Optional[dict]:
+    """Single full row by id — used for the expanded prompt/response view."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM ai_reasoning_log WHERE id = ?", (entry_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
 # ── Aggregate statistics ───────────────────────────────────────────────────────
 
 def get_statistics() -> dict:
@@ -848,22 +897,27 @@ def get_statistics() -> dict:
 
 def save_strategy_audit(row: dict) -> None:
     """
-    row keys: audit_date, tickers, aggregate (dict), rule_summary, ai_summary.
-    Uses INSERT OR REPLACE keyed on audit_date so re-running the same day's
-    audit (e.g. manual on-demand re-run) overwrites rather than duplicates.
+    row keys: audit_date, tickers, aggregate (dict), rule_summary, ai_summary,
+    audit_type ('daily' | 'weekly', defaults 'daily' for backward compat).
+    Uses INSERT OR REPLACE keyed on (audit_date, audit_type) so re-running
+    the same period's audit (e.g. manual on-demand re-run) overwrites rather
+    than duplicates — and so a weekly row for the same date string a daily
+    row uses (e.g. a Friday) never collides with or deletes the daily row.
     """
     import json as _json
+    audit_type = row.get("audit_type", "daily")
     with get_conn() as conn:
         conn.execute(
-            "DELETE FROM strategy_audits WHERE audit_date = ?",
-            (row["audit_date"],),
+            "DELETE FROM strategy_audits WHERE audit_date = ? AND audit_type = ?",
+            (row["audit_date"], audit_type),
         )
         conn.execute(
             "INSERT INTO strategy_audits "
-            "(audit_date, created_at, tickers, aggregate_json, rule_summary, ai_summary) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(audit_date, audit_type, created_at, tickers, aggregate_json, rule_summary, ai_summary) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 row["audit_date"],
+                audit_type,
                 _now_et().isoformat(),
                 row.get("tickers", ""),
                 _json.dumps(row["aggregate"], default=str),
@@ -873,8 +927,10 @@ def save_strategy_audit(row: dict) -> None:
         )
 
 
-def get_latest_strategy_audit() -> Optional[dict]:
-    """Most recent audit row, with aggregate_json decoded back to a dict.
+def get_latest_strategy_audit(audit_type: str = "daily") -> Optional[dict]:
+    """Most recent audit row of the given type, with aggregate_json decoded
+    back to a dict. audit_type defaults to 'daily' to preserve existing
+    callers' behavior; pass 'weekly' for the Friday rollup.
 
     FIX 2026-07-17: this used to ORDER BY audit_date DESC, but audit_date can
     be the literal string "unknown" (runner.py falls back to it when no
@@ -889,7 +945,9 @@ def get_latest_strategy_audit() -> Optional[dict]:
     import json as _json
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM strategy_audits ORDER BY created_at DESC LIMIT 1"
+            "SELECT * FROM strategy_audits WHERE audit_type = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (audit_type,),
         ).fetchone()
     if not row:
         return None
@@ -901,13 +959,14 @@ def get_latest_strategy_audit() -> Optional[dict]:
     return result
 
 
-def get_strategy_audit_history(limit: int = 30) -> list[dict]:
-    """Recent audits, newest first, WITHOUT the full aggregate JSON (keeps
-    the history list endpoint light — callers fetch the latest for detail)."""
+def get_strategy_audit_history(limit: int = 30, audit_type: str = "daily") -> list[dict]:
+    """Recent audits of the given type, newest first, WITHOUT the full
+    aggregate JSON (keeps the history list endpoint light — callers fetch
+    the latest for detail)."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT audit_date, created_at, tickers, rule_summary, ai_summary "
-            "FROM strategy_audits ORDER BY created_at DESC LIMIT ?",
-            (limit,),
+            "SELECT audit_date, audit_type, created_at, tickers, rule_summary, ai_summary "
+            "FROM strategy_audits WHERE audit_type = ? ORDER BY created_at DESC LIMIT ?",
+            (audit_type, limit),
         ).fetchall()
     return [dict(r) for r in rows]

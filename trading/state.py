@@ -139,6 +139,7 @@ def set_user_trade_log(log: logging.Logger, user_id: str | None = None) -> None:
 # USER_STATES[user_id] is each user's isolated bot state dict.
 # LIVE_STATE is a backward-compat alias pointing to USER_STATES["admin"].
 from risk import RiskManager  # noqa: E402
+from config import _DEFAULTS  # noqa: E402
 
 
 def _make_initial_state() -> dict:
@@ -166,7 +167,12 @@ def _make_initial_state() -> dict:
         "stage1_done":           False,
         "stage1_be_price":       None,
         "orb_triggered":         False,
-        "current_stop_pct":      RiskManager.ORB_STOP_PCT,
+        # CLEANUP 2026-07-22 (full-audit finding 1.5): dashboard placeholder,
+        # overwritten by the real synced value on the next tick — but read
+        # from config's _DEFAULTS instead of RiskManager's raw class default
+        # so it can't silently drift from the two if they're ever edited
+        # separately.
+        "current_stop_pct":      float(_DEFAULTS.get("orb_stop_loss_pct", 20)) / 100.0,
         "struct_stop_price":     None,
         "flip_eligible":         False,
         "flip_direction":        None,
@@ -293,7 +299,8 @@ def reset_session_state(user_id: str = "admin") -> None:
     _US["last_direction"]         = None
     _US["last_trade_closed_time"] = None
     _US["peak_price"]             = None
-    _US["current_stop_pct"]       = RiskManager.ORB_STOP_PCT
+    # CLEANUP 2026-07-22 (full-audit finding 1.5) — see matching note above.
+    _US["current_stop_pct"]       = float(_DEFAULTS.get("orb_stop_loss_pct", 20)) / 100.0
     _US["struct_stop_price"]      = None
     _US["scanner_ran_today"]      = False
     _US["scan_watchlist"]         = []

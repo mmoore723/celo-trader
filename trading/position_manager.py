@@ -701,24 +701,43 @@ def _manage_open_position(
         _trail_is_armed     = atr_trail_stop is not None
         _effective_atr_stop = atr_trail_stop or ps.get("initial_atr_stop")
 
-        should_exit, reason = _risk.should_exit(
-            entry_price, current_price,
-            entry_time      = entry_time,
-            now             = now_et,
-            stage1_done     = stage1_done,
-            stage1_be_price = stage1_be_price,
-            peak_price      = ps.get("peak_price"),   # MFE for giveback rule
-            struct_stop_price = _struct_stop,
-            atr_trail_stop  = _effective_atr_stop,    # initial or armed ATR stop
-            trail_armed     = _trail_is_armed,        # which case the above actually is
-            vwap            = vwap,
-            vwap_breached   = _vwap_breached_any,     # any breach (≥1 bar)
-            trend_dead      = trend_dead,
-            direction       = direction,
-            rvol            = _rvol_for_exit,
-            atr_target_price = _atr_target_price,   # dynamic stage1 trigger (2026-07-21)
-            momentum_fading  = _momentum_fading,
-        )
+        # ── Exit decision: simplified 3-rule path OR the full 9+-condition
+        # engine (2026-07-22, see trading/simplified_exit_live.py). Gated by
+        # a settings toggle (default True) so it's a one-flip rollback, not
+        # a one-way door — same reversibility every fix shipped with today.
+        from config import get_settings as _gs_exit
+        _simplified_mode = bool(_gs_exit().get("simplified_exit_mode", True))
+        _atr_for_exit        = locals().get("_atr")
+        _underlying_for_exit = locals().get("_underlying_now")
+        if _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
+            from trading.simplified_exit_live import evaluate_simplified_live_exit
+            should_exit, reason = evaluate_simplified_live_exit(
+                ps, entry_price, current_price,
+                entry_time=entry_time, now=now_et, direction=direction,
+                atr=_atr_for_exit, underlying_now=_underlying_for_exit,
+            )
+        else:
+            # Fail-open to the full engine if simplified mode is off, or if
+            # bar data isn't ready yet for the chandelier calc — same
+            # fail-open convention used throughout this file.
+            should_exit, reason = _risk.should_exit(
+                entry_price, current_price,
+                entry_time      = entry_time,
+                now             = now_et,
+                stage1_done     = stage1_done,
+                stage1_be_price = stage1_be_price,
+                peak_price      = ps.get("peak_price"),   # MFE for giveback rule
+                struct_stop_price = _struct_stop,
+                atr_trail_stop  = _effective_atr_stop,    # initial or armed ATR stop
+                trail_armed     = _trail_is_armed,        # which case the above actually is
+                vwap            = vwap,
+                vwap_breached   = _vwap_breached_any,     # any breach (≥1 bar)
+                trend_dead      = trend_dead,
+                direction       = direction,
+                rvol            = _rvol_for_exit,
+                atr_target_price = _atr_target_price,   # dynamic stage1 trigger (2026-07-21)
+                momentum_fading  = _momentum_fading,
+            )
 
         if not should_exit:
             return
@@ -1113,6 +1132,10 @@ def _close_position(
         "manual":                   "manually closed by the user",
         "panic":                    "emergency close triggered (kill-switch or account risk limit)",
         "kill_lock_force_close":    "daily loss limit reached — all positions force-closed to protect the account",
+        # 2026-07-22: simplified 3-rule exit engine (see trading/simplified_exit_live.py)
+        "simplified_hard_stop":       "hard stop hit — structural or ATR-based catastrophe stop",
+        "simplified_chandelier_3atr": "chandelier exit (3.0x ATR trailing stop) triggered as price pulled back from the high",
+        "simplified_time_cap":        "time cap hit — trade closed to stop theta bleed on a stalled position",
     }
     _reason_txt = next((v for k, v in _REASON_MAP.items() if reason and k in reason), reason or "exit signal")
     _pnl_sign   = "+" if 0 >= 0 else ""   # placeholder; real pnl not available yet
@@ -1172,6 +1195,9 @@ def _close_position(
             "manual":                    "manually closed by user",
             "panic":                     "emergency close triggered",
             "kill_lock_force_close":     "daily loss limit — force closed",
+            "simplified_hard_stop":       "hard stop (structural/ATR)",
+            "simplified_chandelier_3atr": "chandelier exit (3.0x ATR trail)",
+            "simplified_time_cap":        "time cap (theta stall)",
         }
         _reason_nice = next(
             (v for k, v in _reason_map.items() if reason and k in reason), reason or "exit signal"

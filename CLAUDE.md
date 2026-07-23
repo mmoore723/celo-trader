@@ -6,3 +6,5 @@
 6. Make sure when modifying trade logic the trade logic is updated though the complete app
 7. Do not hallucenate results
 8. Ask for code change approval before implementing
+9. Before making changes to strategy logic (entry/exit rules, thresholds, gates), research with at least 10 outside sources first — not just reactive tuning against one backtest sample.
+10. When explaining bot status, strategy/architecture, test results, or what's changing, lead with a visual (diagram or dashboard widget), not a long text explanation. Keep any accompanying text short — the visual should carry the explanation.

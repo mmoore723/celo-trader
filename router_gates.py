@@ -41,7 +41,7 @@ logger = logging.getLogger("celo_trader.router_gates")
 
 # ── 1. Regime gate (OFF by default — see regime_manager.py) ──────────────────
 
-def apply_regime_gate(signals: list, df: pd.DataFrame, ticker: str) -> list:
+def apply_regime_gate(signals: list, df: pd.DataFrame, ticker: str, quiet: bool = False) -> list:
     if not (_regime_mgr.REGIME_GATE_ENABLED and signals):
         return signals
     _regime = compute_regime(df)
@@ -49,7 +49,7 @@ def apply_regime_gate(signals: list, df: pd.DataFrame, ticker: str) -> list:
         return signals
     _before = len(signals)
     signals = [s for s in signals if regime_allows(s.strategy_id, s.direction, _regime)]
-    if len(signals) != _before:
+    if len(signals) != _before and not quiet:
         try:
             _db_log("INFO", "bar_eval",
                     f"⚪ [{ticker}] Regime={_regime} filtered "
@@ -64,7 +64,7 @@ def apply_regime_gate(signals: list, df: pd.DataFrame, ticker: str) -> list:
 # excluded — individual strategies already gate on it. Penalty scales with
 # RVOL so high-volume days allow more counter-session latitude.
 
-def apply_session_bias_penalty(signals: list, today: pd.DataFrame, ticker: str) -> list:
+def apply_session_bias_penalty(signals: list, today: pd.DataFrame, ticker: str, quiet: bool = False) -> list:
     if not (signals and len(today) >= 2):
         return signals
 
@@ -103,7 +103,7 @@ def apply_session_bias_penalty(signals: list, today: pd.DataFrame, ticker: str) 
                 _bias_label, _sig.strategy_id, _sig.direction,
                 _old_conf, _sig.confidence, _last_rvol, _dynamic_penalty * 100,
             )
-    if _penalized:
+    if _penalized and not quiet:
         _db_log(
             "INFO", "scan",
             f"{ticker} — Session bias={_bias_label}: "
@@ -160,7 +160,7 @@ def apply_vwap_weight(signals: list, today: pd.DataFrame, ticker: str) -> list:
 # When 2+ independent strategies agree on direction, this is the highest-
 # probability setup. Reward it with a confidence bonus.
 
-def apply_confluence_bonus(signals: list, ticker: str) -> list:
+def apply_confluence_bonus(signals: list, ticker: str, quiet: bool = False) -> list:
     if not signals:
         return signals
     _top_dir     = signals[0].direction
@@ -169,16 +169,17 @@ def apply_confluence_bonus(signals: list, ticker: str) -> list:
         _conf_bonus  = min(0.05, (_agree_count - 1) * 0.03)
         _old_top     = signals[0].confidence
         signals[0].confidence = min(0.95, signals[0].confidence + _conf_bonus)
-        logger.info(
-            "router: confluence +%.0f%% for %s %s (%d strategies agree: %.0f%%→%.0f%%)",
-            _conf_bonus * 100, ticker, _top_dir, _agree_count,
-            _old_top * 100, signals[0].confidence * 100,
-        )
-        _db_log(
-            "INFO", "scan",
-            f"{ticker} — Confluence: {_agree_count} strategies agree {_top_dir} "
-            f"→ confidence boosted +{_conf_bonus:.0%} to {signals[0].confidence:.0%}",
-        )
+        if not quiet:
+            logger.info(
+                "router: confluence +%.0f%% for %s %s (%d strategies agree: %.0f%%→%.0f%%)",
+                _conf_bonus * 100, ticker, _top_dir, _agree_count,
+                _old_top * 100, signals[0].confidence * 100,
+            )
+            _db_log(
+                "INFO", "scan",
+                f"{ticker} — Confluence: {_agree_count} strategies agree {_top_dir} "
+                f"→ confidence boosted +{_conf_bonus:.0%} to {signals[0].confidence:.0%}",
+            )
         signals.sort(key=lambda s: s.confidence, reverse=True)
     return signals
 
@@ -220,7 +221,7 @@ def apply_large_move_gate(signals: list, today: pd.DataFrame, ticker: str) -> li
 # must ALL agree before a direction is considered "established" enough to
 # hard-block the opposite side. 2/3 agreement gets a soft penalty instead.
 
-def apply_directional_consensus(signals: list, today: pd.DataFrame, ticker: str) -> list:
+def apply_directional_consensus(signals: list, today: pd.DataFrame, ticker: str, quiet: bool = False) -> list:
     if not (signals and len(today) >= 20):
         return signals
 
@@ -248,7 +249,7 @@ def apply_directional_consensus(signals: list, today: pd.DataFrame, ticker: str)
     _dc_before = len(signals)
     if _bull_score == 3:
         signals = [s for s in signals if s.direction == "bullish"]
-        if _dc_before > len(signals):
+        if _dc_before > len(signals) and not quiet:
             logger.info(
                 "router: dir_consensus=BULLISH 3/3 (slope+%.3f%% %s RVOL=%.1f×) — %d PUT(s) blocked",
                 _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
@@ -259,7 +260,7 @@ def apply_directional_consensus(signals: list, today: pd.DataFrame, ticker: str)
                 f"— PUT entries blocked.")
     elif _bear_score == 3:
         signals = [s for s in signals if s.direction == "bearish"]
-        if _dc_before > len(signals):
+        if _dc_before > len(signals) and not quiet:
             logger.info(
                 "router: dir_consensus=BEARISH 3/3 (slope%.3f%% %s RVOL=%.1f×) — %d CALL(s) blocked",
                 _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
@@ -302,13 +303,16 @@ def apply_confidence_floor(signals: list, ticker: str, min_confidence: float) ->
 # If the top two signals disagree on direction and their confidence gap is
 # within veto_band, the market is sending mixed signals — skip both.
 
-def check_conflict_veto(signals: list, today: pd.DataFrame, ticker: str, veto_band: float) -> bool:
+def check_conflict_veto(signals: list, today: pd.DataFrame, ticker: str, veto_band: float, quiet: bool = False) -> bool:
     if len(signals) < 2:
         return False
     _top, _second = signals[0], signals[1]
     if not (_top.direction != _second.direction and
             (_top.confidence - _second.confidence) <= veto_band):
         return False
+
+    if quiet:
+        return True
 
     _db_log(
         "INFO", "scan",
@@ -336,7 +340,7 @@ def check_conflict_veto(signals: list, today: pd.DataFrame, ticker: str, veto_ba
 # Prevent entries when buying pressure is already fading. Compares avg volume
 # of the last 3 bars vs the prior 3 bars.
 
-def check_volume_roc_veto(signals: list, today: pd.DataFrame, ticker: str) -> bool:
+def check_volume_roc_veto(signals: list, today: pd.DataFrame, ticker: str, quiet: bool = False) -> bool:
     if not (signals and len(today) >= 6):
         return False
 
@@ -347,6 +351,9 @@ def check_volume_roc_veto(signals: list, today: pd.DataFrame, ticker: str) -> bo
     _roc_threshold = float(_get_settings().get("vol_roc_threshold", 0.50))
     if _vol_roc >= _roc_threshold:
         return False
+
+    if quiet:
+        return True
 
     _db_log(
         "INFO", "scan",

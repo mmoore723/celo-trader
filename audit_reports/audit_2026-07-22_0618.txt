@@ -1,0 +1,109 @@
+RUN FULL AUDIT — 2 month(s), 2 ticker(s): SPY, QQQ
+Started 06:18:37 — 2 ticker(s) in parallel (set AUDIT_WORKERS=N to change)
+
+   ✓ QQQ done (908s, total elapsed 908s) — 46 trades, return -53.6%, win rate 35%
+   ✓ SPY done (933s, total elapsed 933s) — 35 trades, return -50.9%, win rate 29%
+
+====================================================================================================
+PER-TICKER SUMMARY
+====================================================================================================
+  SPY: 35 trades, return -50.9%, win rate 29%, max DD $2609.60 (52.2%)  (933s)
+  QQQ: 46 trades, return -53.6%, win rate 35%, max DD $2739.05 (54.8%)  (908s)
+
+====================================================================================================
+ENTRY-GATE FUNNEL (aggregated across all tickers above)
+====================================================================================================
+    6084 bars scanned across 78 trading days
+       0 of those (0.0%) were in ADX<25 chop regime — breakout strategies were never even evaluated on these bars (this is a coverage gap, not a 'signals killed' count — those strategies might not have fired anyway)
+      68 bars had >=1 raw signal from any strategy (out of the remaining non-chop bars, plus non-gated strategies during chop)
+    -    0 killed by the confidence floor (< router's min confidence)
+    -    0 killed by the conflict veto (2 strategies disagreed, too close to call)
+    -    0 skipped by a calls-only/puts-only filter
+    -    0 passed every gate but couldn't afford even 1 contract
+    -    0 passed every gate, affordable, but reward:risk was below the 1.2x-1.6x minimum (2026-07-22 fidelity fix — live has always enforced this, the backtester didn't until now)
+  =     81 actual trades taken
+  Signal survival rate: 119.1% of bars with a raw signal became a real trade — the confidence floor is the dominant filter if below_floor accounts for most of the gap.
+
+====================================================================================================
+1. PER-STRATEGY EXPECTANCY
+====================================================================================================
+STRATEGY      TRADES   WIN%   TOTAL P&L  EXPECTANCY  VERDICT
+----------------------------------------------------------------------------------------------------
+TREND_CONT         5    60%    -172.80$     -34.56$  ⚪ too few trades to judge
+INST_ORB           9    56%    -417.40$     -46.38$  ⚪ too few trades to judge
+MID_BRK           52    23%   -3453.15$     -66.41$  🔴 negative expectancy
+FVG                8    38%    -598.55$     -74.82$  ⚪ too few trades to judge
+AFT_REV            6    50%    -495.60$     -82.60$  ⚪ too few trades to judge
+VWAP_PB            1     0%     -84.90$     -84.90$  ⚪ too few trades to judge
+
+====================================================================================================
+2. RISK MATH — realized win:loss vs. configured gate, exit-reason mix
+====================================================================================================
+
+MID_BRK (Mid-Day Breakdown) — n=52
+  avg win $31.63  avg loss $95.82  realized W:L 0.33x  (gate requires 1.2x-1.6x)
+  exit mix: structural_stop_bar_high (20), initial_atr_stop (9), stage1_momentum_fade (8), stage2_trail_stop (7)
+  WIN exits:  stage1_momentum_fade (8), stage2_trail_stop (2), peak_giveback (2)
+  LOSS exits: structural_stop_bar_high (20), initial_atr_stop (9), stage2_trail_stop (5), momentum_dead_exit (3)
+
+INST_ORB (Opening Range Breakout) — n=9
+  avg win $17.69  avg loss $126.46  realized W:L 0.14x  (gate requires 1.2x-1.6x)
+  exit mix: structural_stop_bar_high (3), stage1_momentum_fade (2), stage2_trail_stop (2), momentum_dead_exit (1)
+  WIN exits:  stage1_momentum_fade (2), stage2_trail_stop (2), stage1_volume_fade (1)
+  LOSS exits: structural_stop_bar_high (3), momentum_dead_exit (1)
+
+FVG (Fair Value Gap) — n=8
+  avg win $53.30  avg loss $151.69  realized W:L 0.35x  (gate requires 1.2x-1.6x)
+  exit mix: initial_atr_stop (4), peak_giveback (1), stage1_momentum_fade (1), stage2_trail_stop (1)
+  WIN exits:  peak_giveback (1), stage1_momentum_fade (1), stage2_trail_stop (1)
+  LOSS exits: initial_atr_stop (4), momentum_dead_exit (1)
+
+AFT_REV (Afternoon Reversal) — n=6
+  avg win $31.27  avg loss $196.47  realized W:L 0.16x  (gate requires 1.2x-1.6x)
+  exit mix: initial_atr_stop (2), stage1_momentum_fade (2), stage2_trail_stop (1), momentum_dead_exit (1)
+  WIN exits:  stage1_momentum_fade (2), stage2_trail_stop (1)
+  LOSS exits: initial_atr_stop (2), momentum_dead_exit (1)
+
+TREND_CONT (Trend Continuation) — n=5
+  avg win $14.70  avg loss $108.45  realized W:L 0.14x  (gate requires 1.2x-1.6x)
+  exit mix: stage1_momentum_fade (2), stage2_trail_stop (2), structural_stop_bar_high (1)
+  WIN exits:  stage1_momentum_fade (2), stage2_trail_stop (1)
+  LOSS exits: stage2_trail_stop (1), structural_stop_bar_high (1)
+
+VWAP_PB (VWAP Pullback) — n=1
+  avg win $0.00  avg loss $84.90  realized W:L —  (gate requires 1.2x-1.6x)
+  exit mix: structural_stop_bar_high (1)
+  LOSS exits: structural_stop_bar_high (1)
+
+====================================================================================================
+3. WIN vs LOSS FEATURE GAPS (per strategy, only where n >= 5)
+====================================================================================================
+
+MID_BRK (Mid-Day Breakdown) — n=52, win rate 23%
+              N  avg RVOL  avg conf  avg held(m) avg breakdown_pct avg entry_bar_high avg lh_confirmed      avg or_high       avg or_low    avg rvol_gate         avg vwap
+  WINS       12      2.10      0.77         28.4             0.77           728.79             1.00           735.15           732.39             0.75           731.70
+  LOSSES     40      2.56      0.77         20.1             0.53           728.55             1.00           733.65           730.82             0.75           730.49
+
+INST_ORB (Opening Range Breakout) — n=9, win rate 56%
+              N  avg RVOL  avg conf  avg held(m)          avg atr avg entry_bar_high avg entry_bar_low  avg or_boundary      avg or_high       avg or_low avg rvol_threshold         avg vwap
+  WINS        5      2.09      0.80         24.0             1.30           742.99           718.12           732.71           734.57           731.12             0.93           732.32
+  LOSSES      4      2.82      0.79         11.8             0.60           737.41             0.00           737.24           739.39           736.98             1.20           738.23
+
+FVG (Fair Value Gap) — n=8, win rate 38%
+              N  avg RVOL  avg conf  avg held(m)          avg atr     avg gap_high      avg gap_low    avg gap_width avg sweep_detected         avg vwap
+  WINS        3      2.24      0.83         27.7             0.48           722.37           721.59             0.78             1.00           722.64
+  LOSSES      5      2.65      0.77         13.2             0.46           728.08           727.31             0.77             0.60           727.83
+
+AFT_REV (Afternoon Reversal) — n=6, win rate 50%
+              N  avg RVOL  avg conf  avg held(m) avg breakdown_pct avg lh_confirmed avg prev_swing_low         avg vwap
+  WINS        3      2.36      0.75         19.7             0.50             1.00           716.08           717.77
+  LOSSES      3      3.60      0.75         41.7             0.19             1.00           730.22           731.80
+
+TREND_CONT (Trend Continuation) — n=5, win rate 60%
+              N  avg RVOL  avg conf  avg held(m)     avg bars_ago avg entry_bar_high avg entry_bar_low     avg hl_price  avg hl_rise_pct avg lh_depth_pct     avg lh_price     avg prior_sh     avg prior_sl
+  WINS        3      2.54      0.80         21.7             4.00           745.29           732.79           732.79             1.04             0.75           745.29           750.96           725.26
+  LOSSES      2      1.80      0.75         23.0             2.00           734.57           732.79           732.79             1.04             0.72           734.57           739.86           725.26
+
+VWAP_PB: n=1 — below the 5-trade floor, skipping (would just be noise).
+
+Total elapsed: 933s

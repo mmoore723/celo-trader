@@ -1,0 +1,99 @@
+RUN FULL AUDIT — 2 month(s), 5 ticker(s): SPY, QQQ, NVDA, AAPL, TSLA
+Started 12:14:41
+
+⏳ SPY…
+   ✓ SPY done (98s, total elapsed 98s)
+⏳ QQQ…
+   ✓ QQQ done (97s, total elapsed 194s)
+⏳ NVDA…
+   ✓ NVDA done (96s, total elapsed 290s)
+⏳ AAPL…
+   ✓ AAPL done (97s, total elapsed 387s)
+⏳ TSLA…
+   ✓ TSLA done (109s, total elapsed 496s)
+
+====================================================================================================
+PER-TICKER SUMMARY
+====================================================================================================
+  SPY: 13 trades, return -14.6%, win rate 23%, max DD $952.30 (19.0%)  (98s)
+  QQQ: 13 trades, return -5.6%, win rate 38%, max DD $428.75 (8.6%)  (97s)
+  NVDA: 13 trades, return -18.1%, win rate 0%, max DD $905.20 (18.1%)  (96s)
+  AAPL: 11 trades, return -30.2%, win rate 0%, max DD $1510.95 (30.2%)  (97s)
+  TSLA: 2 trades, return -5.2%, win rate 0%, max DD $258.70 (5.2%)  (109s)
+
+====================================================================================================
+1. PER-STRATEGY EXPECTANCY
+====================================================================================================
+STRATEGY      TRADES   WIN%   TOTAL P&L  EXPECTANCY  VERDICT
+----------------------------------------------------------------------------------------------------
+TREND_CONT        10    50%    -388.85$     -38.89$  🔴 negative expectancy
+INST_ORB           3    33%    -136.60$     -45.53$  ⚪ too few trades to judge
+FVG                1     0%     -57.45$     -57.45$  ⚪ too few trades to judge
+VWAP_PB            5     0%    -292.30$     -58.46$  ⚪ too few trades to judge
+IFVG               1     0%     -64.00$     -64.00$  ⚪ too few trades to judge
+AFT_REV            8     0%    -571.25$     -71.41$  ⚪ too few trades to judge
+MID_BRK           24     8%   -2176.55$     -90.69$  🔴 negative expectancy
+
+====================================================================================================
+2. RISK MATH — realized win:loss vs. configured gate, exit-reason mix
+====================================================================================================
+
+MID_BRK (Mid-Day Breakdown) — n=24
+  avg win $55.70  avg loss $104.00  realized W:L 0.54x  (gate requires 1.2x-1.6x)
+  exit mix: atr_trail_stop (21), peak_giveback (2), time_cap_loser_60m (1)
+
+TREND_CONT (Trend Continuation) — n=10
+  avg win $75.32  avg loss $153.09  realized W:L 0.49x  (gate requires 1.2x-1.6x)
+  exit mix: atr_trail_stop (5), stage1_50pct (2), peak_giveback (2), time_cap_winner_90m (1)
+
+AFT_REV (Afternoon Reversal) — n=8
+  avg win $0.00  avg loss $71.41  realized W:L —  (gate requires 1.2x-1.6x)
+  exit mix: atr_trail_stop (8)
+
+VWAP_PB (VWAP Pullback) — n=5
+  avg win $0.00  avg loss $58.46  realized W:L —  (gate requires 1.2x-1.6x)
+  exit mix: structural_stop_bar_high (4), time_cap_loser_60m (1)
+
+INST_ORB (Opening Range Breakout) — n=3
+  avg win $58.35  avg loss $97.47  realized W:L 0.60x  (gate requires 1.2x-1.6x)
+  exit mix: atr_trail_stop (2), peak_giveback (1)
+
+IFVG (Inverted Fair Value Gap) — n=1
+  avg win $0.00  avg loss $64.00  realized W:L —  (gate requires 1.2x-1.6x)
+  exit mix: atr_trail_stop (1)
+
+FVG (Fair Value Gap) — n=1
+  avg win $0.00  avg loss $57.45  realized W:L —  (gate requires 1.2x-1.6x)
+  exit mix: atr_trail_stop (1)
+
+====================================================================================================
+3. WIN vs LOSS FEATURE GAPS (per strategy, only where n >= 5)
+====================================================================================================
+
+MID_BRK (Mid-Day Breakdown) — n=24, win rate 8%
+              N  avg RVOL  avg conf  avg held(m) avg breakdown_pct avg lh_confirmed      avg or_high       avg or_low    avg rvol_gate         avg vwap
+  WINS        2      2.28      0.81         45.0             1.40             1.00           728.23           723.88             0.75           721.21
+  LOSSES     22      1.94      0.77         18.9             1.00             1.00           508.86           505.56             0.75           504.73
+
+TREND_CONT (Trend Continuation) — n=10, win rate 50%
+              N  avg RVOL  avg conf  avg held(m)     avg bars_ago     avg hl_price  avg hl_rise_pct avg lh_depth_pct     avg lh_price     avg prior_sh     avg prior_sl
+  WINS        5      2.52      0.80         52.0             4.00           719.82             1.20             0.99           735.93           743.25           711.36
+  LOSSES      5      2.14      0.77         20.0             5.40           289.61             1.03             0.89           291.13           293.73           286.68
+
+AFT_REV (Afternoon Reversal) — n=8, win rate 0%
+              N  avg RVOL  avg conf  avg held(m) avg breakdown_pct avg breakout_pct avg hl_confirmed avg lh_confirmed avg prev_swing_high avg prev_swing_low         avg vwap
+  WINS        0      0.00      0.00          0.0             0.00             0.00             0.00             0.00             0.00             0.00             0.00
+  LOSSES      8      2.22      0.76         12.5             0.79             1.14             1.00             1.00           310.85           426.99           413.41
+
+VWAP_PB (VWAP Pullback) — n=5, win rate 0%
+              N  avg RVOL  avg conf  avg held(m)        avg ema50 avg entry_bar_high avg entry_bar_low avg msa_confirmed    avg prev_high     avg prev_low    avg rvol_gate         avg vwap   avg vwap_touch
+  WINS        0      0.00      0.00          0.0             0.00             0.00             0.00             0.00             0.00             0.00             0.00             0.00             0.00
+  LOSSES      5      1.47      0.78         19.0           627.01           728.47           604.20             0.40           728.49           603.57             1.02           628.63             1.00
+
+INST_ORB: n=3 — below the 5-trade floor, skipping (would just be noise).
+
+IFVG: n=1 — below the 5-trade floor, skipping (would just be noise).
+
+FVG: n=1 — below the 5-trade floor, skipping (would just be noise).
+
+Total elapsed: 496s

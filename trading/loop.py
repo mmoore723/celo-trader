@@ -97,6 +97,41 @@ def _run_nightly_strategy_audit_once(alpaca) -> None:
     threading.Thread(target=_worker, daemon=True, name="strategy-health-audit").start()
 
 
+def _run_weekly_strategy_review_once(alpaca) -> None:
+    """
+    Trigger the weekly strategy review (strategy_health/runner.py::
+    run_weekly_review) once per ISO week, on Fridays only, right alongside
+    the daily audit above. Deduped via a saved settings key on the ISO
+    year-week (e.g. "2026-W29") so a mid-evening restart doesn't re-run the
+    same week. `alpaca` isn't actually used by the weekly review (it only
+    reads already-saved daily audits + the trades table, no market-data
+    fetch) but is accepted for symmetry with the daily trigger's call site.
+    """
+    import threading
+    from datetime import date as _date
+    from config import get_settings, save_settings
+
+    today = _date.today()
+    if today.weekday() != 4:   # 0=Monday .. 4=Friday
+        return
+
+    week_label = f"{today.isocalendar()[0]}-W{today.isocalendar()[1]:02d}"
+    if get_settings().get("last_weekly_review_week") == week_label:
+        return   # already ran this week
+
+    def _worker() -> None:
+        try:
+            from strategy_health.runner import run_weekly_review
+            from database import log_event as _le
+            run_weekly_review()
+            save_settings({"last_weekly_review_week": week_label})
+            _le("INFO", "trading_logic", "📈 Weekly strategy review complete — see Strategy Health page.")
+        except Exception as exc:
+            logger.warning("Weekly strategy review failed (non-fatal): %s", exc)
+
+    threading.Thread(target=_worker, daemon=True, name="strategy-health-weekly").start()
+
+
 def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> None:
     """Inner body of the trading loop — called exclusively from run_trading_loop()."""
     from broker import get_clients
@@ -296,6 +331,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                         f"({_wake.strftime('%a %b %d')}). No API calls during this window.",
                     )
                     _run_nightly_strategy_audit_once(alpaca)
+                    _run_weekly_strategy_review_once(alpaca)
 
                 # Sleep up to 5 min at a time so Stop Bot stays responsive.
                 # FIX: this used to wait on the module-level admin-only

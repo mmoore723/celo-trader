@@ -12,6 +12,7 @@ daily P&L, exit-reason breakdown, and full trade log.
 
 import logging
 import math
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional
 
@@ -22,24 +23,51 @@ from config import (
     BACKTEST_MONTHS, STARTING_CAPITAL,
     EARLY_TIMEBOX_MIN, EARLY_STOP_PCT, STAGE2_TRAIL_PCT,
     MOMENTUM_DEAD_RVOL, MOMENTUM_DEAD_MIN,
+    get_trading_windows as _get_trading_windows,
+    _DEFAULTS,
 )
 from signals import (
     bars_to_df, compute_vwap_bands, compute_rvol,
     get_opening_range, ORB_RVOL_THRESHOLD,
 )
 from risk import RiskManager
+from backtest_exit_sim import ExitSimState, evaluate_bt_exit
+from backtest_exit_sim_simplified import evaluate_bt_exit_simplified
 
-# Router quality-gate constants — import directly so the backtester
-# always stays in sync when these values are tuned in strategy_router.py
-from strategy_router import _MIN_CONFIDENCE, _CONFLICT_VETO_BAND, _SESSION_BIAS_PENALTY
-import regime_manager as _regime_mgr
-from regime_manager import (
-    compute_regime_series, regime_allows,
-    ADX_MIN, ADX_GATED_STRATEGIES, compute_adx_series,
-)
-from strategies.base import MarketStructureAnalyzer
+# 2026-07-21 integration: entry detection now calls the REAL router instead
+# of a hand-copied gate stack (see _simulate_day docstring + diag_entry_
+# resolution_comparison.py for why). ADX_MIN/compute_adx_series are kept
+# only for an informational chop-bar diagnostic counter, not for gating —
+# route_signals() does its own ADX gating internally now.
+from strategy_router import route_signals
+from regime_manager import ADX_MIN, compute_adx_series
+from backtester_1min_entry import fetch_1min_entry_data
+import backtest_data_cache
 
 logger = logging.getLogger("celo_trader.backtester")
+
+
+# ── Quiet logging for backtest replay ─────────────────────────────────────────
+# Mirrors strategy_health/engine.py's identical helper (duplicated rather than
+# imported to keep the two modules decoupled). A full backtest calls
+# route_signals() thousands of times; without this, that writes a comparable
+# number of INFO/DEBUG lines to bot.log — which the live dashboard's THINKING
+# panel tails — making a backtest look like real-time trading activity and
+# slowing the run down with unrelated disk I/O.
+_NOISY_LOGGER_NAMES = ("celo_trader.strategy_router", "celo_trader.strategies", "celo_trader.router_gates")
+
+
+@contextmanager
+def _quiet_router_logging():
+    loggers  = [logging.getLogger(name) for name in _NOISY_LOGGER_NAMES]
+    previous = [lg.level for lg in loggers]
+    try:
+        for lg in loggers:
+            lg.setLevel(logging.WARNING)
+        yield
+    finally:
+        for lg, lvl in zip(loggers, previous):
+            lg.setLevel(lvl)
 
 
 # ── Per-ticker implied volatility lookup ──────────────────────────────────────
@@ -131,14 +159,39 @@ class Backtester:
     risk_pct         : override risk % (e.g. 0.05 for 5%). None = use live tier ladder.
     """
 
-    # Mirror the constants from RiskManager so they're always in sync
+    # Mirror the constants from RiskManager so they're always in sync.
+    # CLEANUP 2026-07-22 (full-audit finding 1.4): a dead ORB_STAGE1_GAIN
+    # class-level mirror used to live here, permanently stuck at
+    # RiskManager's raw class default (0.25) and never read anywhere —
+    # the real, live-synced value is self._risk.ORB_STAGE1_GAIN (see
+    # __init__). Removed to avoid a future edit assuming self.ORB_STAGE1_GAIN
+    # is synced the way self._risk.ORB_STAGE1_GAIN is.
     ORB_STOP_PCT          = RiskManager.ORB_STOP_PCT           # 0.20
-    ORB_STAGE1_GAIN       = RiskManager.ORB_STAGE1_GAIN        # 0.50
     ORB_TIME_BOX_WINNER   = RiskManager.ORB_TIME_BOX_WINNER    # 90 min
     SLIPPAGE_PCT          = RiskManager.SLIPPAGE_PCT           # 0.05
     STOP_TIGHTEN_INTERVAL = RiskManager.STOP_TIGHTEN_INTERVAL  # 15 min
     STOP_TIGHTEN_STEP     = RiskManager.STOP_TIGHTEN_STEP      # 0.05
     STOP_FLOOR_PCT        = RiskManager.STOP_FLOOR_PCT         # 0.10
+
+    # 2026-07-22: fidelity fix — live has always gated entries on R:R via
+    # risk.evaluate_rr(), the backtester never did. True = match live.
+    # See ab_test_rr_gate.py for the case this gets toggled off.
+    RR_GATE_ENABLED       = True
+
+    # 2026-07-22: speed fix — route_signals() was being fed the ENTIRE
+    # multi-day history since day 1 on every single tick (bar_slice grows
+    # unbounded), making per-tick cost grow across the whole backtest —
+    # O(days²) overall. The only thing inside route_signals() that reads
+    # more than the current day is compute_rvol(df, lookback_days=10) in
+    # signals.py, which only needs ~10 trading days. 20 is a safety margin.
+    # Capping the slice to a trailing window turns that back into O(days).
+    ENTRY_LOOKBACK_DAYS   = 20
+
+    # 2026-07-22: exit-complexity A/B test. False = current 9+-condition
+    # exit stack (backtest_exit_sim.py). True = the stripped-down 3-rule
+    # exit (hard stop / 3.0x chandelier trail / one time cap, see
+    # backtest_exit_sim_simplified.py). See ab_test_exit_complexity.py.
+    SIMPLIFIED_EXIT_MODE  = False
 
     def __init__(
         self,
@@ -156,6 +209,39 @@ class Backtester:
         self.direction         = direction
         self.risk_pct_override = risk_pct   # None → live 4-tier ladder
         self.trades: list[dict] = []
+        # Used for structural_stop_from_level()/should_exit() AND (2026-07-22)
+        # the pre-entry evaluate_rr() gate — the same real risk.py engine live
+        # trading calls (see backtest_exit_sim.py).
+        self._risk = RiskManager()
+        # BUG FIX 2026-07-22: risk.py's class default (ORB_STAGE1_GAIN=0.25) is
+        # stale — live overrides it every tick from settings (orb_stage1_gain_pct,
+        # default 50 in config.py's _DEFAULTS). backtest_exit_sim.py's own _risk
+        # instance already got this same fix on 2026-07-21; this Backtester's
+        # self._risk never did. Left uncorrected, evaluate_rr()'s rr_ratio is a
+        # mathematically constant 0.781 (every term scales with entry price, so
+        # only these two percentages determine it) — permanently below the
+        # 1.2x/1.6x gate, blocking every single trade regardless of ticker,
+        # strategy, or entry quality. This is why the R:R-gated backtest and
+        # ab_test_structural_stop_mode.py runs came back with 0 trades.
+        self._risk.ORB_STAGE1_GAIN = float(_DEFAULTS.get("orb_stage1_gain_pct", 50)) / 100.0
+        self._risk.ORB_STOP_PCT    = float(_DEFAULTS.get("orb_stop_loss_pct", 20)) / 100.0
+        # BUG FIX 2026-07-22 (full-audit finding 1.1): the two lines above only
+        # synced 2 of the 7 knobs live actually syncs every tick (see
+        # trading/entry.py's "Sync user-editable trade parameters" block).
+        # The other 5 were silently left at risk.py's raw class defaults —
+        # correct today only by coincidence, not by design. If any of these
+        # is ever changed via Settings, an unpatched backtester would keep
+        # testing the OLD value forever with no error. Syncing all 7 here.
+        self._risk.STAGE1_DYNAMIC_ENABLED     = bool(_DEFAULTS.get("stage1_dynamic_enabled", True))
+        self._risk.STAGE1_ATR_TARGET_MULT     = float(_DEFAULTS.get("stage1_atr_target_mult", 2.0))
+        self._risk.STAGE1_MIN_LOCK_FLOOR_PCT  = float(_DEFAULTS.get("stage1_min_lock_floor_pct", 10)) / 100.0
+        self._risk.STAGE1_RVOL_FADE_THRESHOLD = float(_DEFAULTS.get("stage1_rvol_fade_threshold", 1.0))
+        self._risk.STAGE1_MOMENTUM_REQUIRE_BOTH = bool(_DEFAULTS.get("stage1_momentum_require_both", False))
+        # Entry-detection sources — populated by _prep_entry_sources() in run().
+        self._df1m: Optional[pd.DataFrame] = None
+        self._1m_day_start: dict = {}
+        self._df5m_full: Optional[pd.DataFrame] = None
+        self._5m_day_start: dict = {}
 
     # ── Contract sizing helper ────────────────────────────────────────────────
 
@@ -203,20 +289,135 @@ class Backtester:
 
         return max(0, contracts)
 
-    # ── Public entry point ────────────────────────────────────────────────────
+    # ── Extra-timeframe fetch (2026-07-21, for the dynamic ATR-trail multiplier) ─
+    # Live position_manager.py doesn't use a flat trail multiplier — it widens
+    # or tightens the ATR trail based on 1-hour trend bias and 15-min swing
+    # proximity (plus 5-min RSI/MACD, which the primary 5m `df` already
+    # covers). The backtester used to skip this and use a flat 2.0x base —
+    # disclosed as a known gap. This fetches those two extra timeframes so
+    # backtest_exit_sim.py can replicate the REAL adaptive multiplier instead
+    # of a static stand-in. Best-effort: any failure here just means the
+    # trail falls back to the flat 2.0x base, same as before — never fatal.
+    def _fetch_extra_timeframe(self, interval: str, start_d: str, end_d: str) -> pd.DataFrame:
+        try:
+            import yfinance as yf
+            import concurrent.futures as _cf
 
-    def run(self) -> dict:
-        """Execute the full multi-strategy backtest. Returns a results dict."""
-        logger.info(
-            "backtest_start",
-            extra={
-                "event":        "backtest_start",
-                "ticker":       self.ticker,
-                "months":       self.months,
-                "capital":      self.capital,
-                "risk_pct":     self.risk_pct_override,
-            },
-        )
+            def _do_download():
+                return yf.download(
+                    self.ticker, start=start_d, end=end_d,
+                    interval=interval, progress=False, auto_adjust=True,
+                )
+
+            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(_do_download)
+                try:
+                    _raw = _fut.result(timeout=20)
+                except _cf.TimeoutError:
+                    logger.warning("Backtest: yfinance %s timed out for %s", interval, self.ticker)
+                    return pd.DataFrame()
+
+            if _raw.empty:
+                return pd.DataFrame()
+            if hasattr(_raw.columns, "get_level_values"):
+                _raw.columns = _raw.columns.get_level_values(0)
+            _raw = _raw.rename(columns={
+                "Open": "open", "High": "high", "Low": "low",
+                "Close": "close", "Volume": "volume",
+            })
+            _raw.index.name = "time"
+            _raw = _raw.reset_index()
+            _raw["time"] = (
+                pd.to_datetime(_raw["time"], utc=True)
+                .dt.tz_convert("America/New_York")
+                .dt.tz_localize(None)
+            )
+            return _raw[["time", "open", "high", "low", "close", "volume"]].copy()
+        except Exception as _ex:
+            logger.warning("Backtest: %s fetch failed for %s: %s", interval, self.ticker, _ex)
+            return pd.DataFrame()
+
+    # ── Entry-detection source prep (2026-07-21 integration) ─────────────────
+
+    def _prep_entry_sources(self, df5_session: pd.DataFrame) -> None:
+        """
+        Prepare both possible entry-detection sources for _simulate_day():
+        1-minute bars where Alpaca has coverage, and the full multi-day
+        5-minute frame (session-filtered, indicators already attached) as a
+        fallback for days outside that window. Both are stored as single
+        sorted frames with a per-date starting row index so _simulate_day()
+        can slice "all history up to now" in O(1) — needed because real
+        RVOL (compute_rvol's 10-day lookback) requires multi-day context,
+        not just the current day.
+
+        WHY 1-MIN AT ALL: diag_entry_resolution_comparison.py found the
+        1-min view caught a signal the 5-min view missed ENTIRELY on 8 of 17
+        SPY days (47%) — a bigger, more clearly evidenced effect than any of
+        the threshold tuning done earlier this session. Falling back to
+        5-min for days outside Alpaca's ~18-trading-day 1-min window (see
+        backtester_1min_entry.py) keeps the full backtest date range intact
+        instead of shrinking every run down to 18 days.
+        """
+        self._df5m_full = df5_session
+        self._5m_day_start = {
+            d: int(grp.index[0]) for d, grp in df5_session.groupby("_date")
+        }
+
+        self._df1m = None
+        self._1m_day_start = {}
+        try:
+            raw = fetch_1min_entry_data(self.alpaca, self.ticker, months=self.months)
+            if raw is None or raw.empty:
+                logger.info("Backtest: no 1-min data for %s — every day uses 5-min entries", self.ticker)
+                return
+            mask = (
+                (raw["time"].dt.hour > 9) |
+                ((raw["time"].dt.hour == 9) & (raw["time"].dt.minute >= 30))
+            ) & (raw["time"].dt.hour < 16)
+            df1m = raw[mask].sort_values("time").reset_index(drop=True)
+            if df1m.empty:
+                return
+            self._1m_day_start = {
+                d: int(grp.index[0]) for d, grp in df1m.groupby("_date")
+            }
+            self._df1m = df1m
+            logger.info(
+                "Backtest: 1-min entry data for %s — %d bars across %d days "
+                "(5-min fallback for the rest)",
+                self.ticker, len(df1m), len(self._1m_day_start),
+            )
+        except Exception as ex:
+            logger.warning(
+                "1-min entry fetch failed for %s (%s) — every day uses 5-min entries",
+                self.ticker, ex,
+            )
+
+    # ── Market data fetch + precompute (cached, see backtest_data_cache.py) ───
+
+    def _load_market_data(self):
+        """
+        Fetch 5-min/1h/15m/1-min bars, precompute indicators (RVOL/EMA50/ATR/
+        ADX), and prep the entry-detection sources — OR, on a same-day cache
+        hit, skip all of that and restore it from disk in milliseconds.
+
+        WHY CACHED (2026-07-22): A/B test scripts construct a fresh Backtester
+        per ticker, once per variant (4-5x per run). The candles don't change
+        between variants — only the strategy logic does — so re-fetching and
+        re-computing indicators on identical data every variant was pure
+        waste. See backtest_data_cache.py's module docstring.
+
+        Returns either the precomputed df (success) or {"error": ...} (same
+        failure cases the old inline code returned early on).
+        """
+        bundle = backtest_data_cache.load(self.ticker, self.months)
+        if bundle is not None:
+            self._df_1h        = bundle["df_1h"]
+            self._df_15m       = bundle["df_15m"]
+            self._df1m         = bundle["df1m"]
+            self._1m_day_start = bundle["day1m_start"]
+            self._df5m_full    = bundle["df5m_full"]
+            self._5m_day_start = bundle["day5m_start"]
+            return bundle["df"]
 
         # ── Fetch historical 5-min bars ───────────────────────────────────────
         import datetime as _dt
@@ -289,6 +490,16 @@ class Backtester:
             return {"error": f"No bars within the last {self.months} months "
                     "(5-minute bars are limited to ~60 days; try 1–2 months)"}
 
+        # 1h/15m fetch for the real dynamic trail multiplier (see
+        # _fetch_extra_timeframe's docstring). 15m shares 5m's ~60-day yfinance
+        # cap; 1h supports ~730 days so the same window is always covered.
+        self._df_1h  = self._fetch_extra_timeframe("1h",  _start_d, _end_d)
+        self._df_15m = self._fetch_extra_timeframe("15m", _start_d, _end_d)
+        logger.info(
+            "Backtest: extra-timeframe fetch for %s — 1h=%d bars, 15m=%d bars",
+            self.ticker, len(self._df_1h), len(self._df_15m),
+        )
+
         # Pre-compute indicators across the full dataset
         df["rvol"]  = compute_rvol(df, lookback_days=10)
         df["ema50"] = df["close"].ewm(span=50, adjust=False).mean()
@@ -298,10 +509,58 @@ class Backtester:
         tr  = pd.concat([hl, hcp, lcp], axis=1).max(axis=1)
         df["atr"] = tr.ewm(span=14, adjust=False).mean()
 
+        df["_date"] = df["time"].dt.date
+
+        # ── ADX(14) series — informational only now (2026-07-21) ─────────────
+        # route_signals() does its own ADX gating internally; this is kept
+        # purely so the diagnostics dict can still report a chop-bar count.
+        try:
+            _adx_s = compute_adx_series(df)
+            if _adx_s is not None:
+                df["adx"] = _adx_s.reindex(df["time"].dt.floor("5min")).to_numpy()
+        except Exception as _adx_ex:
+            logger.debug("ADX series unavailable: %s", _adx_ex)
+
+        # ── Entry-detection sources (2026-07-21 integration) ─────────────────
+        # Full multi-day 5-min frame, session-filtered, for the fallback path;
+        # fetch_1min_entry_data() inside handles the 1-min side. See
+        # _prep_entry_sources()'s docstring for why this exists.
+        _full_session_mask = (
+            (df["time"].dt.hour > 9) |
+            ((df["time"].dt.hour == 9) & (df["time"].dt.minute >= 30))
+        ) & (df["time"].dt.hour < 16)
+        self._prep_entry_sources(df[_full_session_mask].reset_index(drop=True))
+
+        backtest_data_cache.save(
+            self.ticker, self.months,
+            df=df, df_1h=self._df_1h, df_15m=self._df_15m,
+            df1m=self._df1m, day1m_start=self._1m_day_start,
+            df5m_full=self._df5m_full, day5m_start=self._5m_day_start,
+        )
+        return df
+
+    # ── Public entry point ────────────────────────────────────────────────────
+
+    def run(self) -> dict:
+        """Execute the full multi-strategy backtest. Returns a results dict."""
+        logger.info(
+            "backtest_start",
+            extra={
+                "event":        "backtest_start",
+                "ticker":       self.ticker,
+                "months":       self.months,
+                "capital":      self.capital,
+                "risk_pct":     self.risk_pct_override,
+            },
+        )
+
+        df = self._load_market_data()
+        if isinstance(df, dict):   # error case — see _load_market_data()
+            return df
+
         balance      = self.capital
         daily_pnl: dict[str, float] = {}
 
-        df["_date"] = df["time"].dt.date
         unique_days = sorted(df["_date"].unique())
 
         # Diagnostic counters — returned in error message when no trades fire
@@ -316,79 +575,39 @@ class Backtester:
             "no_contracts":   0,   # sized to 0 contracts
             "max_confidence": 0.0, # highest confidence seen (key: are we near the 0.78 floor?)
             "rvol_samples":   [],  # small sample of RVOL values for debugging
+            "chop_bars":      0,   # bars where ADX<25 — gated strategies never evaluated at all
+            "rr_gate_blocked": 0,  # passed every other gate but failed the R:R minimum (2026-07-22)
         }
 
-        # Import strategy modules ONCE
-        import strategies.inst_orb   as _inst_orb
-        import strategies.bos_mss    as _bos_mss
-        import strategies.vwap_pb    as _vwap_pb
-        import strategies.fvg        as _fvg
-        import strategies.ifvg       as _ifvg
-        import strategies.mid_brk    as _mid_brk
-        import strategies.aft_rev    as _aft_rev
-        import strategies.trend_cont as _trend_cont
-        import strategies.chan_break  as _chan_break
+        with _quiet_router_logging():
+            for trade_date in unique_days:
+                day_all = df[df["_date"] == trade_date].reset_index(drop=True)
+                session_mask = (
+                    (day_all["time"].dt.hour > 9) |
+                    ((day_all["time"].dt.hour == 9) & (day_all["time"].dt.minute >= 30))
+                ) & (day_all["time"].dt.hour < 16)
+                day_df  = day_all[session_mask].reset_index(drop=True)
+                day_str = trade_date.isoformat()
 
-        # NOTE: BOS_MSS intentionally excluded — matches live strategy_router.py.
-        # Liquidity sweep detection was merged into FVG as a confidence modifier;
-        _EVALUATORS_CACHED = [
-            ("INST_ORB",   _inst_orb.evaluate),
-            ("VWAP_PB",    _vwap_pb.evaluate),
-            ("FVG",        _fvg.evaluate),
-            ("IFVG",       _ifvg.evaluate),   # Inverted FVG — zone-flip reversal
-            ("MID_BRK",    _mid_brk.evaluate),
-            ("AFT_REV",    _aft_rev.evaluate),
-            ("TREND_CONT", _trend_cont.evaluate),
-            # ("CHAN_BREAK", _chan_break.evaluate),  # disabled — 0% WR, needs root-cause fix
-        ]
+                # VWAP must stay precomputed on day_df — backtest_exit_sim.py's
+                # exit engine reads bar["vwap"] every bar (vwap+trend-dead
+                # check). This is exit-side, unrelated to the entry-detection
+                # change above — do not remove.
+                try:
+                    _vb = compute_vwap_bands(day_df, num_stds=(1, 2))
+                    day_df = day_df.copy()
+                    day_df["vwap"]        = _vb["vwap"].ffill()
+                    day_df["vwap_upper1"] = _vb["vwap_upper1"].ffill()
+                    day_df["vwap_lower1"] = _vb["vwap_lower1"].ffill()
+                    day_df["vwap_upper2"] = _vb["vwap_upper2"].ffill()
+                    day_df["vwap_lower2"] = _vb["vwap_lower2"].ffill()
+                except Exception:
+                    pass
 
-        # ── ADX(14) regime series — mirrors live router gate (2026-07-15) ────
-        # Computed once over the full multi-day df (continuity across days,
-        # same as live which sees 15 days of history). Mapped back per-bar.
-        try:
-            _adx_s = compute_adx_series(df)
-            if _adx_s is not None:
-                df["adx"] = _adx_s.reindex(df["time"].dt.floor("5min")).to_numpy()
-        except Exception as _adx_ex:
-            logger.debug("ADX series unavailable — gate fails open: %s", _adx_ex)
-
-        # ── Regime series (2026-07-16, OFF by default — see regime_manager.py) ──
-        # Precomputed regardless of the flag so ab_test_regime_manager.py can
-        # flip _regime_mgr.REGIME_GATE_ENABLED between runs without re-fetching
-        # data. Costs nothing when the flag is off — simply unused.
-        try:
-            _regime_s = compute_regime_series(df)
-            if _regime_s is not None:
-                df["regime"] = _regime_s.reindex(df["time"].dt.floor("15min")).to_numpy()
-        except Exception as _regime_ex:
-            logger.debug("Regime series unavailable — gate fails open: %s", _regime_ex)
-
-        for trade_date in unique_days:
-            day_all = df[df["_date"] == trade_date].reset_index(drop=True)
-            session_mask = (
-                (day_all["time"].dt.hour > 9) |
-                ((day_all["time"].dt.hour == 9) & (day_all["time"].dt.minute >= 30))
-            ) & (day_all["time"].dt.hour < 16)
-            day_df  = day_all[session_mask].reset_index(drop=True)
-            day_str = trade_date.isoformat()
-
-            # Pre-compute VWAP bands for the full day once (O(n), not O(n²))
-            try:
-                _vb = compute_vwap_bands(day_df, num_stds=(1, 2))
-                day_df = day_df.copy()
-                day_df["vwap"]        = _vb["vwap"].ffill()
-                day_df["vwap_upper1"] = _vb["vwap_upper1"].ffill()
-                day_df["vwap_lower1"] = _vb["vwap_lower1"].ffill()
-                day_df["vwap_upper2"] = _vb["vwap_upper2"].ffill()
-                day_df["vwap_lower2"] = _vb["vwap_lower2"].ffill()
-                day_df["vol_sma20"]   = day_df["volume"].rolling(100, min_periods=5).mean()
-            except Exception:
-                pass
-
-            pnl = self._simulate_day(day_df, balance, day_str, _EVALUATORS_CACHED)
-            balance += pnl
-            if pnl != 0:
-                daily_pnl[day_str] = pnl
+                pnl = self._simulate_day(day_df, balance, day_str)
+                balance += pnl
+                if pnl != 0:
+                    daily_pnl[day_str] = pnl
 
         return self._compute_results(daily_pnl, balance)
 
@@ -399,11 +618,24 @@ class Backtester:
         day_df: pd.DataFrame,
         balance: float,
         day_str: str,
-        evaluators: list,
     ) -> float:
         """
-        Simulate a single trading day using all 8 strategy evaluators with the
-        same quality gates and exit logic as the live trading bot.
+        Simulate a single trading day.
+
+        ENTRY (2026-07-21 rewrite): calls the REAL strategy_router.
+        route_signals() — the exact function live trading uses — instead of
+        a ~230-line hand-copied gate stack that had drifted from
+        router_gates.py (e.g. it was missing the volume-ROC veto entirely).
+        Ticks on 1-minute bars where Alpaca has coverage (matching live,
+        which switched to 1-min scanning 2026-06-23), falling back to 5-min
+        for older days. See diag_entry_resolution_comparison.py — the 1-min
+        view caught a signal the 5-min view missed ENTIRELY on 8 of 17 SPY
+        days (47%), which is why this exists.
+
+        EXIT: UNCHANGED. Still the real risk.py engine via
+        backtest_exit_sim.py, ticking on 5-min bars — deliberately not
+        touched, to avoid risking the exit-fidelity fixes made earlier
+        this session.
         """
         from strategies.base import _signal_cooldown
         _signal_cooldown.clear()
@@ -411,7 +643,34 @@ class Backtester:
         if len(day_df) < 5:
             return 0.0
 
-        ticker_iv = _get_iv(self.ticker)
+        ticker_iv  = _get_iv(self.ticker)
+        trade_date = day_df["_date"].iloc[0]
+
+        # ── Pick this day's entry-detection source (1-min preferred) ────────
+        _src, _src_start, _src_res = None, None, "5min"
+        if self._df1m is not None and trade_date in self._1m_day_start:
+            _day1m_check = self._df1m[self._df1m["_date"] == trade_date]
+            if len(_day1m_check) >= 25:
+                _src, _src_start, _src_res = self._df1m, self._1m_day_start[trade_date], "1min"
+        if _src is None:
+            _src, _src_start, _src_res = self._df5m_full, self._5m_day_start.get(trade_date, 0), "5min"
+        _day_ticks = _src[_src["_date"] == trade_date].reset_index(drop=True)
+        _warmup    = 20 if _src_res == "1min" else 4
+
+        # ── Bounded lookback floor for route_signals() (2026-07-22 speed fix) ──
+        # Without this, bar_slice below grows from a few hundred rows to
+        # 16,000+ over a 2-month backtest, and route_signals() re-scans all
+        # of it every tick. Only compute_rvol()'s 10-day lookback needs
+        # multi-day context (see ENTRY_LOOKBACK_DAYS comment) — cap it once
+        # per day, not per tick.
+        _day_start_map = self._1m_day_start if _src_res == "1min" else self._5m_day_start
+        _all_days      = sorted(_day_start_map.keys())
+        try:
+            _day_pos = _all_days.index(trade_date)
+        except ValueError:
+            _day_pos = len(_all_days) - 1
+        _floor_day_pos    = max(0, _day_pos - self.ENTRY_LOOKBACK_DAYS)
+        _lookback_floor_idx = _day_start_map[_all_days[_floor_day_pos]]
 
         in_trade              = False
         entry_price           = 0.0
@@ -421,6 +680,8 @@ class Backtester:
         contracts             = 0       # integer contract count (live bot units)
         remaining_contracts   = 0       # contracts left after stage 1 sell
         stage1_done           = False
+        stage1_be_price: Optional[float] = None
+        exit_state: Optional["ExitSimState"] = None
         session_pnl           = 0.0
         active_strategy       = "UNKNOWN"
         entry_date_str        = day_str
@@ -430,26 +691,44 @@ class Backtester:
         active_confidence     = 0.0
         active_rvol           = 0.0
         active_meta: dict     = {}
+        peak_opt_price        = 0.0
 
-        for idx in range(4, len(day_df)):
-            bar   = day_df.iloc[idx]
-            close = float(bar["close"])
-            ts    = bar["time"]
+        idx_5m              = -1   # pointer into day_df (5-min) for exit management
+        _last_exit_check_5m = -1   # avoid re-checking the same closed 5-min bar twice
 
-            # ── Manage open position ──────────────────────────────────────────
+        for i in range(_warmup, len(_day_ticks)):
+            tick  = _day_ticks.iloc[i]
+            ts    = tick["time"]
+            close = float(tick["close"])
+
+            # Advance the 5-min exit pointer to the latest bar CLOSED by now.
+            # This is what lets a 1-min-driven outer loop still manage exits
+            # on the unchanged 5-min exit engine below.
+            while idx_5m + 1 < len(day_df) and day_df["time"].iloc[idx_5m + 1] <= ts:
+                idx_5m += 1
+            if idx_5m < 4:
+                continue   # not enough 5-min history yet for the exit engine
+
+            # ── Manage open position (exit engine — unchanged, 5-min cadence) ──
             if in_trade:
-                elapsed_min = (ts - entry_bar_time).total_seconds() / 60
+                if idx_5m == _last_exit_check_5m:
+                    continue   # no new 5-min bar has closed since the last check
+                _last_exit_check_5m = idx_5m
+
+                bar = day_df.iloc[idx_5m]
+                ts5 = bar["time"]
+                elapsed_min = (ts5 - entry_bar_time).total_seconds() / 60
 
                 # Reprice the same contract (fixed strike, 5 DTE)
                 opt_price = _estimate_option_price(
-                    close, entry_strike, 5, iv=ticker_iv, option_type=option_type,
+                    float(bar["close"]), entry_strike, 5, iv=ticker_iv, option_type=option_type,
                 )
 
                 # ── Intrabar price simulation ─────────────────────────────────
                 # Checking only the bar CLOSE misses what happened on the HIGH/LOW.
                 # Conservative bar-path assumption: stops checked before targets.
-                _bar_high_px = float(bar.get("high", close))
-                _bar_low_px  = float(bar.get("low",  close))
+                _bar_high_px = float(bar.get("high", bar["close"]))
+                _bar_low_px  = float(bar.get("low",  bar["close"]))
 
                 if option_type == "call":
                     _opt_bar_best  = _estimate_option_price(
@@ -466,349 +745,119 @@ class Backtester:
                 if _opt_bar_best > peak_opt_price:
                     peak_opt_price = _opt_bar_best
 
-                # ── Exit 1: Early momentum stop (uses bar WORST — realistic fill) ─
-                # If the worst intrabar option price is down > EARLY_STOP_PCT (12%)
-                # within the first EARLY_TIMEBOX_MIN, the setup failed — exit
-                if (not stage1_done
-                        and elapsed_min <= EARLY_TIMEBOX_MIN
-                        and _opt_bar_worst <= entry_price * (1.0 - EARLY_STOP_PCT)):
-                    exit_px = round(_opt_bar_worst * (1.0 - self.SLIPPAGE_PCT), 4)
-                    pnl = self._close_bt_trade(
-                        entry_price, exit_px, remaining_contracts, option_type,
-                        "early_momentum_stop", ts.hour, round(elapsed_min, 1),
-                        active_strategy, entry_date_str,
-                        active_confidence, active_rvol, active_meta,
+                # ── Exit engine — real risk.py logic, OR the 3-rule simplified
+                # variant under test (2026-07-22, see SIMPLIFIED_EXIT_MODE) ──
+                if self.SIMPLIFIED_EXIT_MODE:
+                    should_exit, exit_reason = evaluate_bt_exit_simplified(
+                        exit_state, day_df, idx_5m,
+                        current_opt_price = opt_price,
                     )
-                    session_pnl += pnl
-                    in_trade = False
+                else:
+                    _bar_rvol = float(day_df.iloc[idx_5m].get("rvol", 0.0)) if "rvol" in day_df.columns else 0.0
+                    should_exit, exit_reason = evaluate_bt_exit(
+                        exit_state, day_df, idx_5m,
+                        current_opt_price = opt_price,
+                        opt_bar_best    = _opt_bar_best,
+                        opt_bar_worst   = _opt_bar_worst,
+                        stage1_done     = stage1_done,
+                        stage1_be_price = stage1_be_price,
+                        peak_opt_price  = peak_opt_price,
+                        rvol            = _bar_rvol,
+                        df_1h           = getattr(self, "_df_1h", None),
+                        df_15m          = getattr(self, "_df_15m", None),
+                    )
+
+                if not should_exit:
+                    continue   # still holding
+
+                if exit_reason.startswith("stage1"):
+                    # Sell 50%, arm the trailing stop on the remainder — same
+                    # split as position_manager.py's live stage-1 handling.
+                    s1_exit_px    = round(_opt_bar_best * (1.0 - self.SLIPPAGE_PCT), 4)
+                    s1_contracts  = max(1, contracts // 2)
+                    s1_pnl        = (s1_exit_px - entry_price) * s1_contracts * 100
+                    session_pnl  += s1_pnl
+                    self.trades.append({
+                        "strategy_id":   active_strategy,
+                        "option_type":   option_type,
+                        "direction":     "long" if option_type == "call" else "short",
+                        "entry_price":   entry_price,
+                        "exit_price":    s1_exit_px,
+                        "contracts":     s1_contracts,
+                        "pnl":           round(s1_pnl, 2),
+                        "exit_reason":   exit_reason.split(" ")[0],
+                        "entry_hour":    entry_bar_time.hour,
+                        "held_minutes":  round(elapsed_min, 1),
+                        "date":          entry_date_str,
+                        "entry_confidence": active_confidence,
+                        "entry_rvol":        active_rvol,
+                        "entry_meta":        active_meta,
+                    })
+                    remaining_contracts = contracts - s1_contracts
+                    stage1_done         = True
+                    stage1_be_price     = round(entry_price * (1.0 + STAGE2_TRAIL_PCT), 4)
                     continue
 
-                # ── Exit 2: Dynamic hard stop (uses bar WORST — realistic fill) ──
-                # Tightens 5pp every 15 min (theta decay protection):
-                #   0–14 min  → 20% stop
-                elapsed_steps  = int(elapsed_min / self.STOP_TIGHTEN_INTERVAL)
-                dynamic_sl_pct = max(
-                    self.ORB_STOP_PCT - elapsed_steps * self.STOP_TIGHTEN_STEP,
-                    self.STOP_FLOOR_PCT,
+                # Any other reason is a full close. Stop-type reasons (structural,
+                # ATR/swing trail, hard-stop fallback, VWAP+trend-dead, stage2
+                # floor, momentum-death, early-momentum) fill at the bar's worst
+                # price — they're adverse-move triggers. Time caps fill at the
+                # bar's close (opt_price), matching the pre-fix convention.
+                _adverse_reasons = (
+                    "structural_stop", "atr_trail_stop", "initial_atr_stop",
+                    "hard_stop", "vwap_trend_dead", "stage2_trail_stop",
+                    "momentum_dead", "early_momentum_stop",
+                    # 2026-07-22: the simplified 3-rule exit's stop-type reasons
+                    # need the same worst-price fill convention as their
+                    # equivalents above — only the time cap fills at close.
+                    "simplified_hard_stop", "simplified_chandelier_3atr",
                 )
-                sl_price = entry_price * (1.0 - dynamic_sl_pct)
-
-                if _opt_bar_worst <= sl_price:
-                    exit_px = round(_opt_bar_worst * (1.0 - self.SLIPPAGE_PCT), 4)
-                    pnl = self._close_bt_trade(
-                        entry_price, exit_px, remaining_contracts, option_type,
-                        "stop_loss", ts.hour, round(elapsed_min, 1),
-                        active_strategy, entry_date_str,
-                        active_confidence, active_rvol, active_meta,
-                    )
-                    session_pnl += pnl
-                    in_trade = False
-                    continue
-
-                # ── Exit 3: Stage 1 — sell 50% at +50% (uses bar BEST) ───────
-                # Check if the option's best intrabar price hit the target.
-                # Exit at best price × (1 - slippage) for realistic fill.
-                if not stage1_done:
-                    s1_price = entry_price * (1.0 + self.ORB_STAGE1_GAIN)
-                    if _opt_bar_best >= s1_price:
-                        s1_exit_px    = round(_opt_bar_best * (1.0 - self.SLIPPAGE_PCT), 4)
-                        s1_contracts  = max(1, contracts // 2)
-                        s1_pnl        = (s1_exit_px - entry_price) * s1_contracts * 100
-                        session_pnl  += s1_pnl
-                        self.trades.append({
-                            "strategy_id":   active_strategy,
-                            "option_type":   option_type,
-                            "direction":     "long" if option_type == "call" else "short",
-                            "entry_price":   entry_price,
-                            "exit_price":    s1_exit_px,
-                            "contracts":     s1_contracts,
-                            "pnl":           round(s1_pnl, 2),
-                            "exit_reason":   "stage1_50pct",
-                            "entry_hour":    entry_bar_time.hour,
-                            "held_minutes":  round(elapsed_min, 1),
-                            "date":          entry_date_str,
-                            # 2026-07-17: this path bypasses _close_bt_trade() and
-                            # was missing these — every stage1 exit showed up as
-                            # RVOL=0.00/conf=0.00 in feature analysis, which is a
-                            # data gap, not a real reading. Fixed to match the
-                            # other 7 trade-recording sites.
-                            "entry_confidence": active_confidence,
-                            "entry_rvol":        active_rvol,
-                            "entry_meta":        active_meta,
-                        })
-                        remaining_contracts = contracts - s1_contracts
-                        stage1_done         = True
-                        continue
-
-                # ── Exit 4: Stage 2 floor ─────────────────────────────────────
-                # Live bot: exit remainder if price drops back to entry × 1.15
-                # (not break-even). Locks in 15% profit floor on stage-2 leg.
-                if stage1_done:
-                    stage2_floor = entry_price * (1.0 + STAGE2_TRAIL_PCT)
-                    if opt_price <= stage2_floor:
-                        exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
-                        pnl = self._close_bt_trade(
-                            entry_price, exit_px, remaining_contracts, option_type,
-                            "stage2_trail_floor", ts.hour, round(elapsed_min, 1),
-                            active_strategy, entry_date_str,
-                            active_confidence, active_rvol, active_meta,
-                        )
-                        session_pnl += pnl
-                        in_trade = False
-                        continue
-
-                # ── Exit 5a: Momentum-death early exit ───────────────────────
-                # Fires when RVOL is genuinely dead (< 0.70 = 30%+ below avg),
-                # the trade is losing, and the CANDLE ITSELF shows no momentum
-                # (small body = doji/spinning top confirms dead price action).
-                _bar_rvol = float(day_df.iloc[idx].get("rvol", 0.0)) if "rvol" in day_df.columns else 0.0
-                _bar_range  = max(_bar_high_px - _bar_low_px, 0.0001)
-                _bar_body   = abs(close - float(bar.get("open", close)))
-                _candle_has_momentum = (_bar_body / _bar_range) > 0.40  # >40% body = directional move
-                # 2026-07-15 audit (matches live risk.py): require a genuine adverse
-                # move (down ≥ MOMENTUM_DEAD_LOSS_PCT), not just any 1-cent loss.
-                from config import MOMENTUM_DEAD_LOSS_PCT as _MDL_BT
-                if (not stage1_done
-                        and _bar_rvol > 0.0
-                        and _bar_rvol < MOMENTUM_DEAD_RVOL      # 0.70 — truly dead volume
-                        and elapsed_min >= MOMENTUM_DEAD_MIN
-                        and opt_price <= entry_price * (1.0 - _MDL_BT)
-                        and not _candle_has_momentum):           # candle confirms dead action
-                    exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
-                    pnl = self._close_bt_trade(
-                        entry_price, exit_px, remaining_contracts, option_type,
-                        f"momentum_dead_exit (rvol={_bar_rvol:.2f})", ts.hour, round(elapsed_min, 1),
-                        active_strategy, entry_date_str,
-                        active_confidence, active_rvol, active_meta,
-                    )
-                    session_pnl += pnl
-                    in_trade = False
-                    continue
-
-                # ── Exit 5b: Time-box — losers hard cap (60 min) ─────────────
-                # Extended from 30 → 60 min; momentum-death check above kills
-                # dead trades faster than the clock for most cases.
-                if not stage1_done and elapsed_min >= EARLY_TIMEBOX_MIN:
-                    exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
-                    pnl = self._close_bt_trade(
-                        entry_price, exit_px, remaining_contracts, option_type,
-                        f"time_box_{EARLY_TIMEBOX_MIN}m", ts.hour, round(elapsed_min, 1),
-                        active_strategy, entry_date_str,
-                        active_confidence, active_rvol, active_meta,
-                    )
-                    session_pnl += pnl
-                    in_trade = False
-                    continue
-
-                # ── Exit 5b: Time-box — winners (stage1 IS done) ─────────────
-                # Let winners breathe up to ORB_TIME_BOX_WINNER (90 min).
-                if stage1_done and elapsed_min >= self.ORB_TIME_BOX_WINNER:
-                    exit_px = round(opt_price * (1.0 - self.SLIPPAGE_PCT), 4)
-                    pnl = self._close_bt_trade(
-                        entry_price, exit_px, remaining_contracts, option_type,
-                        "time_box_90m", ts.hour, round(elapsed_min, 1),
-                        active_strategy, entry_date_str,
-                        active_confidence, active_rvol, active_meta,
-                    )
-                    session_pnl += pnl
-                    in_trade = False
-                    continue
-
-                continue   # still holding
-
-            # ── Signal detection ──────────────────────────────────────────────
-            bar_slice = day_df.iloc[:idx + 1]
-
-            # ── ADX regime gate — skip breakout strategies in chop (< 25) ────
-            # Fail-open on NaN/missing ADX, matching live route_signals().
-            _bar_adx_raw = bar.get("adx") if "adx" in day_df.columns else None
-            _bar_adx = (float(_bar_adx_raw)
-                        if _bar_adx_raw is not None and pd.notna(_bar_adx_raw)
-                        else None)
-            _chop_regime = _bar_adx is not None and _bar_adx < ADX_MIN
-
-            raw_signals = []
-            for strategy_id, fn in evaluators:
-                if _chop_regime and strategy_id in ADX_GATED_STRATEGIES:
-                    self._diag["adx_gated"] = self._diag.get("adx_gated", 0) + 1
-                    continue   # chop regime — breakout strategy gated
-                try:
-                    sig = fn(bar_slice, ticker=self.ticker)
-                    if sig is not None:
-                        raw_signals.append(sig)
-                except Exception as _strat_ex:
-                    logger.debug(
-                        "BT strategy %s raised exception on bar %s: %s",
-                        strategy_id, bar.get("time", idx), _strat_ex,
-                    )
-
-            if not raw_signals:
+                _fill_px = _opt_bar_worst if exit_reason.startswith(_adverse_reasons) else opt_price
+                exit_px  = round(_fill_px * (1.0 - self.SLIPPAGE_PCT), 4)
+                pnl = self._close_bt_trade(
+                    entry_price, exit_px, remaining_contracts, option_type,
+                    exit_reason, ts5.hour, round(elapsed_min, 1),
+                    active_strategy, entry_date_str,
+                    active_confidence, active_rvol, active_meta,
+                )
+                session_pnl += pnl
+                in_trade = False
                 continue
 
-            # Track diagnostics
-            self._diag["raw_signals"] += 1
-            for _s in raw_signals:
-                if _s.confidence > self._diag["max_confidence"]:
-                    self._diag["max_confidence"] = round(_s.confidence, 4)
-            # Sample a few RVOL values
-            _bar_rvol = float(bar.get("rvol", 0) or 0)
-            if len(self._diag["rvol_samples"]) < 20 and _bar_rvol > 0:
-                self._diag["rvol_samples"].append(round(_bar_rvol, 2))
+            # ── Signal detection — real route_signals(), same pipeline live uses ──
+            _wgm = ts.hour * 60 + ts.minute
+            _bt_windows = _get_trading_windows(balance)
+            _in_window = any(
+                int(s.split(":")[0]) * 60 + int(s.split(":")[1]) <= _wgm <=
+                int(e.split(":")[0]) * 60 + int(e.split(":")[1])
+                for s, e in _bt_windows
+            )
+            if not _in_window:
+                continue
 
-            raw_signals.sort(key=lambda s: s.confidence, reverse=True)
+            # Multi-day slice up to now (not just today) — required for real
+            # 10-day RVOL, matching what live actually feeds route_signals().
+            # Bounded to the trailing ENTRY_LOOKBACK_DAYS (2026-07-22 speed
+            # fix) instead of unbounded since day 1 — see _lookback_floor_idx
+            # above for why this doesn't change RVOL fidelity.
+            _global_idx = _src_start + i
+            bar_slice   = _src.iloc[_lookback_floor_idx : _global_idx + 1]
 
-            # ── Session bias penalty — RVOL-dynamic (mirrors strategy_router) ──
-            # Penalty scales with RVOL: high-volume days allow more counter-session
-            # latitude; low-volume days get penalized harder.
-            if raw_signals and idx >= 1:
-                _bt_first   = day_df.iloc[0]
-                _bt_last    = bar_slice.iloc[-1]
-                _bt_open    = float(_bt_first.get("open", _bt_first["close"]))
-                _bt_close   = float(_bt_last["close"])
-                _bt_rvol    = float(_bt_last.get("rvol", 1.0) or 1.0)
-                _bt_bearish = _bt_close < _bt_open
-                _bt_bullish = _bt_close > _bt_open
+            try:
+                signals = route_signals(bar_slice, self.ticker, quiet=True)
+            except Exception as _rs_ex:
+                logger.debug("BT route_signals raised on %s bar %s: %s", self.ticker, ts, _rs_ex)
+                continue
 
-                # Dynamic penalty: matches live strategy_router logic
-                if _bt_rvol > 1.5:
-                    _bt_bias_penalty = 0.02   # high-vol: V-reversals are real
-                elif _bt_rvol < 1.0:
-                    _bt_bias_penalty = 0.10   # low-vol: counter-trend = chop
-                else:
-                    _bt_bias_penalty = 0.05   # normal days
-
-                if _bt_bearish or _bt_bullish:
-                    for _sig in raw_signals:
-                        _counter = (
-                            (_bt_bearish and _sig.direction == "bullish") or
-                            (_bt_bullish and _sig.direction == "bearish")
-                        )
-                        if _counter:
-                            _sig.confidence = max(0.0, _sig.confidence - _bt_bias_penalty)
-                    raw_signals.sort(key=lambda s: s.confidence, reverse=True)
-
-            # ── Intraday VWAP slope — weighted 20% factor (mirrors router) ──────
-            # VWAP trend = 20% of signal strength. Against flow → ×0.80.
-            # High-momentum signals (0.87+) survive; marginal ones at 0.74 drop
-            if raw_signals and len(bar_slice) >= 12 and "vwap" in bar_slice.columns:
-                _bt_vwap_now   = float(bar_slice.iloc[-1].get("vwap", 0) or 0)
-                _bt_vwap_10    = float(bar_slice.iloc[-10].get("vwap", _bt_vwap_now) or _bt_vwap_now)
-                _bt_vwap_slope = (_bt_vwap_now - _bt_vwap_10) / max(_bt_vwap_10, 1.0)
-                _BT_VWAP_THRESH = 0.0005
-                _BT_VWAP_WEIGHT = 0.20
-                for _sig in raw_signals:
-                    _against_flow = (
-                        (_bt_vwap_slope < -_BT_VWAP_THRESH and _sig.direction == "bullish") or
-                        (_bt_vwap_slope >  _BT_VWAP_THRESH and _sig.direction == "bearish")
-                    )
-                    if _against_flow:
-                        _sig.confidence = round(
-                            max(0.0, _sig.confidence * (1.0 - _BT_VWAP_WEIGHT)), 4
-                        )
-                raw_signals.sort(key=lambda s: s.confidence, reverse=True)
-
-            # ── Confluence bonus (mirrors strategy_router logic) ───────────────
-            # 2+ strategies agree on direction → boost top signal's confidence.
-            if raw_signals:
-                _bt_top_dir   = raw_signals[0].direction
-                _bt_agree_cnt = sum(1 for _s in raw_signals if _s.direction == _bt_top_dir)
-                if _bt_agree_cnt >= 2:
-                    _bt_bonus = min(0.05, (_bt_agree_cnt - 1) * 0.03)
-                    raw_signals[0].confidence = min(0.95, raw_signals[0].confidence + _bt_bonus)
-                raw_signals.sort(key=lambda s: s.confidence, reverse=True)
-
-            # ── Regime gate (2026-07-16, OFF by default — see regime_manager.py) ──
-            if raw_signals and _regime_mgr.REGIME_GATE_ENABLED and "regime" in day_df.columns:
-                _bt_regime_raw = bar.get("regime")
-                _bt_regime = str(_bt_regime_raw) if _bt_regime_raw and pd.notna(_bt_regime_raw) else "neutral"
-                if _bt_regime != "neutral":
-                    raw_signals = [s for s in raw_signals
-                                   if regime_allows(s.strategy_id, s.direction, _bt_regime)]
-
-            # ── Entry window gate (mirrors live TRADING_WINDOWS 2026-07-15) ──
-            # Two sessions: 9:30–11:30 (opening edge) + 14:00–15:45 (afternoon
-            # trend / power hour). Lunch chop blocked. Exits still run all day.
-            if raw_signals:
-                _wgt = bar_slice.iloc[-1].get("time", ts)
-                _wgm = (_wgt.hour * 60 + _wgt.minute) if hasattr(_wgt, "hour") else 600
-                _in_am = 9 * 60 + 30  <= _wgm <= 11 * 60 + 30
-                _in_pm = 14 * 60      <= _wgm <= 15 * 60 + 45
-                if not (_in_am or _in_pm):
-                    raw_signals = []
-
-            # ── Large-session-move gate (gap/momentum-day filter) ────────────
-            # Mirrors strategy_router: counter-trend signals before 13:00 ET
-            # are capped when session has moved ±1.5%+ from the open.
-            if raw_signals and idx >= 1:
-                _bt_so    = float(day_df.iloc[0].get("open", day_df.iloc[0]["close"]))
-                _bt_sc    = float(bar_slice.iloc[-1]["close"])
-                _bt_sm    = (_bt_sc - _bt_so) / max(_bt_so, 1.0)
-                _bt_btime = bar_slice.iloc[-1].get("time", ts)
-                _bt_bmin  = (
-                    (_bt_btime.hour * 60 + _bt_btime.minute)
-                    if hasattr(_bt_btime, "hour") else 600
-                )
-                if abs(_bt_sm) > 0.015 and _bt_bmin < 13 * 60:
-                    _bt_tdir = "bullish" if _bt_sm > 0 else "bearish"
-                    for _sig in raw_signals:
-                        if _sig.direction != _bt_tdir:
-                            _sig.confidence = min(_sig.confidence, 0.70)
-                    raw_signals.sort(key=lambda s: s.confidence, reverse=True)
-
-            # ── Directional consensus filter (mirrors strategy_router) ────────
-            # Hard-block counter-trend signals when price/VWAP/structure all agree
-            # AND RVOL ≥ 1.5× confirms institutional participation.
-            if raw_signals and len(bar_slice) >= 20 and "vwap" in bar_slice.columns:
-                _dc_last   = bar_slice.iloc[-1]
-                _dc_rvol   = float(_dc_last.get("rvol", 1.0) or 1.0)
-                _dc_close  = float(_dc_last["close"])
-                _dc_vwap   = float(_dc_last.get("vwap", _dc_close) or _dc_close)
-                _dc_v20    = float(bar_slice.iloc[-20].get("vwap", _dc_vwap) or _dc_vwap)
-                _dc_slope  = (_dc_vwap - _dc_v20) / max(_dc_v20, 1.0)
-                _dc_trend  = MarketStructureAnalyzer(bar_slice).classify_trend()
-
-                _dc_bull = sum([
-                    _dc_close > _dc_vwap,
-                    _dc_slope > 0.0005,
-                    _dc_trend == "uptrend",
-                ])
-                _dc_bear = sum([
-                    _dc_close < _dc_vwap,
-                    _dc_slope < -0.0005,
-                    _dc_trend == "downtrend",
-                ])
-
-                # Hard block only on unanimous 3/3 — mirrors strategy_router.py.
-                # 2/3 agreement → soft ×0.80 penalty only, never a hard block.
-                if _dc_bull == 3:
-                    raw_signals = [s for s in raw_signals if s.direction == "bullish"]
-                elif _dc_bear == 3:
-                    raw_signals = [s for s in raw_signals if s.direction == "bearish"]
-                else:
-                    if _dc_bull == 2:
-                        for _s in raw_signals:
-                            if _s.direction == "bearish":
-                                _s.confidence = round(max(0.0, _s.confidence * 0.80), 4)
-                    elif _dc_bear == 2:
-                        for _s in raw_signals:
-                            if _s.direction == "bullish":
-                                _s.confidence = round(max(0.0, _s.confidence * 0.80), 4)
-                if raw_signals:
-                    raw_signals.sort(key=lambda s: s.confidence, reverse=True)
-
-            # ── Quality gate 1: confidence floor ─────────────────────────────
-            signals = [s for s in raw_signals if s.confidence >= _MIN_CONFIDENCE]
             if not signals:
-                self._diag["below_floor"] += 1
                 continue
 
-            # ── Quality gate 2: conflict veto ─────────────────────────────────
-            if len(signals) >= 2:
-                _top, _second = signals[0], signals[1]
-                if (_top.direction != _second.direction and
-                        (_top.confidence - _second.confidence) <= _CONFLICT_VETO_BAND):
-                    self._diag["conflict_veto"] += 1
-                    continue
+            self._diag["raw_signals"] += 1
+            if signals[0].confidence > self._diag["max_confidence"]:
+                self._diag["max_confidence"] = round(signals[0].confidence, 4)
+            _bar_rvol_diag = float(tick.get("rvol", 0) or 0) if "rvol" in _day_ticks.columns else 0.0
+            if len(self._diag["rvol_samples"]) < 20 and _bar_rvol_diag > 0:
+                self._diag["rvol_samples"].append(round(_bar_rvol_diag, 2))
 
             signal    = signals[0]
             direction = signal.direction
@@ -817,7 +866,7 @@ class Backtester:
             _entry_rvol       = signal.rvol
             _entry_meta       = dict(signal.meta or {})
 
-            # Direction filter
+            # Direction filter (backtester-only override — calls_only/puts_only)
             opt_type_str = "call" if direction == "bullish" else "put"
             if self.direction == "calls_only" and opt_type_str != "call":
                 self._diag["direction_skip"] += 1
@@ -845,20 +894,60 @@ class Backtester:
                 self._diag["no_contracts"] += 1
                 continue   # can't afford even 1 contract
 
-            in_trade            = True
-            entry_price         = entry_opt_px
-            entry_strike        = strike
-            option_type         = opt_type_str
-            entry_bar_time      = ts
-            contracts           = n_contracts
-            remaining_contracts = n_contracts
-            stage1_done         = False
-            active_strategy     = strat_id
-            entry_date_str      = day_str
-            active_confidence   = _entry_confidence
-            active_rvol         = _entry_rvol
-            active_meta         = _entry_meta
-            peak_opt_price      = entry_opt_px   # tracks highest option price for profit lock
+            # ── R:R gate (2026-07-22 fidelity fix) ────────────────────────────
+            # Live's trading/entry.py has ALWAYS called risk.evaluate_rr() and
+            # blocked any entry below the 1.2x-1.6x minimum reward:risk before
+            # this — the backtester never did. Every backtest run before today
+            # included trades live would have refused to take. Wired in here so
+            # backtest and live enforce the identical gate. Toggleable
+            # (self.RR_GATE_ENABLED) so ab_test_rr_gate.py can compare against
+            # the old ungated behavior and different threshold values.
+            if self.RR_GATE_ENABLED:
+                _rr_allowed, _rr_audit = self._risk.evaluate_rr(
+                    entry_price=entry_opt_px, n_contracts=n_contracts,
+                    entry_volume_multiplier=_entry_rvol,
+                )
+                if not _rr_allowed:
+                    self._diag["rr_gate_blocked"] = self._diag.get("rr_gate_blocked", 0) + 1
+                    continue
+
+            in_trade             = True
+            entry_price          = entry_opt_px
+            entry_strike         = strike
+            option_type          = opt_type_str
+            entry_bar_time       = ts
+            contracts            = n_contracts
+            remaining_contracts  = n_contracts
+            stage1_done          = False
+            active_strategy      = strat_id
+            entry_date_str       = day_str
+            active_confidence    = _entry_confidence
+            active_rvol          = _entry_rvol
+            active_meta          = _entry_meta
+            peak_opt_price       = entry_opt_px   # tracks highest option price for profit lock
+            _last_exit_check_5m  = idx_5m         # don't re-check exit on the bar we just entered on
+
+            # ── Structural stop + exit-sim state (real risk.py exit engine) ────
+            # Same source as live's trading/entry.py: only signals whose meta
+            # carries entry_bar_high (PUT) / entry_bar_low (CALL) get a
+            # structural stop; everything else falls back to the initial ATR
+            # stop / trail once one arms. See backtest_exit_sim.py.
+            _entry_bar_level = active_meta.get("entry_bar_high") or active_meta.get("entry_bar_low")
+            _struct_stop_opt = None
+            if _entry_bar_level is not None:
+                try:
+                    _struct_stop_opt = self._risk.structural_stop_from_level(
+                        entry_opt_px, close, float(_entry_bar_level))
+                except Exception:
+                    _struct_stop_opt = None
+            _atr_at_entry = float(tick["atr"]) if "atr" in _day_ticks.columns and pd.notna(tick.get("atr")) else None
+            exit_state = ExitSimState(
+                direction         = direction,
+                entry_price       = entry_opt_px,
+                entry_bar_time    = ts,
+                struct_stop_price = _struct_stop_opt,
+                atr_at_entry      = _atr_at_entry,
+            )
 
         # ── EOD: force-close any open position ───────────────────────────────
         if in_trade and remaining_contracts > 0:
@@ -997,8 +1086,9 @@ class Backtester:
         held_times = [t.get("held_minutes", 0) for t in trades if t.get("held_minutes", 0) > 0]
         avg_hold   = round(sum(held_times) / len(held_times), 1) if held_times else 0.0
 
-        # Stage-1 hit rate
-        stage1_exits = [t for t in trades if t.get("exit_reason") == "stage1_50pct"]
+        # Stage-1 hit rate — prefix match now that stage1 has 4 possible
+        # sub-reasons (2026-07-21) instead of the one flat-% string.
+        stage1_exits = [t for t in trades if str(t.get("exit_reason", "")).startswith("stage1")]
         stage1_rate  = len(stage1_exits) / max(len(trades), 1) * 100
 
         # Avg contracts per trade
@@ -1069,4 +1159,9 @@ class Backtester:
             "exit_reasons":     exit_reasons,
             "daily_pnl":        daily_pnl,
             "trades":           trades,
+            # 2026-07-21: previously only surfaced in the zero-trades error
+            # message. Always include it so a low (but nonzero) trade count
+            # can be explained by real gate-by-gate numbers instead of
+            # guessing — see run_full_audit.py's funnel summary.
+            "diagnostics":      getattr(self, "_diag", {}),
         }

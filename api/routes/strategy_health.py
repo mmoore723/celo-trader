@@ -54,3 +54,39 @@ def run_now() -> dict:
     except Exception as e:
         logger.exception("strategy_health on-demand run failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Weekly rollup (added 2026-07-20) ───────────────────────────────────────
+# Separate from the daily audit above — same page, different time horizon.
+# See strategy_health/weekly.py for what's aggregated and why this isn't a
+# second parallel system: it reuses the daily audits already saved plus a
+# fresh read of real closed trades, nothing re-fetched from the market.
+
+@router.get("/weekly/latest")
+def get_weekly_latest() -> dict:
+    from database import get_latest_strategy_audit
+    audit = get_latest_strategy_audit(audit_type="weekly")
+    if audit is None:
+        return {"available": False}
+    return {"available": True, **audit}
+
+
+@router.get("/weekly/history")
+def get_weekly_history(limit: int = 12) -> dict:
+    from database import get_strategy_audit_history
+    return {"audits": get_strategy_audit_history(limit, audit_type="weekly")}
+
+
+@router.post("/weekly/run")
+def run_weekly_now() -> dict:
+    """On-demand weekly review — no market-data fetch involved (unlike the
+    daily audit), so this is fast: it's just DB reads + one Claude call."""
+    try:
+        from strategy_health.runner import run_weekly_review
+        from database import get_latest_strategy_audit
+        run_weekly_review()
+        audit = get_latest_strategy_audit(audit_type="weekly")
+        return {"ok": True, "available": audit is not None, **(audit or {})}
+    except Exception as e:
+        logger.exception("strategy_health weekly on-demand run failed")
+        raise HTTPException(status_code=500, detail=str(e))

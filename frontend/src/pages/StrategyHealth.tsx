@@ -6,11 +6,17 @@
  * strategy, how many raw signals fired, how many survived the router's
  * gates, and how many became real trades with what P&L. Runs automatically
  * once/day (trading/loop.py); the button here triggers an on-demand re-run.
+ *
+ * 2026-07-20: added a Weekly tab. Deliberately the SAME page as the daily
+ * audit, not a separate one — a user flagged that two parallel AI summaries
+ * (daily funnel vs. a proposed standalone "AI advisor") would just create
+ * confusion about which to trust. The weekly view reuses daily audits
+ * already saved plus real closed trades; see strategy_health/weekly.py.
  */
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type StrategyFunnelRow } from "../lib/api";
+import { api, type StrategyFunnelRow, type StrategyRiskMathRow } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -89,7 +95,67 @@ function FunnelTable({ perStrategy }: { perStrategy: Record<string, StrategyFunn
   );
 }
 
-export function StrategyHealth() {
+function RiskMathTable({ perStrategy }: { perStrategy: Record<string, StrategyRiskMathRow> }) {
+  const rows = Object.entries(perStrategy).sort((a, b) => b[1].n - a[1].n);
+  if (rows.length === 0) {
+    return <p style={{ color: "var(--ink-muted)", fontSize: 13 }}>No closed trades in this window.</p>;
+  }
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--ink-muted)", textAlign: "left" }}>
+            <th style={{ padding: "6px 8px" }}>Strategy</th>
+            <th style={{ padding: "6px 8px" }}>Trades</th>
+            <th style={{ padding: "6px 8px" }}>Win rate</th>
+            <th style={{ padding: "6px 8px" }}>Avg P&L</th>
+            <th style={{ padding: "6px 8px" }}>Total P&L</th>
+            <th style={{ padding: "6px 8px" }}>Realized win:loss</th>
+            <th style={{ padding: "6px 8px" }}>Top exit reasons</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([sid, row]) => {
+            const topReasons = Object.entries(row.exit_reasons)
+              .sort((a, b) => b[1] - a[1]).slice(0, 2)
+              .map(([r, n]) => `${r} (${n})`).join(", ");
+            return (
+              <tr key={sid} style={{ borderBottom: "1px solid var(--border)" }}>
+                <td style={{ padding: "6px 8px", fontWeight: 600 }}>
+                  {STRAT_NAMES[sid] ?? sid}
+                  <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>{sid}</div>
+                </td>
+                <td style={{ padding: "6px 8px" }}>
+                  {row.n}
+                  {row.n < 10 && (
+                    <span title="Sample under 10 trades — read cautiously" style={{ marginLeft: 6, color: "#f0883e" }}>
+                      <AlertTriangle size={13} style={{ display: "inline" }} />
+                    </span>
+                  )}
+                </td>
+                <td style={{ padding: "6px 8px" }}>{row.win_rate_pct.toFixed(0)}%</td>
+                <td style={{ padding: "6px 8px", color: row.avg_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                  ${row.avg_pnl.toFixed(2)}
+                </td>
+                <td style={{ padding: "6px 8px", color: row.total_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                  ${row.total_pnl.toFixed(2)}
+                </td>
+                <td style={{ padding: "6px 8px" }}>
+                  {row.realized_rr != null ? `${row.realized_rr}x` : "—"}
+                </td>
+                <td style={{ padding: "6px 8px", fontSize: 12, color: "var(--ink-muted)" }}>
+                  {topReasons || "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DailyView() {
   const qc = useQueryClient();
   const [showHistory, setShowHistory] = useState(false);
 
@@ -116,15 +182,12 @@ export function StrategyHealth() {
   if (isLoading) return <PageLoader label="Strategy Health" />;
 
   return (
-    <div className="p-4 md:p-6 flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>Strategy Health</h1>
-          <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>
-            Runs automatically every night after close. Replaces the one-off diagnostic scripts —
-            raw signals vs. what survived the router vs. what actually traded.
-          </p>
-        </div>
+        <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+          Runs automatically every night after close. Raw signals vs. what survived the router
+          vs. what actually traded, for the most recent trading day.
+        </p>
         <button
           className="btn btn-primary"
           onClick={() => runNow.mutate()}
@@ -208,6 +271,169 @@ export function StrategyHealth() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function WeeklyView() {
+  const qc = useQueryClient();
+  const [showHistory, setShowHistory] = useState(false);
+
+  const { data: latest, isLoading } = useQuery({
+    queryKey: ["strategy-health-weekly-latest"],
+    queryFn:  api.strategyHealth.weeklyLatest,
+    staleTime: 60_000,
+  });
+
+  const { data: history } = useQuery({
+    queryKey: ["strategy-health-weekly-history"],
+    queryFn:  () => api.strategyHealth.weeklyHistory(12),
+    enabled:  showHistory,
+  });
+
+  const runNow = useMutation({
+    mutationFn: api.strategyHealth.weeklyRun,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["strategy-health-weekly-latest"] });
+      qc.invalidateQueries({ queryKey: ["strategy-health-weekly-history"] });
+    },
+  });
+
+  if (isLoading) return <PageLoader label="Weekly Review" />;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+          Runs automatically every Friday after close. Rolls up the trailing week's daily audits
+          plus real closed trades — win rate, exit-reason mix, realized win:loss vs. the R:R
+          gate. The AI take here is specifically asked for one concrete, testable recommendation,
+          not a summary — and it will say so plainly if the sample is still too thin to trust.
+        </p>
+        <button
+          className="btn btn-primary"
+          onClick={() => runNow.mutate()}
+          disabled={runNow.isPending}
+        >
+          <RefreshCw size={14} className={runNow.isPending ? "animate-spin" : ""} />
+          {runNow.isPending ? "Running review…" : "Run Weekly Review Now"}
+        </button>
+      </div>
+
+      {runNow.isError && (
+        <div className="card" style={{ padding: 12, color: "var(--negative)", fontSize: 13 }}>
+          Weekly review failed: {(runNow.error as Error)?.message ?? "unknown error"}
+        </div>
+      )}
+
+      {(() => {
+        const shown = runNow.data ?? latest;
+        const agg = shown?.aggregate;
+        if (!shown?.available || !agg) {
+          return (
+            <div className="card" style={{ padding: 20, textAlign: "center", color: "var(--ink-muted)" }}>
+              No weekly review yet. It will run automatically this Friday after close, or press
+              "Run Weekly Review Now" to see the trailing week's picture immediately.
+            </div>
+          );
+        }
+        return (
+            <>
+              <div className="card" style={{ padding: 16 }}>
+                <div style={{ fontSize: 12, color: "var(--ink-faint)", marginBottom: 8 }}>
+                  {agg.week_label} — {agg.daily_audits_included.length} daily audit(s) rolled up
+                  over the trailing {agg.window_days} days.
+                </div>
+                <pre style={{
+                  whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13,
+                  color: "var(--ink)", margin: 0, lineHeight: 1.5,
+                }}>
+                  {shown.rule_summary}
+                </pre>
+              </div>
+
+              {shown.ai_summary && (
+                <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--accent)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, color: "var(--accent)" }}>
+                    <Sparkles size={14} />
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>Claude's recommendation</span>
+                  </div>
+                  <p style={{ fontSize: 13, color: "var(--ink)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                    {shown.ai_summary}
+                  </p>
+                </div>
+              )}
+
+              <div className="card" style={{ padding: 16 }}>
+                <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
+                  Real-trade risk math (this window)
+                </h3>
+                <RiskMathTable perStrategy={agg.per_strategy_risk_math} />
+              </div>
+
+              <div className="card" style={{ padding: 16 }}>
+                <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
+                  Signal funnel (summed across the week)
+                </h3>
+                <FunnelTable perStrategy={agg.per_strategy_funnel} />
+              </div>
+            </>
+        );
+      })()}
+
+      <div className="card" style={{ padding: 16 }}>
+        <button
+          onClick={() => setShowHistory(v => !v)}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: 0,
+                   fontSize: 13, fontWeight: 600, color: "var(--ink)" }}
+        >
+          {showHistory ? "Hide" : "Show"} weekly history
+        </button>
+        {showHistory && (
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+            {(history?.audits ?? []).length === 0 && (
+              <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>No history yet.</p>
+            )}
+            {(history?.audits ?? []).map(row => (
+              <div key={row.audit_date} style={{ fontSize: 12, borderBottom: "1px solid var(--border)", paddingBottom: 6 }}>
+                <span style={{ fontWeight: 600, color: "var(--ink)" }}>{row.audit_date}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function StrategyHealth() {
+  const [tab, setTab] = useState<"daily" | "weekly">("daily");
+
+  const tabBtn = (id: "daily" | "weekly", label: string) => (
+    <button
+      onClick={() => setTab(id)}
+      className="btn"
+      style={{
+        background: tab === id ? "var(--accent-subtle)" : "transparent",
+        color: tab === id ? "var(--accent)" : "var(--ink-muted)",
+        border: "none", fontWeight: 600, fontSize: 13,
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="p-4 md:p-6 flex flex-col gap-4">
+      <div>
+        <h1 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>Strategy Health</h1>
+        <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+          {tabBtn("daily", "Daily Audit")}
+          {tabBtn("weekly", "Weekly Review")}
+        </div>
+      </div>
+
+      {tab === "daily" ? <DailyView /> : <WeeklyView />}
     </div>
   );
 }

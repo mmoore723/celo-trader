@@ -439,7 +439,7 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
       "5. Strategy confidence: signal must score above 0.55 (absolute floor from entry.py) and the router pre-filters below 0.74. Low-confidence signals are noise.",
       "6. SPY VWAP macro gate: if SPY trades below its VWAP (bearish macro), any bullish signals on individual tickers are flipped to bearish (puts instead of calls), and vice versa. You're always trading with the broad market.",
       "7. Contract sizing: must be able to afford at least 1 contract within the risk budget. If the option premium implies a stop loss larger than the risk budget, 0 contracts are returned and the ticker is skipped.",
-      "8. Spread gate: the bid-ask spread as a % of mid price must be below the spread_gate_pct setting (default 25%). Wide spreads are an immediate performance drag.",
+      "8. Spread gate: the bid-ask spread as a % of mid price must be below the spread_gate_pct setting (default 8%). Wide spreads are an immediate performance drag.",
       "9. R:R gate: the potential reward (Stage 1 target) must be ≥ 1.2× the risk (stop loss) for bootstrap accounts, or ≥ 1.6× for standard accounts. The math must work even if you're only right half the time.",
       "10. Duplicate-order guard: can't place the same contract twice in the same minute. Prevents accidental double entries.",
     ],

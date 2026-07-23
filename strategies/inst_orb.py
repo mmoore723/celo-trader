@@ -31,6 +31,18 @@ Fixes vs. original raw-breakout INST_ORB
 4. VWAP direction gate applies at the retest entry bar
 5. Flip/fade signals: still supported — the breakout bar is the fade trigger;
    the retest is price coming back to test the failed level
+
+2026-07-21 audit note (NOT acted on — see reasoning below): run_full_audit.py
+showed INST_ORB at -$74.48/trade (n=11), and an odd inversion — losing trades
+averaged a HIGHER confidence score (0.85) than winners (0.77), plus roughly
+2x the ATR (3.46 vs 1.88), suggesting the proximity-score's ATR-normalization
+in _compute_confidence() may over-reward "close in ATR terms" bounces during
+genuinely volatile/choppy conditions. This is a real, mechanistically
+plausible lead, but n=11 with only 3 winning trades is too thin to safely
+recalibrate a confidence formula without overfitting to those 3 trades —
+unlike TREND_CONT (n=26) and AFT_REV (n=19), no change was shipped here.
+Re-run this audit once more paper trades accumulate before touching
+_compute_confidence()'s weights.
 """
 
 from __future__ import annotations

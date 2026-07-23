@@ -1,0 +1,7 @@
+RUN FULL AUDIT — 2 month(s), 10 ticker(s): SPY, QQQ, NVDA, AAPL, TSLA, AMD, META, AMZN, MSFT, GOOGL
+Started 22:28:40 — 8 tickers in parallel (set AUDIT_WORKERS=N to change)
+
+   ✓ QQQ done (5481s, total elapsed 5482s)
+   ✓ AAPL done (5562s, total elapsed 5563s)
+   ✓ NVDA done (5584s, total elapsed 5585s)
+   ✓ SPY done (5694s, total elapsed 5695s)

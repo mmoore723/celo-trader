@@ -1,0 +1,100 @@
+RUN FULL AUDIT — 2 month(s), 5 ticker(s): SPY, QQQ, NVDA, AAPL, TSLA
+Started 12:36:36
+
+⏳ SPY…
+   ✓ SPY done (97s, total elapsed 97s)
+⏳ QQQ…
+   ✓ QQQ done (97s, total elapsed 193s)
+⏳ NVDA…
+   ✓ NVDA done (94s, total elapsed 287s)
+⏳ AAPL…
+   ✓ AAPL done (93s, total elapsed 380s)
+⏳ TSLA…
+   ✓ TSLA done (108s, total elapsed 488s)
+
+====================================================================================================
+PER-TICKER SUMMARY
+====================================================================================================
+  SPY: 10 trades, return -1.2%, win rate 40%, max DD $281.20 (5.6%)  (97s)
+  QQQ: 11 trades, return -3.2%, win rate 45%, max DD $382.20 (7.6%)  (97s)
+  NVDA: 9 trades, return -11.0%, win rate 11%, max DD $701.50 (14.0%)  (94s)
+  AAPL: 11 trades, return -34.7%, win rate 0%, max DD $1734.90 (34.7%)  (93s)
+  TSLA: 2 trades, return -4.6%, win rate 0%, max DD $230.20 (4.6%)  (108s)
+
+====================================================================================================
+1. PER-STRATEGY EXPECTANCY
+====================================================================================================
+STRATEGY      TRADES   WIN%   TOTAL P&L  EXPECTANCY  VERDICT
+----------------------------------------------------------------------------------------------------
+INST_ORB           3    33%     -72.95$     -24.32$  ⚪ too few trades to judge
+TREND_CONT         9    44%    -390.25$     -43.36$  ⚪ too few trades to judge
+FVG                1     0%     -46.05$     -46.05$  ⚪ too few trades to judge
+AFT_REV            6    17%    -302.80$     -50.47$  ⚪ too few trades to judge
+VWAP_PB            5     0%    -372.45$     -74.49$  ⚪ too few trades to judge
+MID_BRK           18    22%   -1469.60$     -81.64$  🔴 negative expectancy
+IFVG               1     0%     -85.85$     -85.85$  ⚪ too few trades to judge
+
+====================================================================================================
+2. RISK MATH — realized win:loss vs. configured gate, exit-reason mix
+====================================================================================================
+
+MID_BRK (Mid-Day Breakdown) — n=18
+  avg win $101.40  avg loss $133.94  realized W:L 0.76x  (gate requires 1.2x-1.6x)
+  exit mix: time_cap_loser_60m (6), peak_giveback (4), momentum_dead_exit (4), initial_atr_stop (3)
+
+TREND_CONT (Trend Continuation) — n=9
+  avg win $74.26  avg loss $137.46  realized W:L 0.54x  (gate requires 1.2x-1.6x)
+  exit mix: time_cap_loser_60m (3), peak_giveback (2), early_momentum_stop_20pct (2), stage1_50pct (1)
+
+AFT_REV (Afternoon Reversal) — n=6
+  avg win $85.25  avg loss $77.61  realized W:L 1.10x  (gate requires 1.2x-1.6x)
+  exit mix: momentum_dead_exit (2), time_cap_loser_60m (2), stage1_50pct (1), eod (1)
+
+VWAP_PB (VWAP Pullback) — n=5
+  avg win $0.00  avg loss $74.49  realized W:L —  (gate requires 1.2x-1.6x)
+  exit mix: structural_stop_bar_high (4), time_cap_loser_60m (1)
+  ⚠️  SANITY CHECK: 'structural_stop_bar_high' is 80% of exits (4/5). A single exit reason dominating this heavily usually means a gate/condition in the exit engine, not the strategy's entries, is driving the result — verify the exit logic before trusting this P&L.
+
+INST_ORB (Opening Range Breakout) — n=3
+  avg win $58.35  avg loss $65.65  realized W:L 0.89x  (gate requires 1.2x-1.6x)
+  exit mix: time_cap_loser_60m (2), peak_giveback (1)
+
+IFVG (Inverted Fair Value Gap) — n=1
+  avg win $0.00  avg loss $85.85  realized W:L —  (gate requires 1.2x-1.6x)
+  exit mix: time_cap_loser_60m (1)
+
+FVG (Fair Value Gap) — n=1
+  avg win $0.00  avg loss $46.05  realized W:L —  (gate requires 1.2x-1.6x)
+  exit mix: eod (1)
+
+====================================================================================================
+3. WIN vs LOSS FEATURE GAPS (per strategy, only where n >= 5)
+====================================================================================================
+
+MID_BRK (Mid-Day Breakdown) — n=18, win rate 22%
+              N  avg RVOL  avg conf  avg held(m) avg breakdown_pct avg lh_confirmed      avg or_high       avg or_low    avg rvol_gate         avg vwap
+  WINS        4      2.16      0.79         47.5             1.34             1.00           604.52           600.92             0.75           599.40
+  LOSSES     14      1.93      0.77         45.0             0.98             1.00           487.93           484.34             0.75           483.62
+
+TREND_CONT (Trend Continuation) — n=9, win rate 44%
+              N  avg RVOL  avg conf  avg held(m)     avg bars_ago     avg hl_price  avg hl_rise_pct avg lh_depth_pct     avg lh_price     avg prior_sh     avg prior_sl
+  WINS        4      2.41      0.80         57.5             4.00           719.82             1.20             0.75           745.29           750.96           711.36
+  LOSSES      5      2.14      0.77         55.0             5.40           289.61             1.03             0.89           291.13           293.73           286.68
+
+AFT_REV (Afternoon Reversal) — n=6, win rate 17%
+              N  avg RVOL  avg conf  avg held(m) avg breakdown_pct avg breakout_pct avg hl_confirmed avg lh_confirmed avg prev_swing_high avg prev_swing_low         avg vwap
+  WINS        1      3.88      0.77         45.0             1.14             0.00             0.00             1.00             0.00           723.34           722.03
+  LOSSES      5      2.05      0.75         50.0             0.56             1.14             1.00             1.00           310.85           464.62           435.20
+
+VWAP_PB (VWAP Pullback) — n=5, win rate 0%
+              N  avg RVOL  avg conf  avg held(m)        avg ema50 avg entry_bar_high avg entry_bar_low avg msa_confirmed    avg prev_high     avg prev_low    avg rvol_gate         avg vwap   avg vwap_touch
+  WINS        0      0.00      0.00          0.0             0.00             0.00             0.00             0.00             0.00             0.00             0.00             0.00             0.00
+  LOSSES      5      1.47      0.78         19.0           627.01           728.47           604.20             0.40           728.49           603.57             1.02           628.63             1.00
+
+INST_ORB: n=3 — below the 5-trade floor, skipping (would just be noise).
+
+IFVG: n=1 — below the 5-trade floor, skipping (would just be noise).
+
+FVG: n=1 — below the 5-trade floor, skipping (would just be noise).
+
+Total elapsed: 488s

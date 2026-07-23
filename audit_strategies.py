@@ -53,11 +53,18 @@ def main() -> None:
             continue
 
         breakdown = result.get("strategy_breakdown") or {}
+        # FIX 2026-07-20: max_drawdown comes back from backtester.py as a raw
+        # DOLLAR figure (peak-to-trough equity, e.g. $1037.40), not a percent —
+        # this used to print it with a bare "%" suffix, so a normal ~21%
+        # drawdown showed up as "1037.4%" and looked like a blown account.
+        # Normalize by the same starting_capital passed to Backtester below.
+        _dd_dollars = result.get('max_drawdown', 0)
+        _dd_pct     = (_dd_dollars / 5000.0 * 100) if _dd_dollars else 0.0
         per_ticker_lines.append(
             f"{ticker}: {result.get('total_trades', 0)} trades, "
             f"return {result.get('total_return', 0):+.1f}%, "
             f"win rate {result.get('win_rate', 0) * 100:.0f}%, "
-            f"max DD {result.get('max_drawdown', 0):.1f}%"
+            f"max DD ${_dd_dollars:.2f} ({_dd_pct:.1f}%)"
         )
         for sid, row in breakdown.items():
             agg[sid]["trades"] += int(row.get("trades", 0))

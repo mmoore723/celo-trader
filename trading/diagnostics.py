@@ -72,6 +72,13 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
 
         # ── 5-min today slice (ORB detection uses 5-min bars) ─────────────────
         latest_date_5m = df5["time"].dt.date.max()
+        # BUG FIX 2026-07-22: capture today's row labels BEFORE reset_index.
+        # rvol_series below is indexed on the full multi-day df5; reindexing
+        # against today_df.index AFTER it's reset to 0..N-1 silently pulls
+        # whichever earlier day starts at the same row offset instead of
+        # today's real RVOL. Same bug, same fix as strategy_router.py's
+        # _build_indicator_frame() (fixed earlier today).
+        today_idx      = df5.index[df5["time"].dt.date == latest_date_5m]
         today_df       = df5[df5["time"].dt.date == latest_date_5m].reset_index(drop=True)
 
         # ── VWAP (on today's 1-min bars for precision) ─────────────────────────
@@ -84,7 +91,7 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
         # ── RVOL (augmented df gives 10-day baseline) ─────────────────────────
         try:
             rvol_series = _crvol(df5, lookback_days=10)
-            rvol_today  = rvol_series.reindex(today_df.index)
+            rvol_today  = rvol_series.reindex(today_idx)   # reindex against PRE-reset labels
             rvol_val    = float(rvol_today.iloc[-1]) if (not rvol_today.empty and not _pd.isna(rvol_today.iloc[-1])) else 0.0
         except Exception:
             rvol_val = 0.0

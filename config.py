@@ -115,14 +115,16 @@ AI_NARRATION_MODEL       = os.getenv("AI_NARRATION_MODEL", "claude-haiku-4-5-202
 # timeout only bounds how long a stray thread can live, not trade latency.
 AI_NARRATION_TIMEOUT_SEC = int(os.getenv("AI_NARRATION_TIMEOUT_SEC", "10"))
 
-# Phase 2 (decision support — veto/narrow an already-approved trade) is NOT
-# implemented yet; these two flags exist so the plumbing added here doesn't
-# need revisiting later, but both stay hard off until that phase is built
-# and separately approved. AI_DECISION_SUPPORT_ENABLED_LIVE is a SECOND,
-# independent switch — decision support only ever runs in paper trading
-# unless BOTH flags are true, so a single accidental flag flip can never
-# expose live capital to it.
-AI_DECISION_SUPPORT_ENABLED      = os.getenv("AI_DECISION_SUPPORT_ENABLED", "false").lower() == "true"
+# Phase 2 (decision support — veto/narrow an already-approved trade) is now
+# built (ai_reasoning/decision_support.py) and, per explicit user decision
+# 2026-07-20, turned on for PAPER TRADING ONLY to start building a track
+# record before it's ever trusted near live capital. AI_DECISION_SUPPORT_
+# ENABLED_LIVE is a SECOND, independent switch that stays hard off — decision
+# support only ever runs in paper trading unless BOTH flags are true, so a
+# single accidental flag flip can never expose live capital to it. Requires
+# ANTHROPIC_API_KEY to be set in .env; if it isn't, this whole layer is a
+# silent no-op regardless of this flag (see ai_reasoning/client.py).
+AI_DECISION_SUPPORT_ENABLED      = os.getenv("AI_DECISION_SUPPORT_ENABLED", "true").lower() == "true"
 AI_DECISION_SUPPORT_ENABLED_LIVE = os.getenv("AI_DECISION_SUPPORT_ENABLED_LIVE", "false").lower() == "true"
 # Decision support (phase 2) is SYNCHRONOUS and sits in the entry path
 # (unlike narration's fire-and-forget daemon thread), so its timeout bounds
@@ -292,14 +294,25 @@ EARNINGS_BLACKOUT_DAYS   = 2
 COMMISSION_PER_CONTRACT = 0.65
 
 # Trading windows (ET) — ENTRIES ONLY. Position management/exits run all session.
-# Two-session schedule: opening range + power hour; lunch chop blocked.
+#
+# FIX 2026-07-20: this used to be a two-session schedule (09:30-11:30 +
+# 14:00-15:45) that blocked the 11:30-14:00 "lunch chop" period entirely.
+# But MID_BRK's own session window is 10:30-13:00 and AFT_REV's is
+# 13:00-15:30 — the old gate silently cut off 60% of MID_BRK's window
+# (11:30-13:00) and 40% of AFT_REV's (13:00-14:00), because select_ticker()
+# in trading/entry.py returns no ticker at all outside these windows, so
+# those strategies' own evaluate() was never even reached during that time.
+# Widened to one continuous window so every strategy's own session logic
+# (not this global gate) is what decides whether a setup is good — per
+# explicit user decision. Un-widening this back to a two-session schedule
+# would silently re-break MID_BRK/AFT_REV the same way; if that's ever
+# revisited, do it by trimming those strategies' own windows instead of
+# narrowing this one, so the mismatch can't reappear silently.
 TRADING_WINDOWS_PHASE1 = [
-    ("09:30", "11:30"),   # Opening session
-    ("14:00", "15:45"),   # Afternoon trend / power hour
+    ("09:30", "15:45"),
 ]
 TRADING_WINDOWS_PHASE2 = [
-    ("09:30", "11:30"),
-    ("14:00", "15:45"),
+    ("09:30", "15:45"),
 ]
 # Active windows — auto-selected based on account balance
 # trading_logic.py reads get_trading_windows() each tick
@@ -359,11 +372,29 @@ _DEFAULTS = {
     # These override the class constants in risk.py and the hardcoded gates in
     # entry.py / strategy_router.py so the user can tune live without touching code.
     "orb_stage1_gain_pct":   50,    # Stage-1 profit target as % of entry (50 = +50%)
+                                    # NOTE 2026-07-21: this flat % is now only the FAIL-OPEN
+                                    # fallback (used when ATR data is missing). The primary
+                                    # stage-1 trigger is dynamic — see stage1_dynamic_enabled
+                                    # below. Research basis: ab_test_stage1_target.py found
+                                    # 50/30/20% all negative expectancy, ~0 winners ever
+                                    # reached the static target.
     "orb_stop_loss_pct":     20,    # Option premium stop-loss as % of entry (20 = -20%)
+    "stage1_dynamic_enabled":      True,   # ATR/momentum/volume-based stage1 trigger (kill-switch)
+    "stage1_atr_target_mult":      2.0,    # ATR multiplier for the dynamic target (1.5-2.5x per research)
+    "stage1_min_lock_floor_pct":   10,     # min gain % before momentum/volume fade can trigger early lock
+    "stage1_rvol_fade_threshold":  1.0,    # RVOL below this (after being elevated) = crowd left, lock early
+    "stage1_momentum_require_both": False, # False=RSI OR MACD fires early lock, True=requires BOTH (untested candidate)
     # 2026-07-15 audit: 25% was far too loose — a 25% spread is an instant ~12%
     # loss at entry. 8% max keeps round-trip spread cost survivable.
     "spread_gate_pct":       8,     # Max bid-ask spread as % of mid (8 = 8%)
     "vol_roc_threshold":     0.50,  # Volume ROC veto threshold (0.50 = 50% of prior vol)
+    # 2026-07-22: ab_test_exit_complexity.py — stripped-down 3-rule exit
+    # (hard stop / 3.0x chandelier trail / 1 time cap) beat the full 9+-
+    # condition engine on realized R:R (1.17-1.29x vs 0.20-0.27x) at roughly
+    # the same avg loss but 4.3x bigger avg wins, stacked with prior_swing.
+    # Default True = simplified path live. False = fall back to the full
+    # risk.py engine (trading/position_manager.py's should_exit() call).
+    "simplified_exit_mode":  True,
 
     # Filters
     "volume_filter_enabled":   True,

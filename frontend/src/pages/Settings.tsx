@@ -36,12 +36,13 @@ const DEFAULT: AppSettings = {
   chan_break_enabled: true,
   mid_brk_enabled: true,
   trend_cont_enabled: true,
+  aft_rev_enabled: true,   // Afternoon Reversal — added to Settings 2026-07-20
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
   // Trade parameters
   orb_stage1_gain_pct: 50,
   orb_stop_loss_pct: 20,
-  spread_gate_pct: 25,
+  spread_gate_pct: 8,   // was stale 25, fixed 2026-07-22
   vol_roc_threshold: 0.50,
 };
 
@@ -338,6 +339,8 @@ export function Settings() {
                 onChange={(v) => set("mid_brk_enabled", v)} />
         <Toggle label="Trend Continuation / TREND_CONT (9:45 AM – 2:30 PM)" checked={form.trend_cont_enabled}
                 onChange={(v) => set("trend_cont_enabled", v)} />
+        <Toggle label="Afternoon Reversal / AFT_REV (1:00 PM – 3:30 PM)" checked={form.aft_rev_enabled}
+                onChange={(v) => set("aft_rev_enabled", v)} />
       </div>
 
       {/* Display */}
@@ -401,12 +404,12 @@ export function Settings() {
             <label className="text-sm" style={{ color: "var(--ink)" }}>
               Spread gate (% of mid)
               <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-                Skip contracts wider than this bid-ask spread (default 25%)
+                Skip contracts wider than this bid-ask spread (default 8%)
               </span>
             </label>
             <input
               type="number" step="5" min="5" max="50"
-              value={form.spread_gate_pct ?? 25}
+              value={form.spread_gate_pct ?? 8}
               onChange={(e) => set("spread_gate_pct", parseFloat(e.target.value))}
               className="input w-24"
             />

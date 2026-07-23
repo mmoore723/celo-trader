@@ -355,8 +355,9 @@ export interface AppSettings {
   // Trade parameters — user-tunable without touching code
   orb_stage1_gain_pct?: number;  // Stage-1 profit target as % of entry (default 50)
   orb_stop_loss_pct?: number;    // Option premium stop-loss as % of entry (default 20)
-  spread_gate_pct?: number;      // Max bid-ask spread as % of mid (default 25)
+  spread_gate_pct?: number;      // Max bid-ask spread as % of mid (default 8)
   vol_roc_threshold?: number;    // Volume ROC veto threshold (default 0.50)
+  simplified_exit_mode?: boolean; // 3-rule exit (hard stop / 3.0x chandelier / time cap) vs full engine (default true)
 }
 
 // ── Chart annotations (bot-drawn overlays) ────────────────────────────────────

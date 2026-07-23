@@ -100,6 +100,16 @@ def _build_indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     latest_date = df["time"].dt.date.max()
+    # BUG FIX 2026-07-22: capture today's row labels BEFORE reset_index below.
+    # rvol_series (computed a few lines down) is indexed on the FULL
+    # multi-day df. Previously `today` was reset to a 0-based index first,
+    # then reindexed against that reset index — silently pulling whichever
+    # earlier day happened to start at the same row offset instead of
+    # today's real RVOL, any time df spans more than one day. Confirmed via
+    # a direct call to this function on synthetic multi-day data. Affects
+    # both the backtester and live (trading/entry.py's df5 is multi-day
+    # after the RVOL history augment).
+    today_idx   = df.index[df["time"].dt.date == latest_date]
     today       = df[df["time"].dt.date == latest_date].copy().reset_index(drop=True)
 
     _vwap_frame           = compute_vwap_bands(today, num_stds=(1, 2))
@@ -110,7 +120,10 @@ def _build_indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
     today["vwap_lower2"]  = _vwap_frame["vwap_lower2"].ffill()
 
     rvol_series   = compute_rvol(df, lookback_days=10)
-    today["rvol"] = rvol_series.reindex(today.index).fillna(1.0)
+    # Positional assign via .to_numpy() — sidesteps index alignment entirely.
+    # today_idx and today are in the same row order (both derived from the
+    # same boolean mask, mask application preserves order), so this is safe.
+    today["rvol"] = rvol_series.reindex(today_idx).fillna(1.0).to_numpy()
 
     today["ema50"] = today["close"].ewm(span=50, adjust=False).mean()
 
@@ -220,29 +233,35 @@ def route_signals(
             logger.warning("Strategy %s raised: %s", strategy_id, exc, exc_info=True)
 
     # ── Sequential quality-gate pipeline (see router_gates.py) ───────────────
-    signals = _gates.apply_regime_gate(signals, df, ticker)
+    # `quiet` (added 2026-07-21 for the 1-min backtest integration) is threaded
+    # into every gate that writes to the DB event log or bot.log — a bar-by-bar
+    # historical replay calling this thousands of times per backtest would
+    # otherwise flood the live THINKING panel with fake "in-market" narration.
+    # Gating decisions themselves are IDENTICAL either way; only the logging
+    # side-effects are suppressed. Never pass quiet=True on the live path.
+    signals = _gates.apply_regime_gate(signals, df, ticker, quiet=quiet)
     signals.sort(key=lambda s: s.confidence, reverse=True)
 
-    signals = _gates.apply_session_bias_penalty(signals, today, ticker)
+    signals = _gates.apply_session_bias_penalty(signals, today, ticker, quiet=quiet)
     signals = _gates.apply_vwap_weight(signals, today, ticker)
-    signals = _gates.apply_confluence_bonus(signals, ticker)
+    signals = _gates.apply_confluence_bonus(signals, ticker, quiet=quiet)
     signals = _gates.apply_large_move_gate(signals, today, ticker)
-    signals = _gates.apply_directional_consensus(signals, today, ticker)
+    signals = _gates.apply_directional_consensus(signals, today, ticker, quiet=quiet)
     signals = _gates.apply_confidence_floor(signals, ticker, _MIN_CONFIDENCE)
 
-    if _gates.check_conflict_veto(signals, today, ticker, _CONFLICT_VETO_BAND):
+    if _gates.check_conflict_veto(signals, today, ticker, _CONFLICT_VETO_BAND, quiet=quiet):
         return []
-    if _gates.check_volume_roc_veto(signals, today, ticker):
+    if _gates.check_volume_roc_veto(signals, today, ticker, quiet=quiet):
         return []
 
-    if signals:
+    if signals and not quiet:
         logger.info(
             "router_result: %d signal(s) for %s — top=%s %.0f%% conf",
             len(signals), ticker, signals[0].strategy_id, signals[0].confidence * 100,
         )
 
     try:
-        if ticker != "SIM":
+        if ticker != "SIM" and not quiet:
             _audit_plain_english(today, ticker, signals)
     except Exception:
         pass

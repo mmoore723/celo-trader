@@ -386,7 +386,14 @@ class AlpacaClient:
         else:
             # FIX 2026-06-20: intraday timeframes (5Min/15Min/1Hour) had NO start
             # date at all — Alpaca's implicit default window without one is too
-            _bars_per_day = {"5Min": 78, "15Min": 26, "1Hour": 7}.get(tf, 78)
+            # FIX 2026-07-21: "1Min" was missing from this map entirely, silently
+            # falling back to the 78/day default (5Min's rate) — 5x too low. A
+            # limit=10000 request then computed a start date ~209 days back
+            # instead of ~26, so Alpaca returned the FIRST 10000 bars from 209
+            # days ago (an old, essentially random window) instead of anything
+            # recent. Found via diag_1min_data_availability.py while checking
+            # 1-minute data depth for a backtester resolution-fidelity fix.
+            _bars_per_day = {"1Min": 390, "5Min": 78, "15Min": 26, "1Hour": 7}.get(tf, 78)
             _trading_days_needed = max(1, -(-limit // _bars_per_day))  # ceil division
             # Pad 1.6x for weekends/holidays, plus a flat 5-day floor so small
             # `limit` requests still get a sane minimum lookback window.

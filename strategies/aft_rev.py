@@ -19,6 +19,19 @@ Gates:
   5. Price closes above most recent Swing High (bullish BOS)
        or below most recent Swing Low (bearish BOS)
   Bonus: VWAP alignment adds to confidence (soft gate)
+
+2026-07-21: run_full_audit.py (post window-fix, backtester-fidelity-fix)
+showed AFT_REV at -$83.04/trade expectancy, 21% WR (n=19) — the worst win
+rate of any active strategy. Two gaps in the win/loss feature comparison:
+  1. Winners break out by roughly 2x the margin losers do (breakout_pct
+     avg 0.91% vs 0.54% on the bullish path). Added _MIN_BREAKOUT_PCT below
+     as a minimum BOS clearance instead of any tick-through counting.
+  2. Winners had LOWER average RVOL (1.97) than losers (2.73) — the
+     opposite of what the confidence formula assumes. Capped the RVOL bonus
+     below instead of removing it outright (n=19 is thin; the bearish-side
+     breakdown_pct read the opposite direction on wins/losses and n=4 wins
+     is too small to trust a threshold there, so that side is untouched).
+Both HYPOTHESES pending ab_test_v2_fixes.py confirmation.
 """
 
 from __future__ import annotations
@@ -34,6 +47,9 @@ from strategies.base import Signal, MarketStructureAnalyzer
 logger = logging.getLogger("celo_trader.strategies.aft_rev")
 
 STRATEGY_ID = "AFT_REV"
+
+_MIN_BREAKOUT_PCT = 0.50   # min BOS clearance past the swing level, in % (2026-07-21, pending A/B)
+_RVOL_BONUS_CAP   = 1.0    # was 2.0 — losers ran hotter RVOL than winners (2026-07-21, pending A/B)
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
@@ -74,11 +90,17 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     if msa.confirmed_higher_low():
         prev_sh = msa.last_swing_high()
         if prev_sh is not None and close > prev_sh:
-            vwap_bonus   = 0.05 if (vwap is not None and close > vwap) else 0.0
             breakout_mag = (close - prev_sh) / max(prev_sh, 1.0)
+            if breakout_mag * 100 < _MIN_BREAKOUT_PCT:
+                logger.debug(
+                    "[%s] AFT_REV bullish: breakout %.2f%% < %.2f%% — BOS too shallow",
+                    ticker, breakout_mag * 100, _MIN_BREAKOUT_PCT,
+                )
+                return None
+            vwap_bonus   = 0.05 if (vwap is not None and close > vwap) else 0.0
             mag_bonus    = min(0.04, breakout_mag * 10)
             trend_bonus  = 0.03 if trend == "consolidation" else (0.01 if trend == "uptrend" else 0.0)
-            confidence   = min(0.84, 0.62 + min(rvol - 1.0, 2.0) * 0.05 + vwap_bonus + mag_bonus + trend_bonus)
+            confidence   = min(0.84, 0.62 + min(rvol - 1.0, _RVOL_BONUS_CAP) * 0.05 + vwap_bonus + mag_bonus + trend_bonus)
 
             logger.info("[%s] AFT_REV bullish close=%.2f prev_sh=%.2f RVOL=%.2f trend=%s conf=%.2f",
                         ticker, close, prev_sh, rvol, trend, confidence)
@@ -114,7 +136,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             breakdown_mag = (prev_sl - close) / max(prev_sl, 1.0)
             mag_bonus     = min(0.04, breakdown_mag * 10)
             trend_bonus   = 0.03 if trend == "consolidation" else (0.01 if trend == "downtrend" else 0.0)
-            confidence    = min(0.84, 0.62 + min(rvol - 1.0, 2.0) * 0.05 + vwap_bonus + mag_bonus + trend_bonus)
+            confidence    = min(0.84, 0.62 + min(rvol - 1.0, _RVOL_BONUS_CAP) * 0.05 + vwap_bonus + mag_bonus + trend_bonus)
 
             logger.info("[%s] AFT_REV bearish close=%.2f prev_sl=%.2f RVOL=%.2f trend=%s conf=%.2f",
                         ticker, close, prev_sl, rvol, trend, confidence)
