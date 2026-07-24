@@ -33,3 +33,12 @@ audit_reports/_data_cache/
 # blocking every deploy since. Untracked via `git rm --cached` in the same
 # commit as this comment — see that commit message for the full incident.
 ec2_log/
+
+# FIX 2026-07-24 part 2: first pass only caught daily_universe.json and
+# user_settings.json — EC2's actual `git status` also showed .bot_heartbeat
+# and tax_sweep.json as modified (same already-tracked-before-ignored
+# problem), still blocking the pull. Also ignoring venv/ and user_data/,
+# which showed up untracked on EC2 and should never be committed at all.
+.bot_heartbeat
+venv/
+user_data/
