@@ -37,8 +37,26 @@ from trading.annotations import emit_annotation as _emit_ann
 from strategies.base import MarketStructureAnalyzer
 import regime_manager as _regime_mgr
 from regime_manager import compute_regime, regime_allows
+from signal_journal import log_signal_outcome as _log_journal
 
 logger = logging.getLogger("celo_trader.router_gates")
+
+
+def _journal_dropped(before: list, after: list, ticker: str, reason_code: str, reason_detail: str = "") -> None:
+    """
+    Write one signal_journal 'blocked' row per signal a gate just removed.
+    Shared by every hard-block gate below so the diff logic lives in one
+    place — compares by id() since signal objects aren't hashable/comparable.
+    """
+    _after_ids = {id(s) for s in after}
+    for _s in before:
+        if id(_s) in _after_ids:
+            continue
+        try:
+            _log_journal(ticker, _s.strategy_id, _s.direction, _s.confidence,
+                         outcome="blocked", reason_code=reason_code, reason_detail=reason_detail)
+        except Exception:
+            pass   # journal writes are never allowed to affect gate behavior
 
 
 # ── 1. Regime gate (OFF by default — see regime_manager.py) ──────────────────
@@ -49,13 +67,14 @@ def apply_regime_gate(signals: list, df: pd.DataFrame, ticker: str, quiet: bool 
     _regime = compute_regime(df)
     if _regime == "neutral":
         return signals
-    _before = len(signals)
+    _before_list = list(signals)
     signals = [s for s in signals if regime_allows(s.strategy_id, s.direction, _regime)]
-    if len(signals) != _before and not quiet:
+    if len(signals) != len(_before_list) and not quiet:
+        _journal_dropped(_before_list, signals, ticker, "regime_gate", f"regime={_regime}")
         try:
             _db_log("INFO", "bar_eval",
                     f"⚪ [{ticker}] Regime={_regime} filtered "
-                    f"{_before - len(signals)} counter-regime signal(s).")
+                    f"{len(_before_list) - len(signals)} counter-regime signal(s).")
         except Exception:
             pass
     return signals
@@ -254,6 +273,9 @@ def apply_grade_filter(signals: list, today: pd.DataFrame, ticker: str, quiet: b
         return signals
 
     if not quiet:
+        _journal_dropped(signals, [], ticker, "grade_filter",
+                          f"{_grade} grade below minimum {_min_grade} "
+                          f"(gap={_gap:+.2f}%, rvol={_rvol:.1f}x, atr=${_atr:.2f})")
         _db_log("INFO", "bar_eval",
                 f"⚪ [{ticker}] Grade filter: {_grade} setup (gap={_gap:+.2f}%, "
                 f"rvol={_rvol:.1f}x, atr=${_atr:.2f}) below minimum {_min_grade} "
@@ -345,10 +367,13 @@ def apply_directional_consensus(signals: list, today: pd.DataFrame, ticker: str,
     _bull_score = sum([_dc_price_bull, _dc_slope_bull, _dc_struct_bull])
     _bear_score = sum([_dc_price_bear, _dc_slope_bear, _dc_struct_bear])
 
+    _dc_before_list = list(signals)
     _dc_before = len(signals)
     if _bull_score == 3:
         signals = [s for s in signals if s.direction == "bullish"]
         if _dc_before > len(signals) and not quiet:
+            _journal_dropped(_dc_before_list, signals, ticker, "directional_consensus",
+                              f"3/3 bullish (slope+{_dc_slope_pct*100:.2f}% {_dc_trend} RVOL {_dc_rvol:.1f}x)")
             logger.info(
                 "router: dir_consensus=BULLISH 3/3 (slope+%.3f%% %s RVOL=%.1f×) — %d PUT(s) blocked",
                 _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
@@ -360,6 +385,8 @@ def apply_directional_consensus(signals: list, today: pd.DataFrame, ticker: str,
     elif _bear_score == 3:
         signals = [s for s in signals if s.direction == "bearish"]
         if _dc_before > len(signals) and not quiet:
+            _journal_dropped(_dc_before_list, signals, ticker, "directional_consensus",
+                              f"3/3 bearish (slope{_dc_slope_pct*100:.2f}% {_dc_trend} RVOL {_dc_rvol:.1f}x)")
             logger.info(
                 "router: dir_consensus=BEARISH 3/3 (slope%.3f%% %s RVOL=%.1f×) — %d CALL(s) blocked",
                 _dc_slope_pct * 100, _dc_trend, _dc_rvol, _dc_before - len(signals),
@@ -386,11 +413,18 @@ def apply_directional_consensus(signals: list, today: pd.DataFrame, ticker: str,
 
 # ── 8. Confidence floor ───────────────────────────────────────────────────────
 
-def apply_confidence_floor(signals: list, ticker: str, min_confidence: float) -> list:
-    _before_floor = len(signals)
+def apply_confidence_floor(signals: list, ticker: str, min_confidence: float, quiet: bool = False) -> list:
+    # quiet=True added 2026-07-24 alongside the signal_journal write below —
+    # without it, backtester.py's 1-min-resolution replay of route_signals()
+    # (see backtester.py) would flood signal_journal with thousands of fake
+    # historical rows every backtest run. Default False preserves the exact
+    # prior behavior for the one live call site in strategy_router.py.
+    _before_list = list(signals)
     signals = [s for s in signals if s.confidence >= min_confidence]
-    if len(signals) < _before_floor:
-        _dropped = _before_floor - len(signals)
+    if len(signals) < len(_before_list) and not quiet:
+        _dropped = len(_before_list) - len(signals)
+        _journal_dropped(_before_list, signals, ticker, "confidence_floor",
+                          f"below {min_confidence:.0%} floor")
         logger.info(
             "router: dropped %d low-confidence signal(s) for %s (floor=%.0f%%)",
             _dropped, ticker, min_confidence * 100,
@@ -412,6 +446,9 @@ def check_conflict_veto(signals: list, today: pd.DataFrame, ticker: str, veto_ba
 
     if quiet:
         return True
+
+    _detail = f"{_top.strategy_id} {_top.direction} vs {_second.strategy_id} {_second.direction} within {veto_band:.0%}"
+    _journal_dropped([_top, _second], [], ticker, "conflict_veto", _detail)
 
     _db_log(
         "INFO", "scan",
@@ -453,6 +490,9 @@ def check_volume_roc_veto(signals: list, today: pd.DataFrame, ticker: str, quiet
 
     if quiet:
         return True
+
+    _journal_dropped(signals, [], ticker, "volume_roc_veto",
+                      f"ROC {_vol_roc:.2f} < {_roc_threshold:.2f}")
 
     _db_log(
         "INFO", "scan",

@@ -8,7 +8,10 @@ import { RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
-import { api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle } from "../lib/api";
+import {
+  api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle,
+  type SignalJournalEntry,
+} from "../lib/api";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
@@ -101,6 +104,14 @@ export function LiveTrading() {
   const [tradeDrawerId,  setTradeDrawerId]    = useState<number | null>(null);
   const chartReplayRef  = useRef<BoomerangReplayHandle>(null);
 
+  // ── Signal journal filters (Thinking panel) ───────────────────────────────
+  // 2026-07-24: structured "why did/didn't the bot trade" data, separate from
+  // the raw narration tail below it — see signal_journal.py.
+  const [journalTicker,   setJournalTicker]   = useState("");
+  const [journalStrategy, setJournalStrategy] = useState("");
+  const [journalReason,   setJournalReason]   = useState("");
+  const [journalOutcome,  setJournalOutcome]  = useState<"all" | "entered" | "blocked">("all");
+
   const { status, logs } = useBotStore();
   const { } = useUIStore();
 
@@ -171,6 +182,40 @@ export function LiveTrading() {
     refetchInterval: 60_000,
     retry: false,
   });
+
+  // ── Signal journal (Thinking panel) ───────────────────────────────────────
+  const { data: journalSummary } = useQuery({
+    queryKey: ["signal-journal-summary"],
+    queryFn: api.signals.summary,
+    refetchInterval: 20_000,
+  });
+
+  // Trend strip tracks whichever blocked reason is stopping the most signals
+  // today — the one worth asking "is this a today problem or every day."
+  const topBlockReason = Object.entries(journalSummary?.by_reason ?? {})
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  const { data: journalTrend } = useQuery({
+    queryKey: ["signal-journal-trend", topBlockReason],
+    queryFn: () => api.signals.trend(topBlockReason!),
+    enabled: !!topBlockReason,
+    refetchInterval: 60_000,
+  });
+
+  const { data: journalRows } = useQuery({
+    queryKey: ["signal-journal", journalTicker, journalStrategy, journalReason],
+    queryFn: () => api.signals.journal({
+      ticker: journalTicker || undefined,
+      strategy: journalStrategy || undefined,
+      reason: journalReason || undefined,
+      limit: 100,
+    }),
+    refetchInterval: 15_000,
+  });
+
+  const journalEntries: SignalJournalEntry[] = (journalRows?.entries ?? []).filter((e) =>
+    journalOutcome === "all" ? true : e.outcome === journalOutcome
+  );
 
   // Bot chart annotations — zones, hlines, markers emitted by strategy_router
   const { data: annotations = [] } = useQuery<ChartAnnotation[]>({
@@ -832,7 +877,12 @@ export function LiveTrading() {
           {(() => {
             const displayLogs = logPaused ? logSnapshotRef.current : logs;
             const networkLogs  = displayLogs.filter((e) => isNetworkLog(e));
-            const thinkingLogs = displayLogs.filter((e) => !isNetworkLog(e));
+            // Signal outcome lines (SIGNAL_ENTERED/SIGNAL_BLOCKED) are shown in the
+            // structured journal section above instead — filtered out here so they
+            // don't appear twice in the same tab.
+            const thinkingLogs = displayLogs.filter((e) =>
+              !isNetworkLog(e) && e.event !== "SIGNAL_ENTERED" && e.event !== "SIGNAL_BLOCKED"
+            );
             const netHasError  = networkLogs.some((e) => (e.level ?? "").toUpperCase() === "ERROR");
             const activeLogs   = logTab === "network" ? networkLogs : thinkingLogs;
             return (
@@ -864,6 +914,97 @@ export function LiveTrading() {
                     <span className="badge badge-blue text-[9px] animate-pulse mr-2">⏸ PAUSED</span>
                   )}
                 </div>
+
+                {logTab === "thinking" && (
+                  <div className="border-b p-2" style={{ borderColor: "var(--border)" }}>
+                    {/* Summary bar — today's totals + a count per block reason */}
+                    <div className="text-[9px] uppercase tracking-wider mb-1.5"
+                         style={{ color: "var(--ink-muted)" }}>
+                      Today — {journalSummary?.total ?? 0} signals, {journalSummary?.entered ?? 0} entered
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      <span className="badge badge-green text-[9px]">
+                        entered {journalSummary?.entered ?? 0}
+                      </span>
+                      {Object.entries(journalSummary?.by_reason ?? {}).map(([code, count]) => (
+                        <button key={code} onClick={() => setJournalReason(journalReason === code ? "" : code)}
+                          className="badge badge-yellow text-[9px]"
+                          style={{ cursor: "pointer", opacity: journalReason && journalReason !== code ? 0.5 : 1 }}>
+                          {code.replace(/_/g, " ")} {count}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* 7-day trend strip for whichever reason is blocking the most today */}
+                    {topBlockReason && journalTrend && journalTrend.points.length > 0 && (
+                      <div className="mb-2">
+                        <div className="text-[9px] uppercase tracking-wider mb-1"
+                             style={{ color: "var(--ink-muted)" }}>
+                          {topBlockReason.replace(/_/g, " ")} blocks — last {journalTrend.days} days
+                        </div>
+                        <div className="flex items-end gap-1" style={{ height: 28 }}>
+                          {journalTrend.points.map((p) => {
+                            const max = Math.max(...journalTrend.points.map((x) => x.count), 1);
+                            return (
+                              <div key={p.date} title={`${p.date}: ${p.count}`}
+                                style={{
+                                  flex: 1, height: `${Math.max(8, (p.count / max) * 28)}px`,
+                                  background: "var(--warning)", borderRadius: "2px 2px 0 0",
+                                }} />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Filters — ticker / strategy / reason on one row */}
+                    <div className="flex gap-1.5 mb-2">
+                      <input placeholder="Ticker" value={journalTicker}
+                        onChange={(e) => setJournalTicker(e.target.value.toUpperCase())}
+                        className="text-[10px] px-2 py-1 rounded flex-shrink-0"
+                        style={{ width: 72, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
+                      <input placeholder="Strategy" value={journalStrategy}
+                        onChange={(e) => setJournalStrategy(e.target.value.toUpperCase())}
+                        className="text-[10px] px-2 py-1 rounded flex-1 min-w-0"
+                        style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
+                      <select value={journalOutcome}
+                        onChange={(e) => setJournalOutcome(e.target.value as typeof journalOutcome)}
+                        className="text-[10px] px-2 py-1 rounded flex-1 min-w-0"
+                        style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }}>
+                        <option value="all">All</option>
+                        <option value="entered">Entered</option>
+                        <option value="blocked">Blocked</option>
+                      </select>
+                    </div>
+
+                    {/* Filtered journal rows — today only */}
+                    <div className="flex flex-col gap-1 font-mono text-[11px]" style={{ maxHeight: 160, overflowY: "auto" }}>
+                      {journalEntries.slice(0, 40).map((e) => (
+                        <div key={e.id} className="flex gap-2 items-start">
+                          <span style={{ color: "var(--ink-muted)", minWidth: "5.2em" }}>
+                            {new Date(e.ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}
+                          </span>
+                          <span className={e.outcome === "entered" ? "badge badge-green" : "badge badge-yellow"}
+                            style={{ fontSize: 9, whiteSpace: "nowrap" }}>
+                            {e.outcome === "entered" ? "ENTERED" : "BLOCKED"}
+                          </span>
+                          <div>
+                            <div style={{ color: "var(--ink)" }}>
+                              {e.ticker} {e.direction === "bullish" ? "CALL" : "PUT"} · {e.strategy_id} · {Math.round(e.confidence * 100)}%
+                            </div>
+                            {e.reason_detail && (
+                              <div style={{ color: "var(--ink-muted)", fontSize: 10 }}>{e.reason_detail}</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {journalEntries.length === 0 && (
+                        <p style={{ color: "var(--ink-muted)", fontSize: 10 }}>No signals match these filters yet today.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div
                   className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs"
                   style={{ maxHeight: 280, cursor: logPaused ? "text" : "default" }}

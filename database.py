@@ -120,6 +120,33 @@ CREATE TABLE IF NOT EXISTS ai_reasoning_log (
 );
 """
 
+# signal_journal — one row per strategy signal's FINAL outcome, win or lose.
+# Added 2026-07-24 per explicit user request: neither bot.log (unstructured
+# text dump) nor ai_reasoning_log (narrates realized entries/exits only) can
+# answer "why didn't the bot trade today" — this table is the queryable
+# answer. Written by signal_journal.py::log_signal_outcome(), called from
+# router_gates.py (pre-entry.py gates: confidence floor, grade filter,
+# conflict veto, volume ROC veto, directional consensus, regime gate) and
+# trading/entry.py (budget, spread, R:R, sizing, macro VWAP gates, and the
+# final 'entered' outcome on a successful trade).
+_CREATE_SIGNAL_JOURNAL = """
+CREATE TABLE IF NOT EXISTS signal_journal (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts            TEXT    NOT NULL,   -- ISO datetime (ET)
+    ticker        TEXT    NOT NULL,
+    strategy_id   TEXT    NOT NULL,
+    direction     TEXT    NOT NULL,   -- 'bullish' | 'bearish'
+    confidence    REAL    NOT NULL,   -- 0.0-1.0 at the moment of this outcome
+    outcome       TEXT    NOT NULL,   -- 'entered' | 'blocked'
+    reason_code   TEXT,               -- NULL when outcome='entered' — see signal_journal.REASON_CODES
+    reason_detail TEXT                -- human-readable specifics, e.g. "needs $88, cap is $69"
+);
+"""
+_CREATE_SIGNAL_JOURNAL_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_signal_journal_ts ON signal_journal(ts);",
+    "CREATE INDEX IF NOT EXISTS idx_signal_journal_ticker ON signal_journal(ticker);",
+]
+
 
 # ── Connection context manager ────────────────────────────────────────────────
 
@@ -206,6 +233,9 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_SYSTEM_EVENTS)
         conn.execute(_CREATE_STRATEGY_AUDITS)
         conn.execute(_CREATE_AI_REASONING_LOG)
+        conn.execute(_CREATE_SIGNAL_JOURNAL)
+        for _idx_sql in _CREATE_SIGNAL_JOURNAL_IDX:
+            conn.execute(_idx_sql)
         # ── Migrations ────────────────────────────────────────────────────────
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
         if "strategy_id" not in _cols:

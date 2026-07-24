@@ -178,6 +178,29 @@ export interface AiReasoningEntry {
   applied: number;   // 1 if a veto/resize was actually acted on (phase 2 only)
 }
 
+// signal_journal — every strategy signal's final outcome, entered or
+// blocked-with-reason. Added 2026-07-24 for the Thinking panel's summary
+// bar / filterable row list / 7-day trend strip. See signal_journal.py.
+export interface SignalJournalEntry {
+  id: number;
+  ts: string;
+  ticker: string;
+  strategy_id: string;
+  direction: string;              // "bullish" | "bearish"
+  confidence: number;             // 0.0-1.0
+  outcome: "entered" | "blocked";
+  reason_code: string | null;     // null when outcome="entered"
+  reason_detail: string | null;
+}
+
+export interface SignalJournalSummary {
+  total: number;
+  entered: number;
+  by_reason: Record<string, number>;   // reason_code -> count
+}
+
+export interface SignalJournalTrendPoint { date: string; count: number }
+
 export interface StrategyHealthAggregate {
   date: string;
   tickers_scanned: string[];
@@ -507,5 +530,24 @@ export const api = {
       );
     },
     entry: (id: number) => request<AiReasoningEntry>(`/api/ai-reasoning/log/${id}`),
+  },
+  signals: {
+    journal: (opts?: { ticker?: string; strategy?: string; reason?: string; limit?: number }) => {
+      const params = new URLSearchParams();
+      if (opts?.ticker)   params.set("ticker", opts.ticker);
+      if (opts?.strategy) params.set("strategy", opts.strategy);
+      if (opts?.reason)   params.set("reason", opts.reason);
+      if (opts?.limit)    params.set("limit", String(opts.limit));
+      const qs = params.toString();
+      return request<{ entries: SignalJournalEntry[]; count: number }>(
+        `/api/signals/journal${qs ? `?${qs}` : ""}`
+      );
+    },
+    summary: () => request<SignalJournalSummary>("/api/signals/journal/summary"),
+    trend:   (reason: string, days = 7) =>
+      request<{ reason: string; days: number; points: SignalJournalTrendPoint[] }>(
+        `/api/signals/journal/trend?reason=${encodeURIComponent(reason)}&days=${days}`
+      ),
+    reasons: () => request<{ reasons: Record<string, string> }>("/api/signals/journal/reasons"),
   },
 };
