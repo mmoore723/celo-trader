@@ -134,6 +134,19 @@ def _estimate_option_price(
 # The live bot buys weekly OTM options in the $2–4 range; the old "first $0.50
 _SIMULATED_OTM_PCT: float = 0.015   # 1.5% OTM
 
+# ── Simulated days-to-expiry (2026-07-23, DTE fidelity bug) ───────────────────
+# CRITICAL FINDING: every _estimate_option_price() call site below was passing
+# the LITERAL 5, not this constant — meaning every backtest this whole session
+# priced options as if they were 5-DTE contracts. broker.py's real
+# get_expirations() filters to 7-21 days out (`if 7 <= days_out <= 21`) and
+# select_contract() takes the nearest one with a valid chain — so live trades
+# a contract somewhere in that window, never 5. 10 is a documented
+# approximation of "the nearest qualifying expiry," biased toward the front
+# of the 7-21 range since select_contract() stops at the first match — NOT a
+# precise empirical average. If you want to tighten this later, the real
+# distribution is queryable from trades.expiry on live/paper fills.
+_SIMULATED_DTE: int = 10
+
 
 def _simulated_strike(stock_price: float, direction: str) -> float:
     """Strike 1.5% OTM, rounded to the nearest $0.50 increment."""
@@ -409,7 +422,13 @@ class Backtester:
         Returns either the precomputed df (success) or {"error": ...} (same
         failure cases the old inline code returned early on).
         """
-        bundle = backtest_data_cache.load(self.ticker, self.months)
+        # FIX 2026-07-23: key the cache by the EFFECTIVE fetch window, not the
+        # raw `months` value — see backtest_data_cache.py's module docstring.
+        # months=2 and months=3 (and any months>=2) both resolve to the same
+        # 59-day yfinance cap below, so they now share one cache entry instead
+        # of each script re-fetching identical candles under a different key.
+        _cache_max_days = backtest_data_cache.max_days_for(self.months)
+        bundle = backtest_data_cache.load(self.ticker, _cache_max_days)
         if bundle is not None:
             self._df_1h        = bundle["df_1h"]
             self._df_15m       = bundle["df_15m"]
@@ -532,7 +551,7 @@ class Backtester:
         self._prep_entry_sources(df[_full_session_mask].reset_index(drop=True))
 
         backtest_data_cache.save(
-            self.ticker, self.months,
+            self.ticker, _cache_max_days,
             df=df, df_1h=self._df_1h, df_15m=self._df_15m,
             df1m=self._df1m, day1m_start=self._1m_day_start,
             df5m_full=self._df5m_full, day5m_start=self._5m_day_start,
@@ -719,9 +738,9 @@ class Backtester:
                 ts5 = bar["time"]
                 elapsed_min = (ts5 - entry_bar_time).total_seconds() / 60
 
-                # Reprice the same contract (fixed strike, 5 DTE)
+                # Reprice the same contract (fixed strike, _SIMULATED_DTE — was hardcoded 5, see fix above)
                 opt_price = _estimate_option_price(
-                    float(bar["close"]), entry_strike, 5, iv=ticker_iv, option_type=option_type,
+                    float(bar["close"]), entry_strike, _SIMULATED_DTE, iv=ticker_iv, option_type=option_type,
                 )
 
                 # ── Intrabar price simulation ─────────────────────────────────
@@ -732,14 +751,14 @@ class Backtester:
 
                 if option_type == "call":
                     _opt_bar_best  = _estimate_option_price(
-                        _bar_high_px, entry_strike, 5, iv=ticker_iv, option_type=option_type)
+                        _bar_high_px, entry_strike, _SIMULATED_DTE, iv=ticker_iv, option_type=option_type)
                     _opt_bar_worst = _estimate_option_price(
-                        _bar_low_px,  entry_strike, 5, iv=ticker_iv, option_type=option_type)
+                        _bar_low_px,  entry_strike, _SIMULATED_DTE, iv=ticker_iv, option_type=option_type)
                 else:  # put gains when underlying falls
                     _opt_bar_best  = _estimate_option_price(
-                        _bar_low_px,  entry_strike, 5, iv=ticker_iv, option_type=option_type)
+                        _bar_low_px,  entry_strike, _SIMULATED_DTE, iv=ticker_iv, option_type=option_type)
                     _opt_bar_worst = _estimate_option_price(
-                        _bar_high_px, entry_strike, 5, iv=ticker_iv, option_type=option_type)
+                        _bar_high_px, entry_strike, _SIMULATED_DTE, iv=ticker_iv, option_type=option_type)
 
                 # Track peak using the best intrabar price (not just close)
                 if _opt_bar_best > peak_opt_price:
@@ -878,7 +897,7 @@ class Backtester:
             # ── Simulate entry ────────────────────────────────────────────────
             strike      = _simulated_strike(close, direction)
             raw_opt_px  = _estimate_option_price(
-                close, strike, 5, iv=ticker_iv, option_type=opt_type_str,
+                close, strike, _SIMULATED_DTE, iv=ticker_iv, option_type=opt_type_str,
             )
             if raw_opt_px <= 0.0:
                 continue
@@ -954,7 +973,7 @@ class Backtester:
             last_bar   = day_df.iloc[-1]
             last_close = float(last_bar["close"])
             eod_mid    = _estimate_option_price(
-                last_close, entry_strike, 5, iv=ticker_iv, option_type=option_type,
+                last_close, entry_strike, _SIMULATED_DTE, iv=ticker_iv, option_type=option_type,
             )
             eod_price = round(eod_mid * (1.0 - self.SLIPPAGE_PCT), 4)
             eod_time  = last_bar["time"]

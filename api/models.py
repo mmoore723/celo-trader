@@ -143,10 +143,15 @@ class Settings(BaseModel):
     ifvg_enabled: bool = True    # Inverted Fair Value Gap — zone-flip reversal
     bos_mss_enabled: bool
     chan_break_enabled: bool = True
-    mid_brk_enabled: bool = True
+    mid_brk_enabled: bool = False   # disabled 2026-07-23 — 13 backtested configs, all
+                                     # negative expectancy, see professional-strategy-
+                                     # alignment audit. Other 7 strategies unaffected.
     trend_cont_enabled: bool = True
     aft_rev_enabled: bool = True   # Afternoon Reversal — added 2026-07-20, was previously
                                     # not exposed in Settings at all (no way to toggle it)
+    gap_go_enabled: bool = False   # Gap and Go — added 2026-07-23, defaults OFF: unlike
+                                    # every other strategy here, it has never been
+                                    # backtested. See strategies/gap_go.py.
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────
     orb_stage1_gain_pct: float = 50.0   # Stage-1 profit target as % of entry
@@ -160,6 +165,10 @@ class Settings(BaseModel):
                                           # 3.0x chandelier trail / time cap) vs
                                           # the full 9+-condition engine. See
                                           # ab_test_exit_complexity.py.
+    mtf_confirmation_enabled: bool = False  # 2026-07-23: live 1Hour bias gate,
+                                          # see trading/mtf_live_gate.py. Can't
+                                          # be backtested — watch in
+                                          # signal_only_mode before trusting.
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────

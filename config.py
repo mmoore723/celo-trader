@@ -396,6 +396,14 @@ _DEFAULTS = {
     # risk.py engine (trading/position_manager.py's should_exit() call).
     "simplified_exit_mode":  True,
 
+    # 2026-07-23 (Gap 3, professional-strategy-alignment audit): live 1Hour
+    # MTF confirmation gate — see trading/mtf_live_gate.py + router_gates.py's
+    # apply_mtf_confirmation(). OFF by default because, unlike every other
+    # toggle in this file, it can't be validated against the historical
+    # backtester (it depends on a live "as-of-now" API fetch, not replayable
+    # multi-day data) — watch it in signal_only_mode before trusting it.
+    "mtf_confirmation_enabled": False,
+
     # Filters
     "volume_filter_enabled":   True,
     "volume_filter_multiplier": 2.0,

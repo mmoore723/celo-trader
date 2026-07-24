@@ -34,7 +34,7 @@ const DEFAULT: AppSettings = {
   ifvg_enabled: true,
   bos_mss_enabled: true,   // kept for API compatibility; strategy is disabled in router
   chan_break_enabled: true,
-  mid_brk_enabled: true,
+  mid_brk_enabled: false,  // disabled 2026-07-23 — 13 backtested configs, all negative, see audit
   trend_cont_enabled: true,
   aft_rev_enabled: true,   // Afternoon Reversal — added to Settings 2026-07-20
   signal_only_mode: false,  // true = bot alerts only, no order placement
@@ -335,7 +335,8 @@ export function Settings() {
                 onChange={(v) => set("ifvg_enabled", v)} />
         <Toggle label="Channel Breakout (9:45 AM – 3:45 PM)" checked={form.chan_break_enabled}
                 onChange={(v) => set("chan_break_enabled", v)} />
-        <Toggle label="Mid-Day Breakdown / MID_BRK (10:30 AM – 1:00 PM)" checked={form.mid_brk_enabled}
+        <Toggle label="Mid-Day Breakdown / MID_BRK — OFF by default (no edge in 13 backtested configs, 2026-07-23 audit)"
+                checked={form.mid_brk_enabled}
                 onChange={(v) => set("mid_brk_enabled", v)} />
         <Toggle label="Trend Continuation / TREND_CONT (9:45 AM – 2:30 PM)" checked={form.trend_cont_enabled}
                 onChange={(v) => set("trend_cont_enabled", v)} />

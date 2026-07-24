@@ -112,7 +112,11 @@ def regime_allows(strategy_id: str, direction: str, regime: str) -> bool:
 # both live here since they're both "regime classification."
 ADX_PERIOD           = 14
 ADX_MIN              = 25.0
-ADX_GATED_STRATEGIES = {"INST_ORB", "MID_BRK", "TREND_CONT", "CHAN_BREAK", "VWAP_PB"}
+ADX_GATED_STRATEGIES = {"INST_ORB", "MID_BRK", "TREND_CONT", "CHAN_BREAK", "VWAP_PB", "GAP_GO"}
+# GAP_GO added 2026-07-23 — it's a momentum/breakout continuation play, the
+# same family as INST_ORB/TREND_CONT/CHAN_BREAK, all of which are gated here.
+# A gap without real directional participation (chop regime) is the
+# textbook false-start gap-and-go fails on.
 # VWAP_PB added 2026-07-15: it's trend-CONTINUATION, not mean-reversion —
 # in low-ADX chop, VWAP acts as an attractor, not support (10% WR in audit).
 

@@ -16,11 +16,12 @@ Pipeline order (must match strategy_router.route_signals()):
   2. apply_session_bias_penalty   (confidence tax)
   3. apply_vwap_weight            (confidence tax)
   4. apply_confluence_bonus       (confidence boost)
-  5. apply_large_move_gate        (confidence cap)
-  6. apply_directional_consensus  (filter or penalty)
-  7. apply_confidence_floor       (filter)
-  8. check_conflict_veto          (early return if True)
-  9. check_volume_roc_veto        (early return if True)
+  5. apply_mtf_confirmation       (confidence tax/boost — OFF by default, live-only)
+  6. apply_large_move_gate        (confidence cap)
+  7. apply_directional_consensus  (filter or penalty)
+  8. apply_confidence_floor       (filter)
+  9. check_conflict_veto          (early return if True)
+  10. check_volume_roc_veto       (early return if True)
 """
 
 from __future__ import annotations
@@ -184,7 +185,43 @@ def apply_confluence_bonus(signals: list, ticker: str, quiet: bool = False) -> l
     return signals
 
 
-# ── 5. Large-session-move gate (gap / momentum-day filter) ───────────────────
+# ── 5. MTF confirmation (2026-07-23, professional-strategy-alignment audit) ──
+# Gap 3: higher-timeframe (1Hour) agreement is a soft confidence tax/boost —
+# NOT a hard block, and OFF by default. This is the one gate in this file
+# that can't be backtested the normal way (see trading/mtf_live_gate.py's
+# docstring) — it only does anything when the live call site passes a real
+# `alpaca` client + per-user `mtf_cache` dict; every other caller (backtester,
+# audit tools) leaves both None and this is a complete no-op, unchanged
+# behavior. Applies uniformly to every strategy's signals, not just one —
+# this is how "align the other strategies with it" was implemented: one
+# shared gate in the pipeline instead of duplicating logic per strategy file.
+
+_MTF_BOOST   = 0.05   # 1Hour agrees with the signal's direction
+_MTF_PENALTY = 0.05   # 1Hour disagrees with the signal's direction
+
+def apply_mtf_confirmation(signals: list, ticker: str, alpaca=None, mtf_cache: dict | None = None,
+                            quiet: bool = False) -> list:
+    if not signals or alpaca is None or mtf_cache is None:
+        return signals   # no-op unless the live call site opted in
+    from config import get_settings as _gs
+    if not bool(_gs().get("mtf_confirmation_enabled", False)):
+        return signals
+
+    from trading.mtf_live_gate import get_live_1h_bias
+    for sig in signals:
+        bias = get_live_1h_bias(alpaca, ticker, sig.direction, mtf_cache)
+        if bias == "with":
+            sig.confidence = min(0.95, sig.confidence + _MTF_BOOST)
+        elif bias == "against":
+            sig.confidence = max(0.0, sig.confidence - _MTF_PENALTY)
+        # "neutral" (no data / insufficient history) — leave confidence as-is
+        if bias != "neutral" and not quiet:
+            logger.debug("[%s] %s: 1Hour bias %s (%s)", ticker, sig.strategy_id, bias, sig.direction)
+    signals.sort(key=lambda s: s.confidence, reverse=True)
+    return signals
+
+
+# ── 6. Large-session-move gate (gap / momentum-day filter) ───────────────────
 # If the session has already moved ±1.5%+ from the opening bar, it is a gap
 # or momentum day. Counter-trend entries before 13:00 ET are high-risk.
 
@@ -216,7 +253,7 @@ def apply_large_move_gate(signals: list, today: pd.DataFrame, ticker: str) -> li
     return signals
 
 
-# ── 6. Directional consensus filter ───────────────────────────────────────────
+# ── 7. Directional consensus filter ───────────────────────────────────────────
 # Three independent indicators (price vs VWAP, VWAP slope, market structure)
 # must ALL agree before a direction is considered "established" enough to
 # hard-block the opposite side. 2/3 agreement gets a soft penalty instead.
@@ -285,7 +322,7 @@ def apply_directional_consensus(signals: list, today: pd.DataFrame, ticker: str,
     return signals
 
 
-# ── 7. Confidence floor ───────────────────────────────────────────────────────
+# ── 8. Confidence floor ───────────────────────────────────────────────────────
 
 def apply_confidence_floor(signals: list, ticker: str, min_confidence: float) -> list:
     _before_floor = len(signals)
@@ -299,7 +336,7 @@ def apply_confidence_floor(signals: list, ticker: str, min_confidence: float) ->
     return signals
 
 
-# ── 8. Conflict veto (early return if True) ───────────────────────────────────
+# ── 9. Conflict veto (early return if True) ───────────────────────────────────
 # If the top two signals disagree on direction and their confidence gap is
 # within veto_band, the market is sending mixed signals — skip both.
 
@@ -336,7 +373,7 @@ def check_conflict_veto(signals: list, today: pd.DataFrame, ticker: str, veto_ba
     return True
 
 
-# ── 9. Volume ROC gate (early return if True) ─────────────────────────────────
+# ── 10. Volume ROC gate (early return if True) ────────────────────────────────
 # Prevent entries when buying pressure is already fading. Compares avg volume
 # of the last 3 bars vs the prior 3 bars.
 

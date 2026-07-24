@@ -49,7 +49,19 @@ _LIVE_END   = 13 * 60
 
 
 def _fetch_bars(alpaca: AlpacaClient, ticker: str) -> pd.DataFrame:
-    """Same yfinance-first, Alpaca-fallback approach as diag_mid_brk_level_scan.py."""
+    """
+    Same yfinance-first, Alpaca-fallback approach as diag_mid_brk_level_scan.py.
+
+    FIX 2026-07-23: this always re-fetched from scratch, even on a rerun the
+    same day — this script's window (59 days) never changes within a day, so
+    it's a perfect fit for backtest_data_cache.py's raw-bars cache (shared
+    with every other script, not just this one). See that module's docstring.
+    """
+    import backtest_data_cache
+    _cached = backtest_data_cache.load_raw_bars(ticker)
+    if _cached is not None:
+        return _cached
+
     import datetime as _dt
     df = pd.DataFrame()
     try:
@@ -77,6 +89,8 @@ def _fetch_bars(alpaca: AlpacaClient, ticker: str) -> pd.DataFrame:
         bars = raw2[0] if isinstance(raw2, tuple) else raw2
         if bars:
             df = bars_to_df(bars)
+    if not df.empty:
+        backtest_data_cache.save_raw_bars(ticker, df)
     return df
 
 

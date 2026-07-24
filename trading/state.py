@@ -195,6 +195,10 @@ def _make_initial_state() -> dict:
         "max_affordable_premium": 0.0,
         "last_successful_bar_fetch": None,
         "data_gap_minutes":          0,
+        # 2026-07-23 (Gap 3, professional-strategy-alignment audit): per-ticker
+        # cache for the live 1Hour MTF confirmation gate — see
+        # trading/mtf_live_gate.py. {ticker: {"ts": epoch, "price_above_ema20": bool}}
+        "mtf_1h_cache":              {},
     }
 
 

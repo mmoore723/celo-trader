@@ -58,6 +58,63 @@ CANDLESTICK_MIN_WICK_RATIO = 1.5   # loosened from 2.0 (2026-07-16) — first pa
                                    # 0 trades, conflicting with the 0.2% touch-proximity
                                    # band; 1.5x lets shorter genuine wicks still qualify.
 
+# ── Pullback-count gate (2026-07-23, professional-strategy alignment audit) ───
+# Published VWAP-pullback sources: the FIRST pullback to VWAP on a trend day
+# has the highest win rate, the second is decent, by the third the trend is
+# usually losing steam. This strategy had no concept of "which pullback" it
+# was trading — a 4th or 5th touch scored the same confidence as the 1st.
+# ON by default: MAX_PULLBACK_COUNT=2 means only the 1st and 2nd touch of a
+# trend leg are tradeable; a 3rd+ touch is rejected. Set to None to disable
+# (restores pre-2026-07-23 behavior — every touch treated equally).
+MAX_PULLBACK_COUNT   = 2      # allow touch #1 and #2 only; reject #3+
+_PULLBACK_LOOKBACK    = 60    # bars to search backward for the trend leg's start (safety cap)
+
+
+def _count_prior_pullbacks(today: pd.DataFrame, direction: str, touch_pct: float) -> int:
+    """
+    Count how many VWAP touches already happened earlier in this trend leg,
+    walking backward from the bar BEFORE the current touch bar (index -2).
+
+    A "touch" is the same test evaluate() uses for entry: low (bullish) or
+    high (bearish) came within touch_pct of that bar's own VWAP. Consecutive
+    touch-bars count as ONE pullback event, not one per bar, so a 3-bar dip
+    isn't miscounted as 3 separate pullbacks. Walking stops at whichever
+    comes first: the trend leg's start (EMA50 no longer on the trend side of
+    VWAP — that's where "this leg" began) or _PULLBACK_LOOKBACK bars back
+    (safety cap so a very long trend day can't make this O(n) per tick).
+
+    Returns 0 if no prior touch is found — i.e. the CURRENT touch is the 1st.
+    """
+    n = len(today)
+    if n < 4:
+        return 0
+    end = max(0, n - 2 - _PULLBACK_LOOKBACK)   # -2: skip the current touch bar itself
+    count = 0
+    in_touch_run = False
+    for i in range(n - 3, end - 1, -1):
+        bar   = today.iloc[i]
+        vwap  = float(bar.get("vwap", float("nan")))
+        ema50 = float(bar.get("ema50", float("nan")))
+        if pd.isna(vwap) or pd.isna(ema50):
+            break
+        # Trend-leg boundary: EMA50 must still be on the trend side of VWAP.
+        if direction == "bullish" and ema50 <= vwap:
+            break
+        if direction == "bearish" and ema50 >= vwap:
+            break
+        low, high = float(bar["low"]), float(bar["high"])
+        is_touch = (
+            (direction == "bullish" and low  <= vwap and low  >= vwap * (1.0 - touch_pct))
+            or (direction == "bearish" and high >= vwap and high <= vwap * (1.0 + touch_pct))
+        )
+        if is_touch:
+            if not in_touch_run:
+                count += 1
+                in_touch_run = True
+        else:
+            in_touch_run = False
+    return count
+
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     if len(today) < 8:
@@ -181,7 +238,13 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         logger.debug("[%s] VWAP_PB bullish: blowthrough detected — price crashed through VWAP, not a pullback",
                      ticker)
 
-    if _bull_conditions and _bull_blowthrough_ok:
+    _bull_pullback_n = _count_prior_pullbacks(today, "bullish", _TOUCH_PCT) if _bull_conditions else 0
+    _bull_pullback_ok = MAX_PULLBACK_COUNT is None or _bull_pullback_n < MAX_PULLBACK_COUNT
+    if _bull_conditions and not _bull_pullback_ok:
+        logger.debug("[%s] VWAP_PB bullish: this is pullback #%d (max %d) — trend likely losing steam",
+                     ticker, _bull_pullback_n + 1, MAX_PULLBACK_COUNT)
+
+    if _bull_conditions and _bull_blowthrough_ok and _bull_pullback_ok:
         proximity  = max(0.0, 1.0 - abs(p_low - p_vwap) / max(p_vwap * _TOUCH_PCT, 0.01))
         confidence = min(0.82, 0.60 + proximity * 0.15 + min(c_rvol - rvol_min_bull, 1.0) * 0.07)
         logger.info("[%s] VWAP_PB bullish RVOL=%.2f (min=%.2f msa=%s) conf=%.2f",
@@ -199,6 +262,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 "vwap_touch":     p_low <= p_vwap,
                 "entry_bar_low":  float(curr["low"]),
                 "msa_confirmed":  msa_ok_bull,
+                "pullback_number": _bull_pullback_n + 1,
                 "rvol_gate":        round(rvol_min_bull, 2),
                 "rvol_gate_reason": _rvol_threshold_reason(
                     bar_min, c_close, None, c_vwap, STRATEGY_ID, msa_confirmed=msa_ok_bull),
@@ -234,7 +298,13 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
         logger.debug("[%s] VWAP_PB bearish: blowthrough detected — price crashed through VWAP, not a pullback",
                      ticker)
 
-    if _bear_conditions and _bear_blowthrough_ok:
+    _bear_pullback_n = _count_prior_pullbacks(today, "bearish", _TOUCH_PCT) if _bear_conditions else 0
+    _bear_pullback_ok = MAX_PULLBACK_COUNT is None or _bear_pullback_n < MAX_PULLBACK_COUNT
+    if _bear_conditions and not _bear_pullback_ok:
+        logger.debug("[%s] VWAP_PB bearish: this is pullback #%d (max %d) — trend likely losing steam",
+                     ticker, _bear_pullback_n + 1, MAX_PULLBACK_COUNT)
+
+    if _bear_conditions and _bear_blowthrough_ok and _bear_pullback_ok:
         proximity  = max(0.0, 1.0 - abs(p_high - p_vwap) / max(p_vwap * _TOUCH_PCT, 0.01))
         confidence = min(0.82, 0.60 + proximity * 0.15 + min(c_rvol - rvol_min_bear, 1.0) * 0.07)
         logger.info("[%s] VWAP_PB bearish RVOL=%.2f (min=%.2f msa=%s) conf=%.2f",
@@ -252,6 +322,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 "vwap_touch":      p_high >= p_vwap,
                 "entry_bar_high":  float(curr["high"]),
                 "msa_confirmed":   msa_ok_bear,
+                "pullback_number": _bear_pullback_n + 1,
                 "rvol_gate":        round(rvol_min_bear, 2),
                 "rvol_gate_reason": _rvol_threshold_reason(
                     bar_min, c_close, None, c_vwap, STRATEGY_ID, msa_confirmed=msa_ok_bear),

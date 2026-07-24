@@ -842,6 +842,22 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         "strategy_tcont_enabled": True,    # TREND_CONT — audit: +$41/trade, re-enabled
         "strategy_aft_enabled":   True,    # AFT_REV   — re-enabled 2026-07-20, prior audit predates fill-recording fixes
         "strategy_ifvg_enabled":  True,    # IFVG — newly wired 2026-07-18, no track record yet
+        # MID_BRK 2026-07-23 — disabled after the professional-strategy-alignment
+        # audit: 13 distinct backtested configurations (4 structural-stop modes,
+        # 2 exit-complexity variants, 4 RVOL ceilings, session-window extension,
+        # ADX-gate removal, a data-targeted best-hour window), all negative
+        # expectancy, -$44 to -$75/trade. The setup was never modeled on a real
+        # professional strategy — it traded the exact midday window sources say
+        # to build reference levels in, not trade directly. See CLAUDE.md rule 9
+        # research + run_full_audit.py history for the full trail.
+        "strategy_mid_enabled":   False,
+        # GAP_GO 2026-07-23 — the ONE strategy that deliberately breaks the
+        # "everything defaults ON" policy above. Every other strategy in this
+        # table has SOME backtest/live track record, even a bad one, that the
+        # policy comment is about not letting suppress it unfairly. GAP_GO has
+        # none — it was built from published sources, never run once through
+        # this bot's own backtester. Default False until that happens.
+        "strategy_gapgo_enabled": False,
     }
     _enabled: set[str] = {
         sid for sid, key in (
@@ -854,10 +870,17 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("AFT_REV",    "strategy_aft_enabled"),
             ("TREND_CONT", "strategy_tcont_enabled"),
             ("CHAN_BREAK",  "strategy_chan_enabled"),
+            ("GAP_GO",      "strategy_gapgo_enabled"),
         )
         if _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, True))
     }
-    _signals = route_signals(df5, ticker, enabled_strategies=_enabled or None)
+    # mtf_cache: per-user, per-ticker cache dict (see trading/state.py's
+    # "mtf_1h_cache" key + trading/mtf_live_gate.py) — passing both alpaca and
+    # this cache is what turns on the Gap 3 MTF confirmation gate; every other
+    # route_signals() caller (backtester, audit tools) omits them and is
+    # unaffected. Gate itself still defaults OFF via mtf_confirmation_enabled.
+    _signals = route_signals(df5, ticker, enabled_strategies=_enabled or None,
+                              alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}))
     if not _signals:
         _US["last_signal"] = None
         # Log WHY no signal — the bar_eval entry already covers the ORB gate

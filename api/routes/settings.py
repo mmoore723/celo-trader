@@ -37,7 +37,7 @@ def get_settings_endpoint() -> Settings:
         ifvg_enabled=bool(s.get("strategy_ifvg_enabled", True)),
         bos_mss_enabled=bool(s.get("strategy_bos_enabled", True)),
         chan_break_enabled=bool(s.get("strategy_chan_enabled", True)),
-        mid_brk_enabled=bool(s.get("strategy_mid_enabled", True)),
+        mid_brk_enabled=bool(s.get("strategy_mid_enabled", False)),  # disabled 2026-07-23, see audit
         trend_cont_enabled=bool(s.get("strategy_tcont_enabled", True)),
         # AFT_REV — added to Settings 2026-07-20. Previously had NO field in
         # this model or endpoint at all, so it could never be toggled from
@@ -45,6 +45,7 @@ def get_settings_endpoint() -> Settings:
         # the same reason as VWAP_PB — its -$127/trade (0-for-4) audit
         # predates the trade-recording fixes.
         aft_rev_enabled=bool(s.get("strategy_aft_enabled", True)),
+        gap_go_enabled=bool(s.get("strategy_gapgo_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
         orb_stage1_gain_pct=float(s.get("orb_stage1_gain_pct", 50)),
@@ -52,6 +53,7 @@ def get_settings_endpoint() -> Settings:
         spread_gate_pct=float(s.get("spread_gate_pct", 8)),   # was stale 25, fixed 2026-07-22
         vol_roc_threshold=float(s.get("vol_roc_threshold", 0.50)),
         simplified_exit_mode=bool(s.get("simplified_exit_mode", True)),
+        mtf_confirmation_enabled=bool(s.get("mtf_confirmation_enabled", False)),
     )
 
 
@@ -70,6 +72,7 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_mid_enabled"]    = data.pop("mid_brk_enabled", True)
     data["strategy_tcont_enabled"]  = data.pop("trend_cont_enabled", True)   # re-enabled 2026-07-16
     data["strategy_aft_enabled"]    = data.pop("aft_rev_enabled", True)      # exposed to Settings 2026-07-20
+    data["strategy_gapgo_enabled"]  = data.pop("gap_go_enabled", False)      # added 2026-07-23, defaults OFF
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw
     # the user's setting and always fell through to the bootstrap 5% auto-tier.

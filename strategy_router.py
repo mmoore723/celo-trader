@@ -8,7 +8,8 @@ All evaluation logic lives in strategies/; all post-evaluation filtering
 lives in router_gates.py; regime classification lives in regime_manager.py.
 This file only wires them together (2026-07-16 split — was 830 lines).
 
-Strategy IDs (seven active):
+Strategy IDs (eight active, one OFF by default):
+  GAP_GO      — strategies/gap_go.py    (09:30–09:45)  ← OFF by default, untested
   INST_ORB    — strategies/inst_orb.py   (09:45–10:30)
   VWAP_PB     — strategies/vwap_pb.py   (09:45–EOD)
   FVG         — strategies/fvg.py        (09:45–EOD)  ← absorbs BOS_MSS sweep logic
@@ -38,7 +39,7 @@ from trading.annotations import emit_signal_annotation as _emit_signal_annotatio
 from strategies.base import Signal, MarketStructureAnalyzer  # noqa: F401
 
 # ── Strategy evaluator modules ────────────────────────────────────────────────
-from strategies import inst_orb, bos_mss, vwap_pb, fvg, ifvg, mid_brk, aft_rev, trend_cont, chan_break
+from strategies import inst_orb, bos_mss, vwap_pb, fvg, ifvg, mid_brk, aft_rev, trend_cont, chan_break, gap_go
 
 # ── Regime classification (trend direction + trend strength) ─────────────────
 from regime_manager import (
@@ -78,6 +79,12 @@ ACTIVE_STRATEGIES = [
     ("MID_BRK",    mid_brk.evaluate),
     ("AFT_REV",    aft_rev.evaluate),
     ("TREND_CONT", trend_cont.evaluate),
+    ("GAP_GO",     gap_go.evaluate),   # 2026-07-23, Gap 2 — see strategies/gap_go.py.
+                                       # Present here (so backtester/audit tools CAN
+                                       # exercise it) but gated OFF live by default via
+                                       # strategy_gapgo_enabled — unlike every other
+                                       # strategy in this list, it has zero backtest
+                                       # history yet. Run one before flipping it on.
     # ("CHAN_BREAK", chan_break.evaluate),  # disabled — 0% WR in backtests, needs fix
 ]
 
@@ -95,6 +102,13 @@ def _build_indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
       ema50      — long-term trend filter
       atr        — 14-bar ATR for gap sizing + MFE gates
       vol_sma20  — 100-bar volume rolling mean (intraday reference)
+      session_gap_pct — today's open vs. prior session's close, as a % —
+                  added 2026-07-23 for strategies/gap_go.py (Gap 2, professional-
+                  strategy-alignment audit). Constant-broadcast across every row
+                  of today, same pattern as any other single-value-per-day field
+                  strategies need — evaluate() only ever sees `today`, never the
+                  full multi-day df, so this is computed once here where prior-day
+                  data is still available, not inside the strategy itself.
     """
     if df.empty:
         return df
@@ -135,6 +149,16 @@ def _build_indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
 
     today["vol_sma20"] = today["volume"].rolling(100, min_periods=20).mean()
 
+    # ── Session gap % (constant-broadcast) ────────────────────────────────
+    _prior_mask = df["time"].dt.date < latest_date
+    if _prior_mask.any() and len(today) > 0:
+        _prior_close = float(df.loc[_prior_mask].iloc[-1]["close"])
+        _today_open  = float(today.iloc[0]["open"])
+        today["session_gap_pct"] = ((_today_open - _prior_close) / _prior_close * 100.0
+                                     if _prior_close else 0.0)
+    else:
+        today["session_gap_pct"] = 0.0   # no prior-day data (e.g. synthetic/short backtest window)
+
     return today
 
 
@@ -145,6 +169,8 @@ def route_signals(
     ticker: str,
     enabled_strategies: "set[str] | None" = None,
     quiet: bool = False,
+    alpaca=None,
+    mtf_cache: "dict | None" = None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -161,6 +187,15 @@ def route_signals(
                               write hundreds of bar-by-bar rows into the same
                               event log the live THINKING panel reads from.
                               Never set True on the live trading path.
+        alpaca, mtf_cache   : Optional — only the live call site in
+                              trading/entry.py passes these. When both are
+                              given, router_gates.apply_mtf_confirmation()
+                              applies a soft 1Hour-bias confidence adjustment
+                              (see trading/mtf_live_gate.py). Every other
+                              caller (backtester, audit tools) leaves these
+                              None and gets identical behavior to before
+                              2026-07-23 — this is a strictly additive,
+                              opt-in change.
 
     Returns:
         list[Signal] sorted by confidence descending (may be empty).
@@ -245,6 +280,7 @@ def route_signals(
     signals = _gates.apply_session_bias_penalty(signals, today, ticker, quiet=quiet)
     signals = _gates.apply_vwap_weight(signals, today, ticker)
     signals = _gates.apply_confluence_bonus(signals, ticker, quiet=quiet)
+    signals = _gates.apply_mtf_confirmation(signals, ticker, alpaca=alpaca, mtf_cache=mtf_cache, quiet=quiet)
     signals = _gates.apply_large_move_gate(signals, today, ticker)
     signals = _gates.apply_directional_consensus(signals, today, ticker, quiet=quiet)
     signals = _gates.apply_confidence_floor(signals, ticker, _MIN_CONFIDENCE)
