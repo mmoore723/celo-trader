@@ -281,6 +281,7 @@ def route_signals(
     signals = _gates.apply_vwap_weight(signals, today, ticker)
     signals = _gates.apply_confluence_bonus(signals, ticker, quiet=quiet)
     signals = _gates.apply_mtf_confirmation(signals, ticker, alpaca=alpaca, mtf_cache=mtf_cache, quiet=quiet)
+    signals = _gates.apply_grade_filter(signals, today, ticker, quiet=quiet)
     signals = _gates.apply_large_move_gate(signals, today, ticker)
     signals = _gates.apply_directional_consensus(signals, today, ticker, quiet=quiet)
     signals = _gates.apply_confidence_floor(signals, ticker, _MIN_CONFIDENCE)

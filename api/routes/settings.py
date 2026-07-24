@@ -56,6 +56,9 @@ def get_settings_endpoint() -> Settings:
         mtf_confirmation_enabled=bool(s.get("mtf_confirmation_enabled", False)),
         # 2026-07-24: hard-cap kill-lock threshold, was hardcoded — see risk.py
         daily_loss_hard_cap_pct=float(s.get("daily_loss_hard_cap_pct", 10.0)),
+        # 2026-07-24: grade-based entry filter — see router_gates.py
+        min_grade_filter_enabled=bool(s.get("min_grade_filter_enabled", False)),
+        min_entry_grade=str(s.get("min_entry_grade", "C")),
     )
 
 

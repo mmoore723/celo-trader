@@ -17,6 +17,7 @@ Pipeline order (must match strategy_router.route_signals()):
   3. apply_vwap_weight            (confidence tax)
   4. apply_confluence_bonus       (confidence boost)
   5. apply_mtf_confirmation       (confidence tax/boost — OFF by default, live-only)
+  5b. apply_grade_filter          (filter — OFF by default, mirrors dashboard grade)
   6. apply_large_move_gate        (confidence cap)
   7. apply_directional_consensus  (filter or penalty)
   8. apply_confidence_floor       (filter)
@@ -198,6 +199,67 @@ def apply_confluence_bonus(signals: list, ticker: str, quiet: bool = False) -> l
 
 _MTF_BOOST   = 0.05   # 1Hour agrees with the signal's direction
 _MTF_PENALTY = 0.05   # 1Hour disagrees with the signal's direction
+
+# ── 5b. Minimum-grade filter (OFF by default) ─────────────────────────────────
+# 2026-07-24: the dashboard's premarket report already grades every ticker
+# A+/A/B/C/Watch (api/routes/market.py::_grade()) but that grade was DISPLAY
+# ONLY — never read by live entry logic, so a "Watch"-grade ticker with no
+# real setup could still fire a real trade if it happened to pass a
+# strategy's own internal gates. This mirrors that same grading formula so a
+# blocked entry matches what the dashboard shows, and blocks entries below a
+# configurable minimum grade (default cutoff "C" — only "Watch" is blocked).
+#
+# KNOWN FIDELITY GAP: this uses strategy_router's own rvol (compute_rvol(),
+# 10-day lookback) and atr, not market.py's separately-computed time-
+# normalized live rvol — the two methods can disagree slightly since they're
+# genuinely different calculations. Exact parity would require unifying both
+# call sites onto one shared rvol function; out of scope for this gate.
+from scanner import _ETF_SET as _GRADE_ETF_SET
+
+_GRADE_ORDER = {"Watch": 0, "C": 1, "B": 2, "A": 3, "A+": 4}
+
+
+def _grade_from_metrics(gap_pct: float, rvol: float, atr: float, is_etf: bool) -> str:
+    """Mirrors api/routes/market.py::_grade() — keep both in sync if either changes."""
+    ag   = abs(gap_pct)
+    gmin = 0.5 if is_etf else 1.0
+    if ag >= 2.0 and rvol >= 2.5 and atr >= 1.5:
+        return "A+"
+    if ag >= gmin and rvol >= 2.0 and atr >= 1.0:
+        return "A"
+    if ag >= gmin * 0.5 and rvol >= 1.5:
+        return "B"
+    if ag >= gmin * 0.25:
+        return "C"
+    return "Watch"
+
+
+def apply_grade_filter(signals: list, today: pd.DataFrame, ticker: str, quiet: bool = False) -> list:
+    if not signals or len(today) == 0:
+        return signals
+    _s = _get_settings()
+    if not bool(_s.get("min_grade_filter_enabled", False)):
+        return signals
+    _min_grade = str(_s.get("min_entry_grade", "C"))
+    if _min_grade not in _GRADE_ORDER:
+        _min_grade = "C"
+
+    _last = today.iloc[-1]
+    _gap  = float(_last.get("session_gap_pct", 0.0) or 0.0)
+    _rvol = float(_last.get("rvol", 0.0) or 0.0)
+    _atr  = float(_last.get("atr", 0.0) or 0.0)
+    _grade = _grade_from_metrics(_gap, _rvol, _atr, ticker in _GRADE_ETF_SET)
+
+    if _GRADE_ORDER[_grade] >= _GRADE_ORDER[_min_grade]:
+        return signals
+
+    if not quiet:
+        _db_log("INFO", "bar_eval",
+                f"⚪ [{ticker}] Grade filter: {_grade} setup (gap={_gap:+.2f}%, "
+                f"rvol={_rvol:.1f}x, atr=${_atr:.2f}) below minimum {_min_grade} "
+                f"— {len(signals)} entry signal(s) blocked.")
+        logger.info("router: grade filter blocked %s (%s < %s)", ticker, _grade, _min_grade)
+    return []
 
 def apply_mtf_confirmation(signals: list, ticker: str, alpaca=None, mtf_cache: dict | None = None,
                             quiet: bool = False) -> list:

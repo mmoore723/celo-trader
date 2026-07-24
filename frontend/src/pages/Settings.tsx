@@ -45,6 +45,8 @@ const DEFAULT: AppSettings = {
   spread_gate_pct: 8,   // was stale 25, fixed 2026-07-22
   vol_roc_threshold: 0.50,
   daily_loss_hard_cap_pct: 10,  // added 2026-07-24 — was hardcoded, non-adjustable
+  min_grade_filter_enabled: false,  // added 2026-07-24 — off by default
+  min_entry_grade: "C",
 };
 
 const TIMEZONES = [
@@ -445,6 +447,35 @@ export function Settings() {
               onChange={(e) => set("daily_loss_hard_cap_pct", parseFloat(e.target.value))}
               className="input w-24"
             />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm" style={{ color: "var(--ink)" }}>
+              Minimum entry grade
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+                Block entries on tickers graded below this (matches the Daily
+                Brief's premarket grade). Off by default — was display-only
+                until 2026-07-24.
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={form.min_grade_filter_enabled ?? false}
+                onChange={(e) => set("min_grade_filter_enabled", e.target.checked)}
+              />
+              <select
+                value={form.min_entry_grade ?? "C"}
+                onChange={(e) => set("min_entry_grade", e.target.value)}
+                disabled={!(form.min_grade_filter_enabled ?? false)}
+                className="input w-24"
+              >
+                <option value="A+">A+</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="Watch">Watch</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>

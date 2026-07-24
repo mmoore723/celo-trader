@@ -23,3 +23,13 @@ _debug_harness_unused/
 # Generated audit cache (regenerable, not source)
 audit_reports/_cache/
 audit_reports/_data_cache/
+
+# FIX 2026-07-24: daily_universe.json and user_settings.json were listed
+# above but still showed up as tracked (git ls-files) because they were
+# committed to history before these ignore rules existed — .gitignore only
+# stops NEW files from being added, it doesn't untrack files already in the
+# index. Every time the live app wrote fresh runtime data to these files on
+# EC2, "git pull --rebase" failed with "You have unstaged changes", silently
+# blocking every deploy since. Untracked via `git rm --cached` in the same
+# commit as this comment — see that commit message for the full incident.
+ec2_log/

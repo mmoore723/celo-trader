@@ -170,6 +170,14 @@ class Settings(BaseModel):
                                           # this small account motivated making
                                           # it user-configurable. UI percentage,
                                           # e.g. 10.0 = 10%.
+    min_grade_filter_enabled: bool = False  # 2026-07-24: blocks entries on tickers
+                                          # graded below min_entry_grade (mirrors the
+                                          # dashboard's premarket grade, which was
+                                          # display-only until now). Off by default
+                                          # like the other new gates added this session.
+    min_entry_grade: str = "C"           # "A+" | "A" | "B" | "C" | "Watch" — cutoff
+                                          # below which entries are blocked. Default
+                                          # "C" blocks only the "Watch" grade.
     simplified_exit_mode: bool = True   # 2026-07-22: 3-rule exit (hard stop /
                                           # 3.0x chandelier trail / time cap) vs
                                           # the full 9+-condition engine. See

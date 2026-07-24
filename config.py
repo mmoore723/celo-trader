@@ -378,6 +378,12 @@ _DEFAULTS = {
     # kill locks (7/21, 7/22) on a small account — was previously hardcoded and
     # non-adjustable (config.py's DAILY_LOSS_HARD_CAP_PCT).
     "daily_loss_hard_cap_pct": 10.0,
+
+    # Minimum-grade entry filter — 2026-07-24, off by default. See
+    # router_gates.py::apply_grade_filter(). Grades mirror the dashboard's
+    # premarket report (A+/A/B/C/Watch); "C" cutoff blocks only "Watch".
+    "min_grade_filter_enabled": False,
+    "min_entry_grade": "C",
     "stop_loss_pct":         0.50,
     "take_profit_pct":       1.00,
     "trail_stop_pct":        0.25,
