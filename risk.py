@@ -707,8 +707,11 @@ class RiskManager:
 
         # ── Daily loss enforcement ─────────────────────────────────────────────
         # Two thresholds:
-        #   1. HARD CAP: 10% of equity — always enforced; triggers 24h kill lock.
-        hard_threshold = -(account_balance * DAILY_LOSS_HARD_CAP_PCT)   # always -10%
+        #   1. HARD CAP: user-configurable % of equity (default 10%) — triggers
+        #      24h kill lock. Was a hardcoded, non-adjustable 10% until
+        #      2026-07-24; see config.py's daily_loss_hard_cap_pct comment.
+        _hard_cap_frac = settings.get("daily_loss_hard_cap_pct", DAILY_LOSS_HARD_CAP_PCT * 100) / 100.0
+        hard_threshold = -(account_balance * _hard_cap_frac)
         soft_threshold = -(account_balance * settings.get("max_daily_loss_pct", 0.10))
         effective_threshold = max(hard_threshold, soft_threshold)        # max = least negative
 
@@ -727,7 +730,7 @@ class RiskManager:
             _day_start = float(get_user_state().get("day_start_balance") or 0)
             if _day_start > 0 and account_balance > 0:
                 _equity_drawdown = account_balance - _day_start
-                if _equity_drawdown <= -(_day_start * DAILY_LOSS_HARD_CAP_PCT):
+                if _equity_drawdown <= -(_day_start * _hard_cap_frac):
                     if not self.daily_limit_hit:
                         self.daily_limit_hit = True
                         expires = set_kill_lock()
@@ -789,7 +792,8 @@ class RiskManager:
     def record_pnl(self, pnl: float, account_balance: float) -> None:
         settings       = get_settings()
         todays_pnl     = get_todays_realized_pnl()
-        hard_threshold = -(account_balance * DAILY_LOSS_HARD_CAP_PCT)            # -10%
+        _hard_cap_frac = settings.get("daily_loss_hard_cap_pct", DAILY_LOSS_HARD_CAP_PCT * 100) / 100.0
+        hard_threshold = -(account_balance * _hard_cap_frac)
         soft_threshold = -(account_balance * settings.get("max_daily_loss_pct", 0.10))
         threshold      = max(hard_threshold, soft_threshold)   # use the tighter one
 

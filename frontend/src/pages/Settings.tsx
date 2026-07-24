@@ -44,6 +44,7 @@ const DEFAULT: AppSettings = {
   orb_stop_loss_pct: 20,
   spread_gate_pct: 8,   // was stale 25, fixed 2026-07-22
   vol_roc_threshold: 0.50,
+  daily_loss_hard_cap_pct: 10,  // added 2026-07-24 — was hardcoded, non-adjustable
 };
 
 const TIMEZONES = [
@@ -426,6 +427,22 @@ export function Settings() {
               type="number" step="0.05" min="0.10" max="0.90"
               value={form.vol_roc_threshold ?? 0.50}
               onChange={(e) => set("vol_roc_threshold", parseFloat(e.target.value))}
+              className="input w-24"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm" style={{ color: "var(--ink)" }}>
+              Daily loss hard cap (%)
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+                Freezes ALL trading for 24h if breached (default 10%). Was
+                hardcoded until 2026-07-24 — lower it carefully, small accounts
+                can trip a tight cap on normal option premium swings.
+              </span>
+            </label>
+            <input
+              type="number" step="1" min="3" max="30"
+              value={form.daily_loss_hard_cap_pct ?? 10}
+              onChange={(e) => set("daily_loss_hard_cap_pct", parseFloat(e.target.value))}
               className="input w-24"
             />
           </div>

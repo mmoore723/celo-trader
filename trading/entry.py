@@ -457,9 +457,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _US["ghost_position_alert"] = _check_ghost_positions(alpaca)
 
     # ── Write shared state file so dashboard reads live bot state ─────────────
-    from config import get_risk_tier as _grt, DAILY_LOSS_HARD_CAP_PCT as _DLHCP, get_settings as _gs
+    from config import get_risk_tier as _grt, DAILY_LOSS_HARD_CAP_PCT as _DLHCP_FALLBACK, get_settings as _gs
     _kill_locked, _kill_reason = check_kill_lock()
     _is_paper = _gs().get("paper_trading", True)
+    # 2026-07-24: this used to always show the hardcoded 10% constant even
+    # after the hard cap became user-configurable (see risk.py) — dashboard
+    # would silently lie about the real threshold once someone changed it.
+    _DLHCP = _gs().get("daily_loss_hard_cap_pct", _DLHCP_FALLBACK * 100) / 100.0
     # Preserve eval_log across ticks using _US (in-memory).
     # File-read was racy: an intermediate write at line ~1133 could put
     _preserved_eval_log = _US.get("eval_log", [])

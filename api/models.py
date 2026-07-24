@@ -161,6 +161,15 @@ class Settings(BaseModel):
                                           # _DEFAULTS — this model default was stale,
                                           # fixed 2026-07-22 audit)
     vol_roc_threshold:   float = 0.50   # Volume ROC veto threshold
+    daily_loss_hard_cap_pct: float = 10.0  # 2026-07-24: was hardcoded, non-
+                                          # adjustable 10% (config.py's
+                                          # DAILY_LOSS_HARD_CAP_PCT). Breaching
+                                          # this freezes ALL trading for 24h
+                                          # (kill lock) — see risk.py. Two
+                                          # back-to-back trips (7/21, 7/22) on
+                                          # this small account motivated making
+                                          # it user-configurable. UI percentage,
+                                          # e.g. 10.0 = 10%.
     simplified_exit_mode: bool = True   # 2026-07-22: 3-rule exit (hard stop /
                                           # 3.0x chandelier trail / time cap) vs
                                           # the full 9+-condition engine. See

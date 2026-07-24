@@ -54,6 +54,8 @@ def get_settings_endpoint() -> Settings:
         vol_roc_threshold=float(s.get("vol_roc_threshold", 0.50)),
         simplified_exit_mode=bool(s.get("simplified_exit_mode", True)),
         mtf_confirmation_enabled=bool(s.get("mtf_confirmation_enabled", False)),
+        # 2026-07-24: hard-cap kill-lock threshold, was hardcoded — see risk.py
+        daily_loss_hard_cap_pct=float(s.get("daily_loss_hard_cap_pct", 10.0)),
     )
 
 

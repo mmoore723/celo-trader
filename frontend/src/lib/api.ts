@@ -358,6 +358,7 @@ export interface AppSettings {
   spread_gate_pct?: number;      // Max bid-ask spread as % of mid (default 8)
   vol_roc_threshold?: number;    // Volume ROC veto threshold (default 0.50)
   simplified_exit_mode?: boolean; // 3-rule exit (hard stop / 3.0x chandelier / time cap) vs full engine (default true)
+  daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
 }
 
 // ── Chart annotations (bot-drawn overlays) ────────────────────────────────────

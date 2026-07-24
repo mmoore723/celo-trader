@@ -152,7 +152,15 @@ MAX_CONCURRENT_POSITIONS = 2
 # Growth mode ON:
 #   balance < $5k   → Tier 4: 5%  (bootstrap — floors at 2 contracts when in this zone)
 
-DAILY_LOSS_HARD_CAP_PCT   = 0.10   # 10% hard cap — non-negotiable, always enforced
+DAILY_LOSS_HARD_CAP_PCT   = 0.10   # 10% hard cap — fallback default only. As of
+                                    # 2026-07-24 this is user-configurable via
+                                    # Settings ("daily_loss_hard_cap_pct", stored as
+                                    # a UI percentage e.g. 10.0 = 10%). risk.py reads
+                                    # the settings value first and only falls back to
+                                    # this constant if the key is somehow missing.
+                                    # Small accounts trip this fast on normal option
+                                    # premium swings — see the 7/21 + 7/22 back-to-back
+                                    # kill-lock incident that motivated exposing it.
 BOOTSTRAP_RISK_PCT        = 0.05   # Tier 4: bootstrap 5% sub-$5k (reference constant)
 GROWTH_MODE_RISK_PCT      = 0.03   # Tier 3: aggressive growth $5k–$25k
 MID_TIER_RISK_PCT         = 0.02   # Tier 2: transition $25k–$50k
@@ -362,8 +370,14 @@ _DEFAULTS = {
     "max_position_dollars":     750,
 
     # Exit parameters — max_daily_loss_pct is the user-adjustable soft limit.
-    # DAILY_LOSS_HARD_CAP_PCT (10%) is enforced in code regardless of this setting.
     "max_daily_loss_pct":    0.10,   # default 10% — matches hard cap
+    # Hard cap that triggers the 24h kill lock (trading fully frozen). Stored as
+    # a UI percentage (10.0 = 10%), unlike max_daily_loss_pct above which is a
+    # raw decimal — matches the other Settings-page fields' convention (see
+    # orb_stage1_gain_pct etc. below). Added 2026-07-24 after two back-to-back
+    # kill locks (7/21, 7/22) on a small account — was previously hardcoded and
+    # non-adjustable (config.py's DAILY_LOSS_HARD_CAP_PCT).
+    "daily_loss_hard_cap_pct": 10.0,
     "stop_loss_pct":         0.50,
     "take_profit_pct":       1.00,
     "trail_stop_pct":        0.25,
