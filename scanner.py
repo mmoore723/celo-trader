@@ -505,24 +505,35 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
             score = rvol_capped * c["abs_gap"] * atr_factor * liq
 
             # ── Affordability filter: de-rank tickers that would always bust the
-            # risk budget.  Estimate: ATM option premium ≈ 0.5 × daily ATR.
-            # If the stop loss on 1 contract (premium × 30% × 100 shares) exceeds
+            # position-size budget. Estimate: ATM option premium ≈ 0.5 × daily ATR.
+            #
+            # FIX 2026-07-24: this used to compare against risk_pct/risk_per_trade
+            # (the per-trade LOSS budget from the 4-tier sizing system) — but the
+            # real live entry gate (trading/entry.py::_place_entry, "over_budget"
+            # check) compares the FULL contract premium against max_position_dollars_pct
+            # (or max_position_dollars), a completely different setting. That
+            # mismatch is exactly how a real signal (BABA, 2026-07-24 10:02 ET,
+            # VWAP_PB PUT, 77% confidence) slipped past this pre-filter and only
+            # got caught at the very last step, after passing every other gate.
+            # Now mirrors the real gate: full estimated premium × 100 shares vs.
+            # the same max_position_dollars_pct/max_position_dollars budget.
             try:
                 from config import get_settings as _get_s_aff
                 _s_aff = _get_s_aff()
-                _bal   = float(_s_aff.get("last_known_balance", 1000.0))
-                # Prefer the converted decimal risk_per_trade; fall back to risk_pct %
-                _rp    = _s_aff.get("risk_per_trade") or (float(_s_aff.get("risk_pct", 1.0)) / 100.0)
-                _rp    = max(0.01, float(_rp))
-                _budget       = _bal * _rp
-                _est_premium  = atr_usd * 0.5           # rough ATM premium estimate
-                _est_risk_1c  = _est_premium * 0.30 * 100  # loss if 30% stop hits
-                if _budget > 0 and _est_risk_1c > _budget:
-                    score *= 0.05   # 95% penalty — bot can't size even 1 contract
+                _bal      = float(_s_aff.get("last_known_balance", 1000.0))
+                _cap_pct  = _s_aff.get("max_position_dollars_pct")
+                if _cap_pct:
+                    _budget = _bal * (float(_cap_pct) / 100.0)
+                else:
+                    _budget = float(_s_aff.get("max_position_dollars", 750.0))
+                _est_premium       = atr_usd * 0.5             # rough ATM premium estimate
+                _est_contract_cost = _est_premium * 100.0       # full premium, 1 contract
+                if _budget > 0 and _est_contract_cost > _budget:
+                    score *= 0.05   # 95% penalty — bot can't afford even 1 contract
                     logger.debug(
-                        "%s affordability penalty: est_premium=$%.2f → stop_loss_1c=$%.2f "
-                        "> budget=$%.2f (%.0f%% of $%.0f) → score de-ranked",
-                        ticker, _est_premium, _est_risk_1c, _budget, _rp * 100, _bal,
+                        "%s affordability penalty: est_premium=$%.2f → contract_cost=$%.2f "
+                        "> budget=$%.2f (max_position_dollars_pct=%s, balance=$%.0f) → score de-ranked",
+                        ticker, _est_premium, _est_contract_cost, _budget, _cap_pct, _bal,
                     )
             except Exception:
                 pass  # non-critical — scoring still runs without affordability check

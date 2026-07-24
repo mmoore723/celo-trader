@@ -47,6 +47,7 @@ const DEFAULT: AppSettings = {
   daily_loss_hard_cap_pct: 10,  // added 2026-07-24 — was hardcoded, non-adjustable
   min_grade_filter_enabled: false,  // added 2026-07-24 — off by default
   min_entry_grade: "C",
+  max_position_dollars_pct: 15,  // added 2026-07-24 — was hardcoded, no UI
 };
 
 const TIMEZONES = [
@@ -476,6 +477,22 @@ export function Settings() {
                 <option value="Watch">Watch</option>
               </select>
             </div>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm" style={{ color: "var(--ink)" }}>
+              Max spend per contract (% of balance)
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+                The real affordability cap — separate from risk %. A signal
+                gets skipped if the cheapest contract costs more than this.
+                Was hardcoded 15% with no UI until 2026-07-24.
+              </span>
+            </label>
+            <input
+              type="number" step="1" min="5" max="100"
+              value={form.max_position_dollars_pct ?? 15}
+              onChange={(e) => set("max_position_dollars_pct", parseFloat(e.target.value))}
+              className="input w-24"
+            />
           </div>
         </div>
       </div>

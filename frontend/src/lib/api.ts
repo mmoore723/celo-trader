@@ -361,6 +361,8 @@ export interface AppSettings {
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
   min_grade_filter_enabled?: boolean; // 2026-07-24: blocks entries below min_entry_grade (default off)
   min_entry_grade?: string;           // "A+" | "A" | "B" | "C" | "Watch" (default "C")
+  max_position_dollars_pct?: number;  // 2026-07-24: real per-contract affordability cap
+                                       // (balance × this%), was hardcoded 15% with no UI.
 }
 
 // ── Chart annotations (bot-drawn overlays) ────────────────────────────────────

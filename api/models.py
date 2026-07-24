@@ -178,6 +178,14 @@ class Settings(BaseModel):
     min_entry_grade: str = "C"           # "A+" | "A" | "B" | "C" | "Watch" — cutoff
                                           # below which entries are blocked. Default
                                           # "C" blocks only the "Watch" grade.
+    max_position_dollars_pct: float = 15.0  # 2026-07-24: was hardcoded, no UI at all.
+                                          # This is what actually caps how much the
+                                          # bot will spend on one contract's premium
+                                          # (balance × this% ) — separate from risk_pct,
+                                          # which only governs position SIZE/stop-loss
+                                          # sizing, not the affordability cap. See the
+                                          # BABA 10:02am incident, 2026-07-24: a valid
+                                          # 77%-confidence signal got blocked here.
     simplified_exit_mode: bool = True   # 2026-07-22: 3-rule exit (hard stop /
                                           # 3.0x chandelier trail / time cap) vs
                                           # the full 9+-condition engine. See

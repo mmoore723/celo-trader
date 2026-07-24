@@ -59,6 +59,9 @@ def get_settings_endpoint() -> Settings:
         # 2026-07-24: grade-based entry filter — see router_gates.py
         min_grade_filter_enabled=bool(s.get("min_grade_filter_enabled", False)),
         min_entry_grade=str(s.get("min_entry_grade", "C")),
+        # 2026-07-24: real per-contract affordability cap, was hardcoded — see
+        # trading/entry.py's "over_budget" check and scanner.py's affordability filter
+        max_position_dollars_pct=float(s.get("max_position_dollars_pct", 15.0)),
     )
 
 
