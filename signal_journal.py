@@ -45,6 +45,7 @@ REASON_CODES = {
     "regime_gate":           "Market regime blocks this direction",
     "macro_vwap_veto":       "Conflicts with SPY/QQQ or ticker's own VWAP posture",
     "budget":                "Cheapest contract costs more than the spend cap",
+    "illiquid_contract":     "An affordable contract existed but failed spread/OI filters",
     "no_option_data":        "No usable options chain returned",
     "no_liquid_contracts":   "No contract met spread/open-interest filters",
     "zero_contracts":        "Risk budget too small to size even 1 contract",

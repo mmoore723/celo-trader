@@ -172,10 +172,26 @@ def select_contract(
 
     Returns (contract, info) where info["reason"] is one of:
       "selected", "api_error", "no_expirations", "no_chain_data",
-      "over_budget", "filtered"
+      "over_budget", "illiquid", "filtered"
+
+    2026-07-24: previously any candidate that passed the cost check but then
+    failed the spread or OI check just silently `continue`d — invisible.
+    So "over_budget" could be misleading: it only proves the CHEAPEST
+    cost-rejected candidate was too expensive, not that no affordable
+    candidate existed at all. If a candidate was cost-affordable but got
+    rejected for spread/OI, that's a liquidity problem, not a budget
+    problem, and the account size isn't actually the blocker — this is
+    now tracked separately as info["illiquid_cost"]/["illiquid_symbol"]/
+    ["illiquid_fail"] and takes priority in the final reason when found,
+    since it's the more accurate diagnosis. See signal_journal.py's
+    "illiquid" reason code, added alongside this.
     """
     option_type = "call" if direction == "bullish" else "put"
-    info = {"reason": "no_chain_data", "cheapest_cost": None, "cheapest_symbol": None}
+    info = {
+        "reason": "no_chain_data",
+        "cheapest_cost": None, "cheapest_symbol": None,
+        "illiquid_cost": None, "illiquid_symbol": None, "illiquid_fail": None,
+    }
 
     try:
         expirations = tradier.get_expirations(ticker)
@@ -235,10 +251,18 @@ def select_contract(
             if spread > _SPREAD_MAX:
                 logger.debug("Skip %s — spread $%.2f > max $%.2f",
                              contract.get("symbol","?"), spread, _SPREAD_MAX)
+                if info["illiquid_cost"] is None or cost < info["illiquid_cost"]:
+                    info["illiquid_cost"]   = cost
+                    info["illiquid_symbol"] = contract.get("symbol", "?")
+                    info["illiquid_fail"]   = f"spread ${spread:.2f} > ${_SPREAD_MAX:.2f} max"
                 continue
             if oi < _MIN_OI:
                 logger.debug("Skip %s — OI %d < min %d",
                              contract.get("symbol","?"), oi, _MIN_OI)
+                if info["illiquid_cost"] is None or cost < info["illiquid_cost"]:
+                    info["illiquid_cost"]   = cost
+                    info["illiquid_symbol"] = contract.get("symbol", "?")
+                    info["illiquid_fail"]   = f"open interest {oi} < {_MIN_OI} min"
                 continue
 
             contract["expiry"] = expiry
@@ -252,6 +276,11 @@ def select_contract(
 
     if not saw_chain_data:
         info["reason"] = "no_chain_data"
+    elif info["illiquid_cost"] is not None:
+        # An affordable contract existed but got rejected on liquidity, not
+        # cost — more accurate than "over_budget" when both occurred, since
+        # the account size wasn't actually the blocker here.
+        info["reason"] = "illiquid"
     elif info["cheapest_cost"] is None:
         info["reason"] = "filtered"
 
@@ -1129,6 +1158,20 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"but your budget is set to ${max_spend:.0f}. "
                       f"Skipping this setup — will check again next candle.")
             _skip_log(ticker, "budget", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+        elif _reason == "illiquid":
+            # 2026-07-24: a contract existed WITHIN budget but failed the
+            # spread/OI liquidity filters — the real blocker here is
+            # liquidity, not account size, even though a budget-limited
+            # search is what surfaced it. Distinct from "over_budget" so
+            # the signal journal doesn't misreport this as a money problem.
+            _cheap_afford = _sel_info.get("illiquid_cost")
+            _fail_detail  = _sel_info.get("illiquid_fail", "liquidity filter")
+            log_event("INFO", "bar_eval",
+                      f"🔴 [{ticker}] {_sel_info.get('illiquid_symbol', '?')} costs "
+                      f"~${_cheap_afford:.0f} (within your ${max_spend:.0f} budget) but "
+                      f"failed the liquidity filter ({_fail_detail}). "
+                      f"Skipping this setup — will check again next candle.")
+            _skip_log(ticker, "illiquid_contract", strategy=strategy_id, confidence=_top.confidence, direction=direction)
         elif _reason in ("api_error", "no_expirations", "no_chain_data"):
             # Tradier didn't return usable options data — NOT a budget issue.
             log_event("INFO", "bar_eval",
