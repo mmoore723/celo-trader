@@ -415,7 +415,15 @@ def reconcile_trades(
     )
 
     # ── 5. Pull DB trades for the date ────────────────────────────────────────
-    all_db_rows = get_all_trades(limit=1000, mode="paper", status_filter="closed") or []
+    # FIX 2026-07-28: this used to fetch status_filter="closed" only, so any
+    # currently-OPEN position was invisible to the matching loop below — its
+    # entry fill had nothing to pair against and always fell into "unmatched
+    # Alpaca fills", making it look like the bot lost track of a real trade
+    # when it was actually sitting in the Journal the whole time, just still
+    # open. status_filter="all" lets open positions through; the date filter
+    # right below still scopes them to today via entry_time (open trades have
+    # no exit_time yet, so the `or r.get("entry_time")` fallback catches them).
+    all_db_rows = get_all_trades(limit=1000, mode="paper", status_filter="all") or []
     db_trades = [
         r for r in all_db_rows
         if str(r.get("exit_time") or r.get("entry_time") or "").startswith(date)
@@ -531,6 +539,7 @@ def reconcile_trades(
             strategy_id     = r.get("strategy_id"),
             contracts       = contracts,
             contract_symbol = sym,
+            status          = r.get("status"),   # "open" | "closed"
             bot_entry       = bot_entry,
             bot_exit        = bot_exit,
             bot_pnl         = bot_pnl,

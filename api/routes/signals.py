@@ -71,3 +71,100 @@ def get_reason_codes() -> dict:
     """Reference list of reason codes + human-readable labels, for the filter dropdown."""
     from signal_journal import REASON_CODES
     return {"reasons": REASON_CODES}
+
+
+@router.get("/watching")
+def get_watching() -> dict:
+    """
+    Tickers INST_ORB is currently tracking mid-retest — breakout seen,
+    waiting for a retest touch or bounce confirmation before it would enter.
+    See strategies/inst_orb.py's module docstring for the Phase 1-3 state
+    machine. This is the only strategy in this codebase with an explicit
+    multi-bar "waiting" state; every other strategy either fires on the
+    current bar or doesn't, so there's nothing to watch for them yet.
+
+    For each watched ticker, also resolves the real contract (strike,
+    expiration, live bid/ask) via select_contract() — the SAME function
+    trading/entry.py calls for a real entry — so this shows what would
+    actually be bought right now, not a guess.
+    """
+    from datetime import date as _date
+    import strategies.inst_orb as _inst_orb
+
+    today_iso = _date.today().isoformat()
+    watched = [
+        {"ticker": k[0], **v}
+        for k, v in _inst_orb._retest_state.items()
+        if k[1] == today_iso and v.get("phase") in ("breakout_seen", "retesting")
+    ]
+    if not watched:
+        return {"watching": []}
+
+    try:
+        from broker import get_clients
+        from trading.entry import select_contract
+        from config import get_settings
+    except Exception as e:
+        logger.exception("watching: import failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    alpaca, tradier = get_clients()
+    settings = get_settings()
+
+    try:
+        acct = alpaca.get_account()
+        balance = float(acct.get("equity", 0)) if acct else 0.0
+    except Exception:
+        balance = 0.0
+    if balance <= 0:
+        balance = float(settings.get("last_known_balance", 0) or 0)
+
+    cap_pct = settings.get("max_position_dollars_pct")
+    if cap_pct:
+        max_spend = balance * (float(cap_pct) / 100.0)
+    else:
+        max_spend = float(settings.get("max_position_dollars", 750.0))
+
+    out = []
+    for w in watched:
+        ticker    = w["ticker"]
+        direction = w.get("direction")
+        boundary  = w.get("or_boundary")
+
+        current_price = 0.0
+        try:
+            quote = alpaca.get_latest_quote(ticker)
+            if quote:
+                current_price = (float(quote.get("ap", 0) or 0) + float(quote.get("bp", 0) or 0)) / 2
+        except Exception:
+            pass
+
+        contract = None
+        if current_price > 0 and direction and max_spend > 0:
+            try:
+                contract, _info = select_contract(tradier, ticker, direction, current_price, max_spend)
+            except Exception as ex:
+                logger.debug("watching: select_contract failed for %s: %s", ticker, ex)
+
+        phase = w.get("phase")
+        out.append({
+            "ticker":        ticker,
+            "strategy":      "INST_ORB",
+            "direction":     direction,
+            "option_type":   "call" if direction == "bullish" else "put" if direction == "bearish" else None,
+            "phase":         phase,
+            "phase_label":   "1 of 3 — breakout seen" if phase == "breakout_seen" else "2 of 3 — retesting",
+            "retest_level":  boundary,
+            "current_price": current_price or None,
+            "breakout_time": str(w.get("breakout_bar")) if w.get("breakout_bar") is not None else None,
+            "retest_time":   str(w.get("retest_bar")) if w.get("retest_bar") is not None else None,
+            "contract": {
+                "symbol": contract.get("symbol"),
+                "strike": contract.get("strike"),
+                "expiry": contract.get("expiry"),
+                "bid":    contract.get("bid"),
+                "ask":    contract.get("ask"),
+            } if contract else None,
+        })
+
+    return {"watching": out}

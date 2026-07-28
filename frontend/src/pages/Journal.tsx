@@ -308,6 +308,7 @@ function ReconcileTab() {
                     <th>Contract</th>
                     <th>Qty</th>
                     <th>Strategy</th>
+                    <th>Status</th>
                     <th>Bot Entry</th>
                     <th>Bot Exit</th>
                     <th>Bot P&L</th>
@@ -320,13 +321,19 @@ function ReconcileTab() {
                 <tbody>
                   {data.trades.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="text-center py-6"
+                      <td colSpan={11} className="text-center py-6"
                           style={{ color: "var(--ink-muted)" }}>
-                        No closed trades on {data.date}
+                        No trades on {data.date}
                       </td>
                     </tr>
                   ) : (
                     data.trades.map((row: ReconcileRow, i: number) => {
+                      // Open positions have nothing to gap-check yet (no exit
+                      // fill exists on either side) — 2026-07-28: these used to
+                      // be excluded from this endpoint entirely, which made a
+                      // real open position's entry fill show up in the scary
+                      // "Unmatched Alpaca fills" list below instead of here.
+                      const isOpen = row.status === "open";
                       const gapBig = row.has_gap;
                       const bpnl   = row.bot_pnl   ?? 0;
                       const apnl   = row.alpaca_pnl ?? 0;
@@ -340,23 +347,28 @@ function ReconcileTab() {
                           <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
                             {row.strategy_id ?? "—"}
                           </td>
+                          <td>
+                            <span className={`badge ${isOpen ? "badge-blue" : "badge-green"}`}>
+                              {isOpen ? "OPEN" : "CLOSED"}
+                            </span>
+                          </td>
                           <td className="num">{fmtPx(row.bot_entry)}</td>
-                          <td className="num">{fmtPx(row.bot_exit)}</td>
+                          <td className="num">{isOpen ? "—" : fmtPx(row.bot_exit)}</td>
                           <td className="num font-medium"
-                              style={{ color: bpnl >= 0 ? posColor : negColor }}>
-                            {fmt$(row.bot_pnl)}
+                              style={{ color: isOpen ? "var(--ink-muted)" : (bpnl >= 0 ? posColor : negColor) }}>
+                            {isOpen ? "—" : fmt$(row.bot_pnl)}
                           </td>
                           <td className="num">{fmtPx(row.alpaca_entry)}</td>
-                          <td className="num">{fmtPx(row.alpaca_exit)}</td>
+                          <td className="num">{isOpen ? "—" : fmtPx(row.alpaca_exit)}</td>
                           <td className="num font-medium"
-                              style={{ color: apnl >= 0 ? posColor : negColor }}>
-                            {fmt$(row.alpaca_pnl)}
+                              style={{ color: isOpen ? "var(--ink-muted)" : (apnl >= 0 ? posColor : negColor) }}>
+                            {isOpen ? "—" : fmt$(row.alpaca_pnl)}
                           </td>
                           <td className="num font-semibold"
                               style={{ color: gapBig ? gapColor : "var(--ink-muted)" }}>
-                            {gap != null
-                              ? `${gap >= 0 ? "+" : ""}$${Math.abs(gap).toFixed(2)}`
-                              : "—"}
+                            {isOpen || gap == null
+                              ? "—"
+                              : `${gap >= 0 ? "+" : ""}$${Math.abs(gap).toFixed(2)}`}
                           </td>
                         </tr>
                       );

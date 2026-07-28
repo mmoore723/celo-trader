@@ -503,21 +503,30 @@ export function Settings() {
         </div>
       </div>
 
-      {/* Exit engine + live gates */}
+      {/* Exit engine — controls how an OPEN position gets closed */}
       <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Exit engine and live gates</h3>
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Exit engine</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          These defaults came from A/B-tested research this session — flip
-          them only if you're deliberately testing an alternative.
+          Controls how the bot closes a position once it's already open.
+          Only one exit engine ever runs at a time.
         </p>
         <Toggle
           label="Simplified exit (hard stop / 3.0x chandelier trail / time cap)"
           checked={form.simplified_exit_mode ?? true}
           onChange={(v) => set("simplified_exit_mode", v)}
         />
-        <p className="text-xs mb-2" style={{ color: "var(--ink-muted)" }}>
+        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
           On (default): the 3-rule exit that beat the full 9-condition engine
           on realized R:R in backtesting. Off: falls back to the full engine.
+        </p>
+      </div>
+
+      {/* Entry confirmation — controls whether a trade gets taken at all */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Entry confirmation</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          Runs before a trade is entered, not after — adjusts a signal's
+          confidence rather than closing anything.
         </p>
         <Toggle
           label="MTF confirmation gate (live 1Hour bias check)"

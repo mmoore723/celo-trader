@@ -131,7 +131,7 @@ export function LiveTrading() {
   const [showOR,          setShowOR]          = useState(true);
   const [showSwings,      setShowSwings]      = useState(true);
   const [showPositionCard,setShowPositionCard]= useState(true);
-  const [scannerTab,      setScannerTab]      = useState<"scanner" | "chain">("scanner");
+  const [scannerTab,      setScannerTab]      = useState<"scanner" | "watching" | "chain">("scanner");
   const [logPaused,       setLogPaused]       = useState(false);
   const logSnapshotRef  = useRef<typeof logs>([]);
   const [logTab,         setLogTab]           = useState<"thinking" | "network">("thinking");
@@ -216,6 +216,18 @@ export function LiveTrading() {
     refetchInterval: 60_000,
     retry: false,
   });
+
+  // "Watching" — INST_ORB setups mid-retest (breakout seen, waiting for a
+  // touch or bounce confirmation before it would enter). See
+  // api/routes/signals.py::get_watching() — this is the only strategy with
+  // an explicit multi-bar waiting state today.
+  const { data: watchingData } = useQuery({
+    queryKey: ["watching"],
+    queryFn:  api.signals.watching,
+    refetchInterval: 15_000,
+    retry: false,
+  });
+  const watching = watchingData?.watching ?? [];
 
   // ── Signal journal (Thinking panel) ───────────────────────────────────────
   const { data: journalSummary } = useQuery({
@@ -585,7 +597,7 @@ export function LiveTrading() {
           {/* Tab header */}
           <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
                style={{ borderColor: "var(--border)" }}>
-            {(["scanner", "chain"] as const).map((tab) => (
+            {(["scanner", "watching", "chain"] as const).map((tab) => (
               <button key={tab} onClick={() => setScannerTab(tab)}
                 className="px-3 py-2 transition-colors"
                 style={{
@@ -593,10 +605,86 @@ export function LiveTrading() {
                   borderBottom: scannerTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
                   background: "none",
                 }}>
-                {tab === "scanner" ? "Premarket Scanner" : `${ticker} Chain`}
+                {tab === "scanner" ? "Premarket Scanner"
+                  : tab === "watching" ? `Watching${watching.length ? ` (${watching.length})` : ""}`
+                  : `${ticker} Chain`}
               </button>
             ))}
           </div>
+
+          {/* Watching — INST_ORB setups mid-retest, not entered yet */}
+          {scannerTab === "watching" && (
+            <div className="overflow-y-auto p-2 flex flex-col gap-2" style={{ maxHeight: 220 }}>
+              {watching.length === 0 ? (
+                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+                  Nothing mid-retest right now — INST_ORB is the only strategy
+                  with a waiting state.
+                </p>
+              ) : (
+                watching.map((w) => {
+                  const isRetesting = w.phase === "retesting";
+                  const optLabel = w.contract?.strike
+                    ? `${w.ticker} ${w.contract.strike}${w.option_type === "call" ? "C" : "P"}`
+                    : w.ticker;
+                  return (
+                    <div key={w.ticker} className="card px-3 py-2"
+                         style={{ background: "var(--panel)" }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                            {optLabel}
+                          </span>
+                          <span className="badge badge-blue">{w.strategy}</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
+                              style={{
+                                background: isRetesting ? "rgba(234, 148, 29, 0.15)" : "rgba(88, 166, 255, 0.15)",
+                                color: isRetesting ? "#ea941d" : "var(--accent)",
+                              }}>
+                          {isRetesting ? "near entry" : "watching"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-xs">
+                        <div>
+                          <div style={{ color: "var(--ink-faint)" }}>Retest level</div>
+                          <div className="num font-medium" style={{ color: "var(--ink)" }}>
+                            {w.retest_level != null ? `$${w.retest_level.toFixed(2)}` : "—"}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: "var(--ink-faint)" }}>Phase</div>
+                          <div className="font-medium" style={{ color: "var(--ink)" }}>
+                            {w.phase_label.split(" — ")[0]}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: "var(--ink-faint)" }}>Expiration</div>
+                          <div className="font-medium" style={{ color: "var(--ink)" }}>
+                            {w.contract?.expiry ?? "—"}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: "var(--ink-faint)" }}>Now</div>
+                          <div className="num font-medium" style={{ color: "var(--ink)" }}>
+                            {w.current_price != null ? `$${w.current_price.toFixed(2)}` : "—"}
+                          </div>
+                        </div>
+                      </div>
+                      {isRetesting && w.contract?.bid != null && w.contract?.ask != null && (
+                        <div className="mt-2 px-2 py-1 flex items-center justify-between text-xs"
+                             style={{ background: "var(--muted)", borderRadius: 6 }}>
+                          <span style={{ color: "var(--ink-muted)" }}>Enter if premium is</span>
+                          <span className="num font-medium" style={{ color: "var(--ink)" }}>
+                            ${w.contract.bid.toFixed(2)} – ${w.contract.ask.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
 
           {/* Scanner list */}
           {scannerTab === "scanner" && (

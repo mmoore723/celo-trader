@@ -331,6 +331,9 @@ class ReconcileRow(BaseModel):
     strategy_id: Optional[str]
     contracts: Optional[int]
     contract_symbol: Optional[str]
+    status: Optional[str] = None    # "open" | "closed" — 2026-07-28: open positions are now
+                                     # included here (matched on entry only) instead of only
+                                     # ever appearing as an "unmatched" Alpaca fill
     # Bot-recorded prices
     bot_entry: Optional[float]
     bot_exit: Optional[float]

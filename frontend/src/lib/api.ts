@@ -201,6 +201,28 @@ export interface SignalJournalSummary {
 
 export interface SignalJournalTrendPoint { date: string; count: number }
 
+export interface WatchingContract {
+  symbol: string | null;
+  strike: number | null;
+  expiry: string | null;
+  bid: number | null;
+  ask: number | null;
+}
+
+export interface WatchingSignal {
+  ticker: string;
+  strategy: string;              // "INST_ORB" — only strategy with a waiting state today
+  direction: "bullish" | "bearish" | null;
+  option_type: "call" | "put" | null;
+  phase: "breakout_seen" | "retesting";
+  phase_label: string;           // "1 of 3 — breakout seen" | "2 of 3 — retesting"
+  retest_level: number | null;
+  current_price: number | null;
+  breakout_time: string | null;
+  retest_time: string | null;
+  contract: WatchingContract | null;
+}
+
 export interface StrategyHealthAggregate {
   date: string;
   tickers_scanned: string[];
@@ -277,6 +299,7 @@ export interface ReconcileRow {
   strategy_id: string | null;
   contracts: number | null;
   contract_symbol: string | null;
+  status: "open" | "closed" | null;
   bot_entry: number | null;
   bot_exit: number | null;
   bot_pnl: number | null;
@@ -552,5 +575,6 @@ export const api = {
         `/api/signals/journal/trend?reason=${encodeURIComponent(reason)}&days=${days}`
       ),
     reasons: () => request<{ reasons: Record<string, string> }>("/api/signals/journal/reasons"),
+    watching: () => request<{ watching: WatchingSignal[] }>("/api/signals/watching"),
   },
 };
