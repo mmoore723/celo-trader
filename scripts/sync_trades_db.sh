@@ -33,6 +33,19 @@
 #   rm ec2_log/SYNC_PAUSED
 # TO PERMANENTLY REMOVE the schedule: crontab -e and delete the line, or
 # see setup instructions below.
+#
+# ADDED 2026-07-28: also pull a bot.log tail. Previously this script only
+# synced the two trades DBs — bot.log had to be scp'd by hand, and the one
+# time it was needed mid-debug the local copy was 4 days stale. bot.log
+# itself is 49MB+ and growing, so this pulls just the last N lines over SSH
+# (`tail` runs on EC2, only the tail text crosses the wire) instead of
+# scp-ing the whole file every 15 minutes.
+#
+# FIX (same day): first attempt pointed at $EC2_DIR/bot.log (repo root) —
+# doesn't exist. logger_config.py / config.py::LOG_PATH show the real path
+# is $EC2_DIR/log/bot.log (a "log" subdirectory). Same mistake shape as the
+# trades-DB root-vs-subpath bug above — checked the code this time instead
+# of assuming the layout matched the local dev copy.
 
 set -e
 
@@ -71,3 +84,15 @@ _pull() {
 
 _pull "$EC2_DIR/user_data/$EC2_USER/trades_paper.db" "trades_paper_ec2.db"
 _pull "$EC2_DIR/user_data/$EC2_USER/trades_live.db"  "trades_live_ec2.db"
+
+# Tail bot.log over SSH (not scp) — see 2026-07-28 note above. Same .tmp+mv
+# atomicity as _pull() so nothing reads a half-written tail.
+BOT_LOG_TAIL_LINES=3000
+if ssh -i "$EC2_KEY" -o ConnectTimeout=10 "$EC2_HOST" \
+    "tail -$BOT_LOG_TAIL_LINES $EC2_DIR/log/bot.log" > "$OUT_DIR/bot_tail.log.tmp" 2>>"$LOG_FILE"; then
+    mv "$OUT_DIR/bot_tail.log.tmp" "$OUT_DIR/bot_tail.log"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') OK  bot.log (last $BOT_LOG_TAIL_LINES lines) -> $OUT_DIR/bot_tail.log" >> "$LOG_FILE"
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') FAIL bot.log tail (see ssh error above)" >> "$LOG_FILE"
+    rm -f "$OUT_DIR/bot_tail.log.tmp"
+fi
