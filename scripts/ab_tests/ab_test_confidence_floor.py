@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, neede
 
 from broker import AlpacaClient
 import backtester
+import strategy_router
 from backtester import Backtester
 
 DEFAULT_TICKERS = ["SPY", "QQQ", "NVDA", "AAPL", "TSLA"]
@@ -61,16 +62,22 @@ def main() -> None:
     tickers = sys.argv[2:] or DEFAULT_TICKERS
     alpaca  = AlpacaClient()
 
-    _orig = backtester._MIN_CONFIDENCE
+    # FIX 2026-07-28: route_signals() (called inside Backtester.run()) reads
+    # the floor from strategy_router's own module-level _MIN_CONFIDENCE —
+    # backtester.py only imports the route_signals FUNCTION, never the
+    # constant, so patching backtester._MIN_CONFIDENCE was a no-op target
+    # that didn't even exist there (AttributeError on first run). The floor
+    # must be patched on strategy_router itself.
+    _orig = strategy_router._MIN_CONFIDENCE
     results = {}
     try:
         for floor in _FLOOR_VARIANTS:
             print(f"\n=== FLOOR = {floor} {'(current live default)' if floor == _orig else ''} ===")
-            backtester._MIN_CONFIDENCE = floor
+            strategy_router._MIN_CONFIDENCE = floor
             results[floor] = _run_variant(alpaca, tickers, months, floor)
     finally:
         # Always restore — this script must never leave live behavior changed.
-        backtester._MIN_CONFIDENCE = _orig
+        strategy_router._MIN_CONFIDENCE = _orig
 
     print("\n" + "=" * 78)
     print("CONFIDENCE FLOOR A/B/C RESULT")

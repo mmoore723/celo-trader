@@ -33,6 +33,40 @@ function barLimitForPeriod(tf: string, period: Period): number {
   return Math.min(2000, Math.max(40, Math.ceil((barsPerDay[tf] ?? 90) * (tradingDays[period] ?? 3))));
 }
 
+// 2026-07-28: real pipeline order (router_gates.py, then trading/entry.py) —
+// used to turn one reason_code into an ordered chip list: every gate BEFORE
+// the one that fired gets a green chip (the signal genuinely passed it to
+// get this far), the firing gate gets red, and gates AFTER it are omitted
+// entirely (never reached — showing them either way would be a guess).
+// Some reason_codes share one chip on purpose (over-budget/illiquid/no-data
+// are all "couldn't get a tradeable contract" — the Budget chip), matching
+// the "simple, not one label per micro-check" request.
+const GATE_ORDER: { codes: string[]; label: string }[] = [
+  { codes: ["regime_gate"], label: "Regime" },
+  { codes: ["grade_filter"], label: "Grade" },
+  { codes: ["directional_consensus"], label: "Consensus" },
+  { codes: ["confidence_floor"], label: "Confidence" },
+  { codes: ["conflict_veto"], label: "Conflict" },
+  { codes: ["volume_roc_veto"], label: "Volume" },
+  { codes: ["macro_vwap_veto"], label: "Macro VWAP" },
+  { codes: ["budget", "illiquid_contract", "no_option_data", "no_liquid_contracts"], label: "Budget" },
+  { codes: ["zero_contracts"], label: "Sizing" },
+  { codes: ["spread_too_wide"], label: "Spread" },
+  { codes: ["rr_too_low"], label: "R:R" },
+  { codes: ["ai_decision_veto"], label: "AI review" },
+];
+
+function buildGateChips(outcome: string, reasonCode: string | null): { label: string; passed: boolean }[] {
+  const firedIdx = reasonCode ? GATE_ORDER.findIndex((g) => g.codes.includes(reasonCode)) : -1;
+  const upTo = outcome === "entered" ? GATE_ORDER.length : (firedIdx === -1 ? 0 : firedIdx + 1);
+  const chips = GATE_ORDER.slice(0, upTo).map((g, i) => ({
+    label: g.label,
+    passed: outcome === "entered" || i < firedIdx,
+  }));
+  if (outcome === "entered") chips.push({ label: "Entered", passed: true });
+  return chips;
+}
+
 function isSeparator(entry: Record<string, unknown>): boolean {
   return !!entry["_separator"];
 }
@@ -977,27 +1011,32 @@ export function LiveTrading() {
                       </select>
                     </div>
 
-                    {/* Filtered journal rows — today only */}
-                    <div className="flex flex-col gap-1 font-mono text-[11px]" style={{ maxHeight: 160, overflowY: "auto" }}>
-                      {journalEntries.slice(0, 40).map((e) => (
-                        <div key={e.id} className="flex gap-2 items-start">
-                          <span style={{ color: "var(--ink-muted)", minWidth: "5.2em" }}>
-                            {new Date(e.ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}
-                          </span>
-                          <span className={e.outcome === "entered" ? "badge badge-green" : "badge badge-yellow"}
-                            style={{ fontSize: 9, whiteSpace: "nowrap" }}>
-                            {e.outcome === "entered" ? "ENTERED" : "BLOCKED"}
-                          </span>
-                          <div>
-                            <div style={{ color: "var(--ink)" }}>
-                              {e.ticker} {e.direction === "bullish" ? "CALL" : "PUT"} · {e.strategy_id} · {Math.round(e.confidence * 100)}%
+                    {/* Filtered journal rows — today only. One row = ticker/strategy
+                        header, then a chip per gate the signal actually reached:
+                        green = passed, red = the one that stopped it. */}
+                    <div className="flex flex-col gap-3 font-mono text-[11px]" style={{ maxHeight: 200, overflowY: "auto" }}>
+                      {journalEntries.slice(0, 40).map((e) => {
+                        const chips = buildGateChips(e.outcome, e.reason_code);
+                        return (
+                          <div key={e.id}>
+                            <div className="flex gap-2 items-center mb-1">
+                              <span style={{ color: "var(--ink-muted)" }}>
+                                {new Date(e.ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                              </span>
+                              <span style={{ color: "var(--ink)" }}>
+                                {e.ticker} {e.direction === "bullish" ? "CALL" : "PUT"} · {e.strategy_id}
+                              </span>
                             </div>
-                            {e.reason_detail && (
-                              <div style={{ color: "var(--ink-muted)", fontSize: 10 }}>{e.reason_detail}</div>
-                            )}
+                            <div className="flex gap-3 flex-wrap" style={{ paddingLeft: 2 }}>
+                              {chips.map((c) => (
+                                <span key={c.label} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
+                                  {c.passed ? "✓" : "✗"} {c.label}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {journalEntries.length === 0 && (
                         <p style={{ color: "var(--ink-muted)", fontSize: 10 }}>No signals match these filters yet today.</p>
                       )}
