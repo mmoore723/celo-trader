@@ -373,6 +373,7 @@ export interface AppSettings {
   mid_brk_enabled: boolean;
   trend_cont_enabled: boolean;
   aft_rev_enabled: boolean;    // Afternoon Reversal — added to Settings 2026-07-20
+  gap_go_enabled?: boolean;    // Gap and Go — added 2026-07-23, OFF by default (untested live)
   signal_only_mode?: boolean;  // true = signal alerts only, bot does NOT place orders
   display_timezone?: string;   // e.g. "America/New_York" | "America/Chicago" | "America/Los_Angeles"
   // Trade parameters — user-tunable without touching code
@@ -381,6 +382,8 @@ export interface AppSettings {
   spread_gate_pct?: number;      // Max bid-ask spread as % of mid (default 8)
   vol_roc_threshold?: number;    // Volume ROC veto threshold (default 0.50)
   simplified_exit_mode?: boolean; // 3-rule exit (hard stop / 3.0x chandelier / time cap) vs full engine (default true)
+  mtf_confirmation_enabled?: boolean; // 2026-07-23: live 1Hour bias gate, OFF by default —
+                                       // can't be backtested (live "as-of-now" fetch), watch in signal-only first
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
   min_grade_filter_enabled?: boolean; // 2026-07-24: blocks entries below min_entry_grade (default off)
   min_entry_grade?: string;           // "A+" | "A" | "B" | "C" | "Watch" (default "C")

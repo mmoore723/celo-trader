@@ -415,12 +415,28 @@ def _compute_confidence(
 ) -> float:
     """
     0–1 confidence score.
-    Components:
-      35% — RVOL strength relative to threshold
-      25% — proximity to OR boundary (retest entries start closer → higher score)
-      20% — trend alignment (confirmed > consolidation > counter-trend)
-      10% — flip quality penalty (flipped signals get a haircut)
-      10% — retest bonus (retest entries are higher probability than raw breakouts)
+
+    FIX 2026-07-28 (doc only, no behavior change): this previously described
+    5 additive weighted components summing to 100%, including a "10% flip
+    quality penalty" line item. That's not what the code does — flip quality
+    isn't a separate additive term, it's a multiplicative haircut applied to
+    the WHOLE score at the end. Corrected below to match the actual formula.
+
+    Additive components (sum before the flip multiplier):
+      35% × rvol_score   — RVOL strength relative to threshold
+      25% × prox_score   — proximity to OR boundary (closer = higher, retest
+                            entries use a tighter 0–1 ATR scale vs. 0–2 ATR
+                            for raw breakouts — though in practice is_retest
+                            is always True at the live call site, so the
+                            raw-breakout scale is currently unreachable)
+      20% × trend_score  — trend alignment (confirmed > consolidation > counter)
+      10% flat           — unconditional base component, always added
+      10% retest_bonus   — added only when is_retest=True (always True live)
+    Then the entire sum is multiplied by flip_multiplier: 0.85× if the
+    signal's direction flipped from the original breakout, else 1.0×. This
+    haircut applies to every component above, not just its own 10% slice —
+    e.g. a flipped signal with a perfect 1.00 pre-multiplier score ends at
+    0.85, not 0.90.
     """
     # Score RVOL as excess above threshold, scaled so 2× threshold = full score.
     # Previous /3.0 divisor made rvol_score=0.42 even at 1.5× — too stingy.

@@ -37,6 +37,7 @@ const DEFAULT: AppSettings = {
   mid_brk_enabled: false,  // disabled 2026-07-23 — 13 backtested configs, all negative, see audit
   trend_cont_enabled: true,
   aft_rev_enabled: true,   // Afternoon Reversal — added to Settings 2026-07-20
+  gap_go_enabled: false,   // Gap and Go — added 2026-07-23, OFF by default (untested live)
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
   // Trade parameters
@@ -48,6 +49,8 @@ const DEFAULT: AppSettings = {
   min_grade_filter_enabled: false,  // added 2026-07-24 — off by default
   min_entry_grade: "C",
   max_position_dollars_pct: 15,  // added 2026-07-24 — was hardcoded, no UI
+  simplified_exit_mode: true,        // added 2026-07-22 — 3-rule exit, on by default (see research note in-form)
+  mtf_confirmation_enabled: false,   // added 2026-07-23 — live 1Hour bias gate, off by default (can't backtest)
 };
 
 const TIMEZONES = [
@@ -346,6 +349,9 @@ export function Settings() {
                 onChange={(v) => set("trend_cont_enabled", v)} />
         <Toggle label="Afternoon Reversal / AFT_REV (1:00 PM – 3:30 PM)" checked={form.aft_rev_enabled}
                 onChange={(v) => set("aft_rev_enabled", v)} />
+        <Toggle label="Gap and Go / GAP_GO (9:30–9:45 AM) — OFF by default, untested live"
+                checked={form.gap_go_enabled ?? false}
+                onChange={(v) => set("gap_go_enabled", v)} />
       </div>
 
       {/* Display */}
@@ -495,6 +501,34 @@ export function Settings() {
             />
           </div>
         </div>
+      </div>
+
+      {/* Exit engine + live gates */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Exit engine and live gates</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          These defaults came from A/B-tested research this session — flip
+          them only if you're deliberately testing an alternative.
+        </p>
+        <Toggle
+          label="Simplified exit (hard stop / 3.0x chandelier trail / time cap)"
+          checked={form.simplified_exit_mode ?? true}
+          onChange={(v) => set("simplified_exit_mode", v)}
+        />
+        <p className="text-xs mb-2" style={{ color: "var(--ink-muted)" }}>
+          On (default): the 3-rule exit that beat the full 9-condition engine
+          on realized R:R in backtesting. Off: falls back to the full engine.
+        </p>
+        <Toggle
+          label="MTF confirmation gate (live 1Hour bias check)"
+          checked={form.mtf_confirmation_enabled ?? false}
+          onChange={(v) => set("mtf_confirmation_enabled", v)}
+        />
+        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+          Off by default — unlike every other gate, this depends on a live
+          "as-of-now" API fetch and can't be validated against the
+          backtester. Watch it in Signal-Only mode before trusting it.
+        </p>
       </div>
 
       {/* Watchlist */}

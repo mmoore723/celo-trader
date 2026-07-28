@@ -259,7 +259,13 @@ def _get_dynamic_rvol_threshold(
         else:
             threshold = ORB_RVOL_THRESHOLD
 
-    floor = 0.75 if bar_min > (10 * 60 + 30) else 1.0
+    # FIX 2026-07-28: mid_day's window starts at bar_min == 630 (10:30)
+    # inclusive ("<="), but this floor used to check "> 630" (exclusive) —
+    # at exactly 10:30 the mid-day relaxed threshold (0.75) would compute
+    # correctly above, then get silently overridden back to 1.0 here since
+    # the floor's strict comparison didn't consider 10:30 itself "past" the
+    # boundary. Now uses ">=" to match mid_day's own boundary.
+    floor = 0.75 if bar_min >= (10 * 60 + 30) else 1.0
     return max(threshold, floor)
 
 

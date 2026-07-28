@@ -400,7 +400,11 @@ except Exception:
 
 def detect_orb_breakout(df: pd.DataFrame) -> Optional[tuple[str, float]]:
     """
-    Core ORB signal — called once per tick by trading_logic._tick().
+    Legacy raw-breakout ORB signal. NOT called by the live pipeline —
+    the live ORB strategy is the retest state machine in
+    strategies/inst_orb.py, wired in via strategy_router.ACTIVE_STRATEGIES.
+    Kept here for reference/backtesting only; do not assume "called once
+    per tick" (stale claim from before the retest-entry rework).
 
     Returns (direction, rvol) or None.
       direction : "bullish" | "bearish"
@@ -415,12 +419,21 @@ def detect_orb_breakout(df: pd.DataFrame) -> Optional[tuple[str, float]]:
 
     df must contain today's 5-min bars sorted ascending.
     If df spans multiple sessions the function operates on the most recent day.
+
+    FIX 2026-07-28: rvol_today used to reindex against today_df.index AFTER
+    it was reset to 0..N-1 — the same misalignment bug already fixed in
+    strategy_router.py::_build_indicator_frame() and
+    trading/diagnostics.py::_log_bar_thinking(). Captures the pre-reset
+    index first, same pattern as those two fixes, so this function is
+    correct if it's ever wired back into the live pipeline.
     """
     if df.empty or len(df) < 2:
         return None
 
-    # Isolate today's bars
+    # Isolate today's bars — capture the PRE-reset index for the rvol
+    # reindex below before resetting today_df's own index to 0..N-1.
     latest_date = df["time"].dt.date.max()
+    today_idx   = df.index[df["time"].dt.date == latest_date]
     today_df    = df[df["time"].dt.date == latest_date].reset_index(drop=True)
 
     if len(today_df) < 2:
@@ -436,7 +449,12 @@ def detect_orb_breakout(df: pd.DataFrame) -> Optional[tuple[str, float]]:
     # Compute VWAP and RVOL (pass full df so prior days inform RVOL calc)
     vwap_series = compute_vwap(today_df)
     rvol_series = compute_rvol(df, lookback_days=10)
-    rvol_today  = rvol_series.reindex(today_df.index)
+    # Positional assign via .to_numpy(): today_idx (pre-reset) and today_df
+    # are in the same row order, so this sidesteps index alignment entirely
+    # — same fix pattern as strategy_router.py/trading/diagnostics.py.
+    rvol_today  = pd.Series(
+        rvol_series.reindex(today_idx).to_numpy(), index=today_df.index
+    )
 
     for idx in range(1, len(today_df)):
         bar     = today_df.iloc[idx]
