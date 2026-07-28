@@ -1022,6 +1022,32 @@ export function LiveTrading() {
                         </div>
                       );
                     }
+                    // 2026-07-28: "bar_conditions" lines carry a structured
+                    // [{name, passed}] list (see trading/diagnostics.py) — render
+                    // as simple red/green condition labels instead of parsing
+                    // emoji out of a text blob. Per user request: "simpler...
+                    // just red for not met, green for met, side by side."
+                    if (entry.event === "bar_conditions" && Array.isArray(entry.conditions)) {
+                      const conditions = entry.conditions as { name: string; passed: boolean }[];
+                      return (
+                        <div key={i} className="flex items-center gap-3 flex-wrap">
+                          {entry.ts && (
+                            <span className="opacity-60 select-none"
+                              style={{ color: "var(--ink-muted)", minWidth: "6.5em", display: "inline-block" }}>
+                              {entry.ts}
+                            </span>
+                          )}
+                          {typeof entry.ticker === "string" && (
+                            <span style={{ color: "var(--ink)" }}>{entry.ticker}</span>
+                          )}
+                          {conditions.map((c) => (
+                            <span key={c.name} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
+                              {c.passed ? "✓" : "✗"} {c.name}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    }
                     const lvl = (entry.level ?? "INFO").toUpperCase();
                     const color =
                       lvl === "ERROR"   ? "var(--negative)" :

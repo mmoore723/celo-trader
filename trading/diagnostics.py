@@ -235,6 +235,16 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
         or_low   = or_info["low"]
         or_range = round(or_high - or_low, 2)
 
+        # 2026-07-28: alongside the existing text narrative below, also build
+        # a small structured [(condition_name, passed), ...] list for the two
+        # breakout branches — this is what backs the simple red/green
+        # checklist in the Thinking panel (per user request: "simpler...
+        # colors for the conditions, red for not met, green for met, side by
+        # side"). Only set for the two branches where there's a real 3-item
+        # checklist (Price/RVOL/VWAP); the "inside range" branch has no
+        # breakout to check yet, so it stays None and nothing renders.
+        _bar_conditions: list | None = None
+
         # Gate evaluations
         rvol_ok    = rvol_val >= _ORB_RVOL
         vwap_str   = f"${vwap_val:.2f}" if vwap_val else "N/A"
@@ -301,6 +311,7 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
                 f"OR range: ${or_low:.2f}–${or_high:.2f} (${or_range} wide) | "
                 f"{rvol_label} | {vwap_label} | {conclusion}"
             )
+            _bar_conditions = [("Price", True), ("VWAP", vwap_ok), ("RVOL", rvol_ok)]
 
         elif close < or_low:
             ext     = round(or_low - close, 2)
@@ -337,6 +348,7 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
                 f"OR range: ${or_low:.2f}–${or_high:.2f} (${or_range} wide) | "
                 f"{rvol_label} | {vwap_label} | {conclusion}"
             )
+            _bar_conditions = [("Price", True), ("VWAP", vwap_ok), ("RVOL", rvol_ok)]
 
         else:
             # ── Inside the Opening Range ──────────────────────────────────────
@@ -384,6 +396,22 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
             )
 
         log_event("INFO", "bar_eval", narrative)
+
+        # Structured mirror of the checklist above — only fires for the two
+        # breakout branches (see _bar_conditions comment above). Same
+        # dual-write shape as signal_journal: DB write is skipped here (this
+        # is a live-only condition snapshot, not a persisted signal outcome),
+        # just the bot.log/WebSocket side so the Thinking panel can render it
+        # as simple green/red labels instead of parsing emoji out of text.
+        if _bar_conditions is not None:
+            logger.info(
+                "bar_conditions",
+                extra={
+                    "event": "bar_conditions",
+                    "ticker": ticker,
+                    "conditions": [{"name": n, "passed": bool(p)} for n, p in _bar_conditions],
+                },
+            )
 
     except Exception as _be:
         logger.debug("_log_bar_thinking error: %s", _be)
