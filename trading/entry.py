@@ -291,24 +291,35 @@ def select_contract(
 
 def _skip_log(ticker: str, reason: str, *,
               strategy: str = "", confidence: float = 0.0, rr: float = 0.0,
-              direction: str = "") -> None:
+              direction: str = "", detail: str = "") -> None:
     """
     Append a rejection entry to eval_log so the dashboard shows WHY each ticker
     was passed over on a given bar (no signal, low confidence, zero contracts, etc.).
 
     reason values: "no_signal" | "below_confidence" | "zero_contracts" |
-                   "spread_too_wide" | "rr_too_low" | "macro_vwap_veto"
+                   "spread_too_wide" | "rr_too_low" | "macro_vwap_veto" |
+                   "ai_decision_veto" | "budget" | "illiquid_contract" |
+                   "no_option_data" | "no_liquid_contracts"
 
     2026-07-24: also writes to signal_journal (see signal_journal.py) when a
     real signal was actually rejected (strategy given) — "no_signal" calls
     have no strategy/confidence because there was no signal to journal, only
     an absence of one, so those are skipped here by design, not by accident.
+
+    2026-07-28 FIX: every call site except "rr_too_low" was passing no detail
+    at all, so the Thinking panel showed a bare BLOCKED badge with nothing
+    explaining why — this is what made an above-floor AI-veto block (77%,
+    75%, both > the 74% confidence floor) look unexplained, when the real
+    reason (the AI decision-support layer's rationale) was sitting right
+    there in the caller and just never got threaded through. `detail` now
+    takes priority; `rr` is kept as a fallback for any older call site that
+    hasn't been updated to pass detail explicitly.
     """
     if strategy:
         try:
             _log_journal(ticker, strategy, direction or "unknown", confidence,
                          outcome="blocked", reason_code=reason,
-                         reason_detail=(f"R:R {rr:.2f}" if rr else ""))
+                         reason_detail=detail or (f"R:R {rr:.2f}" if rr else ""))
         except Exception:
             pass   # journal writes are never allowed to affect entry logic
 
@@ -1042,14 +1053,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                               f"⚪ [{ticker}] Skipping CALL — {ticker} (${_self_close:.2f}) "
                               f"is BELOW its own VWAP (${_self_vwap:.2f}). "
                               f"Signal conflicts with macro posture.")
-                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                             detail=f"{ticker} ${_self_close:.2f} below own VWAP ${_self_vwap:.2f}")
                     return
                 elif direction == "bearish" and _self_close > _self_vwap:
                     log_event("INFO", "bar_eval",
                               f"⚪ [{ticker}] Skipping PUT — {ticker} (${_self_close:.2f}) "
                               f"is ABOVE its own VWAP (${_self_vwap:.2f}). "
                               f"Signal conflicts with macro posture.")
-                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                             detail=f"{ticker} ${_self_close:.2f} above own VWAP ${_self_vwap:.2f}")
                     return
                 else:
                     logger.debug(
@@ -1113,14 +1126,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                           f"⚪ [{ticker}] Skipping CALL — SPY (${_spy_close:.2f}) "
                           f"is BELOW VWAP (${_spy_vwap:.2f}). "
                           f"Signal conflicts with macro posture.")
-                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence)
+                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                         detail=f"SPY ${_spy_close:.2f} below VWAP ${_spy_vwap:.2f}")
                 return
             elif direction == "bearish" and _spy_close > _spy_vwap:
                 log_event("INFO", "bar_eval",
                           f"⚪ [{ticker}] Skipping PUT — SPY (${_spy_close:.2f}) "
                           f"is ABOVE VWAP (${_spy_vwap:.2f}). "
                           f"Signal conflicts with macro posture.")
-                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence)
+                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                         detail=f"SPY ${_spy_close:.2f} above VWAP ${_spy_vwap:.2f}")
                 return
             else:
                 logger.debug(
@@ -1157,7 +1172,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"({_sel_info.get('cheapest_symbol', '?')}) costs ~${_needed:.0f}, "
                       f"but your budget is set to ${max_spend:.0f}. "
                       f"Skipping this setup — will check again next candle.")
-            _skip_log(ticker, "budget", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+            _skip_log(ticker, "budget", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                     detail=f"cheapest ~${_needed:.0f} vs ${max_spend:.0f} budget")
         elif _reason == "illiquid":
             # 2026-07-24: a contract existed WITHIN budget but failed the
             # spread/OI liquidity filters — the real blocker here is
@@ -1171,21 +1187,24 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"~${_cheap_afford:.0f} (within your ${max_spend:.0f} budget) but "
                       f"failed the liquidity filter ({_fail_detail}). "
                       f"Skipping this setup — will check again next candle.")
-            _skip_log(ticker, "illiquid_contract", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+            _skip_log(ticker, "illiquid_contract", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                     detail=f"${_cheap_afford:.0f} within budget but {_fail_detail}")
         elif _reason in ("api_error", "no_expirations", "no_chain_data"):
             # Tradier didn't return usable options data — NOT a budget issue.
             log_event("INFO", "bar_eval",
                       f"🔴 [{ticker}] Couldn't load {opt_type.upper()} option prices from "
                       f"Tradier (no data returned). Skipping this setup — will check again "
                       f"next candle.")
-            _skip_log(ticker, "no_option_data", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+            _skip_log(ticker, "no_option_data", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                     detail="Tradier returned no usable chain data")
         else:
             # "filtered" — chain data existed but spread/open-interest filters
             # rejected every candidate (not a budget issue).
             log_event("INFO", "bar_eval",
                       f"🔴 [{ticker}] No {opt_type.upper()} contracts met liquidity/spread "
                       f"requirements. Skipping this setup — will check again next candle.")
-            _skip_log(ticker, "no_liquid_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+            _skip_log(ticker, "no_liquid_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                     detail="no contract met spread/open-interest filters")
         return
 
     ask_price = contract["ask"]
@@ -1244,7 +1263,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"${_risk_budget:.2f} ({_risk_pct*100:.0f}% of ${balance:.2f}). "
                   f"Need a bigger risk budget (raise risk_per_trade or grow the "
                   f"account) or a cheaper-premium contract.")
-        _skip_log(ticker, "zero_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+        _skip_log(ticker, "zero_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                 detail=f"1 contract risks ${_risk_per_contract:.0f}, budget is ${_risk_budget:.0f}")
         return
 
     # ── Total-position-cost cap (tier-aware notional cap) ─────────────────────
@@ -1321,7 +1341,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"{_spread_pct*100:.1f}% of mid price "
                       f"(bid=${_c_bid:.2f} ask=${_c_ask:.2f}). "
                       f"Too wide; waiting for tighter liquidity.")
-            _skip_log(ticker, "spread_too_wide", strategy=strategy_id, confidence=_top.confidence, direction=direction)
+            _skip_log(ticker, "spread_too_wide", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                     detail=f"spread {_spread_pct*100:.1f}% > {_spread_max*100:.0f}% max (bid ${_c_bid:.2f}/ask ${_c_ask:.2f})")
             return
 
     # ── R:R gate: block entry if reward-to-risk < 1.6 ─────────────────────────
@@ -1426,7 +1447,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 log_event("INFO", "bar_eval",
                           f"🟣 [{ticker}] AI decision support VETO — "
                           f"{_ds_result.rationale or 'no reason given'}")
-                _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence)
+                _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence,
+                         direction=direction, detail=_ds_result.rationale or "AI review declined, no rationale given")
                 return
             elif _ds_result is not None and _ds_result.action == "reduce_size":
                 _ds_resized = int(n_contracts * _ds_result.size_multiplier)
@@ -1436,7 +1458,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     log_event("INFO", "bar_eval",
                               f"🟣 [{ticker}] AI decision support reduced size to 0 "
                               f"contracts — treating as VETO. {_ds_result.rationale or ''}")
-                    _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence)
+                    _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence,
+                             direction=direction, detail=f"resized to 0 contracts — {_ds_result.rationale or 'no rationale given'}")
                     return
                 elif _ds_resized < n_contracts:
                     log_event("INFO", "bar_eval",
