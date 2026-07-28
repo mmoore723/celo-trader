@@ -228,6 +228,7 @@ export function LiveTrading() {
     retry: false,
   });
   const watching = watchingData?.watching ?? [];
+  const watchingActiveCount = watching.filter((w) => w.phase !== "expired").length;
 
   // ── Signal journal (Thinking panel) ───────────────────────────────────────
   const { data: journalSummary } = useQuery({
@@ -606,7 +607,7 @@ export function LiveTrading() {
                   background: "none",
                 }}>
                 {tab === "scanner" ? "Premarket Scanner"
-                  : tab === "watching" ? `Watching${watching.length ? ` (${watching.length})` : ""}`
+                  : tab === "watching" ? `Watching${watchingActiveCount ? ` (${watchingActiveCount})` : ""}`
                   : `${ticker} Chain`}
               </button>
             ))}
@@ -623,9 +624,31 @@ export function LiveTrading() {
               ) : (
                 watching.map((w) => {
                   const isRetesting = w.phase === "retesting";
+                  const isExpired   = w.phase === "expired";
                   const optLabel = w.contract?.strike
                     ? `${w.ticker} ${w.contract.strike}${w.option_type === "call" ? "C" : "P"}`
                     : w.ticker;
+
+                  // Expired — the setup gave up (bounce failed, a gate blocked
+                  // it, etc.) rather than firing a real entry. Shown briefly
+                  // and minimally instead of just vanishing with no trace.
+                  if (isExpired) {
+                    return (
+                      <div key={w.ticker} className="card px-3 py-2 flex items-center justify-between"
+                           style={{ background: "var(--panel)", opacity: 0.65 }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold" style={{ color: "var(--ink-muted)" }}>
+                            {w.ticker}
+                          </span>
+                          <span className="badge badge-blue">{w.strategy}</span>
+                        </div>
+                        <span className="text-xs" style={{ color: "var(--ink-faint)" }}>
+                          {w.phase_label}
+                        </span>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div key={w.ticker} className="card px-3 py-2"
                          style={{ background: "var(--panel)" }}>

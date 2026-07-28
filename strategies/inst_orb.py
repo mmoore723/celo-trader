@@ -83,6 +83,18 @@ _RETEST_TOLERANCE_MIN = 0.05     # absolute floor
 # Key: (ticker, date_str)  Value: phase dict
 _retest_state: dict[tuple[str, str], dict] = {}
 
+# 2026-07-28: read-only side-channel for the dashboard's Watching tab.
+# _retest_state gets fully wiped and rebuilt on every evaluate() call (see
+# the comment above evaluate()'s reset block) — that's correct for the
+# state machine itself, but it means a setup that WAS mid-retest a moment
+# ago just silently vanishes from the API with no trace of what happened
+# to it. This dict remembers, for a short window, whether a vanished setup
+# expired (gave up — bounce failed, gate blocked it, etc.) so the UI can
+# say "expired" instead of just disappearing. Never read by the state
+# machine itself — purely observational.
+_recent_expirations: dict[tuple[str, str], dict] = {}
+_EXPIRATION_MEMORY_SEC = 300   # how long a card stays visible as "expired"
+
 
 def _get_state(ticker: str, today_date: _date) -> dict:
     """Return (and lazily initialize) the retest state for ticker+date."""
@@ -135,11 +147,18 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
 
     today_date = today["time"].iloc[-1].date()
 
+    # 2026-07-28: capture the phase BEFORE the reset below wipes it, purely
+    # so the Watching-tab side-channel (see bottom of this function) can
+    # tell "this setup expired" apart from "this setup just fired a real
+    # entry" apart from "there was nothing here to begin with" — read-only,
+    # doesn't affect any decision in the state machine itself.
+    key = (ticker, today_date.isoformat())
+    _phase_before_this_call = _retest_state.get(key, {}).get("phase", "idle")
+
     # Reset state to idle on EVERY call so the state machine is re-derived
     # cleanly from the full bar slice. This prevents stale phase leftovers
     # from a prior call (same bar position, different slice length) corrupting
     # the phase transitions — the root cause of the backtester "no trades" bug.
-    key = (ticker, today_date.isoformat())
     _retest_state[key] = {
         "phase":        "idle",
         "direction":    None,
@@ -395,6 +414,31 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
                 },
             )
             # Don't break — keep iterating; the last qualifying signal wins (most recent bar)
+
+    # 2026-07-28: record an expiration if this setup was mid-retest before
+    # this call and is idle now WITHOUT firing — see _recent_expirations
+    # comment above. A real entry (result is not None) also resets phase to
+    # idle, but that's not an expiration, it graduated into an actual trade
+    # — skip recording those so they don't show as "expired" right after
+    # showing up in Open Positions.
+    _final_phase = _retest_state.get(key, {}).get("phase", "idle")
+    if (
+        _phase_before_this_call in ("breakout_seen", "retesting")
+        and _final_phase == "idle"
+        and result is None
+    ):
+        _recent_expirations[key] = {
+            "ticker":     ticker,
+            "expired_at": pd.Timestamp.now(),
+            "last_phase": _phase_before_this_call,
+        }
+    # Prune old expirations so this dict doesn't grow forever
+    _stale_exp = [
+        k for k, v in _recent_expirations.items()
+        if (pd.Timestamp.now() - v["expired_at"]).total_seconds() > _EXPIRATION_MEMORY_SEC
+    ]
+    for k in _stale_exp:
+        del _recent_expirations[k]
 
     return result
 

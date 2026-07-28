@@ -337,7 +337,12 @@ def _skip_log(ticker: str, reason: str, *,
         if rr:          _entry["rr"]         = round(rr, 2)
         _log = list(_US.get("eval_log", []))
         _log.insert(0, _entry)
-        _US["eval_log"] = _log[:10]
+        # FIX 2026-07-28: cap was 10 across EVERY evaluation on EVERY ticker —
+        # with dozens of tickers evaluated multiple times per tick, a single
+        # ticker's entry (e.g. a real NFLX entry) could fall off within
+        # moments even though it was never removed on purpose. 50 gives real
+        # entries room to survive a few minutes of other tickers' activity.
+        _US["eval_log"] = _log[:50]
         _sp = get_bot_state_path()
         with open(_sp) as _f:
             _bs = _skj.load(_f)
@@ -1320,7 +1325,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         }
         _log = list(_US.get("eval_log", []))  # read from memory, not file
         _log.insert(0, _new_entry)                    # newest first
-        _US["eval_log"] = _log[:10]            # update in-memory copy first
+        # FIX 2026-07-28: cap was 10 across EVERY evaluation on EVERY ticker —
+        # with dozens of tickers evaluated multiple times per tick, a single
+        # ticker's entry (e.g. a real NFLX entry) could fall off within
+        # moments even though it was never removed on purpose. 50 gives real
+        # entries room to survive a few minutes of other tickers' activity.
+        _US["eval_log"] = _log[:50]            # update in-memory copy first
         _bs_c["eval_log"]      = _US["eval_log"]
         _json.dump(_bs_c, open(_state_path, "w"))
     except Exception:

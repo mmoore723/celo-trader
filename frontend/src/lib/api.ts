@@ -214,7 +214,7 @@ export interface WatchingSignal {
   strategy: string;              // "INST_ORB" — only strategy with a waiting state today
   direction: "bullish" | "bearish" | null;
   option_type: "call" | "put" | null;
-  phase: "breakout_seen" | "retesting";
+  phase: "breakout_seen" | "retesting" | "expired";
   phase_label: string;           // "1 of 3 — breakout seen" | "2 of 3 — retesting"
   retest_level: number | null;
   current_price: number | null;

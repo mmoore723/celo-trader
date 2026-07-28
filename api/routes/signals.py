@@ -97,7 +97,20 @@ def get_watching() -> dict:
         for k, v in _inst_orb._retest_state.items()
         if k[1] == today_iso and v.get("phase") in ("breakout_seen", "retesting")
     ]
-    if not watched:
+
+    # Setups that were mid-retest a moment ago and then gave up (bounce
+    # failed, a gate blocked it, etc.) — shown briefly as "expired" instead
+    # of just vanishing with no explanation. See _recent_expirations in
+    # strategies/inst_orb.py. Excludes anything that's back in `watched`
+    # above (a new breakout cycle started again for the same ticker/day).
+    watched_tickers = {w["ticker"] for w in watched}
+    expired = [
+        {"ticker": k[0], **v}
+        for k, v in _inst_orb._recent_expirations.items()
+        if k[1] == today_iso and k[0] not in watched_tickers
+    ]
+
+    if not watched and not expired:
         return {"watching": []}
 
     try:
@@ -165,6 +178,21 @@ def get_watching() -> dict:
                 "bid":    contract.get("bid"),
                 "ask":    contract.get("ask"),
             } if contract else None,
+        })
+
+    for e in expired:
+        out.append({
+            "ticker":        e["ticker"],
+            "strategy":      "INST_ORB",
+            "direction":     None,
+            "option_type":   None,
+            "phase":         "expired",
+            "phase_label":   f"expired — was {'1 of 3' if e.get('last_phase') == 'breakout_seen' else '2 of 3'}",
+            "retest_level":  None,
+            "current_price": None,
+            "breakout_time": None,
+            "retest_time":   None,
+            "contract":      None,
         })
 
     return {"watching": out}
