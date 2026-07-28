@@ -264,13 +264,41 @@ def _manage_open_position(
 
     try:
         # ── Option quote ──────────────────────────────────────────────────────
+        # FIX 2026-07-28: this used to price the position ENTIRELY off
+        # Tradier's quote feed, even though Alpaca is the broker that
+        # actually holds the position and settles every fill. Confirmed
+        # live: Tradier read $1.25 on a thin BA contract while Alpaca's own
+        # mark was $1.06-1.12 at the same moment — a real ~15% gap on a
+        # single contract. Every exit trigger (stop-loss, chandelier trail,
+        # targets) compares against current_price, so pricing off the wrong
+        # broker means the bot's own risk management can be working off a
+        # number nobody could actually trade at. Alpaca's own position mark
+        # is now the source of truth for current_price / P&L. Tradier's
+        # quote is still fetched for its bid (needed to construct a real
+        # limit sell order below) and as a fallback if Alpaca has no
+        # matching position (e.g. a transient API hiccup) so the bot
+        # doesn't go blind.
         quote = tradier.get_option_quote(trade["contract_symbol"])
-        if quote is None:
+        alpaca_positions = alpaca.get_positions()
+        alpaca_pos = next(
+            (p for p in alpaca_positions if p.get("symbol") == trade["contract_symbol"]),
+            None,
+        )
+
+        if alpaca_pos is not None and alpaca_pos.get("current_price") is not None:
+            current_price = float(alpaca_pos["current_price"])
+        elif quote is not None:
+            current_price = quote["mid"]
+            logger.warning(
+                "%s not found in Alpaca positions — falling back to Tradier's "
+                "quote for current_price (may not reflect Alpaca's real mark)",
+                trade["contract_symbol"],
+            )
+        else:
             logger.warning("Cannot price %s — holding", trade["contract_symbol"])
             return
 
-        current_price = quote["mid"]
-        bid_price     = float(quote.get("bid") or quote["mid"])  # for limit sell step-down
+        bid_price     = float(quote.get("bid") or current_price) if quote else current_price  # for limit sell step-down
         entry_price   = trade["entry_price"]
         trade_id      = trade["id"]
         ticker        = trade.get("ticker", "")

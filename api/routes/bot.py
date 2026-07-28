@@ -88,6 +88,8 @@ def get_status(request: Request) -> BotStatus:
         last_eval_contracts=state.get("last_eval_contracts") if state.get("last_eval_contracts") is not None else _state.get("last_eval_contracts"),
         last_eval_opt_type=state.get("last_eval_opt_type") or _state.get("last_eval_opt_type"),
         last_eval_ticker=state.get("last_eval_ticker") or _state.get("last_eval_ticker"),
+        # FIX 2026-07-28: was never passed through — see BotStatus.eval_log comment
+        eval_log=list(state.get("eval_log") or _state.get("eval_log") or []),
         maintenance_mode=bool(settings.get("maintenance_mode", False)),
         maintenance_message=str(settings.get("maintenance_message", "")),
     )

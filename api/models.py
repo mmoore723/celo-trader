@@ -31,6 +31,13 @@ class BotStatus(BaseModel):
     last_eval_contracts: Optional[int] = None
     last_eval_opt_type: Optional[str] = None
     last_eval_ticker: Optional[str] = None
+    # FIX 2026-07-28: entry.py has always written a full last-10 evaluation
+    # history to bot_state.json's "eval_log" key (see trading/entry.py
+    # ~line 1321), but this field never existed on BotStatus — FastAPI's
+    # response_model silently strips any key not declared on the model, so
+    # the frontend's "Signal History" panel has been permanently empty
+    # (status?.eval_log was always undefined) regardless of real activity.
+    eval_log: list[dict] = []
     # Maintenance mode — set by admin to halt all trading and show maintenance screen
     maintenance_mode: bool = False
     maintenance_message: str = ""
