@@ -75,7 +75,20 @@ def compute_adx(df: pd.DataFrame, period: int = 14) -> Optional[float]:
             dx     = np.where(dx_den > 0, 100 * np.abs(pdi - mdi) / dx_den, 0)
 
         adx_w  = wilder_smooth(dx[period:], period)
-        return float(adx_w[-1]) if len(adx_w) > 0 else None
+        # FIX 2026-07-28: wilder_smooth() returns a smoothed SUM, not an
+        # average — fine for atr_w/pdm_w/mdm_w above since they're only ever
+        # used as a ratio (pdi/mdi), where the shared scale-up cancels out.
+        # But adx_w was being returned directly with no such ratio, so it
+        # stayed inflated by a factor of `period` (proven algebraically:
+        # sum[i] = period * avg[i] holds at every step of the recursion, not
+        # just asymptotically — confirmed against a synthetic DX series
+        # before applying this). Live evidence: the AI decision-support layer
+        # vetoed a real QQQ/IFVG signal citing "ADX at 676.94 is impossible"
+        # — 676.94/14≈48, a plausible real value. This also silently weakened
+        # position_manager.py's ADX<20 exit condition on every open position
+        # (inflated ADX rarely reads below 20) and fed the same bad number
+        # into backtest_exit_sim.py.
+        return float(adx_w[-1]) / period if len(adx_w) > 0 else None
     except Exception as ex:
         logger.debug("ADX computation failed: %s", ex)
         return None
