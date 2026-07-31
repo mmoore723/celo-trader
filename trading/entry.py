@@ -915,13 +915,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # to build reference levels in, not trade directly. See CLAUDE.md rule 9
         # research + run_full_audit.py history for the full trail.
         "strategy_mid_enabled":   False,
-        # GAP_GO 2026-07-23 — the ONE strategy that deliberately breaks the
-        # "everything defaults ON" policy above. Every other strategy in this
-        # table has SOME backtest/live track record, even a bad one, that the
-        # policy comment is about not letting suppress it unfairly. GAP_GO has
-        # none — it was built from published sources, never run once through
-        # this bot's own backtester. Default False until that happens.
-        "strategy_gapgo_enabled": False,
+        # GAP_GO — flipped to True 2026-07-31 per explicit user decision,
+        # same pattern as VWAP_PB/AFT_REV above. Still has no backtest track
+        # record of its own (built from published sources, never run through
+        # this bot's backtester) — that risk is accepted, not resolved.
+        "strategy_gapgo_enabled": True,
     }
     _enabled: set[str] = {
         sid for sid, key in (

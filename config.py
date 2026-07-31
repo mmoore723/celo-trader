@@ -422,7 +422,12 @@ _DEFAULTS = {
     # toggle in this file, it can't be validated against the historical
     # backtester (it depends on a live "as-of-now" API fetch, not replayable
     # multi-day data) — watch it in signal_only_mode before trusting it.
-    "mtf_confirmation_enabled": False,
+    "mtf_confirmation_enabled": True,
+
+    # 2026-07-31: INST_ORB immediate-entry (skip retest wait) toggle — see
+    # strategies/inst_orb.py and api/models.py's field comment. ON by default
+    # per explicit user decision.
+    "strategy_instorb_immediate_entry": True,
 
     # Filters
     "volume_filter_enabled":   True,

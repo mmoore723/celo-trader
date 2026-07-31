@@ -164,9 +164,9 @@ class Settings(BaseModel):
     trend_cont_enabled: bool = True
     aft_rev_enabled: bool = True   # Afternoon Reversal — added 2026-07-20, was previously
                                     # not exposed in Settings at all (no way to toggle it)
-    gap_go_enabled: bool = False   # Gap and Go — added 2026-07-23, defaults OFF: unlike
-                                    # every other strategy here, it has never been
-                                    # backtested. See strategies/gap_go.py.
+    gap_go_enabled: bool = True    # Gap and Go — added 2026-07-23. Flipped to ON by
+                                    # default 2026-07-31 per explicit request. See
+                                    # strategies/gap_go.py.
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────
     orb_stage1_gain_pct: float = 50.0   # Stage-1 profit target as % of entry
@@ -205,23 +205,23 @@ class Settings(BaseModel):
                                           # 3.0x chandelier trail / time cap) vs
                                           # the full 9+-condition engine. See
                                           # ab_test_exit_complexity.py.
-    mtf_confirmation_enabled: bool = False  # 2026-07-23: live 1Hour bias gate,
-                                          # see trading/mtf_live_gate.py. Can't
-                                          # be backtested — watch in
-                                          # signal_only_mode before trusting.
-    inst_orb_immediate_entry_enabled: bool = False  # 2026-07-31: opt-in — enter
-                                          # on the breakout bar itself instead of
-                                          # waiting for the OR-level retest. OFF
-                                          # by default: INST_ORB's whole edge (see
-                                          # strategies/inst_orb.py's module
-                                          # docstring) is that the retest gives a
+    mtf_confirmation_enabled: bool = True   # 2026-07-23: live 1Hour bias gate,
+                                          # see trading/mtf_live_gate.py. Flipped
+                                          # to ON by default 2026-07-31 per
+                                          # explicit request — still can't be
+                                          # backtested (live "as-of-now" fetch).
+    inst_orb_immediate_entry_enabled: bool = True  # 2026-07-31: enter on the
+                                          # breakout bar itself instead of always
+                                          # waiting for the OR-level retest. ON by
+                                          # default per explicit request. Trade-off:
+                                          # INST_ORB's retest normally gives a
                                           # cheaper premium + structural
-                                          # confirmation; this trades that off for
-                                          # not missing moves that never retest.
-                                          # Not backtested — no historical data
-                                          # captures the raw-breakout-bar fill
-                                          # price/spread. Watch in
-                                          # signal_only_mode before trusting.
+                                          # confirmation (see strategies/inst_orb.py's
+                                          # module docstring); this catches moves
+                                          # that never retest at the cost of that
+                                          # confirmation. Not backtested — no
+                                          # historical data captures the
+                                          # raw-breakout-bar fill price/spread.
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────

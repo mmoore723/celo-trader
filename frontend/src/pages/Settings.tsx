@@ -37,7 +37,7 @@ const DEFAULT: AppSettings = {
   mid_brk_enabled: false,  // disabled 2026-07-23 — 13 backtested configs, all negative, see audit
   trend_cont_enabled: true,
   aft_rev_enabled: true,   // Afternoon Reversal — added to Settings 2026-07-20
-  gap_go_enabled: false,   // Gap and Go — added 2026-07-23, OFF by default (untested live)
+  gap_go_enabled: true,    // Gap and Go — added 2026-07-23, flipped ON 2026-07-31
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
   // Trade parameters
@@ -350,8 +350,8 @@ export function Settings() {
                 onChange={(v) => set("trend_cont_enabled", v)} />
         <Toggle label="Afternoon Reversal / AFT_REV (1:00 PM – 3:30 PM)" checked={form.aft_rev_enabled}
                 onChange={(v) => set("aft_rev_enabled", v)} />
-        <Toggle label="Gap and Go / GAP_GO (9:30–9:45 AM) — OFF by default, untested live"
-                checked={form.gap_go_enabled ?? false}
+        <Toggle label="Gap and Go / GAP_GO (9:30–9:45 AM)"
+                checked={form.gap_go_enabled ?? true}
                 onChange={(v) => set("gap_go_enabled", v)} />
       </div>
 
@@ -531,27 +531,26 @@ export function Settings() {
         </p>
         <Toggle
           label="MTF confirmation gate (live 1Hour bias check)"
-          checked={form.mtf_confirmation_enabled ?? false}
+          checked={form.mtf_confirmation_enabled ?? true}
           onChange={(v) => set("mtf_confirmation_enabled", v)}
         />
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          Off by default — unlike every other gate, this depends on a live
-          "as-of-now" API fetch and can't be validated against the
-          backtester. Watch it in Signal-Only mode before trusting it.
+          Unlike every other gate, this depends on a live "as-of-now" API
+          fetch and can't be validated against the backtester.
         </p>
         <Toggle
           label="INST_ORB immediate entry (skip retest wait)"
-          checked={form.inst_orb_immediate_entry_enabled ?? false}
+          checked={form.inst_orb_immediate_entry_enabled ?? true}
           onChange={(v) => set("inst_orb_immediate_entry_enabled", v)}
         />
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          Off by default (recommended). INST_ORB normally waits for price to
-          pull back and retest the opening-range level before entering —
-          cheaper premium, tighter stop. On: it can also enter right on the
-          breakout bar itself if RVOL and cooldown gates clear, so moves that
-          never come back to retest aren't missed entirely. The retest path
-          still runs as a fallback either way. Not backtested — turning this
-          on is a live trade-off between catching more moves and worse fills.
+          INST_ORB normally waits for price to pull back and retest the
+          opening-range level before entering — cheaper premium, tighter
+          stop. On: it can also enter right on the breakout bar itself if
+          RVOL and cooldown gates clear, so moves that never come back to
+          retest aren't missed entirely. The retest path still runs as a
+          fallback either way. Not backtested — this is a live trade-off
+          between catching more moves and worse fills.
         </p>
       </div>
 

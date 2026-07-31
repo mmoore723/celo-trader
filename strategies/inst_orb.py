@@ -181,7 +181,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     # Read once per evaluate() call, not per bar, to avoid a settings lookup
     # on every iteration of the loop below.
     from config import get_settings as _gs
-    _immediate_entry_on = bool(_gs().get("strategy_instorb_immediate_entry", False))
+    _immediate_entry_on = bool(_gs().get("strategy_instorb_immediate_entry", True))
 
     result: Optional[Signal] = None
 
