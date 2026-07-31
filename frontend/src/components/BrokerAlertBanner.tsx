@@ -1,5 +1,5 @@
 /**
- * BrokerAlertBanner.tsx — Persistent red banner when a broker is failing.
+ * BrokerAlertBanner.tsx — Persistent red banner + one-time toast when a broker is failing.
  *
  * Added 2026-07-31 after a Tradier credential got accidentally overwritten
  * (a masked display value was saved over the real key — see the
@@ -9,8 +9,19 @@
  * rows that look like normal signal noise one ticker at a time. This reads
  * BotStatus.broker_alerts (populated from broker_health.py) and puts it
  * somewhere impossible to miss, on every page, until the broker recovers.
+ *
+ * Toast added same day, per explicit request: the banner alone is easy to
+ * miss if you're not looking at the top of the page. Fires once per
+ * incident (keyed on broker + "since" timestamp — a fresh "since" means the
+ * previous incident cleared and a new one started, so it fires again),
+ * auto-dismisses after 20s, and can be closed early. The banner itself
+ * still stays up the whole time the broker is unhealthy — this is on top
+ * of it, not instead of it.
  */
+import { useEffect, useState } from "react";
 import { useBotStore } from "../store/bot";
+
+type BrokerAlert = { broker: string; error_count: number; since: number; last_error: string };
 
 function timeAgo(epochSec: number): string {
   const mins = Math.max(0, Math.round((Date.now() / 1000 - epochSec) / 60));
@@ -21,32 +32,103 @@ function timeAgo(epochSec: number): string {
 
 export function BrokerAlertBanner() {
   const alerts = useBotStore((s) => s.status?.broker_alerts) ?? [];
-  if (alerts.length === 0) return null;
+  return (
+    <>
+      <BrokerAlertToasts alerts={alerts} />
+      {alerts.length > 0 && (
+        <div
+          role="alert"
+          style={{
+            background: "#7f1d1d",
+            color: "#fff",
+            padding: "10px 16px",
+            fontSize: 13,
+            fontWeight: 600,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "8px 20px",
+            alignItems: "center",
+            zIndex: 50,
+            position: "relative",
+          }}
+        >
+          {alerts.map((a) => (
+            <span key={a.broker}>
+              🔴 {a.broker.toUpperCase()} is failing — {a.error_count} errors in the last few
+              minutes (since {timeAgo(a.since)}). The bot cannot trade on {a.broker} data right
+              now. Check Settings → API Credentials.
+            </span>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Toast layer — fires once per new incident, sits top-right, self-dismisses ──
+function BrokerAlertToasts({ alerts }: { alerts: BrokerAlert[] }) {
+  // key = `${broker}:${since}` so a NEW "since" (broker recovered, then failed
+  // again later) re-triggers the toast instead of staying silently suppressed.
+  const [shown, setShown] = useState<Record<string, boolean>>({});
+  const [active, setActive] = useState<BrokerAlert[]>([]);
+
+  useEffect(() => {
+    const fresh = alerts.filter((a) => !shown[`${a.broker}:${a.since}`]);
+    if (fresh.length === 0) return;
+    setShown((prev) => {
+      const next = { ...prev };
+      fresh.forEach((a) => { next[`${a.broker}:${a.since}`] = true; });
+      return next;
+    });
+    setActive((prev) => [...prev, ...fresh]);
+    fresh.forEach((a) => {
+      const key = `${a.broker}:${a.since}`;
+      setTimeout(() => {
+        setActive((prev) => prev.filter((x) => `${x.broker}:${x.since}` !== key));
+      }, 20_000);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alerts]);
+
+  if (active.length === 0) return null;
 
   return (
     <div
-      role="alert"
       style={{
-        background: "#7f1d1d",
-        color: "#fff",
-        padding: "10px 16px",
-        fontSize: 13,
-        fontWeight: 600,
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "8px 20px",
-        alignItems: "center",
-        zIndex: 50,
-        position: "relative",
+        position: "fixed", top: 16, right: 16, zIndex: 200,
+        display: "flex", flexDirection: "column", gap: 10, maxWidth: 360,
       }}
     >
-      {alerts.map((a) => (
-        <span key={a.broker}>
-          🔴 {a.broker.toUpperCase()} is failing — {a.error_count} errors in the last few
-          minutes (since {timeAgo(a.since)}). The bot cannot trade on {a.broker} data right
-          now. Check Settings → API Credentials.
-        </span>
-      ))}
+      {active.map((a) => {
+        const key = `${a.broker}:${a.since}`;
+        return (
+          <div
+            key={key}
+            role="alert"
+            style={{
+              background: "#7f1d1d", color: "#fff", borderRadius: 8,
+              padding: "12px 14px", boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              fontSize: 13, display: "flex", gap: 10, alignItems: "flex-start",
+            }}
+          >
+            <span style={{ flex: 1 }}>
+              <strong>🔴 {a.broker.toUpperCase()} stopped responding.</strong><br />
+              {a.error_count} failed calls — the bot can't trade on {a.broker} data. Check
+              Settings → API Credentials.
+            </span>
+            <button
+              onClick={() => setActive((prev) => prev.filter((x) => `${x.broker}:${x.since}` !== key))}
+              aria-label="Dismiss"
+              style={{
+                background: "none", border: "none", color: "#fff", cursor: "pointer",
+                fontSize: 16, lineHeight: 1, padding: 0, opacity: 0.8,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
