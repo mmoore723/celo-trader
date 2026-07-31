@@ -559,11 +559,337 @@ export function LiveTrading() {
           />
         </div>
 
-        {/* Board / Log — one card, single grid item, sitting next to the
-            chart/ticker panel (moved here from the Open Positions row per
-            explicit request — it was floating alone with nothing to anchor
-            it to). Board is the default per-ticker view (see boardData
-            above); Log is the old Thinking/Network scrolling feed. */}
+        {/* Scanner / Chain panel — the old Watching tab that used to live
+            here moved into the Board tab below (see mainPanelTab), since
+            Board covers the same INST_ORB data plus everything else. */}
+        <div className="card flex flex-col">
+          {/* Tab header */}
+          <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
+               style={{ borderColor: "var(--border)" }}>
+            {(["scanner", "chain"] as const).map((tab) => (
+              <button key={tab} onClick={() => setScannerTab(tab)}
+                className="px-3 py-2 transition-colors"
+                style={{
+                  color: scannerTab === tab ? "var(--ink)" : "var(--ink-muted)",
+                  borderBottom: scannerTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
+                  background: "none",
+                }}>
+                {tab === "scanner" ? "Premarket Scanner" : `${ticker} Chain`}
+              </button>
+            ))}
+          </div>
+
+          {/* Scanner list */}
+          {scannerTab === "scanner" && (
+            <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
+              {scanner.length === 0 ? (
+                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+                  No scan results yet — bot scans 9:00–9:25 ET
+                </p>
+              ) : (
+                scanner.map((s) => (
+                  <button key={s.ticker}
+                    className="w-full px-3 py-2 flex items-center justify-between hover:bg-muted transition-colors text-left border-b"
+                    style={{ borderColor: "var(--border)" }}
+                    onClick={() => setTicker(s.ticker)}>
+                    <div>
+                      <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                        {s.ticker}
+                      </div>
+                      <div className="text-xs num" style={{ color: "var(--ink-muted)" }}>
+                        ${s.price.toFixed(2)} · {s.rvol.toFixed(1)}x RVOL
+                      </div>
+                    </div>
+                    <span className="text-xs num font-medium" style={{ color: scannerColor(s.change_pct) }}>
+                      {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Options chain */}
+          {scannerTab === "chain" && (
+            <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
+              {chain.length === 0 ? (
+                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+                  No chain data — Tradier key required, or no liquid contracts 7–21 DTE
+                </p>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse",
+                  fontFamily: "JetBrains Mono, monospace", fontSize: 10 }}>
+                  <thead>
+                    <tr style={{ background: "var(--surface-raised)" }}>
+                      <th colSpan={3} style={{ padding: "4px 6px", color: "var(--positive)",
+                        textAlign: "center", borderBottom: "1px solid var(--border)" }}>CALLS</th>
+                      <th style={{ padding: "4px 6px", color: "var(--ink-muted)", textAlign: "center",
+                        borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
+                        borderRight: "1px solid var(--border)" }}>Strike</th>
+                      <th colSpan={3} style={{ padding: "4px 6px", color: "var(--negative)",
+                        textAlign: "center", borderBottom: "1px solid var(--border)" }}>PUTS</th>
+                    </tr>
+                    <tr style={{ background: "var(--surface-raised)" }}>
+                      {["Bid","Mid","Ask"].map((h) => (
+                        <th key={`c-${h}`} style={{ padding: "3px 5px", color: "var(--ink-faint)",
+                          fontWeight: 500, borderBottom: "1px solid var(--border)", textAlign: "right" }}>{h}</th>
+                      ))}
+                      <th style={{ padding: "3px 5px", color: "var(--ink-muted)", fontWeight: 700,
+                        borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
+                        borderRight: "1px solid var(--border)", textAlign: "center" }}>—</th>
+                      {["Bid","Mid","Ask"].map((h) => (
+                        <th key={`p-${h}`} style={{ padding: "3px 5px", color: "var(--ink-faint)",
+                          fontWeight: 500, borderBottom: "1px solid var(--border)", textAlign: "right" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(chain as OptionsChainRow[]).map((row) => (
+                      <tr key={row.strike} style={{ borderBottom: "1px solid var(--border)" }}>
+                        {[row.call_bid, row.call_mid, row.call_ask].map((v, i) => (
+                          <td key={i} style={{ padding: "3px 5px", textAlign: "right",
+                            color: "var(--positive)" }}>
+                            {v != null ? v.toFixed(2) : "—"}
+                          </td>
+                        ))}
+                        <td style={{ padding: "3px 5px", textAlign: "center", fontWeight: 700,
+                          color: "var(--ink)", borderLeft: "1px solid var(--border)",
+                          borderRight: "1px solid var(--border)", background: "var(--surface-raised)" }}>
+                          {row.strike.toFixed(0)}
+                        </td>
+                        {[row.put_bid, row.put_mid, row.put_ask].map((v, i) => (
+                          <td key={i} style={{ padding: "3px 5px", textAlign: "right",
+                            color: "var(--negative)" }}>
+                            {v != null ? v.toFixed(2) : "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* Signal History — all recent evaluations */}
+          <div className="border-t px-3 py-2 flex items-center justify-between"
+               style={{ borderColor: "var(--border)" }}>
+            <span className="text-xs font-semibold uppercase tracking-wider"
+                  style={{ color: "var(--ink-muted)" }}>Signal History</span>
+            <span className="text-[9px]" style={{ color: "var(--ink-faint)" }}>tap to copy</span>
+          </div>
+          <div className="overflow-y-auto flex-1" style={{ minHeight: 200 }}>
+            {evalLog.length === 0 ? (
+              <p className="text-xs px-3 pb-3" style={{ color: "var(--ink-muted)" }}>
+                {status?.running
+                  ? "Scanning… no contract evaluations yet"
+                  : "Waiting for bot to start scanning…"}
+              </p>
+            ) : (
+              evalLog.map((ev: any, i: number) => {
+                // Rejected evaluations (no contract) — compact skip row instead of
+                // the meaningless "1c @ $0.00 → $0.00" template.
+                if (ev.rejected) {
+                  const reasonLabel: Record<string, string> = {
+                    no_signal:        "no setup",
+                    below_confidence: "low confidence",
+                    zero_contracts:   "can't size 1 contract",
+                    spread_too_wide:  "spread too wide",
+                    rr_too_low:       "R:R too low",
+                    macro_vwap_veto:  "macro VWAP conflict",
+                  };
+                  return (
+                    <div key={i}
+                      className="w-full px-3 py-1 border-b"
+                      style={{ borderColor: "var(--border)", fontFamily: "JetBrains Mono, monospace",
+                               fontSize: 10, display: "flex", alignItems: "center", gap: 6,
+                               opacity: 0.65 }}>
+                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{ev.ts ?? ""}</span>
+                      <span style={{ color: "var(--ink-muted)", fontWeight: 600 }}>{ev.ticker}</span>
+                      <span style={{
+                        fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
+                        background: "rgba(139,148,158,0.15)", color: "var(--ink-muted)",
+                      }}>SKIP</span>
+                      <span style={{ color: "var(--ink-muted)" }}>
+                        {reasonLabel[ev.reason] ?? ev.reason}
+                        {ev.strategy ? ` · ${ev.strategy}` : ""}
+                        {ev.confidence ? ` · conf ${(ev.confidence * 100).toFixed(0)}%` : ""}
+                      </span>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: "0px 5px", fontSize: 8, marginLeft: "auto" }}
+                        title="Watch this moment on the chart"
+                        onClick={(e) => { e.stopPropagation(); watchAt(ev.ts); }}
+                      >
+                        ▶
+                      </button>
+                    </div>
+                  );
+                }
+                const isCall = (ev.opt_type ?? "").toLowerCase() === "call";
+                const stk    = ev.strike != null
+                  ? `$${ev.strike % 1 === 0 ? ev.strike.toFixed(0) : ev.strike.toFixed(2)}`
+                  : "";
+                const isSignal = ev.mode === "signal";
+                return (
+                  <button key={i}
+                    className="w-full text-left px-3 py-1.5 border-b hover:bg-muted transition-colors"
+                    style={{ borderColor: "var(--border)", fontFamily: "JetBrains Mono, monospace", fontSize: 10 }}
+                    title="Click to copy Discord-ready trade idea"
+                    onClick={() => navigator.clipboard.writeText(toDiscordStr(ev)).catch(() => {})}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
+                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{ev.ts ?? ""}</span>
+                      <span style={{
+                        fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
+                        background: isCall ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
+                        color: isCall ? "var(--positive)" : "var(--negative)",
+                      }}>
+                        {(ev.opt_type ?? "").toUpperCase()}
+                      </span>
+                      <span style={{ color: "var(--accent)", fontWeight: 700, cursor: "pointer" }}
+                        onClick={(e) => { e.stopPropagation(); setTicker(ev.ticker); }}
+                        title={`View ${ev.ticker} chart`}>
+                        {ev.ticker}
+                      </span>
+                      <span style={{ color: "var(--ink)" }}>{stk}</span>
+                      {ev.expiry && <span style={{ color: "var(--ink-muted)" }}>{fmtExp(ev.expiry)}</span>}
+                      {ev.strategy && <span className="badge badge-blue" style={{ fontSize: 7 }}>{ev.strategy}</span>}
+                      {/* mode badge */}
+                      <span style={{
+                        fontSize: 7, fontWeight: 700, padding: "1px 4px", borderRadius: 2, marginLeft: "auto",
+                        background: isSignal ? "rgba(234,148,29,0.15)" : "rgba(34,197,94,0.15)",
+                        color: isSignal ? "var(--warning)" : "var(--positive)",
+                      }}>
+                        {isSignal ? "MANUAL" : "AUTO"}
+                      </span>
+                      {/* Watch this setup — jumps the chart's scrub position to this
+                          moment and auto-plays (chart refactor Phase 3). A <span>, not
+                          a nested <button>, since this whole row is already a <button>. */}
+                      <span
+                        role="button"
+                        style={{ fontSize: 9, color: "var(--accent)", cursor: "pointer", padding: "0 2px" }}
+                        title="Watch this setup on the chart"
+                        onClick={(e) => { e.stopPropagation(); watchAt(ev.ts); }}
+                      >
+                        ▶
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, color: "var(--ink-muted)" }}>
+                      <span>
+                        <span style={{ color: "var(--ink)" }}>{ev.contracts ?? 1}c</span>
+                        {" @ "}
+                        <span style={{ color: "var(--ink)", fontWeight: 600 }}>${(ev.eff_entry ?? 0).toFixed(2)}</span>
+                        {" → "}
+                        <span style={{ color: "var(--positive)", fontWeight: 600 }}>${(ev.s1_target ?? 0).toFixed(2)}</span>
+                        {ev.profit != null && (
+                          <span style={{ color: "var(--positive)", opacity: 0.7 }}>{" "}(+${ev.profit.toFixed(2)})</span>
+                        )}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Open positions + eval log ─────────────────────────────────────── */}
+      <div className="grid gap-4 two-col-grid">
+        {/* Open positions */}
+        <div className="card">
+          <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
+               style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}>
+            Open Positions ({openTrades.length})
+          </div>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th>
+                  <th>Now</th><th>Strategy</th><th>P&L (live)</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {openTrades.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
+                      No open positions
+                    </td>
+                  </tr>
+                ) : (
+                  openTrades.map((t: Trade) => {
+                    const livePos = status?.open_positions?.[String(t.id)];
+                    const curPx   = livePos?.current_option_price ?? null;
+                    const qty     = livePos?.contracts ?? t.contracts ?? 1;
+                    const unreal  = curPx != null ? (curPx - t.entry_price) * qty * 100 : null;
+                    const pnlPct  = curPx != null ? (curPx - t.entry_price) / t.entry_price * 100 : null;
+                    const updTime = livePos?.current_option_price_time;
+                    return (
+                      <tr key={t.id}
+                        style={{ cursor: "pointer" }}
+                        title="Click to view bot thinking log for this trade"
+                        onClick={() => setTradeDrawerId(id => id === t.id ? null : t.id)}>
+                        <td className="font-semibold"
+                          style={{ color: "var(--accent)" }}
+                          onClick={(e) => { e.stopPropagation(); setTicker(t.ticker); }}
+                          title={`View ${t.ticker} chart`}>
+                          {t.ticker}
+                        </td>
+                        <td>
+                          <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
+                            {t.direction?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="num text-center">
+                          <span className="badge badge-blue">{qty}c</span>
+                        </td>
+                        <td className="num">${t.entry_price.toFixed(2)}</td>
+                        <td className="num" style={{ whiteSpace: "nowrap" }}>
+                          {curPx != null ? (
+                            <>
+                              <span style={{ fontWeight: 600 }}>${curPx.toFixed(2)}</span>
+                              {updTime && (
+                                <span style={{ color: "var(--ink-faint)", fontSize: 9, marginLeft: 3 }}>
+                                  {updTime}
+                                </span>
+                              )}
+                            </>
+                          ) : "—"}
+                        </td>
+                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                          {t.strategy_id ?? "—"}
+                        </td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {unreal != null ? (
+                            <span style={{ fontWeight: 700, color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                              {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
+                              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
+                                ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
+                              </span>
+                            </span>
+                          ) : (
+                            <PnlBadge value={t.pnl} />
+                          )}
+                        </td>
+                        <td>
+                          <button className="btn btn-ghost btn-sm text-xs"
+                            onClick={() => api.bot.closeTrade(t.id)}>
+                            Close
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Board / Log — one card, single grid item, next to Open Positions.
+            Board is the default per-ticker view (see boardData above); Log
+            is the old Thinking/Network scrolling feed. */}
         <div className="card flex flex-col">
         <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
              style={{ borderColor: "var(--border)" }}>
@@ -851,334 +1177,6 @@ export function LiveTrading() {
           })()}
         </div>
         )}
-        </div>
-      </div>
-
-      {/* ── Open positions + eval log ─────────────────────────────────────── */}
-      <div className="grid gap-4 two-col-grid">
-        {/* Open positions */}
-        <div className="card">
-          <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
-               style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}>
-            Open Positions ({openTrades.length})
-          </div>
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th>
-                  <th>Now</th><th>Strategy</th><th>P&L (live)</th><th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {openTrades.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
-                      No open positions
-                    </td>
-                  </tr>
-                ) : (
-                  openTrades.map((t: Trade) => {
-                    const livePos = status?.open_positions?.[String(t.id)];
-                    const curPx   = livePos?.current_option_price ?? null;
-                    const qty     = livePos?.contracts ?? t.contracts ?? 1;
-                    const unreal  = curPx != null ? (curPx - t.entry_price) * qty * 100 : null;
-                    const pnlPct  = curPx != null ? (curPx - t.entry_price) / t.entry_price * 100 : null;
-                    const updTime = livePos?.current_option_price_time;
-                    return (
-                      <tr key={t.id}
-                        style={{ cursor: "pointer" }}
-                        title="Click to view bot thinking log for this trade"
-                        onClick={() => setTradeDrawerId(id => id === t.id ? null : t.id)}>
-                        <td className="font-semibold"
-                          style={{ color: "var(--accent)" }}
-                          onClick={(e) => { e.stopPropagation(); setTicker(t.ticker); }}
-                          title={`View ${t.ticker} chart`}>
-                          {t.ticker}
-                        </td>
-                        <td>
-                          <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
-                            {t.direction?.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="num text-center">
-                          <span className="badge badge-blue">{qty}c</span>
-                        </td>
-                        <td className="num">${t.entry_price.toFixed(2)}</td>
-                        <td className="num" style={{ whiteSpace: "nowrap" }}>
-                          {curPx != null ? (
-                            <>
-                              <span style={{ fontWeight: 600 }}>${curPx.toFixed(2)}</span>
-                              {updTime && (
-                                <span style={{ color: "var(--ink-faint)", fontSize: 9, marginLeft: 3 }}>
-                                  {updTime}
-                                </span>
-                              )}
-                            </>
-                          ) : "—"}
-                        </td>
-                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                          {t.strategy_id ?? "—"}
-                        </td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          {unreal != null ? (
-                            <span style={{ fontWeight: 700, color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
-                              {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
-                              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
-                                ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
-                              </span>
-                            </span>
-                          ) : (
-                            <PnlBadge value={t.pnl} />
-                          )}
-                        </td>
-                        <td>
-                          <button className="btn btn-ghost btn-sm text-xs"
-                            onClick={() => api.bot.closeTrade(t.id)}>
-                            Close
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Scanner / Chain panel — the old Watching tab that used to live
-            here moved into the Board tab below (see mainPanelTab), since
-            Board covers the same INST_ORB data plus everything else. */}
-        <div className="card flex flex-col">
-          {/* Tab header */}
-          <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
-               style={{ borderColor: "var(--border)" }}>
-            {(["scanner", "chain"] as const).map((tab) => (
-              <button key={tab} onClick={() => setScannerTab(tab)}
-                className="px-3 py-2 transition-colors"
-                style={{
-                  color: scannerTab === tab ? "var(--ink)" : "var(--ink-muted)",
-                  borderBottom: scannerTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
-                  background: "none",
-                }}>
-                {tab === "scanner" ? "Premarket Scanner" : `${ticker} Chain`}
-              </button>
-            ))}
-          </div>
-
-          {/* Scanner list */}
-          {scannerTab === "scanner" && (
-            <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
-              {scanner.length === 0 ? (
-                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                  No scan results yet — bot scans 9:00–9:25 ET
-                </p>
-              ) : (
-                scanner.map((s) => (
-                  <button key={s.ticker}
-                    className="w-full px-3 py-2 flex items-center justify-between hover:bg-muted transition-colors text-left border-b"
-                    style={{ borderColor: "var(--border)" }}
-                    onClick={() => setTicker(s.ticker)}>
-                    <div>
-                      <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                        {s.ticker}
-                      </div>
-                      <div className="text-xs num" style={{ color: "var(--ink-muted)" }}>
-                        ${s.price.toFixed(2)} · {s.rvol.toFixed(1)}x RVOL
-                      </div>
-                    </div>
-                    <span className="text-xs num font-medium" style={{ color: scannerColor(s.change_pct) }}>
-                      {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-
-          {/* Options chain */}
-          {scannerTab === "chain" && (
-            <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
-              {chain.length === 0 ? (
-                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                  No chain data — Tradier key required, or no liquid contracts 7–21 DTE
-                </p>
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse",
-                  fontFamily: "JetBrains Mono, monospace", fontSize: 10 }}>
-                  <thead>
-                    <tr style={{ background: "var(--surface-raised)" }}>
-                      <th colSpan={3} style={{ padding: "4px 6px", color: "var(--positive)",
-                        textAlign: "center", borderBottom: "1px solid var(--border)" }}>CALLS</th>
-                      <th style={{ padding: "4px 6px", color: "var(--ink-muted)", textAlign: "center",
-                        borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
-                        borderRight: "1px solid var(--border)" }}>Strike</th>
-                      <th colSpan={3} style={{ padding: "4px 6px", color: "var(--negative)",
-                        textAlign: "center", borderBottom: "1px solid var(--border)" }}>PUTS</th>
-                    </tr>
-                    <tr style={{ background: "var(--surface-raised)" }}>
-                      {["Bid","Mid","Ask"].map((h) => (
-                        <th key={`c-${h}`} style={{ padding: "3px 5px", color: "var(--ink-faint)",
-                          fontWeight: 500, borderBottom: "1px solid var(--border)", textAlign: "right" }}>{h}</th>
-                      ))}
-                      <th style={{ padding: "3px 5px", color: "var(--ink-muted)", fontWeight: 700,
-                        borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
-                        borderRight: "1px solid var(--border)", textAlign: "center" }}>—</th>
-                      {["Bid","Mid","Ask"].map((h) => (
-                        <th key={`p-${h}`} style={{ padding: "3px 5px", color: "var(--ink-faint)",
-                          fontWeight: 500, borderBottom: "1px solid var(--border)", textAlign: "right" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(chain as OptionsChainRow[]).map((row) => (
-                      <tr key={row.strike} style={{ borderBottom: "1px solid var(--border)" }}>
-                        {[row.call_bid, row.call_mid, row.call_ask].map((v, i) => (
-                          <td key={i} style={{ padding: "3px 5px", textAlign: "right",
-                            color: "var(--positive)" }}>
-                            {v != null ? v.toFixed(2) : "—"}
-                          </td>
-                        ))}
-                        <td style={{ padding: "3px 5px", textAlign: "center", fontWeight: 700,
-                          color: "var(--ink)", borderLeft: "1px solid var(--border)",
-                          borderRight: "1px solid var(--border)", background: "var(--surface-raised)" }}>
-                          {row.strike.toFixed(0)}
-                        </td>
-                        {[row.put_bid, row.put_mid, row.put_ask].map((v, i) => (
-                          <td key={i} style={{ padding: "3px 5px", textAlign: "right",
-                            color: "var(--negative)" }}>
-                            {v != null ? v.toFixed(2) : "—"}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {/* Signal History — all recent evaluations */}
-          <div className="border-t px-3 py-2 flex items-center justify-between"
-               style={{ borderColor: "var(--border)" }}>
-            <span className="text-xs font-semibold uppercase tracking-wider"
-                  style={{ color: "var(--ink-muted)" }}>Signal History</span>
-            <span className="text-[9px]" style={{ color: "var(--ink-faint)" }}>tap to copy</span>
-          </div>
-          <div className="overflow-y-auto flex-1" style={{ minHeight: 200 }}>
-            {evalLog.length === 0 ? (
-              <p className="text-xs px-3 pb-3" style={{ color: "var(--ink-muted)" }}>
-                {status?.running
-                  ? "Scanning… no contract evaluations yet"
-                  : "Waiting for bot to start scanning…"}
-              </p>
-            ) : (
-              evalLog.map((ev: any, i: number) => {
-                // Rejected evaluations (no contract) — compact skip row instead of
-                // the meaningless "1c @ $0.00 → $0.00" template.
-                if (ev.rejected) {
-                  const reasonLabel: Record<string, string> = {
-                    no_signal:        "no setup",
-                    below_confidence: "low confidence",
-                    zero_contracts:   "can't size 1 contract",
-                    spread_too_wide:  "spread too wide",
-                    rr_too_low:       "R:R too low",
-                    macro_vwap_veto:  "macro VWAP conflict",
-                  };
-                  return (
-                    <div key={i}
-                      className="w-full px-3 py-1 border-b"
-                      style={{ borderColor: "var(--border)", fontFamily: "JetBrains Mono, monospace",
-                               fontSize: 10, display: "flex", alignItems: "center", gap: 6,
-                               opacity: 0.65 }}>
-                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{ev.ts ?? ""}</span>
-                      <span style={{ color: "var(--ink-muted)", fontWeight: 600 }}>{ev.ticker}</span>
-                      <span style={{
-                        fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
-                        background: "rgba(139,148,158,0.15)", color: "var(--ink-muted)",
-                      }}>SKIP</span>
-                      <span style={{ color: "var(--ink-muted)" }}>
-                        {reasonLabel[ev.reason] ?? ev.reason}
-                        {ev.strategy ? ` · ${ev.strategy}` : ""}
-                        {ev.confidence ? ` · conf ${(ev.confidence * 100).toFixed(0)}%` : ""}
-                      </span>
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        style={{ padding: "0px 5px", fontSize: 8, marginLeft: "auto" }}
-                        title="Watch this moment on the chart"
-                        onClick={(e) => { e.stopPropagation(); watchAt(ev.ts); }}
-                      >
-                        ▶
-                      </button>
-                    </div>
-                  );
-                }
-                const isCall = (ev.opt_type ?? "").toLowerCase() === "call";
-                const stk    = ev.strike != null
-                  ? `$${ev.strike % 1 === 0 ? ev.strike.toFixed(0) : ev.strike.toFixed(2)}`
-                  : "";
-                const isSignal = ev.mode === "signal";
-                return (
-                  <button key={i}
-                    className="w-full text-left px-3 py-1.5 border-b hover:bg-muted transition-colors"
-                    style={{ borderColor: "var(--border)", fontFamily: "JetBrains Mono, monospace", fontSize: 10 }}
-                    title="Click to copy Discord-ready trade idea"
-                    onClick={() => navigator.clipboard.writeText(toDiscordStr(ev)).catch(() => {})}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
-                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{ev.ts ?? ""}</span>
-                      <span style={{
-                        fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
-                        background: isCall ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
-                        color: isCall ? "var(--positive)" : "var(--negative)",
-                      }}>
-                        {(ev.opt_type ?? "").toUpperCase()}
-                      </span>
-                      <span style={{ color: "var(--accent)", fontWeight: 700, cursor: "pointer" }}
-                        onClick={(e) => { e.stopPropagation(); setTicker(ev.ticker); }}
-                        title={`View ${ev.ticker} chart`}>
-                        {ev.ticker}
-                      </span>
-                      <span style={{ color: "var(--ink)" }}>{stk}</span>
-                      {ev.expiry && <span style={{ color: "var(--ink-muted)" }}>{fmtExp(ev.expiry)}</span>}
-                      {ev.strategy && <span className="badge badge-blue" style={{ fontSize: 7 }}>{ev.strategy}</span>}
-                      {/* mode badge */}
-                      <span style={{
-                        fontSize: 7, fontWeight: 700, padding: "1px 4px", borderRadius: 2, marginLeft: "auto",
-                        background: isSignal ? "rgba(234,148,29,0.15)" : "rgba(34,197,94,0.15)",
-                        color: isSignal ? "var(--warning)" : "var(--positive)",
-                      }}>
-                        {isSignal ? "MANUAL" : "AUTO"}
-                      </span>
-                      {/* Watch this setup — jumps the chart's scrub position to this
-                          moment and auto-plays (chart refactor Phase 3). A <span>, not
-                          a nested <button>, since this whole row is already a <button>. */}
-                      <span
-                        role="button"
-                        style={{ fontSize: 9, color: "var(--accent)", cursor: "pointer", padding: "0 2px" }}
-                        title="Watch this setup on the chart"
-                        onClick={(e) => { e.stopPropagation(); watchAt(ev.ts); }}
-                      >
-                        ▶
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, color: "var(--ink-muted)" }}>
-                      <span>
-                        <span style={{ color: "var(--ink)" }}>{ev.contracts ?? 1}c</span>
-                        {" @ "}
-                        <span style={{ color: "var(--ink)", fontWeight: 600 }}>${(ev.eff_entry ?? 0).toFixed(2)}</span>
-                        {" → "}
-                        <span style={{ color: "var(--positive)", fontWeight: 600 }}>${(ev.s1_target ?? 0).toFixed(2)}</span>
-                        {ev.profit != null && (
-                          <span style={{ color: "var(--positive)", opacity: 0.7 }}>{" "}(+${ev.profit.toFixed(2)})</span>
-                        )}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
         </div>
       </div>
 
