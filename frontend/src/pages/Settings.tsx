@@ -103,6 +103,20 @@ function CredentialsPanel() {
   const [creds, setCreds] = useState({
     alpaca_api_key: "", alpaca_secret_key: "", tradier_api_key: "", tradier_account_id: ""
   });
+  // FIX 2026-07-31: GET returns MASKED display values ("abcd…wxyz"), which
+  // get loaded into `creds` below as the form's starting point. The old
+  // save() sent that whole object every time, so an edit to ONLY the Alpaca
+  // fields silently re-saved the Tradier key AS its masked display string —
+  // a real credential replaced by garbage, which is exactly what broke
+  // Tradier (268 silent 401s, see broker_health.py). Fix: track which
+  // fields the user actually typed into, and only send those. Backend
+  // (api/routes/settings.py save_credentials) now treats an omitted field
+  // as "leave it alone" rather than "overwrite with whatever was sent."
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  function setField(key: keyof typeof creds, v: string) {
+    setCreds(c => ({ ...c, [key]: v }));
+    setTouched(t => ({ ...t, [key]: true }));
+  }
   const [status, setStatus] = useState<{ ok?: boolean; msg?: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -127,15 +141,27 @@ function CredentialsPanel() {
 
   async function save() {
     setStatus(null);
+    // Only include fields the user actually edited — everything else is
+    // omitted entirely so the backend leaves the stored value untouched.
+    const payload: Record<string, string> = {};
+    for (const key of Object.keys(creds) as (keyof typeof creds)[]) {
+      if (touched[key]) payload[key] = creds[key];
+    }
+    if (Object.keys(payload).length === 0) {
+      setStatus({ ok: true, msg: "Nothing changed." });
+      setTimeout(() => setStatus(null), 3000);
+      return;
+    }
     try {
       const r = await fetch("/api/settings/credentials", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(creds),
+        body: JSON.stringify(payload),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Save failed");
       setStatus({ ok: true, msg: "Keys saved securely." });
+      setTouched({});
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Save failed" });
     }
@@ -155,18 +181,18 @@ function CredentialsPanel() {
       </div>
 
       <CredentialField label="Alpaca API Key" name="alpaca_key"
-        value={creds.alpaca_api_key} onChange={v => setCreds(c => ({ ...c, alpaca_api_key: v }))}
+        value={creds.alpaca_api_key} onChange={v => setField("alpaca_api_key", v)}
         show={show.alpaca_key} onToggle={() => toggle("alpaca_key")}
         hint="PK…" />
       <CredentialField label="Alpaca Secret Key" name="alpaca_secret"
-        value={creds.alpaca_secret_key} onChange={v => setCreds(c => ({ ...c, alpaca_secret_key: v }))}
+        value={creds.alpaca_secret_key} onChange={v => setField("alpaca_secret_key", v)}
         show={show.alpaca_secret} onToggle={() => toggle("alpaca_secret")} />
       <CredentialField label="Tradier API Key" name="tradier_key"
-        value={creds.tradier_api_key} onChange={v => setCreds(c => ({ ...c, tradier_api_key: v }))}
+        value={creds.tradier_api_key} onChange={v => setField("tradier_api_key", v)}
         show={show.tradier_key} onToggle={() => toggle("tradier_key")}
         hint="Bearer token from Tradier dashboard" />
       <CredentialField label="Tradier Account ID" name="tradier_account_id"
-        value={creds.tradier_account_id} onChange={v => setCreds(c => ({ ...c, tradier_account_id: v }))}
+        value={creds.tradier_account_id} onChange={v => setField("tradier_account_id", v)}
         show={true} onToggle={() => {}} hint="Account number (digits only)" />
 
       <p className="text-xs" style={{ color: "var(--ink-muted)" }}>

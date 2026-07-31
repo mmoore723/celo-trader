@@ -53,6 +53,9 @@ export interface BotStatus {
   // Maintenance mode — set by admin from Emergency Controls
   maintenance_mode: boolean;
   maintenance_message: string;
+  // 2026-07-31: see broker_health.py — non-empty when a broker (Tradier/Alpaca)
+  // has failed enough calls recently that trading is effectively blind.
+  broker_alerts?: { broker: string; error_count: number; since: number; last_error: string }[];
 }
 
 export interface LogEntry {

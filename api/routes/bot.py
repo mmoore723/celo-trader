@@ -41,6 +41,15 @@ def _get_uid(request: Request) -> str:
     return getattr(request.state, "user_id", "admin")
 
 
+def _get_broker_alerts_safe() -> list[dict]:
+    """Never let the alert banner itself take down /api/bot/status."""
+    try:
+        from broker_health import get_broker_alerts
+        return get_broker_alerts()
+    except Exception:
+        return []
+
+
 @router.get("/status", response_model=BotStatus)
 def get_status(request: Request) -> BotStatus:
     from trading.state import _get_lock, get_user_state
@@ -92,6 +101,8 @@ def get_status(request: Request) -> BotStatus:
         eval_log=list(state.get("eval_log") or _state.get("eval_log") or []),
         # FIX 2026-07-31: same missing-field bug — see BotStatus.open_positions comment
         open_positions=dict(state.get("open_positions") or _state.get("open_positions") or {}),
+        # 2026-07-31: see BotStatus.broker_alerts comment + broker_health.py
+        broker_alerts=_get_broker_alerts_safe(),
         maintenance_mode=bool(settings.get("maintenance_mode", False)),
         maintenance_message=str(settings.get("maintenance_message", "")),
     )

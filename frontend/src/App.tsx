@@ -30,6 +30,7 @@ import { Terms }           from "./pages/Terms";
 import { Maintenance }     from "./pages/Maintenance";
 import { ApiSetupModal }   from "./components/ApiSetupModal";
 import { ErrorBoundary }   from "./components/ErrorBoundary";
+import { BrokerAlertBanner } from "./components/BrokerAlertBanner";
 import { useState, useEffect } from "react";
 
 const qc = new QueryClient({
@@ -92,6 +93,7 @@ function AppShell() {
           pointerEvents: "none", userSelect: "none", zIndex: 2,
         }}
       />
+      <BrokerAlertBanner />
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>

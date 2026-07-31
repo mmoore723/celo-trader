@@ -2,6 +2,7 @@
 api/routes/settings.py — Settings read/write endpoints + API credentials.
 """
 from __future__ import annotations
+from typing import Optional
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from api.models import Settings
@@ -132,10 +133,14 @@ def save_settings_endpoint(payload: Settings) -> Settings:
 # ── API credentials ───────────────────────────────────────────────────────────
 
 class CredentialsPayload(BaseModel):
-    alpaca_api_key:     str
-    alpaca_secret_key:  str
-    tradier_api_key:    str = ""
-    tradier_account_id: str = ""
+    # FIX 2026-07-31: all fields now Optional — see save_credentials()'s
+    # docstring for the incident this fixes. None means "the frontend didn't
+    # touch this field, leave it alone"; a real (possibly empty) string
+    # means "the frontend wants this exact value saved."
+    alpaca_api_key:     Optional[str] = None
+    alpaca_secret_key:  Optional[str] = None
+    tradier_api_key:    Optional[str] = None
+    tradier_account_id: Optional[str] = None
 
 
 @router.get("/credentials")
@@ -164,12 +169,31 @@ def save_credentials(payload: CredentialsPayload) -> dict:
     Save Alpaca + Tradier API keys for the current user (encrypted at rest).
     Note: Alpaca uses the SAME key pair for both paper and live trading.
     The paper vs live routing is controlled by the Paper/Live toggle, not the keys.
+
+    FIX 2026-07-31 — real incident: GET /credentials returns MASKED display
+    values (e.g. "abcd…wxyz"), which the Settings.tsx form loads as its
+    initial state. The old code here always saved ALL FOUR fields
+    unconditionally, so editing only the Alpaca keys silently re-saved the
+    Tradier key AS its own masked display string — replacing a real
+    credential with garbage. That triggered 268 silent Tradier 401s across
+    every ticker with zero visible indication anywhere. Fix, two parts:
+      1. CredentialsPayload fields are now Optional — None means "the
+         frontend didn't touch this field" (see Settings.tsx's matching
+         dirty-tracking fix, which now only sends touched fields).
+      2. save_api_keys() is a full-overwrite primitive (encrypts exactly
+         the dict it's given), so we read-merge existing keys first —
+         otherwise a partial payload would DELETE the untouched keys
+         instead of leaving them alone.
     """
-    from config import save_api_keys
-    save_api_keys({
-        "alpaca_api_key":     payload.alpaca_api_key.strip(),
-        "alpaca_secret_key":  payload.alpaca_secret_key.strip(),
-        "tradier_api_key":    payload.tradier_api_key.strip(),
-        "tradier_account_id": payload.tradier_account_id.strip(),
-    })
+    from config import get_api_keys, save_api_keys
+    current = get_api_keys()
+    if payload.alpaca_api_key is not None:
+        current["alpaca_api_key"] = payload.alpaca_api_key.strip()
+    if payload.alpaca_secret_key is not None:
+        current["alpaca_secret_key"] = payload.alpaca_secret_key.strip()
+    if payload.tradier_api_key is not None:
+        current["tradier_api_key"] = payload.tradier_api_key.strip()
+    if payload.tradier_account_id is not None:
+        current["tradier_account_id"] = payload.tradier_account_id.strip()
+    save_api_keys(current)
     return {"ok": True, "message": "API keys saved securely"}

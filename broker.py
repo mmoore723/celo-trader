@@ -126,6 +126,11 @@ def _cb_record_success():
     global _cb_fail_count, _cb_open_until
     _cb_fail_count = 0
     _cb_open_until = 0.0
+    try:
+        from broker_health import record_broker_success
+        record_broker_success("alpaca")
+    except Exception:
+        pass
 
 def _cb_record_failure():
     global _cb_fail_count, _cb_open_until
@@ -137,6 +142,12 @@ def _cb_record_failure():
             "pausing Alpaca calls for %ds",
             _cb_fail_count, _CB_COOLDOWN,
         )
+    # 2026-07-31: feed the dashboard alert banner — see broker_health.py.
+    try:
+        from broker_health import record_broker_error
+        record_broker_error("alpaca", f"{_cb_fail_count} consecutive connection failures")
+    except Exception:
+        pass  # never let alerting itself break a trade path
 
 def _cb_is_open() -> bool:
     """Return True if the circuit is open (calls should be skipped)."""
@@ -1447,7 +1458,14 @@ class TradierClient:
                         )
                     return {}
         try:
-            return _retry(call)
+            result = _retry(call)
+            # 2026-07-31: clear the alert window on a good call — see broker_health.py
+            try:
+                from broker_health import record_broker_success
+                record_broker_success("tradier")
+            except Exception:
+                pass
+            return result
         except Exception as e:
             log_event("ERROR", "broker.tradier",
                       f"🔴 [Tradier] Connection failed — could not reach the API. "
@@ -1456,6 +1474,12 @@ class TradierClient:
                 "tradier_get_failed",
                 extra={"event": "tradier_get_failed", "endpoint": endpoint, "error": str(e)},
             )
+            # 2026-07-31: feed the dashboard alert banner — see broker_health.py.
+            try:
+                from broker_health import record_broker_error
+                record_broker_error("tradier", f"{endpoint}: {e}")
+            except Exception:
+                pass  # never let alerting itself break a trade path
             raise
 
     # ── Options chain ─────────────────────────────────────────────────────────

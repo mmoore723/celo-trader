@@ -46,6 +46,13 @@ class BotStatus(BaseModel):
     # columns (LiveTrading.tsx: status?.open_positions?.[id]) have been
     # silently reading undefined this whole time and rendering "—".
     open_positions: dict = {}
+    # 2026-07-31: surfaces broker_health.py's rolling error tracker so a
+    # sustained Tradier/Alpaca outage shows a visible banner instead of
+    # silently blocking every signal one ticker at a time (see the incident
+    # that motivated this: a masked credential overwrote the real Tradier
+    # key, causing 268 silent 401s across every ticker with zero indication
+    # anywhere except individual "no_option_data" journal rows).
+    broker_alerts: list[dict] = []
     # Maintenance mode — set by admin to halt all trading and show maintenance screen
     maintenance_mode: bool = False
     maintenance_message: str = ""
