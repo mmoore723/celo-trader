@@ -1490,7 +1490,17 @@ class TradierClient:
         expiration: str,
         option_type: str = "call",
     ) -> list[dict]:
-        """Full chain fetch — used for contract selection at trade entry only."""
+        """
+        Full chain fetch — used for contract selection at trade entry only.
+
+        FIX 2026-07-31: real incident — COIN got a valid Contract selected on
+        one candle, then "no data returned" on the very next, same ticker,
+        same expiration. That's not an HTTP failure (self._get()'s _retry
+        already covers those) — it's Tradier's sandbox returning HTTP 200
+        with an empty options list, a known intermittent quirk. That case
+        skipped straight to "no_chain_data" with zero retry. One retry after
+        a short delay before giving up.
+        """
         if not TRADIER_API_KEY:
             return []
         try:
@@ -1500,6 +1510,16 @@ class TradierClient:
             options = resp.get("options", {}).get("option", [])
             if isinstance(options, dict):
                 options = [options]
+
+            if not options:
+                import time as _time
+                _time.sleep(0.75)
+                resp = self._get("/markets/options/chains", {
+                    "symbol": symbol, "expiration": expiration, "greeks": "true",
+                })
+                options = resp.get("options", {}).get("option", [])
+                if isinstance(options, dict):
+                    options = [options]
 
             filtered = []
             for opt in options:
