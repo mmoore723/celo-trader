@@ -149,6 +149,26 @@ def get_todays_summary() -> dict:
     return {"total": total, "entered": entered, "by_reason": by_reason}
 
 
+def get_latest_per_ticker_today() -> dict[str, dict]:
+    """
+    Today's single most recent journal row for every ticker that had at
+    least one signal — the "Blocked" status source for the ticker board
+    (api/routes/tickers.py). One row per ticker, not the full day's list,
+    since the board only needs "what's true right now" per ticker.
+    """
+    _today = _now_et().strftime("%Y-%m-%d")
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT sj.* FROM signal_journal sj
+               INNER JOIN (
+                   SELECT ticker, MAX(id) as max_id FROM signal_journal
+                   WHERE ts LIKE ? GROUP BY ticker
+               ) latest ON sj.ticker = latest.ticker AND sj.id = latest.max_id""",
+            (f"{_today}%",),
+        ).fetchall()
+        return {r["ticker"]: dict(r) for r in rows}
+
+
 def get_trend(reason_code: str, days: int = 7) -> list[dict]:
     """
     Daily count of one reason_code over the last *days* calendar days —

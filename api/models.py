@@ -38,6 +38,14 @@ class BotStatus(BaseModel):
     # the frontend's "Signal History" panel has been permanently empty
     # (status?.eval_log was always undefined) regardless of real activity.
     eval_log: list[dict] = []
+    # FIX 2026-07-31: same bug class as eval_log above — position_manager.py
+    # has always written a live per-position dict (current_option_price,
+    # current_option_price_time, contracts) keyed by trade id to
+    # bot_state.json's "open_positions" key, but this field never existed on
+    # BotStatus either. The Open Positions table's "Now" and "P&L (live)"
+    # columns (LiveTrading.tsx: status?.open_positions?.[id]) have been
+    # silently reading undefined this whole time and rendering "—".
+    open_positions: dict = {}
     # Maintenance mode — set by admin to halt all trading and show maintenance screen
     maintenance_mode: bool = False
     maintenance_message: str = ""

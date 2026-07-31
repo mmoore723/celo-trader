@@ -223,6 +223,20 @@ export interface WatchingSignal {
   contract: WatchingContract | null;
 }
 
+export interface TickerBoardRow {
+  ticker: string;
+  status: "trading" | "watching" | "blocked";
+  strategy: string | null;
+  direction: string | null;
+  detail: string;                 // human line: "entered 9:41 AM" | "2 of 3 — retesting" | reason text
+  time: string | null;
+  reason_code?: string | null;    // only present when status === "blocked" — feeds buildGateChips()
+  contract: { symbol: string | null; strike: number | null; expiry: string | null } | null;
+  entry_price: number | null;
+  current_price: number | null;
+  pnl: number | null;
+}
+
 export interface StrategyHealthAggregate {
   date: string;
   tickers_scanned: string[];
@@ -576,5 +590,8 @@ export const api = {
       ),
     reasons: () => request<{ reasons: Record<string, string> }>("/api/signals/journal/reasons"),
     watching: () => request<{ watching: WatchingSignal[] }>("/api/signals/watching"),
+  },
+  tickers: {
+    board: () => request<{ tickers: TickerBoardRow[] }>("/api/tickers/board"),
   },
 };

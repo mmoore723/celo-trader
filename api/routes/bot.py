@@ -90,6 +90,8 @@ def get_status(request: Request) -> BotStatus:
         last_eval_ticker=state.get("last_eval_ticker") or _state.get("last_eval_ticker"),
         # FIX 2026-07-28: was never passed through — see BotStatus.eval_log comment
         eval_log=list(state.get("eval_log") or _state.get("eval_log") or []),
+        # FIX 2026-07-31: same missing-field bug — see BotStatus.open_positions comment
+        open_positions=dict(state.get("open_positions") or _state.get("open_positions") or {}),
         maintenance_mode=bool(settings.get("maintenance_mode", False)),
         maintenance_message=str(settings.get("maintenance_message", "")),
     )
