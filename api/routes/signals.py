@@ -73,6 +73,77 @@ def get_reason_codes() -> dict:
     return {"reasons": REASON_CODES}
 
 
+def resolve_watching_contracts(watched: list[dict]) -> list[dict]:
+    """
+    Given watched entries (ticker, direction, or_boundary, phase,
+    breakout_bar, retest_bar), resolve each one's real contract — strike,
+    expiration, live bid/ask — via select_contract(), the SAME function
+    trading/entry.py calls for a real entry, so this shows what would
+    actually be bought right now, not a guess.
+
+    Shared by /api/signals/watching and /api/tickers/board (see
+    api/routes/tickers.py) so both surfaces resolve the identical contract
+    for the identical ticker from one implementation — two copies of this
+    logic is exactly the kind of drift that caused the earlier IEX-volume
+    bug (see market_data.py's docstring), just in a new place.
+    """
+    if not watched:
+        return []
+    from broker import get_clients
+    from trading.entry import select_contract
+    from config import get_settings
+
+    alpaca, tradier = get_clients()
+    settings = get_settings()
+
+    try:
+        acct = alpaca.get_account()
+        balance = float(acct.get("equity", 0)) if acct else 0.0
+    except Exception:
+        balance = 0.0
+    if balance <= 0:
+        balance = float(settings.get("last_known_balance", 0) or 0)
+
+    cap_pct = settings.get("max_position_dollars_pct")
+    if cap_pct:
+        max_spend = balance * (float(cap_pct) / 100.0)
+    else:
+        max_spend = float(settings.get("max_position_dollars", 750.0))
+
+    out = []
+    for w in watched:
+        ticker    = w["ticker"]
+        direction = w.get("direction")
+
+        current_price = 0.0
+        try:
+            quote = alpaca.get_latest_quote(ticker)
+            if quote:
+                current_price = (float(quote.get("ap", 0) or 0) + float(quote.get("bp", 0) or 0)) / 2
+        except Exception:
+            pass
+
+        contract = None
+        if current_price > 0 and direction and max_spend > 0:
+            try:
+                contract, _info = select_contract(tradier, ticker, direction, current_price, max_spend)
+            except Exception as ex:
+                logger.debug("resolve_watching_contracts: select_contract failed for %s: %s", ticker, ex)
+
+        out.append({
+            **w,
+            "current_price": current_price or None,
+            "contract": {
+                "symbol": contract.get("symbol"),
+                "strike": contract.get("strike"),
+                "expiry": contract.get("expiry"),
+                "bid":    contract.get("bid"),
+                "ask":    contract.get("ask"),
+            } if contract else None,
+        })
+    return out
+
+
 @router.get("/watching")
 def get_watching() -> dict:
     """
@@ -82,11 +153,6 @@ def get_watching() -> dict:
     machine. This is the only strategy in this codebase with an explicit
     multi-bar "waiting" state; every other strategy either fires on the
     current bar or doesn't, so there's nothing to watch for them yet.
-
-    For each watched ticker, also resolves the real contract (strike,
-    expiration, live bid/ask) via select_contract() — the SAME function
-    trading/entry.py calls for a real entry — so this shows what would
-    actually be bought right now, not a guess.
     """
     from datetime import date as _date
     import strategies.inst_orb as _inst_orb
@@ -114,70 +180,26 @@ def get_watching() -> dict:
         return {"watching": []}
 
     try:
-        from broker import get_clients
-        from trading.entry import select_contract
-        from config import get_settings
+        resolved = resolve_watching_contracts(watched)
     except Exception as e:
-        logger.exception("watching: import failed")
+        logger.exception("watching: resolve_watching_contracts failed")
         raise HTTPException(status_code=500, detail=str(e))
 
-    alpaca, tradier = get_clients()
-    settings = get_settings()
-
-    try:
-        acct = alpaca.get_account()
-        balance = float(acct.get("equity", 0)) if acct else 0.0
-    except Exception:
-        balance = 0.0
-    if balance <= 0:
-        balance = float(settings.get("last_known_balance", 0) or 0)
-
-    cap_pct = settings.get("max_position_dollars_pct")
-    if cap_pct:
-        max_spend = balance * (float(cap_pct) / 100.0)
-    else:
-        max_spend = float(settings.get("max_position_dollars", 750.0))
-
     out = []
-    for w in watched:
-        ticker    = w["ticker"]
-        direction = w.get("direction")
-        boundary  = w.get("or_boundary")
-
-        current_price = 0.0
-        try:
-            quote = alpaca.get_latest_quote(ticker)
-            if quote:
-                current_price = (float(quote.get("ap", 0) or 0) + float(quote.get("bp", 0) or 0)) / 2
-        except Exception:
-            pass
-
-        contract = None
-        if current_price > 0 and direction and max_spend > 0:
-            try:
-                contract, _info = select_contract(tradier, ticker, direction, current_price, max_spend)
-            except Exception as ex:
-                logger.debug("watching: select_contract failed for %s: %s", ticker, ex)
-
+    for w in resolved:
         phase = w.get("phase")
         out.append({
-            "ticker":        ticker,
+            "ticker":        w["ticker"],
             "strategy":      "INST_ORB",
-            "direction":     direction,
-            "option_type":   "call" if direction == "bullish" else "put" if direction == "bearish" else None,
+            "direction":     w.get("direction"),
+            "option_type":   "call" if w.get("direction") == "bullish" else "put" if w.get("direction") == "bearish" else None,
             "phase":         phase,
             "phase_label":   "1 of 3 — breakout seen" if phase == "breakout_seen" else "2 of 3 — retesting",
-            "retest_level":  boundary,
-            "current_price": current_price or None,
+            "retest_level":  w.get("or_boundary"),
+            "current_price": w.get("current_price"),
             "breakout_time": str(w.get("breakout_bar")) if w.get("breakout_bar") is not None else None,
             "retest_time":   str(w.get("retest_bar")) if w.get("retest_bar") is not None else None,
-            "contract": {
-                "symbol": contract.get("symbol"),
-                "strike": contract.get("strike"),
-                "expiry": contract.get("expiry"),
-                "bid":    contract.get("bid"),
-                "ask":    contract.get("ask"),
-            } if contract else None,
+            "contract":      w.get("contract"),
         })
 
     for e in expired:

@@ -10,7 +10,6 @@ import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
 import {
   api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle,
-  type SignalJournalEntry,
 } from "../lib/api";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
@@ -142,16 +141,9 @@ export function LiveTrading() {
   const [logPaused,       setLogPaused]       = useState(false);
   const logSnapshotRef  = useRef<typeof logs>([]);
   const [logTab,         setLogTab]           = useState<"thinking" | "network">("thinking");
+  const [logRawTicker,   setLogRawTicker]     = useState("");
   const [tradeDrawerId,  setTradeDrawerId]    = useState<number | null>(null);
   const chartReplayRef  = useRef<BoomerangReplayHandle>(null);
-
-  // ── Signal journal filters (Thinking panel) ───────────────────────────────
-  // 2026-07-24: structured "why did/didn't the bot trade" data, separate from
-  // the raw narration tail below it — see signal_journal.py.
-  const [journalTicker,   setJournalTicker]   = useState("");
-  const [journalStrategy, setJournalStrategy] = useState("");
-  const [journalReason,   setJournalReason]   = useState("");
-  const [journalOutcome,  setJournalOutcome]  = useState<"all" | "entered" | "blocked">("all");
 
   const { status, logs } = useBotStore();
   const { } = useUIStore();
@@ -237,40 +229,6 @@ export function LiveTrading() {
   });
   const boardRows = boardData?.tickers ?? [];
   const boardActiveCount = boardRows.filter((r) => r.status !== "blocked").length;
-
-  // ── Signal journal (Thinking panel) ───────────────────────────────────────
-  const { data: journalSummary } = useQuery({
-    queryKey: ["signal-journal-summary"],
-    queryFn: api.signals.summary,
-    refetchInterval: 20_000,
-  });
-
-  // Trend strip tracks whichever blocked reason is stopping the most signals
-  // today — the one worth asking "is this a today problem or every day."
-  const topBlockReason = Object.entries(journalSummary?.by_reason ?? {})
-    .sort((a, b) => b[1] - a[1])[0]?.[0];
-
-  const { data: journalTrend } = useQuery({
-    queryKey: ["signal-journal-trend", topBlockReason],
-    queryFn: () => api.signals.trend(topBlockReason!),
-    enabled: !!topBlockReason,
-    refetchInterval: 60_000,
-  });
-
-  const { data: journalRows } = useQuery({
-    queryKey: ["signal-journal", journalTicker, journalStrategy, journalReason],
-    queryFn: () => api.signals.journal({
-      ticker: journalTicker || undefined,
-      strategy: journalStrategy || undefined,
-      reason: journalReason || undefined,
-      limit: 100,
-    }),
-    refetchInterval: 15_000,
-  });
-
-  const journalEntries: SignalJournalEntry[] = (journalRows?.entries ?? []).filter((e) =>
-    journalOutcome === "all" ? true : e.outcome === journalOutcome
-  );
 
   // Bot chart annotations — zones, hlines, markers emitted by strategy_router
   const { data: annotations = [] } = useQuery<ChartAnnotation[]>({
@@ -949,13 +907,13 @@ export function LiveTrading() {
 
         {mainPanelTab === "board" && (
           <div className="card flex flex-col">
-            <div className="p-2 flex gap-1.5" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className="p-2" style={{ borderBottom: "1px solid var(--border)" }}>
               <input placeholder="Filter by ticker" value={boardTicker}
                 onChange={(e) => setBoardTicker(e.target.value.toUpperCase())}
-                className="text-[10px] px-2 py-1 rounded flex-1"
+                className="text-xs px-2 py-1.5 rounded w-full"
                 style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
             </div>
-            <div className="overflow-y-auto flex flex-col" style={{ maxHeight: 280 }}>
+            <div className="overflow-y-auto flex flex-col gap-2 p-2" style={{ maxHeight: 320 }}>
               {boardRows.filter((r) => !boardTicker || r.ticker.includes(boardTicker)).length === 0 ? (
                 <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
                   No tickers active yet today.
@@ -970,40 +928,107 @@ export function LiveTrading() {
                     const statusLabel =
                       r.status === "trading" ? "Trading" : r.status === "watching" ? "Watching" : "Blocked";
                     const chips = r.status === "blocked" ? buildGateChips("blocked", r.reason_code ?? null) : null;
+                    // "direction" means different things per status: "call"/"put"
+                    // on trading rows (from option_type), "bullish"/"bearish" on
+                    // watching rows (from INST_ORB) — normalize both to a C/P suffix.
+                    const isCall = r.direction === "call" || r.direction === "bullish";
+                    const isPut  = r.direction === "put"  || r.direction === "bearish";
+                    const optLabel = r.contract?.strike
+                      ? `${r.ticker} ${r.contract.strike}${isCall ? "C" : isPut ? "P" : ""}`
+                      : r.ticker;
+
                     return (
-                      <div key={r.ticker} className="px-3 py-2 flex flex-col gap-1"
-                           style={{ borderBottom: "1px solid var(--border)" }}>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold" style={{ color: "var(--ink)", width: 52 }}>
-                            {r.ticker}
-                          </span>
+                      <div key={r.ticker} className="card px-3 py-2.5" style={{ background: "var(--panel)" }}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                              {r.status === "trading" || r.status === "watching" ? optLabel : r.ticker}
+                            </span>
+                            {r.strategy && <span className="badge badge-blue">{r.strategy}</span>}
+                          </div>
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
                                 style={{ background: `${statusColor}22`, color: statusColor }}>
                             {statusLabel}
                           </span>
-                          <span className="text-xs flex-1" style={{ color: "var(--ink-muted)" }}>
-                            {r.strategy ? `${r.strategy} · ` : ""}{r.detail}
-                          </span>
                         </div>
+
+                        {/* Trading — real position: contract, entry→now, live P&L */}
                         {r.status === "trading" && (
-                          <div className="text-xs flex gap-4" style={{ color: "var(--ink-muted)", paddingLeft: 60 }}>
-                            <span>{r.contract?.symbol ?? `${r.ticker} ${r.contract?.strike ?? ""}`}</span>
-                            <span>${r.entry_price?.toFixed(2)} → {r.current_price != null ? `$${r.current_price.toFixed(2)}` : "—"}</span>
-                            {r.pnl != null && (
-                              <span style={{ color: r.pnl >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 }}>
-                                {r.pnl >= 0 ? "+" : ""}${r.pnl.toFixed(2)}
-                              </span>
-                            )}
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <div style={{ color: "var(--ink-faint)" }}>Expiration</div>
+                              <div className="font-medium" style={{ color: "var(--ink)" }}>{r.contract?.expiry ?? "—"}</div>
+                            </div>
+                            <div>
+                              <div style={{ color: "var(--ink-faint)" }}>Entry → now</div>
+                              <div className="num font-medium" style={{ color: "var(--ink)" }}>
+                                ${r.entry_price?.toFixed(2)} → {r.current_price != null ? `$${r.current_price.toFixed(2)}` : "—"}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "var(--ink-faint)" }}>Live P&amp;L</div>
+                              <div className="num font-medium" style={{ color: r.pnl != null && r.pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                                {r.pnl != null ? `${r.pnl >= 0 ? "+" : ""}$${r.pnl.toFixed(2)}` : "—"}
+                              </div>
+                            </div>
                           </div>
                         )}
+
+                        {/* Watching — same detail the old Watching tab showed: retest
+                            level, phase, expiration, current price, and a live
+                            "enter if premium is X-Y" band once it's actually retesting */}
+                        {r.status === "watching" && (
+                          <>
+                            <div className="grid grid-cols-4 gap-2 text-xs">
+                              <div>
+                                <div style={{ color: "var(--ink-faint)" }}>Retest level</div>
+                                <div className="num font-medium" style={{ color: "var(--ink)" }}>
+                                  {r.retest_level != null ? `$${r.retest_level.toFixed(2)}` : "—"}
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ color: "var(--ink-faint)" }}>Phase</div>
+                                <div className="font-medium" style={{ color: "var(--ink)" }}>{r.detail.split(" — ")[0]}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "var(--ink-faint)" }}>Expiration</div>
+                                <div className="font-medium" style={{ color: "var(--ink)" }}>{r.contract?.expiry ?? "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "var(--ink-faint)" }}>Now</div>
+                                <div className="num font-medium" style={{ color: "var(--ink)" }}>
+                                  {r.current_price != null ? `$${r.current_price.toFixed(2)}` : "—"}
+                                </div>
+                              </div>
+                            </div>
+                            {r.contract?.bid != null && r.contract?.ask != null && (
+                              <div className="mt-2 px-2 py-1 flex items-center justify-between text-xs"
+                                   style={{ background: "var(--muted)", borderRadius: 6 }}>
+                                <span style={{ color: "var(--ink-muted)" }}>Enter if premium is</span>
+                                <span className="num font-medium" style={{ color: "var(--ink)" }}>
+                                  ${r.contract.bid.toFixed(2)} – ${r.contract.ask.toFixed(2)}
+                                </span>
+                              </div>
+                            )}
+                            {r.detail.startsWith("expired") && (
+                              <p className="text-xs mt-1" style={{ color: "var(--ink-faint)" }}>{r.detail}</p>
+                            )}
+                          </>
+                        )}
+
+                        {/* Blocked — same gate chips the Log tab used to show inline
+                            in its journal rows; this is now the one place they live */}
                         {chips && (
-                          <div className="flex gap-3 flex-wrap text-xs" style={{ paddingLeft: 60 }}>
-                            {chips.map((c) => (
-                              <span key={c.label} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
-                                {c.passed ? "✓" : "✗"} {c.label}
-                              </span>
-                            ))}
-                          </div>
+                          <>
+                            <p className="text-xs mb-1.5" style={{ color: "var(--ink-muted)" }}>{r.detail}</p>
+                            <div className="flex gap-3 flex-wrap text-xs">
+                              {chips.map((c) => (
+                                <span key={c.label} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
+                                  {c.passed ? "✓" : "✗"} {c.label}
+                                </span>
+                              ))}
+                            </div>
+                          </>
                         )}
                       </div>
                     );
@@ -1056,100 +1081,17 @@ export function LiveTrading() {
                   )}
                 </div>
 
-                {logTab === "thinking" && (
-                  <div className="border-b p-2" style={{ borderColor: "var(--border)" }}>
-                    {/* Summary bar — today's totals + a count per block reason */}
-                    <div className="text-[9px] uppercase tracking-wider mb-1.5"
-                         style={{ color: "var(--ink-muted)" }}>
-                      Today — {journalSummary?.total ?? 0} signals, {journalSummary?.entered ?? 0} entered
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      <span className="badge badge-green text-[9px]">
-                        entered {journalSummary?.entered ?? 0}
-                      </span>
-                      {Object.entries(journalSummary?.by_reason ?? {}).map(([code, count]) => (
-                        <button key={code} onClick={() => setJournalReason(journalReason === code ? "" : code)}
-                          className="badge badge-yellow text-[9px]"
-                          style={{ cursor: "pointer", opacity: journalReason && journalReason !== code ? 0.5 : 1 }}>
-                          {code.replace(/_/g, " ")} {count}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* 7-day trend strip for whichever reason is blocking the most today */}
-                    {topBlockReason && journalTrend && journalTrend.points.length > 0 && (
-                      <div className="mb-2">
-                        <div className="text-[9px] uppercase tracking-wider mb-1"
-                             style={{ color: "var(--ink-muted)" }}>
-                          {topBlockReason.replace(/_/g, " ")} blocks — last {journalTrend.days} days
-                        </div>
-                        <div className="flex items-end gap-1" style={{ height: 28 }}>
-                          {journalTrend.points.map((p) => {
-                            const max = Math.max(...journalTrend.points.map((x) => x.count), 1);
-                            return (
-                              <div key={p.date} title={`${p.date}: ${p.count}`}
-                                style={{
-                                  flex: 1, height: `${Math.max(8, (p.count / max) * 28)}px`,
-                                  background: "var(--warning)", borderRadius: "2px 2px 0 0",
-                                }} />
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Filters — ticker / strategy / reason on one row */}
-                    <div className="flex gap-1.5 mb-2">
-                      <input placeholder="Ticker" value={journalTicker}
-                        onChange={(e) => setJournalTicker(e.target.value.toUpperCase())}
-                        className="text-[10px] px-2 py-1 rounded flex-shrink-0"
-                        style={{ width: 72, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
-                      <input placeholder="Strategy" value={journalStrategy}
-                        onChange={(e) => setJournalStrategy(e.target.value.toUpperCase())}
-                        className="text-[10px] px-2 py-1 rounded flex-1 min-w-0"
-                        style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
-                      <select value={journalOutcome}
-                        onChange={(e) => setJournalOutcome(e.target.value as typeof journalOutcome)}
-                        className="text-[10px] px-2 py-1 rounded flex-1 min-w-0"
-                        style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }}>
-                        <option value="all">All</option>
-                        <option value="entered">Entered</option>
-                        <option value="blocked">Blocked</option>
-                      </select>
-                    </div>
-
-                    {/* Filtered journal rows — today only. One row = ticker/strategy
-                        header, then a chip per gate the signal actually reached:
-                        green = passed, red = the one that stopped it. */}
-                    <div className="flex flex-col gap-3 font-mono text-[11px]" style={{ maxHeight: 200, overflowY: "auto" }}>
-                      {journalEntries.slice(0, 40).map((e) => {
-                        const chips = buildGateChips(e.outcome, e.reason_code);
-                        return (
-                          <div key={e.id}>
-                            <div className="flex gap-2 items-center mb-1">
-                              <span style={{ color: "var(--ink-muted)" }}>
-                                {new Date(e.ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                              </span>
-                              <span style={{ color: "var(--ink)" }}>
-                                {e.ticker} {e.direction === "bullish" ? "CALL" : "PUT"} · {e.strategy_id}
-                              </span>
-                            </div>
-                            <div className="flex gap-3 flex-wrap" style={{ paddingLeft: 2 }}>
-                              {chips.map((c) => (
-                                <span key={c.label} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
-                                  {c.passed ? "✓" : "✗"} {c.label}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {journalEntries.length === 0 && (
-                        <p style={{ color: "var(--ink-muted)", fontSize: 10 }}>No signals match these filters yet today.</p>
-                      )}
-                    </div>
-                  </div>
-                )}
+                {/* Ticker filter — the structured summary/chips/journal rows
+                    that used to live here now live on the Board tab instead;
+                    this is purely the raw scrolling narrative, filterable and
+                    with repeated "no setup" filler collapsed so it's actually
+                    readable instead of a wall of near-identical lines. */}
+                <div className="p-2 border-b" style={{ borderColor: "var(--border)" }}>
+                  <input placeholder="Filter by ticker" value={logRawTicker}
+                    onChange={(e) => setLogRawTicker(e.target.value.toUpperCase())}
+                    className="text-xs px-2 py-1.5 rounded w-full"
+                    style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
+                </div>
 
                 <div
                   className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs"
@@ -1157,7 +1099,30 @@ export function LiveTrading() {
                   onMouseEnter={() => { logSnapshotRef.current = [...logs]; setLogPaused(true); }}
                   onMouseLeave={() => setLogPaused(false)}
                 >
-                  {activeLogs.slice(0, 80).map((entry, i) => {
+                  {(() => {
+                    // Filter by ticker (checks the entry's own ticker field
+                    // first, falls back to a "[TICKER]" match in the message
+                    // since not every log line carries a structured field).
+                    const tickerFiltered = !logRawTicker ? activeLogs : activeLogs.filter((e) => {
+                      const t = typeof e.ticker === "string" ? e.ticker.toUpperCase() : "";
+                      const msg = String(e.message ?? "").toUpperCase();
+                      return t.includes(logRawTicker) || msg.includes(`[${logRawTicker}`);
+                    });
+                    // Collapse consecutive identical (ticker, message) lines —
+                    // "No trade setup found" repeating every candle for the
+                    // same ticker was the single biggest source of noise.
+                    const collapsed: { entry: typeof tickerFiltered[number]; count: number }[] = [];
+                    for (const entry of tickerFiltered) {
+                      const prev = collapsed[collapsed.length - 1];
+                      const sameAsPrev = prev
+                        && !isSeparator(entry) && !isSeparator(prev.entry)
+                        && prev.entry.ticker === entry.ticker
+                        && prev.entry.message === entry.message
+                        && prev.entry.event === entry.event;
+                      if (sameAsPrev) { prev.count += 1; } else { collapsed.push({ entry, count: 1 }); }
+                    }
+                    return collapsed.slice(0, 80);
+                  })().map(({ entry, count }, i) => {
                     if (isSeparator(entry)) {
                       return (
                         <div key={i} className="flex items-center gap-2 my-1 select-none"
@@ -1210,6 +1175,9 @@ export function LiveTrading() {
                         )}
                         {entry.event && <span className="badge badge-blue mr-1">{entry.event}</span>}
                         {String(entry.message ?? "")}
+                        {count > 1 && (
+                          <span className="ml-1" style={{ color: "var(--ink-faint)" }}>×{count}</span>
+                        )}
                       </div>
                     );
                   })}

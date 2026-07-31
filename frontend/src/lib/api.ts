@@ -231,7 +231,14 @@ export interface TickerBoardRow {
   detail: string;                 // human line: "entered 9:41 AM" | "2 of 3 — retesting" | reason text
   time: string | null;
   reason_code?: string | null;    // only present when status === "blocked" — feeds buildGateChips()
-  contract: { symbol: string | null; strike: number | null; expiry: string | null } | null;
+  retest_level: number | null;    // only meaningful when status === "watching"
+  contract: {
+    symbol: string | null;
+    strike: number | null;
+    expiry: string | null;
+    bid?: number | null;          // present on watching rows only
+    ask?: number | null;
+  } | null;
   entry_price: number | null;
   current_price: number | null;
   pnl: number | null;

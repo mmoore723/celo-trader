@@ -71,6 +71,7 @@ def get_board(request: Request) -> dict:
             "direction":     t.get("option_type"),
             "detail":        f"entered {entry_hm}" if entry_hm else "entered",
             "time":          t.get("entry_time"),
+            "retest_level":  None,
             "contract": {
                 "symbol": t.get("contract_symbol"),
                 "strike": t.get("strike"),
@@ -81,12 +82,28 @@ def get_board(request: Request) -> dict:
             "pnl":           round(pnl, 2) if pnl is not None else None,
         })
 
-    # ── 2. Watching — INST_ORB mid-retest, same source as the old
-    # /api/signals/watching endpoint (kept for now; board is additive) ─────
+    # ── 2. Watching — INST_ORB mid-retest. Contract resolution (strike,
+    # expiry, live bid/ask, current price) uses the SAME resolver
+    # /api/signals/watching calls — see resolve_watching_contracts() in
+    # api/routes/signals.py — so this can't show a different contract for
+    # the same ticker than that endpoint would. ────────────────────────────
+    from api.routes.signals import resolve_watching_contracts
+
     today_iso = _date.today().isoformat()
-    for k, v in _inst_orb._retest_state.items():
-        ticker = k[0]
-        if k[1] != today_iso or ticker in seen or v.get("phase") not in ("breakout_seen", "retesting"):
+    watched_raw = [
+        {"ticker": k[0], **v}
+        for k, v in _inst_orb._retest_state.items()
+        if k[1] == today_iso and k[0] not in seen and v.get("phase") in ("breakout_seen", "retesting")
+    ]
+    try:
+        watched_resolved = resolve_watching_contracts(watched_raw)
+    except Exception:
+        logger.exception("board: resolve_watching_contracts failed")
+        watched_resolved = watched_raw
+
+    for v in watched_resolved:
+        ticker = v["ticker"]
+        if ticker in seen:
             continue
         seen.add(ticker)
         phase = v.get("phase")
@@ -97,9 +114,10 @@ def get_board(request: Request) -> dict:
             "direction":     v.get("direction"),
             "detail":        "1 of 3 — breakout seen" if phase == "breakout_seen" else "2 of 3 — retesting",
             "time":          str(v.get("retest_bar") or v.get("breakout_bar") or "") or None,
-            "contract":      None,
+            "retest_level":  v.get("or_boundary"),
+            "contract":      v.get("contract"),
             "entry_price":   None,
-            "current_price": None,
+            "current_price": v.get("current_price"),
             "pnl":           None,
         })
 
@@ -116,6 +134,7 @@ def get_board(request: Request) -> dict:
             "direction":     None,
             "detail":        f"expired — was {was}",
             "time":          None,
+            "retest_level":  None,
             "contract":      None,
             "entry_price":   None,
             "current_price": None,
@@ -143,6 +162,7 @@ def get_board(request: Request) -> dict:
             "detail":        r.get("reason_detail") or (r.get("reason_code") or "").replace("_", " "),
             "time":          r.get("ts"),
             "reason_code":   r.get("reason_code"),
+            "retest_level":  None,
             "contract":      None,
             "entry_price":   None,
             "current_price": None,
