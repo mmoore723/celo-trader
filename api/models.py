@@ -167,6 +167,11 @@ class Settings(BaseModel):
     gap_go_enabled: bool = True    # Gap and Go — added 2026-07-23. Flipped to ON by
                                     # default 2026-07-31 per explicit request. See
                                     # strategies/gap_go.py.
+    liquidity_sweep_enabled: bool = True  # Liquidity Sweep Reversal — added
+                                    # 2026-07-31, fades a swept swing high/low.
+                                    # ON by default per explicit request. No
+                                    # backtest track record yet — see
+                                    # strategies/liquidity_sweep.py.
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────
     orb_stage1_gain_pct: float = 50.0   # Stage-1 profit target as % of entry

@@ -429,6 +429,11 @@ _DEFAULTS = {
     # per explicit user decision.
     "strategy_instorb_immediate_entry": True,
 
+    # 2026-07-31: Liquidity Sweep Reversal (LIQ_SWEEP) — new strategy, see
+    # strategies/liquidity_sweep.py. ON by default per explicit user
+    # decision. No backtest track record yet.
+    "strategy_liqsweep_enabled": True,
+
     # Filters
     "volume_filter_enabled":   True,
     "volume_filter_multiplier": 2.0,

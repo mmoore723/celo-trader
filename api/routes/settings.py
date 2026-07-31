@@ -46,6 +46,7 @@ def get_settings_endpoint() -> Settings:
         # predates the trade-recording fixes.
         aft_rev_enabled=bool(s.get("strategy_aft_enabled", True)),
         gap_go_enabled=bool(s.get("strategy_gapgo_enabled", True)),
+        liquidity_sweep_enabled=bool(s.get("strategy_liqsweep_enabled", True)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
         orb_stage1_gain_pct=float(s.get("orb_stage1_gain_pct", 50)),
@@ -84,6 +85,7 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_tcont_enabled"]  = data.pop("trend_cont_enabled", True)   # re-enabled 2026-07-16
     data["strategy_aft_enabled"]    = data.pop("aft_rev_enabled", True)      # exposed to Settings 2026-07-20
     data["strategy_gapgo_enabled"]  = data.pop("gap_go_enabled", True)       # ON by default per 2026-07-31 request
+    data["strategy_liqsweep_enabled"] = data.pop("liquidity_sweep_enabled", True)  # new strategy, ON by default per 2026-07-31 request
     data["strategy_instorb_immediate_entry"] = data.pop("inst_orb_immediate_entry_enabled", True)  # ON by default per 2026-07-31 request
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw

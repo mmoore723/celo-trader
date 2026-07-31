@@ -8,15 +8,16 @@ All evaluation logic lives in strategies/; all post-evaluation filtering
 lives in router_gates.py; regime classification lives in regime_manager.py.
 This file only wires them together (2026-07-16 split — was 830 lines).
 
-Strategy IDs (eight active, one OFF by default):
-  GAP_GO      — strategies/gap_go.py    (09:30–09:45)  ← OFF by default, untested
+Strategy IDs (nine active, one OFF by default):
+  GAP_GO      — strategies/gap_go.py    (09:30–09:45)
   INST_ORB    — strategies/inst_orb.py   (09:45–10:30)
   VWAP_PB     — strategies/vwap_pb.py   (09:45–EOD)
   FVG         — strategies/fvg.py        (09:45–EOD)  ← absorbs BOS_MSS sweep logic
-  MID_BRK     — strategies/mid_brk.py   (10:30–13:00)
+  MID_BRK     — strategies/mid_brk.py   (10:30–13:00)  ← OFF by default, negative expectancy
   AFT_REV     — strategies/aft_rev.py   (13:00–15:30)
   TREND_CONT  — strategies/trend_cont.py (09:45–14:30)
-  CHAN_BREAK  — strategies/chan_break.py (09:45–14:00)
+  CHAN_BREAK  — strategies/chan_break.py (09:45–14:00)  ← disabled, 0% WR in backtests
+  LIQ_SWEEP   — strategies/liquidity_sweep.py (09:45–15:30)  ← fades a swept swing high/low
 
   BOS_MSS (strategies/bos_mss.py) — DISABLED; its sweep detection was merged
   into FVG as a confidence modifier (running both double-voted the same move).
@@ -39,7 +40,7 @@ from trading.annotations import emit_signal_annotation as _emit_signal_annotatio
 from strategies.base import Signal, MarketStructureAnalyzer  # noqa: F401
 
 # ── Strategy evaluator modules ────────────────────────────────────────────────
-from strategies import inst_orb, bos_mss, vwap_pb, fvg, ifvg, mid_brk, aft_rev, trend_cont, chan_break, gap_go
+from strategies import inst_orb, bos_mss, vwap_pb, fvg, ifvg, mid_brk, aft_rev, trend_cont, chan_break, gap_go, liquidity_sweep
 
 # ── Regime classification (trend direction + trend strength) ─────────────────
 from regime_manager import (
@@ -81,10 +82,12 @@ ACTIVE_STRATEGIES = [
     ("TREND_CONT", trend_cont.evaluate),
     ("GAP_GO",     gap_go.evaluate),   # 2026-07-23, Gap 2 — see strategies/gap_go.py.
                                        # Present here (so backtester/audit tools CAN
-                                       # exercise it) but gated OFF live by default via
-                                       # strategy_gapgo_enabled — unlike every other
-                                       # strategy in this list, it has zero backtest
-                                       # history yet. Run one before flipping it on.
+                                       # exercise it). ON by default 2026-07-31 per
+                                       # explicit user decision — still has zero
+                                       # backtest history of its own.
+    ("LIQ_SWEEP",  liquidity_sweep.evaluate),  # 2026-07-31 — see strategies/liquidity_sweep.py.
+                                       # Fades a swept swing high/low. ON by default per
+                                       # explicit user decision — zero backtest history.
     # ("CHAN_BREAK", chan_break.evaluate),  # disabled — 0% WR in backtests, needs fix
 ]
 

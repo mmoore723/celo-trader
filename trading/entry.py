@@ -920,6 +920,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # record of its own (built from published sources, never run through
         # this bot's backtester) — that risk is accepted, not resolved.
         "strategy_gapgo_enabled": True,
+        # LIQ_SWEEP 2026-07-31 — new strategy, see strategies/liquidity_sweep.py.
+        # ON by default per explicit user decision. Zero backtest history —
+        # same accepted risk as GAP_GO above.
+        "strategy_liqsweep_enabled": True,
     }
     _enabled: set[str] = {
         sid for sid, key in (
@@ -933,6 +937,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("TREND_CONT", "strategy_tcont_enabled"),
             ("CHAN_BREAK",  "strategy_chan_enabled"),
             ("GAP_GO",      "strategy_gapgo_enabled"),
+            ("LIQ_SWEEP",   "strategy_liqsweep_enabled"),
         )
         if _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, True))
     }

@@ -38,6 +38,7 @@ const DEFAULT: AppSettings = {
   trend_cont_enabled: true,
   aft_rev_enabled: true,   // Afternoon Reversal — added to Settings 2026-07-20
   gap_go_enabled: true,    // Gap and Go — added 2026-07-23, flipped ON 2026-07-31
+  liquidity_sweep_enabled: true,  // Liquidity Sweep Reversal — added 2026-07-31, ON by default
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
   // Trade parameters
@@ -353,6 +354,9 @@ export function Settings() {
         <Toggle label="Gap and Go / GAP_GO (9:30–9:45 AM)"
                 checked={form.gap_go_enabled ?? true}
                 onChange={(v) => set("gap_go_enabled", v)} />
+        <Toggle label="Liquidity Sweep Reversal / LIQ_SWEEP (9:45 AM – 3:30 PM) — fades a swept swing high/low"
+                checked={form.liquidity_sweep_enabled ?? true}
+                onChange={(v) => set("liquidity_sweep_enabled", v)} />
       </div>
 
       {/* Display */}

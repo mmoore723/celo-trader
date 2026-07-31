@@ -429,7 +429,9 @@ export interface AppSettings {
   mtf_confirmation_enabled?: boolean; // 2026-07-23: live 1Hour bias gate, OFF by default —
                                        // can't be backtested (live "as-of-now" fetch), watch in signal-only first
   inst_orb_immediate_entry_enabled?: boolean; // 2026-07-31: enter on the breakout bar instead of
-                                       // waiting for the OR-level retest, OFF by default — not backtested
+                                       // waiting for the OR-level retest, ON by default — not backtested
+  liquidity_sweep_enabled?: boolean;  // 2026-07-31: fades a swept swing high/low, ON by
+                                       // default — new strategy, no backtest track record
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
   min_grade_filter_enabled?: boolean; // 2026-07-24: blocks entries below min_entry_grade (default off)
   min_entry_grade?: string;           // "A+" | "A" | "B" | "C" | "Watch" (default "C")
