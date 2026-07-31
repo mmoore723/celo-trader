@@ -619,26 +619,49 @@ def get_opening_range(ticker: str) -> dict:
     """
     Return the Opening Range (9:30–9:40 ET) for today's session.
 
-    Uses 5-minute bars (same source as the chart) so the result stays
-    consistent with what the chart is drawing.  Falls back to Alpaca 1Min
-    with limit=390 (full 6.5-hour session) if needed, so the 9:30 bars are
-    always included regardless of what time of day the request arrives.
-
-    The old approach of limit=50 1Min bars broke after 10:20 AM because the
-    50 most recent bars no longer contained the 9:30–9:40 opening window.
+    FIX 2026-07-31: this used to try yfinance FIRST and only fall back to
+    Alpaca if that failed — reasoned as "same source as the chart" (the main
+    candlestick chart's /bars endpoint does prefer yfinance, for its 30-day
+    history). But the OR line isn't decorative — it's the exact reference
+    level strategies/inst_orb.py trades against, and inst_orb.py's own
+    get_opening_range() call is fed Alpaca bars from the live trading loop,
+    never yfinance. Real incident: AMD's chart showed OR Hi $515.62 / OR Lo
+    $499.39 (yfinance) while the bot was actually detecting breakouts and
+    entering retest logic against a ~$504.6-504.8 boundary (Alpaca) — a
+    trader watching the chart had no way to see where the bot's own OR
+    boundary actually was. Alpaca now tried first so the line drawn always
+    matches what the bot is trading against; yfinance is still the fallback
+    for when Alpaca's free tier has nothing (market closed, etc.).
     """
     try:
-        import datetime as _dt
         import pandas as pd
         from signals import bars_to_df, get_opening_range as _get_or
 
-        # ── Attempt 1: yfinance 5-minute bars (same as the chart) ────────────
+        # ── Attempt 1: Alpaca 1Min, full-session limit so 9:30 is included —
+        # the SAME feed inst_orb.py's live evaluate() call is fed, so this
+        # line always matches the boundary the bot is actually trading against.
+        try:
+            from broker import get_clients
+            alpaca, _ = get_clients()
+            raw = alpaca.get_bars(ticker, "1Min", limit=390)  # 390 = full 6.5h session
+            bars = raw[0] if isinstance(raw, tuple) else raw
+            if bars:
+                df = bars_to_df(bars)
+                result = _get_or(df)
+                if result:
+                    return result
+        except Exception:
+            pass
+
+        # ── Attempt 2: yfinance 5-minute bars — fallback only, e.g. market
+        # closed or Alpaca's free IEX tier has nothing for this ticker yet.
         # Use prepost=True (same as main chart) — prepost=False can return
         # timezone-naive timestamps that the utc=True conversion misinterprets,
         # causing the 9:30 UTC bar (= 5:30 AM ET premarket) to match the
         # get_opening_range filter instead of the real 9:30 AM ET bar.
         # We filter to regular session hours explicitly after conversion.
         try:
+            import datetime as _dt
             import yfinance as yf
             _today      = _dt.date.today()
             _start_date = _today.strftime("%Y-%m-%d")
@@ -668,28 +691,16 @@ def get_opening_range(ticker: str) -> dict:
                 )
                 df = raw_yf[["time", "open", "high", "low", "close", "volume"]].copy()
                 # Explicit regular-session filter: 9:30 AM – 4:00 PM ET.
-                # This is the fix: excludes premarket bars regardless of
-                # what yfinance returns with the prepost setting.
                 session_mask = (
                     (df["time"].dt.hour > 9) |
                     ((df["time"].dt.hour == 9) & (df["time"].dt.minute >= 30))
                 ) & (df["time"].dt.hour < 16)
                 df = df[session_mask].copy()
-                result = _get_or(df)
-                if result:
-                    return result
+                return _get_or(df) or {}
         except Exception:
             pass
 
-        # ── Attempt 2: Alpaca 1Min with full-session limit so 9:30 is included ─
-        from broker import get_clients
-        alpaca, _ = get_clients()
-        raw = alpaca.get_bars(ticker, "1Min", limit=390)  # 390 = full 6.5h session
-        bars = raw[0] if isinstance(raw, tuple) else raw
-        if not bars:
-            return {}
-        df = bars_to_df(bars)
-        return _get_or(df) or {}
+        return {}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
