@@ -38,7 +38,23 @@ export interface OverlayInputs {
 export class OverlayManager {
   private candle: ISeriesApi<"Candlestick">;
   private vwapLines: Record<"vwap" | "u1" | "l1" | "u2" | "l2", ISeriesApi<"Line"> | null> = { vwap: null, u1: null, l1: null, u2: null, l2: null };
-  private priceLines: IPriceLine[] = [];
+  // { series, line } pairs so clearPriceLines() can call removePriceLine on
+  // whichever series a given line actually belongs to — needed now that
+  // trade-level lines (see tradeLevelAnchor below) live on a different
+  // series than the OR/annotation lines, which stay on `candle`.
+  private priceLines: { series: ISeriesApi<"Candlestick"> | ISeriesApi<"Line">; line: IPriceLine }[] = [];
+  // FIX 2026-07-31: real bug — option premium levels (position entry/stop/
+  // target/trail, and replay MFE/MAE) used to be drawn with
+  // candle.createPriceLine(), sharing the STOCK candle's price axis. A
+  // $4.85 option premium on an axis scaled to AMZN's $260-360 stock price
+  // collapses to a meaningless sliver at the bottom of the chart. This
+  // hidden line series has its own independent price scale ("trade_levels")
+  // so those dollar levels get correct relative spacing to each other
+  // without cluttering the stock axis. The series itself is invisible
+  // (visible:false) — it exists only so createPriceLine() has a scale to
+  // anchor to; lightweight-charts includes price lines in a series'
+  // autoscale, so seeding it with the levels' own range is enough.
+  private tradeLevelAnchor: ISeriesApi<"Line"> | null = null;
   private zoneMgr: ZoneBandManager;
   private palette: ChartPalette;
   private chart: IChartApi;
@@ -89,8 +105,23 @@ export class OverlayManager {
   }
 
   private clearPriceLines() {
-    for (const pl of this.priceLines) { try { this.candle.removePriceLine(pl); } catch { /* gone */ } }
+    for (const { series, line } of this.priceLines) { try { series.removePriceLine(line); } catch { /* gone */ } }
     this.priceLines = [];
+  }
+
+  /** Lazily creates the hidden trade-level anchor series (own price scale). */
+  private ensureTradeLevelAnchor(): ISeriesApi<"Line"> {
+    if (!this.tradeLevelAnchor) {
+      this.tradeLevelAnchor = this.chart.addSeries(LineSeries, {
+        priceScaleId: "trade_levels",
+        visible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+      }) as unknown as ISeriesApi<"Line">;
+      this.chart.priceScale("trade_levels").applyOptions({ visible: false });
+    }
+    return this.tradeLevelAnchor;
   }
 
   apply(input: OverlayInputs) {
@@ -127,8 +158,8 @@ export class OverlayManager {
     );
     const orZoneFrom = (todayOrStart as number) > (firstT as number) ? todayOrStart : firstT;
 
-    if (input.orHigh != null) this.priceLines.push(this.candle.createPriceLine({ price: input.orHigh, color: P.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Hi" }));
-    if (input.orLow != null) this.priceLines.push(this.candle.createPriceLine({ price: input.orLow, color: P.orLow, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Lo" }));
+    if (input.orHigh != null) this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: input.orHigh, color: P.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Hi" }) });
+    if (input.orLow != null) this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: input.orLow, color: P.orLow, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Lo" }) });
     if (input.orHigh != null && input.orLow != null) {
       zoneSpecs.push({ id: "or_zone", fromTime: orZoneFrom, toTime: lastT, low: input.orLow, high: input.orHigh, color: P.orHigh + "18" });
     }
@@ -153,42 +184,70 @@ export class OverlayManager {
     }
 
     // ── Position bracket (live open trade) ──────────────────────────────────
+    // FIX 2026-07-31: entry/stop/target/trail are OPTION premium dollars
+    // (e.g. $4.85), not stock price — drawn on `candle` they collapsed to a
+    // sliver at the bottom of AMZN's $260-360 axis. Now anchored to their
+    // own hidden scale (see ensureTradeLevelAnchor) so they're correctly
+    // spaced relative to each other. Zones (risk/reward shading) stay on the
+    // main pane's time axis but their price coordinates are meaningless on
+    // the stock scale too — left as-is since they're a subtle background
+    // tint, not a number a user reads directly; the lines were the real
+    // complaint.
     const pl = input.positionLevels;
     if (pl?.entry != null) {
       const entry = pl.entry;
+      const anchor = this.ensureTradeLevelAnchor();
       const defs: { key: "stop" | "target" | "trail"; color: string; label: string }[] = [
         { key: "stop", color: P.stop, label: "Stop" }, { key: "target", color: P.target, label: "Target" }, { key: "trail", color: P.trail, label: "Trail" },
       ];
-      this.priceLines.push(this.candle.createPriceLine({ price: entry, color: P.entry, lineWidth: 2, title: `Entry $${entry.toFixed(2)}` }));
+      // Seed the anchor's own data so it has a sensible range to autoscale
+      // against — a flat line at `entry` spanning the loaded bars. Price
+      // lines (below) factor into a series' autoscale too, so this plus the
+      // stop/target/trail lines together produce correct relative spacing.
+      anchor.setData([{ time: firstT, value: entry }, { time: lastT, value: entry }]);
+      this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price: entry, color: P.entry, lineWidth: 2, title: `Entry $${entry.toFixed(2)}` }) });
       for (const d of defs) {
         const price = pl[d.key];
-        if (price != null && price > 0) this.priceLines.push(this.candle.createPriceLine({ price, color: d.color, lineWidth: 1, lineStyle: d.key === "trail" ? LineStyle.Dashed : LineStyle.Solid, title: `${d.label} $${price.toFixed(2)}` }));
+        if (price != null && price > 0) this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price, color: d.color, lineWidth: 1, lineStyle: d.key === "trail" ? LineStyle.Dashed : LineStyle.Solid, title: `${d.label} $${price.toFixed(2)}` }) });
       }
       if (pl.stop != null) zoneSpecs.push({ id: "pos_risk", fromTime: firstT, toTime: lastT, low: Math.min(entry, pl.stop), high: Math.max(entry, pl.stop), color: P.stop + "18" });
       if (pl.target != null) zoneSpecs.push({ id: "pos_reward", fromTime: firstT, toTime: lastT, low: Math.min(entry, pl.target), high: Math.max(entry, pl.target), color: P.target + "18" });
+    } else if (this.tradeLevelAnchor) {
+      this.tradeLevelAnchor.setData([]);
     }
 
     // ── Simulation overlay ────────────────────────────────────────────────────
     if (input.simulationOverlay) {
       const s = input.simulationOverlay;
       const isCall = s.direction === "calls";
-      this.priceLines.push(this.candle.createPriceLine({ price: s.entryTrigger, color: isCall ? P.up : P.down, lineWidth: 2, title: "Entry Trigger" }));
-      this.priceLines.push(this.candle.createPriceLine({ price: s.stage1Px, color: P.target, lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Stage 1" }));
-      this.priceLines.push(this.candle.createPriceLine({ price: s.stopPx, color: P.stop, lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Stop" }));
+      this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: s.entryTrigger, color: isCall ? P.up : P.down, lineWidth: 2, title: "Entry Trigger" }) });
+      this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: s.stage1Px, color: P.target, lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Stage 1" }) });
+      this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: s.stopPx, color: P.stop, lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Stop" }) });
       zoneSpecs.push({ id: "sim_reward", fromTime: firstT, toTime: lastT, low: Math.min(s.entryTrigger, s.stage1Px), high: Math.max(s.entryTrigger, s.stage1Px), color: P.target + "18" });
       zoneSpecs.push({ id: "sim_risk", fromTime: firstT, toTime: lastT, low: Math.min(s.entryTrigger, s.stopPx), high: Math.max(s.entryTrigger, s.stopPx), color: P.stop + "18" });
     }
 
     // ── Replay MFE/MAE ────────────────────────────────────────────────────────
+    // Same unit mismatch as the position bracket above — these are option
+    // prices too (see ReplayTrade's peak_option_px/mae_option_px comments).
+    // Only create the anchor here if the position bracket above didn't
+    // already (a replay can run with no live position open).
     if (input.replayTrade) {
       const rt = input.replayTrade;
-      if (rt.peak_option_px != null) this.priceLines.push(this.candle.createPriceLine({ price: rt.peak_option_px, color: "#a78bfa", lineWidth: 1, lineStyle: LineStyle.Dotted, title: `MFE ${rt.peak_option_px.toFixed(2)}` }));
-      if (rt.mae_option_px != null) this.priceLines.push(this.candle.createPriceLine({ price: rt.mae_option_px, color: "#f87171", lineWidth: 1, lineStyle: LineStyle.Dotted, title: `MAE ${rt.mae_option_px.toFixed(2)}` }));
+      if (rt.peak_option_px != null || rt.mae_option_px != null) {
+        const anchor = this.ensureTradeLevelAnchor();
+        if (!pl?.entry) {
+          const seed = rt.peak_option_px ?? rt.mae_option_px!;
+          anchor.setData([{ time: firstT, value: seed }, { time: lastT, value: seed }]);
+        }
+        if (rt.peak_option_px != null) this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price: rt.peak_option_px, color: "#a78bfa", lineWidth: 1, lineStyle: LineStyle.Dotted, title: `MFE ${rt.peak_option_px.toFixed(2)}` }) });
+        if (rt.mae_option_px != null) this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price: rt.mae_option_px, color: "#f87171", lineWidth: 1, lineStyle: LineStyle.Dotted, title: `MAE ${rt.mae_option_px.toFixed(2)}` }) });
+      }
     }
 
     // ── Bot annotations (hline / zone) ───────────────────────────────────────
     for (const ann of input.annotations) {
-      if (ann.type === "hline" && ann.price != null) this.priceLines.push(this.candle.createPriceLine({ price: ann.price, color: ann.color, lineWidth: 1, lineStyle: LineStyle.Dashed, title: ann.label }));
+      if (ann.type === "hline" && ann.price != null) this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: ann.price, color: ann.color, lineWidth: 1, lineStyle: LineStyle.Dashed, title: ann.label }) });
       else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) zoneSpecs.push({ id: `ann_${ann.id}`, fromTime: firstT, toTime: lastT, low: ann.price_low, high: ann.price_high, color: ann.color + "22" });
     }
 
@@ -207,6 +266,10 @@ export class OverlayManager {
       const s = this.vwapLines[key];
       if (s) { try { this.chart.removeSeries(s); } catch { /* chart already disposed */ } }
       this.vwapLines[key] = null;
+    }
+    if (this.tradeLevelAnchor) {
+      try { this.chart.removeSeries(this.tradeLevelAnchor); } catch { /* chart already disposed */ }
+      this.tradeLevelAnchor = null;
     }
   }
 }
