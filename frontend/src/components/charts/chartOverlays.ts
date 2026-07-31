@@ -108,10 +108,29 @@ export class OverlayManager {
     const lastT = toEpochTime(input.bars[input.bars.length - 1].time);
 
     // ── Opening range: line + shaded box ────────────────────────────────────
+    // FIX 2026-07-31: the shaded OR box used to span fromTime=firstT — the
+    // very first loaded bar, which on a multi-day chart is DAYS before the
+    // range even formed. The backend only ever returns TODAY's OR (single
+    // Hi/Lo pair, no history), so a box stretching back through yesterday's
+    // session was never meaningful — real complaint: "it looks like a
+    // static line for the full session... the bot is calculating different
+    // ORB times," i.e. the box didn't visually track when today's range
+    // actually formed. Bound it to today only: from market open (9:30 ET,
+    // taken from the LAST loaded bar's calendar day, since that's the
+    // session currently on screen) through the most recent bar. The two
+    // thin reference lines below stay full-chart-width — lightweight-charts'
+    // createPriceLine has no time-bound option — but the shaded box is what
+    // visually dominated the "stretches across everything" complaint.
+    const lastBarDate = new Date(input.bars[input.bars.length - 1].time);
+    const todayOrStart = toEpochTime(
+      new Date(lastBarDate.getFullYear(), lastBarDate.getMonth(), lastBarDate.getDate(), 9, 30, 0, 0).toISOString(),
+    );
+    const orZoneFrom = (todayOrStart as number) > (firstT as number) ? todayOrStart : firstT;
+
     if (input.orHigh != null) this.priceLines.push(this.candle.createPriceLine({ price: input.orHigh, color: P.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Hi" }));
     if (input.orLow != null) this.priceLines.push(this.candle.createPriceLine({ price: input.orLow, color: P.orLow, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Lo" }));
     if (input.orHigh != null && input.orLow != null) {
-      zoneSpecs.push({ id: "or_zone", fromTime: firstT, toTime: lastT, low: input.orLow, high: input.orHigh, color: P.orHigh + "18" });
+      zoneSpecs.push({ id: "or_zone", fromTime: orZoneFrom, toTime: lastT, low: input.orLow, high: input.orHigh, color: P.orHigh + "18" });
     }
 
     // ── Premium / discount split ─────────────────────────────────────────────
