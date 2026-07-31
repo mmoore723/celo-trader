@@ -159,6 +159,7 @@ def select_contract(
     direction: str,
     current_price: float,
     max_spend: float,
+    for_display: bool = False,
 ) -> Tuple[Optional[dict], dict]:
     """
     Select the best option contract for entry.
@@ -185,6 +186,18 @@ def select_contract(
     ["illiquid_fail"] and takes priority in the final reason when found,
     since it's the more accurate diagnosis. See signal_journal.py's
     "illiquid" reason code, added alongside this.
+
+    FIX 2026-07-31: this function is shared by the real entry path
+    (trading/entry.py's own call, below) AND resolve_watching_contracts()
+    (api/routes/signals.py — called every poll to refresh the live bid/ask
+    shown on Watching/Board cards, no trade intent at all). Both used to log
+    an identical "Contract selected: ..." INFO line, so the Log tab showed
+    what looked like repeated real trade attempts on tickers that were
+    never actually being evaluated for entry — real incident: user saw
+    "Contract selected: PLTR/SMCI/SPY..." firing every ~1s and assumed the
+    bot was finding and abandoning trades. `for_display=True` (passed by
+    resolve_watching_contracts) downgrades that line to DEBUG so it stops
+    polluting the live-trade narration; the real entry path is unaffected.
     """
     option_type = "call" if direction == "bullish" else "put"
     info = {
@@ -266,10 +279,11 @@ def select_contract(
                 continue
 
             contract["expiry"] = expiry
-            logger.info(
-                "Contract selected: %s exp=%s strike=%.2f ask=%.2f spread=%.2f OI=%d",
+            _log_fn = logger.debug if for_display else logger.info
+            _log_fn(
+                "Contract selected: %s exp=%s strike=%.2f ask=%.2f spread=%.2f OI=%d%s",
                 contract["symbol"], expiry, contract["strike"],
-                ask, spread, oi,
+                ask, spread, oi, " (display refresh, not an entry)" if for_display else "",
             )
             info["reason"] = "selected"
             return contract, info

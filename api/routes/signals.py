@@ -126,7 +126,10 @@ def resolve_watching_contracts(watched: list[dict]) -> list[dict]:
         contract = None
         if current_price > 0 and direction and max_spend > 0:
             try:
-                contract, _info = select_contract(tradier, ticker, direction, current_price, max_spend)
+                # for_display=True — this is a price refresh for the watching
+                # card, not a real entry attempt. See select_contract()'s
+                # docstring for the incident this prevents.
+                contract, _info = select_contract(tradier, ticker, direction, current_price, max_spend, for_display=True)
             except Exception as ex:
                 logger.debug("resolve_watching_contracts: select_contract failed for %s: %s", ticker, ex)
 
