@@ -95,58 +95,54 @@ function CredentialField({
   );
 }
 
-function CredentialsPanel() {
-  // Show/hide state per field
-  const [show, setShow] = useState({ alpaca_key: false, alpaca_secret: false, tradier_key: false });
-  const toggle = (f: keyof typeof show) => setShow(s => ({ ...s, [f]: !s[f] }));
+// FIX 2026-07-31: this used to be ONE panel with ONE "Save API Keys" button
+// covering all four fields. GET returns MASKED display values ("abcd…wxyz"),
+// which got loaded as the form's starting point — the old save() sent the
+// whole object every time, so editing only the Alpaca fields silently
+// re-saved the Tradier key AS its own masked display string (and vice
+// versa), replacing a real credential with garbage. That's what broke
+// Tradier (268 silent 401s) and then, independently, crashed Alpaca calls
+// outright — the masked "…" character isn't valid latin-1, so any HTTP
+// library that encodes headers as latin-1 throws on it. A single shared
+// button also visually implied "fill in both," which is exactly backwards:
+// touching one broker's fields should never be able to affect the other's.
+// Fix: two fully independent panels below, each with its own load, its own
+// "touched" tracking, and its own Save button that only ever sends ITS OWN
+// two fields — an Alpaca save cannot include a Tradier field or vice versa,
+// not just "won't accidentally," structurally can't.
 
-  const [creds, setCreds] = useState({
-    alpaca_api_key: "", alpaca_secret_key: "", tradier_api_key: "", tradier_account_id: ""
-  });
-  // FIX 2026-07-31: GET returns MASKED display values ("abcd…wxyz"), which
-  // get loaded into `creds` below as the form's starting point. The old
-  // save() sent that whole object every time, so an edit to ONLY the Alpaca
-  // fields silently re-saved the Tradier key AS its masked display string —
-  // a real credential replaced by garbage, which is exactly what broke
-  // Tradier (268 silent 401s, see broker_health.py). Fix: track which
-  // fields the user actually typed into, and only send those. Backend
-  // (api/routes/settings.py save_credentials) now treats an omitted field
-  // as "leave it alone" rather than "overwrite with whatever was sent."
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
-  function setField(key: keyof typeof creds, v: string) {
-    setCreds(c => ({ ...c, [key]: v }));
-    setTouched(t => ({ ...t, [key]: true }));
-  }
-  const [status, setStatus] = useState<{ ok?: boolean; msg?: string } | null>(null);
-  const [loaded, setLoaded] = useState(false);
+function useCredentialSave<K extends string>(fields: K[]) {
+  const [creds, setCreds]     = useState<Record<K, string>>(() => Object.fromEntries(fields.map(f => [f, ""])) as Record<K, string>);
+  const [touched, setTouched] = useState<Partial<Record<K, boolean>>>({});
+  const [status, setStatus]   = useState<{ ok?: boolean; msg?: string } | null>(null);
+  const [loaded, setLoaded]   = useState(false);
 
-  // Load masked values on mount
   useEffect(() => {
     (async () => {
       try {
         const r = await fetch("/api/settings/credentials", { credentials: "include" });
         if (r.ok) {
           const d = await r.json();
-          setCreds({
-            alpaca_api_key:    d.alpaca_api_key    || "",
-            alpaca_secret_key: d.alpaca_secret_key || "",
-            tradier_api_key:   d.tradier_api_key   || "",
-            tradier_account_id: d.tradier_account_id || "",
+          setCreds(c => {
+            const next = { ...c };
+            for (const f of fields) next[f] = d[f] || "";
+            return next;
           });
         }
       } catch { /* ignore */ }
       setLoaded(true);
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function save() {
+  function setField(key: K, v: string) {
+    setCreds(c => ({ ...c, [key]: v }));
+    setTouched(t => ({ ...t, [key]: true }));
+  }
+
+  async function save(label: string) {
     setStatus(null);
-    // Only include fields the user actually edited — everything else is
-    // omitted entirely so the backend leaves the stored value untouched.
-    const payload: Record<string, string> = {};
-    for (const key of Object.keys(creds) as (keyof typeof creds)[]) {
-      if (touched[key]) payload[key] = creds[key];
-    }
+    const payload: Partial<Record<K, string>> = {};
+    for (const key of fields) if (touched[key]) payload[key] = creds[key];
     if (Object.keys(payload).length === 0) {
       setStatus({ ok: true, msg: "Nothing changed." });
       setTimeout(() => setStatus(null), 3000);
@@ -160,7 +156,7 @@ function CredentialsPanel() {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Save failed");
-      setStatus({ ok: true, msg: "Keys saved securely." });
+      setStatus({ ok: true, msg: `${label} saved.` });
       setTouched({});
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Save failed" });
@@ -168,46 +164,71 @@ function CredentialsPanel() {
     setTimeout(() => setStatus(null), 3000);
   }
 
+  return { creds, setField, status, loaded, save };
+}
+
+function AlpacaCredentialsPanel() {
+  const [show, setShow] = useState({ key: false, secret: false });
+  const { creds, setField, status, loaded, save } =
+    useCredentialSave<"alpaca_api_key" | "alpaca_secret_key">(["alpaca_api_key", "alpaca_secret_key"]);
+
   if (!loaded) return <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading…</p>;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 mb-1">
+    <div className="card p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
         <Key size={14} style={{ color: "var(--accent)" }} />
-        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          Alpaca uses the <strong>same</strong> API key pair for paper and live trading — only the
-          URL changes when you toggle modes.
-        </p>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Alpaca</h3>
       </div>
-
+      <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+        Same key pair for paper and live — only the URL changes when you toggle modes. Saving
+        here never touches your Tradier keys.
+      </p>
       <CredentialField label="Alpaca API Key" name="alpaca_key"
         value={creds.alpaca_api_key} onChange={v => setField("alpaca_api_key", v)}
-        show={show.alpaca_key} onToggle={() => toggle("alpaca_key")}
+        show={show.key} onToggle={() => setShow(s => ({ ...s, key: !s.key }))}
         hint="PK…" />
       <CredentialField label="Alpaca Secret Key" name="alpaca_secret"
         value={creds.alpaca_secret_key} onChange={v => setField("alpaca_secret_key", v)}
-        show={show.alpaca_secret} onToggle={() => toggle("alpaca_secret")} />
+        show={show.secret} onToggle={() => setShow(s => ({ ...s, secret: !s.secret }))} />
+      {status && (
+        <p className="text-xs font-medium" style={{ color: status.ok ? "var(--accent)" : "#f87171" }}>{status.msg}</p>
+      )}
+      <button className="btn btn-primary" onClick={() => save("Alpaca keys")}>
+        <Save size={14} /> Save Alpaca Keys
+      </button>
+    </div>
+  );
+}
+
+function TradierCredentialsPanel() {
+  const [show, setShow] = useState(false);
+  const { creds, setField, status, loaded, save } =
+    useCredentialSave<"tradier_api_key" | "tradier_account_id">(["tradier_api_key", "tradier_account_id"]);
+
+  if (!loaded) return <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading…</p>;
+
+  return (
+    <div className="card p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Key size={14} style={{ color: "var(--accent)" }} />
+        <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Tradier</h3>
+      </div>
+      <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+        Used for options quotes and chains. Saving here never touches your Alpaca keys.
+      </p>
       <CredentialField label="Tradier API Key" name="tradier_key"
         value={creds.tradier_api_key} onChange={v => setField("tradier_api_key", v)}
-        show={show.tradier_key} onToggle={() => toggle("tradier_key")}
+        show={show} onToggle={() => setShow(s => !s)}
         hint="Bearer token from Tradier dashboard" />
       <CredentialField label="Tradier Account ID" name="tradier_account_id"
         value={creds.tradier_account_id} onChange={v => setField("tradier_account_id", v)}
         show={true} onToggle={() => {}} hint="Account number (digits only)" />
-
-      <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-        Keys are encrypted at rest (AES-128 / Fernet). Never stored in plain text.
-      </p>
-
       {status && (
-        <p className="text-xs font-medium"
-          style={{ color: status.ok ? "var(--accent)" : "#f87171" }}>
-          {status.msg}
-        </p>
+        <p className="text-xs font-medium" style={{ color: status.ok ? "var(--accent)" : "#f87171" }}>{status.msg}</p>
       )}
-
-      <button className="btn btn-primary" onClick={save}>
-        <Save size={14} /> Save API Keys
+      <button className="btn btn-primary" onClick={() => save("Tradier keys")}>
+        <Save size={14} /> Save Tradier Keys
       </button>
     </div>
   );
@@ -602,13 +623,16 @@ export function Settings() {
         </p>
       </div>
 
-      {/* API Credentials */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
-          API Credentials
-        </h3>
-        <CredentialsPanel />
-      </div>
+      {/* API Credentials — two independent panels, see the comment above
+          AlpacaCredentialsPanel for why they're structurally separate now */}
+      <p className="text-xs font-semibold px-1" style={{ color: "var(--ink-muted)" }}>
+        API Credentials — each saves independently
+      </p>
+      <AlpacaCredentialsPanel />
+      <TradierCredentialsPanel />
+      <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
+        Keys are encrypted at rest (AES-128 / Fernet). Never stored in plain text.
+      </p>
 
       {/* Save / Discard */}
       <div className="flex gap-2">
