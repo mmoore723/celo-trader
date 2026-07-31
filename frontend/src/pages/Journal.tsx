@@ -5,7 +5,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
 } from "recharts";
 import { ChevronDown, ChevronRight, Download, AlertTriangle, CheckCircle } from "lucide-react";
 import { api, type Trade, type ReconcileResponse, type ReconcileRow } from "../lib/api";
@@ -92,10 +92,21 @@ function TradeDetail({ t, onViewChart }: { t: Trade; onViewChart: () => void }) 
           style={{ background: "var(--surface-raised)", borderBottom: "1px solid var(--border)" }}
         >
           {/* Bar chart */}
+          {/* FIX 2026-07-31: real crash — this sat in a flex row (siblings:
+              stats grid, button, narrative) with no fixed width of its own,
+              inside a horizontally-scrollable table (overflow-x: auto).
+              ResponsiveContainer measures its parent via ResizeObserver on
+              every layout pass; with no stable width to converge on, that
+              measurement can feed back into itself indefinitely — recharts
+              uses redux internally, and the observed crash (React error
+              #185, stack trace through react-redux's notifyNestedSubs /
+              redux-toolkit) is exactly that failure signature. This chart
+              is always a small fixed decoration (never needs to grow), so
+              a fixed pixel width sidesteps the ResizeObserver loop
+              entirely instead of trying to tune around it. */}
           {t.peak_price != null && (
-            <div style={{ minWidth: 200, height: 80 }}>
-              <ResponsiveContainer width="100%" height={80}>
-                <BarChart data={pricePoints} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <div style={{ width: 200, height: 80 }}>
+              <BarChart width={200} height={80} data={pricePoints} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: "var(--ink-muted)" }} />
                   <YAxis
                     domain={[
@@ -118,7 +129,6 @@ function TradeDetail({ t, onViewChart }: { t: Trade; onViewChart: () => void }) 
                     ))}
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer>
             </div>
           )}
 
