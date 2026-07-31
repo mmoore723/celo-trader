@@ -961,16 +961,26 @@ export function LiveTrading() {
                       );
                     } else if (r.status === "watching" && r.detail.startsWith("expired")) {
                       sentence = <>Was watching {r.ticker} — the setup expired ({r.detail.replace("expired — ", "")}).</>;
-                    } else if (r.status === "watching" && r.detail.startsWith("1 of 3")) {
-                      sentence = <>Watching {r.ticker} — breakout spotted, but no retest yet. Contract and entry price aren't locked in until it actually retests.</>;
                     } else if (r.status === "watching") {
+                      // FIX 2026-07-31: this used to be two DIFFERENT formats — phase 1
+                      // ("1 of 3", breakout_seen) got a bare "not locked in yet" line with
+                      // no contract shown, phase 2 ("2 of 3", retesting) got the full
+                      // approved-mockup sentence (strike/expiry/bid-ask). The backend
+                      // (resolve_watching_contracts) resolves a real contract for BOTH
+                      // phases identically, so there was never a real reason for phase 1
+                      // to withhold it — same detailed sentence for both now, differing
+                      // only in what's being waited for (touch vs. bounce-through).
+                      const isRetesting = r.detail.startsWith("2 of 3");
                       sentence = (
                         <>
                           Watching {r.ticker} for the{" "}
                           <strong>{optLabel}{r.contract?.expiry ? `, exp ${r.contract.expiry}` : ""}</strong>
-                          {" "}— waiting for price to retest{" "}
+                          {" "}— waiting for price to{" "}
+                          {isRetesting
+                            ? <>bounce back through{" "}</>
+                            : <>pull back and retest{" "}</>}
                           <strong>{r.retest_level != null ? `$${r.retest_level.toFixed(2)}` : "that level"}</strong>{" "}
-                          and bounce before entering.
+                          before entering.
                           {r.contract?.bid != null && r.contract?.ask != null && (
                             <> Would cost <strong>${r.contract.bid.toFixed(2)}–${r.contract.ask.toFixed(2)}</strong> right now.</>
                           )}
