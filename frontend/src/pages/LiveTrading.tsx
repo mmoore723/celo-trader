@@ -2,7 +2,7 @@
  * LiveTrading.tsx — Main trading cockpit.
  * Real-time chart, signal alert banner (Bot Focus), open positions, eval log, scanner.
  */
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
@@ -559,6 +559,394 @@ export function LiveTrading() {
           />
         </div>
 
+        {/* Board / Log — one card, single grid item, sitting next to the
+            chart/ticker panel (moved here from the Open Positions row per
+            explicit request — it was floating alone with nothing to anchor
+            it to). Board is the default per-ticker view (see boardData
+            above); Log is the old Thinking/Network scrolling feed. */}
+        <div className="card flex flex-col">
+        <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
+             style={{ borderColor: "var(--border)" }}>
+          {(["board", "log"] as const).map((tab) => (
+            <button key={tab} onClick={() => setMainPanelTab(tab)}
+              className="px-3 py-2 transition-colors"
+              style={{
+                color: mainPanelTab === tab ? "var(--ink)" : "var(--ink-muted)",
+                borderBottom: mainPanelTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
+                background: "none",
+              }}>
+              {tab === "board" ? `Board${boardActiveCount ? ` (${boardActiveCount})` : ""}` : "Log"}
+            </button>
+          ))}
+        </div>
+
+        {mainPanelTab === "board" && (
+          <div className="flex flex-col">
+            <div className="p-2" style={{ borderBottom: "1px solid var(--border)" }}>
+              <input placeholder="Filter by ticker" value={boardTicker}
+                onChange={(e) => setBoardTicker(e.target.value.toUpperCase())}
+                className="text-xs px-2 py-1.5 rounded w-full"
+                style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
+            </div>
+            <div className="overflow-y-auto flex flex-col gap-2 p-2" style={{ maxHeight: 320 }}>
+              {boardRows.filter((r) => !boardTicker || r.ticker.includes(boardTicker)).length === 0 ? (
+                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+                  No tickers active yet today.
+                </p>
+              ) : (
+                boardRows
+                  .filter((r) => !boardTicker || r.ticker.includes(boardTicker))
+                  .map((r) => {
+                    const statusColor =
+                      r.status === "trading"  ? "var(--positive)" :
+                      r.status === "watching" ? "var(--accent)"   : "var(--warning, #ea941d)";
+                    const statusLabel =
+                      r.status === "trading" ? "Trading" : r.status === "watching" ? "Watching" : "Blocked";
+                    const chips = r.status === "blocked" ? buildGateChips("blocked", r.reason_code ?? null) : null;
+                    // "direction" means different things per status: "call"/"put"
+                    // on trading rows (from option_type), "bullish"/"bearish" on
+                    // watching rows (from INST_ORB) — normalize both to a C/P suffix.
+                    const isCall = r.direction === "call" || r.direction === "bullish";
+                    const isPut  = r.direction === "put"  || r.direction === "bearish";
+                    const optLabel = r.contract?.strike
+                      ? `${r.ticker} ${r.contract.strike}${isCall ? "C" : isPut ? "P" : ""}`
+                      : r.ticker;
+
+                    // One plain-language sentence per ticker instead of a
+                    // grid of labels — say what's happening the way you'd
+                    // say it out loud, with the real numbers dropped in.
+                    let sentence: ReactNode = null;
+                    if (r.status === "trading") {
+                      const upDown = r.pnl != null && r.pnl >= 0 ? "up" : "down";
+                      sentence = (
+                        <>
+                          In a trade on {r.ticker}: bought the{" "}
+                          <strong>{optLabel}{r.contract?.expiry ? `, exp ${r.contract.expiry}` : ""}</strong>{" "}
+                          at <strong>${r.entry_price?.toFixed(2)}</strong>, now worth{" "}
+                          <strong>{r.current_price != null ? `$${r.current_price.toFixed(2)}` : "—"}</strong>
+                          {r.pnl != null && (
+                            <> — {upDown}{" "}
+                              <strong style={{ color: r.pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                                ${Math.abs(r.pnl).toFixed(2)}
+                              </strong>
+                            </>
+                          )}.
+                        </>
+                      );
+                    } else if (r.status === "watching" && r.detail.startsWith("expired")) {
+                      sentence = <>Was watching {r.ticker} — the setup expired ({r.detail.replace("expired — ", "")}).</>;
+                    } else if (r.status === "watching" && r.detail.startsWith("1 of 3")) {
+                      sentence = <>Watching {r.ticker} — breakout spotted, but no retest yet. Contract and entry price aren't locked in until it actually retests.</>;
+                    } else if (r.status === "watching") {
+                      sentence = (
+                        <>
+                          Watching {r.ticker} for the{" "}
+                          <strong>{optLabel}{r.contract?.expiry ? `, exp ${r.contract.expiry}` : ""}</strong>
+                          {" "}— waiting for price to retest{" "}
+                          <strong>{r.retest_level != null ? `$${r.retest_level.toFixed(2)}` : "that level"}</strong>{" "}
+                          and bounce before entering.
+                          {r.contract?.bid != null && r.contract?.ask != null && (
+                            <> Would cost <strong>${r.contract.bid.toFixed(2)}–${r.contract.ask.toFixed(2)}</strong> right now.</>
+                          )}
+                        </>
+                      );
+                    } else {
+                      sentence = (
+                        <>{r.ticker} fired a {r.direction ?? "signal"} on {r.strategy ?? "a strategy"} but{" "}
+                          {r.detail || "didn't clear a gate"} — skipped, nothing to watch here.</>
+                      );
+                    }
+
+                    return (
+                      <div key={r.ticker} className="card px-3 py-2.5" style={{ background: "var(--panel)" }}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                              {r.ticker}
+                            </span>
+                            {r.strategy && <span className="badge badge-blue">{r.strategy}</span>}
+                          </div>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
+                                style={{ background: `${statusColor}22`, color: statusColor }}>
+                            {statusLabel}
+                          </span>
+                        </div>
+
+                        <p className="text-sm" style={{ color: "var(--ink)", lineHeight: 1.5, margin: 0 }}>
+                          {sentence}
+                        </p>
+
+                        {chips && (
+                          <div className="flex gap-3 flex-wrap text-xs mt-1.5">
+                            {chips.map((c) => (
+                              <span key={c.label} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
+                                {c.passed ? "✓" : "✗"} {c.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        )}
+
+        {mainPanelTab === "log" && (
+        <div className="flex flex-col">
+          {(() => {
+            const displayLogs = logPaused ? logSnapshotRef.current : logs;
+            const networkLogs  = displayLogs.filter((e) => isNetworkLog(e));
+            // Signal outcome lines (SIGNAL_ENTERED/SIGNAL_BLOCKED) are shown in the
+            // structured journal section above instead — filtered out here so they
+            // don't appear twice in the same tab.
+            const thinkingLogs = displayLogs.filter((e) =>
+              !isNetworkLog(e) && e.event !== "SIGNAL_ENTERED" && e.event !== "SIGNAL_BLOCKED"
+            );
+            const netHasError  = networkLogs.some((e) => (e.level ?? "").toUpperCase() === "ERROR");
+            const activeLogs   = logTab === "network" ? networkLogs : thinkingLogs;
+            return (
+              <>
+                <div className="border-b flex items-center justify-between"
+                     style={{ borderColor: "var(--border)" }}>
+                  <div className="flex">
+                    {(["thinking", "network"] as const).map((tab) => {
+                      const isNetwork = tab === "network";
+                      const isActive  = logTab === tab;
+                      const hasNetErr = isNetwork && netHasError;
+                      return (
+                        <button key={tab} onClick={() => setLogTab(tab)}
+                          className="px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors"
+                          style={{
+                            borderBottom: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                            color: hasNetErr ? "var(--negative)" : isActive ? "var(--ink)" : "var(--ink-muted)",
+                            background: "none", cursor: "pointer",
+                          }}>
+                          {tab === "thinking" ? "Thinking" : "Network"}
+                          {isNetwork && netHasError && (
+                            <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse align-middle" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {logPaused && (
+                    <span className="badge badge-blue text-[9px] animate-pulse mr-2">⏸ PAUSED</span>
+                  )}
+                </div>
+
+                {/* Ticker filter — the structured summary/chips/journal rows
+                    that used to live here now live on the Board tab instead;
+                    this is purely the raw scrolling narrative, filterable and
+                    with repeated "no setup" filler collapsed so it's actually
+                    readable instead of a wall of near-identical lines. */}
+                <div className="p-2 border-b" style={{ borderColor: "var(--border)" }}>
+                  <input placeholder="Filter by ticker" value={logRawTicker}
+                    onChange={(e) => setLogRawTicker(e.target.value.toUpperCase())}
+                    className="text-xs px-2 py-1.5 rounded w-full"
+                    style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
+                </div>
+
+                <div
+                  className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs"
+                  style={{ maxHeight: 280, cursor: logPaused ? "text" : "default" }}
+                  onMouseEnter={() => { logSnapshotRef.current = [...logs]; setLogPaused(true); }}
+                  onMouseLeave={() => setLogPaused(false)}
+                >
+                  {(() => {
+                    // Filter by ticker (checks the entry's own ticker field
+                    // first, falls back to a "[TICKER]" match in the message
+                    // since not every log line carries a structured field).
+                    const tickerFiltered = !logRawTicker ? activeLogs : activeLogs.filter((e) => {
+                      const t = typeof e.ticker === "string" ? e.ticker.toUpperCase() : "";
+                      const msg = String(e.message ?? "").toUpperCase();
+                      return t.includes(logRawTicker) || msg.includes(`[${logRawTicker}`);
+                    });
+                    // Collapse consecutive identical (ticker, message) lines —
+                    // "No trade setup found" repeating every candle for the
+                    // same ticker was the single biggest source of noise.
+                    const collapsed: { entry: typeof tickerFiltered[number]; count: number }[] = [];
+                    for (const entry of tickerFiltered) {
+                      const prev = collapsed[collapsed.length - 1];
+                      const sameAsPrev = prev
+                        && !isSeparator(entry) && !isSeparator(prev.entry)
+                        && prev.entry.ticker === entry.ticker
+                        && prev.entry.message === entry.message
+                        && prev.entry.event === entry.event;
+                      if (sameAsPrev) { prev.count += 1; } else { collapsed.push({ entry, count: 1 }); }
+                    }
+                    return collapsed.slice(0, 80);
+                  })().map(({ entry, count }, i) => {
+                    if (isSeparator(entry)) {
+                      return (
+                        <div key={i} className="flex items-center gap-2 my-1 select-none"
+                          style={{ color: "var(--ink-faint)", fontSize: 10 }}>
+                          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                          <span>previous session</span>
+                          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                        </div>
+                      );
+                    }
+                    // 2026-07-28: "bar_conditions" lines carry a structured
+                    // [{name, passed}] list (see trading/diagnostics.py) — render
+                    // as simple red/green condition labels instead of parsing
+                    // emoji out of a text blob. Per user request: "simpler...
+                    // just red for not met, green for met, side by side."
+                    if (entry.event === "bar_conditions" && Array.isArray(entry.conditions)) {
+                      const conditions = entry.conditions as { name: string; passed: boolean }[];
+                      return (
+                        <div key={i} className="flex items-center gap-3 flex-wrap">
+                          {entry.ts && (
+                            <span className="opacity-60 select-none"
+                              style={{ color: "var(--ink-muted)", minWidth: "6.5em", display: "inline-block" }}>
+                              {entry.ts}
+                            </span>
+                          )}
+                          {typeof entry.ticker === "string" && (
+                            <span style={{ color: "var(--ink)" }}>{entry.ticker}</span>
+                          )}
+                          {conditions.map((c) => (
+                            <span key={c.name} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
+                              {c.passed ? "✓" : "✗"} {c.name}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    }
+                    const lvl = (entry.level ?? "INFO").toUpperCase();
+                    const color =
+                      lvl === "ERROR"   ? "var(--negative)" :
+                      lvl === "WARNING" ? "var(--warning)"  :
+                      entry.event?.includes("Trade_Signal") ? "var(--positive)" :
+                      "var(--ink-muted)";
+                    return (
+                      <div key={i} style={{ color }}>
+                        {entry.ts && (
+                          <span className="opacity-60 mr-1 select-none"
+                            style={{ color: "var(--ink-muted)", minWidth: "6.5em", display: "inline-block" }}>
+                            {entry.ts}
+                          </span>
+                        )}
+                        {entry.event && <span className="badge badge-blue mr-1">{entry.event}</span>}
+                        {String(entry.message ?? "")}
+                        {count > 1 && (
+                          <span className="ml-1" style={{ color: "var(--ink-faint)" }}>×{count}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {activeLogs.length === 0 && (
+                    <p style={{ color: "var(--ink-muted)" }}>
+                      {logs.length === 0
+                        ? "Waiting for bot…"
+                        : logTab === "thinking"
+                          ? "No bot activity yet — API/network events are in the Network tab"
+                          : "No network events yet"}
+                    </p>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+        </div>
+        )}
+        </div>
+      </div>
+
+      {/* ── Open positions + eval log ─────────────────────────────────────── */}
+      <div className="grid gap-4 two-col-grid">
+        {/* Open positions */}
+        <div className="card">
+          <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
+               style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}>
+            Open Positions ({openTrades.length})
+          </div>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th>
+                  <th>Now</th><th>Strategy</th><th>P&L (live)</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {openTrades.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
+                      No open positions
+                    </td>
+                  </tr>
+                ) : (
+                  openTrades.map((t: Trade) => {
+                    const livePos = status?.open_positions?.[String(t.id)];
+                    const curPx   = livePos?.current_option_price ?? null;
+                    const qty     = livePos?.contracts ?? t.contracts ?? 1;
+                    const unreal  = curPx != null ? (curPx - t.entry_price) * qty * 100 : null;
+                    const pnlPct  = curPx != null ? (curPx - t.entry_price) / t.entry_price * 100 : null;
+                    const updTime = livePos?.current_option_price_time;
+                    return (
+                      <tr key={t.id}
+                        style={{ cursor: "pointer" }}
+                        title="Click to view bot thinking log for this trade"
+                        onClick={() => setTradeDrawerId(id => id === t.id ? null : t.id)}>
+                        <td className="font-semibold"
+                          style={{ color: "var(--accent)" }}
+                          onClick={(e) => { e.stopPropagation(); setTicker(t.ticker); }}
+                          title={`View ${t.ticker} chart`}>
+                          {t.ticker}
+                        </td>
+                        <td>
+                          <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
+                            {t.direction?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="num text-center">
+                          <span className="badge badge-blue">{qty}c</span>
+                        </td>
+                        <td className="num">${t.entry_price.toFixed(2)}</td>
+                        <td className="num" style={{ whiteSpace: "nowrap" }}>
+                          {curPx != null ? (
+                            <>
+                              <span style={{ fontWeight: 600 }}>${curPx.toFixed(2)}</span>
+                              {updTime && (
+                                <span style={{ color: "var(--ink-faint)", fontSize: 9, marginLeft: 3 }}>
+                                  {updTime}
+                                </span>
+                              )}
+                            </>
+                          ) : "—"}
+                        </td>
+                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                          {t.strategy_id ?? "—"}
+                        </td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {unreal != null ? (
+                            <span style={{ fontWeight: 700, color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                              {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
+                              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
+                                ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
+                              </span>
+                            </span>
+                          ) : (
+                            <PnlBadge value={t.pnl} />
+                          )}
+                        </td>
+                        <td>
+                          <button className="btn btn-ghost btn-sm text-xs"
+                            onClick={() => api.bot.closeTrade(t.id)}>
+                            Close
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         {/* Scanner / Chain panel — the old Watching tab that used to live
             here moved into the Board tab below (see mainPanelTab), since
             Board covers the same INST_ORB data plus everything else. */}
@@ -792,410 +1180,6 @@ export function LiveTrading() {
             )}
           </div>
         </div>
-      </div>
-
-      {/* ── Open positions + eval log ─────────────────────────────────────── */}
-      <div className="grid gap-4 two-col-grid">
-        {/* Open positions */}
-        <div className="card">
-          <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
-               style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}>
-            Open Positions ({openTrades.length})
-          </div>
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th>
-                  <th>Now</th><th>Strategy</th><th>P&L (live)</th><th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {openTrades.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
-                      No open positions
-                    </td>
-                  </tr>
-                ) : (
-                  openTrades.map((t: Trade) => {
-                    const livePos = status?.open_positions?.[String(t.id)];
-                    const curPx   = livePos?.current_option_price ?? null;
-                    const qty     = livePos?.contracts ?? t.contracts ?? 1;
-                    const unreal  = curPx != null ? (curPx - t.entry_price) * qty * 100 : null;
-                    const pnlPct  = curPx != null ? (curPx - t.entry_price) / t.entry_price * 100 : null;
-                    const updTime = livePos?.current_option_price_time;
-                    return (
-                      <tr key={t.id}
-                        style={{ cursor: "pointer" }}
-                        title="Click to view bot thinking log for this trade"
-                        onClick={() => setTradeDrawerId(id => id === t.id ? null : t.id)}>
-                        <td className="font-semibold"
-                          style={{ color: "var(--accent)" }}
-                          onClick={(e) => { e.stopPropagation(); setTicker(t.ticker); }}
-                          title={`View ${t.ticker} chart`}>
-                          {t.ticker}
-                        </td>
-                        <td>
-                          <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
-                            {t.direction?.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="num text-center">
-                          <span className="badge badge-blue">{qty}c</span>
-                        </td>
-                        <td className="num">${t.entry_price.toFixed(2)}</td>
-                        <td className="num" style={{ whiteSpace: "nowrap" }}>
-                          {curPx != null ? (
-                            <>
-                              <span style={{ fontWeight: 600 }}>${curPx.toFixed(2)}</span>
-                              {updTime && (
-                                <span style={{ color: "var(--ink-faint)", fontSize: 9, marginLeft: 3 }}>
-                                  {updTime}
-                                </span>
-                              )}
-                            </>
-                          ) : "—"}
-                        </td>
-                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                          {t.strategy_id ?? "—"}
-                        </td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          {unreal != null ? (
-                            <span style={{ fontWeight: 700, color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
-                              {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
-                              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
-                                ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
-                              </span>
-                            </span>
-                          ) : (
-                            <PnlBadge value={t.pnl} />
-                          )}
-                        </td>
-                        <td>
-                          <button className="btn btn-ghost btn-sm text-xs"
-                            onClick={() => api.bot.closeTrade(t.id)}>
-                            Close
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Board / Log — Board is the default per-ticker view (see
-            boardData above); Log is the old Thinking/Network scrolling feed,
-            unchanged, just no longer the first thing you see. */}
-        <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
-             style={{ borderColor: "var(--border)" }}>
-          {(["board", "log"] as const).map((tab) => (
-            <button key={tab} onClick={() => setMainPanelTab(tab)}
-              className="px-3 py-2 transition-colors"
-              style={{
-                color: mainPanelTab === tab ? "var(--ink)" : "var(--ink-muted)",
-                borderBottom: mainPanelTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
-                background: "none",
-              }}>
-              {tab === "board" ? `Board${boardActiveCount ? ` (${boardActiveCount})` : ""}` : "Log"}
-            </button>
-          ))}
-        </div>
-
-        {mainPanelTab === "board" && (
-          <div className="card flex flex-col">
-            <div className="p-2" style={{ borderBottom: "1px solid var(--border)" }}>
-              <input placeholder="Filter by ticker" value={boardTicker}
-                onChange={(e) => setBoardTicker(e.target.value.toUpperCase())}
-                className="text-xs px-2 py-1.5 rounded w-full"
-                style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
-            </div>
-            <div className="overflow-y-auto flex flex-col gap-2 p-2" style={{ maxHeight: 320 }}>
-              {boardRows.filter((r) => !boardTicker || r.ticker.includes(boardTicker)).length === 0 ? (
-                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                  No tickers active yet today.
-                </p>
-              ) : (
-                boardRows
-                  .filter((r) => !boardTicker || r.ticker.includes(boardTicker))
-                  .map((r) => {
-                    const statusColor =
-                      r.status === "trading"  ? "var(--positive)" :
-                      r.status === "watching" ? "var(--accent)"   : "var(--warning, #ea941d)";
-                    const statusLabel =
-                      r.status === "trading" ? "Trading" : r.status === "watching" ? "Watching" : "Blocked";
-                    const chips = r.status === "blocked" ? buildGateChips("blocked", r.reason_code ?? null) : null;
-                    // "direction" means different things per status: "call"/"put"
-                    // on trading rows (from option_type), "bullish"/"bearish" on
-                    // watching rows (from INST_ORB) — normalize both to a C/P suffix.
-                    const isCall = r.direction === "call" || r.direction === "bullish";
-                    const isPut  = r.direction === "put"  || r.direction === "bearish";
-                    const optLabel = r.contract?.strike
-                      ? `${r.ticker} ${r.contract.strike}${isCall ? "C" : isPut ? "P" : ""}`
-                      : r.ticker;
-
-                    return (
-                      <div key={r.ticker} className="card px-3 py-2.5" style={{ background: "var(--panel)" }}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                              {r.status === "trading" || r.status === "watching" ? optLabel : r.ticker}
-                            </span>
-                            {r.strategy && <span className="badge badge-blue">{r.strategy}</span>}
-                          </div>
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
-                                style={{ background: `${statusColor}22`, color: statusColor }}>
-                            {statusLabel}
-                          </span>
-                        </div>
-
-                        {/* Trading — real position: contract, entry→now, live P&L */}
-                        {r.status === "trading" && (
-                          <div className="grid grid-cols-3 gap-2 text-xs">
-                            <div>
-                              <div style={{ color: "var(--ink-faint)" }}>Expiration</div>
-                              <div className="font-medium" style={{ color: "var(--ink)" }}>{r.contract?.expiry ?? "—"}</div>
-                            </div>
-                            <div>
-                              <div style={{ color: "var(--ink-faint)" }}>Entry → now</div>
-                              <div className="num font-medium" style={{ color: "var(--ink)" }}>
-                                ${r.entry_price?.toFixed(2)} → {r.current_price != null ? `$${r.current_price.toFixed(2)}` : "—"}
-                              </div>
-                            </div>
-                            <div>
-                              <div style={{ color: "var(--ink-faint)" }}>Live P&amp;L</div>
-                              <div className="num font-medium" style={{ color: r.pnl != null && r.pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>
-                                {r.pnl != null ? `${r.pnl >= 0 ? "+" : ""}$${r.pnl.toFixed(2)}` : "—"}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Watching — same detail the old Watching tab showed: retest
-                            level, phase, expiration, current price, and a live
-                            "enter if premium is X-Y" band once it's actually retesting */}
-                        {r.status === "watching" && (
-                          <>
-                            <div className="grid grid-cols-4 gap-2 text-xs">
-                              <div>
-                                <div style={{ color: "var(--ink-faint)" }}>Retest level</div>
-                                <div className="num font-medium" style={{ color: "var(--ink)" }}>
-                                  {r.retest_level != null ? `$${r.retest_level.toFixed(2)}` : "—"}
-                                </div>
-                              </div>
-                              <div>
-                                <div style={{ color: "var(--ink-faint)" }}>Phase</div>
-                                <div className="font-medium" style={{ color: "var(--ink)" }}>{r.detail.split(" — ")[0]}</div>
-                              </div>
-                              <div>
-                                <div style={{ color: "var(--ink-faint)" }}>Expiration</div>
-                                <div className="font-medium" style={{ color: "var(--ink)" }}>{r.contract?.expiry ?? "—"}</div>
-                              </div>
-                              <div>
-                                <div style={{ color: "var(--ink-faint)" }}>Now</div>
-                                <div className="num font-medium" style={{ color: "var(--ink)" }}>
-                                  {r.current_price != null ? `$${r.current_price.toFixed(2)}` : "—"}
-                                </div>
-                              </div>
-                            </div>
-                            {r.contract?.bid != null && r.contract?.ask != null && (
-                              <div className="mt-2 px-2 py-1 flex items-center justify-between text-xs"
-                                   style={{ background: "var(--muted)", borderRadius: 6 }}>
-                                <span style={{ color: "var(--ink-muted)" }}>Enter if premium is</span>
-                                <span className="num font-medium" style={{ color: "var(--ink)" }}>
-                                  ${r.contract.bid.toFixed(2)} – ${r.contract.ask.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            {r.detail.startsWith("expired") && (
-                              <p className="text-xs mt-1" style={{ color: "var(--ink-faint)" }}>{r.detail}</p>
-                            )}
-                          </>
-                        )}
-
-                        {/* Blocked — same gate chips the Log tab used to show inline
-                            in its journal rows; this is now the one place they live */}
-                        {chips && (
-                          <>
-                            <p className="text-xs mb-1.5" style={{ color: "var(--ink-muted)" }}>{r.detail}</p>
-                            <div className="flex gap-3 flex-wrap text-xs">
-                              {chips.map((c) => (
-                                <span key={c.label} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
-                                  {c.passed ? "✓" : "✗"} {c.label}
-                                </span>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-          </div>
-        )}
-
-        {mainPanelTab === "log" && (
-        <div className="card flex flex-col">
-          {(() => {
-            const displayLogs = logPaused ? logSnapshotRef.current : logs;
-            const networkLogs  = displayLogs.filter((e) => isNetworkLog(e));
-            // Signal outcome lines (SIGNAL_ENTERED/SIGNAL_BLOCKED) are shown in the
-            // structured journal section above instead — filtered out here so they
-            // don't appear twice in the same tab.
-            const thinkingLogs = displayLogs.filter((e) =>
-              !isNetworkLog(e) && e.event !== "SIGNAL_ENTERED" && e.event !== "SIGNAL_BLOCKED"
-            );
-            const netHasError  = networkLogs.some((e) => (e.level ?? "").toUpperCase() === "ERROR");
-            const activeLogs   = logTab === "network" ? networkLogs : thinkingLogs;
-            return (
-              <>
-                <div className="border-b flex items-center justify-between"
-                     style={{ borderColor: "var(--border)" }}>
-                  <div className="flex">
-                    {(["thinking", "network"] as const).map((tab) => {
-                      const isNetwork = tab === "network";
-                      const isActive  = logTab === tab;
-                      const hasNetErr = isNetwork && netHasError;
-                      return (
-                        <button key={tab} onClick={() => setLogTab(tab)}
-                          className="px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors"
-                          style={{
-                            borderBottom: isActive ? "2px solid var(--accent)" : "2px solid transparent",
-                            color: hasNetErr ? "var(--negative)" : isActive ? "var(--ink)" : "var(--ink-muted)",
-                            background: "none", cursor: "pointer",
-                          }}>
-                          {tab === "thinking" ? "Thinking" : "Network"}
-                          {isNetwork && netHasError && (
-                            <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse align-middle" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {logPaused && (
-                    <span className="badge badge-blue text-[9px] animate-pulse mr-2">⏸ PAUSED</span>
-                  )}
-                </div>
-
-                {/* Ticker filter — the structured summary/chips/journal rows
-                    that used to live here now live on the Board tab instead;
-                    this is purely the raw scrolling narrative, filterable and
-                    with repeated "no setup" filler collapsed so it's actually
-                    readable instead of a wall of near-identical lines. */}
-                <div className="p-2 border-b" style={{ borderColor: "var(--border)" }}>
-                  <input placeholder="Filter by ticker" value={logRawTicker}
-                    onChange={(e) => setLogRawTicker(e.target.value.toUpperCase())}
-                    className="text-xs px-2 py-1.5 rounded w-full"
-                    style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--ink)" }} />
-                </div>
-
-                <div
-                  className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 font-mono text-xs"
-                  style={{ maxHeight: 280, cursor: logPaused ? "text" : "default" }}
-                  onMouseEnter={() => { logSnapshotRef.current = [...logs]; setLogPaused(true); }}
-                  onMouseLeave={() => setLogPaused(false)}
-                >
-                  {(() => {
-                    // Filter by ticker (checks the entry's own ticker field
-                    // first, falls back to a "[TICKER]" match in the message
-                    // since not every log line carries a structured field).
-                    const tickerFiltered = !logRawTicker ? activeLogs : activeLogs.filter((e) => {
-                      const t = typeof e.ticker === "string" ? e.ticker.toUpperCase() : "";
-                      const msg = String(e.message ?? "").toUpperCase();
-                      return t.includes(logRawTicker) || msg.includes(`[${logRawTicker}`);
-                    });
-                    // Collapse consecutive identical (ticker, message) lines —
-                    // "No trade setup found" repeating every candle for the
-                    // same ticker was the single biggest source of noise.
-                    const collapsed: { entry: typeof tickerFiltered[number]; count: number }[] = [];
-                    for (const entry of tickerFiltered) {
-                      const prev = collapsed[collapsed.length - 1];
-                      const sameAsPrev = prev
-                        && !isSeparator(entry) && !isSeparator(prev.entry)
-                        && prev.entry.ticker === entry.ticker
-                        && prev.entry.message === entry.message
-                        && prev.entry.event === entry.event;
-                      if (sameAsPrev) { prev.count += 1; } else { collapsed.push({ entry, count: 1 }); }
-                    }
-                    return collapsed.slice(0, 80);
-                  })().map(({ entry, count }, i) => {
-                    if (isSeparator(entry)) {
-                      return (
-                        <div key={i} className="flex items-center gap-2 my-1 select-none"
-                          style={{ color: "var(--ink-faint)", fontSize: 10 }}>
-                          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-                          <span>previous session</span>
-                          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-                        </div>
-                      );
-                    }
-                    // 2026-07-28: "bar_conditions" lines carry a structured
-                    // [{name, passed}] list (see trading/diagnostics.py) — render
-                    // as simple red/green condition labels instead of parsing
-                    // emoji out of a text blob. Per user request: "simpler...
-                    // just red for not met, green for met, side by side."
-                    if (entry.event === "bar_conditions" && Array.isArray(entry.conditions)) {
-                      const conditions = entry.conditions as { name: string; passed: boolean }[];
-                      return (
-                        <div key={i} className="flex items-center gap-3 flex-wrap">
-                          {entry.ts && (
-                            <span className="opacity-60 select-none"
-                              style={{ color: "var(--ink-muted)", minWidth: "6.5em", display: "inline-block" }}>
-                              {entry.ts}
-                            </span>
-                          )}
-                          {typeof entry.ticker === "string" && (
-                            <span style={{ color: "var(--ink)" }}>{entry.ticker}</span>
-                          )}
-                          {conditions.map((c) => (
-                            <span key={c.name} style={{ color: c.passed ? "var(--positive)" : "var(--negative)" }}>
-                              {c.passed ? "✓" : "✗"} {c.name}
-                            </span>
-                          ))}
-                        </div>
-                      );
-                    }
-                    const lvl = (entry.level ?? "INFO").toUpperCase();
-                    const color =
-                      lvl === "ERROR"   ? "var(--negative)" :
-                      lvl === "WARNING" ? "var(--warning)"  :
-                      entry.event?.includes("Trade_Signal") ? "var(--positive)" :
-                      "var(--ink-muted)";
-                    return (
-                      <div key={i} style={{ color }}>
-                        {entry.ts && (
-                          <span className="opacity-60 mr-1 select-none"
-                            style={{ color: "var(--ink-muted)", minWidth: "6.5em", display: "inline-block" }}>
-                            {entry.ts}
-                          </span>
-                        )}
-                        {entry.event && <span className="badge badge-blue mr-1">{entry.event}</span>}
-                        {String(entry.message ?? "")}
-                        {count > 1 && (
-                          <span className="ml-1" style={{ color: "var(--ink-faint)" }}>×{count}</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {activeLogs.length === 0 && (
-                    <p style={{ color: "var(--ink-muted)" }}>
-                      {logs.length === 0
-                        ? "Waiting for bot…"
-                        : logTab === "thinking"
-                          ? "No bot activity yet — API/network events are in the Network tab"
-                          : "No network events yet"}
-                    </p>
-                  )}
-                </div>
-              </>
-            );
-          })()}
-        </div>
-        )}
       </div>
 
       {/* ── News feed ───────────────────────────────────────────────────────── */}
