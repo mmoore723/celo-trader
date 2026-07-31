@@ -176,6 +176,13 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     msa   = MarketStructureAnalyzer(today)
     trend = msa.classify_trend()
 
+    # 2026-07-31: opt-in immediate-entry toggle — see api/models.py's
+    # inst_orb_immediate_entry_enabled field comment for the full rationale.
+    # Read once per evaluate() call, not per bar, to avoid a settings lookup
+    # on every iteration of the loop below.
+    from config import get_settings as _gs
+    _immediate_entry_on = bool(_gs().get("strategy_instorb_immediate_entry", False))
+
     result: Optional[Signal] = None
 
     for _, bar in today.iterrows():
@@ -219,10 +226,62 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             else:
                 direction = "bearish" if trend in ("downtrend", "consolidation") else "bullish"
 
+            boundary = or_high if broke_high else or_low
+
+            # ── Opt-in immediate entry (2026-07-31) ─────────────────────────
+            # Off by default. When ON, try to enter right here on the
+            # breakout bar instead of waiting for a retest. If the gates
+            # below don't clear (cooldown/RVOL), we do NOT give up — we fall
+            # through to the normal breakout_seen transition below and still
+            # wait for a retest, exactly as if this toggle were off. Additive:
+            # the retest path is never removed, only possibly preempted.
+            if _immediate_entry_on and not check_cooldown(STRATEGY_ID, ticker, bar_time):
+                rvol_threshold = _get_dynamic_rvol_threshold(
+                    bar_min=bar_min, close=close, or_low=or_low, vwap=vwap, strategy_id=STRATEGY_ID,
+                )
+                rvol_reason = _rvol_threshold_reason(
+                    bar_min=bar_min, close=close, or_low=or_low, vwap=vwap, strategy_id=STRATEGY_ID,
+                )
+                if rvol >= rvol_threshold:
+                    confidence = _compute_confidence(
+                        rvol=rvol, rvol_threshold=rvol_threshold, atr=atr, close=close,
+                        or_high=or_high, or_low=or_low, direction=direction,
+                        direction_flipped=False,   # can't have flipped yet — this IS the breakout bar
+                        trend=trend,
+                        is_retest=False,   # raw-breakout entry — no retest bonus, wider proximity scale
+                    )
+                    register_cooldown(STRATEGY_ID, ticker, bar_time)
+                    logger.info(
+                        "[%s] INST_ORB IMMEDIATE ENTRY at %s — direction=%s boundary=%.2f "
+                        "close=%.2f confidence=%.2f rvol=%.2f trend=%s "
+                        "(retest wait skipped — immediate-entry toggle ON)",
+                        ticker, bar_time.strftime("%H:%M"), direction, boundary, close,
+                        confidence, rvol, trend,
+                    )
+                    _entry_bar_low  = float(bar["low"])  if direction == "bullish" else None
+                    _entry_bar_high = float(bar["high"]) if direction == "bearish" else None
+                    result = Signal(
+                        confidence  = confidence,
+                        strategy_id = STRATEGY_ID,
+                        direction   = direction,
+                        rvol        = rvol,
+                        trigger_bar = bar_time,
+                        meta        = {
+                            "or_high": or_high, "or_low": or_low, "or_boundary": boundary,
+                            "atr": atr, "vwap": vwap, "trend": trend,
+                            "entry_type": "immediate",
+                            "rvol_threshold": rvol_threshold, "rvol_reason": rvol_reason,
+                            "entry_bar_low": _entry_bar_low, "entry_bar_high": _entry_bar_high,
+                        },
+                    )
+                    # Stay idle — this breakout has already been acted on, so
+                    # don't also enter breakout_seen and wait for its retest.
+                    continue
+
             # Record the breakout; do NOT enter — advance state to "wait for retest"
             state["phase"]        = "breakout_seen"
             state["direction"]    = direction
-            state["or_boundary"]  = or_high if broke_high else or_low
+            state["or_boundary"]  = boundary
             state["breakout_bar"] = bar_time
             state["retest_bar"]   = None
             logger.info(

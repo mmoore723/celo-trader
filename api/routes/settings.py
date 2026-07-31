@@ -54,6 +54,9 @@ def get_settings_endpoint() -> Settings:
         vol_roc_threshold=float(s.get("vol_roc_threshold", 0.50)),
         simplified_exit_mode=bool(s.get("simplified_exit_mode", True)),
         mtf_confirmation_enabled=bool(s.get("mtf_confirmation_enabled", False)),
+        # 2026-07-31: INST_ORB immediate-entry (no-retest) toggle — see
+        # strategies/inst_orb.py and api/models.py's field comment.
+        inst_orb_immediate_entry_enabled=bool(s.get("strategy_instorb_immediate_entry", False)),
         # 2026-07-24: hard-cap kill-lock threshold, was hardcoded — see risk.py
         daily_loss_hard_cap_pct=float(s.get("daily_loss_hard_cap_pct", 10.0)),
         # 2026-07-24: grade-based entry filter — see router_gates.py
@@ -81,6 +84,7 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_tcont_enabled"]  = data.pop("trend_cont_enabled", True)   # re-enabled 2026-07-16
     data["strategy_aft_enabled"]    = data.pop("aft_rev_enabled", True)      # exposed to Settings 2026-07-20
     data["strategy_gapgo_enabled"]  = data.pop("gap_go_enabled", False)      # added 2026-07-23, defaults OFF
+    data["strategy_instorb_immediate_entry"] = data.pop("inst_orb_immediate_entry_enabled", False)  # added 2026-07-31, defaults OFF
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw
     # the user's setting and always fell through to the bootstrap 5% auto-tier.

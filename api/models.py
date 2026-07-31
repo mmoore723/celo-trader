@@ -209,6 +209,19 @@ class Settings(BaseModel):
                                           # see trading/mtf_live_gate.py. Can't
                                           # be backtested — watch in
                                           # signal_only_mode before trusting.
+    inst_orb_immediate_entry_enabled: bool = False  # 2026-07-31: opt-in — enter
+                                          # on the breakout bar itself instead of
+                                          # waiting for the OR-level retest. OFF
+                                          # by default: INST_ORB's whole edge (see
+                                          # strategies/inst_orb.py's module
+                                          # docstring) is that the retest gives a
+                                          # cheaper premium + structural
+                                          # confirmation; this trades that off for
+                                          # not missing moves that never retest.
+                                          # Not backtested — no historical data
+                                          # captures the raw-breakout-bar fill
+                                          # price/spread. Watch in
+                                          # signal_only_mode before trusting.
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────

@@ -51,6 +51,7 @@ const DEFAULT: AppSettings = {
   max_position_dollars_pct: 15,  // added 2026-07-24 — was hardcoded, no UI
   simplified_exit_mode: true,        // added 2026-07-22 — 3-rule exit, on by default (see research note in-form)
   mtf_confirmation_enabled: false,   // added 2026-07-23 — live 1Hour bias gate, off by default (can't backtest)
+  inst_orb_immediate_entry_enabled: false,  // added 2026-07-31 — skip the retest wait, off by default (not backtested)
 };
 
 const TIMEZONES = [
@@ -537,6 +538,20 @@ export function Settings() {
           Off by default — unlike every other gate, this depends on a live
           "as-of-now" API fetch and can't be validated against the
           backtester. Watch it in Signal-Only mode before trusting it.
+        </p>
+        <Toggle
+          label="INST_ORB immediate entry (skip retest wait)"
+          checked={form.inst_orb_immediate_entry_enabled ?? false}
+          onChange={(v) => set("inst_orb_immediate_entry_enabled", v)}
+        />
+        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+          Off by default (recommended). INST_ORB normally waits for price to
+          pull back and retest the opening-range level before entering —
+          cheaper premium, tighter stop. On: it can also enter right on the
+          breakout bar itself if RVOL and cooldown gates clear, so moves that
+          never come back to retest aren't missed entirely. The retest path
+          still runs as a fallback either way. Not backtested — turning this
+          on is a live trade-off between catching more moves and worse fills.
         </p>
       </div>
 
