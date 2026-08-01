@@ -267,7 +267,11 @@ class SimulateMixin:
             bar_slice   = _src.iloc[_lookback_floor_idx : _global_idx + 1]
 
             try:
-                signals = route_signals(bar_slice, self.ticker, quiet=True)
+                signals = route_signals(
+                    bar_slice, self.ticker,
+                    enabled_strategies=self.enabled_strategies,
+                    quiet=True,
+                )
             except Exception as _rs_ex:
                 logger.debug("BT route_signals raised on %s bar %s: %s", self.ticker, ts, _rs_ex)
                 continue

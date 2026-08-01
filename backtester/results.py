@@ -165,6 +165,7 @@ class ResultsMixin:
             # live options profitability.
             "model_fidelity": {
                 "exit_mode": "simplified_3_rule" if self.SIMPLIFIED_EXIT_MODE else "full_exit_stack",
+                "enabled_strategies": sorted(self.enabled_strategies),
                 "settings_snapshot": self.backtest_settings,
                 "option_pricing": "synthetic_black_scholes_proxy",
                 "limitations": [

@@ -46,6 +46,24 @@ class CoreMixin:
         # Freeze settings once so a running replay is reproducible and cannot
         # silently change when a dashboard setting is saved mid-run.
         self.backtest_settings = get_settings()
+        # Match trading/entry/tick.py: a normal dashboard backtest must only
+        # replay strategies currently enabled for paper/live trading. A/B
+        # harnesses can explicitly replace this set for a hypothetical test.
+        _strategy_settings = (
+            ("INST_ORB", "strategy_orb_enabled", True),
+            ("VWAP_PB", "strategy_vwap_enabled", True),
+            ("FVG", "strategy_fvg_enabled", True),
+            ("IFVG", "strategy_ifvg_enabled", True),
+            ("MID_BRK", "strategy_mid_enabled", False),
+            ("AFT_REV", "strategy_aft_enabled", True),
+            ("TREND_CONT", "strategy_tcont_enabled", True),
+            ("GAP_GO", "strategy_gapgo_enabled", True),
+            ("LIQ_SWEEP", "strategy_liqsweep_enabled", True),
+        )
+        self.enabled_strategies = {
+            strategy_id for strategy_id, key, default in _strategy_settings
+            if bool(self.backtest_settings.get(key, default))
+        }
         # Used for structural_stop_from_level()/should_exit() AND (2026-07-22)
         # the pre-entry evaluate_rr() gate — the same real risk.py engine live
         # trading calls (see backtest_exit_sim.py).
