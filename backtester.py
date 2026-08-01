@@ -322,13 +322,28 @@ class Backtester:
                     interval=interval, progress=False, auto_adjust=True,
                 )
 
-            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                _fut = _ex.submit(_do_download)
-                try:
-                    _raw = _fut.result(timeout=20)
-                except _cf.TimeoutError:
-                    logger.warning("Backtest: yfinance %s timed out for %s", interval, self.ticker)
-                    return pd.DataFrame()
+            # FIX 2026-07-31: `with ThreadPoolExecutor(...)` was cosmetic here —
+            # exiting the `with` block calls shutdown(wait=True), which BLOCKS
+            # until the background thread actually finishes, even after the
+            # .result(timeout=20) above it already timed out. If yf.download()
+            # truly hangs (TCP connects but never receives data — no error, no
+            # exception, just silence), the process still blocks forever on
+            # exit, defeating the timeout entirely. Confirmed live: a run on
+            # the user's Mac hung with no output for 16+ minutes and didn't
+            # even respond to Ctrl+C (blocked in a native thread-join, not
+            # Python bytecode). Managing the executor manually and calling
+            # shutdown(wait=False) on timeout lets the main thread move on —
+            # the stuck background thread is abandoned, not force-killed
+            # (Python can't kill threads), but it no longer blocks anything.
+            _ex = _cf.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(_do_download)
+            try:
+                _raw = _fut.result(timeout=20)
+            except _cf.TimeoutError:
+                logger.warning("Backtest: yfinance %s timed out for %s", interval, self.ticker)
+                _ex.shutdown(wait=False)
+                return pd.DataFrame()
+            _ex.shutdown(wait=False)
 
             if _raw.empty:
                 return pd.DataFrame()
@@ -460,13 +475,21 @@ class Backtester:
                     auto_adjust=True,
                 )
 
-            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                _fut = _ex.submit(_do_download)
-                try:
-                    _raw_yf = _fut.result(timeout=30)
-                except _cf.TimeoutError:
-                    logger.warning("Backtest: yfinance timed out after 30s for %s", self.ticker)
-                    _raw_yf = pd.DataFrame()
+            # FIX 2026-07-31: see the matching fix + full explanation in
+            # _fetch_extra_timeframe() above — `with ThreadPoolExecutor(...)`
+            # blocks on exit (shutdown(wait=True)) even after this timeout
+            # fires, so a genuinely hung yf.download() (connects, never
+            # receives data, no exception) still hangs the whole process
+            # indefinitely and doesn't even respond to Ctrl+C. Managed
+            # manually + shutdown(wait=False) so a timeout actually unblocks.
+            _ex = _cf.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(_do_download)
+            try:
+                _raw_yf = _fut.result(timeout=30)
+            except _cf.TimeoutError:
+                logger.warning("Backtest: yfinance timed out after 30s for %s", self.ticker)
+                _raw_yf = pd.DataFrame()
+            _ex.shutdown(wait=False)
 
             if not _raw_yf.empty:
                 if hasattr(_raw_yf.columns, "get_level_values"):
