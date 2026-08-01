@@ -27,9 +27,10 @@ Entry logic — fade a failed breakout, not a real one:
     5. RVOL confirms real participation on the stab (dynamic threshold,
        same helper every other strategy uses)
   Stop reference: the wick extreme itself — if price retakes it, the sweep
-  thesis (this was a trap, not a real move) is wrong. Floored at 0.5×ATR
-  beyond entry (2026-07-31 fix — see stop_ref below) so normal post-sweep
-  chop doesn't clip the trade before the thesis has room to play out.
+  thesis (this was a trap, not a real move) is wrong. Padded an ADDITIONAL
+  0.5×ATR beyond the wick (2026-07-31, corrected same-day — see stop_ref
+  below for why the first version of this fix was a no-op) so normal
+  post-sweep chop doesn't clip the trade before the thesis has room to play out.
 
 UNTESTED — see api/models.py's liquidity_sweep_enabled comment. Built from
 published sources, not yet validated against this bot's own backtester.
@@ -134,18 +135,26 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
 
     # Structural stop — the wick extreme itself is the correct INVALIDATION
     # level (if price retakes it, the sweep thesis is wrong), but handing it
-    # to the exit engine with zero padding produces a near-zero-width stop:
-    # by construction the wick is only _PENETRATION_ATR_MIN + _REJECTION_ATR_MIN
-    # ATR away from the entry (close), which normal post-sweep chop clips
-    # almost immediately (2026-07-31 audit: 20/21 backtested trades stopped
-    # out via this exact path, avg hold 4.2 min). Same fix CHAN_BREAK already
-    # uses for the same reason: floor the distance at 0.5×ATR beyond the
-    # level so the trade has room to actually prove the thesis right or wrong,
-    # instead of getting stopped by the first tick of noise.
+    # to the exit engine with zero padding produced a near-zero-width stop in
+    # practice: real backtested distance (penetration + rejection) averaged
+    # only 1.31 ATR, which the 0.40-delta option-price conversion compresses
+    # into a razor-thin premium move (2026-07-31 audit: 20/21 trades stopped
+    # out via this exact path, avg hold 4.2 min).
+    #
+    # BUG (2026-07-31, first attempt): this was originally written as
+    # max(wick_extreme, close ± 0.5×ATR) — a FLOOR, copying chan_break.py's
+    # pattern. That works for chan_break because its reference (prev bar's
+    # high/low) can be near-zero distance from entry. LIQ_SWEEP's entry gate
+    # already guarantees the wick is >= ~0.25 ATR away (avg 1.31 ATR in real
+    # trades) — always further than the 0.5×ATR floor, so max() always kept
+    # the original wick and the "fix" never activated. Confirmed by rerunning
+    # the backtest: P&L came back byte-for-byte identical to the pre-fix run.
+    # Corrected to ADD 0.5×ATR beyond the wick instead of flooring at it, so
+    # it always widens the stop regardless of how far the wick already is.
     if direction == "bearish":
-        stop_ref = max(wick_extreme, close + 0.5 * atr)
+        stop_ref = wick_extreme + 0.5 * atr
     else:
-        stop_ref = min(wick_extreme, close - 0.5 * atr)
+        stop_ref = wick_extreme - 0.5 * atr
 
     register_cooldown(STRATEGY_ID, ticker, bar_time)
     logger.info(
