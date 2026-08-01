@@ -339,7 +339,15 @@ class RiskManager:
     #      same way, instead of a fixed % being too tight in high-ATR names
     #      and too loose in low-ATR ones.
     STAGE1_MOMENTUM_REQUIRE_BOTH      = True   # 2026-07-31: was False (OR) — see diagnosis above
-    STAGE1_FLOOR_FRACTION_OF_TARGET   = 0.45   # 2026-07-31: replaces flat STAGE1_MIN_LOCK_FLOOR_PCT
+    # 2026-07-31, later same day: 0.45 + the new STAGE1_TARGET_MIN_PCT floor
+    # above made wins bigger (confirmed: MID_BRK avg win $31→$49, LIQ_SWEEP
+    # $2→$21) but stage1_atr_target STILL never won the race — momentum/
+    # volume fade fired first on every single trade, just later than before.
+    # Raised 0.45 → 0.75 so the fade check isn't even eligible until a trade
+    # has covered 75% of the distance to target — close enough that the real
+    # target gets a genuine shot at finishing first on trades that are
+    # actually working, instead of always losing the race to an early fade.
+    STAGE1_FLOOR_FRACTION_OF_TARGET   = 0.75   # 2026-07-31: raised from 0.45 — see note above
     # NOTE 2026-07-18: ORB_TIME_BOX below is UNUSED — grepped the repo, nothing
     # reads it. The real flat/losing time cap is config.py's EARLY_TIMEBOX_MIN
     # (currently 60 min), read directly in evaluate_exit_conditions() below.

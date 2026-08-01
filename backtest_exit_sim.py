@@ -102,7 +102,7 @@ _risk.ORB_STAGE1_GAIN = float(_DEFAULTS.get("orb_stage1_gain_pct", 50)) / 100.0
 _risk.ORB_STOP_PCT                 = float(_DEFAULTS.get("orb_stop_loss_pct", 20)) / 100.0
 _risk.STAGE1_DYNAMIC_ENABLED        = bool(_DEFAULTS.get("stage1_dynamic_enabled", True))
 _risk.STAGE1_ATR_TARGET_MULT        = float(_DEFAULTS.get("stage1_atr_target_mult", 2.0))
-_risk.STAGE1_FLOOR_FRACTION_OF_TARGET = float(_DEFAULTS.get("stage1_floor_fraction_of_target", 45)) / 100.0
+_risk.STAGE1_FLOOR_FRACTION_OF_TARGET = float(_DEFAULTS.get("stage1_floor_fraction_of_target", 75)) / 100.0
 _risk.STAGE1_RVOL_FADE_THRESHOLD    = float(_DEFAULTS.get("stage1_rvol_fade_threshold", 1.0))
 _risk.STAGE1_MOMENTUM_REQUIRE_BOTH  = bool(_DEFAULTS.get("stage1_momentum_require_both", True))
 

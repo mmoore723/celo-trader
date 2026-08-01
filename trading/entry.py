@@ -721,7 +721,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # within seconds without a bot restart.
         _risk.STAGE1_DYNAMIC_ENABLED     = bool(settings.get("stage1_dynamic_enabled", True))
         _risk.STAGE1_ATR_TARGET_MULT     = float(settings.get("stage1_atr_target_mult", 2.0))
-        _risk.STAGE1_FLOOR_FRACTION_OF_TARGET = float(settings.get("stage1_floor_fraction_of_target", 45)) / 100.0
+        _risk.STAGE1_FLOOR_FRACTION_OF_TARGET = float(settings.get("stage1_floor_fraction_of_target", 75)) / 100.0
         _risk.STAGE1_RVOL_FADE_THRESHOLD = float(settings.get("stage1_rvol_fade_threshold", 1.0))
         _risk.STAGE1_MOMENTUM_REQUIRE_BOTH = bool(settings.get("stage1_momentum_require_both", True))
 

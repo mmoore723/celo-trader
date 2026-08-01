@@ -405,7 +405,7 @@ _DEFAULTS = {
     # a fraction of the distance to the ATR target, so it scales with
     # volatility like the target itself does. See risk.py's STAGE1_
     # FLOOR_FRACTION_OF_TARGET docstring for the diagnosis.
-    "stage1_floor_fraction_of_target": 45, # % of the ATR-target distance required before momentum/volume fade can lock early
+    "stage1_floor_fraction_of_target": 75, # % of the ATR-target distance required before momentum/volume fade can lock early (2026-07-31: raised from 45 -- see risk.py)
     "stage1_rvol_fade_threshold":  1.0,    # RVOL below this (after being elevated) = crowd left, lock early
     "stage1_momentum_require_both": True,  # 2026-07-31: was False (OR) — requires BOTH RSI exhaustion AND MACD fade
     # 2026-07-15 audit: 25% was far too loose — a 25% spread is an instant ~12%
