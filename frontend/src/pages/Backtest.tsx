@@ -214,6 +214,14 @@ export function Backtest() {
             ))}
           </div>
 
+          <div className="card px-4 py-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+            <span className="font-semibold" style={{ color: "var(--ink)" }}>Model scope: </span>
+            {result.model_fidelity?.exit_mode === "simplified_3_rule"
+              ? "uses the current simplified live exit rules"
+              : "uses the full exit stack"}
+            {"; option prices are a synthetic IV proxy, not historical bid/ask fills. Use this to compare configurations, then validate the winner in paper trading."}
+          </div>
+
           {/* Call vs Put breakdown (only shown when direction = "both") */}
           {direction === "both" && (result.call_trades ?? 0) + (result.put_trades ?? 0) > 0 && (
             <div className="card p-4">

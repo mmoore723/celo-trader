@@ -233,7 +233,7 @@ class SimulateMixin:
                     # 2026-07-22: the simplified 3-rule exit's stop-type reasons
                     # need the same worst-price fill convention as their
                     # equivalents above — only the time cap fills at close.
-                    "simplified_hard_stop", "simplified_chandelier_3atr",
+                    "simplified_hard_stop",
                 )
                 _fill_px = _opt_bar_worst if exit_reason.startswith(_adverse_reasons) else opt_price
                 exit_px  = round(_fill_px * (1.0 - self.SLIPPAGE_PCT), 4)
@@ -407,4 +407,3 @@ class SimulateMixin:
             session_pnl += pnl
 
         return session_pnl
-

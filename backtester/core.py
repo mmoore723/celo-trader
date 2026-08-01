@@ -11,7 +11,12 @@ from typing import Optional
 
 import pandas as pd
 
-from config import BACKTEST_MONTHS, STARTING_CAPITAL, _DEFAULTS
+from config import (
+    BACKTEST_MONTHS, STARTING_CAPITAL, get_settings,
+    BOOTSTRAP_RISK_PCT, GROWTH_MODE_RISK_PCT, MID_TIER_RISK_PCT,
+    CONSERVATIVE_RISK_PCT, GROWTH_RISK_BOUNDARY_BOOT,
+    GROWTH_RISK_BOUNDARY_LOW, GROWTH_RISK_BOUNDARY,
+)
 from risk import RiskManager
 
 
@@ -33,6 +38,9 @@ class CoreMixin:
         self.direction         = direction
         self.risk_pct_override = risk_pct   # None → live 4-tier ladder
         self.trades: list[dict] = []
+        # Freeze settings once so a running replay is reproducible and cannot
+        # silently change when a dashboard setting is saved mid-run.
+        self.backtest_settings = get_settings()
         # Used for structural_stop_from_level()/should_exit() AND (2026-07-22)
         # the pre-entry evaluate_rr() gate — the same real risk.py engine live
         # trading calls (see backtest_exit_sim.py).
@@ -47,8 +55,9 @@ class CoreMixin:
         # 1.2x/1.6x gate, blocking every single trade regardless of ticker,
         # strategy, or entry quality. This is why the R:R-gated backtest and
         # ab_test_structural_stop_mode.py runs came back with 0 trades.
-        self._risk.ORB_STAGE1_GAIN = float(_DEFAULTS.get("orb_stage1_gain_pct", 50)) / 100.0
-        self._risk.ORB_STOP_PCT    = float(_DEFAULTS.get("orb_stop_loss_pct", 20)) / 100.0
+        self._risk.ORB_STAGE1_GAIN = float(self.backtest_settings.get("orb_stage1_gain_pct", 50)) / 100.0
+        self._risk.ORB_STOP_PCT    = float(self.backtest_settings.get("orb_stop_loss_pct", 20)) / 100.0
+        self.ORB_STOP_PCT          = self._risk.ORB_STOP_PCT
         # BUG FIX 2026-07-22 (full-audit finding 1.1): the two lines above only
         # synced 2 of the 7 knobs live actually syncs every tick (see
         # trading/entry.py's "Sync user-editable trade parameters" block).
@@ -56,11 +65,14 @@ class CoreMixin:
         # correct today only by coincidence, not by design. If any of these
         # is ever changed via Settings, an unpatched backtester would keep
         # testing the OLD value forever with no error. Syncing all 7 here.
-        self._risk.STAGE1_DYNAMIC_ENABLED     = bool(_DEFAULTS.get("stage1_dynamic_enabled", True))
-        self._risk.STAGE1_ATR_TARGET_MULT     = float(_DEFAULTS.get("stage1_atr_target_mult", 2.0))
-        self._risk.STAGE1_FLOOR_FRACTION_OF_TARGET = float(_DEFAULTS.get("stage1_floor_fraction_of_target", 75)) / 100.0
-        self._risk.STAGE1_RVOL_FADE_THRESHOLD = float(_DEFAULTS.get("stage1_rvol_fade_threshold", 1.0))
-        self._risk.STAGE1_MOMENTUM_REQUIRE_BOTH = bool(_DEFAULTS.get("stage1_momentum_require_both", True))
+        self._risk.STAGE1_DYNAMIC_ENABLED     = bool(self.backtest_settings.get("stage1_dynamic_enabled", True))
+        self._risk.STAGE1_ATR_TARGET_MULT     = float(self.backtest_settings.get("stage1_atr_target_mult", 2.0))
+        self._risk.STAGE1_FLOOR_FRACTION_OF_TARGET = float(self.backtest_settings.get("stage1_floor_fraction_of_target", 75)) / 100.0
+        self._risk.STAGE1_RVOL_FADE_THRESHOLD = float(self.backtest_settings.get("stage1_rvol_fade_threshold", 1.0))
+        self._risk.STAGE1_MOMENTUM_REQUIRE_BOTH = bool(self.backtest_settings.get("stage1_momentum_require_both", True))
+        # Live defaults to this mode. A/B scripts may still override it after
+        # construction, but a normal dashboard backtest must test the live bot.
+        self.SIMPLIFIED_EXIT_MODE = bool(self.backtest_settings.get("simplified_exit_mode", True))
         # Entry-detection sources — populated by _prep_entry_sources() in run().
         self._df1m: Optional[pd.DataFrame] = None
         self._1m_day_start: dict = {}
@@ -86,9 +98,7 @@ class CoreMixin:
         if self.risk_pct_override is not None:
             risk_pct = float(self.risk_pct_override)
         else:
-            # Use the live bot's 4-tier ladder based on current simulated balance
-            _rm_temp = RiskManager(account_balance=balance)
-            risk_pct = _rm_temp.effective_risk_pct(balance)
+            risk_pct = self._effective_risk_pct(balance)
 
         total_risk        = balance * risk_pct
         risk_per_contract = entry_px * self.ORB_STOP_PCT * 100   # $ at risk per contract
@@ -98,18 +108,43 @@ class CoreMixin:
 
         contracts = int(total_risk / risk_per_contract)
 
-        # Notional cap: 30% of balance in high-risk tiers, 20% in conservative
-        max_notional_pct = 0.30 if risk_pct > 0.01 else 0.20
+        boot_boundary = float(self.backtest_settings.get(
+            "growth_risk_boundary_boot", GROWTH_RISK_BOUNDARY_BOOT,
+        ))
+        in_bootstrap = bool(self.backtest_settings.get("growth_mode", False)) and balance < boot_boundary
+        max_notional_pct = 0.45 if in_bootstrap else (0.30 if risk_pct > CONSERVATIVE_RISK_PCT else 0.20)
         max_notional     = balance * max_notional_pct
-
-        # Floor to 1 contract if we can afford the PREMIUM (notional check).
-        # The risk-based floor (risk_per_contract <= total_risk) is too strict
-        # for small accounts trading expensive underlyings like SPY — the live
-        if contracts == 0 and (entry_px * 100) <= max_notional:
-            contracts = 1
 
         while contracts > 1 and (entry_px * 100 * contracts) > max_notional:
             contracts -= 1
 
+        if in_bootstrap:
+            if contracts < 2 and (entry_px * 100 * 2) <= max_notional:
+                contracts = 2
+            elif contracts == 0 and (entry_px * 100) <= max_notional:
+                contracts = 1
+        elif contracts == 0 and (entry_px * 100) <= max_notional:
+            contracts = 1
+
         return max(0, contracts)
 
+    def _effective_risk_pct(self, balance: float) -> float:
+        """Snapshot equivalent of config.get_risk_tier() for this replay."""
+        override = self.backtest_settings.get("risk_per_trade")
+        try:
+            if override is not None and 0 < float(override) <= 0.25:
+                return float(override)
+        except (TypeError, ValueError):
+            pass
+        if not self.backtest_settings.get("growth_mode", False):
+            return CONSERVATIVE_RISK_PCT
+        boot = float(self.backtest_settings.get("growth_risk_boundary_boot", GROWTH_RISK_BOUNDARY_BOOT))
+        low = float(self.backtest_settings.get("growth_risk_boundary_low", GROWTH_RISK_BOUNDARY_LOW))
+        high = float(self.backtest_settings.get("growth_risk_boundary", GROWTH_RISK_BOUNDARY))
+        if balance < boot:
+            return BOOTSTRAP_RISK_PCT
+        if balance < low:
+            return GROWTH_MODE_RISK_PCT
+        if balance < high:
+            return MID_TIER_RISK_PCT
+        return CONSERVATIVE_RISK_PCT

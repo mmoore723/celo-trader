@@ -160,4 +160,17 @@ class ResultsMixin:
             # can be explained by real gate-by-gate numbers instead of
             # guessing — see run_full_audit.py's funnel summary.
             "diagnostics":      getattr(self, "_diag", {}),
+            # Historical option bid/ask, IV and Greeks are not available from
+            # the bar feeds used here. This is a comparison tool, not proof of
+            # live options profitability.
+            "model_fidelity": {
+                "exit_mode": "simplified_3_rule" if self.SIMPLIFIED_EXIT_MODE else "full_exit_stack",
+                "settings_snapshot": self.backtest_settings,
+                "option_pricing": "synthetic_black_scholes_proxy",
+                "limitations": [
+                    "No historical option bid/ask or fill data",
+                    "Ticker-level IV proxy rather than historical implied volatility",
+                    "No historical chain liquidity, Greeks, or spread selection",
+                ],
+            },
         }

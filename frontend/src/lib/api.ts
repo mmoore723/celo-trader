@@ -501,6 +501,11 @@ export interface BacktestResult {
   call_pnl?: number;
   put_pnl?: number;
   strategy_breakdown?: Record<string, { trades: number; wins: number; win_rate: number; pnl: number }>;
+  model_fidelity?: {
+    exit_mode?: string;
+    option_pricing?: string;
+    limitations?: string[];
+  };
   error?: string;
 }
 

@@ -70,6 +70,7 @@ def run_backtest(req: BacktestRequest) -> BacktestResult:
             call_pnl           = float(res.get("call_pnl", 0)),
             put_pnl            = float(res.get("put_pnl", 0)),
             strategy_breakdown = res.get("strategy_breakdown", {}),
+            model_fidelity     = res.get("model_fidelity", {}),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
