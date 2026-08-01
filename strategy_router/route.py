@@ -54,6 +54,7 @@ def route_signals(
     quiet: bool = False,
     alpaca=None,
     mtf_cache: "dict | None" = None,
+    prepared_today: "pd.DataFrame | None" = None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -79,6 +80,10 @@ def route_signals(
                               None and gets identical behavior to before
                               2026-07-23 — this is a strictly additive,
                               opt-in change.
+        prepared_today      : Optional already-augmented current-session
+                              frame. Backtests use this to reuse causal
+                              indicator values prepared once per session;
+                              live callers leave it unset.
 
     Returns:
         list[Signal] sorted by confidence descending (may be empty).
@@ -105,7 +110,7 @@ def route_signals(
             )
             return []
 
-    today = _build_indicator_frame(df)
+    today = prepared_today if prepared_today is not None else _build_indicator_frame(df)
     if today.empty:
         return []
 

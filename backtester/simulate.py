@@ -27,6 +27,7 @@ import pandas as pd
 from config import get_trading_windows as _get_trading_windows, STAGE2_TRAIL_PCT
 from signals import compute_rvol
 from strategy_router import route_signals
+from strategy_router.indicator_frame import _build_indicator_frame
 from backtest_exit_sim import ExitSimState, evaluate_bt_exit
 from backtest_exit_sim_simplified import evaluate_bt_exit_simplified
 from backtester.helpers import _get_iv, _estimate_option_price, _simulated_strike, _SIMULATED_DTE
@@ -94,6 +95,16 @@ class SimulateMixin:
             _day_pos = len(_all_days) - 1
         _floor_day_pos    = max(0, _day_pos - self.ENTRY_LOOKBACK_DAYS)
         _lookback_floor_idx = _day_start_map[_all_days[_floor_day_pos]]
+
+        # All fields produced by _build_indicator_frame are causal at each
+        # row (cumulative VWAP/RVOL, EMA, ATR, rolling volume). Prepare them
+        # once for this session and expose only rows through the current bar
+        # below. This removes thousands of identical multi-day groupby/rolling
+        # calculations without allowing a historical signal to see the future.
+        _day_end_idx = _src_start + len(_day_ticks)
+        _prepared_today = _build_indicator_frame(
+            _src.iloc[_lookback_floor_idx:_day_end_idx]
+        )
 
         in_trade              = False
         entry_price           = 0.0
@@ -271,6 +282,7 @@ class SimulateMixin:
                     bar_slice, self.ticker,
                     enabled_strategies=self.enabled_strategies,
                     quiet=True,
+                    prepared_today=_prepared_today.iloc[:i + 1],
                 )
             except Exception as _rs_ex:
                 logger.debug("BT route_signals raised on %s bar %s: %s", self.ticker, ts, _rs_ex)
