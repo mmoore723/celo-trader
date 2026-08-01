@@ -413,10 +413,27 @@ class AlpacaClient:
             params["start"] = start
 
         try:
-            resp = self._get(url, params)
-            # FIX 2026-06-20: resp.get("bars", []) only applies the [] default when
-            # the "bars" KEY IS MISSING. Alpaca can return the key present with a
-            bars = resp.get("bars") or []
+            # FIX 2026-08-01: Alpaca's bars endpoint paginates — a single
+            # response can stop far short of `limit` and include a
+            # next_page_token pointing at more data. This was never
+            # followed, so any request whose true result spanned more than
+            # one page silently returned only the FIRST page and stopped
+            # there — found via a live 1-month backtest request coming back
+            # with only ~2200 of the requested 10000 bars, stalled 6 months
+            # before "today" instead of reaching it. Loop until no token is
+            # left or we've collected `limit` bars; 20-page hard cap so a
+            # pagination bug on Alpaca's end can't spin this forever.
+            bars: list[dict] = []
+            page_params = dict(params)
+            for _ in range(20):
+                resp = self._get(url, page_params)
+                # FIX 2026-06-20: resp.get("bars", []) only applies the [] default when
+                # the "bars" KEY IS MISSING. Alpaca can return the key present with a
+                bars.extend(resp.get("bars") or [])
+                _token = resp.get("next_page_token")
+                if not _token or len(bars) >= limit:
+                    break
+                page_params = dict(params, page_token=_token)
             logger.debug("Got %d bars for %s %s", len(bars), symbol, timeframe)
             return bars, False          # success — possibly empty list
         except _AlpacaCircuitOpenError:
