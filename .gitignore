@@ -42,3 +42,4 @@ ec2_log/
 .bot_heartbeat
 venv/
 user_data/
+tax_engine/tax_sweep.json.stray_bak
