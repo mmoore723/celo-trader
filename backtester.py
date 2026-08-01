@@ -1059,7 +1059,23 @@ class Backtester:
                         entry_opt_px, close, float(_entry_bar_level))
                 except Exception:
                     _struct_stop_opt = None
-            _atr_at_entry = float(tick["atr"]) if "atr" in _day_ticks.columns and pd.notna(tick.get("atr")) else None
+            # FIX 2026-08-01: was reading tick["atr"] — the 1-minute-resolution
+            # entry-detection ATR (14-bar EWM over 1-min bars, ~2-4x smaller
+            # than a 5-min-bar ATR for the same underlying since both the
+            # lookback window and each bar's own range scale down). This value
+            # only feeds initial_atr_stop, which is then checked every 5-min
+            # bar against day_df's actual 5-min OHLC extremes (backtest_exit_
+            # sim.py) — a stop sized for 1-min noise gets clipped almost
+            # immediately by completely normal 5-min bar range, unrelated to
+            # whether the trade thesis was right. Live's position_manager.py
+            # never has this problem: it recomputes atr fresh from 5-min bars
+            # at the first management tick (position_manager.py ~line 534),
+            # independent of whatever resolution fed the entry signal. Fixed
+            # by reading the matching 5-min day_df bar's atr instead, same
+            # source live uses — this only affects the backtest's pre-trail-
+            # arm stop; the structural stop and the armed trail were already
+            # both correctly 5-min-scale in both paths.
+            _atr_at_entry = float(day_df.iloc[idx_5m]["atr"]) if "atr" in day_df.columns and idx_5m >= 0 and pd.notna(day_df.iloc[idx_5m].get("atr")) else None
             exit_state = ExitSimState(
                 direction         = direction,
                 entry_price       = entry_opt_px,

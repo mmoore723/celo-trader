@@ -36,50 +36,41 @@ logger = logging.getLogger("celo_trader.strategies.mid_brk")
 
 STRATEGY_ID = "MID_BRK"
 
-# ── Consolidation-range reference (2026-07-17) ────────────────────────────────
-# OFF by default. The mechanical 15-min opening range can sit well below where
-# price actually builds its real morning base — on 2026-07-16 SPY consolidated
-# ~753.5-753.9 for 45 min before breaking down, but the 15-min OR low (751.13)
-# wasn't touched until after MID_BRK's session window had already closed, so
-# the strategy structurally could not catch the real move. When enabled, uses
-# the high/low of 09:30-CONSOLIDATION_END_MIN instead of the raw 15-min OR.
-# See ab_test_mid_brk_consolidation.py before flipping this live.
+# ── Consolidation-range reference (2026-07-17) ─────────────────────────────
+# OFF by default. The mechanical 15-min OR can sit well below where price
+# actually builds its real morning base (2026-07-16 SPY: real base held at
+# 753.5-753.9, but the 15-min OR low wasn't touched until after this
+# strategy's session window closed). When enabled, uses 09:30-
+# CONSOLIDATION_END_MIN instead of the raw 15-min OR. A/B before flipping.
 CONSOLIDATION_RANGE_ENABLED = False
 CONSOLIDATION_END_HOUR      = 10
 CONSOLIDATION_END_MINUTE    = 15
 
-# ── Session window (2026-07-17) ───────────────────────────────────────────────
-# Named constants instead of a hardcoded literal so diag/ab_test scripts can
-# flip _SESSION_END_MIN the same way trend_cont.py's _MAX_BARS gets A/B'd.
-# Investigating whether cutting off at 13:00 misses real afternoon breakdowns
-# (2026-07-16 SPY's real move didn't clear either reference level until after
-# this window closed). See diag_mid_brk_session_scan.py before changing.
+# ── Session window (2026-07-17) ────────────────────────────────────────────
 _SESSION_START_MIN = 10 * 60 + 30   # 10:30 ET
 _SESSION_END_MIN    = 13 * 60        # 13:00 ET
 
-# ── Structural stop reference (2026-07-22, A/B tested — see result below) ─────
-# Which level to hand off as entry_bar_high for the exit engine's structural
-# stop. ab_test_structural_stop_mode.py ran all 4 (SPY/QQQ, 2mo, post RR/RVOL
-# bug fixes): prior_swing won clearly — best expectancy AND best win rate of
-# the 4, beating even "none" (ATR-only). pivot and entry_bar (the tighter
-# options) were both worse — tighter stops were getting hit by normal noise
-# before the trade had a chance to work. Shipped as default 2026-07-22.
-#   "prior_swing" — the swing high BEFORE the LH (wider) — DEFAULT, A/B winner
-#   "pivot"       — the LH price that confirmed this entry (was default, now 2nd-best)
-#   "entry_bar"   — this bar's own high (tightest, mirrors INST_ORB's convention) — worst
-#   "none"        — no structural stop; ATR fallback only (pre-2026-07-21 behavior)
+# ── Structural stop reference (2026-07-22, A/B tested) ────────────────────
+# ab_test_structural_stop_mode.py ran all 4 on SPY/QQQ, 2mo: prior_swing won
+# clearly on both expectancy and win rate, beating even ATR-only. Tighter
+# options (pivot, entry_bar) got hit by normal noise before the trade had a
+# chance to work.
+#   "prior_swing" — swing high BEFORE the LH (wider) — DEFAULT, A/B winner
+#   "pivot"       — the LH price that confirmed this entry
+#   "entry_bar"   — this bar's own high (tightest)
+#   "none"        — no structural stop; ATR fallback only
 STRUCT_STOP_MODE = "prior_swing"
 
-# ── RVOL ceiling (2026-07-22, hypothesis under test) ───────────────────────────
-# Gate 6's floor (0.75x once MSA confirms) rarely binds — most entries clear it
-# easily, so it isn't selecting FOR high RVOL. But the bot's own trade data
-# shows an inverse relationship: WR 44% at RVOL<1.5 vs 9% at RVOL>3.0. Published
-# sources back a mechanism for this — post-breakout volume spikes more often
-# signal exhaustion/climactic selling than fresh continuation conviction, and
-# MID_BRK's RVOL check happens at LH-confirmation (after the initial break),
-# not on the break itself. OFF by default (None = no ceiling, current live
-# behavior unchanged). See ab_test_mid_brk_rvol_ceiling.py before flipping.
-RVOL_CEILING = None   # e.g. 2.0 → reject entries where RVOL > 2.0x
+# ── RVOL ceiling (2026-07-22 hypothesis, ENABLED 2026-08-01) ───────────────
+# The RVOL floor rarely binds, so it isn't selecting FOR high RVOL. This
+# bot's own A/B-tested data shows the opposite of naive breakout theory: WR
+# 44% at RVOL<1.5 vs 9% at RVOL>3.0 — MID_BRK's RVOL check happens at LH-
+# confirmation (after the break), so a late volume spike usually reads as
+# exhaustion, not fresh conviction. Confirmed again 2026-08-01: this
+# session's only 3 wins of 26 all sat in the lowest RVOL bucket; every
+# higher bucket was 0%. Soft skip (rule 12), not a hard block on the
+# strategy — MID_BRK still trades, just not on exhaustion-shaped entries.
+RVOL_CEILING = 2.0   # reject entries where RVOL > 2.0x
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
@@ -151,25 +142,17 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     trend_bonus = 0.05 if trend == "downtrend" else 0.0
     breakdown_pct = (or_low - close) / or_low
     mag_bonus     = min(0.04, breakdown_pct * 5)
-    # REVERTED 2026-07-17: raised 0.65 -> 0.72 alongside the same change in
-    # trend_cont.py, on the hypothesis that the router's 0.74 confidence floor
-    # was wrongly killing good signals. Backtest disproved that for TREND_CONT
-    # (24 trades / 29% WR / -$39.59 expectancy after the change, was +$41
-    # before) — reverting MID_BRK too rather than leave an unverified change
-    # live on a now-falsified premise. Only 1 trade in the test window, too
-    # few to judge MID_BRK specifically either way.
+    # REVERTED 2026-07-17: a 0.65->0.72 base-confidence bump (hypothesis: the
+    # router's 0.74 floor was killing good signals) falsified TREND_CONT's
+    # backtest (-$39.59 expectancy vs +$41 before), so reverted here too.
     confidence    = min(0.86, 0.65 + min(rvol - 1.0, 2.0) * 0.04 + trend_bonus + mag_bonus)
 
-    # ── Structural stop (2026-07-21, research-backed — see mid_brk audit) ────
-    # MID_BRK only enters after 3 confirmations are already true (below OR
-    # low, below VWAP, confirmed LH) — a textbook "confirmation entry," which
-    # every source on the topic pairs with a TIGHT stop just beyond the pivot
-    # that confirmed the setup, not a wide ATR fallback. This signal never
-    # carried entry_bar_high, so every MID_BRK trade fell back to the lagging/
-    # whipsaw-prone ATR stop from tick one — the audit's #1 loss reason
-    # (initial_atr_stop, 6 of 17 losses). STRUCT_STOP_MODE picks which level
-    # to use — see the constant's docstring above; "prior_swing" (default,
-    # A/B winner) is the swing before the LH; msa already computes both.
+    # ── Structural stop (2026-07-21, research-backed) ─────────────────────
+    # A confirmation entry (3 checks already true before entry) pairs with a
+    # TIGHT stop just beyond the confirming pivot, not a wide ATR fallback —
+    # this signal never carried entry_bar_high before, so every trade fell
+    # back to the lagging ATR stop (audit's #1 loss reason, pre-2026-07-21).
+    # STRUCT_STOP_MODE picks the level — see constant docstring above.
     if STRUCT_STOP_MODE == "pivot":
         _struct_ref = msa.last_swing_high()
     elif STRUCT_STOP_MODE == "prior_swing":
