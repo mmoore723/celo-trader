@@ -1,0 +1,158 @@
+"""
+strategies/chan_break/ascending.py — Ascending channel (bullish) trendline
+bounce detection.
+
+Split out of the old single strategies/chan_break.py (2026-08-01,
+file-size cleanup); no logic changed, only relocated as a standalone
+helper called from evaluate.py — mirror of descending.py's bearish logic.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+import pandas as pd
+
+from strategies.base import Signal, MarketStructureAnalyzer, _rvol_threshold_reason
+from strategies.chan_break.constants import STRATEGY_ID, _MIN_SLOPE, _MAX_AGE, _TOUCH_TOL
+
+logger = logging.getLogger("celo_trader.strategies.chan_break")
+
+
+def _evaluate_ascending(
+    today: pd.DataFrame,
+    ticker: str,
+    bar_time: pd.Timestamp,
+    bar_min: int,
+    close: float,
+    high: float,
+    low_: float,
+    curr_idx: int,
+    rvol: float,
+    rvol_min: float,
+    vwap: "float | None",
+    atr: float,
+    msa: MarketStructureAnalyzer,
+    lows: list[dict],
+) -> Optional[Signal]:
+    """Long at ascending channel lower trendline. See package docstring."""
+    if len(lows) < 2:
+        return None
+
+    for j in range(len(lows) - 1, 0, -1):
+        sl2 = lows[j]        # more recent, higher
+        sl1 = lows[j - 1]    # older, lower
+
+        if sl2["price"] <= sl1["price"]:
+            continue
+
+        if (curr_idx - sl1["idx"]) > _MAX_AGE:
+            break
+
+        slope = (sl2["price"] - sl1["price"]) / max(sl2["idx"] - sl1["idx"], 1)
+        if abs(slope) < _MIN_SLOPE:
+            logger.debug("[%s] CHAN_BREAK ascending: slope %.4f too flat", ticker, slope)
+            continue
+
+        projected = sl2["price"] + slope * (curr_idx - sl2["idx"])
+        touch_pct = (projected - low_) / max(projected, 1.0)
+
+        if not (-0.001 <= touch_pct <= _TOUCH_TOL):
+            logger.debug("[%s] CHAN_BREAK bullish: low %.2f vs projected %.2f (touch %.3f%%) — no tag",
+                         ticker, low_, projected, touch_pct * 100)
+            break
+
+        if close <= projected:
+            logger.debug("[%s] CHAN_BREAK bullish: close %.2f <= projected %.2f — no bounce",
+                         ticker, close, projected)
+            break
+
+        # Minimum bounce distance — close must be ≥ 0.3% above the trendline.
+        _bounce_pct = (close - projected) / max(projected, 1.0)
+        if _bounce_pct < 0.0015:
+            logger.debug("[%s] CHAN_BREAK bullish: bounce %.3f%% < 0.3%% — too shallow",
+                         ticker, _bounce_pct * 100)
+            break
+
+        # Bounce wick — requirement scales with channel width (same logic as bearish path).
+        #   channel width < 0.5%  → require ≥ 40% wick
+        #   channel width > 1.5%  → require ≥ 25% wick
+        #   in between → linear interpolation
+        _channel_width_pct = (sl2["price"] - sl1["price"]) / max(sl1["price"], 1.0)
+        _wick_req = 0.40 - (0.40 - 0.25) * max(0.0, min(1.0,
+            (_channel_width_pct - 0.005) / (0.015 - 0.005)))
+        _bar_range  = high - low_
+        _lower_wick = close - low_
+        if _bar_range > 0 and _lower_wick / _bar_range < _wick_req:
+            logger.debug("[%s] CHAN_BREAK bullish: lower wick %.0f%% < %.0f%% (channel_width=%.2f%%) — weak bounce",
+                         ticker, _lower_wick / _bar_range * 100, _wick_req * 100, _channel_width_pct * 100)
+            break
+
+        # Price momentum — price must be moving away from the trendline.
+        # If close ≤ prev close price is still falling into support.
+        _prev_close_bar = float(today.iloc[-2]["close"]) if len(today) >= 2 else close
+        if close <= _prev_close_bar:
+            logger.debug("[%s] CHAN_BREAK bullish: close %.2f <= prev_close %.2f — no bullish momentum",
+                         ticker, close, _prev_close_bar)
+            break
+
+        if vwap is not None and close <= vwap:
+            logger.debug("[%s] CHAN_BREAK bullish: close %.2f <= vwap %.2f", ticker, close, vwap)
+            break
+
+        # Block bullish channel bounces in confirmed downtrends
+        if msa.classify_trend() == "downtrend":
+            logger.debug("[%s] CHAN_BREAK bullish: MSA=downtrend — blocked (counter-trend)", ticker)
+            break
+
+        if rvol < rvol_min:
+            logger.debug("[%s] CHAN_BREAK bullish: RVOL %.2f < %.2f — skipped", ticker, rvol, rvol_min)
+            break
+
+        bounce_body   = (close - low_) / max(high - low_, 0.01)
+        channel_age   = curr_idx - sl1["idx"]
+        recency_bonus = max(0, 0.05 - channel_age * 0.001)
+        rvol_bonus    = min(0.08, max(rvol - rvol_min, 0) * 0.07)
+        body_bonus    = min(0.05, bounce_body * 0.06)
+        confidence    = min(0.90, 0.75 + rvol_bonus + body_bonus + recency_bonus)
+
+        logger.info(
+            "[%s] CHAN_BREAK bullish bounce: sl1=%.2f sl2=%.2f slope=%.4f "
+            "projected=%.2f low=%.2f close=%.2f RVOL=%.2f (min=%.2f) conf=%.2f",
+            ticker, sl1["price"], sl2["price"], slope,
+            projected, low_, close, rvol, rvol_min, confidence,
+        )
+        # Structural stop for CALLS: use the PREVIOUS bar's low, not the
+        # entry bar's own low.  The entry bar's low ≈ channel trendline
+        # (within 0.3% by definition), making the old stop essentially
+        # zero-width.  Previous bar's low is a real prior structure low
+        # that gives the trade room to prove itself without being noise-stopped.
+        # Stop for CALLS: prev bar's low, floored at current low - 0.5×ATR.
+        # Same doji guard as the bearish side: if prev bar's low is barely
+        # below current bar's low, we use the ATR-based floor so there's
+        # always at least half a bar's worth of noise tolerance.
+        _prev_bar_low = float(today.iloc[-2]["low"]) if len(today) >= 2 else low_
+        _prev_bar_low = min(_prev_bar_low, low_ - 0.5 * atr)
+        return Signal(
+            strategy_id = STRATEGY_ID,
+            direction   = "bullish",
+            trigger_bar = bar_time,
+            confidence  = confidence,
+            rvol        = rvol,
+            meta        = {
+                "trigger":          "ascending_channel_bounce",
+                "sl1_price":        sl1["price"],
+                "sl2_price":        sl2["price"],
+                "slope_per_bar":    round(slope, 4),
+                "projected":        round(projected, 2),
+                "touch_pct":        round(touch_pct * 100, 3),
+                "bounce_body":      round(bounce_body, 2),
+                "entry_bar_low":    round(_prev_bar_low, 4),   # prev bar's low (floored at low - 0.5×ATR)
+                "rvol_gate":        round(rvol_min, 2),
+                "rvol_gate_reason": _rvol_threshold_reason(
+                    bar_min, close, None, vwap, STRATEGY_ID, msa_confirmed=True),
+            },
+        )
+
+    return None
