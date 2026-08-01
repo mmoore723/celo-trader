@@ -131,7 +131,20 @@ class MarketStructureAnalyzer:
         # classification 3–4 times in a single 15-minute window.
         # ATR-body gate: the pivot extension must exceed 15% of the bar's ATR so
         # micro-wicks (≤1 tick past the prior extreme) are ignored.
+        #
+        # FIX 2026-08-01 (late-entry diagnosis): requiring FULL average volume
+        # on the pivot bar itself defeats the point of "real-time" detection —
+        # volume typically CONFIRMS a move after it's underway, not at the
+        # exact instant it turns, so a genuine reversal starting on merely
+        # below-average volume was falling through to the 5-bar-lagged
+        # confirmed path instead of registering immediately. Every audit this
+        # session showed entries that die fast (LIQ_SWEEP losses averaging
+        # 4-5 min held) — consistent with entering after the move already
+        # happened, not at the inflection. Loosened to 50% of average instead
+        # of 100% — still filters true single-wick noise, no longer defers
+        # every merely-quiet-volume pivot to the laggy path.
         VOL_LOOKBACK = 20
+        _RT_VOL_FLOOR_PCT = 0.50   # was 1.0 (full average) — see fix note above
         rt_start = max(lb, n - lb)
         for i in range(rt_start, n):
             bar_high = highs[i]
@@ -142,14 +155,14 @@ class MarketStructureAnalyzer:
             if left_high.size == 0:
                 continue
 
-            # Volume gate — bar must show at least average participation
+            # Volume gate — bar must show at least 50% of average participation
             if volumes is not None:
                 vol_window = volumes[max(0, i - VOL_LOOKBACK) : i]
                 vol_mean   = float(vol_window.mean()) if vol_window.size else 0.0
                 _bv = volumes[i]
                 bar_vol = float(_bv) if (_bv is not None and not (isinstance(_bv, float) and np.isnan(_bv))) else 0.0
-                if vol_mean > 0 and bar_vol < vol_mean:
-                    continue   # below-average volume → retail noise, skip
+                if vol_mean > 0 and bar_vol < vol_mean * _RT_VOL_FLOOR_PCT:
+                    continue   # well below average volume → retail noise, skip
 
             # ATR body gate — extension past the prior extreme must be meaningful
             bar_atr = None
