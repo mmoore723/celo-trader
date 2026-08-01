@@ -43,3 +43,10 @@ class BacktestResult(BaseModel):
     strategy_breakdown: dict[str, Any] = {}
     model_fidelity: dict[str, Any] = {}
     error: Optional[str] = None
+
+
+class BacktestJobStatus(BaseModel):
+    job_id: str
+    status: str
+    result: Optional[BacktestResult] = None
+    error: Optional[str] = None

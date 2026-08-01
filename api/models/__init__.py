@@ -16,7 +16,7 @@ from api.models.settings import Settings
 from api.models.analytics import StrategyRow, HourRow, TickerRow, ExitReasonRow, TradeAnalytics
 from api.models.news import NewsArticle
 from api.models.options import OptionsChainRow
-from api.models.backtest import BacktestRequest, BacktestResult
+from api.models.backtest import BacktestRequest, BacktestResult, BacktestJobStatus
 from api.models.reconcile import AlpacaOrder, ReconcileRow, ReconcileResponse
 from api.models.performance import DailySummary, PerformanceStats
 
@@ -28,7 +28,7 @@ __all__ = [
     "StrategyRow", "HourRow", "TickerRow", "ExitReasonRow", "TradeAnalytics",
     "NewsArticle",
     "OptionsChainRow",
-    "BacktestRequest", "BacktestResult",
+    "BacktestRequest", "BacktestResult", "BacktestJobStatus",
     "AlpacaOrder", "ReconcileRow", "ReconcileResponse",
     "DailySummary", "PerformanceStats",
 ]

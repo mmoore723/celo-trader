@@ -65,11 +65,24 @@ export function Backtest() {
 
   const riskPctOverride = riskPctStr !== "" ? parseFloat(riskPctStr) / 100 : undefined;
 
-  const { mutate, data: result, isPending, isError, error } = useMutation({
-    mutationFn: () => api.backtest.run(
+  const [jobId, setJobId] = useState<string | null>(null);
+  const { mutate, isPending, isError, error } = useMutation({
+    mutationFn: () => api.backtest.start(
       ticker, 3, capital, direction, startDate, endDate, riskPctOverride,
     ),
+    onSuccess: (job) => setJobId(job.job_id),
   });
+  const { data: job } = useQuery({
+    queryKey: ["backtest-job", jobId],
+    queryFn: () => api.backtest.status(jobId!),
+    enabled: Boolean(jobId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "complete" || status === "failed" ? false : 1500;
+    },
+  });
+  const result = job?.result;
+  const running = isPending || job?.status === "queued" || job?.status === "running";
 
   const gridColor = dark ? "#21262d" : "#f0f2f7";
   const posColor  = dark ? "#3fb950" : "#16a34a";
@@ -167,10 +180,10 @@ export function Backtest() {
           <button
             className="btn btn-primary"
             onClick={() => mutate()}
-            disabled={isPending}
+            disabled={running}
           >
             <Play size={14} />
-            {isPending ? "Running…" : "Run Backtest"}
+            {running ? "Running in background…" : "Run Backtest"}
           </button>
         </div>
       </div>
@@ -180,6 +193,12 @@ export function Backtest() {
           <p className="text-sm" style={{ color: "var(--negative)" }}>
             {(error as Error).message}
           </p>
+        </div>
+      )}
+
+      {job?.status === "failed" && (
+        <div className="card p-4" style={{ background: "var(--negative-bg)", borderColor: "var(--negative)" }}>
+          <p className="text-sm" style={{ color: "var(--negative)" }}>{job.error ?? "Backtest failed"}</p>
         </div>
       )}
 

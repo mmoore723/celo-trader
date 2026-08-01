@@ -509,6 +509,13 @@ export interface BacktestResult {
   error?: string;
 }
 
+export interface BacktestJobStatus {
+  job_id: string;
+  status: "queued" | "running" | "complete" | "failed";
+  result?: BacktestResult;
+  error?: string;
+}
+
 // ── Bot ────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -547,7 +554,7 @@ export const api = {
     save: (s: AppSettings) => request<AppSettings>("/api/settings", { method: "POST", body: JSON.stringify(s) }),
   },
   backtest: {
-    run: (
+    start: (
       ticker: string,
       months: number,
       capital: number,
@@ -556,7 +563,7 @@ export const api = {
       endDate?: string,
       riskPct?: number,       // flat override e.g. 0.05; undefined = live tier ladder
     ) =>
-      request<BacktestResult>("/api/backtest", {
+      request<BacktestJobStatus>("/api/backtest", {
         method: "POST",
         body: JSON.stringify({
           ticker,
@@ -568,6 +575,7 @@ export const api = {
           ...(riskPct   !== undefined ? { risk_pct:   riskPct   } : {}),
         }),
       }),
+    status: (jobId: string) => request<BacktestJobStatus>(`/api/backtest/${jobId}`),
   },
   strategyHealth: {
     latest:  () => request<StrategyHealthAudit>("/api/strategy-health/latest"),
