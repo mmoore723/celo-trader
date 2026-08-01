@@ -509,8 +509,22 @@ class Backtester:
                     # 20% of the requested start date; otherwise the data is
                     # too shallow and yfinance takes over instead.
                     _earliest = df["time"].min().date()
+                    _latest   = df["time"].max().date()
                     _requested_start = _dt.date.fromisoformat(_start_d)
                     _slack_days = max(3, int(_max_days * 0.20))
+                    # FIX 2026-08-01: this only ever checked the EARLIEST bar
+                    # against the requested start — it never checked whether
+                    # the data reached all the way to TODAY. Free-tier IEX can
+                    # return a real, non-empty, correctly-starting range that
+                    # still stops well short of the present (archived history
+                    # up to some point, then a gap before the recent rolling
+                    # window resumes) — get_bars()'s pagination fix (same day)
+                    # made this gap visible for the first time; previously the
+                    # code silently ran the backtest over whatever shorter
+                    # window it got. Requiring the LATEST bar to be within the
+                    # same slack window of "today" closes that gap the same
+                    # way the earliest-bar check already covers the start.
+                    _today_for_check = _dt.date.today()
                     if _earliest > _requested_start + _dt.timedelta(days=_slack_days):
                         logger.warning(
                             "Backtest: Alpaca 5m data for %s only goes back to %s "
@@ -518,10 +532,18 @@ class Backtester:
                             self.ticker, _earliest, _start_d,
                         )
                         df = pd.DataFrame()
+                    elif _latest < _today_for_check - _dt.timedelta(days=_slack_days):
+                        logger.warning(
+                            "Backtest: Alpaca 5m data for %s stops at %s "
+                            "(requested through %s) — doesn't reach recent data, "
+                            "falling back to yfinance",
+                            self.ticker, _latest, _end_d,
+                        )
+                        df = pd.DataFrame()
                     else:
                         _data_source = "alpaca"
-                        logger.info("Backtest: Alpaca returned %d 5m bars for %s (from %s)",
-                                    len(df), self.ticker, _earliest)
+                        logger.info("Backtest: Alpaca returned %d 5m bars for %s (%s to %s)",
+                                    len(df), self.ticker, _earliest, _latest)
         except Exception as _al_ex:
             logger.warning("Backtest: Alpaca 5m fetch failed for %s: %s", self.ticker, _al_ex)
 
