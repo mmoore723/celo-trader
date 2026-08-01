@@ -995,7 +995,14 @@ class AlpacaClient:
         # switch between bot restarts is reflected immediately.
         from config import get_settings as _gs
         is_paper = _gs().get("paper_trading", "paper" in self.base.lower())
-        effective_wait = 10 if is_paper else 30   # seconds before giving up
+        # FIX 2026-07-31 (profitability audit): paper used to wait a flat 10s at
+        # the mid-price limit, then cancel and fire a full MARKET order — no
+        # intermediate step. Live already does better (steps mid->ask/bid at 5s
+        # before ever going to market). Research on options execution is
+        # consistent that market orders should be a last resort, not a 10-second
+        # default — extending paper's wait to 20s gives the stepped limit (added
+        # below) a real chance to fill before falling back to market.
+        effective_wait = 20 if is_paper else 30   # seconds before giving up
 
         # Step-up threshold: on live, after this many seconds without a fill,
         # modify the order's limit price from mid up to the ask.
@@ -1016,7 +1023,12 @@ class AlpacaClient:
                     (not _is_buy and step_to_price < (limit_price or float("inf")))  # bid < mid
                 )
             )
-            if (not is_paper and not _stepped_up and _step_ok and i == _STEP_UP_AFTER_SECS):
+            # FIX 2026-07-31: was "not is_paper" only — live got the gradual
+            # mid->ask/bid step, paper went straight from mid to a full market
+            # order at 10s with no intermediate step. Paper now gets the same
+            # proven step logic live already uses, instead of a separate,
+            # cruder fallback path.
+            if (not _stepped_up and _step_ok and i == _STEP_UP_AFTER_SECS):
                 try:
                     self._patch(
                         f"{self.base}/v2/orders/{order_id}",
@@ -1101,8 +1113,9 @@ class AlpacaClient:
             time.sleep(1)
 
         if is_paper:
-            # Limit order didn't fill in 10s — cancel it and place a market order
-            # so we record the REAL fill price from Alpaca's paper simulator.
+            # Limit order (mid, stepped to ask/bid at 5s) still didn't fill
+            # after effective_wait — cancel it and place a market order so we
+            # record the REAL fill price from Alpaca's paper simulator.
             log_event("INFO", "order",
                       f"📝 Paper limit order pending after {effective_wait}s — "
                       f"cancelling and re-submitting as market to get real fill price.")

@@ -261,13 +261,24 @@ def select_contract(
                     info["cheapest_symbol"] = contract.get("symbol", "?")
                 info["reason"] = "over_budget"
                 continue
-            if spread > _SPREAD_MAX:
-                logger.debug("Skip %s — spread $%.2f > max $%.2f",
-                             contract.get("symbol","?"), spread, _SPREAD_MAX)
+            # FIX 2026-07-31 (profitability audit): _SPREAD_MAX was a flat $0.50
+            # regardless of premium. On a $0.80 contract that let a spread worth
+            # 62% of the entire premium through — research on options execution
+            # is consistent that a spread that wide relative to premium "destroys"
+            # edge on its own, independent of whether the entry signal was right.
+            # Scale the cap with the contract's own price instead: 15% of ask,
+            # floored at $0.15 (keeps a sane minimum for near-worthless contracts)
+            # and capped at the original $0.50 (unchanged behavior on contracts
+            # $3.33+, where 15% already exceeds the old flat cap).
+            _spread_cap = min(_SPREAD_MAX, max(0.15, ask * 0.15))
+            if spread > _spread_cap:
+                logger.debug("Skip %s — spread $%.2f > max $%.2f (%.0f%% of $%.2f ask)",
+                             contract.get("symbol","?"), spread, _spread_cap,
+                             spread / max(ask, 0.01) * 100, ask)
                 if info["illiquid_cost"] is None or cost < info["illiquid_cost"]:
                     info["illiquid_cost"]   = cost
                     info["illiquid_symbol"] = contract.get("symbol", "?")
-                    info["illiquid_fail"]   = f"spread ${spread:.2f} > ${_SPREAD_MAX:.2f} max"
+                    info["illiquid_fail"]   = f"spread ${spread:.2f} > ${_spread_cap:.2f} max ({spread/max(ask,0.01)*100:.0f}% of premium)"
                 continue
             if oi < _MIN_OI:
                 logger.debug("Skip %s — OI %d < min %d",

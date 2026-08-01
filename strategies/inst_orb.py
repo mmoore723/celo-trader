@@ -561,5 +561,20 @@ def _compute_confidence(
     flip_multiplier  = 0.85 if direction_flipped else 1.0
     retest_bonus     = 0.10 if is_retest else 0.0
 
-    confidence = (0.35 * rvol_score + 0.25 * prox_score + 0.20 * trend_score + 0.10 + retest_bonus) * flip_multiplier
+    # FIX 2026-07-31 (profitability audit): weights rebalanced 0.35/0.25 ->
+    # 0.45/0.15 (rvol_score / prox_score). This is the module docstring's own
+    # deferred finding from 2026-07-21 — losing trades averaged HIGHER
+    # confidence (0.85) than winners (0.77) and ~2x the ATR (3.46 vs 1.88).
+    # prox_score is ATR-normalized ("close in ATR terms"), so on a choppy,
+    # elevated-ATR session it can read as "close to the boundary" even when
+    # the underlying move is noisy, not structural. That was left unfixed at
+    # n=11 as too thin to safely recalibrate; n is now 19 (still not large,
+    # but the direction hasn't reversed) and external research on ORB false
+    # breakouts backs the same mechanism — volume/participation confirms a
+    # real breakout more reliably than price-distance-in-ATR-terms does,
+    # especially in choppy conditions. Dampening the flagged term (prox_score)
+    # and shifting weight to the better-evidenced one (rvol_score) is a
+    # rebalance of existing components, not a new invented threshold — lower
+    # risk than fabricating an ATR% cutoff this bot's own data hasn't tested.
+    confidence = (0.45 * rvol_score + 0.15 * prox_score + 0.20 * trend_score + 0.10 + retest_bonus) * flip_multiplier
     return round(min(confidence, 1.0), 4)
