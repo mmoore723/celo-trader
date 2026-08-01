@@ -36,10 +36,34 @@ class RunMixin:
         if isinstance(df, dict):   # error case — see _load_market_data()
             return df
 
+        # The dashboard's start/end dates are a contract, not a rough month
+        # hint. Keep earlier bars available in the prepared sources for RVOL
+        # warmup, but replay and report only the requested inclusive window.
+        if self.start_date is not None:
+            df = df[df["_date"] >= self.start_date].reset_index(drop=True)
+        if self.end_date is not None:
+            df = df[df["_date"] <= self.end_date].reset_index(drop=True)
+        if df.empty:
+            return {"error": "No market bars exist in the requested date range."}
+        if self.end_date is not None:
+            latest = max(df["_date"])
+            # Weekends/holidays are normal, but data ending several sessions
+            # before the selected end date is incomplete, not a valid test.
+            if latest < self.end_date and (self.end_date - latest).days > 3:
+                return {
+                    "error": (
+                        f"Historical data ends on {latest.isoformat()}, before the requested "
+                        f"end date {self.end_date.isoformat()}. No result was calculated."
+                    )
+                }
+
         balance      = self.capital
         daily_pnl: dict[str, float] = {}
 
         unique_days = sorted(df["_date"].unique())
+        progress = getattr(self, "_progress_callback", None)
+        if callable(progress):
+            progress(0, len(unique_days))
 
         # Diagnostic counters — returned in error message when no trades fire
         self._diag = {
@@ -58,7 +82,7 @@ class RunMixin:
         }
 
         with _quiet_router_logging():
-            for trade_date in unique_days:
+            for day_index, trade_date in enumerate(unique_days, start=1):
                 day_all = df[df["_date"] == trade_date].reset_index(drop=True)
                 session_mask = (
                     (day_all["time"].dt.hour > 9) |
@@ -86,5 +110,7 @@ class RunMixin:
                 balance += pnl
                 if pnl != 0:
                     daily_pnl[day_str] = pnl
+                if callable(progress):
+                    progress(day_index, len(unique_days))
 
         return self._compute_results(daily_pnl, balance)

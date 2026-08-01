@@ -514,6 +514,10 @@ export interface BacktestJobStatus {
   status: "queued" | "running" | "complete" | "failed";
   result?: BacktestResult;
   error?: string;
+  started_at?: string;
+  completed_days: number;
+  total_days: number;
+  estimated_remaining_seconds?: number;
 }
 
 // ── Bot ────────────────────────────────────────────────────────────────────

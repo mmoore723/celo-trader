@@ -51,8 +51,10 @@ class MarketDataMixin:
         # months=2 and months=3 (and any months>=2) both resolve to the same
         # 59-day yfinance cap below, so they now share one cache entry instead
         # of each script re-fetching identical candles under a different key.
+        import datetime as _dt
+        _anchor_date = self.end_date or _dt.date.today()
         _cache_max_days = backtest_data_cache.max_days_for(self.months)
-        bundle = backtest_data_cache.load(self.ticker, _cache_max_days)
+        bundle = backtest_data_cache.load(self.ticker, _cache_max_days, as_of=_anchor_date)
         if bundle is not None:
             self._df_1h        = bundle["df_1h"]
             self._df_15m       = bundle["df_15m"]
@@ -73,8 +75,7 @@ class MarketDataMixin:
         # hang on the user's Mac that didn't even respond to Ctrl+C (see the
         # ThreadPoolExecutor fix above/below). It's kept as a fallback only,
         # not removed, in case Alpaca's free IEX feed is ever missing a bar.
-        import datetime as _dt
-        _today    = _dt.date.today()
+        _today    = _anchor_date
         _max_days = min(self.months * 30, 59)   # yfinance 5m hard limit = 60 d — Alpaca has no such cap
         _start_d  = (_today - _dt.timedelta(days=_max_days)).strftime("%Y-%m-%d")
         _end_d    = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -192,7 +193,7 @@ class MarketDataMixin:
         self._data_source = _data_source or "unknown"
 
         # Trim to requested look-back window
-        cutoff = pd.Timestamp.now() - pd.DateOffset(months=self.months)
+        cutoff = pd.Timestamp(_anchor_date) - pd.DateOffset(months=self.months)
         df = df[df["time"] >= cutoff].reset_index(drop=True)
 
         if df.empty:
@@ -241,10 +242,9 @@ class MarketDataMixin:
         self._prep_entry_sources(df[_full_session_mask].reset_index(drop=True))
 
         backtest_data_cache.save(
-            self.ticker, _cache_max_days,
+            self.ticker, _cache_max_days, as_of=_anchor_date,
             df=df, df_1h=self._df_1h, df_15m=self._df_15m,
             df1m=self._df1m, day1m_start=self._1m_day_start,
             df5m_full=self._df5m_full, day5m_start=self._5m_day_start,
         )
         return df
-

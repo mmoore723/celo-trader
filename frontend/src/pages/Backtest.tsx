@@ -30,6 +30,12 @@ function defaultStart() {
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
+function durationLabel(seconds?: number): string {
+  if (seconds === undefined || seconds === null || seconds < 0) return "calculating…";
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.floor(seconds % 60);
+  return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+}
 
 // Live bot tier ladder for display hint
 function liveTierLabel(capital: number): string {
@@ -83,6 +89,9 @@ export function Backtest() {
   });
   const result = job?.result;
   const running = isPending || job?.status === "queued" || job?.status === "running";
+  const elapsedSeconds = job?.started_at
+    ? Math.max(0, (Date.now() - new Date(job.started_at).getTime()) / 1000)
+    : undefined;
 
   const gridColor = dark ? "#21262d" : "#f0f2f7";
   const posColor  = dark ? "#3fb950" : "#16a34a";
@@ -187,6 +196,20 @@ export function Backtest() {
           </button>
         </div>
       </div>
+
+      {running && (
+        <div className="card px-4 py-3 text-sm" style={{ color: "var(--ink-muted)" }}>
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>Backtest running. </span>
+          {job?.started_at
+            ? `Started ${new Date(job.started_at).toLocaleTimeString()} · elapsed ${durationLabel(elapsedSeconds)}`
+            : "Queued — waiting for the prior run to finish"}
+          {job && job.total_days > 0 && ` · ${job.completed_days}/${job.total_days} sessions replayed`}
+          {job?.estimated_remaining_seconds !== undefined && ` · estimate ${durationLabel(job.estimated_remaining_seconds)} remaining`}
+          <div className="text-xs mt-1" style={{ color: "var(--ink-faint)" }}>
+            Estimate updates after each session; it includes the current strategy/router workload.
+          </div>
+        </div>
+      )}
 
       {isError && (
         <div className="card p-4" style={{ background: "var(--negative-bg)", borderColor: "var(--negative)" }}>

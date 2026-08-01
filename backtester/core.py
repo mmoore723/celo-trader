@@ -7,6 +7,7 @@ no logic changed, only relocated. Combined with the other Backtester*Mixin
 classes into Backtester in backtester/engine.py.
 """
 
+from datetime import date
 from typing import Optional
 
 import pandas as pd
@@ -30,6 +31,8 @@ class CoreMixin:
         starting_capital: float = STARTING_CAPITAL,
         direction: str = "both",
         risk_pct: Optional[float] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ):
         self.alpaca            = alpaca
         self.ticker            = ticker
@@ -37,6 +40,8 @@ class CoreMixin:
         self.capital           = starting_capital
         self.direction         = direction
         self.risk_pct_override = risk_pct   # None → live 4-tier ladder
+        self.start_date        = start_date
+        self.end_date          = end_date
         self.trades: list[dict] = []
         # Freeze settings once so a running replay is reproducible and cannot
         # silently change when a dashboard setting is saved mid-run.

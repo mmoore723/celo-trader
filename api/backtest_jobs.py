@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date as _date
+from datetime import date as _date, datetime, timezone
 import math
 import threading
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -15,18 +16,27 @@ _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
 
-def _to_result(req: BacktestRequest) -> BacktestResult:
+def _to_result(req: BacktestRequest, progress_callback=None) -> BacktestResult:
     from broker import get_clients
     from backtester import Backtester
 
+    start_date = None
+    end_date = None
     months = req.months
     if req.start_date and req.end_date:
         try:
-            months = max(1, math.ceil((_date.fromisoformat(req.end_date) - _date.fromisoformat(req.start_date)).days / 30))
+            start_date = _date.fromisoformat(req.start_date)
+            end_date = _date.fromisoformat(req.end_date)
+            months = max(1, math.ceil((end_date - start_date).days / 30))
         except ValueError:
             pass
     alpaca, _ = get_clients()
-    raw = Backtester(alpaca, req.ticker, months, req.starting_capital, req.direction, req.risk_pct).run()
+    backtester = Backtester(
+        alpaca, req.ticker, months, req.starting_capital, req.direction, req.risk_pct,
+        start_date=start_date, end_date=end_date,
+    )
+    backtester._progress_callback = progress_callback
+    raw = backtester.run()
     if "error" in raw:
         return BacktestResult(
             total_return_pct=0, win_rate_pct=0, total_trades=0, avg_win=0,
@@ -52,13 +62,30 @@ def start(req: BacktestRequest) -> str:
     """Queue one replay; a single worker avoids competing with the paper bot."""
     job_id = uuid4().hex
     with _lock:
-        _jobs[job_id] = {"status": "queued", "result": None, "error": None}
+        _jobs[job_id] = {
+            "status": "queued", "result": None, "error": None,
+            "started_at": None, "completed_days": 0, "total_days": 0,
+            "estimated_remaining_seconds": None,
+        }
 
     def _work() -> None:
+        started_monotonic = time.monotonic()
         with _lock:
-            _jobs[job_id]["status"] = "running"
+            _jobs[job_id].update(status="running", started_at=datetime.now(timezone.utc).isoformat())
+
+        def _progress(completed_days: int, total_days: int) -> None:
+            elapsed = time.monotonic() - started_monotonic
+            remaining = None
+            if completed_days > 0 and total_days >= completed_days:
+                remaining = round(elapsed / completed_days * (total_days - completed_days))
+            with _lock:
+                _jobs[job_id].update(
+                    completed_days=completed_days,
+                    total_days=total_days,
+                    estimated_remaining_seconds=remaining,
+                )
         try:
-            result = _to_result(req)
+            result = _to_result(req, _progress)
             with _lock:
                 _jobs[job_id].update(status="complete", result=result)
         except Exception as exc:

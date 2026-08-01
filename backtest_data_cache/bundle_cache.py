@@ -19,12 +19,13 @@ from backtest_data_cache.constants import _CACHE_DIR, _BUNDLE_VERSION
 logger = logging.getLogger("celo_trader.backtest_data_cache")
 
 
-def _cache_path(ticker: str, max_days: int) -> Path:
+def _cache_path(ticker: str, max_days: int, as_of: date | None = None) -> Path:
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return _CACHE_DIR / f"{ticker}_{max_days}d_{date.today().isoformat()}.pkl"
+    anchor = as_of or date.today()
+    return _CACHE_DIR / f"{ticker}_{max_days}d_{anchor.isoformat()}.pkl"
 
 
-def load(ticker: str, max_days: int) -> Optional[dict]:
+def load(ticker: str, max_days: int, as_of: date | None = None) -> Optional[dict]:
     """
     Return the cached bundle dict, or None on any cache miss / read failure.
     A miss (not an exception) is the expected, common path — callers should
@@ -35,7 +36,7 @@ def load(ticker: str, max_days: int) -> Optional[dict]:
     script and a months=3 script share one cache entry when both resolve to
     the same 59-day yfinance cap.
     """
-    path = _cache_path(ticker, max_days)
+    path = _cache_path(ticker, max_days, as_of)
     if not path.exists():
         return None
     try:
@@ -63,13 +64,14 @@ def save(
     day1m_start: dict,
     df5m_full,
     day5m_start: dict,
+    as_of: date | None = None,
 ) -> None:
     """
     Persist the fetched/precomputed dataframes for same-day reuse. Never
     raises — a failed cache write should never break a backtest run, it just
     means the next Backtester construction re-fetches instead of reusing.
     """
-    path = _cache_path(ticker, max_days)
+    path = _cache_path(ticker, max_days, as_of)
     bundle = {
         "_version":    _BUNDLE_VERSION,
         "df":          df,

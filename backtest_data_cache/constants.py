@@ -13,7 +13,7 @@ _CACHE_DIR = Path("audit_reports") / "_data_cache"
 
 # Bump this if the bundle's shape ever changes, so stale-shaped pickles from
 # an older version of this file are ignored instead of crashing a restore.
-_BUNDLE_VERSION = 1
+_BUNDLE_VERSION = 2
 
 
 def max_days_for(months: int) -> int:

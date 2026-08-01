@@ -50,3 +50,7 @@ class BacktestJobStatus(BaseModel):
     status: str
     result: Optional[BacktestResult] = None
     error: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_days: int = 0
+    total_days: int = 0
+    estimated_remaining_seconds: Optional[int] = None
