@@ -93,13 +93,17 @@ def route_signals(
     ADX_GATED_STRATEGIES  = _pkg.ADX_GATED_STRATEGIES
     _CONFLICT_VETO_BAND   = _pkg._CONFLICT_VETO_BAND
 
-    _killed, _kill_reason = check_kill_lock()
-    if _killed:
-        logger.warning(
-            "route_signals blocked by kill lock",
-            extra={"event": "kill_lock_blocked", "reason": _kill_reason, "ticker": ticker},
-        )
-        return []
+    # Historical replays must not depend on a present-day live kill switch.
+    # Besides making a backtest non-deterministic, the check is a DB read on
+    # every one-minute bar.  The live order path still always performs it.
+    if not quiet:
+        _killed, _kill_reason = check_kill_lock()
+        if _killed:
+            logger.warning(
+                "route_signals blocked by kill lock",
+                extra={"event": "kill_lock_blocked", "reason": _kill_reason, "ticker": ticker},
+            )
+            return []
 
     today = _build_indicator_frame(df)
     if today.empty:
@@ -139,10 +143,14 @@ def route_signals(
             sig = fn(today, ticker=ticker)   # ticker= needed for cooldown tracking
             if sig is not None:
                 signals.append(sig)
-                try:
-                    _emit_signal_annotation(ticker, sig, today)
-                except Exception:
-                    pass   # annotation failure must never crash the router
+                # Annotations are live-dashboard side effects.  Suppress
+                # them during a quiet historical replay so an A/B test does
+                # not create live chart records or perform DB writes.
+                if not quiet:
+                    try:
+                        _emit_signal_annotation(ticker, sig, today)
+                    except Exception:
+                        pass   # annotation failure must never crash the router
                 logger.info(
                     "strategy_signal",
                     extra={

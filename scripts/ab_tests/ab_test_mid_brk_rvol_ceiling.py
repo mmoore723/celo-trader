@@ -35,10 +35,10 @@ DEFAULT_TICKERS = ["SPY", "QQQ"]
 DEFAULT_MONTHS  = 2
 
 _VARIANTS = [
-    ("A: no ceiling (control — current live default)", None),
-    ("B: ceiling 2.5x",                                  2.5),
-    ("C: ceiling 2.0x",                                  2.0),
-    ("D: ceiling 1.5x (aggressive — matches best bucket)", 1.5),
+    ("A: current 2.0x ceiling (control)",   2.0),
+    ("B: tighter 1.5x ceiling",              1.5),
+    ("C: looser 2.5x ceiling (sensitivity)", 2.5),
+    ("D: no ceiling (sensitivity)",          None),
 ]
 
 
@@ -48,6 +48,9 @@ def _run_variant(alpaca, tickers: list[str], months: int, ceiling) -> dict:
     all_trades: list[dict] = []
     for ticker in tickers:
         bt = Backtester(alpaca, ticker, months=months, starting_capital=5000.0, direction="both")
+        # MID_BRK is intentionally disabled in paper/live settings.  Enable
+        # it only in this throwaway Backtester instance for hypothetical A/B.
+        bt.enabled_strategies = set(bt.enabled_strategies) | {"MID_BRK"}
         result = bt.run()
         if result.get("error"):
             continue

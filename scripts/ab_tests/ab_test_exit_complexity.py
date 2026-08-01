@@ -1,6 +1,6 @@
 """
-ab_test_exit_complexity.py — A/B test: current 9+-condition exit stack vs.
-the stripped-down 3-rule exit (backtest_exit_sim_simplified.py).
+ab_test_exit_complexity.py — A/B test: the live-default stripped-down
+3-rule exit vs. the optional full 9+-condition exit stack.
 
 WHY THIS EXISTS (2026-07-22): published overfitting research names 8-10
 tunable variables as the danger zone for a trading strategy, and today's
@@ -38,8 +38,8 @@ DEFAULT_TICKERS = ["SPY", "QQQ"]
 DEFAULT_MONTHS  = 2
 
 _VARIANTS = [
-    ("A: current stack (9+ conditions, control)", False),
-    ("B: simplified (hard stop / 3.0x chandelier / 1 time cap)", True),
+    ("A: simplified live default (control)", True),
+    ("B: optional full 9+ condition stack", False),
 ]
 
 
@@ -118,9 +118,9 @@ def main() -> None:
             else:
                 print(f"  {sid:<12} n={s['trades']} — below 5-trade floor, skipping (noise)")
 
-    print("\nReading this: if B (simplified) beats A on realized R:R and expectancy, that supports\n"
+    print("\nReading this: if A (simplified live default) beats B on realized R:R and expectancy, that supports\n"
           "the overfitting hypothesis — fewer, wider rules let winners actually run instead of\n"
-          "getting nickel-and-dimed by 9 different ways to exit early. If A still wins, the extra\n"
+          "getting nickel-and-dimed by 9 different ways to exit early. If B wins, the extra\n"
           "conditions are pulling their weight and the complexity isn't the problem.\n"
           "Small overlapping sample (SPY/QQQ only) — directional, not proof.")
 
