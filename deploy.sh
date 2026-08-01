@@ -24,7 +24,12 @@ npm run build
 cd ..
 
 echo "==> Committing + pushing to GitHub..."
-git add -A
+# Never sweep local diagnostics, reports, or secrets into a deployment commit.
+# Tracked source/build changes are sufficient for a normal release.
+git add -u
+if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  echo "==> Leaving untracked local files out of the deployment commit."
+fi
 git commit -m "chore: frontend build $(date +%Y-%m-%d)" --allow-empty
 git push origin main
 
