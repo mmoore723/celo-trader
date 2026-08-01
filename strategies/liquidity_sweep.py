@@ -27,7 +27,9 @@ Entry logic — fade a failed breakout, not a real one:
     5. RVOL confirms real participation on the stab (dynamic threshold,
        same helper every other strategy uses)
   Stop reference: the wick extreme itself — if price retakes it, the sweep
-  thesis (this was a trap, not a real move) is wrong.
+  thesis (this was a trap, not a real move) is wrong. Floored at 0.5×ATR
+  beyond entry (2026-07-31 fix — see stop_ref below) so normal post-sweep
+  chop doesn't clip the trade before the thesis has room to play out.
 
 UNTESTED — see api/models.py's liquidity_sweep_enabled comment. Built from
 published sources, not yet validated against this bot's own backtester.
@@ -130,11 +132,26 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
     rvol_score         = min(max(rvol - rvol_min, 0.0) / max(rvol_min, 0.01), 1.0)
     confidence = min(0.82, 0.60 + 0.15 * rejection_score + 0.05 * penetration_score + 0.10 * rvol_score)
 
+    # Structural stop — the wick extreme itself is the correct INVALIDATION
+    # level (if price retakes it, the sweep thesis is wrong), but handing it
+    # to the exit engine with zero padding produces a near-zero-width stop:
+    # by construction the wick is only _PENETRATION_ATR_MIN + _REJECTION_ATR_MIN
+    # ATR away from the entry (close), which normal post-sweep chop clips
+    # almost immediately (2026-07-31 audit: 20/21 backtested trades stopped
+    # out via this exact path, avg hold 4.2 min). Same fix CHAN_BREAK already
+    # uses for the same reason: floor the distance at 0.5×ATR beyond the
+    # level so the trade has room to actually prove the thesis right or wrong,
+    # instead of getting stopped by the first tick of noise.
+    if direction == "bearish":
+        stop_ref = max(wick_extreme, close + 0.5 * atr)
+    else:
+        stop_ref = min(wick_extreme, close - 0.5 * atr)
+
     register_cooldown(STRATEGY_ID, ticker, bar_time)
     logger.info(
         "[%s] LIQ_SWEEP %s — swept %.2f, wick to %.2f (%.2f ATR), closed %.2f (%.2f ATR rejection), "
-        "RVOL=%.2f conf=%.2f",
-        ticker, direction, swept_level, wick_extreme, penetration_atrs, close, rejection_atrs, rvol, confidence,
+        "stop_ref=%.2f, RVOL=%.2f conf=%.2f",
+        ticker, direction, swept_level, wick_extreme, penetration_atrs, close, rejection_atrs, stop_ref, rvol, confidence,
     )
     return Signal(
         strategy_id = STRATEGY_ID,
@@ -149,9 +166,10 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Optional[Signal]:
             "rejection_atrs":   round(rejection_atrs, 2),
             "rvol_gate":        round(rvol_min, 2),
             "rvol_gate_reason": _rvol_threshold_reason(bar_min, close, None, None, STRATEGY_ID, msa_confirmed=False),
-            # Structural stop — beyond the wick extreme itself (same meta key
-            # convention risk.structural_stop_from_level() already reads).
-            "entry_bar_high": wick_extreme if direction == "bearish" else None,
-            "entry_bar_low":  wick_extreme if direction == "bullish" else None,
+            # Structural stop — wick extreme, floored at 0.5×ATR beyond entry
+            # (same meta key convention risk.structural_stop_from_level() already
+            # reads; same 0.5×ATR floor pattern as chan_break.py's entry_bar_high/low).
+            "entry_bar_high": round(stop_ref, 4) if direction == "bearish" else None,
+            "entry_bar_low":  round(stop_ref, 4) if direction == "bullish" else None,
         },
     )

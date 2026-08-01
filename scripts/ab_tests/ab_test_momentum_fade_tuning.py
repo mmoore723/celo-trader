@@ -6,15 +6,19 @@ WHY THIS ONE: ab_test_stage1_dynamic.py's exit-mix breakdown (after fixing
 the mislabeling bug in backtester.py) showed ALL stage1 exits firing via
 momentum_fade — zero via the ATR target, volume fade, or static fallback.
 At only +10% gain required, either RSI exhaustion OR MACD fade alone was
-enough to trigger, never giving the 2x-ATR target room to work. Testing
-two candidate fixes, isolated AND combined, rather than assuming the
-combined change is what helped (same "change one variable at a time"
-discipline as every other test this session):
+enough to trigger, never giving the 2x-ATR target room to work. Confirmed
+again in the 2026-07-31 full audit (MID_BRK n=32, 0.30x realized W:L vs
+1.2-1.6x gate). Both candidate fixes were shipped as the live default that
+day (STAGE1_MOMENTUM_REQUIRE_BOTH=True, and the flat floor replaced with
+STAGE1_FLOOR_FRACTION_OF_TARGET=0.45 — a fraction of the ATR-target
+distance, not premium %, so it scales with volatility). This script still
+tests floor/logic combinations, now in the new fraction-of-target units, to
+validate that choice post-hoc:
 
-  A. floor=10%, OR   — current live default (baseline)
-  B. floor=25%, OR   — floor-only change
-  C. floor=10%, AND  — logic-only change
-  D. floor=25%, AND  — both changes combined
+  A. floor=25%, OR   — floor-only change (weak floor)
+  B. floor=45%, OR   — floor-only change (shipped floor value)
+  C. floor=25%, AND  — logic-only change
+  D. floor=45%, AND  — both changes combined (current live default)
 
 HONEST LIMITATION: same yfinance ~60-day intraday cap, same single
 overlapping backtest window as every other test this session. A win here
@@ -38,12 +42,12 @@ from backtester import Backtester
 DEFAULT_TICKERS = ["SPY", "QQQ", "NVDA", "AAPL", "TSLA"]
 DEFAULT_MONTHS  = 2
 
-# (floor_pct, require_both, label)
+# (floor_fraction_of_target, require_both, label)
 _VARIANTS = [
-    (0.10, False, "A: floor=10% OR (current default)"),
-    (0.25, False, "B: floor=25% OR (floor-only)"),
-    (0.10, True,  "C: floor=10% AND (logic-only)"),
-    (0.25, True,  "D: floor=25% AND (combined — friend's proposal)"),
+    (0.25, False, "A: floor=25% of target, OR (floor-only)"),
+    (0.45, False, "B: floor=45% of target, OR (floor-only)"),
+    (0.25, True,  "C: floor=25% of target, AND (logic-only)"),
+    (0.45, True,  "D: floor=45% of target, AND (current live default)"),
 ]
 
 
@@ -71,19 +75,19 @@ def main() -> None:
     tickers = sys.argv[2:] or DEFAULT_TICKERS
     alpaca  = AlpacaClient()
 
-    _orig_floor = backtest_exit_sim._risk.STAGE1_MIN_LOCK_FLOOR_PCT
+    _orig_floor = backtest_exit_sim._risk.STAGE1_FLOOR_FRACTION_OF_TARGET
     _orig_both  = backtest_exit_sim._risk.STAGE1_MOMENTUM_REQUIRE_BOTH
     results = {}
     try:
         for floor, both, label in _VARIANTS:
             print(f"\n=== {label} ===")
-            backtest_exit_sim._risk.STAGE1_MIN_LOCK_FLOOR_PCT  = floor
+            backtest_exit_sim._risk.STAGE1_FLOOR_FRACTION_OF_TARGET = floor
             backtest_exit_sim._risk.STAGE1_MOMENTUM_REQUIRE_BOTH = both
             results[label] = _run_variant(alpaca, tickers, months)
     finally:
         # Always restore — this script must never leave live behavior changed.
-        backtest_exit_sim._risk.STAGE1_MIN_LOCK_FLOOR_PCT    = _orig_floor
-        backtest_exit_sim._risk.STAGE1_MOMENTUM_REQUIRE_BOTH = _orig_both
+        backtest_exit_sim._risk.STAGE1_FLOOR_FRACTION_OF_TARGET = _orig_floor
+        backtest_exit_sim._risk.STAGE1_MOMENTUM_REQUIRE_BOTH    = _orig_both
 
     print("\n" + "=" * 88)
     print("MOMENTUM-FADE FLOOR/LOGIC TUNING — A/B/C/D RESULT")

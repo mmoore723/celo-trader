@@ -305,18 +305,29 @@ class RiskManager:
     # atr_trail_stop/trend_dead below.
     STAGE1_DYNAMIC_ENABLED     = True   # kill-switch — False reverts to the flat % above
     STAGE1_ATR_TARGET_MULT     = 2.0    # ATR multiplier for the dynamic target (1.5-2.5x per research)
-    STAGE1_MIN_LOCK_FLOOR_PCT  = 0.10   # min gain before momentum/volume fade can trigger early lock
     STAGE1_RVOL_FADE_THRESHOLD = 1.0    # RVOL below this after being elevated = crowd left
     # DIAGNOSIS 2026-07-21 (ab_test_stage1_dynamic.py, exit-reason breakdown
     # after the mislabeling bug above was fixed): ALL 11 stage1 exits in that
     # run were momentum_fade, ZERO were ATR target/volume fade/static
     # fallback. At only +10% gain required, either RSI exhaustion OR MACD
-    # fade alone is enough to fire — too easy to trip on a minor wobble
-    # before the 2x-ATR target ever gets a chance. STAGE1_MOMENTUM_REQUIRE_
-    # BOTH switches the OR to an AND (both signals must agree); combined
-    # with a higher STAGE1_MIN_LOCK_FLOOR_PCT this is the next candidate
-    # to A/B test, not yet the live default — see ab_test_momentum_fade_tuning.py.
-    STAGE1_MOMENTUM_REQUIRE_BOTH = False   # False=OR (current), True=AND (untested candidate)
+    # fade alone was enough to fire — too easy to trip on a minor wobble
+    # before the 2x-ATR target ever gets a chance. Confirmed again in the
+    # 2026-07-31 full audit (MID_BRK n=32: 8 of 11 wins exited via momentum/
+    # volume fade, avg win $30 vs avg loss $101 — 0.30x realized vs the
+    # 1.2-1.6x R:R gate).
+    #
+    # Two fixes, shipped together 2026-07-31:
+    #   1. STAGE1_MOMENTUM_REQUIRE_BOTH: OR → AND — both RSI exhaustion AND
+    #      MACD fade must agree, not either alone.
+    #   2. The minimum-gain floor is no longer a flat % of premium — it's now
+    #      STAGE1_FLOOR_FRACTION_OF_TARGET, a fraction of the DISTANCE to the
+    #      already-volatility-scaled ATR target. A flat % floor next to an
+    #      ATR-scaled target mixed one static gate with one dynamic one; this
+    #      makes both halves of the stage1 trigger move with volatility the
+    #      same way, instead of a fixed % being too tight in high-ATR names
+    #      and too loose in low-ATR ones.
+    STAGE1_MOMENTUM_REQUIRE_BOTH      = True   # 2026-07-31: was False (OR) — see diagnosis above
+    STAGE1_FLOOR_FRACTION_OF_TARGET   = 0.45   # 2026-07-31: replaces flat STAGE1_MIN_LOCK_FLOOR_PCT
     # NOTE 2026-07-18: ORB_TIME_BOX below is UNUSED — grepped the repo, nothing
     # reads it. The real flat/losing time cap is config.py's EARLY_TIMEBOX_MIN
     # (currently 60 min), read directly in evaluate_exit_conditions() below.
@@ -1189,7 +1200,13 @@ class RiskManager:
                         f"stage1_atr_target "
                         f"(target={atr_target_price:.4f} current={current_price:.4f} +{gain_pct*100:.1f}%)"
                     )
-                if gain_pct >= self.STAGE1_MIN_LOCK_FLOOR_PCT:
+                # Floor is a FRACTION OF THE TARGET DISTANCE, not a flat % of
+                # premium — so it widens/tightens with volatility the same way
+                # the ATR target itself does (2026-07-31, see class docstring
+                # above for the diagnosis this replaces).
+                _target_dist = atr_target_price - entry_price
+                _floor_price = entry_price + self.STAGE1_FLOOR_FRACTION_OF_TARGET * _target_dist
+                if current_price >= _floor_price:
                     if momentum_fading:
                         return True, f"stage1_momentum_fade (+{gain_pct*100:.1f}%)"
                     if rvol > 0.0 and rvol < self.STAGE1_RVOL_FADE_THRESHOLD:

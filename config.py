@@ -401,9 +401,13 @@ _DEFAULTS = {
     "orb_stop_loss_pct":     20,    # Option premium stop-loss as % of entry (20 = -20%)
     "stage1_dynamic_enabled":      True,   # ATR/momentum/volume-based stage1 trigger (kill-switch)
     "stage1_atr_target_mult":      2.0,    # ATR multiplier for the dynamic target (1.5-2.5x per research)
-    "stage1_min_lock_floor_pct":   10,     # min gain % before momentum/volume fade can trigger early lock
+    # 2026-07-31: was a flat % of premium (stage1_min_lock_floor_pct=10) — now
+    # a fraction of the distance to the ATR target, so it scales with
+    # volatility like the target itself does. See risk.py's STAGE1_
+    # FLOOR_FRACTION_OF_TARGET docstring for the diagnosis.
+    "stage1_floor_fraction_of_target": 45, # % of the ATR-target distance required before momentum/volume fade can lock early
     "stage1_rvol_fade_threshold":  1.0,    # RVOL below this (after being elevated) = crowd left, lock early
-    "stage1_momentum_require_both": False, # False=RSI OR MACD fires early lock, True=requires BOTH (untested candidate)
+    "stage1_momentum_require_both": True,  # 2026-07-31: was False (OR) — requires BOTH RSI exhaustion AND MACD fade
     # 2026-07-15 audit: 25% was far too loose — a 25% spread is an instant ~12%
     # loss at entry. 8% max keeps round-trip spread cost survivable.
     "spread_gate_pct":       8,     # Max bid-ask spread as % of mid (8 = 8%)
