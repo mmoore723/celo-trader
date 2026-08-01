@@ -312,6 +312,25 @@ class Backtester:
     # of a static stand-in. Best-effort: any failure here just means the
     # trail falls back to the flat 2.0x base, same as before — never fatal.
     def _fetch_extra_timeframe(self, interval: str, start_d: str, end_d: str) -> pd.DataFrame:
+        # FIX 2026-07-31 (backtest speed/reliability): Alpaca tried first —
+        # same reasoning as the primary 5-min fetch above. get_bars() maps
+        # "1h"/"15m" to Alpaca's "1Hour"/"15Min" and already has a real,
+        # working 10s timeout. yfinance only runs if Alpaca comes back empty.
+        _alpaca_tf = {"1h": "1Hour", "15m": "15Min"}.get(interval)
+        if _alpaca_tf:
+            try:
+                raw = self.alpaca.get_bars(self.ticker, _alpaca_tf, limit=2000)
+                bars = raw[0] if isinstance(raw, tuple) else raw
+                if bars:
+                    _df = bars_to_df(bars)
+                    if not _df.empty:
+                        logger.info("Backtest: Alpaca returned %d %s bars for %s",
+                                    len(_df), interval, self.ticker)
+                        return _df
+            except Exception as _al_ex:
+                logger.warning("Backtest: Alpaca %s fetch failed for %s: %s",
+                                interval, self.ticker, _al_ex)
+
         try:
             import yfinance as yf
             import concurrent.futures as _cf
@@ -454,75 +473,111 @@ class Backtester:
             return bundle["df"]
 
         # ── Fetch historical 5-min bars ───────────────────────────────────────
+        # FIX 2026-07-31 (backtest speed/reliability): Alpaca is now tried
+        # FIRST, yfinance is the fallback — this used to be the other way
+        # around. Reasoning: Alpaca is what live trading already uses every
+        # day, its requests all carry a real, working 10s timeout (broker.py's
+        # _get()), and it has no 60-day depth cap the way yfinance's 5-min
+        # bars do. yfinance (via curl_cffi) has caused two real incidents —
+        # a hard network refusal in one environment, and a 16+ minute silent
+        # hang on the user's Mac that didn't even respond to Ctrl+C (see the
+        # ThreadPoolExecutor fix above/below). It's kept as a fallback only,
+        # not removed, in case Alpaca's free IEX feed is ever missing a bar.
         import datetime as _dt
         _today    = _dt.date.today()
-        _max_days = min(self.months * 30, 59)   # yfinance 5m hard limit = 60 d
+        _max_days = min(self.months * 30, 59)   # yfinance 5m hard limit = 60 d — Alpaca has no such cap
         _start_d  = (_today - _dt.timedelta(days=_max_days)).strftime("%Y-%m-%d")
         _end_d    = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
         df = pd.DataFrame()
+        _data_source = None
         try:
-            import yfinance as yf
-            import concurrent.futures as _cf
-
-            def _do_download():
-                return yf.download(
-                    self.ticker,
-                    start=_start_d,
-                    end=_end_d,
-                    interval="5m",
-                    progress=False,
-                    auto_adjust=True,
-                )
-
-            # FIX 2026-07-31: see the matching fix + full explanation in
-            # _fetch_extra_timeframe() above — `with ThreadPoolExecutor(...)`
-            # blocks on exit (shutdown(wait=True)) even after this timeout
-            # fires, so a genuinely hung yf.download() (connects, never
-            # receives data, no exception) still hangs the whole process
-            # indefinitely and doesn't even respond to Ctrl+C. Managed
-            # manually + shutdown(wait=False) so a timeout actually unblocks.
-            _ex = _cf.ThreadPoolExecutor(max_workers=1)
-            _fut = _ex.submit(_do_download)
-            try:
-                _raw_yf = _fut.result(timeout=30)
-            except _cf.TimeoutError:
-                logger.warning("Backtest: yfinance timed out after 30s for %s", self.ticker)
-                _raw_yf = pd.DataFrame()
-            _ex.shutdown(wait=False)
-
-            if not _raw_yf.empty:
-                if hasattr(_raw_yf.columns, "get_level_values"):
-                    _raw_yf.columns = _raw_yf.columns.get_level_values(0)
-                _raw_yf = _raw_yf.rename(columns={
-                    "Open": "open", "High": "high",
-                    "Low": "low", "Close": "close", "Volume": "volume",
-                })
-                _raw_yf.index.name = "time"
-                _raw_yf = _raw_yf.reset_index()
-                _raw_yf["time"] = (
-                    pd.to_datetime(_raw_yf["time"], utc=True)
-                    .dt.tz_convert("America/New_York")
-                    .dt.tz_localize(None)
-                )
-                df = _raw_yf[["time", "open", "high", "low", "close", "volume"]].copy()
-                logger.info(
-                    "Backtest: yfinance returned %d 5m bars for %s (%s → %s)",
-                    len(df), self.ticker, _start_d, _end_d,
-                )
-        except Exception as _yf_ex:
-            logger.warning("Backtest: yfinance failed for %s: %s", self.ticker, _yf_ex)
-
-        # Alpaca fallback
-        if df.empty:
             raw = self.alpaca.get_bars(self.ticker, "5Min", limit=10000)
             bars_5m = raw[0] if isinstance(raw, tuple) else raw
-            if not bars_5m:
-                return {"error": f"No historical data for {self.ticker}."}
-            df = bars_to_df(bars_5m)
+            if bars_5m:
+                df = bars_to_df(bars_5m)
+                if not df.empty:
+                    # DEPTH CHECK (2026-07-31): a non-empty result isn't the
+                    # same as a COMPLETE one. Alpaca's free IEX feed has a
+                    # known quirk of sometimes returning only recent bars
+                    # (see broker.py get_session_bars()'s "sometimes returns
+                    # only recent bars" comment, a same-day version of this
+                    # same risk) — if that happens here too, treating any
+                    # non-empty df as "good" would silently run the backtest
+                    # over a shorter, wrong window instead of the requested
+                    # one. Require the earliest returned bar to be within
+                    # 20% of the requested start date; otherwise the data is
+                    # too shallow and yfinance takes over instead.
+                    _earliest = df["time"].min().date()
+                    _requested_start = _dt.date.fromisoformat(_start_d)
+                    _slack_days = max(3, int(_max_days * 0.20))
+                    if _earliest > _requested_start + _dt.timedelta(days=_slack_days):
+                        logger.warning(
+                            "Backtest: Alpaca 5m data for %s only goes back to %s "
+                            "(requested %s) — too shallow, falling back to yfinance",
+                            self.ticker, _earliest, _start_d,
+                        )
+                        df = pd.DataFrame()
+                    else:
+                        _data_source = "alpaca"
+                        logger.info("Backtest: Alpaca returned %d 5m bars for %s (from %s)",
+                                    len(df), self.ticker, _earliest)
+        except Exception as _al_ex:
+            logger.warning("Backtest: Alpaca 5m fetch failed for %s: %s", self.ticker, _al_ex)
+
+        # yfinance fallback — same 20/30s non-blocking timeout pattern as
+        # _fetch_extra_timeframe() below (shutdown(wait=False) so a hang
+        # can't block the process even here).
+        if df.empty:
+            try:
+                import yfinance as yf
+                import concurrent.futures as _cf
+
+                def _do_download():
+                    return yf.download(
+                        self.ticker,
+                        start=_start_d,
+                        end=_end_d,
+                        interval="5m",
+                        progress=False,
+                        auto_adjust=True,
+                    )
+
+                _ex = _cf.ThreadPoolExecutor(max_workers=1)
+                _fut = _ex.submit(_do_download)
+                try:
+                    _raw_yf = _fut.result(timeout=30)
+                except _cf.TimeoutError:
+                    logger.warning("Backtest: yfinance timed out after 30s for %s", self.ticker)
+                    _raw_yf = pd.DataFrame()
+                _ex.shutdown(wait=False)
+
+                if not _raw_yf.empty:
+                    if hasattr(_raw_yf.columns, "get_level_values"):
+                        _raw_yf.columns = _raw_yf.columns.get_level_values(0)
+                    _raw_yf = _raw_yf.rename(columns={
+                        "Open": "open", "High": "high",
+                        "Low": "low", "Close": "close", "Volume": "volume",
+                    })
+                    _raw_yf.index.name = "time"
+                    _raw_yf = _raw_yf.reset_index()
+                    _raw_yf["time"] = (
+                        pd.to_datetime(_raw_yf["time"], utc=True)
+                        .dt.tz_convert("America/New_York")
+                        .dt.tz_localize(None)
+                    )
+                    df = _raw_yf[["time", "open", "high", "low", "close", "volume"]].copy()
+                    _data_source = "yfinance"
+                    logger.info(
+                        "Backtest: yfinance returned %d 5m bars for %s (%s → %s)",
+                        len(df), self.ticker, _start_d, _end_d,
+                    )
+            except Exception as _yf_ex:
+                logger.warning("Backtest: yfinance failed for %s: %s", self.ticker, _yf_ex)
 
         if df.empty:
             return {"error": f"No historical data for {self.ticker}"}
+        self._data_source = _data_source or "unknown"
 
         # Trim to requested look-back window
         cutoff = pd.Timestamp.now() - pd.DateOffset(months=self.months)
@@ -607,7 +662,7 @@ class Backtester:
 
         # Diagnostic counters — returned in error message when no trades fire
         self._diag = {
-            "data_source":    "yfinance" if not df.empty else "alpaca",
+            "data_source":    getattr(self, "_data_source", "unknown"),
             "total_bars":     len(df),
             "trading_days":   len(unique_days),
             "raw_signals":    0,   # bars where at least one strategy returned a Signal

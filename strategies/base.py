@@ -73,24 +73,51 @@ class MarketStructureAnalyzer:
     # ── Swing detection ───────────────────────────────────────────────────────
 
     def _detect_swings(self) -> list[dict]:
+        # FIX 2026-07-31 (backtest performance): this used to call df.iloc[i]
+        # / df.iloc[slice] inside a per-bar Python loop — each pandas .iloc[]
+        # access has real overhead (dtype resolution, Series construction)
+        # that a raw numpy array doesn't. Confirmed via py-spy profiling a
+        # real stuck backtest: this one function was 90% of ALL CPU time,
+        # dominated by pandas internals (_slice/fast_xs/__getitem__), not
+        # the actual min/max arithmetic. Every strategy using
+        # MarketStructureAnalyzer rebuilds it fresh per bar (by design, for
+        # correct backtester replay), so this function still runs
+        # O(bars-in-day) times per day — extracting to numpy once here
+        # doesn't change that call count, but makes each call's O(n) scan
+        # dramatically cheaper (compiled numpy slicing/min/max instead of
+        # per-element pandas access). Same pivot logic, same output as the
+        # original .iloc-based version — only the access method changed.
         pivots: list[dict] = []
         df = self._df
         n  = len(df)
         lb = self.LOOKBACK
 
+        highs   = df["high"].to_numpy()
+        lows    = df["low"].to_numpy()
+        volumes = df["volume"].to_numpy() if "volume" in df.columns else None
+        atrs    = df["atr"].to_numpy()    if "atr"    in df.columns else None
+        _time_col = df["time"]   # kept as a pandas Series (not numpy) so
+                                  # swing["time"] stays a real Timestamp,
+                                  # same type callers already expect —
+                                  # .iat[] is pandas' fast scalar accessor,
+                                  # far cheaper than the old whole-row .iloc[i].
+
         # ── Confirmed pivots: require lb bars on BOTH sides ───────────────────
         # These are fully confirmed — higher accuracy, 5-bar lag vs. live price.
         for i in range(lb, n - lb):
-            bar   = df.iloc[i]
-            left  = df.iloc[i - lb : i]
-            right = df.iloc[i + 1 : i + lb + 1]
+            bar_high = highs[i]
+            bar_low  = lows[i]
+            left_high_max  = highs[i - lb : i].max()
+            right_high_max = highs[i + 1 : i + lb + 1].max()
+            left_low_min   = lows[i - lb : i].min()
+            right_low_min  = lows[i + 1 : i + lb + 1].min()
 
-            if bar["high"] > left["high"].max() and bar["high"] > right["high"].max():
-                pivots.append({"idx": i, "price": float(bar["high"]),
-                               "type": "high", "time": bar["time"]})
-            if bar["low"] < left["low"].min() and bar["low"] < right["low"].min():
-                pivots.append({"idx": i, "price": float(bar["low"]),
-                               "type": "low",  "time": bar["time"]})
+            if bar_high > left_high_max and bar_high > right_high_max:
+                pivots.append({"idx": i, "price": float(bar_high),
+                               "type": "high", "time": _time_col.iat[i]})
+            if bar_low < left_low_min and bar_low < right_low_min:
+                pivots.append({"idx": i, "price": float(bar_low),
+                               "type": "low",  "time": _time_col.iat[i]})
 
         # ── Real-time fallback: left-side only for the last lb bars ───────────
         # The confirmed loop above can never detect pivots within the last lb bars
@@ -107,40 +134,48 @@ class MarketStructureAnalyzer:
         VOL_LOOKBACK = 20
         rt_start = max(lb, n - lb)
         for i in range(rt_start, n):
-            bar  = df.iloc[i]
-            left = df.iloc[max(0, i - lb) : i]
-            if left.empty:
+            bar_high = highs[i]
+            bar_low  = lows[i]
+            _left_start = max(0, i - lb)
+            left_high = highs[_left_start : i]
+            left_low  = lows[_left_start : i]
+            if left_high.size == 0:
                 continue
 
             # Volume gate — bar must show at least average participation
-            vol_window = df.iloc[max(0, i - VOL_LOOKBACK) : i]
-            vol_mean   = float(vol_window["volume"].mean()) if not vol_window.empty else 0.0
-            bar_vol    = float(bar.get("volume", 0) or 0)
-            if vol_mean > 0 and bar_vol < vol_mean:
-                continue   # below-average volume → retail noise, skip
+            if volumes is not None:
+                vol_window = volumes[max(0, i - VOL_LOOKBACK) : i]
+                vol_mean   = float(vol_window.mean()) if vol_window.size else 0.0
+                _bv = volumes[i]
+                bar_vol = float(_bv) if (_bv is not None and not (isinstance(_bv, float) and np.isnan(_bv))) else 0.0
+                if vol_mean > 0 and bar_vol < vol_mean:
+                    continue   # below-average volume → retail noise, skip
 
             # ATR body gate — extension past the prior extreme must be meaningful
-            _atr_col = bar.get("atr")
-            bar_atr  = float(_atr_col) if (_atr_col is not None and not (isinstance(_atr_col, float) and np.isnan(_atr_col))) else None
+            bar_atr = None
+            if atrs is not None:
+                _a = atrs[i]
+                if _a is not None and not (isinstance(_a, float) and np.isnan(_a)):
+                    bar_atr = float(_a)
 
-            left_high_max = left["high"].max()
-            left_low_min  = left["low"].min()
+            left_high_max = left_high.max()
+            left_low_min  = left_low.min()
 
-            if bar["high"] > left_high_max:
-                extension = float(bar["high"]) - float(left_high_max)
+            if bar_high > left_high_max:
+                extension = float(bar_high) - float(left_high_max)
                 if bar_atr and bar_atr > 0 and extension < 0.15 * bar_atr:
                     pass   # micro-wick — skip this pivot
                 else:
-                    pivots.append({"idx": i, "price": float(bar["high"]),
-                                   "type": "high", "time": bar["time"], "realtime": True})
+                    pivots.append({"idx": i, "price": float(bar_high),
+                                   "type": "high", "time": _time_col.iat[i], "realtime": True})
 
-            if bar["low"] < left_low_min:
-                extension = float(left_low_min) - float(bar["low"])
+            if bar_low < left_low_min:
+                extension = float(left_low_min) - float(bar_low)
                 if bar_atr and bar_atr > 0 and extension < 0.15 * bar_atr:
                     pass   # micro-wick — skip this pivot
                 else:
-                    pivots.append({"idx": i, "price": float(bar["low"]),
-                                   "type": "low",  "time": bar["time"], "realtime": True})
+                    pivots.append({"idx": i, "price": float(bar_low),
+                                   "type": "low",  "time": _time_col.iat[i], "realtime": True})
 
         pivots.sort(key=lambda p: p["idx"])
         return pivots
