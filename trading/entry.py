@@ -1444,11 +1444,27 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 _ds_macd_hist = compute_macd_hist(_df1m)
                 _ds_adx       = compute_adx(_df1m)
                 _ds_ema_align = ema_stack_aligned(_df1m, direction)
-                # trend_1h_bias intentionally skipped — no 1-hour frame is
-                # already in memory here, and fetching one would add a new
-                # blocking Alpaca API call to the synchronous entry path.
-                # Latency safety over feature completeness, per design brief.
-                _ds_trend_1h  = None
+                # FIX 2026-07-31: this used to hardcode None with a latency
+                # justification that no longer holds — apply_mtf_confirmation()
+                # already fetched and cached this exact ticker's 1Hour bias
+                # earlier in THIS SAME tick (route_signals() call above, via
+                # _US["mtf_1h_cache"] / trading/mtf_live_gate.py, 15-min TTL).
+                # Reading it here is a cache hit in the common case, not a new
+                # blocking API call. Real incident: 3 losing trades today all
+                # fired against the 1Hour trend (and mostly against 5Min/15Min
+                # too — see mtf_bias_json on those trades), and the AI review
+                # layer's own system prompt explicitly asks it to watch for
+                # "conflicting multi-timeframe signals" — it just never had
+                # the data to do that with. This closes that gap for free.
+                try:
+                    from trading.mtf_live_gate import get_live_1h_bias
+                    _ds_trend_1h = get_live_1h_bias(
+                        alpaca, ticker, direction, _US.setdefault("mtf_1h_cache", {})
+                    )
+                    if _ds_trend_1h == "neutral":
+                        _ds_trend_1h = None   # no signal either way — keep prior "don't mention it" behavior
+                except Exception:
+                    _ds_trend_1h = None   # never let this optional context block the review call
 
                 from ai_reasoning.decision_support import review_entry
                 _ds_result = review_entry(

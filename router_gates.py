@@ -217,7 +217,16 @@ def apply_confluence_bonus(signals: list, ticker: str, quiet: bool = False) -> l
 # shared gate in the pipeline instead of duplicating logic per strategy file.
 
 _MTF_BOOST   = 0.05   # 1Hour agrees with the signal's direction
-_MTF_PENALTY = 0.05   # 1Hour disagrees with the signal's direction
+# 2026-07-31: was 0.05. At that size the penalty almost never mattered —
+# most signals clear the 0.74 confidence floor with enough room that a
+# 5-point ding doesn't change the outcome. Research (Elder's Triple Screen
+# and general MTF-confirmation literature) treats higher-timeframe
+# disagreement as a real, consequential signal, not a rounding error —
+# aligned setups run meaningfully higher win rates than counter-trend ones.
+# Raised to 0.12 so a disagreeing 1Hour trend can actually push a borderline
+# signal below the floor. Still a SOFT adjustment, never a hard block, per
+# CLAUDE.md rule 12 — a strong enough signal can still absorb this and trade.
+_MTF_PENALTY = 0.12   # 1Hour disagrees with the signal's direction
 
 # ── 5b. Minimum-grade filter (OFF by default) ─────────────────────────────────
 # 2026-07-24: the dashboard's premarket report already grades every ticker
