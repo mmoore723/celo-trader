@@ -25,8 +25,9 @@ cd ..
 
 echo "==> Committing + pushing to GitHub..."
 # Never sweep local diagnostics, reports, or secrets into a deployment commit.
-# Tracked source/build changes are sufficient for a normal release.
+# Stage tracked source plus the deliberately versioned frontend build output.
 git add -u
+git add frontend/dist
 if [ -n "$(git ls-files --others --exclude-standard)" ]; then
   echo "==> Leaving untracked local files out of the deployment commit."
 fi
