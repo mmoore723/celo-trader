@@ -164,11 +164,12 @@ def _manage_open_position(
                     ps["cached_underlying_df"] = df_under
                     ps["last_bar_fetch_minute"] = _minute_key
 
-                    _last_close = float(df_under["close"].iloc[-1])
+                    _last_high = float(df_under["high"].iloc[-1])
+                    _last_low  = float(df_under["low"].iloc[-1])
                     if direction == "bullish":
-                        ps["peak_underlying"] = max(ps.get("peak_underlying") or _last_close, _last_close)
+                        ps["peak_underlying"] = max(ps.get("peak_underlying") or _last_high, _last_high)
                     else:
-                        ps["peak_underlying"] = min(ps.get("peak_underlying") or _last_close, _last_close)
+                        ps["peak_underlying"] = min(ps.get("peak_underlying") or _last_low, _last_low)
             except Exception as _be:
                 logger.debug("Bar fetch for position management failed (%s): %s", ticker, _be)
 

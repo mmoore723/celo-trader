@@ -12,14 +12,22 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 @router.get("", response_model=Settings)
 def get_settings_endpoint() -> Settings:
-    from config import get_settings
+    from config import get_settings, get_risk_tier, MAX_CONCURRENT_POSITIONS, STARTING_CAPITAL
     s = get_settings()
+    _risk_override = s.get("risk_per_trade")
+    try:
+        _risk_auto = _risk_override is None
+        _balance = float(s.get("last_known_balance", STARTING_CAPITAL))
+        _risk_pct = (get_risk_tier(_balance) if _risk_auto else float(_risk_override)) * 100
+    except (TypeError, ValueError):
+        _risk_auto, _risk_pct = True, get_risk_tier(STARTING_CAPITAL) * 100
     return Settings(
-        risk_pct=float(s.get("risk_pct", 1.0)),
+        risk_pct=round(_risk_pct, 2),
+        risk_auto=_risk_auto,
         growth_mode=bool(s.get("growth_mode", False)),
         flip_trading_enabled=bool(s.get("flip_trading_enabled", True)),
-        max_concurrent_positions=int(s.get("max_concurrent_positions", 1)),
-        rr_ratio_mode=str(s.get("rr_ratio_mode", "dynamic")),
+        max_concurrent_positions=int(s.get("max_concurrent_positions", MAX_CONCURRENT_POSITIONS)),
+        rr_ratio_mode=str(s.get("rr_ratio_mode", "auto")),
         watchlist=list(s.get("watchlist", ["SPY"])),
         # All strategy flags use the strategy_*_enabled keys that entry.py reads.
         # Policy as of 2026-07-20: every strategy defaults ON; the user opts
@@ -92,8 +100,13 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw
     # the user's setting and always fell through to the bootstrap 5% auto-tier.
     # Both keys are saved so GET can still return risk_pct for UI display.
+    _risk_auto = bool(data.pop("risk_auto", False))
     _rp_ui = data.get("risk_pct")
-    if _rp_ui is not None:
+    if _risk_auto:
+        # Do not accidentally pin an automatic tier merely because the user
+        # saved an unrelated Settings change.
+        data["risk_per_trade"] = None
+    elif _rp_ui is not None:
         try:
             data["risk_per_trade"] = round(float(_rp_ui) / 100.0, 4)  # 10.0 → 0.10
         except (TypeError, ValueError):

@@ -22,11 +22,12 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 
 const DEFAULT: AppSettings = {
   paper_trading: true,
-  risk_pct: 1.0,
+  risk_pct: 5.0,
+  risk_auto: true,
   growth_mode: false,
   flip_trading_enabled: true,
-  max_concurrent_positions: 1,
-  rr_ratio_mode: "dynamic",
+  max_concurrent_positions: 2,
+  rr_ratio_mode: "auto",
   watchlist: ["SPY"],
   orb_enabled: true,
   vwap_pullback_enabled: true,
@@ -333,10 +334,20 @@ export function Settings() {
               min="0.1"
               max="5"
               value={form.risk_pct}
-              onChange={(e) => set("risk_pct", parseFloat(e.target.value))}
+              disabled={form.risk_auto}
+              onChange={(e) => {
+                set("risk_pct", parseFloat(e.target.value));
+                set("risk_auto", false);
+              }}
               className="input w-24"
             />
           </div>
+
+          <Toggle
+            label="Automatic risk tier (based on account balance)"
+            checked={form.risk_auto ?? true}
+            onChange={(v) => set("risk_auto", v)}
+          />
 
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
@@ -359,9 +370,9 @@ export function Settings() {
               value={form.rr_ratio_mode}
               onChange={(e) => set("rr_ratio_mode", e.target.value)}
             >
-              <option value="dynamic">Dynamic</option>
-              <option value="fixed_2_1">Fixed 2:1</option>
-              <option value="fixed_3_1">Fixed 3:1</option>
+              <option value="auto">Automatic</option>
+              <option value="small_account">Small account (1.2:1 minimum)</option>
+              <option value="professional">Professional (1.6:1 minimum)</option>
             </select>
           </div>
 
@@ -389,8 +400,28 @@ export function Settings() {
                 onChange={(v) => set("fvg_enabled", v)} />
         <Toggle label="Inverted FVG / IFVG — zone-flip reversal (all session)" checked={form.ifvg_enabled}
                 onChange={(v) => set("ifvg_enabled", v)} />
-        <Toggle label="Channel Breakout (9:45 AM – 3:45 PM)" checked={form.chan_break_enabled}
-                onChange={(v) => set("chan_break_enabled", v)} />
+        <div className="flex items-center justify-between gap-3 py-2">
+          <span className="text-sm" style={{ color: "var(--ink-muted)" }}>
+            Channel Breakout
+            <span className="block text-xs mt-0.5">
+              Not active in the live router; this setting cannot enable it.
+            </span>
+          </span>
+          <span className="badge" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)" }}>
+            INACTIVE
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3 py-2">
+          <span className="text-sm" style={{ color: "var(--ink-muted)" }}>
+            BOS / MSS
+            <span className="block text-xs mt-0.5">
+              Its sweep/structure confirmation is incorporated into FVG, not run as a separate strategy.
+            </span>
+          </span>
+          <span className="badge" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)" }}>
+            INTEGRATED
+          </span>
+        </div>
         <Toggle label="Mid-Day Breakdown / MID_BRK — OFF by default (no edge in 13 backtested configs, 2026-07-23 audit)"
                 checked={form.mid_brk_enabled}
                 onChange={(v) => set("mid_brk_enabled", v)} />
@@ -434,12 +465,18 @@ export function Settings() {
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           Live-tuning — changes apply on the next bot tick (&lt;60 s). No restart needed.
         </p>
+        {form.simplified_exit_mode && (
+          <p className="text-xs mb-3" style={{ color: "var(--warning)" }}>
+            Simplified Exit is active: positions use a hard stop, underlying Chandelier exit, and time cap.
+            Stage-1 partial-profit settings apply only when Simplified Exit is off.
+          </p>
+        )}
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
               Stage-1 target (% gain)
               <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-                Sell 50% of contracts once option gains this much (default 50%)
+                Used only with Simplified Exit off: sell 50% once the option gains this much (default 50%)
               </span>
             </label>
             <input

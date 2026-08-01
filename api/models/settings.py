@@ -10,6 +10,9 @@ from pydantic import BaseModel
 
 class Settings(BaseModel):
     risk_pct: float
+    # True means the balance-based risk ladder is active.  `risk_pct` then
+    # reports the currently effective tier rather than creating an override.
+    risk_auto: bool = True
     growth_mode: bool
     flip_trading_enabled: bool
     max_concurrent_positions: int

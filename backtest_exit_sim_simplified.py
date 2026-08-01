@@ -76,9 +76,9 @@ def evaluate_bt_exit_simplified(
     elapsed_min = (now - entry_time).total_seconds() / 60
 
     if state.direction == "bullish":
-        state.peak_underlying = max(state.peak_underlying or underlying_now, underlying_now)
+        state.peak_underlying = max(state.peak_underlying or float(bar["high"]), float(bar["high"]))
     else:
-        state.peak_underlying = min(state.peak_underlying or underlying_now, underlying_now)
+        state.peak_underlying = min(state.peak_underlying or float(bar["low"]), float(bar["low"]))
 
     # ── Rule 1: hard stop (catastrophe) ───────────────────────────────────
     hard_stop = state.struct_stop_price if state.struct_stop_price is not None else state.initial_atr_stop
@@ -92,14 +92,20 @@ def evaluate_bt_exit_simplified(
             trail_u = state.peak_underlying - CHANDELIER_ATR_MULT * atr
         else:
             trail_u = state.peak_underlying + CHANDELIER_ATR_MULT * atr
-        trail_opt = _underlying_stop_to_option(state.entry_price, underlying_now, trail_u)
-        # Ratchet: only ever tighten, matching the existing engine's convention.
-        if state.atr_trail_stop is None or trail_opt > state.atr_trail_stop:
-            state.atr_trail_stop = trail_opt
-        if current_opt_price <= state.atr_trail_stop:
+        prior_u = state.simplified_trail_underlying
+        if (prior_u is None
+                or (state.direction == "bullish" and trail_u > prior_u)
+                or (state.direction == "bearish" and trail_u < prior_u)):
+            state.simplified_trail_underlying = trail_u
+            prior_u = trail_u
+        # Keep the option-converted level for comparable backtest reporting,
+        # but use the underlying crossing for the actual Chandelier decision.
+        state.atr_trail_stop = _underlying_stop_to_option(state.entry_price, underlying_now, prior_u)
+        crossed = underlying_now <= prior_u if state.direction == "bullish" else underlying_now >= prior_u
+        if crossed:
             return True, (
                 f"simplified_chandelier_3atr "
-                f"(trail={state.atr_trail_stop:.4f} current={current_opt_price:.4f})"
+                f"(underlying={underlying_now:.4f} trail={prior_u:.4f})"
             )
 
     # ── Rule 3: one unified time cap ──────────────────────────────────────

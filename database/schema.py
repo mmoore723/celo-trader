@@ -122,7 +122,9 @@ CREATE TABLE IF NOT EXISTS signal_journal (
     confidence    REAL    NOT NULL,   -- 0.0-1.0 at the moment of this outcome
     outcome       TEXT    NOT NULL,   -- 'entered' | 'blocked'
     reason_code   TEXT,               -- NULL when outcome='entered' — see signal_journal.REASON_CODES
-    reason_detail TEXT                -- human-readable specifics, e.g. "needs $88, cap is $69"
+    reason_detail TEXT,               -- human-readable specifics, e.g. "needs $88, cap is $69"
+    trade_id      INTEGER,            -- linked real trade for outcome='entered'
+    context_json  TEXT                -- strategy metadata / selected-contract context at decision time
 );
 """
 _CREATE_SIGNAL_JOURNAL_IDX = [
@@ -202,6 +204,13 @@ def _init_db_at(db_path: Path) -> None:
             # failed or was skipped — treat NULL as "unknown", not an error.
             conn.execute("ALTER TABLE trades ADD COLUMN mtf_bias_json TEXT")
             logger.info("Migration: added mtf_bias_json column to %s", db_path.name)
+        _journal_cols = {row[1] for row in conn.execute("PRAGMA table_info(signal_journal)")}
+        if "trade_id" not in _journal_cols:
+            conn.execute("ALTER TABLE signal_journal ADD COLUMN trade_id INTEGER")
+            logger.info("Migration: added trade_id to signal_journal in %s", db_path.name)
+        if "context_json" not in _journal_cols:
+            conn.execute("ALTER TABLE signal_journal ADD COLUMN context_json TEXT")
+            logger.info("Migration: added context_json to signal_journal in %s", db_path.name)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -331,5 +340,4 @@ def backfill_daily_summaries() -> None:
         logger.info("backfill_daily_summaries: synced %d date(s)", len(daily))
     except Exception as e:
         logger.warning("backfill_daily_summaries failed (non-fatal): %s", e)
-
 

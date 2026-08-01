@@ -8,6 +8,7 @@ cleanup); no logic changed, only relocated.
 from __future__ import annotations
 
 import logging
+import json
 from typing import Optional
 
 from database import get_conn, _now_et
@@ -23,6 +24,8 @@ def log_signal_outcome(
     outcome: str,                          # 'entered' | 'blocked'
     reason_code: Optional[str] = None,     # required when outcome='blocked'
     reason_detail: Optional[str] = None,   # human-readable specifics
+    trade_id: Optional[int] = None,
+    context: Optional[dict] = None,
 ) -> None:
     ts = _now_et().isoformat()
     try:
@@ -30,10 +33,11 @@ def log_signal_outcome(
             conn.execute(
                 """INSERT INTO signal_journal
                    (ts, ticker, strategy_id, direction, confidence,
-                    outcome, reason_code, reason_detail)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    outcome, reason_code, reason_detail, trade_id, context_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (ts, ticker.upper(), strategy_id, direction, round(float(confidence), 4),
-                 outcome, reason_code, reason_detail),
+                 outcome, reason_code, reason_detail, trade_id,
+                 json.dumps(context, default=str, sort_keys=True) if context else None),
             )
     except Exception as exc:
         # Non-fatal by design — see package docstring.

@@ -21,8 +21,10 @@ Rules (identical spec to the backtest version — see that file's docstring
 for the full reasoning):
   1. HARD STOP    — struct_stop_price if the strategy supplied one, else
                      initial_atr_stop.
-  2. CHANDELIER   — single 3.0x ATR trailing stop off peak_underlying
-                     (Charles Le Beau's original spec). Full-position exit,
+  2. CHANDELIER   — single 3.0x ATR trailing stop off the underlying's
+                     peak (Charles Le Beau's original spec). The underlying,
+                     not an option quote, decides whether that level broke.
+                     Full-position exit,
                      no partial scale-out — that's the deliberate trade-off
                      vs. the stage1/stage2 structure, not an oversight.
   3. TIME CAP     — one unified cap, not a separate winner/loser split.
@@ -68,6 +70,11 @@ def evaluate_simplified_live_exit(
         return True, f"simplified_hard_stop (sl={hard_stop:.4f} current={current_price:.4f})"
 
     # ── Rule 2: Chandelier exit — single 3.0x ATR trailing stop ───────────
+    # A Chandelier is an UNDERLYING-price exit.  Using current option premium
+    # to test this level mixed two different instruments: IV, theta, gamma and
+    # the bid/ask can move an option through a converted level even while the
+    # underlying has not invalidated the trend.  Keep the converted option
+    # value only for dashboard display; test the actual underlying crossing.
     peak_u = ps.get("peak_underlying")
     if atr is not None and peak_u is not None:
         peak_u = float(peak_u)
@@ -75,15 +82,22 @@ def evaluate_simplified_live_exit(
             trail_u = peak_u - CHANDELIER_ATR_MULT * atr
         else:
             trail_u = peak_u + CHANDELIER_ATR_MULT * atr
-        trail_opt = _underlying_stop_to_option(entry_price, underlying_now, trail_u)
-        prev_trail = ps.get("simplified_trail_stop")
-        if prev_trail is None or trail_opt > prev_trail:
-            ps["simplified_trail_stop"] = trail_opt
-            prev_trail = trail_opt
-        if prev_trail is not None and current_price <= prev_trail:
+        prev_trail_u = ps.get("simplified_trail_underlying")
+        if (prev_trail_u is None
+                or (direction == "bullish" and trail_u > prev_trail_u)
+                or (direction == "bearish" and trail_u < prev_trail_u)):
+            ps["simplified_trail_underlying"] = trail_u
+            prev_trail_u = trail_u
+        ps["simplified_trail_stop"] = _underlying_stop_to_option(
+            entry_price, underlying_now, float(prev_trail_u))
+        crossed = (
+            underlying_now <= prev_trail_u if direction == "bullish"
+            else underlying_now >= prev_trail_u
+        )
+        if crossed:
             return True, (
                 f"simplified_chandelier_3atr "
-                f"(trail={prev_trail:.4f} current={current_price:.4f})"
+                f"(underlying={underlying_now:.4f} trail={prev_trail_u:.4f})"
             )
 
     # ── Rule 3: one unified time cap ──────────────────────────────────────

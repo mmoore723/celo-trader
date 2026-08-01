@@ -417,7 +417,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     for _open_trade in open_trades:
         _manage_open_position(alpaca, tradier, _open_trade, balance)
 
-    if len(_bot_trades) >= MAX_CONCURRENT_POSITIONS:
+    settings = get_settings()
+    try:
+        _max_positions = max(1, min(5, int(settings.get(
+            "max_concurrent_positions", MAX_CONCURRENT_POSITIONS))))
+    except (TypeError, ValueError):
+        _max_positions = MAX_CONCURRENT_POSITIONS
+
+    if len(_bot_trades) >= _max_positions:
         # All position slots are full — nothing left to do this tick except
         # manage the existing position(s) above.
         _US["status"] = "in_trade"
@@ -427,8 +434,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # NEW (MAX_CONCURRENT_POSITIONS): if a slot is free but the bot is still
     # If holding a position in the OTHER slot, still reflect "in_trade".
     _US["status"] = "in_trade" if _bot_trades else "scanning"
-    settings = get_settings()
-
     # ── Sync user-editable trade parameters into the live risk manager ────────
     # This runs every tick so settings changes take effect within seconds,
     # no bot restart needed.
@@ -1385,7 +1390,17 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # that already went through.
     try:
         _log_journal(ticker, _US.get("last_strategy_id", "INST_ORB"), direction, _top.confidence,
-                     outcome="entered", reason_detail=f"R:R={rr_audit['R_R_Ratio']}")
+                     outcome="entered", reason_detail=f"R:R={rr_audit['R_R_Ratio']}", trade_id=trade_id,
+                     context={
+                         "trigger_bar": str(_top.trigger_bar),
+                         "strategy_meta": _top.meta,
+                         "contract": {
+                             "symbol": contract.get("symbol"), "strike": contract.get("strike"),
+                             "expiry": contract.get("expiry"), "bid": contract.get("bid"),
+                             "ask": contract.get("ask"), "spread": contract.get("spread"),
+                         },
+                         "rr_ratio": rr_audit.get("R_R_Ratio"),
+                     })
     except Exception:
         pass
 

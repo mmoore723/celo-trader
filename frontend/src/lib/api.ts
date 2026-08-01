@@ -406,6 +406,7 @@ export interface PremarketTicker {
 export interface AppSettings {
   paper_trading?: boolean;   // true = paper (default), false = live; only toggled via Settings
   risk_pct: number;
+  risk_auto?: boolean;       // true = use the balance-based tier, not a manual override
   growth_mode: boolean;
   flip_trading_enabled: boolean;
   max_concurrent_positions: number;

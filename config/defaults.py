@@ -13,6 +13,7 @@ _DEFAULTS = {
     # None = automatic (balance-based tier logic).
     # Set to 0.01, 0.03, or 0.05 to pin a specific risk % regardless of balance.
     "risk_per_trade": None,
+    "max_concurrent_positions": 2,
 
     # ── Growth Mode ────────────────────────────────────────────────────────────
     "growth_mode":               False,     # OFF by default — user enables in Risk Settings

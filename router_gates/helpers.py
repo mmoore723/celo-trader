@@ -21,6 +21,7 @@ def _journal_dropped(before: list, after: list, ticker: str, reason_code: str, r
             continue
         try:
             _log_journal(ticker, _s.strategy_id, _s.direction, _s.confidence,
-                         outcome="blocked", reason_code=reason_code, reason_detail=reason_detail)
+                         outcome="blocked", reason_code=reason_code, reason_detail=reason_detail,
+                         context={"trigger_bar": str(_s.trigger_bar), "strategy_meta": _s.meta})
         except Exception:
             pass   # journal writes are never allowed to affect gate behavior

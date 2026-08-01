@@ -14,7 +14,7 @@ import logging
 from typing import Optional, Tuple
 
 from broker import TradierClient
-from config import MIN_CONTRACT_COST, MAX_CONTRACT_COST
+from config import MIN_CONTRACT_COST, MAX_CONTRACT_COST, MIN_OPEN_INTEREST, get_settings
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -34,7 +34,7 @@ def select_contract(
       1. First OTM strike (call: above price, put: below price)
       2. ask between MIN_CONTRACT_COST ($0.05) and MAX_CONTRACT_COST ($10.00)
       3. ask × 100 ≤ max_spend (position dollar limit from settings)
-      4. bid-ask spread ≤ MAX_BID_ASK_SPREAD ($0.50)
+      4. bid-ask spread ≤ the user's spread_gate_pct of mid price
       5. open_interest ≥ MIN_OPEN_INTEREST (100)
 
     Returns (contract, info) where info["reason"] is one of:
@@ -84,7 +84,11 @@ def select_contract(
         info["reason"] = "no_expirations"
         return None, info
 
-    from config import MAX_BID_ASK_SPREAD as _SPREAD_MAX, MIN_OPEN_INTEREST as _MIN_OI
+    try:
+        _spread_max_pct = float(get_settings().get("spread_gate_pct", 8)) / 100.0
+    except (TypeError, ValueError):
+        _spread_max_pct = 0.08
+    _spread_max_pct = min(max(_spread_max_pct, 0.01), 1.0)
 
     saw_chain_data = False
 
@@ -107,7 +111,8 @@ def select_contract(
 
         for contract in candidates:
             ask    = contract.get("ask", 0)
-            spread = contract.get("spread", 999)
+            bid    = float(contract.get("bid", 0) or 0)
+            spread = float(contract.get("spread", 999) or 999)
             oi     = contract.get("open_interest", 0)
 
             if ask < MIN_CONTRACT_COST:
@@ -127,32 +132,32 @@ def select_contract(
                     info["cheapest_symbol"] = contract.get("symbol", "?")
                 info["reason"] = "over_budget"
                 continue
-            # FIX 2026-07-31 (profitability audit): _SPREAD_MAX was a flat $0.50
-            # regardless of premium. On a $0.80 contract that let a spread worth
-            # 62% of the entire premium through — research on options execution
-            # is consistent that a spread that wide relative to premium "destroys"
-            # edge on its own, independent of whether the entry signal was right.
-            # Scale the cap with the contract's own price instead: 15% of ask,
-            # floored at $0.15 (keeps a sane minimum for near-worthless contracts)
-            # and capped at the original $0.50 (unchanged behavior on contracts
-            # $3.33+, where 15% already exceeds the old flat cap).
-            _spread_cap = min(_SPREAD_MAX, max(0.15, ask * 0.15))
-            if spread > _spread_cap:
-                logger.debug("Skip %s — spread $%.2f > max $%.2f (%.0f%% of $%.2f ask)",
-                             contract.get("symbol","?"), spread, _spread_cap,
-                             spread / max(ask, 0.01) * 100, ask)
+            # Use the same percentage-of-mid rule the Settings page and the
+            # post-selection entry gate expose.  Previously selection used a
+            # separate 15%-of-ask rule, so an 8% UI setting could still select
+            # a contract that the entry path immediately rejected.
+            _spread = max(ask - bid, spread) if bid > 0 else spread
+            _mid = (ask + bid) / 2 if bid > 0 else 0.0
+            _spread_pct = _spread / _mid if _mid > 0 else float("inf")
+            if _spread_pct > _spread_max_pct:
+                logger.debug("Skip %s — spread %.1f%% > %.1f%% of mid",
+                             contract.get("symbol", "?"), _spread_pct * 100,
+                             _spread_max_pct * 100)
                 if info["illiquid_cost"] is None or cost < info["illiquid_cost"]:
                     info["illiquid_cost"]   = cost
                     info["illiquid_symbol"] = contract.get("symbol", "?")
-                    info["illiquid_fail"]   = f"spread ${spread:.2f} > ${_spread_cap:.2f} max ({spread/max(ask,0.01)*100:.0f}% of premium)"
+                    info["illiquid_fail"] = (
+                        f"spread {_spread_pct * 100:.1f}% > "
+                        f"{_spread_max_pct * 100:.0f}% max of mid"
+                    )
                 continue
-            if oi < _MIN_OI:
+            if oi < MIN_OPEN_INTEREST:
                 logger.debug("Skip %s — OI %d < min %d",
-                             contract.get("symbol","?"), oi, _MIN_OI)
+                             contract.get("symbol","?"), oi, MIN_OPEN_INTEREST)
                 if info["illiquid_cost"] is None or cost < info["illiquid_cost"]:
                     info["illiquid_cost"]   = cost
                     info["illiquid_symbol"] = contract.get("symbol", "?")
-                    info["illiquid_fail"]   = f"open interest {oi} < {_MIN_OI} min"
+                    info["illiquid_fail"]   = f"open interest {oi} < {MIN_OPEN_INTEREST} min"
                 continue
 
             contract["expiry"] = expiry
@@ -176,4 +181,3 @@ def select_contract(
         info["reason"] = "filtered"
 
     return None, info
-

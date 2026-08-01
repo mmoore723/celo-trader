@@ -24,7 +24,7 @@ class ExitSimState:
 
     __slots__ = (
         "direction", "entry_price", "entry_bar_time",
-        "struct_stop_price", "initial_atr_stop", "atr_trail_stop",
+        "struct_stop_price", "initial_atr_stop", "atr_trail_stop", "simplified_trail_underlying",
         "peak_underlying", "vwap_breached_bars",
     )
 
@@ -41,6 +41,7 @@ class ExitSimState:
         self.entry_bar_time    = entry_bar_time
         self.struct_stop_price = struct_stop_price
         self.atr_trail_stop    = None
+        self.simplified_trail_underlying = None
         self.peak_underlying   = None
         self.vwap_breached_bars = 0
 
