@@ -398,7 +398,7 @@ export function Settings() {
                 onChange={(v) => set("trend_cont_enabled", v)} />
         <Toggle label="Afternoon Reversal / AFT_REV (1:00 PM – 3:30 PM)" checked={form.aft_rev_enabled}
                 onChange={(v) => set("aft_rev_enabled", v)} />
-        <Toggle label="Gap and Go / GAP_GO (9:30–9:45 AM)"
+        <Toggle label="Gap and Go / GAP_GO (9:30–9:45 AM) — trades the continuation of a pre-market gap if price pushes past its own opening bar in the gap direction"
                 checked={form.gap_go_enabled ?? true}
                 onChange={(v) => set("gap_go_enabled", v)} />
         <Toggle label="Liquidity Sweep Reversal / LIQ_SWEEP (9:45 AM – 3:30 PM) — fades a swept swing high/low"
