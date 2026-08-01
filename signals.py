@@ -254,12 +254,24 @@ def compute_rvol(df: pd.DataFrame, lookback_days: int = 10) -> pd.Series:
     for _, row in hist_bucket_vol.iterrows():
         tod_vols.setdefault(int(row["_tod5"]), []).append(float(row["volume"]))
 
-    def _avg_for_tod5(tod5: int) -> float:
-        vols = tod_vols.get(tod5, [])
-        tail = vols[-lookback_days:]     # cap at lookback_days (default 10)
-        return float(np.mean(tail)) if tail else np.nan
-
-    avg_series = df["_tod5"].apply(_avg_for_tod5)
+    # FIX 2026-07-31 (backtest performance): this used to be df["_tod5"].
+    # apply(_avg_for_tod5) — calling a Python function once per ROW (up to
+    # thousands, since route_signals() calls compute_rvol() fresh every
+    # single tick per backtester.py's ENTRY_LOOKBACK_DAYS comment above).
+    # But the result only depends on _tod5, which has ~78 distinct values
+    # in a trading day — the exact same value gets recomputed over and over
+    # for every row sharing a bucket. Confirmed via py-spy profiling a real
+    # backtest run: this was 24% of all CPU time. Precomputing the ~78
+    # possible outputs once, then using a vectorized dict .map() (a single
+    # compiled hash-lookup pass) instead of .apply() (n Python calls),
+    # keeps the identical per-bucket averaging logic and NaN-for-missing
+    # fallback, just computed once per bucket instead of once per row.
+    _unique_tod5 = tod_vols.keys()
+    _avg_by_tod5 = {
+        _t: (float(np.mean(_v[-lookback_days:])) if _v else np.nan)
+        for _t, _v in tod_vols.items()
+    }
+    avg_series = df["_tod5"].map(_avg_by_tod5)
 
     # Today's volume-so-far WITHIN its current 5-min bucket (cumulative sum
     # resets at each new bucket) — compared against the historical FULL-
