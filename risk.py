@@ -306,6 +306,18 @@ class RiskManager:
     STAGE1_DYNAMIC_ENABLED     = True   # kill-switch — False reverts to the flat % above
     STAGE1_ATR_TARGET_MULT     = 2.0    # ATR multiplier for the dynamic target (1.5-2.5x per research)
     STAGE1_RVOL_FADE_THRESHOLD = 1.0    # RVOL below this after being elevated = crowd left
+    # ── Target floor (2026-07-31) ────────────────────────────────────────────
+    # The loss side (initial_atr_stop below) has ALWAYS been clamped to a
+    # 15-30%-of-premium floor so a small ATR reading can't produce a near-zero
+    # stop. The win side (target above) never had the matching floor — on a
+    # quiet bar the raw ATR math can size the target far SMALLER than the
+    # guaranteed minimum loss, so even a trade that runs all the way to target
+    # wins less than a typical stop-out loses. Confirmed against every audit
+    # report this project has ever saved: stage1_atr_target has been the win
+    # reason ZERO times, on any strategy, ever. This floor mirrors the stop
+    # side's existing clamp so the target can't be structurally smaller than
+    # what a loss is already guaranteed to cost.
+    STAGE1_TARGET_MIN_PCT      = 0.25   # target floored at +25% gain minimum
     # DIAGNOSIS 2026-07-21 (ab_test_stage1_dynamic.py, exit-reason breakdown
     # after the mislabeling bug above was fixed): ALL 11 stage1 exits in that
     # run were momentum_fade, ZERO were ATR target/volume fade/static

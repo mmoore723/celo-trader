@@ -194,6 +194,7 @@ def _update_trail_and_vwap(
         state.direction, state.entry_price, atr,
         _risk.STAGE1_ATR_TARGET_MULT, day_df.iloc[: idx + 1],
         require_both=_risk.STAGE1_MOMENTUM_REQUIRE_BOTH,
+        target_min_pct=_risk.STAGE1_TARGET_MIN_PCT,
     )
 
     return vwap, trend_dead, atr_target_price, momentum_fading

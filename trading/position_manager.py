@@ -538,7 +538,14 @@ def _manage_open_position(
             # volatility changes through the trade. risk.py fails open to the
             # flat % (ORB_STAGE1_GAIN) whenever this stays None (no ATR yet).
             if _atr is not None and _risk:
-                _atr_target_price = entry_price + _risk.STAGE1_ATR_TARGET_MULT * _atr * _DELTA_APPROX
+                _raw_target_price = entry_price + _risk.STAGE1_ATR_TARGET_MULT * _atr * _DELTA_APPROX
+                # Floor (2026-07-31): mirrors initial_atr_stop's clamp below —
+                # on a quiet bar the raw ATR math can size the target smaller
+                # than the guaranteed minimum loss, so a "perfect" win could be
+                # worth less than a typical stop-out. See risk.py's
+                # STAGE1_TARGET_MIN_PCT docstring for the full diagnosis.
+                _min_target_price = entry_price * (1.0 + _risk.STAGE1_TARGET_MIN_PCT)
+                _atr_target_price = max(_raw_target_price, _min_target_price)
 
             # ── Initial ATR stop (computed once; replaces fixed 20% hard stop) ────
             # On the very first tick with ATR data, derive a stop based on how much

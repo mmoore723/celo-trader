@@ -42,12 +42,19 @@ def compute_stage1_signals(
     atr_target_mult: float,
     bar_slice: pd.DataFrame,
     require_both: bool = False,
+    target_min_pct: float = 0.25,
 ) -> tuple[Optional[float], bool]:
     """
     Returns (atr_target_price, momentum_fading) for the current bar.
 
     atr_target_price: entry_price + atr_target_mult × ATR × delta-approx,
-    or None if no ATR data yet (risk.py fails open to the flat % in that
+    floored at entry_price × (1 + target_min_pct) — mirrors initial_atr_stop's
+    own 15-30%-of-premium clamp (position_manager.py), which the target never
+    had until 2026-07-31. Without it, a quiet-bar ATR reading could size the
+    target smaller than the guaranteed minimum loss, so even a trade that ran
+    all the way to target would win less than a typical stop-out lost. See
+    risk.py's STAGE1_TARGET_MIN_PCT docstring for the full diagnosis.
+    Returns None if no ATR data yet (risk.py fails open to the flat % in that
     case, same fallback pattern as the ATR trail elsewhere).
 
     momentum_fading: RSI exhaustion (5m RSI >=72 call / <=28 put) combined
@@ -64,7 +71,8 @@ def compute_stage1_signals(
     """
     atr_target_price = None
     if atr is not None:
-        atr_target_price = entry_price + atr_target_mult * atr * _DELTA_APPROX
+        _raw_target = entry_price + atr_target_mult * atr * _DELTA_APPROX
+        atr_target_price = max(_raw_target, entry_price * (1.0 + target_min_pct))
 
     momentum_fading = False
     if len(bar_slice) >= 5:
