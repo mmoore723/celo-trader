@@ -41,6 +41,10 @@ uses Alpaca only to create the same frozen CSV artifact.  It filters the
 requested dates after fetch and does not expose the broker client to a V2
 strategy or simulator.
 
+Alpaca exports default to regular-session bars and drop an incomplete final
+session.  Extended-hours data or a partial close can change the meaning of a
+setup and must be an explicit research choice, never an accidental input.
+
 ## V2 contracts
 
 | Component | Responsibility | Must not do |

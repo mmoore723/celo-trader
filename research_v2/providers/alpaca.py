@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import csv
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -35,6 +35,8 @@ def export_alpaca_csv(
     output_path: str | Path,
     timeframe: str = "5Min",
     limit: int = 10_000,
+    regular_session_only: bool = True,
+    drop_partial_final_session: bool = True,
 ) -> Path:
     """Fetch, explicitly date-filter, and freeze Alpaca bars for V2 research.
 
@@ -52,6 +54,8 @@ def export_alpaca_csv(
         timestamp = _timestamp(_value(raw, "t", "time"))
         if not start <= timestamp.date() < end:
             continue
+        if regular_session_only and not (time(9, 30) <= timestamp.time() < time(16, 0)):
+            continue
         rows.append({
             "timestamp": timestamp.isoformat(),
             "open": float(_value(raw, "o", "open")),
@@ -61,6 +65,15 @@ def export_alpaca_csv(
             "volume": float(raw.get("v", raw.get("volume", 0.0))),
         })
     rows.sort(key=lambda row: str(row["timestamp"]))
+    # A live or interrupted final session is not a valid historical close.  It
+    # can fabricate an end-of-data exit and materially distort a strategy.
+    # Drop it unless its last regular-session bar reaches the expected 15:55
+    # close for a 5-minute feed.  Earlier sessions stay intact.
+    if regular_session_only and drop_partial_final_session and rows:
+        latest = datetime.fromisoformat(str(rows[-1]["timestamp"]))
+        if latest.time() < time(15, 55):
+            last_date = latest.date()
+            rows = [row for row in rows if datetime.fromisoformat(str(row["timestamp"])).date() != last_date]
     if not rows:
         raise ValueError(f"Alpaca returned no {timeframe} bars for {symbol} {start} to {end}")
     destination = Path(output_path)

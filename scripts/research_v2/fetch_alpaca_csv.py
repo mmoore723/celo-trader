@@ -20,6 +20,8 @@ def main() -> None:
     parser.add_argument("--end", required=True, help="exclusive YYYY-MM-DD")
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=10_000)
+    parser.add_argument("--include-extended-hours", action="store_true",
+                        help="research exception; default keeps regular-session bars only")
     args = parser.parse_args()
     # Deliberately lazy: documentation/help must not require broker runtime
     # dependencies, while an actual authenticated export does.
@@ -27,7 +29,7 @@ def main() -> None:
     alpaca, _ = get_clients()
     path = export_alpaca_csv(
         alpaca, args.symbol, date.fromisoformat(args.start), date.fromisoformat(args.end),
-        args.output, limit=args.limit,
+        args.output, limit=args.limit, regular_session_only=not args.include_extended_hours,
     )
     dataset = load_csv(path)
     print(f"saved {len(dataset.bars)} bars to {path}; sha256={dataset.sha256}")

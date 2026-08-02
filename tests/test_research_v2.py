@@ -97,6 +97,7 @@ class ResearchV2Tests(unittest.TestCase):
                 return ([
                     {"t": "2026-07-14T13:30:00Z", "o": 100, "h": 101, "l": 99, "c": 100, "v": 4},
                     {"t": "2026-07-15T13:30:00Z", "o": 101, "h": 102, "l": 100, "c": 101, "v": 5},
+                    {"t": "2026-07-15T19:55:00Z", "o": 102, "h": 103, "l": 101, "c": 102, "v": 6},
                 ], False)
         with TemporaryDirectory() as directory:
             path = export_alpaca_csv(
@@ -104,8 +105,25 @@ class ResearchV2Tests(unittest.TestCase):
                 Path(directory) / "bars.csv", limit=99,
             )
             dataset = load_csv(path)
-        self.assertEqual(1, len(dataset.bars))
+        self.assertEqual(2, len(dataset.bars))
         self.assertEqual(101, dataset.bars[0].close)
+
+    def test_alpaca_export_drops_premarket_and_partial_final_session(self) -> None:
+        class _Client:
+            def get_bars(self, symbol, timeframe, limit):
+                return ([
+                    {"t": "2026-07-15T12:00:00Z", "o": 90, "h": 91, "l": 89, "c": 90, "v": 1},
+                    {"t": "2026-07-15T19:55:00Z", "o": 100, "h": 101, "l": 99, "c": 100, "v": 2},
+                    {"t": "2026-07-16T13:30:00Z", "o": 101, "h": 102, "l": 100, "c": 101, "v": 3},
+                ], False)
+        with TemporaryDirectory() as directory:
+            path = export_alpaca_csv(
+                _Client(), "SPY", datetime(2026, 7, 15).date(), datetime(2026, 7, 17).date(),
+                Path(directory) / "bars.csv",
+            )
+            dataset = load_csv(path)
+        self.assertEqual(1, len(dataset.bars))
+        self.assertEqual(datetime(2026, 7, 15, 15, 55, tzinfo=dataset.bars[0].timestamp.tzinfo), dataset.bars[0].timestamp)
 
 
 if __name__ == "__main__":
