@@ -350,6 +350,23 @@ export function LiveTrading() {
 
       </div>
 
+      {status?.opportunity_window?.expires_at && (
+        <div
+          className="card px-4 py-3 flex flex-col gap-1"
+          style={{ borderLeft: "4px solid #8b5cf6", background: "rgba(139, 92, 246, 0.06)" }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-semibold text-sm" style={{ color: "#7c3aed" }}>Research window — no order yet</span>
+            <span className="text-xs font-mono" style={{ color: "var(--ink-muted)" }}>
+              ends {new Date(status.opportunity_window.expires_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </span>
+          </div>
+          <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+            Comparing lower-confidence setups. Current best: {status.opportunity_window.ticker ?? "—"} · {status.opportunity_window.strategy_id ?? "—"} · {((status.opportunity_window.confidence ?? 0) * 100).toFixed(0)}%. It must still confirm when the 15-minute window ends.
+          </p>
+        </div>
+      )}
+
       {/* ── Bot Focus — Signal Alert Banner ───────────────────────────────── */}
       {/* Shows the most recent signal prominently. Orange border = manual (enter yourself).
           Green border = auto-executed. Always visible so you never miss a signal. */}

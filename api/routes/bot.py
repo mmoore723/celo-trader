@@ -103,6 +103,9 @@ def get_status(request: Request) -> BotStatus:
         open_positions=dict(state.get("open_positions") or _state.get("open_positions") or {}),
         # 2026-07-31: see BotStatus.broker_alerts comment + broker_health.py
         broker_alerts=_get_broker_alerts_safe(),
+        opportunity_window=dict(
+            state.get("opportunity_scheduler") or _state.get("opportunity_scheduler") or {}
+        ),
         maintenance_mode=bool(settings.get("maintenance_mode", False)),
         maintenance_message=str(settings.get("maintenance_message", "")),
     )

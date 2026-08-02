@@ -56,6 +56,10 @@ export interface BotStatus {
   // 2026-07-31: see broker_health.py — non-empty when a broker (Tradier/Alpaca)
   // has failed enough calls recently that trading is effectively blind.
   broker_alerts?: { broker: string; error_count: number; since: number; last_error: string }[];
+  opportunity_window?: {
+    ticker?: string; strategy_id?: string; direction?: string;
+    confidence?: number; started_at?: string; expires_at?: string;
+  };
 }
 
 export interface LogEntry {

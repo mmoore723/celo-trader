@@ -54,6 +54,9 @@ class BotStatus(BaseModel):
     # key, causing 268 silent 401s across every ticker with zero indication
     # anywhere except individual "no_option_data" journal rows).
     broker_alerts: list[dict] = []
+    # Present only while the paper-only opportunity scheduler is comparing
+    # lower-confidence candidates before it is allowed to create an order.
+    opportunity_window: dict = {}
     # Maintenance mode — set by admin to halt all trading and show maintenance screen
     maintenance_mode: bool = False
     maintenance_message: str = ""
