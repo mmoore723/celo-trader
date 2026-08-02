@@ -312,6 +312,7 @@ class SimulateMixin:
             _entry_confidence = signal.confidence
             _entry_rvol       = signal.rvol
             _entry_meta       = dict(signal.meta or {})
+            _entry_meta["tier"] = getattr(signal, "tier", "main")
 
             # Direction filter (backtester-only override — calls_only/puts_only)
             opt_type_str = "call" if direction == "bullish" else "put"
@@ -337,6 +338,8 @@ class SimulateMixin:
 
             # ── Contract sizing — same 4-tier risk ladder as live bot ─────────
             n_contracts = self._size_contracts(balance, entry_opt_px)
+            if _entry_meta["tier"] == "opportunity" and n_contracts > 1:
+                n_contracts = max(1, n_contracts // 2)
             if n_contracts <= 0:
                 self._diag["no_contracts"] += 1
                 continue   # can't afford even 1 contract
