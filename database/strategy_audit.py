@@ -10,6 +10,7 @@ from datetime import date
 from typing import Optional
 
 from database.connection import get_conn
+from database.helpers import _now_et
 
 # ── Strategy health audits (strategy_health/ package) ─────────────────────────
 # Replaces the one-off diag_*.py / ab_test_*.py scripts with a permanent,
