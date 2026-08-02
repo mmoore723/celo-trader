@@ -6,7 +6,9 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from research_v2.data import load_csv
-from research_v2.models import Bar, Side, Signal
+from research_v2.models import Bar, Side, Signal, Trade
+from research_v2.reconciliation import ReferenceTrade, reconcile
+from research_v2.ledger import load_trade_ledger, write_trade_ledger
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
@@ -138,6 +140,54 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(2, len(dataset.bars))
         self.assertEqual("2026-07-15T00:00:00-04:00", client.requests[0][1]["start"])
         self.assertEqual("page-2", client.requests[1][1]["page_token"])
+
+    def test_alpaca_export_chunks_long_intervals_without_duplicates(self) -> None:
+        class _Client:
+            data = "https://example.test"
+
+            def __init__(self):
+                self.starts = []
+
+            def _get(self, url, params):
+                self.starts.append(params["start"][:10])
+                if params["start"].startswith("2026-01-01"):
+                    return {"bars": [{"t": "2026-01-02T14:30:00Z", "o": 100, "h": 101,
+                                      "l": 99, "c": 100, "v": 1}]}
+                return {"bars": [{"t": "2026-01-03T14:30:00Z", "o": 101, "h": 102,
+                                  "l": 100, "c": 101, "v": 1}]}
+
+        client = _Client()
+        with TemporaryDirectory() as directory:
+            path = export_alpaca_csv(
+                client, "SPY", datetime(2026, 1, 1).date(), datetime(2026, 1, 4).date(),
+                Path(directory) / "bars.csv", chunk_days=2, drop_partial_final_session=False,
+            )
+            dataset = load_csv(path)
+        self.assertEqual(["2026-01-01", "2026-01-03"], client.starts)
+        self.assertEqual(2, len(dataset.bars))
+
+    def test_reconciliation_matches_side_and_entry_time_only_once(self) -> None:
+        timestamp = datetime(2026, 1, 2, 10, 0)
+        simulated = [Trade("TEST", Side.LONG, timestamp, timestamp, timestamp, 100, 101, 1,
+                           1, 1, 0, 1, "target", {})]
+        reference = [
+            ReferenceTrade(Side.LONG, timestamp, timestamp, 100.1, 101),
+            ReferenceTrade(Side.LONG, timestamp, timestamp, 100.1, 101),
+        ]
+        result = reconcile(reference, simulated)
+        self.assertEqual(1, result.matched_count)
+        self.assertEqual(1, result.unmatched_reference)
+        self.assertEqual(0, result.unmatched_simulated)
+
+    def test_trade_ledger_round_trips_immutable_trade_fields(self) -> None:
+        timestamp = datetime(2026, 1, 2, 10, 0)
+        original = Trade("TEST", Side.LONG, timestamp, timestamp, timestamp, 100, 101, 1,
+                         1, 1, 0, 1, "target", {"setup": "test"})
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "ledger.json"
+            write_trade_ledger(path, [original])
+            restored = load_trade_ledger(path)
+        self.assertEqual((original,), restored)
 
     def test_alpaca_export_drops_premarket_and_partial_final_session(self) -> None:
         class _Client:

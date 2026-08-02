@@ -1,0 +1,13 @@
+{
+  "candidate_id": "tv_example_orb_pullback_v1",
+  "source_url": "https://www.tradingview.com/script/REPLACE_ME/",
+  "source_sha256": "replace-with-the-sha256-of-the-saved-pine-source-file",
+  "symbol": "SPY",
+  "timeframe": "5",
+  "session": "0930-1600 America/New_York",
+  "commission_note": "Record the exact Strategy Tester commission setting.",
+  "slippage_note": "Record the exact Strategy Tester slippage setting.",
+  "bar_magnifier": false,
+  "calc_on_every_tick": false,
+  "process_orders_on_close": false
+}

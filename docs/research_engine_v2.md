@@ -81,3 +81,37 @@ an options-profit claim.  The first simulator uses an underlying-price proxy
 only to reject bad signal logic cheaply.  A future `OptionFillAdapter` will
 replace that proxy for paper-promotion decisions; it must include quote time,
 bid, ask, spread, chosen contract, and actual paper fill.
+
+## Candidate reproduction contract
+
+An externally sourced TradingView candidate is not eligible for research based
+on a performance screenshot or a strategy name. It must have all of the
+following recorded before implementation:
+
+1. Saved Pine source with SHA-256 fingerprint.
+2. `candidate_manifest.json` declaring symbol, timeframe, session, TradingView
+   commission/slippage, Bar Magnifier, and calculation/fill settings.
+3. Exported TradingView trade list for the same immutable bar dataset.
+4. A V2 immutable trade ledger produced by the reproduction.
+5. A trade-by-trade reconciliation report, including unmatched trades and entry
+   price deltas.
+
+`scripts/research_v2/validate_candidate_manifest.py` validates the manifest
+and saved source hash. `scripts/research_v2/reconcile_tradingview_trades.py`
+compares an exported trade list with a V2 ledger. A high match rate establishes
+implementation fidelity only; the normal holdout and options-fill gates still
+apply.
+
+## Long-history collection
+
+`fetch_alpaca_csv.py` accepts `--chunk-days` for long historical intervals.
+Chunks are requested with exact non-overlapping calendar boundaries, merged in
+chronological order, fingerprinted as one frozen artifact, and reject
+conflicting provider revisions at a shared timestamp. This is required because
+the provider's per-request bar limit cannot safely define a multi-year dataset.
+
+```bash
+python3 scripts/research_v2/fetch_alpaca_csv.py SPY \
+  --start 2024-08-01 --end 2026-08-01 --chunk-days 90 \
+  --output research_data/SPY_5m_2024-08-01_2026-08-01.csv
+```

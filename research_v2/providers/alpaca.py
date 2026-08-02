@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import csv
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -69,6 +69,21 @@ def _fetch_dated_bars(
     raise RuntimeError("Alpaca pagination exceeded 100 pages; export aborted")
 
 
+def _date_chunks(start: date, end: date, days: int | None) -> list[tuple[date, date]]:
+    """Split a long request into exact, non-overlapping calendar intervals."""
+    if days is None:
+        return [(start, end)]
+    if days < 1:
+        raise ValueError("chunk_days must be positive when provided")
+    chunks: list[tuple[date, date]] = []
+    cursor = start
+    while cursor < end:
+        next_cursor = min(cursor + timedelta(days=days), end)
+        chunks.append((cursor, next_cursor))
+        cursor = next_cursor
+    return chunks
+
+
 def export_alpaca_csv(
     client: Any,
     symbol: str,
@@ -77,6 +92,7 @@ def export_alpaca_csv(
     output_path: str | Path,
     timeframe: str = "5Min",
     limit: int = 10_000,
+    chunk_days: int | None = None,
     regular_session_only: bool = True,
     drop_partial_final_session: bool = True,
 ) -> Path:
@@ -87,7 +103,9 @@ def export_alpaca_csv(
     """
     if not symbol or end <= start or limit < 1:
         raise ValueError("symbol, an increasing date range, and positive limit are required")
-    bars = _fetch_dated_bars(client, symbol, start, end, timeframe, limit)
+    bars: list[dict[str, Any]] = []
+    for chunk_start, chunk_end in _date_chunks(start, end, chunk_days):
+        bars.extend(_fetch_dated_bars(client, symbol, chunk_start, chunk_end, timeframe, limit))
     rows: list[dict[str, str | float]] = []
     for raw in bars or []:
         timestamp = _timestamp(_value(raw, "t", "time"))
@@ -104,6 +122,17 @@ def export_alpaca_csv(
             "volume": float(raw.get("v", raw.get("volume", 0.0))),
         })
     rows.sort(key=lambda row: str(row["timestamp"]))
+    # A provider can repeat an inclusive interval boundary. Duplicate a
+    # byte-identical bar safely; reject a conflicting revision instead of
+    # silently inventing a history.
+    unique_rows: list[dict[str, str | float]] = []
+    for row in rows:
+        if unique_rows and row["timestamp"] == unique_rows[-1]["timestamp"]:
+            if row != unique_rows[-1]:
+                raise ValueError(f"conflicting Alpaca bars at {row['timestamp']}")
+            continue
+        unique_rows.append(row)
+    rows = unique_rows
     # A live or interrupted final session is not a valid historical close.  It
     # can fabricate an end-of-data exit and materially distort a strategy.
     # Drop it unless its last regular-session bar reaches the expected 15:55
