@@ -46,7 +46,7 @@ def get_settings_endpoint() -> Settings:
         ifvg_enabled=bool(s.get("strategy_ifvg_enabled", True)),
         bos_mss_enabled=bool(s.get("strategy_bos_enabled", True)),
         chan_break_enabled=bool(s.get("strategy_chan_enabled", True)),
-        mid_brk_enabled=bool(s.get("strategy_mid_enabled", False)),  # disabled 2026-07-23, see audit
+        mid_brk_enabled=bool(s.get("strategy_mid_enabled", False)),  # research hold; see Settings/Playbooks
         trend_cont_enabled=bool(s.get("strategy_tcont_enabled", True)),
         # AFT_REV — added to Settings 2026-07-20. Previously had NO field in
         # this model or endpoint at all, so it could never be toggled from

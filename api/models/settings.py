@@ -24,9 +24,9 @@ class Settings(BaseModel):
     ifvg_enabled: bool = True    # Inverted Fair Value Gap — zone-flip reversal
     bos_mss_enabled: bool
     chan_break_enabled: bool = True
-    mid_brk_enabled: bool = False   # disabled 2026-07-23 — 13 backtested configs, all
-                                     # negative expectancy, see professional-strategy-
-                                     # alignment audit. Other 7 strategies unaffected.
+    mid_brk_enabled: bool = False   # research hold: session/RVOL/ADX validation through
+                                     # 2026-08-02 remained negative. It requires a positive
+                                     # portfolio-level holdout before reactivation.
     trend_cont_enabled: bool = True
     aft_rev_enabled: bool = True   # Afternoon Reversal — added 2026-07-20, was previously
                                     # not exposed in Settings at all (no way to toggle it)

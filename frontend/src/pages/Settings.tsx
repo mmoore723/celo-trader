@@ -423,7 +423,7 @@ export function Settings() {
             INTEGRATED
           </span>
         </div>
-        <Toggle label="Mid-Day Breakdown / MID_BRK — OFF by default (no edge in 13 backtested configs, 2026-07-23 audit)"
+        <Toggle label="Mid-Day Breakdown / MID_BRK — RESEARCH HOLD: keep OFF (session, RVOL, and ADX tests still show no profitable edge)"
                 checked={form.mid_brk_enabled}
                 onChange={(v) => set("mid_brk_enabled", v)} />
         <Toggle label="Trend Continuation / TREND_CONT (9:45 AM – 2:30 PM)" checked={form.trend_cont_enabled}
