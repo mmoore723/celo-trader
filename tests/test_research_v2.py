@@ -9,7 +9,10 @@ from research_v2.data import load_csv
 from research_v2.models import Bar, Side, Signal
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.simulator import SimulationConfig, Simulator
-from research_v2.strategies import AfternoonReversal, AfternoonReversalConfig, TrendContinuation, TrendContinuationConfig
+from research_v2.strategies import (
+    AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
+    TrendContinuation, TrendContinuationConfig,
+)
 from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
@@ -176,6 +179,23 @@ class ResearchV2Tests(unittest.TestCase):
         # Last close breaks the confirmed 10:45 swing high after the higher 12:00 low.
         strategy = AfternoonReversal(AfternoonReversalConfig(pivot_lookback=1, atr_bars=3))
         signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+
+    def test_fair_value_gap_requires_first_retest_and_reclaim(self) -> None:
+        bars = []
+        for minute in range(24):
+            price = 100 + minute * 0.1
+            bars.append(_bar(minute, price, price + 0.05, price - 0.05, price))
+        # Bar 19 creates an upward FVG with bar 21; current bar is first retest.
+        bars[18] = _bar(18, 101.8, 101.85, 101.75, 101.8)
+        bars[19] = _bar(19, 101.8, 102.5, 101.8, 102.4)
+        bars[20] = _bar(20, 102.3, 102.45, 102.1, 102.3)
+        bars[21] = _bar(21, 102.3, 102.5, 102.15, 102.3)
+        bars[22] = _bar(22, 102.3, 102.5, 102.15, 102.4)
+        bars[23] = _bar(23, 102.4, 102.5, 101.95, 102.25)
+        signal = FairValueGap(FairValueGapConfig(fast_ema=3, slow_ema=6, atr_bars=3, scan_bars=8)).evaluate(bars)
         self.assertIsNotNone(signal)
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
