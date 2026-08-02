@@ -25,6 +25,12 @@ Strategies do not query settings, place orders, mutate a database, or select
 an option contract.  They receive bars and return either no setup or one
 `Signal`.  The simulator owns fill assumptions and the ledger owns results.
 
+The first data boundary is a chronological OHLCV CSV with a SHA-256 fingerprint.
+That makes a historical result reproducible even if a provider later revises
+its feed.  The first V2 baseline is `V2_TREND_CONT`: a transparent trend/EMA
+plus fresh-range-breakout hypothesis with ATR-defined invalidation.  It is a
+research baseline only, not a promoted replacement for the legacy strategy.
+
 ## V2 contracts
 
 | Component | Responsibility | Must not do |

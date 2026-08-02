@@ -1,10 +1,14 @@
 """Contract tests for the order-free V2 research foundation."""
 
 from datetime import datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
+from research_v2.data import load_csv
 from research_v2.models import Bar, Side, Signal
 from research_v2.simulator import SimulationConfig, Simulator
+from research_v2.strategies import TrendContinuation, TrendContinuationConfig
 from research_v2.validation import ValidationConfig, validate
 
 
@@ -45,6 +49,32 @@ class ResearchV2Tests(unittest.TestCase):
         result = validate(trades, ValidationConfig(min_trades=2, max_drawdown_pct=10_000))
         self.assertFalse(result.passed)
         self.assertIn("only 1 trades; need 2", result.reasons)
+
+    def test_csv_dataset_is_hashed_and_requires_chronology(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "bars.csv"
+            path.write_text(
+                "timestamp,open,high,low,close,volume\n"
+                "2026-01-02T09:30:00+00:00,100,101,99,100,10\n"
+                "2026-01-02T09:31:00+00:00,100,102,100,101,11\n",
+                encoding="utf-8",
+            )
+            dataset = load_csv(path)
+        self.assertEqual(2, len(dataset.bars))
+        self.assertEqual(64, len(dataset.sha256))
+
+    def test_trend_continuation_emits_only_fresh_breakout(self) -> None:
+        bars = []
+        for minute in range(21):
+            price = 100 + minute * 0.2
+            bars.append(_bar(minute, price, price + 0.1, price - 0.1, price))
+        bars[-1] = _bar(20, 104.0, 105.0, 103.9, 104.9)
+        strategy = TrendContinuation(TrendContinuationConfig(fast_ema=3, slow_ema=6, breakout_bars=3, atr_bars=3))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertGreater(signal.target, signal.entry_reference)
 
 
 if __name__ == "__main__":
