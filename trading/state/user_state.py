@@ -85,6 +85,9 @@ def _make_initial_state() -> dict:
         # cache for the live 1Hour MTF confirmation gate — see
         # trading/mtf_live_gate.py. {ticker: {"ts": epoch, "price_above_ema20": bool}}
         "mtf_1h_cache":              {},
+        # One causal 15-minute paper-research window.  It contains only
+        # serializable metadata, never a live order or a signal object.
+        "opportunity_scheduler":      {},
     }
 
 
@@ -196,6 +199,7 @@ def reset_session_state(user_id: str = "admin") -> None:
     _US["ticker_win_cooldown"]    = {}
     _US["orb_entered_today"]      = set()
     _US["_last_order_key"]        = None
+    _US["opportunity_scheduler"]  = {}
     logger.info(
         "session_state_reset",
         extra={"event": "session_state_reset", "reason": "paper_trading_mode_toggle", "user_id": user_id},

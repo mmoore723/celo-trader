@@ -88,6 +88,9 @@ from trading.position_manager import _manage_open_position, _close_position
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
 from trading.entry.contract import select_contract
 from trading.entry.skip_log import _skip_log
+from trading.opportunity_scheduler import clear as _clear_opportunity_window
+from trading.opportunity_scheduler import due_ticker as _opportunity_due_ticker
+from trading.opportunity_scheduler import select as _select_opportunity_signal
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -129,6 +132,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _US["scanner_ran_today"]  = False
         _US["orb_entered_today"]  = set()
         _US["ticker_win_cooldown"] = {}
+        _US["opportunity_scheduler"] = {}
         # Recalculate from DB in case trades were closed earlier today
         from trading.controls import _refresh_session_pnl
         _refresh_session_pnl()
@@ -184,6 +188,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             _US["scanner_ran_today"] = False   # allow fresh scan tomorrow
             _US["scan_watchlist"]    = []
             _US["scan_idx"]          = 0
+            _US["opportunity_scheduler"] = {}
             logger.debug("Market closed — session flags reset for tomorrow")
             try:
                 _mc_balance = (_US.get("account_balance") or
@@ -505,10 +510,23 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "event": "on_demand_scan_done", "watchlist": watchlist,
         })
 
-    # Advance to next ticker in round-robin
-    idx    = _US.get("scan_idx", 0) % len(watchlist)
-    ticker = watchlist[idx]
-    _US["scan_idx"]         = (idx + 1) % len(watchlist)
+    # A due research candidate gets one confirmation scan at the end of its
+    # 15-minute window.  This is causal: it is a real re-evaluation now, never
+    # an order based on stale data from when the window started.
+    _opportunity_enabled = bool(
+        settings.get("paper_trading", True)
+        and settings.get("opportunity_tier_enabled", False)
+    )
+    if not _opportunity_enabled and _US.get("opportunity_scheduler"):
+        _clear_opportunity_window(_US)
+    _due_ticker = _opportunity_due_ticker(_US, _now_et()) if _opportunity_enabled else None
+    idx = _US.get("scan_idx", 0) % len(watchlist)
+    if _due_ticker:
+        ticker = _due_ticker
+        logger.info("opportunity_window_due ticker=%s", ticker)
+    else:
+        ticker = watchlist[idx]
+        _US["scan_idx"] = (idx + 1) % len(watchlist)
     _US["current_ticker"]   = ticker
     logger.debug("Scanning ticker %s (%d/%d)", ticker, idx + 1, len(watchlist))
 
@@ -697,7 +715,51 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # unaffected. Gate itself still defaults OFF via mtf_confirmation_enabled.
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled or None,
                               alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}))
-    if not _signals:
+    # Main-tier setups remain immediate.  Opportunity setups are paper-only
+    # candidates collected and ranked over a causal 15-minute window.
+    if _opportunity_enabled:
+        _scheduled = _select_opportunity_signal(_US, ticker, _signals, _now_et())
+        _candidate = _scheduled.candidate or {}
+        if _scheduled.action == "waiting":
+            if _scheduled.event in {"started", "replaced"}:
+                _US["last_signal"] = "opportunity_waiting"
+                _US["last_strategy_id"] = _candidate.get("strategy_id")
+                _detail = (
+                    f"15-minute ranking window; best={_candidate.get('strategy_id')} "
+                    f"{float(_candidate.get('confidence', 0)):.0%}; expires "
+                    f"{str(_candidate.get('expires_at', ''))[11:16]} ET"
+                )
+                log_event("INFO", "bar_eval", f"🟣 [{ticker}] {_detail}")
+                _skip_log(
+                    ticker, "opportunity_window", strategy=_candidate.get("strategy_id"),
+                    confidence=float(_candidate.get("confidence", 0)),
+                    direction=_candidate.get("direction"), tier="opportunity", detail=_detail,
+                )
+            return
+        if _scheduled.action == "expired":
+            _detail = "15-minute ranking winner no longer confirmed at decision time"
+            log_event("INFO", "bar_eval", f"⚪ [{ticker}] Opportunity skipped — {_detail}.")
+            _skip_log(
+                ticker, "opportunity_confirmation_lost", strategy=_candidate.get("strategy_id"),
+                confidence=float(_candidate.get("confidence", 0)),
+                direction=_candidate.get("direction"), tier="opportunity", detail=_detail,
+            )
+            return
+        if _scheduled.action == "select":
+            if _scheduled.event == "main_preempted" and _candidate:
+                _skip_log(
+                    _candidate.get("ticker", ticker), "opportunity_preempted", strategy=_candidate.get("strategy_id"),
+                    confidence=float(_candidate.get("confidence", 0)),
+                    direction=_candidate.get("direction"), tier="opportunity",
+                    detail="A main-tier setup arrived before the research window closed.",
+                )
+            _top: _RouterSignal = _scheduled.signal
+        else:
+            _top = None
+    else:
+        _top = _signals[0] if _signals else None
+
+    if _top is None:
         _US["last_signal"] = None
         # Log WHY no signal — the bar_eval entry already covers the ORB gate
         # reasoning; this adds a higher-level "no strategy qualified" note so
@@ -711,7 +773,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _skip_log(ticker, "no_signal")   # visible in dashboard eval log
         return
 
-    _top: _RouterSignal = _signals[0]
     direction   = _top.direction      # "bullish" | "bearish"
     entry_rvol  = _top.rvol           # Entry_Volume_Multiplier for audit log
     strategy_id = _top.strategy_id   # "INST_ORB" | "BOS_MSS" | "VWAP_PB" | "FVG"

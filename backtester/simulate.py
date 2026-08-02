@@ -32,6 +32,7 @@ from regime_manager import compute_adx_series
 from backtest_exit_sim import ExitSimState, evaluate_bt_exit
 from backtest_exit_sim_simplified import evaluate_bt_exit_simplified
 from backtester.helpers import _get_iv, _estimate_option_price, _simulated_strike, _SIMULATED_DTE
+from trading.opportunity_scheduler import select as select_opportunity_signal
 
 
 class SimulateMixin:
@@ -133,6 +134,9 @@ class SimulateMixin:
         active_rvol           = 0.0
         active_meta: dict     = {}
         peak_opt_price        = 0.0
+        # A window is intraday only: there is no overnight reservation of a
+        # trading slot, just as live clears it when the market closes.
+        opportunity_scheduler_state: dict = {}
 
         idx_5m              = -1   # pointer into day_df (5-min) for exit management
         _last_exit_check_5m = -1   # avoid re-checking the same closed 5-min bar twice
@@ -296,17 +300,32 @@ class SimulateMixin:
                 logger.debug("BT route_signals raised on %s bar %s: %s", self.ticker, ts, _rs_ex)
                 continue
 
-            if not signals:
-                continue
-
-            self._diag["raw_signals"] += 1
-            if signals[0].confidence > self._diag["max_confidence"]:
+            if signals:
+                self._diag["raw_signals"] += 1
+            if signals and signals[0].confidence > self._diag["max_confidence"]:
                 self._diag["max_confidence"] = round(signals[0].confidence, 4)
             _bar_rvol_diag = float(tick.get("rvol", 0) or 0) if "rvol" in _day_ticks.columns else 0.0
             if len(self._diag["rvol_samples"]) < 20 and _bar_rvol_diag > 0:
                 self._diag["rvol_samples"].append(round(_bar_rvol_diag, 2))
 
-            signal    = signals[0]
+            # Match the live paper-only entry scheduler exactly.  The router
+            # has already applied every normal quality gate; this layer only
+            # decides whether a lower-confidence candidate gets the slot now
+            # or after a causal 15-minute ranking window.  Crucially, call it
+            # even with no signals so an expired candidate cannot survive a
+            # missing confirmation bar.
+            if self.OPPORTUNITY_SCHEDULER_ENABLED:
+                scheduled = select_opportunity_signal(
+                    opportunity_scheduler_state, self.ticker, signals, ts,
+                )
+                if scheduled.action != "select":
+                    continue
+                signal = scheduled.signal
+            else:
+                if not signals:
+                    continue
+                signal = signals[0]
+
             direction = signal.direction
             strat_id  = signal.strategy_id
             _entry_confidence = signal.confidence

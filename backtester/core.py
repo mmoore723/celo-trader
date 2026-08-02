@@ -96,6 +96,13 @@ class CoreMixin:
         # Live defaults to this mode. A/B scripts may still override it after
         # construction, but a normal dashboard backtest must test the live bot.
         self.SIMPLIFIED_EXIT_MODE = bool(self.backtest_settings.get("simplified_exit_mode", True))
+        # The lower-confidence cohort is experimental and paper-only.  Keep
+        # its scheduling rule behind the exact same setting as live execution
+        # so a normal dashboard replay cannot test a different bot.
+        self.OPPORTUNITY_SCHEDULER_ENABLED = bool(
+            self.backtest_settings.get("paper_trading", True)
+            and self.backtest_settings.get("opportunity_tier_enabled", False)
+        )
         # Entry-detection sources — populated by _prep_entry_sources() in run().
         self._df1m: Optional[pd.DataFrame] = None
         self._1m_day_start: dict = {}

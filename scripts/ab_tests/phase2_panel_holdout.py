@@ -12,7 +12,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
+import sys
 from typing import Any
+
+# Allow direct execution from scripts/ab_tests as documented below.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import router_gates
 
@@ -23,11 +28,22 @@ from api.models.backtest import BacktestRequest, BacktestResult
 DEFAULT_TICKERS = ("QQQ", "NVDA", "AAPL", "META")
 DEFAULT_START = "2026-07-15"
 DEFAULT_END = "2026-08-01"
+DEFAULT_OPPORTUNITY_FLOOR = 0.70
 
 
 def _main_only_floor(signals: list, ticker: str, min_confidence: float, quiet: bool = False) -> list:
     """The production main confidence floor, without the paper cohort."""
     return [signal for signal in signals if signal.confidence >= min_confidence]
+
+
+def _opportunity_floor(floor: float):
+    """Create a process-local cohort gate for one explicit test floor."""
+    def _apply(signals: list, ticker: str, min_confidence: float, quiet: bool = False) -> list:
+        for signal in signals:
+            if floor <= signal.confidence < min_confidence:
+                signal.tier = "opportunity"
+        return [signal for signal in signals if signal.confidence >= min_confidence or signal.confidence >= floor]
+    return _apply
 
 
 def _tier_pnl(result: BacktestResult) -> dict[str, float]:
@@ -60,19 +76,20 @@ def _request(ticker: str, start: str, end: str) -> BacktestRequest:
     )
 
 
-def compare_ticker(ticker: str, start: str, end: str) -> dict[str, Any]:
+def compare_ticker(ticker: str, start: str, end: str, opportunity_floor: float) -> dict[str, Any]:
     request = _request(ticker, start, end)
-    opportunity = _to_result(request)
-
     original_floor = router_gates.apply_confidence_floor
-    router_gates.apply_confidence_floor = _main_only_floor
     try:
+        router_gates.apply_confidence_floor = _opportunity_floor(opportunity_floor)
+        opportunity = _to_result(request)
+        router_gates.apply_confidence_floor = _main_only_floor
         main_only = _to_result(request)
     finally:
         router_gates.apply_confidence_floor = original_floor
 
     return {
         "ticker": ticker,
+        "opportunity_floor": opportunity_floor,
         "opportunity": _summary(opportunity),
         "main_only": _summary(main_only),
     }
@@ -83,11 +100,14 @@ def main() -> None:
     parser.add_argument("--tickers", nargs="+", default=list(DEFAULT_TICKERS))
     parser.add_argument("--start", default=DEFAULT_START)
     parser.add_argument("--end", default=DEFAULT_END)
+    parser.add_argument("--opportunity-floor", type=float, default=DEFAULT_OPPORTUNITY_FLOOR)
     args = parser.parse_args()
+    if not 0 < args.opportunity_floor < 0.74:
+        parser.error("--opportunity-floor must be greater than 0 and below the 0.74 main floor")
 
     results = []
     for ticker in args.tickers:
-        result = compare_ticker(ticker.upper(), args.start, args.end)
+        result = compare_ticker(ticker.upper(), args.start, args.end, args.opportunity_floor)
         results.append(result)
         print(json.dumps(result), flush=True)
     print(json.dumps({"panel": results}), flush=True)
