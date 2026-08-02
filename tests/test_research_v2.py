@@ -10,6 +10,7 @@ from research_v2.models import Bar, Side, Signal
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import TrendContinuation, TrendContinuationConfig
+from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
 
@@ -124,6 +125,19 @@ class ResearchV2Tests(unittest.TestCase):
             dataset = load_csv(path)
         self.assertEqual(1, len(dataset.bars))
         self.assertEqual(datetime(2026, 7, 15, 15, 55, tzinfo=dataset.bars[0].timestamp.tzinfo), dataset.bars[0].timestamp)
+
+    def test_vwap_pullback_requires_touch_then_reclaim(self) -> None:
+        bars = []
+        for minute in range(25):
+            price = 100 + minute * 0.1
+            bars.append(_bar(minute, price, price + 0.08, price - 0.08, price))
+        # A deliberate VWAP touch followed by close back above it.
+        bars[-2] = _bar(23, 102.2, 102.25, 101.1, 102.1)
+        bars[-1] = _bar(24, 102.2, 102.7, 102.1, 102.6)
+        signal = VWAPPullback(VWAPPullbackConfig(fast_ema=3, slow_ema=6, atr_bars=3, slope_bars=3)).evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
 
 
 if __name__ == "__main__":
