@@ -11,6 +11,7 @@ from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
     AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
+    OpeningRangePullback, OpeningRangePullbackConfig,
     TrendContinuation, TrendContinuationConfig,
 )
 from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
@@ -199,6 +200,21 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertIsNotNone(signal)
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
+
+    def test_orb_pullback_requires_breakout_retest_then_bounce(self) -> None:
+        bars = [
+            _bar(0, 100.0, 100.2, 99.8, 100.0),
+            _bar(5, 100.0, 100.3, 99.9, 100.1),
+            _bar(10, 100.1, 100.4, 99.9, 100.2),
+            _bar(15, 100.3, 100.8, 100.3, 100.7),  # breakout
+            _bar(20, 100.6, 100.6, 100.35, 100.45),  # first retest
+            _bar(25, 100.45, 100.85, 100.4, 100.8),  # confirmed bounce
+        ]
+        signal = OpeningRangePullback(OpeningRangePullbackConfig(atr_bars=3)).evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual(100.35, signal.stop)
 
 
 if __name__ == "__main__":
