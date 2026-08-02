@@ -10,6 +10,7 @@ from research_v2.models import Bar, Side, Signal
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import TrendContinuation, TrendContinuationConfig
 from research_v2.validation import ValidationConfig, validate
+from research_v2.walk_forward import run_walk_forward
 
 
 def _bar(minute: int, o: float, h: float, low: float, c: float) -> Bar:
@@ -75,6 +76,18 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertGreater(signal.target, signal.entry_reference)
+
+    def test_walk_forward_requires_both_segments_to_pass(self) -> None:
+        bars = [_bar(i, 100, 101, 99, 100) for i in range(8)]
+        result = run_walk_forward(
+            bars, bars[4].timestamp, _OneLong,
+            Simulator(SimulationConfig(slippage_bps=0)),
+            ValidationConfig(min_trades=1, max_drawdown_pct=10_000),
+        )
+        self.assertFalse(result.promoted)
+        self.assertEqual(1, result.train_validation.trade_count)
+        self.assertEqual(1, result.holdout_validation.trade_count)
+        self.assertFalse(result.holdout_validation.passed)
 
 
 if __name__ == "__main__":

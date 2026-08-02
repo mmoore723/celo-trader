@@ -9,8 +9,10 @@ from research_v2.models import Bar, Signal, Side, Trade
 from research_v2.data import BarDataset, load_csv
 from research_v2.simulator import Simulator, SimulationConfig
 from research_v2.validation import ValidationConfig, validate
+from research_v2.walk_forward import WalkForwardResult, run_walk_forward
 
 __all__ = [
     "Bar", "Signal", "Side", "Trade", "BarDataset", "load_csv", "Simulator", "SimulationConfig",
     "ValidationConfig", "validate",
+    "WalkForwardResult", "run_walk_forward",
 ]

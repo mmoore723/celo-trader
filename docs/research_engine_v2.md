@@ -31,6 +31,11 @@ its feed.  The first V2 baseline is `V2_TREND_CONT`: a transparent trend/EMA
 plus fresh-range-breakout hypothesis with ATR-defined invalidation.  It is a
 research baseline only, not a promoted replacement for the legacy strategy.
 
+`scripts/research_v2/fetch_yfinance_csv.py` exports one explicit bounded
+intraday snapshot while online.  It is a convenience source for rejecting
+weak signal logic; the artifact is then tested offline.  It is not historical
+options fill data and cannot be used to claim options profitability.
+
 ## V2 contracts
 
 | Component | Responsibility | Must not do |
@@ -47,6 +52,8 @@ A V2 setup progresses only in this order:
 
 1. **Research** — raw strategy test on a design period.
 2. **Holdout** — unchanged strategy is tested on a later, untouched period.
+   V2's `run_walk_forward()` uses separate strategy instances and refuses to
+   blend the two periods into a single flattering score.
 3. **Portfolio** — compare the current portfolio with and without the setup;
    report displaced trades and net portfolio delta.
 4. **Paper observation** — no automatic order; record live candidates and

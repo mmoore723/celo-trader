@@ -34,6 +34,10 @@ audit_reports/_data_cache/
 # commit as this comment — see that commit message for the full incident.
 ec2_log/
 
+# Downloaded market-data artifacts are reproducible by their recorded SHA-256
+# but are not source code and may carry provider redistribution restrictions.
+research_data/
+
 # FIX 2026-07-24 part 2: first pass only caught daily_universe.json and
 # user_settings.json — EC2's actual `git status` also showed .bot_heartbeat
 # and tax_sweep.json as modified (same already-tracked-before-ignored
