@@ -37,6 +37,9 @@ def _run_variant(alpaca, tickers, months, label: str) -> dict:
     for ticker in tickers:
         print(f"  ⏳ {label}: {ticker}…", flush=True)
         bt     = Backtester(alpaca, ticker, months=months, starting_capital=5000.0, direction="both")
+        # MID_BRK is frozen in production; this is a process-local A/B and
+        # must explicitly include it to test the ADX gate at all.
+        bt.enabled_strategies = set(bt.enabled_strategies) | {"MID_BRK"}
         result = bt.run()
         if result.get("error"):
             # FIX: previously this was swallowed silently — a data-fetch

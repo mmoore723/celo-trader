@@ -36,6 +36,10 @@ def _run_variant(alpaca, tickers, months, label: str) -> dict:
     for ticker in tickers:
         print(f"  ⏳ {label}: {ticker}…", flush=True)
         bt     = Backtester(alpaca, ticker, months=months, starting_capital=5000.0, direction="both")
+        # See session-window harness: force this frozen strategy on only in
+        # the isolated replay so an A/B never degrades into a false 0-trade
+        # result because of the production safety setting.
+        bt.enabled_strategies = set(bt.enabled_strategies) | {"MID_BRK"}
         result = bt.run()
         row    = (result.get("strategy_breakdown") or {}).get("MID_BRK", {})
         trades += int(row.get("trades", 0))

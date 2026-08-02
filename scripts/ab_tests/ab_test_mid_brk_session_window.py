@@ -50,6 +50,10 @@ def _run_variant(alpaca, tickers, months, label: str) -> dict:
     for ticker in tickers:
         print(f"  ⏳ {label}: {ticker}…", flush=True)
         bt     = Backtester(alpaca, ticker, months=months, starting_capital=5000.0, direction="both")
+        # MID_BRK is frozen in the live settings while its negative cohort is
+        # investigated.  This controlled harness must explicitly opt it in or
+        # it silently tests the current disabled configuration (zero trades).
+        bt.enabled_strategies = set(bt.enabled_strategies) | {"MID_BRK"}
         result = bt.run()
         row    = (result.get("strategy_breakdown") or {}).get("MID_BRK", {})
         trades += int(row.get("trades", 0))
