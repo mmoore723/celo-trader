@@ -48,9 +48,13 @@ def _run_variant(alpaca, tickers: list[str], months: int, ceiling) -> dict:
     all_trades: list[dict] = []
     for ticker in tickers:
         bt = Backtester(alpaca, ticker, months=months, starting_capital=5000.0, direction="both")
-        # MID_BRK is intentionally disabled in paper/live settings.  Enable
-        # it only in this throwaway Backtester instance for hypothetical A/B.
-        bt.enabled_strategies = set(bt.enabled_strategies) | {"MID_BRK"}
+        # This is a *strategy-quality* experiment: evaluate only MID_BRK so
+        # unrelated strategies cannot take the single simulated slot or make
+        # a four-ceiling sweep needlessly replay their logic.  A separate
+        # portfolio-level holdout runner tests the real enablement decision
+        # (including displacement of other strategies) after a candidate wins
+        # this narrow screen.
+        bt.enabled_strategies = {"MID_BRK"}
         result = bt.run()
         if result.get("error"):
             continue
