@@ -56,45 +56,70 @@ class SuperTrendReversal:
 
     def __init__(self, config: SuperTrendReversalConfig = SuperTrendReversalConfig()) -> None:
         self.config = config
+        self._reset()
 
     def evaluate(self, bars: Sequence[Bar]) -> Signal | None:
-        if len(bars) < self.config.atr_period + 1:
-            return None
-        atrs = _atr(_true_ranges(bars), self.config.atr_period, self.config.use_rma_atr)
-        up_previous: float | None = None
-        down_previous: float | None = None
-        trend_previous = 1
-        trend = trend_previous
-        current_atr = 0.0
-        for index, bar in enumerate(bars):
-            atr = atrs[index]
-            if atr is None:
-                continue
-            current_atr = atr
-            source = (bar.high + bar.low) / 2.0
-            up = source - self.config.multiplier * atr
-            down = source + self.config.multiplier * atr
-            prior_close = bars[index - 1].close if index else bar.close
-            prior_up = up if up_previous is None else up_previous
-            prior_down = down if down_previous is None else down_previous
-            if prior_close > prior_up:
-                up = max(up, prior_up)
-            if prior_close < prior_down:
-                down = min(down, prior_down)
-            trend = 1 if trend_previous == -1 and bar.close > prior_down else (-1 if trend_previous == 1 and bar.close < prior_up else trend_previous)
-            up_previous, down_previous = up, down
-            if index != len(bars) - 1:
-                trend_previous = trend
+        # The simulator supplies one increasingly long history.  Preserve
+        # state for that normal path; rebuild only when a caller supplies a
+        # different history (as the unit tests and ad-hoc inspections do).
+        if len(bars) == self._seen + 1 and (self._seen == 0 or bars[-2].timestamp == self._last_timestamp):
+            return self._advance(bars[-1])
+        self._reset()
+        signal = None
+        for bar in bars:
+            signal = self._advance(bar)
+        return signal
 
-        if trend == trend_previous or current_atr <= 0:
+    def _reset(self) -> None:
+        self._seen = 0
+        self._last_timestamp = None
+        self._last_close: float | None = None
+        self._tr_values: list[float] = []
+        self._atr_value: float | None = None
+        self._up: float | None = None
+        self._down: float | None = None
+        self._trend = 1
+
+    def _advance(self, current: Bar) -> Signal | None:
+        tr = current.high - current.low if self._last_close is None else max(
+            current.high - current.low, abs(current.high - self._last_close), abs(current.low - self._last_close)
+        )
+        self._tr_values.append(tr)
+        period = self.config.atr_period
+        if len(self._tr_values) < period:
+            self._last_close, self._last_timestamp, self._seen = current.close, current.timestamp, self._seen + 1
             return None
-        current = bars[-1]
+        if len(self._tr_values) == period:
+            self._atr_value = sum(self._tr_values) / period
+        elif self.config.use_rma_atr:
+            assert self._atr_value is not None
+            self._atr_value = ((self._atr_value * (period - 1)) + tr) / period
+        else:
+            self._tr_values.pop(0)
+            self._atr_value = sum(self._tr_values) / period
+        assert self._atr_value is not None
+        source = (current.high + current.low) / 2.0
+        up = source - self.config.multiplier * self._atr_value
+        down = source + self.config.multiplier * self._atr_value
+        prior_up = up if self._up is None else self._up
+        prior_down = down if self._down is None else self._down
+        prior_close = current.close if self._last_close is None else self._last_close
+        if prior_close > prior_up:
+            up = max(up, prior_up)
+        if prior_close < prior_down:
+            down = min(down, prior_down)
+        prior_trend = self._trend
+        trend = 1 if prior_trend == -1 and current.close > prior_down else (-1 if prior_trend == 1 and current.close < prior_up else prior_trend)
+        self._up, self._down, self._trend = up, down, trend
+        self._last_close, self._last_timestamp, self._seen = current.close, current.timestamp, self._seen + 1
+        if trend == prior_trend:
+            return None
         side = Side.LONG if trend == 1 else Side.SHORT
         # The generic Signal contract requires these fields.  They are not
         # execution orders here; the reversal simulator exits on the next
         # opposite flip, exactly as the Pine source does.
-        stop = current.close - current_atr if side is Side.LONG else current.close + current_atr
-        target = current.close + current_atr if side is Side.LONG else current.close - current_atr
+        stop = current.close - self._atr_value if side is Side.LONG else current.close + self._atr_value
+        target = current.close + self._atr_value if side is Side.LONG else current.close - self._atr_value
         return Signal(self.strategy_id, side, current.timestamp, current.close, stop, target, {
             "atr_period": self.config.atr_period,
             "multiplier": self.config.multiplier,
