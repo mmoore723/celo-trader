@@ -56,6 +56,7 @@ def get_settings_endpoint() -> Settings:
         aft_rev_enabled=bool(s.get("strategy_aft_enabled", True)),
         gap_go_enabled=bool(s.get("strategy_gapgo_enabled", True)),
         liquidity_sweep_enabled=bool(s.get("strategy_liqsweep_enabled", True)),
+        opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
         orb_stage1_gain_pct=float(s.get("orb_stage1_gain_pct", 50)),

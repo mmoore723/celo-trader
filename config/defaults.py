@@ -110,6 +110,11 @@ _DEFAULTS = {
     # decision. No backtest track record yet.
     "strategy_liqsweep_enabled": True,
 
+    # Paper-only lower-confidence research cohort. Disabled after the 2026-08-02
+    # locked-holdout panel increased activity while worsening aggregate results.
+    # Candidates remain journaled as `opportunity` for separate evidence.
+    "opportunity_tier_enabled": False,
+
     # Filters
     "volume_filter_enabled":   True,
     "volume_filter_multiplier": 2.0,

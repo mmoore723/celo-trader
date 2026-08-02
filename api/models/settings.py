@@ -38,6 +38,7 @@ class Settings(BaseModel):
                                     # ON by default per explicit request. No
                                     # backtest track record yet — see
                                     # strategies/liquidity_sweep.py.
+    opportunity_tier_enabled: bool = False  # paper-only lower-confidence research cohort
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────
     orb_stage1_gain_pct: float = 50.0   # Stage-1 profit target as % of entry

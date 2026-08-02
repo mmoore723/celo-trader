@@ -40,6 +40,7 @@ const DEFAULT: AppSettings = {
   aft_rev_enabled: true,   // Afternoon Reversal — added to Settings 2026-07-20
   gap_go_enabled: true,    // Gap and Go — added 2026-07-23, flipped ON 2026-07-31
   liquidity_sweep_enabled: true,  // Liquidity Sweep Reversal — added 2026-07-31, ON by default
+  opportunity_tier_enabled: false,
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
   // Trade parameters
@@ -639,6 +640,16 @@ export function Settings() {
           retest aren't missed entirely. The retest path still runs as a
           fallback either way. Not backtested — this is a live trade-off
           between catching more moves and worse fills.
+        </p>
+        <Toggle
+          label="Opportunity cohort (paper-only lower-confidence experiments)"
+          checked={form.opportunity_tier_enabled ?? false}
+          onChange={(v) => set("opportunity_tier_enabled", v)}
+        />
+        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+          Off by default: the latest locked-holdout panel added too many trades
+          and hurt results. When off, candidates are still tagged in Strategy
+          Health so you can learn from them without letting them enter.
         </p>
       </div>
 
