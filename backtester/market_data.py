@@ -52,7 +52,12 @@ class MarketDataMixin:
         # 59-day yfinance cap below, so they now share one cache entry instead
         # of each script re-fetching identical candles under a different key.
         import datetime as _dt
-        _anchor_date = self.end_date or _dt.date.today()
+        # Fetch/cache against the current rolling data window, never the replay
+        # end date.  yfinance only serves intraday bars relative to *today*;
+        # anchoring a split's training leg at its historical end date makes a
+        # perfectly available current window look unavailable.  `run()` below
+        # (not this fetch) applies the exact requested start/end dates.
+        _anchor_date = _dt.date.today()
         _cache_max_days = backtest_data_cache.max_days_for(self.months)
         bundle = backtest_data_cache.load(self.ticker, _cache_max_days, as_of=_anchor_date)
         if bundle is not None:

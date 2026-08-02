@@ -45,6 +45,18 @@ class RunMixin:
             df = df[df["_date"] <= self.end_date].reset_index(drop=True)
         if df.empty:
             return {"error": "No market bars exist in the requested date range."}
+        if self.start_date is not None:
+            earliest = min(df["_date"])
+            # Do not silently grade a shortened training period when the
+            # requested range begins outside the provider's rolling intraday
+            # history.  A small allowance covers weekends and market holidays.
+            if earliest > self.start_date and (earliest - self.start_date).days > 3:
+                return {
+                    "error": (
+                        f"Historical data begins on {earliest.isoformat()}, after the requested "
+                        f"start date {self.start_date.isoformat()}. No result was calculated."
+                    )
+                }
         if self.end_date is not None:
             latest = max(df["_date"])
             # Weekends/holidays are normal, but data ending several sessions
