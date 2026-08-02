@@ -22,3 +22,8 @@ class Signal:
     rvol:        float        = field(compare=False)
     trigger_bar: pd.Timestamp = field(compare=False)
     meta:        dict         = field(compare=False, default_factory=dict)
+    # Lifecycle label set by the router/controller.  It is deliberately data
+    # only: evaluation, confidence, sizing, and exit behavior do not depend on
+    # it.  Persisting it lets the journal and closed-trade scorecard distinguish
+    # the normal setup pool from a future, separately measured opportunity pool.
+    tier:        str          = field(compare=False, default="main")

@@ -715,6 +715,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     direction   = _top.direction      # "bullish" | "bearish"
     entry_rvol  = _top.rvol           # Entry_Volume_Multiplier for audit log
     strategy_id = _top.strategy_id   # "INST_ORB" | "BOS_MSS" | "VWAP_PB" | "FVG"
+    _signal_tier = getattr(_top, "tier", "main")
     _US["last_signal"]     = direction
     _US["last_strategy_id"]= strategy_id
 
@@ -810,7 +811,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                               f"⚪ [{ticker}] Skipping CALL — {ticker} (${_self_close:.2f}) "
                               f"is BELOW its own VWAP (${_self_vwap:.2f}). "
                               f"Signal conflicts with macro posture.")
-                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                              detail=f"{ticker} ${_self_close:.2f} below own VWAP ${_self_vwap:.2f}")
                     return
                 elif direction == "bearish" and _self_close > _self_vwap:
@@ -818,7 +819,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                               f"⚪ [{ticker}] Skipping PUT — {ticker} (${_self_close:.2f}) "
                               f"is ABOVE its own VWAP (${_self_vwap:.2f}). "
                               f"Signal conflicts with macro posture.")
-                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                    _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                              detail=f"{ticker} ${_self_close:.2f} above own VWAP ${_self_vwap:.2f}")
                     return
                 else:
@@ -883,7 +884,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                           f"⚪ [{ticker}] Skipping CALL — SPY (${_spy_close:.2f}) "
                           f"is BELOW VWAP (${_spy_vwap:.2f}). "
                           f"Signal conflicts with macro posture.")
-                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                          detail=f"SPY ${_spy_close:.2f} below VWAP ${_spy_vwap:.2f}")
                 return
             elif direction == "bearish" and _spy_close > _spy_vwap:
@@ -891,7 +892,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                           f"⚪ [{ticker}] Skipping PUT — SPY (${_spy_close:.2f}) "
                           f"is ABOVE VWAP (${_spy_vwap:.2f}). "
                           f"Signal conflicts with macro posture.")
-                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+                _skip_log(ticker, "macro_vwap_veto", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                          detail=f"SPY ${_spy_close:.2f} above VWAP ${_spy_vwap:.2f}")
                 return
             else:
@@ -929,7 +930,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"({_sel_info.get('cheapest_symbol', '?')}) costs ~${_needed:.0f}, "
                       f"but your budget is set to ${max_spend:.0f}. "
                       f"Skipping this setup — will check again next candle.")
-            _skip_log(ticker, "budget", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+            _skip_log(ticker, "budget", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                      detail=f"cheapest ~${_needed:.0f} vs ${max_spend:.0f} budget")
         elif _reason == "illiquid":
             # 2026-07-24: a contract existed WITHIN budget but failed the
@@ -944,7 +945,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"~${_cheap_afford:.0f} (within your ${max_spend:.0f} budget) but "
                       f"failed the liquidity filter ({_fail_detail}). "
                       f"Skipping this setup — will check again next candle.")
-            _skip_log(ticker, "illiquid_contract", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+            _skip_log(ticker, "illiquid_contract", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                      detail=f"${_cheap_afford:.0f} within budget but {_fail_detail}")
         elif _reason in ("api_error", "no_expirations", "no_chain_data"):
             # Tradier didn't return usable options data — NOT a budget issue.
@@ -952,7 +953,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"🔴 [{ticker}] Couldn't load {opt_type.upper()} option prices from "
                       f"Tradier (no data returned). Skipping this setup — will check again "
                       f"next candle.")
-            _skip_log(ticker, "no_option_data", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+            _skip_log(ticker, "no_option_data", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                      detail="Tradier returned no usable chain data")
         else:
             # "filtered" — chain data existed but spread/open-interest filters
@@ -960,7 +961,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             log_event("INFO", "bar_eval",
                       f"🔴 [{ticker}] No {opt_type.upper()} contracts met liquidity/spread "
                       f"requirements. Skipping this setup — will check again next candle.")
-            _skip_log(ticker, "no_liquid_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+            _skip_log(ticker, "no_liquid_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                      detail="no contract met spread/open-interest filters")
         return
 
@@ -1020,7 +1021,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"${_risk_budget:.2f} ({_risk_pct*100:.0f}% of ${balance:.2f}). "
                   f"Need a bigger risk budget (raise risk_per_trade or grow the "
                   f"account) or a cheaper-premium contract.")
-        _skip_log(ticker, "zero_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+        _skip_log(ticker, "zero_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                  detail=f"1 contract risks ${_risk_per_contract:.0f}, budget is ${_risk_budget:.0f}")
         return
 
@@ -1103,7 +1104,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"{_spread_pct*100:.1f}% of mid price "
                       f"(bid=${_c_bid:.2f} ask=${_c_ask:.2f}). "
                       f"Too wide; waiting for tighter liquidity.")
-            _skip_log(ticker, "spread_too_wide", strategy=strategy_id, confidence=_top.confidence, direction=direction,
+            _skip_log(ticker, "spread_too_wide", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                      detail=f"spread {_spread_pct*100:.1f}% > {_spread_max*100:.0f}% max (bid ${_c_bid:.2f}/ask ${_c_ask:.2f})")
             return
 
@@ -1122,7 +1123,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"🟡 [{ticker}] Skipping this candle — the reward is less than 1.6× the risk "
                   f"at the current price (${eff_entry:.2f}). Waiting for a better entry point.")
         _rr_val = float(rr_audit.get("rr_ratio", 0)) if isinstance(rr_audit, dict) else 0.0
-        _skip_log(ticker, "rr_too_low", strategy=strategy_id, confidence=_top.confidence, rr=_rr_val, direction=direction)
+        _skip_log(ticker, "rr_too_low", strategy=strategy_id, confidence=_top.confidence, rr=_rr_val, direction=direction, tier=_signal_tier)
         return
 
     # ── Slippage-adjusted profit-target sanity check ──────────────────────────
@@ -1225,7 +1226,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 log_event("INFO", "bar_eval",
                           f"🟣 [{ticker}] AI decision support VETO — "
                           f"{_ds_result.rationale or 'no reason given'}")
-                _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence,
+                _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence, tier=_signal_tier,
                          direction=direction, detail=_ds_result.rationale or "AI review declined, no rationale given")
                 return
             elif _ds_result is not None and _ds_result.action == "reduce_size":
@@ -1236,7 +1237,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     log_event("INFO", "bar_eval",
                               f"🟣 [{ticker}] AI decision support reduced size to 0 "
                               f"contracts — treating as VETO. {_ds_result.rationale or ''}")
-                    _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence,
+                    _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence, tier=_signal_tier,
                              direction=direction, detail=f"resized to 0 contracts — {_ds_result.rationale or 'no rationale given'}")
                     return
                 elif _ds_resized < n_contracts:
@@ -1383,13 +1384,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         stop_price      = _stop_px,
         target_price    = _target_px,
         annotations_json= _entry_annotations_json,
+        tier            = _signal_tier,
     )
 
     # Journal the final 'entered' outcome — see signal_journal.py. Wrapped
     # defensively: a journal write must never be allowed to affect a trade
     # that already went through.
     try:
-        _log_journal(ticker, _US.get("last_strategy_id", "INST_ORB"), direction, _top.confidence,
+        _journal_id = _log_journal(ticker, _US.get("last_strategy_id", "INST_ORB"), direction, _top.confidence,
                      outcome="entered", reason_detail=f"R:R={rr_audit['R_R_Ratio']}", trade_id=trade_id,
                      context={
                          "trigger_bar": str(_top.trigger_bar),
@@ -1400,9 +1402,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                              "ask": contract.get("ask"), "spread": contract.get("spread"),
                          },
                          "rr_ratio": rr_audit.get("R_R_Ratio"),
-                     })
+                     }, tier=_signal_tier)
+        if _journal_id is None:
+            logger.error(
+                "signal_trade_link_missing: trade_id=%s ticker=%s strategy=%s",
+                trade_id, ticker, _US.get("last_strategy_id", "INST_ORB"),
+            )
     except Exception:
-        pass
+        logger.exception("signal_trade_link_write_failed: trade_id=%s", trade_id)
 
     # Re-run R:R audit with real trade_id — final structured log record
     _risk.evaluate_rr(

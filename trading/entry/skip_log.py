@@ -21,7 +21,7 @@ logger = logging.getLogger("celo_trader.trading_logic")
 
 def _skip_log(ticker: str, reason: str, *,
               strategy: str = "", confidence: float = 0.0, rr: float = 0.0,
-              direction: str = "", detail: str = "") -> None:
+              direction: str = "", detail: str = "", tier: str = "main") -> None:
     """
     Append a rejection entry to eval_log so the dashboard shows WHY each ticker
     was passed over on a given bar (no signal, low confidence, zero contracts, etc.).
@@ -49,7 +49,7 @@ def _skip_log(ticker: str, reason: str, *,
         try:
             _log_journal(ticker, strategy, direction or "unknown", confidence,
                          outcome="blocked", reason_code=reason,
-                         reason_detail=detail or (f"R:R {rr:.2f}" if rr else ""))
+                         reason_detail=detail or (f"R:R {rr:.2f}" if rr else ""), tier=tier)
         except Exception:
             pass   # journal writes are never allowed to affect entry logic
 
@@ -80,5 +80,4 @@ def _skip_log(ticker: str, reason: str, *,
         _skj.dump(_bs, open(_sp, "w"))
     except Exception:
         pass   # non-critical — dashboard still shows whatever was last written
-
 

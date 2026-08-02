@@ -51,6 +51,7 @@ export interface StrategyScorecardRow {
 }
 export interface StrategyScorecard {
   days: number; minimum_actionable_trades: number; strategies: StrategyScorecardRow[];
+  opportunity_strategies: StrategyScorecardRow[];
 }
 
 export interface Trade {

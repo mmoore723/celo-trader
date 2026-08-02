@@ -32,6 +32,7 @@ def insert_trade(
     stop_price: Optional[float] = None,    # option premium stop-loss level at entry
     target_price: Optional[float] = None,  # Stage-1 target at entry
     annotations_json: Optional[str] = None,  # JSON snapshot of entry-time chart annotations
+    tier: str = "main",                       # main setup pool | separately measured opportunity pool
 ) -> int:
     """
     Insert an open trade.  Returns the new row id so we can update it on close.
@@ -41,19 +42,20 @@ def insert_trade(
         INSERT INTO trades
             (ticker, contract_symbol, option_type, strike, expiry,
              contracts, entry_price, entry_time, entry_reason,
-             status, paper, strategy_id, stop_price, target_price, annotations_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
+             status, paper, strategy_id, stop_price, target_price, annotations_json, tier)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
     """
     with get_conn() as conn:
         cur = conn.execute(sql, (
             ticker, contract_symbol, option_type, strike, expiry,
             contracts, entry_price, _to_et_isoformat(entry_time), entry_reason,
             1 if paper else 0, strategy_id, stop_price, target_price, annotations_json,
+            tier if tier in ("main", "opportunity") else "main",
         ))
         trade_id = cur.lastrowid
     logger.info(
-        "Trade %d opened: %s %s @ %.2f [strategy=%s]",
-        trade_id, ticker, contract_symbol, entry_price, strategy_id,
+        "Trade %d opened: %s %s @ %.2f [strategy=%s tier=%s]",
+        trade_id, ticker, contract_symbol, entry_price, strategy_id, tier,
     )
     return trade_id
 
@@ -114,6 +116,16 @@ def close_trade(
         contracts    = row["contracts"]
         realized_pnl = (actual_exit - entry_price) * contracts * 100
 
+        # Manual, panic, and reconciliation closes do not always have a
+        # position-manager price sample.  Store a neutral entry-price value
+        # rather than NULL so every new closed trade has a complete outcome
+        # row.  This denotes no observed intratrade excursion, not proof that
+        # the option price never moved.
+        if peak_price is None:
+            peak_price = entry_price
+        if mae_price is None:
+            mae_price = entry_price
+
         # Deduct round-trip commission on live trades (entry leg + exit leg).
         # Paper trading has no commissions — Alpaca paper is fee-free.
         if not paper:
@@ -161,5 +173,3 @@ def close_trade(
         logger.warning("Could not update last_known_balance after trade close: %s", _e)
 
     return realized_pnl
-
-
