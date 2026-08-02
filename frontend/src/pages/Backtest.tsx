@@ -54,6 +54,7 @@ export function Backtest() {
   // risk_pct: "" means "use live tier ladder"; a number string overrides it
   const [riskPctStr, setRiskPctStr] = useState<string>("");
   const [showTrades, setShowTrades] = useState(true);
+  const [holdout, setHoldout] = useState(true);
   const { theme } = useThemeStore();
   const dark = theme === "dark";
 
@@ -74,7 +75,7 @@ export function Backtest() {
   const [jobId, setJobId] = useState<string | null>(null);
   const { mutate, isPending, isError, error } = useMutation({
     mutationFn: () => api.backtest.start(
-      ticker, 3, capital, direction, startDate, endDate, riskPctOverride,
+      ticker, 3, capital, direction, startDate, endDate, riskPctOverride, holdout ? 0.30 : undefined,
     ),
     onSuccess: (job) => setJobId(job.job_id),
   });
@@ -121,6 +122,10 @@ export function Backtest() {
               {TICKERS.map((t) => <option key={t}>{t}</option>)}
             </select>
           </div>
+          <label className="text-xs flex items-center gap-2" style={{ color: "var(--ink-muted)" }}>
+            <input type="checkbox" checked={holdout} onChange={(e) => setHoldout(e.target.checked)} />
+            Lock final 30% as holdout
+          </label>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Start Date</label>
             <input
@@ -228,6 +233,14 @@ export function Backtest() {
       {result?.error && (
         <div className="card p-4" style={{ background: "var(--negative-bg)", borderColor: "var(--negative)" }}>
           <p className="text-sm" style={{ color: "var(--negative)" }}>{result.error}</p>
+        </div>
+      )}
+      {result?.holdout && (
+        <div className="card p-4 text-sm">
+          <b>Locked holdout — {result.holdout.start_date} to {result.holdout.end_date}</b>
+          <div className="mt-1" style={{ color: "var(--ink-muted)" }}>
+            {result.holdout.result.total_trades} trades · {result.holdout.result.win_rate_pct.toFixed(1)}% win rate · ${result.holdout.result.final_balance.toFixed(2)} final balance
+          </div>
         </div>
       )}
 

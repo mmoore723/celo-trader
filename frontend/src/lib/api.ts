@@ -518,6 +518,7 @@ export interface BacktestResult {
     limitations?: string[];
   };
   error?: string;
+  holdout?: { start_date: string; end_date: string; result: BacktestResult };
 }
 
 export interface BacktestJobStatus {
@@ -577,6 +578,7 @@ export const api = {
       startDate?: string,
       endDate?: string,
       riskPct?: number,       // flat override e.g. 0.05; undefined = live tier ladder
+      holdoutPct?: number,
     ) =>
       request<BacktestJobStatus>("/api/backtest", {
         method: "POST",
@@ -588,6 +590,7 @@ export const api = {
           ...(startDate !== undefined ? { start_date: startDate } : {}),
           ...(endDate   !== undefined ? { end_date:   endDate   } : {}),
           ...(riskPct   !== undefined ? { risk_pct:   riskPct   } : {}),
+          ...(holdoutPct !== undefined ? { holdout_pct: holdoutPct } : {}),
         }),
       }),
     status: (jobId: string) => request<BacktestJobStatus>(`/api/backtest/${jobId}`),
