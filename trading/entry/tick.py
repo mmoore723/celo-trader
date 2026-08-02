@@ -1004,6 +1004,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── ORB 1% risk sizing (uses slippage-adjusted price) ─────────────────────
     n_contracts = _risk.calculate_contracts(eff_entry, balance)
 
+    # Opportunity signals are a paper-only research cohort. They retain every
+    # existing liquidity/R:R/risk check but cannot use more than half of the
+    # main-tier size (one contract is the indivisible minimum).
+    if _signal_tier == "opportunity" and n_contracts > 1:
+        n_contracts = max(1, n_contracts // 2)
+
     if n_contracts < 1:
         logger.warning(
             "ORB sizing returned 0 contracts",

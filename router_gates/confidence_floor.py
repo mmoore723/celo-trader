@@ -7,6 +7,7 @@ cleanup); no logic changed, only relocated.
 
 import logging
 
+from config import get_settings
 from router_gates.helpers import _journal_dropped
 
 logger = logging.getLogger("celo_trader.router_gates")
@@ -19,7 +20,15 @@ def apply_confidence_floor(signals: list, ticker: str, min_confidence: float, qu
     # historical rows every backtest run. Default False preserves the exact
     # prior behavior for the one live call site in strategy_router.py.
     _before_list = list(signals)
-    signals = [s for s in signals if s.confidence >= min_confidence]
+    # Paper-only, separately measured research cohort. Main-tier behavior is
+    # unchanged; this never runs when the account is configured for live mode.
+    _opportunity_floor = min_confidence - 0.04
+    _paper_only = bool(get_settings().get("paper_trading", True))
+    for signal in signals:
+        if _paper_only and _opportunity_floor <= signal.confidence < min_confidence:
+            signal.tier = "opportunity"
+    signals = [s for s in signals if s.confidence >= min_confidence or
+               (_paper_only and s.confidence >= _opportunity_floor)]
     if len(signals) < len(_before_list) and not quiet:
         _dropped = len(_before_list) - len(signals)
         _journal_dropped(_before_list, signals, ticker, "confidence_floor",
