@@ -9,7 +9,7 @@ from research_v2.data import load_csv
 from research_v2.models import Bar, Side, Signal
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.simulator import SimulationConfig, Simulator
-from research_v2.strategies import TrendContinuation, TrendContinuationConfig
+from research_v2.strategies import AfternoonReversal, AfternoonReversalConfig, TrendContinuation, TrendContinuationConfig
 from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
@@ -135,6 +135,21 @@ class ResearchV2Tests(unittest.TestCase):
         bars[-2] = _bar(23, 102.2, 102.25, 101.1, 102.1)
         bars[-1] = _bar(24, 102.2, 102.7, 102.1, 102.6)
         signal = VWAPPullback(VWAPPullbackConfig(fast_ema=3, slow_ema=6, atr_bars=3, slope_bars=3)).evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+
+    def test_afternoon_reversal_requires_confirmed_structure_and_break(self) -> None:
+        bars = []
+        start = datetime(2026, 1, 2, 9, 30)
+        prices = [100, 99.7, 99.4, 99.1, 99.5, 100.0, 100.4, 100.1, 99.8, 99.5,
+                  99.8, 100.1, 100.5, 100.2, 99.9, 100.2, 100.5, 100.9, 101.2]
+        for index, price in enumerate(prices):
+            bars.append(Bar(start + timedelta(minutes=index * 15), price, price + 0.08,
+                            price - 0.08, price, 100))
+        # Last close breaks the confirmed 10:45 swing high after the higher 12:00 low.
+        strategy = AfternoonReversal(AfternoonReversalConfig(pivot_lookback=1, atr_bars=3))
+        signal = strategy.evaluate(bars)
         self.assertIsNotNone(signal)
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
