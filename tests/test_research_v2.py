@@ -7,6 +7,7 @@ import unittest
 
 from research_v2.data import load_csv
 from research_v2.models import Bar, Side, Signal
+from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import TrendContinuation, TrendContinuationConfig
 from research_v2.validation import ValidationConfig, validate
@@ -88,6 +89,23 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(1, result.train_validation.trade_count)
         self.assertEqual(1, result.holdout_validation.trade_count)
         self.assertFalse(result.holdout_validation.passed)
+
+    def test_alpaca_export_filters_explicit_dates(self) -> None:
+        class _Client:
+            def get_bars(self, symbol, timeframe, limit):
+                self.called = (symbol, timeframe, limit)
+                return ([
+                    {"t": "2026-07-14T13:30:00Z", "o": 100, "h": 101, "l": 99, "c": 100, "v": 4},
+                    {"t": "2026-07-15T13:30:00Z", "o": 101, "h": 102, "l": 100, "c": 101, "v": 5},
+                ], False)
+        with TemporaryDirectory() as directory:
+            path = export_alpaca_csv(
+                _Client(), "spy", datetime(2026, 7, 15).date(), datetime(2026, 7, 16).date(),
+                Path(directory) / "bars.csv", limit=99,
+            )
+            dataset = load_csv(path)
+        self.assertEqual(1, len(dataset.bars))
+        self.assertEqual(101, dataset.bars[0].close)
 
 
 if __name__ == "__main__":

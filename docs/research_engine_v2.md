@@ -36,6 +36,11 @@ intraday snapshot while online.  It is a convenience source for rejecting
 weak signal logic; the artifact is then tested offline.  It is not historical
 options fill data and cannot be used to claim options profitability.
 
+For authenticated historical equity data, `scripts/research_v2/fetch_alpaca_csv.py`
+uses Alpaca only to create the same frozen CSV artifact.  It filters the
+requested dates after fetch and does not expose the broker client to a V2
+strategy or simulator.
+
 ## V2 contracts
 
 | Component | Responsibility | Must not do |
