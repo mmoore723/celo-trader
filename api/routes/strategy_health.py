@@ -15,6 +15,13 @@ router = APIRouter(prefix="/api/strategy-health", tags=["strategy-health"])
 logger = logging.getLogger("celo_trader.api.strategy_health")
 
 
+@router.get("/scorecard")
+def get_scorecard(days: int = 30) -> dict:
+    """Read-only strategy evidence scorecard; no allocation decisions here."""
+    from strategy_health.scorecard import build_scorecard
+    return build_scorecard(days)
+
+
 @router.get("/latest")
 def get_latest() -> dict:
     from database import get_latest_strategy_audit
