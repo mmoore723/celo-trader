@@ -17,6 +17,8 @@ from research_v2.strategies import (
     TrendContinuation, TrendContinuationConfig,
 )
 from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
+from research_v2.strategies import SuperTrendReversal
+from research_v2.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
 
@@ -36,6 +38,22 @@ class _OneLong:
 
 
 class ResearchV2Tests(unittest.TestCase):
+    def test_supertrend_emits_a_completed_bar_flip(self) -> None:
+        bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(12)]
+        bars.extend(_bar(12 + i, 111 - i * 3, 112 - i * 3, 110 - i * 3, 111 - i * 3) for i in range(8))
+        signals = [SuperTrendReversal().evaluate(bars[:index]) for index in range(11, len(bars) + 1)]
+        signal = next((item for item in signals if item is not None), None)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.SHORT, signal.side)
+
+    def test_supertrend_reversal_closes_on_opposite_next_bar_open(self) -> None:
+        bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(25)]
+        bars.extend(_bar(25 + i, 124 - i * 3, 125 - i * 3, 123 - i * 3, 124 - i * 3) for i in range(12))
+        trades = SuperTrendReversalSimulator(ReversalSimulationConfig(slippage_bps=0)).run(bars, SuperTrendReversal())
+        self.assertGreaterEqual(len(trades), 1)
+        self.assertIn(trades[0].exit_reason, {"opposite_flip", "end_of_data"})
+
     def test_signal_fills_next_bar_not_signal_bar(self) -> None:
         bars = [_bar(0, 100, 101, 99, 100), _bar(1, 100, 101, 99, 100),
                 _bar(2, 102, 105, 101, 104), _bar(3, 104, 104, 103, 103)]

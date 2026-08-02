@@ -5,10 +5,12 @@ from research_v2.strategies.fair_value_gap import FairValueGap, FairValueGapConf
 from research_v2.strategies.opening_range_pullback import OpeningRangePullback, OpeningRangePullbackConfig
 from research_v2.strategies.trend_continuation import TrendContinuation, TrendContinuationConfig
 from research_v2.strategies.vwap_pullback import VWAPPullback, VWAPPullbackConfig
+from research_v2.strategies.supertrend_reversal import SuperTrendReversal, SuperTrendReversalConfig
 
 __all__ = [
     "AfternoonReversal", "AfternoonReversalConfig", "FairValueGap", "FairValueGapConfig",
     "OpeningRangePullback", "OpeningRangePullbackConfig",
     "TrendContinuation", "TrendContinuationConfig",
     "VWAPPullback", "VWAPPullbackConfig",
+    "SuperTrendReversal", "SuperTrendReversalConfig",
 ]
