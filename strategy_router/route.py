@@ -55,6 +55,7 @@ def route_signals(
     alpaca=None,
     mtf_cache: "dict | None" = None,
     prepared_today: "pd.DataFrame | None" = None,
+    adx_now: "float | None" = None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -125,7 +126,7 @@ def route_signals(
 
     # ── ADX trend-strength gate — skip breakout strategies in chop (< 25) ────
     # Fail-open: if ADX can't be computed (thin data), no strategies are gated.
-    _adx_now = compute_adx(df)
+    _adx_now = adx_now if adx_now is not None else compute_adx(df)
     if _adx_now is not None and _adx_now < ADX_MIN:
         _gated = [sid for sid, _ in evaluators if sid in ADX_GATED_STRATEGIES]
         if _gated:

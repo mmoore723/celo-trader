@@ -28,6 +28,7 @@ from config import get_trading_windows as _get_trading_windows, STAGE2_TRAIL_PCT
 from signals import compute_rvol
 from strategy_router import route_signals
 from strategy_router.indicator_frame import _build_indicator_frame
+from regime_manager import compute_adx_series
 from backtest_exit_sim import ExitSimState, evaluate_bt_exit
 from backtest_exit_sim_simplified import evaluate_bt_exit_simplified
 from backtester.helpers import _get_iv, _estimate_option_price, _simulated_strike, _SIMULATED_DTE
@@ -105,6 +106,12 @@ class SimulateMixin:
         _prepared_today = _build_indicator_frame(
             _src.iloc[_lookback_floor_idx:_day_end_idx]
         )
+        _adx_series = compute_adx_series(_src.iloc[:_day_end_idx])
+        _adx_values = None
+        if _adx_series is not None and not _adx_series.empty:
+            _adx_values = _adx_series.reindex(
+                pd.DatetimeIndex(_day_ticks["time"]).floor("5min"), method="ffill"
+            ).to_numpy()
 
         in_trade              = False
         entry_price           = 0.0
@@ -283,6 +290,7 @@ class SimulateMixin:
                     enabled_strategies=self.enabled_strategies,
                     quiet=True,
                     prepared_today=_prepared_today.iloc[:i + 1],
+                    adx_now=(float(_adx_values[i]) if _adx_values is not None and pd.notna(_adx_values[i]) else None),
                 )
             except Exception as _rs_ex:
                 logger.debug("BT route_signals raised on %s bar %s: %s", self.ticker, ts, _rs_ex)
