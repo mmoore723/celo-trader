@@ -43,6 +43,16 @@ export interface BotStatus {
   broker_alerts?: { broker: string; error_count: number; since: number; last_error: string }[];
 }
 
+export interface StrategyScorecardRow {
+  strategy_id: string; closed_trades: number; wins: number; pnl: number;
+  blocked_signals: number; entered_signals: number; block_reasons: Record<string, number>;
+  win_rate: number | null; expectancy: number | null;
+  sample_status: "actionable" | "collecting_data";
+}
+export interface StrategyScorecard {
+  days: number; minimum_actionable_trades: number; strategies: StrategyScorecardRow[];
+}
+
 export interface Trade {
   id: number;
   ticker: string;
@@ -588,6 +598,7 @@ export const api = {
     weeklyLatest:  () => request<WeeklyReview>("/api/strategy-health/weekly/latest"),
     weeklyHistory: (limit = 12) => request<{audits: StrategyHealthHistoryRow[]}>(`/api/strategy-health/weekly/history?limit=${limit}`),
     weeklyRun:     () => request<WeeklyReview & {ok: boolean}>("/api/strategy-health/weekly/run", { method: "POST" }),
+    scorecard: (days = 30) => request<StrategyScorecard>(`/api/strategy-health/scorecard?days=${days}`),
   },
   aiReasoning: {
     log: (opts?: { limit?: number; eventType?: string; ticker?: string; onlyErrors?: boolean }) => {

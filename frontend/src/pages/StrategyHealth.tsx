@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type StrategyFunnelRow, type StrategyRiskMathRow } from "../lib/api";
+import { api, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -31,6 +31,12 @@ const STRAT_NAMES: Record<string, string> = {
 
 function pct(n: number, d: number): string {
   return d > 0 ? `${Math.round((n / d) * 100)}%` : "—";
+}
+
+function Scorecard({ data }: { data: StrategyScorecard }) {
+  return <div className="card" style={{ padding: 16 }}><h2 className="text-sm font-semibold" style={{ marginBottom: 8 }}>30-Day Evidence Scorecard</h2>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", marginBottom: 10 }}>“Actionable” requires {data.minimum_actionable_trades} closed trades. This reports evidence only; it does not change sizing.</p>
+    <div style={{ overflowX: "auto" }}><table className="w-full text-sm"><thead><tr><th>Strategy</th><th>Trades</th><th>Win rate</th><th>Expectancy</th><th>P&amp;L</th><th>Blocked</th><th>Status</th></tr></thead><tbody>{data.strategies.map(r => <tr key={r.strategy_id}><td>{STRAT_NAMES[r.strategy_id] ?? r.strategy_id}</td><td>{r.closed_trades}</td><td>{r.win_rate == null ? "—" : `${r.win_rate}%`}</td><td style={{ color: (r.expectancy ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{r.expectancy == null ? "—" : `$${r.expectancy.toFixed(2)}`}</td><td style={{ color: r.pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>${r.pnl.toFixed(2)}</td><td>{r.blocked_signals}</td><td>{r.sample_status === "actionable" ? "Actionable" : "Collecting data"}</td></tr>)}</tbody></table></div></div>
 }
 
 function FunnelTable({ perStrategy }: { perStrategy: Record<string, StrategyFunnelRow> }) {
@@ -170,6 +176,7 @@ function DailyView() {
     queryFn:  () => api.strategyHealth.history(30),
     enabled:  showHistory,
   });
+  const { data: scorecard } = useQuery({ queryKey: ["strategy-health-scorecard"], queryFn: () => api.strategyHealth.scorecard(30), staleTime: 60_000 });
 
   const runNow = useMutation({
     mutationFn: api.strategyHealth.run,
@@ -197,6 +204,7 @@ function DailyView() {
           {runNow.isPending ? "Running audit…" : "Run Audit Now"}
         </button>
       </div>
+      {scorecard && <Scorecard data={scorecard} />}
 
       {runNow.isError && (
         <div className="card" style={{ padding: 12, color: "var(--negative)", fontSize: 13 }}>
