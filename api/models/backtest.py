@@ -17,6 +17,7 @@ class BacktestRequest(BaseModel):
     starting_capital: float = 1000.0
     direction: str = "both"            # "both" | "calls_only" | "puts_only"
     risk_pct: Optional[float] = None   # flat override e.g. 0.05 = 5%; None = live 4-tier ladder
+    holdout_pct: Optional[float] = None  # e.g. .30: final 30% is locked evaluation
 
 
 class BacktestResult(BaseModel):
@@ -43,6 +44,7 @@ class BacktestResult(BaseModel):
     strategy_breakdown: dict[str, Any] = {}
     model_fidelity: dict[str, Any] = {}
     error: Optional[str] = None
+    holdout: Optional[dict[str, Any]] = None
 
 
 class BacktestJobStatus(BaseModel):

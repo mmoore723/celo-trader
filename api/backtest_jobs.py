@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date as _date, datetime, timezone
+from datetime import date as _date, datetime, timedelta, timezone
 import math
 import threading
 import time
@@ -17,6 +17,22 @@ _lock = threading.Lock()
 
 
 def _to_result(req: BacktestRequest, progress_callback=None) -> BacktestResult:
+    # A locked chronological holdout prevents a configuration from being judged
+    # only on dates used to choose it. Each leg reuses the same exact runner.
+    if req.holdout_pct and req.start_date and req.end_date:
+        try:
+            start = _date.fromisoformat(req.start_date); end = _date.fromisoformat(req.end_date)
+            pct = min(0.5, max(0.1, float(req.holdout_pct)))
+            split = start + timedelta(days=int((end - start).days * (1 - pct)))
+            train_req = req.model_copy(update={"end_date": split.isoformat(), "holdout_pct": None})
+            test_req = req.model_copy(update={"start_date": (split + timedelta(days=1)).isoformat(), "holdout_pct": None})
+            train = _to_result(train_req, progress_callback)
+            holdout = _to_result(test_req, progress_callback)
+            train.holdout = {"start_date": test_req.start_date, "end_date": test_req.end_date,
+                             "result": holdout.model_dump()}
+            return train
+        except (TypeError, ValueError):
+            pass
     from broker import get_clients
     from backtester import Backtester
 
