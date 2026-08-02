@@ -9,7 +9,6 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from broker import get_clients
 from research_v2.data import load_csv
 from research_v2.providers import export_alpaca_csv
 
@@ -22,6 +21,9 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=10_000)
     args = parser.parse_args()
+    # Deliberately lazy: documentation/help must not require broker runtime
+    # dependencies, while an actual authenticated export does.
+    from broker import get_clients
     alpaca, _ = get_clients()
     path = export_alpaca_csv(
         alpaca, args.symbol, date.fromisoformat(args.start), date.fromisoformat(args.end),
@@ -31,4 +33,5 @@ def main() -> None:
     print(f"saved {len(dataset.bars)} bars to {path}; sha256={dataset.sha256}")
 
 
-if __name__ == "__main__":n+    main()
+if __name__ == "__main__":
+    main()
