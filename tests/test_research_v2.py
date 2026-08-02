@@ -109,6 +109,32 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(2, len(dataset.bars))
         self.assertEqual(101, dataset.bars[0].close)
 
+    def test_alpaca_export_uses_requested_dates_and_pagination(self) -> None:
+        class _Client:
+            data = "https://example.test"
+
+            def __init__(self):
+                self.requests = []
+
+            def _get(self, url, params):
+                self.requests.append((url, params))
+                if "page_token" not in params:
+                    return {"bars": [{"t": "2026-07-15T13:30:00Z", "o": 100, "h": 101,
+                                      "l": 99, "c": 100, "v": 4}], "next_page_token": "page-2"}
+                return {"bars": [{"t": "2026-07-15T13:35:00Z", "o": 101, "h": 102,
+                                  "l": 100, "c": 101, "v": 5}]}
+
+        client = _Client()
+        with TemporaryDirectory() as directory:
+            path = export_alpaca_csv(
+                client, "SPY", datetime(2026, 7, 15).date(), datetime(2026, 7, 16).date(),
+                Path(directory) / "bars.csv", drop_partial_final_session=False,
+            )
+            dataset = load_csv(path)
+        self.assertEqual(2, len(dataset.bars))
+        self.assertEqual("2026-07-15T00:00:00-04:00", client.requests[0][1]["start"])
+        self.assertEqual("page-2", client.requests[1][1]["page_token"])
+
     def test_alpaca_export_drops_premarket_and_partial_final_session(self) -> None:
         class _Client:
             def get_bars(self, symbol, timeframe, limit):

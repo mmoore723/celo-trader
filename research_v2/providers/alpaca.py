@@ -27,6 +27,48 @@ def _timestamp(value: Any) -> datetime:
     return parsed.astimezone(_ET)
 
 
+def _fetch_dated_bars(
+    client: Any, symbol: str, start: date, end: date, timeframe: str, limit: int,
+) -> list[dict[str, Any]]:
+    """Request the declared interval directly and follow every API page.
+
+    The ordinary live-client ``get_bars`` API accepts only a bar count. It is
+    useful for trading, but unsuitable for research because it estimates the
+    date window from *now*. V2 must instead name the exact source interval.
+    """
+    fetch = getattr(client, "_get", None)
+    data_url = getattr(client, "data", None)
+    if not callable(fetch) or not data_url:
+        # Keeps this provider testable with a minimal fake and preserves a
+        # compatibility fallback for older clients. Production V2 uses the
+        # explicit-range path above.
+        response = client.get_bars(symbol.upper(), timeframe, limit=limit)
+        bars, is_error = response if isinstance(response, tuple) else (response, False)
+        if is_error:
+            raise RuntimeError(f"Alpaca returned an error while fetching {symbol}")
+        return list(bars or [])
+
+    params: dict[str, Any] = {
+        "timeframe": timeframe,
+        "start": datetime.combine(start, time.min, tzinfo=_ET).isoformat(),
+        "end": datetime.combine(end, time.min, tzinfo=_ET).isoformat(),
+        "limit": min(limit, 10_000),
+        "adjustment": "split",
+        "feed": "iex",
+        "sort": "asc",
+    }
+    bars: list[dict[str, Any]] = []
+    for _ in range(100):
+        response = fetch(f"{data_url}/v2/stocks/{symbol.upper()}/bars", params)
+        page = response.get("bars") or []
+        bars.extend(page)
+        token = response.get("next_page_token")
+        if not token:
+            return bars
+        params = {**params, "page_token": token}
+    raise RuntimeError("Alpaca pagination exceeded 100 pages; export aborted")
+
+
 def export_alpaca_csv(
     client: Any,
     symbol: str,
@@ -45,10 +87,7 @@ def export_alpaca_csv(
     """
     if not symbol or end <= start or limit < 1:
         raise ValueError("symbol, an increasing date range, and positive limit are required")
-    response = client.get_bars(symbol.upper(), timeframe, limit=limit)
-    bars, is_error = response if isinstance(response, tuple) else (response, False)
-    if is_error:
-        raise RuntimeError(f"Alpaca returned an error while fetching {symbol}")
+    bars = _fetch_dated_bars(client, symbol, start, end, timeframe, limit)
     rows: list[dict[str, str | float]] = []
     for raw in bars or []:
         timestamp = _timestamp(_value(raw, "t", "time"))
