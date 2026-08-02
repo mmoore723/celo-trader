@@ -20,6 +20,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import router_gates
+import backtester.core as backtester_core
 
 from api.backtest_jobs import _to_result
 from api.models.backtest import BacktestRequest, BacktestResult
@@ -79,17 +80,30 @@ def _request(ticker: str, start: str, end: str) -> BacktestRequest:
 def compare_ticker(ticker: str, start: str, end: str, opportunity_floor: float) -> dict[str, Any]:
     request = _request(ticker, start, end)
     original_floor = router_gates.apply_confidence_floor
+    original_settings = backtester_core.get_settings
     try:
         router_gates.apply_confidence_floor = _opportunity_floor(opportunity_floor)
+        # Enable the causal ranking window only for this process-local arm.
+        # This exercises the same scheduler that live paper trading uses while
+        # leaving the saved production setting untouched.
+        def _scheduled_settings() -> dict:
+            settings = dict(original_settings())
+            settings["paper_trading"] = True
+            settings["opportunity_tier_enabled"] = True
+            return settings
+        backtester_core.get_settings = _scheduled_settings
         opportunity = _to_result(request)
+        backtester_core.get_settings = original_settings
         router_gates.apply_confidence_floor = _main_only_floor
         main_only = _to_result(request)
     finally:
         router_gates.apply_confidence_floor = original_floor
+        backtester_core.get_settings = original_settings
 
     return {
         "ticker": ticker,
         "opportunity_floor": opportunity_floor,
+        "opportunity_mode": "causal_15m_ranked",
         "opportunity": _summary(opportunity),
         "main_only": _summary(main_only),
     }
