@@ -90,7 +90,7 @@ def build_scorecard(days: int = 30) -> dict:
             trade_tiers[int(signal["trade_id"])] = tier
     for trade in trades:
         sid = trade["strategy_id"] or "UNKNOWN"
-        tier = _normalise_tier(trade["trade_tier"]) if tier_column else trade_tiers.get(trade["id"], MAIN_TIER)
+        tier = _normalise_tier(trade[tier_column]) if tier_column else trade_tiers.get(trade["id"], MAIN_TIER)
         row = rows.setdefault((sid, tier), _new_row(sid))
         pnl = float(trade["realized_pnl"] or 0.0)
         row["closed_trades"] += 1; row["pnl"] += pnl
