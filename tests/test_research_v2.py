@@ -19,6 +19,7 @@ from research_v2.strategies import (
 )
 from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
 from research_v2.strategies import SuperTrendReversal
+from research_v2.strategies import EMAPullbackRTH, EMAPullbackRTHConfig
 from research_v2.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
@@ -250,6 +251,28 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertIsNotNone(signal)
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
+
+    def test_ema_pullback_requires_prior_pullback_and_fresh_recross(self) -> None:
+        config = EMAPullbackRTHConfig(pullback_ema=3, pullback_limit_ema=6, trend_ema=12,
+                                      minimum_risk_pct=0.001)
+        strategy = EMAPullbackRTH(config)
+        bars = []
+        for minute in range(30):
+            price = 100 + minute * 0.4
+            bars.append(_bar(minute, price, price + 0.2, price - 0.2, price))
+            strategy.evaluate(bars)
+        # Pull below the fast/limit EMA, then reclaim it in the established trend.
+        signal = None
+        for price in [109.0, 108.8, 109.8, 111.3]:
+            minute = len(bars)
+            bars.append(_bar(minute, price, price + 0.2, price - 0.35, price))
+            candidate = strategy.evaluate(bars)
+            if candidate is not None:
+                signal = candidate
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertLess(signal.stop, signal.entry_reference)
 
     def test_afternoon_reversal_requires_confirmed_structure_and_break(self) -> None:
         bars = []
