@@ -19,12 +19,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research_v2.data import load_csv
 from research_v2.simulator import SimulationConfig, Simulator
-from research_v2.strategies import EMAPullbackRTH, GapFillRTH, TurtleSoupRTH, VWAPReversionRTH
+from research_v2.strategies import (
+    AfternoonReversal, EMAPullbackRTH, FairValueGap, GapFillRTH,
+    OpeningRangePullback, TurtleSoupRTH, VWAPReversionRTH,
+)
 from research_v2.validation import ValidationConfig
 from research_v2.walk_forward import run_walk_forward
 
 
-HYPOTHESES = (EMAPullbackRTH, TurtleSoupRTH, GapFillRTH, VWAPReversionRTH)
+# Each is a separately implemented premise.  The screen does not reinstate a
+# legacy strategy: any result must still pass both periods before tuning.
+HYPOTHESES = (
+    EMAPullbackRTH, TurtleSoupRTH, GapFillRTH, VWAPReversionRTH,
+    FairValueGap, AfternoonReversal, OpeningRangePullback,
+)
 
 
 def _metrics(result) -> dict[str, object]:
