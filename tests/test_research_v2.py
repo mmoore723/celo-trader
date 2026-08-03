@@ -20,6 +20,7 @@ from research_v2.strategies import (
 from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
 from research_v2.strategies import SuperTrendReversal
 from research_v2.strategies import EMAPullbackRTH, EMAPullbackRTHConfig
+from research_v2.strategies import TurtleSoupRTH, TurtleSoupRTHConfig
 from research_v2.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
@@ -309,6 +310,24 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertLess(signal.stop, signal.entry_reference)
+
+    def test_turtle_soup_requires_next_bar_confirmation_after_sweep(self) -> None:
+        strategy = TurtleSoupRTH(TurtleSoupRTHConfig(lookback_bars=5, entry_start=datetime(2026, 1, 2, 9, 30).time()))
+        bars = []
+        for minute in range(5):
+            price = 100 + minute * 0.1
+            bars.append(_bar(minute, price, price + 0.2, price - 0.2, price))
+            self.assertIsNone(strategy.evaluate(bars))
+        # Sweep prior lows; no same-bar reversal entry is allowed.
+        bars.append(_bar(5, 100, 100.5, 98.5, 99.7))
+        self.assertIsNone(strategy.evaluate(bars))
+        # Only a close above the sweep bar's high confirms the long.
+        bars.append(_bar(6, 100.6, 101.0, 100.3, 100.8))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual(98.5, signal.stop)
 
     def test_afternoon_reversal_requires_confirmed_structure_and_break(self) -> None:
         bars = []
