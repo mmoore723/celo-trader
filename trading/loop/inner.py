@@ -62,6 +62,23 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     _settings   = get_settings()
     _is_paper   = _settings.get("paper_trading", True)
     _trade_mode = "paper" if _is_paper else "live"
+    # Accounts saved before broker-account attribution existed have no stored
+    # identity yet. Resolve it once at startup so their legacy local history
+    # cannot be mistaken for current-account performance. This is metadata
+    # only; it neither changes the connected client nor sends an order.
+    if not _settings.get("active_broker_account_id"):
+        try:
+            from config import get_api_keys, save_settings
+            from broker.account_identity import resolve_account_identity
+            account = alpaca.get_account()
+            identity = resolve_account_identity(
+                get_api_keys().get("alpaca_api_key", ""), _is_paper, account,
+            )
+            save_settings({"active_broker_account_id": identity})
+            _settings["active_broker_account_id"] = identity
+            logger.info("Initialised broker account identity for %s mode", _trade_mode)
+        except Exception:
+            logger.warning("Could not initialise broker account identity at startup", exc_info=True)
     _US["mode"] = _trade_mode
     _US["broker_account_id"] = _settings.get("active_broker_account_id") or None
 
