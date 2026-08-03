@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, time
 import json
 from pathlib import Path
 import sys
@@ -52,6 +52,10 @@ def main() -> None:
     split = datetime.fromisoformat(args.split.replace("Z", "+00:00"))
     simulation = Simulator(SimulationConfig(
         risk_fraction=args.risk_pct / 100.0, slippage_bps=args.slippage_bps,
+        # The production bot is intraday.  A research result must not borrow
+        # overnight price movement that an intraday option position could not
+        # capture.
+        session_exit_time=time(15, 55),
     ))
     gates = ValidationConfig(min_trades=args.min_trades)
     report = run_walk_forward(dataset.bars, split, TrendContinuation, simulation, gates)
