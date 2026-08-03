@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import time
 from typing import Iterable
 
 from research_v2.models import Bar, Side, Trade
@@ -14,6 +15,7 @@ class ReversalSimulationConfig:
     quantity: int = 1
     slippage_bps: float = 5.0
     commission_per_unit: float = 0.0
+    session_exit_time: time | None = time(15, 55)
 
     def __post_init__(self) -> None:
         if self.quantity < 1 or self.slippage_bps < 0 or self.commission_per_unit < 0:
@@ -49,11 +51,18 @@ class SuperTrendReversalSimulator:
         position: _OpenReversal | None = None
         pending = None
         for index, bar in enumerate(completed):
+            at_session_exit = (self.config.session_exit_time is not None
+                               and bar.timestamp.time() >= self.config.session_exit_time)
             if pending is not None:
-                if position is not None and position.side is not pending.side:
+                # An intraday option position cannot open at the closing bar
+                # only to be flattened immediately.  Discard that pending
+                # signal instead of borrowing an overnight position.
+                if at_session_exit:
+                    pending = None
+                elif position is not None and position.side is not pending.side:
                     trades.append(self._close(position, bar, self._exit_price(position.side, bar.open), "opposite_flip"))
                     position = None
-                if position is None:
+                if pending is not None and position is None:
                     position = _OpenReversal(pending.side, pending.timestamp, bar.timestamp,
                                              self._entry_price(pending.side, bar.open), bar.open, bar.open,
                                              dict(pending.features))
@@ -61,8 +70,11 @@ class SuperTrendReversalSimulator:
             if position is not None and index > 0:
                 position.best_price = max(position.best_price, bar.high)
                 position.worst_price = min(position.worst_price, bar.low)
+                if at_session_exit:
+                    trades.append(self._close(position, bar, self._exit_price(position.side, bar.close), "session"))
+                    position = None
             history.append(bar)
-            if index < len(completed) - 1:
+            if not at_session_exit and index < len(completed) - 1:
                 signal = strategy.evaluate(tuple(history))
                 if signal is not None and (position is None or signal.side is not position.side):
                     pending = signal
