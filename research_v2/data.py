@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 
@@ -63,3 +63,39 @@ def load_csv(path: str | Path) -> BarDataset:
     if timestamps != sorted(timestamps) or len(set(timestamps)) != len(timestamps):
         raise ValueError("CSV bars must be strictly chronological with unique timestamps")
     return BarDataset(str(file_path), digest, tuple(rows))
+
+
+def resample_regular_session(
+    bars: tuple[Bar, ...], source_minutes: int, target_minutes: int,
+) -> tuple[Bar, ...]:
+    """Aggregate complete regular-session bars without crossing a session.
+
+    The source timestamp labels a bar's opening time.  Every output bucket is
+    anchored at 09:30 ET, so 15-minute bars are 09:30, 09:45, 10:00, and so
+    on.  A bucket with a missing constituent bar is discarded rather than
+    inventing an apparently complete candle from partial data.
+    """
+    if source_minutes < 1 or target_minutes < source_minutes or target_minutes % source_minutes:
+        raise ValueError("target_minutes must be a whole multiple of source_minutes")
+    if target_minutes == source_minutes:
+        return bars
+    expected = target_minutes // source_minutes
+    buckets: dict[datetime, list[Bar]] = {}
+    for bar in bars:
+        session_start = bar.timestamp.replace(hour=9, minute=30, second=0, microsecond=0)
+        elapsed = int((bar.timestamp - session_start).total_seconds() // 60)
+        if elapsed < 0:
+            continue
+        bucket_time = session_start + timedelta(minutes=(elapsed // target_minutes) * target_minutes)
+        buckets.setdefault(bucket_time, []).append(bar)
+
+    output: list[Bar] = []
+    for bucket_time in sorted(buckets):
+        group = buckets[bucket_time]
+        expected_times = [bucket_time + timedelta(minutes=source_minutes * index) for index in range(expected)]
+        if len(group) != expected or [bar.timestamp for bar in group] != expected_times:
+            continue
+        output.append(Bar(bucket_time, group[0].open, max(bar.high for bar in group),
+                          min(bar.low for bar in group), group[-1].close,
+                          sum(bar.volume for bar in group)))
+    return tuple(output)

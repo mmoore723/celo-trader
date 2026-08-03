@@ -10,7 +10,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from research_v2.data import load_csv
+from research_v2.data import load_csv, resample_regular_session
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import EMAPullbackRTH
 from research_v2.validation import ValidationConfig
@@ -29,13 +29,20 @@ def main() -> None:
     parser.add_argument("--split", required=True)
     args = parser.parse_args()
     dataset = load_csv(args.csv)
+    # The TradingView source explicitly targets 15-minute charts.  The frozen
+    # research artifact is 5-minute data, so aggregate it deterministically
+    # instead of pretending the source's lookback lengths mean the same thing.
+    bars = resample_regular_session(dataset.bars, source_minutes=5, target_minutes=15)
     simulation = Simulator(SimulationConfig(session_exit_time=time(15, 55)))
-    report = run_walk_forward(dataset.bars, datetime.fromisoformat(args.split.replace("Z", "+00:00")),
+    report = run_walk_forward(bars, datetime.fromisoformat(args.split.replace("Z", "+00:00")),
                               EMAPullbackRTH, simulation, ValidationConfig())
     cfg = asdict(simulation.config)
     cfg["session_exit_time"] = simulation.config.session_exit_time.isoformat()
     print(json.dumps({"research_only": True, "strategy": EMAPullbackRTH.strategy_id,
-                      "dataset_sha256": dataset.sha256, "simulation": cfg,
+                      "dataset_sha256": dataset.sha256,
+                      "bar_aggregation": {"source_minutes": 5, "strategy_minutes": 15,
+                                          "input_bars": len(dataset.bars), "output_bars": len(bars)},
+                      "simulation": cfg,
                       "train": pack(report.train_validation), "holdout": pack(report.holdout_validation),
                       "promoted": report.promoted}, indent=2, sort_keys=True))
 

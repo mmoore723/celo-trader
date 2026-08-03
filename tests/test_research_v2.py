@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from research_v2.data import load_csv
+from research_v2.data import load_csv, resample_regular_session
 from research_v2.models import Bar, Side, Signal, Trade
 from research_v2.reconciliation import ReferenceTrade, reconcile
 from research_v2.ledger import load_trade_ledger, write_trade_ledger
@@ -126,6 +126,20 @@ class ResearchV2Tests(unittest.TestCase):
             dataset = load_csv(path)
         self.assertEqual(2, len(dataset.bars))
         self.assertEqual(64, len(dataset.sha256))
+
+    def test_resample_regular_session_uses_complete_anchored_buckets(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(Bar(start + timedelta(minutes=5 * index), 100 + index,
+                         101 + index, 99 + index, 100.5 + index, 10 + index)
+                     for index in range(4))
+        output = resample_regular_session(bars, 5, 15)
+        self.assertEqual(1, len(output))
+        self.assertEqual(start, output[0].timestamp)
+        self.assertEqual(100, output[0].open)
+        self.assertEqual(103, output[0].high)
+        self.assertEqual(99, output[0].low)
+        self.assertEqual(102.5, output[0].close)
+        self.assertEqual(33, output[0].volume)
 
     def test_trend_continuation_emits_only_fresh_breakout(self) -> None:
         bars = []
