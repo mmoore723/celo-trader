@@ -128,3 +128,30 @@ class PaperOptionQuoteTests(unittest.TestCase):
             conn.close()
 
         self.assertEqual(("INST_ORB", "blocked", "budget", "cap reached"), row)
+
+    def test_shadow_candidate_records_same_session_directional_outcome(self) -> None:
+        from shadow_ledger import resolve_due_directional_outcomes
+
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paper.db"
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            signal = SimpleNamespace(
+                strategy_id="INST_ORB", direction="bullish", confidence=0.81,
+                trigger_bar="2026-08-03T10:00:00", tier="main", meta={},
+            )
+            observed = datetime(2026, 8, 3, 10, 0)
+            due = datetime(2026, 8, 3, 11, 1)
+            with patch("shadow_ledger.get_conn", return_value=conn), patch(
+                "shadow_ledger._now_et", side_effect=[observed, due],
+            ):
+                record_router_candidate("TSLA", signal, 300.0)
+                resolve_due_directional_outcomes("TSLA", 303.0)
+            row = conn.execute(
+                "SELECT underlying_entry_price, underlying_exit_price, directional_move_pct, direction_correct "
+                "FROM shadow_candidates"
+            ).fetchone()
+            conn.close()
+
+        self.assertEqual((300.0, 303.0, 1.0, 1), tuple(row))

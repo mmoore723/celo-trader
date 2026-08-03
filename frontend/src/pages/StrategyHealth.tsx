@@ -62,10 +62,12 @@ function CandidateScorecard({ data }: { data: CandidateScorecard }) {
     <p style={{ fontSize: 12, color: "var(--ink-muted)", marginBottom: 10 }}>
       Every setup the router evaluated in the last {data.days} days is counted here. “Blocked” is not a loss—it only means the bot did not take it. {data.note}
     </p>
-    <div style={{ overflowX: "auto" }}><table className="w-full text-sm"><thead><tr><th>Strategy</th><th>Setups seen</th><th>Entered</th><th>Blocked</th><th>Still deciding</th><th>Top reason blocked</th></tr></thead><tbody>
+    <div style={{ overflowX: "auto" }}><table className="w-full text-sm"><thead><tr><th>Strategy</th><th>Setups seen</th><th>Entered</th><th>Blocked</th><th>60-min direction</th><th>Avg move</th><th>Top reason blocked</th></tr></thead><tbody>
       {data.strategies.map(row => {
         const top = Object.entries(row.block_reasons).sort((a, b) => b[1] - a[1])[0];
-        return <tr key={row.strategy_id}><td>{STRAT_NAMES[row.strategy_id] ?? row.strategy_id}</td><td>{row.raw_candidates}</td><td>{row.entered}</td><td>{row.blocked}</td><td>{row.pending}</td><td>{top ? `${top[0]} (${top[1]})` : "—"}</td></tr>;
+        const direction = row.directional_win_rate == null ? "Collecting" : `${row.directional_win_rate}% (${row.measured})`;
+        const avgMove = row.avg_directional_move_pct == null ? "—" : `${row.avg_directional_move_pct >= 0 ? "+" : ""}${row.avg_directional_move_pct.toFixed(2)}%`;
+        return <tr key={row.strategy_id}><td>{STRAT_NAMES[row.strategy_id] ?? row.strategy_id}</td><td>{row.raw_candidates}</td><td>{row.entered}</td><td>{row.blocked}</td><td>{direction}</td><td style={{ color: (row.avg_directional_move_pct ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{avgMove}</td><td>{top ? `${top[0]} (${top[1]})` : "—"}</td></tr>;
       })}
     </tbody></table></div>
   </div>;

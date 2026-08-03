@@ -191,6 +191,12 @@ CREATE TABLE IF NOT EXISTS shadow_candidates (
     gate_detail        TEXT,
     linked_trade_id    INTEGER,
     resolved_at        TEXT
+    ,underlying_entry_price REAL
+    ,outcome_due_at         TEXT
+    ,underlying_exit_price  REAL
+    ,directional_move_pct   REAL
+    ,direction_correct      INTEGER
+    ,outcome_observed_at    TEXT
 );
 """
 _CREATE_SHADOW_CANDIDATES_IDX = [
@@ -288,6 +294,14 @@ def _init_db_at(db_path: Path) -> None:
         if "broker_account_id" not in _shadow_cols:
             conn.execute("ALTER TABLE shadow_candidates ADD COLUMN broker_account_id TEXT")
             logger.info("Migration: added broker_account_id to shadow_candidates in %s", db_path.name)
+        for _shadow_column, _shadow_type in (
+            ("underlying_entry_price", "REAL"), ("outcome_due_at", "TEXT"),
+            ("underlying_exit_price", "REAL"), ("directional_move_pct", "REAL"),
+            ("direction_correct", "INTEGER"), ("outcome_observed_at", "TEXT"),
+        ):
+            if _shadow_column not in _shadow_cols:
+                conn.execute(f"ALTER TABLE shadow_candidates ADD COLUMN {_shadow_column} {_shadow_type}")
+                logger.info("Migration: added %s to shadow_candidates in %s", _shadow_column, db_path.name)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_shadow_candidates_account "
             "ON shadow_candidates(broker_account_id, observed_at)"

@@ -59,7 +59,9 @@ export interface StrategyScorecard {
 }
 export interface CandidateScorecardRow {
   strategy_id: string; raw_candidates: number; entered: number;
-  blocked: number; pending: number; block_reasons: Record<string, number>;
+  blocked: number; pending: number; measured: number; correct: number;
+  directional_win_rate: number | null; avg_directional_move_pct: number | null;
+  block_reasons: Record<string, number>;
 }
 export interface CandidateScorecard {
   days: number; account_scoped: boolean; note: string;

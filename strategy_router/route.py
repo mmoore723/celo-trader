@@ -116,6 +116,20 @@ def route_signals(
     if today.empty:
         return []
 
+    _underlying_price = None
+    try:
+        _underlying_price = float(today["close"].iloc[-1])
+    except Exception:
+        pass
+    if candidate_observer is not None:
+        try:
+            # Same callback module resolves due candidates before this bar's
+            # new signals are stored. It is observational and non-fatal.
+            from shadow_ledger import resolve_due_directional_outcomes
+            resolve_due_directional_outcomes(ticker, _underlying_price)
+        except Exception:
+            logger.warning("candidate outcome observer failed (non-fatal)", exc_info=True)
+
     # Evaluator table — each module's evaluate() self-gates on its own session
     # window. See ACTIVE_STRATEGIES (single source of truth).
     _all_evaluators = ACTIVE_STRATEGIES
@@ -152,7 +166,7 @@ def route_signals(
                 signals.append(sig)
                 if candidate_observer is not None:
                     try:
-                        candidate_observer(ticker, sig)
+                        candidate_observer(ticker, sig, _underlying_price)
                     except Exception:
                         logger.warning("candidate observer failed (non-fatal)", exc_info=True)
                 # Annotations are live-dashboard side effects.  Suppress

@@ -40,7 +40,10 @@ def get_candidate_scorecard(days: int = 30) -> dict:
         params.append(account_id)
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT strategy_id, final_outcome, gate_reason, COUNT(*) AS count "
+            "SELECT strategy_id, final_outcome, gate_reason, "
+            "COUNT(*) AS count, SUM(CASE WHEN outcome_observed_at IS NOT NULL THEN 1 ELSE 0 END) AS measured, "
+            "SUM(CASE WHEN direction_correct = 1 THEN 1 ELSE 0 END) AS correct, "
+            "AVG(directional_move_pct) AS avg_directional_move_pct "
             "FROM shadow_candidates WHERE " + " AND ".join(clauses) +
             " GROUP BY strategy_id, final_outcome, gate_reason",
             tuple(params),
@@ -50,6 +53,7 @@ def get_candidate_scorecard(days: int = 30) -> dict:
         item = by_strategy.setdefault(row["strategy_id"], {
             "strategy_id": row["strategy_id"], "raw_candidates": 0,
             "entered": 0, "blocked": 0, "pending": 0, "block_reasons": defaultdict(int),
+            "measured": 0, "correct": 0, "avg_directional_move_parts": [],
         })
         count = int(row["count"])
         item["raw_candidates"] += count
@@ -58,13 +62,20 @@ def get_candidate_scorecard(days: int = 30) -> dict:
             item[outcome] += count
         if outcome == "blocked":
             item["block_reasons"][row["gate_reason"] or "unknown"] += count
+        item["measured"] += int(row["measured"] or 0)
+        item["correct"] += int(row["correct"] or 0)
+        if row["avg_directional_move_pct"] is not None and int(row["measured"] or 0):
+            item["avg_directional_move_parts"].append((float(row["avg_directional_move_pct"]), int(row["measured"])))
     strategies = []
     for item in by_strategy.values():
         item["block_reasons"] = dict(sorted(item["block_reasons"].items(), key=lambda pair: -pair[1]))
+        weighted = sum(value * count for value, count in item.pop("avg_directional_move_parts"))
+        item["directional_win_rate"] = round(item["correct"] / item["measured"] * 100, 1) if item["measured"] else None
+        item["avg_directional_move_pct"] = round(weighted / item["measured"], 3) if item["measured"] else None
         strategies.append(item)
     return {
         "days": days, "account_scoped": bool(account_id),
-        "note": "Evidence only: a blocked candidate has not yet been virtual-filled or assigned P&L.",
+        "note": "Measured results are the underlying's same-session 60-minute directional move—not option P&L or a virtual fill.",
         "strategies": sorted(strategies, key=lambda item: item["raw_candidates"], reverse=True),
     }
 
