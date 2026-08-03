@@ -9,7 +9,7 @@ five-minute bars.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import time
+from datetime import date, time
 from typing import Sequence
 
 from research_v2.models import Bar, Side, Signal
@@ -49,10 +49,16 @@ class OpeningRangePullback:
 
     def __init__(self, config: OpeningRangePullbackConfig = OpeningRangePullbackConfig()) -> None:
         self.config = config
+        self._seen = 0
+        self._last_timestamp = None
+        self._today: list[Bar] = []
+        self._emitted_day: date | None = None
 
     def evaluate(self, bars: Sequence[Bar]) -> Signal | None:
-        today = _session(bars)
+        today = self._current_session(bars)
         current = today[-1]
+        if self._emitted_day == current.timestamp.date():
+            return None
         opening = _opening_range(today)
         if opening is None or len(today) < self.config.atr_bars + 1:
             return None
@@ -81,11 +87,10 @@ class OpeningRangePullback:
                     stop = retest.low
                     risk = current.close - stop
                     if risk > 0:
-                        return Signal(self.strategy_id, Side.LONG, current.timestamp, current.close, stop,
-                                      current.close + self.config.reward_risk * risk,
-                                      {"or_high": round(or_high, 6), "or_low": round(or_low, 6),
-                                       "atr": round(atr, 6), "vwap": round(vwap, 6),
-                                       "trigger": "upward_breakout_first_retest_bounce"})
+                        return self._emit(Side.LONG, current, stop, current.close + self.config.reward_risk * risk,
+                                          {"or_high": round(or_high, 6), "or_low": round(or_low, 6),
+                                           "atr": round(atr, 6), "vwap": round(vwap, 6),
+                                           "trigger": "upward_breakout_first_retest_bounce"})
             elif breakout.close < or_low:
                 retests = [bar for bar in prior[index + 1:]
                            if bar.high >= or_low - tolerance]
@@ -98,9 +103,26 @@ class OpeningRangePullback:
                     stop = retest.high
                     risk = stop - current.close
                     if risk > 0:
-                        return Signal(self.strategy_id, Side.SHORT, current.timestamp, current.close, stop,
-                                      current.close - self.config.reward_risk * risk,
-                                      {"or_high": round(or_high, 6), "or_low": round(or_low, 6),
-                                       "atr": round(atr, 6), "vwap": round(vwap, 6),
-                                       "trigger": "downward_breakout_first_retest_bounce"})
+                        return self._emit(Side.SHORT, current, stop, current.close - self.config.reward_risk * risk,
+                                          {"or_high": round(or_high, 6), "or_low": round(or_low, 6),
+                                           "atr": round(atr, 6), "vwap": round(vwap, 6),
+                                           "trigger": "downward_breakout_first_retest_bounce"})
         return None
+
+    def _current_session(self, bars: Sequence[Bar]) -> Sequence[Bar]:
+        """Use the incremental simulator path without rescanning all history."""
+        current = bars[-1]
+        if len(bars) == self._seen + 1 and (self._seen == 0 or bars[-2].timestamp == self._last_timestamp):
+            if not self._today or self._today[-1].timestamp.date() == current.timestamp.date():
+                self._today.append(current)
+            else:
+                self._today = [current]
+            self._seen, self._last_timestamp = len(bars), current.timestamp
+            return self._today
+        self._today = _session(bars)
+        self._seen, self._last_timestamp = len(bars), current.timestamp
+        return self._today
+
+    def _emit(self, side: Side, current: Bar, stop: float, target: float, features: dict) -> Signal:
+        self._emitted_day = current.timestamp.date()
+        return Signal(self.strategy_id, side, current.timestamp, current.close, stop, target, features)

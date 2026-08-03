@@ -297,6 +297,22 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(Side.LONG, signal.side)
         self.assertEqual(100.35, signal.stop)
 
+    def test_orb_pullback_emits_once_per_session(self) -> None:
+        bars = [
+            _bar(0, 100.0, 100.2, 99.8, 100.0), _bar(5, 100.0, 100.3, 99.9, 100.1),
+            _bar(10, 100.1, 100.4, 99.9, 100.2), _bar(15, 100.3, 100.8, 100.3, 100.7),
+            _bar(20, 100.6, 100.6, 100.35, 100.45), _bar(25, 100.45, 100.85, 100.4, 100.8),
+            _bar(30, 100.8, 101.1, 100.7, 101.0),
+        ]
+        strategy = OpeningRangePullback(OpeningRangePullbackConfig(atr_bars=3))
+        first = None
+        for index in range(1, len(bars) + 1):
+            first = strategy.evaluate(bars[:index])
+            if first is not None:
+                break
+        self.assertIsNotNone(first)
+        self.assertIsNone(strategy.evaluate(bars))
+
 
 if __name__ == "__main__":
     unittest.main()
