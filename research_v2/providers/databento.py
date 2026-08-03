@@ -10,7 +10,7 @@ import csv
 import io
 import re
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable, Iterator, TextIO
 
@@ -81,17 +81,21 @@ def _prices(row: dict[str, str]) -> tuple[float, float] | None:
 
 def normalize_databento_cbbo_files(
     paths: Iterable[str | Path], ticker: str, output_path: str | Path,
+    start_date: date | None = None, end_date: date | None = None,
 ) -> Path:
     """Stream selected OPRA CBBO-1m files into V2's normalized quote CSV.
 
-    Only the requested underlying is retained, so a large provider download
-    becomes a compact, immutable research artifact. Rows remain chronological;
-    duplicate timestamp/symbol records keep the last quote from that source
-    minute, which is the conservative usable quote at that instant.
+    Only the requested underlying and optional inclusive date window are
+    retained, so a large provider download becomes a compact, immutable
+    research artifact. Rows remain chronological; duplicate timestamp/symbol
+    records keep the last quote from that source minute, which is the
+    conservative usable quote at that instant.
     """
     expected_ticker = ticker.upper().strip()
     if not expected_ticker:
         raise ValueError("ticker is required")
+    if start_date and end_date and end_date < start_date:
+        raise ValueError("end_date must be on or after start_date")
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     written = 0
@@ -114,6 +118,11 @@ def normalize_databento_cbbo_files(
                         continue
                     option_symbol, underlying, expiration, strike, option_type = identity
                     timestamp = _timestamp(row)
+                    timestamp_date = datetime.fromisoformat(timestamp).date()
+                    if start_date and timestamp_date < start_date:
+                        continue
+                    if end_date and timestamp_date > end_date:
+                        continue
                     key = (timestamp, option_symbol)
                     if last_timestamp is not None and timestamp < last_timestamp:
                         raise ValueError(f"{raw_path.name} is not chronological at {timestamp}")

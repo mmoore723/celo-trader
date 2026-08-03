@@ -88,6 +88,25 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(4.9, quotes[0].bid)
         self.assertEqual("put", quotes[1].option_type)
 
+    def test_databento_cbbo_import_honors_inclusive_date_window(self) -> None:
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            output = Path(directory) / "normalized.csv"
+            source.write_text(
+                "ts_event,symbol,bid_px_00,ask_px_00\n"
+                "2026-06-30T14:30:00Z,TSLA  260703C00300000,2.00,2.10\n"
+                "2026-07-01T14:30:00Z,TSLA  260703C00300000,2.10,2.20\n"
+                "2026-07-02T14:30:00Z,TSLA  260703C00300000,2.20,2.30\n",
+                encoding="utf-8",
+            )
+            normalize_databento_cbbo_files(
+                [source], "TSLA", output, start_date=date(2026, 7, 1), end_date=date(2026, 7, 1),
+            )
+            quotes = load_option_quotes(output)
+
+        self.assertEqual(1, len(quotes))
+        self.assertEqual(date(2026, 7, 1), quotes[0].timestamp.date())
+
     def test_option_quote_book_uses_future_ask_and_same_contract_bid(self) -> None:
         decision = datetime(2026, 8, 3, 10, 0)
         call = OptionQuote(
