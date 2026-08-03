@@ -595,6 +595,7 @@ def _manage_open_position(
                 paper           = paper,
                 strategy_id     = trade.get("strategy_id", "INST_ORB"),
                 annotations_json= trade.get("annotations_json"),
+                broker_account_id= trade.get("broker_account_id"),
             )
             partial_pnl = close_trade(
                 trade_id             = partial_id,

@@ -35,13 +35,16 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
     _uid = _default_user_id()
 
     from database import log_event, get_open_trades, insert_trade, get_conn
+    from config import get_settings
+
+    _account_id = get_settings().get("active_broker_account_id") or None
 
     try:
         positions = alpaca.get_positions()
     except Exception:
         return None
 
-    db_open    = get_open_trades()
+    db_open    = get_open_trades(broker_account_id=_account_id)
     db_symbols = {t.get("contract_symbol") for t in db_open}
     ghosts     = [p for p in positions if p.get("symbol") not in db_symbols]
 
@@ -118,6 +121,7 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
                 entry_time      = _now_et(),
                 entry_reason    = "Recovered from Alpaca — bot entered before DB write",
                 paper           = True,
+                broker_account_id = _account_id,
                 strategy_id     = "RECOVERED_UNTRACKED",
             )
             log_event(
@@ -171,5 +175,4 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
             for p in still_unrecorded
         ],
     }
-
 

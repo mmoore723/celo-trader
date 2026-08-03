@@ -63,6 +63,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     _is_paper   = _settings.get("paper_trading", True)
     _trade_mode = "paper" if _is_paper else "live"
     _US["mode"] = _trade_mode
+    _US["broker_account_id"] = _settings.get("active_broker_account_id") or None
 
     try:
         acct    = alpaca.get_account()
@@ -96,7 +97,10 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     try:
         _US["session_pnl"] = sum(
             (t.get("realized_pnl") or 0)
-            for t in get_all_trades(limit=100, mode=_trade_mode)
+            for t in get_all_trades(
+                limit=100, mode=_trade_mode,
+                broker_account_id=_US.get("broker_account_id"),
+            )
             if (t.get("exit_time") or "")[:10] == date.today().isoformat()
         )
     except Exception as e:
@@ -189,6 +193,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             "running":              True,
             "auto_start_disabled":  False,   # clear explicit-stop flag on fresh start
             "mode":                 _trade_mode,   # "paper" or "live" — shown in dashboard
+            "broker_account_id":    _US.get("broker_account_id"),
             "account_balance":      float(balance),
             "session_pnl":          _US.get("session_pnl", 0.0),
             "status":               "starting",

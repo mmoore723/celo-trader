@@ -13,7 +13,25 @@ from database.connection import get_conn, _conn_for_mode
 
 logger = logging.getLogger("celo_trader.database")
 
-def get_open_trades() -> list[dict]:
+
+def _effective_account_id(broker_account_id: str | None) -> str | None:
+    """Use the active account unless a caller deliberately supplies one.
+
+    Legacy rows have no account identity. Once an account has been connected,
+    treating those rows as the current account is misleading, so normal reads
+    hide them. Startup/migration code can still explicitly request an account
+    when it needs to reconcile broker state.
+    """
+    if broker_account_id is not None:
+        return broker_account_id or None
+    try:
+        from config import get_settings
+        return get_settings().get("active_broker_account_id") or None
+    except Exception:
+        return None
+
+
+def get_open_trades(broker_account_id: str | None = None) -> list[dict]:
     """
     Return ALL currently-open trades (newest first), supporting up to
     MAX_CONCURRENT_POSITIONS simultaneous positions.
@@ -34,10 +52,17 @@ def get_open_trades() -> list[dict]:
     against the 2-position cap.
     """
     from config import MAX_CONCURRENT_POSITIONS
+    broker_account_id = _effective_account_id(broker_account_id)
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM trades WHERE status = 'open' ORDER BY entry_time DESC"
-        ).fetchall()
+        if broker_account_id:
+            rows = conn.execute(
+                "SELECT * FROM trades WHERE status = 'open' AND broker_account_id = ? "
+                "ORDER BY entry_time DESC", (broker_account_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM trades WHERE status = 'open' ORDER BY entry_time DESC"
+            ).fetchall()
     _bot_managed = [r for r in rows if r["strategy_id"] != "RECOVERED_UNTRACKED"]
     if len(_bot_managed) > MAX_CONCURRENT_POSITIONS:
         logger.error(
@@ -50,18 +75,21 @@ def get_open_trades() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_open_trade() -> Optional[dict]:
+def get_open_trade(broker_account_id: str | None = None) -> Optional[dict]:
     """
     Backward-compat helper — returns the single MOST RECENT open trade, or
     None. Used by manual-close / panic-close paths that only ever act on
     one position at a time. Multi-position management should use
     get_open_trades() instead.
     """
-    trades = get_open_trades()
+    trades = get_open_trades(broker_account_id=broker_account_id)
     return trades[0] if trades else None
 
 
-def get_all_trades(limit: int = 500, mode: str = "paper", status_filter: str = "all") -> list[dict]:
+def get_all_trades(
+    limit: int = 500, mode: str = "paper", status_filter: str = "all",
+    broker_account_id: str | None = None,
+) -> list[dict]:
     """
     Return trades for the journal page.
 
@@ -70,23 +98,27 @@ def get_all_trades(limit: int = 500, mode: str = "paper", status_filter: str = "
                     the right database, regardless of which mode the bot is running.
     status_filter — "all" | "open" | "closed". Defaults to all.
     limit         — max rows returned.
+    broker_account_id — when supplied, return only rows written for that
+                         Alpaca account/mode identity.
     """
-    if status_filter == "open":
-        sql    = "SELECT * FROM trades WHERE status = 'open' ORDER BY entry_time DESC LIMIT ?"
-        params = (limit,)
-    elif status_filter == "closed":
-        sql    = "SELECT * FROM trades WHERE status = 'closed' ORDER BY exit_time DESC LIMIT ?"
-        params = (limit,)
-    else:
-        sql    = "SELECT * FROM trades ORDER BY COALESCE(exit_time, entry_time) DESC LIMIT ?"
-        params = (limit,)
+    broker_account_id = _effective_account_id(broker_account_id)
+    clauses: list[str] = []
+    params: list[object] = []
+    if status_filter in {"open", "closed"}:
+        clauses.append("status = ?")
+        params.append(status_filter)
+    if broker_account_id:
+        clauses.append("broker_account_id = ?")
+        params.append(broker_account_id)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    ordering = "entry_time DESC" if status_filter == "open" else "COALESCE(exit_time, entry_time) DESC"
+    sql = f"SELECT * FROM trades{where} ORDER BY {ordering} LIMIT ?"
+    params.append(limit)
 
     try:
         with _conn_for_mode(mode) as conn:
-            rows = conn.execute(sql, params).fetchall()
+            rows = conn.execute(sql, tuple(params)).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.warning("get_all_trades(%s) failed: %s", mode, e)
         return []
-
-

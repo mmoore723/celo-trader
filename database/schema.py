@@ -44,9 +44,14 @@ CREATE TABLE IF NOT EXISTS trades (
     status          TEXT    NOT NULL DEFAULT 'open',   -- 'open' | 'closed'
     paper           INTEGER NOT NULL DEFAULT 1,        -- 1=paper, 0=live
     strategy_id     TEXT    DEFAULT 'INST_ORB',        -- which router strategy generated signal
-    tier            TEXT    NOT NULL DEFAULT 'main'    -- 'main' | 'opportunity'
+    tier            TEXT    NOT NULL DEFAULT 'main',   -- 'main' | 'opportunity'
+    broker_account_id TEXT                             -- account/mode identity at entry
 );
 """
+
+_CREATE_TRADES_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_trades_broker_account ON trades(broker_account_id, entry_time);",
+]
 
 _CREATE_DAILY_SUMMARY = """
 CREATE TABLE IF NOT EXISTS daily_summary (
@@ -165,6 +170,34 @@ _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX = [
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_option_quote_unique_minute ON option_quote_observations(trade_id, observation_kind, observed_minute);",
 ]
 
+# shadow_candidates — paper-only evidence for every strategy signal that the
+# live router actually evaluated, including those later rejected by a gate.
+# This is an audit ledger, never an order queue: no execution code may read it
+# to place, size, or close a trade.
+_CREATE_SHADOW_CANDIDATES = """
+CREATE TABLE IF NOT EXISTS shadow_candidates (
+    candidate_id       TEXT PRIMARY KEY,
+    observed_at        TEXT NOT NULL,
+    ticker             TEXT NOT NULL,
+    strategy_id        TEXT NOT NULL,
+    direction          TEXT NOT NULL,
+    confidence         REAL NOT NULL,
+    trigger_bar        TEXT,
+    tier               TEXT NOT NULL DEFAULT 'main',
+    broker_account_id  TEXT,
+    metadata_json      TEXT,
+    final_outcome      TEXT NOT NULL DEFAULT 'pending',
+    gate_reason        TEXT,
+    gate_detail        TEXT,
+    linked_trade_id    INTEGER,
+    resolved_at        TEXT
+);
+"""
+_CREATE_SHADOW_CANDIDATES_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_shadow_candidates_observed ON shadow_candidates(observed_at);",
+    "CREATE INDEX IF NOT EXISTS idx_shadow_candidates_strategy ON shadow_candidates(strategy_id, final_outcome);",
+]
+
 
 
 # ── Initialisation ────────────────────────────────────────────────────────────
@@ -188,9 +221,14 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_AI_REASONING_LOG)
         conn.execute(_CREATE_SIGNAL_JOURNAL)
         conn.execute(_CREATE_OPTION_QUOTE_OBSERVATIONS)
+        conn.execute(_CREATE_SHADOW_CANDIDATES)
+        for _idx_sql in _CREATE_TRADES_IDX:
+            conn.execute(_idx_sql)
         for _idx_sql in _CREATE_SIGNAL_JOURNAL_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:
+            conn.execute(_idx_sql)
+        for _idx_sql in _CREATE_SHADOW_CANDIDATES_IDX:
             conn.execute(_idx_sql)
         # ── Migrations ────────────────────────────────────────────────────────
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
@@ -243,6 +281,17 @@ def _init_db_at(db_path: Path) -> None:
         if "tier" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN tier TEXT NOT NULL DEFAULT 'main'")
             logger.info("Migration: added tier column to trades in %s", db_path.name)
+        if "broker_account_id" not in _cols:
+            conn.execute("ALTER TABLE trades ADD COLUMN broker_account_id TEXT")
+            logger.info("Migration: added broker_account_id to trades in %s", db_path.name)
+        _shadow_cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_candidates)")}
+        if "broker_account_id" not in _shadow_cols:
+            conn.execute("ALTER TABLE shadow_candidates ADD COLUMN broker_account_id TEXT")
+            logger.info("Migration: added broker_account_id to shadow_candidates in %s", db_path.name)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_shadow_candidates_account "
+            "ON shadow_candidates(broker_account_id, observed_at)"
+        )
         _journal_cols = {row[1] for row in conn.execute("PRAGMA table_info(signal_journal)")}
         if "trade_id" not in _journal_cols:
             conn.execute("ALTER TABLE signal_journal ADD COLUMN trade_id INTEGER")

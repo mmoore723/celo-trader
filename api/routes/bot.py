@@ -59,6 +59,9 @@ def get_status(request: Request) -> BotStatus:
     state    = _read_bot_state(user_id)
     settings = get_settings()
     _state   = get_user_state(user_id)
+    active_account = str(settings.get("active_broker_account_id") or "")
+    state_account = str(state.get("broker_account_id") or _state.get("broker_account_id") or "")
+    account_matches = not active_account or active_account == state_account
 
     lock = _get_lock(user_id)
     lock_acquired = lock.acquire(blocking=False)
@@ -70,18 +73,18 @@ def get_status(request: Request) -> BotStatus:
         running=actually_running,
         mode=str(state.get("mode", _state.get("mode", "stopped"))),
         ticker=state.get("current_ticker") or _state.get("current_ticker"),
-        account_balance=float(
+        account_balance=float(0 if not account_matches else (
             state.get("account_balance")
             or _state.get("account_balance")
             or settings.get("last_known_balance", STARTING_CAPITAL)
-        ),
-        day_start_balance=float(
+        )),
+        day_start_balance=float(0 if not account_matches else (
             state.get("day_start_balance")
             or _state.get("day_start_balance")
             or state.get("account_balance")
             or settings.get("last_known_balance", STARTING_CAPITAL)
-        ),
-        session_pnl=float(state.get("session_pnl", _state.get("session_pnl", 0.0))),
+        )),
+        session_pnl=float(0 if not account_matches else state.get("session_pnl", _state.get("session_pnl", 0.0))),
         options_buying_power=float(state.get("options_buying_power", 0.0)),
         last_update=state.get("last_update"),
         network_ok=bool(state.get("network_ok", True)),

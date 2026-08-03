@@ -3,6 +3,8 @@ api/routes/settings.py — Settings read/write endpoints + API credentials.
 """
 from __future__ import annotations
 from typing import Optional
+from datetime import date
+import json
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from api.models import Settings
@@ -209,5 +211,57 @@ def save_credentials(payload: CredentialsPayload) -> dict:
         current["tradier_api_key"] = payload.tradier_api_key.strip()
     if payload.tradier_account_id is not None:
         current["tradier_account_id"] = payload.tradier_account_id.strip()
+    alpaca_changed = payload.alpaca_api_key is not None or payload.alpaca_secret_key is not None
     save_api_keys(current)
-    return {"ok": True, "message": "API keys saved securely"}
+    if not alpaca_changed:
+        return {"ok": True, "message": "API keys saved securely"}
+
+    # A key can point at a completely different Alpaca account.  Local paper
+    # history is not broker-owned, so it must be explicitly scoped rather than
+    # silently presented as this newly connected account's performance.
+    from config import get_settings, save_settings, get_bot_state_path
+    from broker.account_identity import resolve_account_identity
+    settings = get_settings()
+    paper = bool(settings.get("paper_trading", True))
+    account: dict | None = None
+    try:
+        from broker import AlpacaClient
+        account = AlpacaClient().get_account()
+    except Exception:
+        # A bad/new key should still isolate old local results. The fallback is
+        # a one-way hash of the key id, never the secret or raw key.
+        pass
+    identity = resolve_account_identity(current.get("alpaca_api_key", ""), paper, account)
+    previous_identity = str(settings.get("active_broker_account_id") or "")
+    changed_account = identity != previous_identity
+    if changed_account:
+        save_settings({
+            "active_broker_account_id": identity,
+            "last_known_balance": 0.0,
+            f"day_start_{date.today().isoformat()}": 0.0,
+        })
+        # Clear persisted display state immediately. A running loop retains its
+        # old in-memory client, so it is intentionally NOT restarted here: an
+        # automatic stop could abandon management of an open position. The UI
+        # tells the user to stop/start after saving instead.
+        try:
+            state_path = get_bot_state_path()
+            state = json.loads(state_path.read_text()) if state_path.exists() else {}
+            state.update({
+                "broker_account_id": identity,
+                "account_balance": 0.0,
+                "day_start_balance": 0.0,
+                "session_pnl": 0.0,
+                "credentials_restart_required": True,
+            })
+            state_path.write_text(json.dumps(state, indent=2, default=str))
+        except Exception:
+            pass
+    return {
+        "ok": True,
+        "message": (
+            "Alpaca account changed. Historical results are now scoped to the new account. "
+            "Stop and start the bot before trading so it reconnects with the new key."
+            if changed_account else "Alpaca keys saved securely. Stop and start the bot before trading so it reconnects."
+        ),
+    }

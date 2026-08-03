@@ -56,6 +56,7 @@ def route_signals(
     mtf_cache: "dict | None" = None,
     prepared_today: "pd.DataFrame | None" = None,
     adx_now: "float | None" = None,
+    candidate_observer=None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -149,6 +150,11 @@ def route_signals(
             sig = fn(today, ticker=ticker)   # ticker= needed for cooldown tracking
             if sig is not None:
                 signals.append(sig)
+                if candidate_observer is not None:
+                    try:
+                        candidate_observer(ticker, sig)
+                    except Exception:
+                        logger.warning("candidate observer failed (non-fatal)", exc_info=True)
                 # Annotations are live-dashboard side effects.  Suppress
                 # them during a quiet historical replay so an A/B test does
                 # not create live chart records or perform DB writes.

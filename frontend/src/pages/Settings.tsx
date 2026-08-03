@@ -158,7 +158,7 @@ function useCredentialSave<K extends string>(fields: K[]) {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Save failed");
-      setStatus({ ok: true, msg: `${label} saved.` });
+      setStatus({ ok: true, msg: d.message || `${label} saved.` });
       setTouched({});
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Save failed" });

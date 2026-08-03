@@ -7,9 +7,12 @@ from tempfile import TemporaryDirectory
 import sqlite3
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from database.option_quotes import record_paper_option_quote
 from database.schema import _init_db_at
+from database.trades_query import get_all_trades
+from shadow_ledger import record_router_candidate, resolve_candidate_from_context
 
 
 class PaperOptionQuoteTests(unittest.TestCase):
@@ -55,3 +58,54 @@ class PaperOptionQuoteTests(unittest.TestCase):
                 observation_kind="unknown", observed_at=datetime(2026, 8, 3, 10),
                 quote=None, source="test",
             )
+
+    def test_trade_query_does_not_mix_broker_accounts(self) -> None:
+        """A newly connected broker account must not inherit local P&L history."""
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paper.db"
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            common = (
+                "ticker, contract_symbol, option_type, strike, expiry, contracts, "
+                "entry_price, entry_time, entry_reason, status, paper, tier, broker_account_id"
+            )
+            conn.execute(
+                f"INSERT INTO trades ({common}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("TSLA", "TSLA260807C00300000", "call", 300, "2026-08-07", 1,
+                 5, "2026-08-03T10:00:00", "old", "closed", 1, "main", "alpaca:paper:old"),
+            )
+            conn.execute(
+                f"INSERT INTO trades ({common}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("TSLA", "TSLA260807P00300000", "put", 300, "2026-08-07", 1,
+                 4, "2026-08-03T10:05:00", "new", "closed", 1, "main", "alpaca:paper:new"),
+            )
+            conn.commit()
+            with patch("database.trades_query._conn_for_mode", return_value=conn):
+                rows = get_all_trades(mode="paper", broker_account_id="alpaca:paper:new")
+            conn.close()
+
+        self.assertEqual(1, len(rows))
+        self.assertEqual("new", rows[0]["entry_reason"])
+
+    def test_shadow_candidate_links_router_signal_to_gate_outcome(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paper.db"
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            signal = SimpleNamespace(
+                strategy_id="INST_ORB", direction="bullish", confidence=0.81,
+                trigger_bar="2026-08-03T10:00:00", tier="main", meta={"rvol": 1.8},
+            )
+            with patch("shadow_ledger.get_conn", return_value=conn):
+                record_router_candidate("TSLA", signal)
+                resolve_candidate_from_context(
+                    {"strategy_meta": signal.meta}, "blocked", "budget", "cap reached", None,
+                )
+            row = conn.execute(
+                "SELECT strategy_id, final_outcome, gate_reason, gate_detail "
+                "FROM shadow_candidates"
+            ).fetchone()
+            conn.close()
+
+        self.assertEqual(("INST_ORB", "blocked", "budget", "cap reached"), row)

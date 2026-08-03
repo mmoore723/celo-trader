@@ -713,8 +713,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # this cache is what turns on the Gap 3 MTF confirmation gate; every other
     # route_signals() caller (backtester, audit tools) omits them and is
     # unaffected. Gate itself still defaults OFF via mtf_confirmation_enabled.
+    _candidate_observer = None
+    if paper and bool(settings.get("shadow_ledger_enabled", True)):
+        from shadow_ledger import record_router_candidate
+        _candidate_observer = record_router_candidate
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled or None,
-                              alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}))
+                              alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
+                              candidate_observer=_candidate_observer)
     # Main-tier setups remain immediate.  Opportunity setups are paper-only
     # candidates collected and ranked over a causal 15-minute window.
     if _opportunity_enabled:
@@ -1452,6 +1457,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         target_price    = _target_px,
         annotations_json= _entry_annotations_json,
         tier            = _signal_tier,
+        broker_account_id=settings.get("active_broker_account_id") or None,
     )
 
     # Capture the executable chain quote alongside every PAPER entry.  This is

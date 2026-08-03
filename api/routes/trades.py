@@ -111,7 +111,12 @@ def list_trades(
     status: str = Query("all", enum=["all", "open", "closed"]),
 ) -> TradeListResponse:
     from database import get_all_trades
-    rows = get_all_trades(limit=limit, mode=mode, status_filter=status) or []
+    from config import get_settings
+    account_id = get_settings().get("active_broker_account_id") or None
+    rows = get_all_trades(
+        limit=limit, mode=mode, status_filter=status,
+        broker_account_id=account_id,
+    ) or []
 
     trades = [_row_to_trade(r) for r in rows]
     closed = [t for t in trades if t.pnl is not None]
@@ -130,29 +135,37 @@ def list_trades(
 @router.get("/open", response_model=list[Trade])
 def get_open_trades_endpoint() -> list[Trade]:
     from database import get_open_trades
-    rows = get_open_trades() or []
+    from config import get_settings
+    rows = get_open_trades(
+        broker_account_id=get_settings().get("active_broker_account_id") or None
+    ) or []
     return [_row_to_trade(r) for r in rows]
 
 
 @router.get("/performance", response_model=PerformanceStats)
 def get_performance(mode: str = Query("paper")) -> PerformanceStats:
-    from database import get_all_trades, get_daily_summaries
-    rows = get_all_trades(limit=1000, mode=mode) or []
+    from collections import defaultdict
+    from database import get_all_trades
+    from config import get_settings
+    account_id = get_settings().get("active_broker_account_id") or None
+    rows = get_all_trades(limit=1000, mode=mode, broker_account_id=account_id) or []
     closed = [r for r in rows if r.get("realized_pnl") is not None or r.get("pnl") is not None]
     pnls = [float(r.get("realized_pnl") or r.get("pnl") or 0) for r in closed]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
 
-    # Daily summaries
-    daily_raw = get_daily_summaries(mode=mode) or []
-    daily = []
-    for d in daily_raw:
-        daily.append(DailySummary(
-            date=str(d.get("trade_date") or d.get("date", "")),
-            pnl=float(d.get("pnl", 0)),
-            trades=int(d.get("trades", 0)),
-            win_rate=float(d.get("win_rate", 0)),
-        ))
+    # Daily summaries are deliberately rebuilt from the account-scoped rows.
+    # The legacy cached daily_summary table predates broker attribution and
+    # would otherwise blend a previous account into this account's chart.
+    daily_totals: dict[str, list[float]] = defaultdict(list)
+    for row in closed:
+        day = str(row.get("exit_time") or row.get("entry_time") or "")[:10]
+        if day:
+            daily_totals[day].append(float(row.get("realized_pnl") or row.get("pnl") or 0))
+    daily = [DailySummary(
+        date=day, pnl=round(sum(values), 2), trades=len(values),
+        win_rate=round(sum(1 for value in values if value > 0) / len(values) * 100, 1),
+    ) for day, values in sorted(daily_totals.items())]
 
     # Streak — positive = consecutive wins, negative = consecutive losses
     streak = 0
@@ -190,8 +203,10 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
     """
     from collections import defaultdict
     from database import get_all_trades
+    from config import get_settings
 
-    rows = get_all_trades(limit=2000, mode=mode, status_filter="closed") or []
+    account_id = get_settings().get("active_broker_account_id") or None
+    rows = get_all_trades(limit=2000, mode=mode, status_filter="closed", broker_account_id=account_id) or []
 
     # ── By strategy ───────────────────────────────────────────────────────────
     strat: dict = defaultdict(lambda: {
@@ -423,7 +438,10 @@ def reconcile_trades(
     # open. status_filter="all" lets open positions through; the date filter
     # right below still scopes them to today via entry_time (open trades have
     # no exit_time yet, so the `or r.get("entry_time")` fallback catches them).
-    all_db_rows = get_all_trades(limit=1000, mode="paper", status_filter="all") or []
+    all_db_rows = get_all_trades(
+        limit=1000, mode="paper", status_filter="all",
+        broker_account_id=_get_settings().get("active_broker_account_id") or None,
+    ) or []
     db_trades = [
         r for r in all_db_rows
         if str(r.get("exit_time") or r.get("entry_time") or "").startswith(date)

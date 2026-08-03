@@ -33,6 +33,7 @@ def insert_trade(
     target_price: Optional[float] = None,  # Stage-1 target at entry
     annotations_json: Optional[str] = None,  # JSON snapshot of entry-time chart annotations
     tier: str = "main",                       # main setup pool | separately measured opportunity pool
+    broker_account_id: Optional[str] = None,   # active Alpaca account/mode identity at entry
 ) -> int:
     """
     Insert an open trade.  Returns the new row id so we can update it on close.
@@ -42,15 +43,15 @@ def insert_trade(
         INSERT INTO trades
             (ticker, contract_symbol, option_type, strike, expiry,
              contracts, entry_price, entry_time, entry_reason,
-             status, paper, strategy_id, stop_price, target_price, annotations_json, tier)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
+             status, paper, strategy_id, stop_price, target_price, annotations_json, tier, broker_account_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)
     """
     with get_conn() as conn:
         cur = conn.execute(sql, (
             ticker, contract_symbol, option_type, strike, expiry,
             contracts, entry_price, _to_et_isoformat(entry_time), entry_reason,
             1 if paper else 0, strategy_id, stop_price, target_price, annotations_json,
-            tier if tier in ("main", "opportunity") else "main",
+            tier if tier in ("main", "opportunity") else "main", broker_account_id,
         ))
         trade_id = cur.lastrowid
     logger.info(

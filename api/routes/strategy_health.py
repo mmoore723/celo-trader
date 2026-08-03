@@ -8,6 +8,8 @@ dashboard that always has the latest answer, plus an on-demand re-run button.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
+from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException
 
@@ -20,6 +22,51 @@ def get_scorecard(days: int = 30) -> dict:
     """Read-only strategy evidence scorecard; no allocation decisions here."""
     from strategy_health.scorecard import build_scorecard
     return build_scorecard(days)
+
+
+@router.get("/candidate-scorecard")
+def get_candidate_scorecard(days: int = 30) -> dict:
+    """Evidence-only view of every raw paper candidate and its final gate."""
+    from config import get_settings
+    from database import get_conn, _now_et
+
+    days = max(1, min(int(days), 365))
+    cutoff = (_now_et() - timedelta(days=days)).isoformat()
+    account_id = get_settings().get("active_broker_account_id") or None
+    clauses = ["observed_at >= ?"]
+    params: list[object] = [cutoff]
+    if account_id:
+        clauses.append("broker_account_id = ?")
+        params.append(account_id)
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT strategy_id, final_outcome, gate_reason, COUNT(*) AS count "
+            "FROM shadow_candidates WHERE " + " AND ".join(clauses) +
+            " GROUP BY strategy_id, final_outcome, gate_reason",
+            tuple(params),
+        ).fetchall()
+    by_strategy: dict[str, dict] = {}
+    for row in rows:
+        item = by_strategy.setdefault(row["strategy_id"], {
+            "strategy_id": row["strategy_id"], "raw_candidates": 0,
+            "entered": 0, "blocked": 0, "pending": 0, "block_reasons": defaultdict(int),
+        })
+        count = int(row["count"])
+        item["raw_candidates"] += count
+        outcome = str(row["final_outcome"])
+        if outcome in {"entered", "blocked", "pending"}:
+            item[outcome] += count
+        if outcome == "blocked":
+            item["block_reasons"][row["gate_reason"] or "unknown"] += count
+    strategies = []
+    for item in by_strategy.values():
+        item["block_reasons"] = dict(sorted(item["block_reasons"].items(), key=lambda pair: -pair[1]))
+        strategies.append(item)
+    return {
+        "days": days, "account_scoped": bool(account_id),
+        "note": "Evidence only: a blocked candidate has not yet been virtual-filled or assigned P&L.",
+        "strategies": sorted(strategies, key=lambda item: item["raw_candidates"], reverse=True),
+    }
 
 
 @router.get("/latest")

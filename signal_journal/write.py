@@ -60,6 +60,14 @@ def log_signal_outcome(
         # Non-fatal by design — see package docstring.
         logger.warning("log_signal_outcome: failed to persist (non-fatal): %s", exc)
 
+    # Paper candidate linkage is evidence-only. It runs after the journal
+    # write and is intentionally unable to alter a real trading decision.
+    try:
+        from shadow_ledger import resolve_candidate_from_context
+        resolve_candidate_from_context(context, outcome, reason_code, reason_detail, trade_id)
+    except Exception:
+        logger.warning("shadow candidate linkage failed (non-fatal)", exc_info=True)
+
     _evt = "SIGNAL_ENTERED" if outcome == "entered" else "SIGNAL_BLOCKED"
     _msg = f"{ticker} {direction} {strategy_id} {confidence:.0%}"
     if reason_detail:
