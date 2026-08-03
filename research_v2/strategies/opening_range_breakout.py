@@ -13,7 +13,7 @@ from datetime import date, time
 from typing import Sequence
 
 from research_v2.models import Bar, Side, Signal
-from research_v2.strategies.vwap_pullback import _session, _vwaps
+from research_v2.strategies.vwap_pullback import _session
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,8 @@ class OpeningRangeBreakout:
         self._last_timestamp = None
         self._today: list[Bar] = []
         self._emitted_day: date | None = None
+        self._session_price_volume = 0.0
+        self._session_volume = 0.0
 
     def evaluate(self, bars: Sequence[Bar]) -> Signal | None:
         today = self._current_session(bars)
@@ -58,7 +60,11 @@ class OpeningRangeBreakout:
         range_pct = (high - low) / current.close
         if not self.config.min_range_pct <= range_pct <= self.config.max_range_pct:
             return None
-        vwap = _vwaps(today)[-1]
+        # Most callers add one completed bar at a time.  Keep the exact same
+        # typical-price VWAP incrementally rather than recomputing every bar
+        # of the session for every tuning candidate.  The fallback path in
+        # _current_session recalculates this state for non-sequential callers.
+        vwap = self._session_price_volume / self._session_volume
         buffer = current.close * self.config.breakout_buffer_pct
         if current.close > high + buffer and current.close > vwap:
             stop = high - (high - low) * self.config.stop_range_fraction
@@ -85,11 +91,21 @@ class OpeningRangeBreakout:
                 self._today.append(current)
             else:
                 self._today = [current]
+                self._session_price_volume = self._session_volume = 0.0
+            self._add_to_vwap(current)
             self._seen, self._last_timestamp = len(bars), current.timestamp
             return self._today
         self._today = _session(bars)
+        self._session_price_volume = self._session_volume = 0.0
+        for bar in self._today:
+            self._add_to_vwap(bar)
         self._seen, self._last_timestamp = len(bars), current.timestamp
         return self._today
+
+    def _add_to_vwap(self, bar: Bar) -> None:
+        volume = max(bar.volume, 1.0)
+        self._session_price_volume += (bar.high + bar.low + bar.close) / 3.0 * volume
+        self._session_volume += volume
 
     def _emit(self, side: Side, current: Bar, stop: float, target: float, features: dict) -> Signal:
         self._emitted_day = current.timestamp.date()
