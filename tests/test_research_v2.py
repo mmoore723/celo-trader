@@ -1,6 +1,6 @@
 """Contract tests for the order-free V2 research foundation."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -10,7 +10,7 @@ from research_v2.models import Bar, Side, Signal, Trade
 from research_v2.reconciliation import ReferenceTrade, reconcile
 from research_v2.ledger import load_trade_ledger, write_trade_ledger
 from research_v2.regime import select_regimes
-from research_v2.options import load_option_quotes
+from research_v2.options import OptionQuote, OptionQuoteBook, load_option_quotes
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.providers.databento import normalize_databento_cbbo_files
 from research_v2.simulator import SimulationConfig, Simulator
@@ -86,6 +86,29 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(300.0, quotes[0].strike)
         self.assertEqual(4.9, quotes[0].bid)
         self.assertEqual("put", quotes[1].option_type)
+
+    def test_option_quote_book_uses_future_ask_and_same_contract_bid(self) -> None:
+        decision = datetime(2026, 8, 3, 10, 0)
+        call = OptionQuote(
+            datetime(2026, 8, 3, 10, 0, 30), "TSLA  260807C00300000", "TSLA",
+            date(2026, 8, 7), 300.0, "call", 4.9, 5.1,
+        )
+        later_call = OptionQuote(
+            datetime(2026, 8, 3, 10, 1), "TSLA  260807C00300000", "TSLA",
+            date(2026, 8, 7), 300.0, "call", 5.4, 5.6,
+        )
+        wide_call = OptionQuote(
+            datetime(2026, 8, 3, 10, 0, 30), "TSLA  260807C00305000", "TSLA",
+            date(2026, 8, 7), 305.0, "call", 2.0, 3.0,
+        )
+        book = OptionQuoteBook((call, later_call, wide_call))
+
+        selected = book.select_near_money("TSLA", "call", decision, 300.0)
+        exit_quote = book.first_quote_at_or_after(call.option_symbol, datetime(2026, 8, 3, 10, 1))
+
+        self.assertEqual(call, selected)
+        self.assertEqual(5.1, selected.buy_fill())
+        self.assertEqual(5.4, exit_quote.sell_fill() if exit_quote else None)
 
     def test_supertrend_emits_a_completed_bar_flip(self) -> None:
         bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(12)]

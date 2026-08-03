@@ -6,8 +6,9 @@ time-stamped bid/ask, contract identity, and optional IV/Greeks.
 """
 from __future__ import annotations
 import csv
+from bisect import bisect_left
 from dataclasses import dataclass
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -40,6 +41,73 @@ class OptionQuote:
 
     def buy_fill(self) -> float: return self.ask
     def sell_fill(self) -> float: return self.bid
+
+
+class OptionQuoteBook:
+    """Point-in-time, bid/ask-only option execution evidence.
+
+    It never interpolates a price. A buy is executable only at a quote's ask;
+    a sell is executable only at that same contract's bid. This is intentionally
+    smaller than a backtester—it is the safe quote-selection primitive that a
+    real options simulation can build upon.
+    """
+    def __init__(self, quotes: tuple[OptionQuote, ...]):
+        if not quotes:
+            raise ValueError("option quote book requires quotes")
+        self._by_symbol: dict[str, tuple[OptionQuote, ...]] = {}
+        self._timestamps: dict[str, tuple[datetime, ...]] = {}
+        grouped: dict[str, list[OptionQuote]] = {}
+        for quote in quotes:
+            grouped.setdefault(quote.option_symbol, []).append(quote)
+        for symbol, rows in grouped.items():
+            ordered = tuple(sorted(rows, key=lambda quote: quote.timestamp))
+            self._by_symbol[symbol] = ordered
+            self._timestamps[symbol] = tuple(quote.timestamp for quote in ordered)
+
+    def first_quote_at_or_after(
+        self, symbol: str, timestamp: datetime, max_wait: timedelta = timedelta(minutes=1),
+    ) -> OptionQuote | None:
+        """Return first usable quote after a decision, never an earlier quote."""
+        rows = self._by_symbol.get(symbol)
+        if not rows:
+            return None
+        index = bisect_left(self._timestamps[symbol], timestamp)
+        if index >= len(rows):
+            return None
+        quote = rows[index]
+        return quote if quote.timestamp <= timestamp + max_wait else None
+
+    def select_near_money(
+        self, underlying: str, option_type: OptionType, timestamp: datetime,
+        underlying_price: float, max_dte: int = 7,
+        max_wait: timedelta = timedelta(minutes=1), max_spread_pct: float = 0.20,
+    ) -> OptionQuote | None:
+        """Choose an executable near-money quote using only information then known.
+
+        The selection is deliberately conservative: nearest expiry, then
+        nearest strike, then narrowest percentage spread. It is suitable only
+        as an explicit baseline for research, not as a claim of optimal option
+        contract selection.
+        """
+        if underlying_price <= 0 or max_dte < 0 or max_spread_pct <= 0:
+            raise ValueError("invalid option-selection bounds")
+        candidates: list[OptionQuote] = []
+        for symbol, rows in self._by_symbol.items():
+            # A quote cannot be selected unless it is available after the
+            # decision; never peek at an earlier or later end-of-bar close.
+            quote = self.first_quote_at_or_after(symbol, timestamp, max_wait)
+            if quote is None or quote.underlying != underlying.upper() or quote.option_type != option_type:
+                continue
+            dte = (quote.expiration - timestamp.date()).days
+            if not 0 <= dte <= max_dte or quote.spread / quote.mid > max_spread_pct:
+                continue
+            candidates.append(quote)
+        if not candidates:
+            return None
+        return min(candidates, key=lambda quote: (
+            (quote.expiration - timestamp.date()).days,
+            abs(quote.strike - underlying_price), quote.spread / quote.mid, quote.option_symbol,
+        ))
 
 def load_option_quotes(path: str | Path) -> tuple[OptionQuote, ...]:
     """Load chronological vendor-export CSV; reject ambiguous fill inputs.
