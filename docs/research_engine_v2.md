@@ -82,6 +82,14 @@ only to reject bad signal logic cheaply.  A future `OptionFillAdapter` will
 replace that proxy for paper-promotion decisions; it must include quote time,
 bid, ask, spread, chosen contract, and actual paper fill.
 
+`research_v2.options.load_option_quotes()` now defines the vendor-neutral
+import boundary for that next step.  A provider export must supply a
+chronological CSV with `timestamp, option_symbol, underlying, expiration,
+strike, option_type, bid, ask`; IV, delta, and open interest are optional.
+Research assumes an entry at ask and an exit at bid unless an audited fill
+model provides stronger evidence.  Importing data alone still cannot promote
+a strategy: the selected contract and every fill must be linked to its signal.
+
 ## Candidate reproduction contract
 
 An externally sourced TradingView candidate is not eligible for research based

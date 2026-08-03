@@ -10,6 +10,7 @@ from research_v2.models import Bar, Side, Signal, Trade
 from research_v2.reconciliation import ReferenceTrade, reconcile
 from research_v2.ledger import load_trade_ledger, write_trade_ledger
 from research_v2.regime import select_regimes
+from research_v2.options import load_option_quotes
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
@@ -145,6 +146,15 @@ class ResearchV2Tests(unittest.TestCase):
             dataset = load_csv(path)
         self.assertEqual(2, len(dataset.bars))
         self.assertEqual(64, len(dataset.sha256))
+
+    def test_option_quote_loader_uses_executable_bid_ask(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "quotes.csv"
+            path.write_text("timestamp,option_symbol,underlying,expiration,strike,option_type,bid,ask,iv,delta,open_interest\n"
+                            "2026-01-02T10:00:00-05:00,TSLA260109C00300000,TSLA,2026-01-09,300,call,4.90,5.10,0.42,0.51,100\n")
+            quotes = load_option_quotes(path)
+        self.assertEqual(5.10, quotes[0].buy_fill())
+        self.assertEqual(4.90, quotes[0].sell_fill())
 
     def test_resample_regular_session_uses_complete_anchored_buckets(self) -> None:
         start = datetime(2026, 1, 2, 9, 30)
