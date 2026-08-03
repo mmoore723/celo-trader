@@ -12,6 +12,7 @@ from research_v2.ledger import load_trade_ledger, write_trade_ledger
 from research_v2.regime import select_regimes
 from research_v2.options import load_option_quotes
 from research_v2.providers.alpaca import export_alpaca_csv
+from research_v2.providers.databento import normalize_databento_cbbo_files
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
     AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
@@ -64,6 +65,28 @@ class _TrailingLong(_OneLong):
 
 
 class ResearchV2Tests(unittest.TestCase):
+    def test_databento_cbbo_import_keeps_target_usable_occ_quotes(self) -> None:
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            output = Path(directory) / "normalized.csv"
+            source.write_text(
+                "ts_event,symbol,bid_px_00,ask_px_00\n"
+                "2026-08-03T14:30:00Z,TSLA  260807C00300000,4.90,5.10\n"
+                "2026-08-03T14:30:00Z,SPY   260807C00600000,3.90,4.10\n"
+                "2026-08-03T14:31:00Z,TSLA  260807P00300000,0,2.10\n"
+                "2026-08-03T14:32:00Z,TSLA  260807P00300000,5.20,5.40\n",
+                encoding="utf-8",
+            )
+            normalize_databento_cbbo_files([source], "TSLA", output)
+            quotes = load_option_quotes(output)
+
+        self.assertEqual(2, len(quotes))
+        self.assertEqual("TSLA", quotes[0].underlying)
+        self.assertEqual("call", quotes[0].option_type)
+        self.assertEqual(300.0, quotes[0].strike)
+        self.assertEqual(4.9, quotes[0].bid)
+        self.assertEqual("put", quotes[1].option_type)
+
     def test_supertrend_emits_a_completed_bar_flip(self) -> None:
         bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(12)]
         bars.extend(_bar(12 + i, 111 - i * 3, 112 - i * 3, 110 - i * 3, 111 - i * 3) for i in range(8))
