@@ -40,6 +40,7 @@ class _Position:
     entry_index: int
     best_price: float
     worst_price: float
+    active_stop: float
 
 
 class Simulator:
@@ -79,6 +80,8 @@ class Simulator:
                     trades.append(trade)
                     capital += trade.net_pnl
                     position = None
+                else:
+                    self._tighten_trailing_stop(strategy, position, bar)
 
             history.append(bar)
             # Every strategy must see every completed bar, even while its
@@ -105,7 +108,7 @@ class Simulator:
         quantity = int((capital * self.config.risk_fraction) // unit_risk)
         if quantity < 1:
             return None
-        return _Position(signal, bar.timestamp, entry, quantity, index, entry, entry)
+        return _Position(signal, bar.timestamp, entry, quantity, index, entry, entry, signal.stop)
 
     def _exit_fill(self, position: _Position, bar: Bar, index: int) -> tuple[str | None, float]:
         position.best_price = max(position.best_price, bar.high)
@@ -114,18 +117,32 @@ class Simulator:
         # Conservative ambiguity rule: if both stop and target touch in one
         # bar, the adverse stop wins.  This avoids imaginary perfect fills.
         if s.side is Side.LONG:
-            if bar.low <= s.stop:
-                return "stop", s.stop
-            if bar.high >= s.target:
+            if bar.low <= position.active_stop:
+                return "stop", position.active_stop
+            if not s.features.get("no_profit_target", False) and bar.high >= s.target:
                 return "target", s.target
         else:
-            if bar.high >= s.stop:
-                return "stop", s.stop
-            if bar.low <= s.target:
+            if bar.high >= position.active_stop:
+                return "stop", position.active_stop
+            if not s.features.get("no_profit_target", False) and bar.low <= s.target:
                 return "target", s.target
         if index - position.entry_index >= self.config.max_hold_bars:
             return "time", bar.close
         return None, 0.0
+
+    @staticmethod
+    def _tighten_trailing_stop(strategy: Strategy, position: _Position, bar: Bar) -> None:
+        """Apply an optional bar-close trail for the *next* bar only."""
+        calculator = getattr(strategy, "trailing_stop", None)
+        if not callable(calculator):
+            return
+        candidate = calculator(position.signal, position.active_stop, bar, position.best_price)
+        if candidate is None:
+            return
+        if position.signal.side is Side.LONG and position.active_stop < candidate < position.signal.target:
+            position.active_stop = candidate
+        elif position.signal.side is Side.SHORT and position.signal.target < candidate < position.active_stop:
+            position.active_stop = candidate
 
     def _close(self, position: _Position, bar: Bar, raw_exit: float, reason: str) -> Trade:
         slip = self.config.slippage_bps / 10_000.0

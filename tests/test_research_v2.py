@@ -22,6 +22,7 @@ from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
 from research_v2.strategies import SuperTrendReversal
 from research_v2.strategies import EMAPullbackRTH, EMAPullbackRTHConfig
 from research_v2.strategies import TurtleSoupRTH, TurtleSoupRTHConfig
+from research_v2.strategies import GapFillRTH, GapFillRTHConfig
 from research_v2.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
@@ -53,6 +54,11 @@ class _TrackingStrategy:
             return None
         last = bars[-1]
         return Signal(self.strategy_id, Side.LONG, last.timestamp, last.close, 98, 104, {})
+
+
+class _TrailingLong(_OneLong):
+    def trailing_stop(self, signal, current_stop, bar, best_price):
+        return 102
 
 
 class ResearchV2Tests(unittest.TestCase):
@@ -87,6 +93,16 @@ class ResearchV2Tests(unittest.TestCase):
         strategy = _TrackingStrategy()
         Simulator(SimulationConfig(slippage_bps=0, max_hold_bars=10)).run(bars, strategy)
         self.assertEqual([1, 2, 3, 4, 5], strategy.seen)
+
+    def test_trailing_stop_only_applies_on_following_bar(self) -> None:
+        bars = [_bar(0, 100, 101, 99, 100), _bar(1, 100, 101, 99, 100),
+                _bar(2, 100, 101, 99, 100), _bar(3, 100, 103, 99, 102),
+                _bar(4, 102, 103, 101, 102)]
+        trades = Simulator(SimulationConfig(slippage_bps=0)).run(bars, _TrailingLong())
+        self.assertEqual(1, len(trades))
+        self.assertEqual(bars[4].timestamp, trades[0].exit_time)
+        self.assertEqual("stop", trades[0].exit_reason)
+        self.assertEqual(102, trades[0].exit_price)
 
     def test_ambiguous_bar_uses_stop_first(self) -> None:
         bars = [_bar(0, 100, 101, 99, 100), _bar(1, 100, 101, 99, 100),
@@ -329,6 +345,21 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertEqual(98.5, signal.stop)
+
+    def test_gap_fill_requires_gap_cross_and_reclaim(self) -> None:
+        strategy = GapFillRTH(GapFillRTHConfig(min_gap_pct=0.002, atr_bars=2, entry_start=datetime(2026, 1, 2, 9, 30).time()))
+        day_one = [Bar(datetime(2026, 1, 1, 15, 50), 100, 101, 99, 100),
+                   Bar(datetime(2026, 1, 1, 15, 55), 100, 101, 99, 100)]
+        day_two = [Bar(datetime(2026, 1, 2, 9, 30), 101, 101.5, 100.5, 101),
+                   Bar(datetime(2026, 1, 2, 9, 35), 100.8, 101.2, 99.5, 100.6)]
+        self.assertIsNone(strategy.evaluate(day_one[:1]))
+        self.assertIsNone(strategy.evaluate(day_one))
+        self.assertIsNone(strategy.evaluate(day_one + day_two[:1]))
+        signal = strategy.evaluate(day_one + day_two)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertTrue(signal.features["no_profit_target"])
 
     def test_regime_selection_uses_train_only_and_preserves_side(self) -> None:
         start = datetime(2026, 1, 2, 9, 30)
