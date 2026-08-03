@@ -107,7 +107,7 @@ def close_trade(
 
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT entry_price, contracts, annotations_json FROM trades WHERE id = ?", (trade_id,)
+            "SELECT entry_price, contracts, annotations_json, contract_symbol FROM trades WHERE id = ?", (trade_id,)
         ).fetchone()
         if row is None:
             raise ValueError(f"Trade id {trade_id} not found in database")
@@ -154,6 +154,25 @@ def close_trade(
         "Trade %d closed: exit=%.4f (confirmed=%.4f) reason=%s pnl=$%.2f",
         trade_id, exit_price, actual_exit, exit_reason, realized_pnl,
     )
+
+    # Every confirmed PAPER close receives a durable exit observation.  The
+    # position manager records richer bid/mid evidence first when available;
+    # the unique minute key makes this a safe fallback for manual, panic, and
+    # reconciliation closes that otherwise have no quote row at all.
+    if paper:
+        try:
+            from database.option_quotes import record_paper_option_quote
+            record_paper_option_quote(
+                trade_id=trade_id,
+                contract_symbol=row["contract_symbol"],
+                observation_kind="exit",
+                observed_at=exit_time,
+                quote={"mid": exit_price},
+                source="trade_close",
+                fill_price=actual_exit,
+            )
+        except Exception:
+            logger.warning("paper close quote capture failed for trade %s", trade_id, exc_info=True)
 
     # Update daily summary — wrapped so a transient DB error never blocks the close
     try:

@@ -82,6 +82,24 @@ def _close_position(
     fill_price = float(fill.get("confirmed_fill_price") or
                        fill.get("filled_avg_price") or exit_price)
 
+    # Exit quote/fill evidence for PAPER trades.  This is recorded only after
+    # the broker confirmed a fill, so rejected exit attempts cannot masquerade
+    # as completed research observations.
+    if paper:
+        try:
+            from database import record_paper_option_quote
+            record_paper_option_quote(
+                trade_id=trade["id"],
+                contract_symbol=trade["contract_symbol"],
+                observation_kind="exit",
+                observed_at=_now_et(),
+                quote={"bid": bid_price, "mid": exit_price},
+                source="exit_order",
+                fill_price=fill_price,
+            )
+        except Exception:
+            logger.warning("paper exit quote capture failed for trade %s", trade.get("id"), exc_info=True)
+
     # FIX 2026-07-20 (Alpaca fills audit): broker.py may return a PARTIAL
     # fill for an exit order. Mirror the stage-1 partial-exit pattern: record
     # only what actually closed, shrink the parent row, leave it OPEN so the

@@ -99,6 +99,23 @@ def _manage_open_position(
         option_type   = (trade.get("option_type") or "call").lower()
         direction     = "bullish" if option_type == "call" else "bearish"
 
+        # One quote per minute while PAPER positions are open.  It gives the
+        # research layer actual observed spread/MFE/MAE context without adding
+        # any branch to live execution or any high-frequency DB load.
+        if bool(trade.get("paper", True)) and quote is not None:
+            try:
+                from database import record_paper_option_quote
+                record_paper_option_quote(
+                    trade_id=trade_id,
+                    contract_symbol=trade["contract_symbol"],
+                    observation_kind="mark",
+                    observed_at=_now_et(),
+                    quote=quote,
+                    source="tradier_quote",
+                )
+            except Exception:
+                logger.warning("paper mark quote capture failed for trade %s", trade_id, exc_info=True)
+
         ps = _US["positions"].setdefault(trade_id, {
             "peak_price":                None,
             "min_price":                 None,

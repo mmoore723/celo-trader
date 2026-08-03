@@ -135,6 +135,36 @@ _CREATE_SIGNAL_JOURNAL_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_signal_journal_trade_id ON signal_journal(trade_id);",
 ]
 
+# option_quote_observations — durable, executable quote evidence for paper
+# trades.  This is deliberately separate from `trades`: a position can have
+# many marks, while a trade must remain one compact round-trip row.  Quotes are
+# recorded at entry, once per minute while a paper position is open, and at a
+# confirmed exit.  They are research telemetry only; this table must never be
+# consulted by order-placement code.
+_CREATE_OPTION_QUOTE_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS option_quote_observations (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_id         INTEGER NOT NULL,
+    observed_at      TEXT    NOT NULL,
+    observed_minute  TEXT    NOT NULL,
+    observation_kind TEXT    NOT NULL, -- entry | mark | exit
+    contract_symbol  TEXT    NOT NULL,
+    bid              REAL,
+    ask              REAL,
+    mid              REAL,
+    last             REAL,
+    fill_price       REAL,
+    source           TEXT    NOT NULL,
+    FOREIGN KEY(trade_id) REFERENCES trades(id)
+);
+"""
+_CREATE_OPTION_QUOTE_OBSERVATIONS_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_option_quote_trade_time ON option_quote_observations(trade_id, observed_at);",
+    # Per-minute marks prevent a fast polling loop from turning one paper trade
+    # into thousands of database writes. Entry and exit retain their own rows.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_option_quote_unique_minute ON option_quote_observations(trade_id, observation_kind, observed_minute);",
+]
+
 
 
 # ── Initialisation ────────────────────────────────────────────────────────────
@@ -157,7 +187,10 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_STRATEGY_AUDITS)
         conn.execute(_CREATE_AI_REASONING_LOG)
         conn.execute(_CREATE_SIGNAL_JOURNAL)
+        conn.execute(_CREATE_OPTION_QUOTE_OBSERVATIONS)
         for _idx_sql in _CREATE_SIGNAL_JOURNAL_IDX:
+            conn.execute(_idx_sql)
+        for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         # ── Migrations ────────────────────────────────────────────────────────
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}

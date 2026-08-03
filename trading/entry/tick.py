@@ -1454,6 +1454,27 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         tier            = _signal_tier,
     )
 
+    # Capture the executable chain quote alongside every PAPER entry.  This is
+    # evidence for later execution-fidelity research, not an input to this
+    # order and never a reason to alter/deny a trade that already filled.
+    if paper:
+        try:
+            from database import record_paper_option_quote
+            record_paper_option_quote(
+                trade_id=trade_id,
+                contract_symbol=contract["symbol"],
+                observation_kind="entry",
+                observed_at=entry_utc,
+                quote={
+                    "bid": contract.get("bid"), "ask": contract.get("ask"),
+                    "mid": _c_mid, "last": contract.get("last"),
+                },
+                source="tradier_chain",
+                fill_price=confirmed_price,
+            )
+        except Exception:
+            logger.warning("paper entry quote capture failed for trade %s", trade_id, exc_info=True)
+
     # Journal the final 'entered' outcome — see signal_journal.py. Wrapped
     # defensively: a journal write must never be allowed to affect a trade
     # that already went through.
