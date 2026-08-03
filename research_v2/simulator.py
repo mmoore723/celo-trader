@@ -81,11 +81,15 @@ class Simulator:
                     position = None
 
             history.append(bar)
-            # A position prevents stacking signals.  Future portfolio
-            # simulation will model allocation explicitly rather than letting
-            # each strategy silently assume infinite capital.
+            # Every strategy must see every completed bar, even while its
+            # prior signal is in a position.  Stateful indicators (such as
+            # recursive EMAs) otherwise resume from stale market state after
+            # an exit.  We still discard those in-position signals: one
+            # position is the allocation rule, not a reason to stop updating
+            # the strategy's market view.
+            candidate = strategy.evaluate(tuple(history))
             if position is None and pending is None and index < len(completed) - 1:
-                pending = strategy.evaluate(tuple(history))
+                pending = candidate
 
         if position is not None:
             last = completed[-1]

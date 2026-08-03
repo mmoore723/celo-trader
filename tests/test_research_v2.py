@@ -39,6 +39,20 @@ class _OneLong:
         return Signal(self.strategy_id, Side.LONG, last.timestamp, last.close, 98, 104, {"setup": "test"})
 
 
+class _TrackingStrategy:
+    strategy_id = "TRACKING"
+
+    def __init__(self):
+        self.seen = []
+
+    def evaluate(self, bars):
+        self.seen.append(len(bars))
+        if len(bars) != 2:
+            return None
+        last = bars[-1]
+        return Signal(self.strategy_id, Side.LONG, last.timestamp, last.close, 98, 104, {})
+
+
 class ResearchV2Tests(unittest.TestCase):
     def test_supertrend_emits_a_completed_bar_flip(self) -> None:
         bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(12)]
@@ -63,6 +77,14 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(1, len(trades))
         self.assertEqual(102, trades[0].entry_price)
         self.assertEqual("target", trades[0].exit_reason)
+
+    def test_stateful_strategy_receives_bars_while_position_is_open(self) -> None:
+        bars = [_bar(0, 100, 101, 99, 100), _bar(1, 100, 101, 99, 100),
+                _bar(2, 100, 101, 99, 100), _bar(3, 100, 101, 99, 100),
+                _bar(4, 100, 101, 99, 100)]
+        strategy = _TrackingStrategy()
+        Simulator(SimulationConfig(slippage_bps=0, max_hold_bars=10)).run(bars, strategy)
+        self.assertEqual([1, 2, 3, 4, 5], strategy.seen)
 
     def test_ambiguous_bar_uses_stop_first(self) -> None:
         bars = [_bar(0, 100, 101, 99, 100), _bar(1, 100, 101, 99, 100),
