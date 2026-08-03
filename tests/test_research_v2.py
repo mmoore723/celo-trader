@@ -11,7 +11,7 @@ from research_v2.reconciliation import ReferenceTrade, reconcile
 from research_v2.ledger import load_trade_ledger, write_trade_ledger
 from research_v2.regime import select_regimes
 from research_v2.options import OptionQuote, OptionQuoteBook, load_option_quotes
-from research_v2.option_markouts import run_option_markouts
+from research_v2.option_markouts import run_databento_cbbo_markouts, run_option_markouts
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.providers.databento import normalize_databento_cbbo_files
 from research_v2.simulator import SimulationConfig, Simulator
@@ -159,6 +159,28 @@ class ResearchV2Tests(unittest.TestCase):
         ))
 
         results = run_option_markouts(bars, quotes, _OneLong(), underlying="TSLA")
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(5.1, results[0].entry_ask)
+        self.assertEqual(5.4, results[0].exit_bid)
+
+    def test_streaming_databento_markout_uses_entry_ask_then_exit_bid(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index) for index in range(15)]
+        ]
+        entry_time = bars[2].timestamp
+        exit_time = entry_time + timedelta(minutes=60)
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{entry_time.isoformat()},TSLA  260109C00102000,4.90,5.10\n"
+                f"{entry_time.isoformat()},TSLA  260109C00100000,4.00,5.80\n"
+                f"{exit_time.isoformat()},TSLA  260109C00102000,5.40,5.60\n",
+                encoding="utf-8",
+            )
+            results = run_databento_cbbo_markouts(bars, [source], _OneLong(), underlying="TSLA")
 
         self.assertEqual(1, len(results))
         self.assertEqual(5.1, results[0].entry_ask)

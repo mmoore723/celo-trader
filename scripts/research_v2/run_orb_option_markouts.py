@@ -22,7 +22,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research_v2.data import load_csv
-from research_v2.option_markouts import run_option_markouts
+from research_v2.option_markouts import run_databento_cbbo_markouts, run_option_markouts
 from research_v2.options import OptionQuoteBook, load_option_quotes
 from research_v2.strategies import OpeningRangeBreakout, OpeningRangeBreakoutConfig
 
@@ -31,23 +31,34 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Real-quote ORB option markout diagnostic")
     parser.add_argument("--ticker", required=True)
     parser.add_argument("--bars", type=Path, required=True, help="Frozen regular-session underlying bars CSV")
-    parser.add_argument("--quotes", type=Path, required=True, help="Normalized Databento option quotes CSV")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--quotes", type=Path, help="Normalized option quotes CSV (memory-heavy; small files only)")
+    source.add_argument("--cbbo-file", type=Path, help="Raw Databento .csv or .csv.zst file (streaming; preferred)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--hold-minutes", type=int, default=60)
     parser.add_argument("--max-dte", type=int, default=7)
     args = parser.parse_args()
 
     bars = load_csv(args.bars).bars
-    quotes = OptionQuoteBook(load_option_quotes(args.quotes))
     strategy = OpeningRangeBreakout(OpeningRangeBreakoutConfig())
-    results = run_option_markouts(
-        bars, quotes, strategy, underlying=args.ticker,
-        hold_minutes=args.hold_minutes, max_dte=args.max_dte,
-    )
+    if args.cbbo_file:
+        results = run_databento_cbbo_markouts(
+            bars, [args.cbbo_file], strategy, underlying=args.ticker,
+            hold_minutes=args.hold_minutes, max_dte=args.max_dte,
+        )
+        input_mode = "streaming_raw_cbbo"
+    else:
+        quotes = OptionQuoteBook(load_option_quotes(args.quotes))
+        results = run_option_markouts(
+            bars, quotes, strategy, underlying=args.ticker,
+            hold_minutes=args.hold_minutes, max_dte=args.max_dte,
+        )
+        input_mode = "normalized_quote_csv"
     returns = [result.return_pct for result in results]
     summary = {
         "purpose": "Real bid/ask ORB markout diagnostic; not a live-exit or portfolio backtest.",
-        "ticker": args.ticker.upper(), "hold_minutes": args.hold_minutes, "max_dte": args.max_dte,
+        "ticker": args.ticker.upper(), "input_mode": input_mode,
+        "hold_minutes": args.hold_minutes, "max_dte": args.max_dte,
         "measured_signals": len(results),
         "positive_markouts": sum(value > 0 for value in returns),
         "win_rate_pct": round(sum(value > 0 for value in returns) / len(returns) * 100, 1) if returns else None,
