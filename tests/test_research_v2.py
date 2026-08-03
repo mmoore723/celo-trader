@@ -9,6 +9,7 @@ from research_v2.data import load_csv, resample_regular_session
 from research_v2.models import Bar, Side, Signal, Trade
 from research_v2.reconciliation import ReferenceTrade, reconcile
 from research_v2.ledger import load_trade_ledger, write_trade_ledger
+from research_v2.regime import select_regimes
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
@@ -328,6 +329,22 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertEqual(98.5, signal.stop)
+
+    def test_regime_selection_uses_train_only_and_preserves_side(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(Bar(start + timedelta(minutes=5 * index), 100 + index, 101 + index,
+                         99 + index, 100 + index, 1) for index in range(61))
+        def trade(index, side, pnl):
+            point = bars[index].timestamp
+            return Trade("TEST", side, point, point, point, 100, 101, 1, pnl, pnl, 0, 0, "test", {})
+        # Train has 30 trend-up long winners and 30 losing short trades; only
+        # the observed long regime/side may be selected.
+        train = [trade(index, Side.LONG, 2) for index in range(21, 51)]
+        train += [trade(index, Side.SHORT, -2) for index in range(21, 51)]
+        holdout = [trade(index, Side.LONG, 2) for index in range(21, 51)]
+        result = select_regimes(train, holdout, bars, bars, ValidationConfig(min_trades=30, max_drawdown_pct=10000))
+        self.assertEqual(("TREND_UP:LONG",), result.selected_keys)
+        self.assertEqual(30, result.holdout_selected.trade_count)
 
     def test_afternoon_reversal_requires_confirmed_structure_and_break(self) -> None:
         bars = []
