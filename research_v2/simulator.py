@@ -8,6 +8,7 @@ and fills are required before promotion beyond paper observation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import time
 from typing import Iterable, Sequence
 
 from research_v2.models import Bar, Side, Signal, Trade
@@ -21,6 +22,7 @@ class SimulationConfig:
     slippage_bps: float = 5.0
     commission_per_unit: float = 0.0
     max_hold_bars: int = 75
+    session_exit_time: time | None = None
 
     def __post_init__(self) -> None:
         if self.starting_capital <= 0 or not 0 < self.risk_fraction <= 0.05:
@@ -66,6 +68,12 @@ class Simulator:
 
             if position is not None and index > position.entry_index:
                 close_reason, fill = self._exit_fill(position, bar, index)
+                # Intraday studies must not quietly become overnight studies.
+                # Stops/targets have priority because they can occur before the
+                # closing print inside this bar; otherwise flatten at the
+                # configured regular-session exit.
+                if close_reason is None and self.config.session_exit_time is not None and bar.timestamp.time() >= self.config.session_exit_time:
+                    close_reason, fill = "session", bar.close
                 if close_reason is not None:
                     trade = self._close(position, bar, fill, close_reason)
                     trades.append(trade)

@@ -69,6 +69,19 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual("stop", trades[0].exit_reason)
         self.assertEqual(98, trades[0].exit_price)
 
+    def test_intraday_simulator_flattens_at_configured_session_exit(self) -> None:
+        bars = [
+            Bar(datetime(2026, 1, 2, 15, 40), 100, 101, 99, 100),
+            Bar(datetime(2026, 1, 2, 15, 45), 100, 101, 99, 100),
+            Bar(datetime(2026, 1, 2, 15, 50), 100, 101, 99, 100),
+            Bar(datetime(2026, 1, 2, 15, 55), 100, 101, 99, 100),
+            Bar(datetime(2026, 1, 5, 9, 30), 90, 91, 89, 90),
+        ]
+        trades = Simulator(SimulationConfig(slippage_bps=0, session_exit_time=datetime(2026, 1, 2, 15, 55).time())).run(bars, _OneLong())
+        self.assertEqual(1, len(trades))
+        self.assertEqual("session", trades[0].exit_reason)
+        self.assertEqual(bars[3].timestamp, trades[0].exit_time)
+
     def test_validation_refuses_too_few_trades(self) -> None:
         bars = [_bar(0, 100, 101, 99, 100), _bar(1, 100, 101, 99, 100),
                 _bar(2, 102, 105, 101, 104), _bar(3, 104, 104, 103, 103)]

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, time
 import json
 from pathlib import Path
 import sys
@@ -36,7 +36,11 @@ def main() -> None:
     parser.add_argument("--min-trades", type=int, default=30)
     args = parser.parse_args()
     dataset = load_csv(args.csv)
-    simulation = Simulator(SimulationConfig(risk_fraction=args.risk_pct / 100.0, slippage_bps=args.slippage_bps))
+    simulation = Simulator(SimulationConfig(
+        risk_fraction=args.risk_pct / 100.0,
+        slippage_bps=args.slippage_bps,
+        session_exit_time=time(15, 55),
+    ))
     gates = ValidationConfig(min_trades=args.min_trades)
     report = run_walk_forward(dataset.bars, datetime.fromisoformat(args.split.replace("Z", "+00:00")),
                               OpeningRangePullback, simulation, gates)
