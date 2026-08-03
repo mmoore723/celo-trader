@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard } from "../lib/api";
+import { api, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -46,6 +46,29 @@ function Scorecard({ data }: { data: StrategyScorecard }) {
     <p style={{ fontSize: 12, color: "var(--ink-muted)", marginBottom: 8 }}>These results are never blended into the main tier’s expectancy or sizing evidence.</p>
     <ScorecardTable rows={data.opportunity_strategies ?? []} />
   </div>
+}
+
+function CandidateScorecard({ data }: { data: CandidateScorecard }) {
+  if (!data.strategies.length) {
+    return <div className="card" style={{ padding: 16 }}>
+      <h2 className="text-sm font-semibold" style={{ marginBottom: 6 }}>What the gates did</h2>
+      <p style={{ fontSize: 13, color: "var(--ink-muted)", margin: 0 }}>
+        No new paper candidates have been recorded for this account yet. This starts collecting while the bot evaluates market-session signals.
+      </p>
+    </div>;
+  }
+  return <div className="card" style={{ padding: 16 }}>
+    <h2 className="text-sm font-semibold" style={{ marginBottom: 6 }}>What the gates did</h2>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", marginBottom: 10 }}>
+      Every setup the router evaluated in the last {data.days} days is counted here. “Blocked” is not a loss—it only means the bot did not take it. {data.note}
+    </p>
+    <div style={{ overflowX: "auto" }}><table className="w-full text-sm"><thead><tr><th>Strategy</th><th>Setups seen</th><th>Entered</th><th>Blocked</th><th>Still deciding</th><th>Top reason blocked</th></tr></thead><tbody>
+      {data.strategies.map(row => {
+        const top = Object.entries(row.block_reasons).sort((a, b) => b[1] - a[1])[0];
+        return <tr key={row.strategy_id}><td>{STRAT_NAMES[row.strategy_id] ?? row.strategy_id}</td><td>{row.raw_candidates}</td><td>{row.entered}</td><td>{row.blocked}</td><td>{row.pending}</td><td>{top ? `${top[0]} (${top[1]})` : "—"}</td></tr>;
+      })}
+    </tbody></table></div>
+  </div>;
 }
 
 function FunnelTable({ perStrategy }: { perStrategy: Record<string, StrategyFunnelRow> }) {
@@ -186,6 +209,7 @@ function DailyView() {
     enabled:  showHistory,
   });
   const { data: scorecard } = useQuery({ queryKey: ["strategy-health-scorecard"], queryFn: () => api.strategyHealth.scorecard(30), staleTime: 60_000 });
+  const { data: candidateScorecard } = useQuery({ queryKey: ["strategy-health-candidate-scorecard"], queryFn: () => api.strategyHealth.candidateScorecard(30), staleTime: 60_000 });
 
   const runNow = useMutation({
     mutationFn: api.strategyHealth.run,
@@ -214,6 +238,7 @@ function DailyView() {
         </button>
       </div>
       {scorecard && <Scorecard data={scorecard} />}
+      {candidateScorecard && <CandidateScorecard data={candidateScorecard} />}
 
       {runNow.isError && (
         <div className="card" style={{ padding: 12, color: "var(--negative)", fontSize: 13 }}>

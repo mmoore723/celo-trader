@@ -57,6 +57,14 @@ export interface StrategyScorecard {
   days: number; minimum_actionable_trades: number; strategies: StrategyScorecardRow[];
   opportunity_strategies: StrategyScorecardRow[];
 }
+export interface CandidateScorecardRow {
+  strategy_id: string; raw_candidates: number; entered: number;
+  blocked: number; pending: number; block_reasons: Record<string, number>;
+}
+export interface CandidateScorecard {
+  days: number; account_scoped: boolean; note: string;
+  strategies: CandidateScorecardRow[];
+}
 
 export interface Trade {
   id: number;
@@ -608,6 +616,7 @@ export const api = {
     weeklyHistory: (limit = 12) => request<{audits: StrategyHealthHistoryRow[]}>(`/api/strategy-health/weekly/history?limit=${limit}`),
     weeklyRun:     () => request<WeeklyReview & {ok: boolean}>("/api/strategy-health/weekly/run", { method: "POST" }),
     scorecard: (days = 30) => request<StrategyScorecard>(`/api/strategy-health/scorecard?days=${days}`),
+    candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
   },
   aiReasoning: {
     log: (opts?: { limit?: number; eventType?: string; ticker?: string; onlyErrors?: boolean }) => {
