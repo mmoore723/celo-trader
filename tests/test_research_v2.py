@@ -11,6 +11,7 @@ from research_v2.reconciliation import ReferenceTrade, reconcile
 from research_v2.ledger import load_trade_ledger, write_trade_ledger
 from research_v2.regime import select_regimes
 from research_v2.options import OptionQuote, OptionQuoteBook, load_option_quotes
+from research_v2.option_markouts import run_option_markouts
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.providers.databento import normalize_databento_cbbo_files
 from research_v2.simulator import SimulationConfig, Simulator
@@ -109,6 +110,22 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(call, selected)
         self.assertEqual(5.1, selected.buy_fill())
         self.assertEqual(5.4, exit_quote.sell_fill() if exit_quote else None)
+
+    def test_option_markout_uses_ask_then_same_contract_bid(self) -> None:
+        bars = [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index) for index in range(15)]
+        entry_time = bars[2].timestamp
+        exit_time = entry_time + timedelta(minutes=60)
+        quotes = OptionQuoteBook((
+            OptionQuote(entry_time, "TSLA  260109C00102000", "TSLA", date(2026, 1, 9), 102, "call", 4.9, 5.1),
+            OptionQuote(exit_time, "TSLA  260109C00102000", "TSLA", date(2026, 1, 9), 102, "call", 5.4, 5.6),
+        ))
+
+        results = run_option_markouts(bars, quotes, _OneLong(), underlying="TSLA")
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(5.1, results[0].entry_ask)
+        self.assertEqual(5.4, results[0].exit_bid)
+        self.assertAlmostEqual(5.8824, results[0].return_pct, places=4)
 
     def test_supertrend_emits_a_completed_bar_flip(self) -> None:
         bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(12)]
