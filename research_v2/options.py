@@ -110,7 +110,7 @@ class OptionQuoteBook:
         ))
 
 def load_option_quotes(path: str | Path) -> tuple[OptionQuote, ...]:
-    """Load chronological vendor-export CSV; reject ambiguous fill inputs.
+    """Load vendor-export CSV; reject ambiguous fill inputs.
 
     Required columns: timestamp, option_symbol, underlying, expiration,
     strike, option_type, bid, ask. Optional: iv, delta, open_interest.
@@ -131,6 +131,10 @@ def load_option_quotes(path: str | Path) -> tuple[OptionQuote, ...]:
                     optional_float("delta"), optional_int("open_interest")))
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"invalid option quote at CSV row {number}: {exc}") from exc
-    if not output or [quote.timestamp for quote in output] != sorted(quote.timestamp for quote in output):
-        raise ValueError("option quote CSV must be nonempty and chronological")
+    if not output:
+        raise ValueError("option quote CSV must be nonempty")
+    # A vendor may partition a complete option chain by publisher or delivery
+    # batch, so cross-contract rows need not be globally chronological. The
+    # quote book sorts each contract independently before it permits a fill;
+    # that is the chronology that affects an executable entry or exit.
     return tuple(output)

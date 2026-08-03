@@ -87,9 +87,10 @@ def normalize_databento_cbbo_files(
 
     Only the requested underlying and optional inclusive date window are
     retained, so a large provider download becomes a compact, immutable
-    research artifact. Rows remain chronological; duplicate timestamp/symbol
-    records keep the last quote from that source minute, which is the
-    conservative usable quote at that instant.
+    research artifact. Some provider CSVs are ordered in delivery batches,
+    not globally by timestamp across the whole option chain. The quote book
+    therefore orders each individual contract before a fill is evaluated.
+    Adjacent duplicate timestamp/symbol records contribute no new evidence.
     """
     expected_ticker = ticker.upper().strip()
     if not expected_ticker:
@@ -99,7 +100,6 @@ def normalize_databento_cbbo_files(
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     written = 0
-    last_timestamp: str | None = None
     last_key: tuple[str, str] | None = None
     with destination.open("w", encoding="utf-8", newline="") as output:
         writer = csv.DictWriter(output, fieldnames=[
@@ -124,13 +124,11 @@ def normalize_databento_cbbo_files(
                     if end_date and timestamp_date > end_date:
                         continue
                     key = (timestamp, option_symbol)
-                    if last_timestamp is not None and timestamp < last_timestamp:
-                        raise ValueError(f"{raw_path.name} is not chronological at {timestamp}")
                     # Databento CBBO-1m should provide one observation per
-                    # symbol/minute. An exact repeat contributes no evidence.
+                    # symbol/minute. An adjacent exact repeat contributes no
+                    # evidence. Global file ordering is not assumed here.
                     if key == last_key:
                         continue
-                    last_timestamp = timestamp
                     last_key = key
                     writer.writerow({
                         "timestamp": timestamp, "option_symbol": option_symbol,

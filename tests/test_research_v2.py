@@ -1,6 +1,6 @@
 """Contract tests for the order-free V2 research foundation."""
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -106,6 +106,25 @@ class ResearchV2Tests(unittest.TestCase):
 
         self.assertEqual(1, len(quotes))
         self.assertEqual(date(2026, 7, 1), quotes[0].timestamp.date())
+
+    def test_databento_cbbo_import_accepts_delivery_batch_ordering(self) -> None:
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            output = Path(directory) / "normalized.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                "2026-07-01T14:31:00Z,TSLA  260703C00300000,2.10,2.20\n"
+                "2026-07-01T14:30:00Z,TSLA  260703P00300000,2.00,2.10\n",
+                encoding="utf-8",
+            )
+            normalize_databento_cbbo_files([source], "TSLA", output)
+            book = OptionQuoteBook(load_option_quotes(output))
+
+        quote = book.first_quote_at_or_after(
+            "TSLA  260703P00300000", datetime(2026, 7, 1, 14, 30, tzinfo=UTC),
+        )
+        self.assertIsNotNone(quote)
+        self.assertEqual(2.1, quote.ask if quote else None)
 
     def test_option_quote_book_uses_future_ask_and_same_contract_bid(self) -> None:
         decision = datetime(2026, 8, 3, 10, 0)
