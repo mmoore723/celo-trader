@@ -64,12 +64,18 @@ def main() -> None:
     parser.add_argument("--top-fraction", type=float, default=0.20,
                         help="Fixed share of strongest predictions to assess (default: 0.20)")
     parser.add_argument("--ridge", type=float, default=1.0)
+    parser.add_argument("--ticker", help="Optional pre-declared single-symbol study, e.g. TSLA")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if not 0 < args.top_fraction <= 0.5 or args.ridge < 0:
         parser.error("top fraction must be in (0, .5] and ridge must be non-negative")
     split = datetime.fromisoformat(args.split.replace("Z", "+00:00"))
     rows = _read(args.csv)
+    if args.ticker:
+        ticker = args.ticker.upper().strip()
+        rows = [row for row in rows if row["ticker"] == ticker]
+        if not rows:
+            parser.error(f"no rows found for ticker {ticker}")
     train_rows = [row for row in rows if row["timestamp"] < split]
     holdout_rows = [row for row in rows if row["timestamp"] >= split]
     if len(train_rows) < len(FEATURES) * 5 or len(holdout_rows) < 40:
@@ -97,6 +103,7 @@ def main() -> None:
             "selection": "Only predictions above the absolute cutoff fixed from the training period are evaluated.",
         },
         "split": split.isoformat(), "train_rows": len(train_rows), "holdout_rows": len(holdout_rows),
+        "ticker_scope": args.ticker.upper().strip() if args.ticker else "pooled",
         "feature_effects_pct": {feature: round(float(value), 5) for feature, value in zip(FEATURES, coefficients[1:])},
         "train_selected": _metrics(train_predictions, y_train, [str(row["ticker"]) for row in train_rows], prediction_cutoff),
         "holdout_selected": _metrics(holdout_predictions, y_holdout, [str(row["ticker"]) for row in holdout_rows], prediction_cutoff),
