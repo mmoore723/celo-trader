@@ -14,6 +14,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
+
+
+# This script is deliberately runnable directly from the command line on the
+# research server, not only as ``python -m`` from a configured shell.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research_v2.data import load_csv
 from research_v2.option_markouts import run_option_markouts
