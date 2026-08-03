@@ -16,6 +16,25 @@ from shadow_ledger import record_router_candidate, resolve_candidate_from_contex
 
 
 class PaperOptionQuoteTests(unittest.TestCase):
+    def test_existing_trade_table_migrates_before_account_index(self) -> None:
+        """Older databases lack broker_account_id; init must add it before indexing."""
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "legacy.db"
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                "CREATE TABLE trades (id INTEGER PRIMARY KEY, ticker TEXT, entry_time TEXT)"
+            )
+            conn.commit()
+            conn.close()
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
+            indexes = {row[1] for row in conn.execute("PRAGMA index_list(trades)")}
+            conn.close()
+
+        self.assertIn("broker_account_id", columns)
+        self.assertIn("idx_trades_broker_account", indexes)
+
     def test_mark_is_deduped_per_minute_but_entry_and_exit_are_preserved(self) -> None:
         with TemporaryDirectory() as directory:
             db_path = Path(directory) / "paper.db"

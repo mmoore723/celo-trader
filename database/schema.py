@@ -222,8 +222,6 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_SIGNAL_JOURNAL)
         conn.execute(_CREATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_SHADOW_CANDIDATES)
-        for _idx_sql in _CREATE_TRADES_IDX:
-            conn.execute(_idx_sql)
         for _idx_sql in _CREATE_SIGNAL_JOURNAL_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:
@@ -284,6 +282,8 @@ def _init_db_at(db_path: Path) -> None:
         if "broker_account_id" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN broker_account_id TEXT")
             logger.info("Migration: added broker_account_id to trades in %s", db_path.name)
+        for _idx_sql in _CREATE_TRADES_IDX:
+            conn.execute(_idx_sql)
         _shadow_cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_candidates)")}
         if "broker_account_id" not in _shadow_cols:
             conn.execute("ALTER TABLE shadow_candidates ADD COLUMN broker_account_id TEXT")
