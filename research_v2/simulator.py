@@ -90,7 +90,11 @@ class Simulator:
             # an exit.  We still discard those in-position signals: one
             # position is the allocation rule, not a reason to stop updating
             # the strategy's market view.
-            candidate = strategy.evaluate(tuple(history))
+            # ``history`` is owned by this simulator and strategies receive it
+            # as a read-only Sequence by contract.  Avoid copying every prior
+            # bar into a tuple on every step: research grids otherwise spend
+            # most of their time allocating identical history snapshots.
+            candidate = strategy.evaluate(history)
             if position is None and pending is None and index < len(completed) - 1:
                 pending = candidate
 
