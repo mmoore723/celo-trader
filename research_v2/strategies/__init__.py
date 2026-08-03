@@ -6,6 +6,7 @@ from research_v2.strategies.opening_range_pullback import OpeningRangePullback, 
 from research_v2.strategies.opening_range_breakout import OpeningRangeBreakout, OpeningRangeBreakoutConfig
 from research_v2.strategies.trend_continuation import TrendContinuation, TrendContinuationConfig
 from research_v2.strategies.vwap_pullback import VWAPPullback, VWAPPullbackConfig
+from research_v2.strategies.vwap_reversion_rth import VWAPReversionRTH, VWAPReversionRTHConfig
 from research_v2.strategies.supertrend_reversal import SuperTrendReversal, SuperTrendReversalConfig
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "OpeningRangeBreakout", "OpeningRangeBreakoutConfig",
     "TrendContinuation", "TrendContinuationConfig",
     "VWAPPullback", "VWAPPullbackConfig",
+    "VWAPReversionRTH", "VWAPReversionRTHConfig",
     "SuperTrendReversal", "SuperTrendReversalConfig",
 ]
