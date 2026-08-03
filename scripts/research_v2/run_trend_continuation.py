@@ -59,6 +59,8 @@ def main() -> None:
     ))
     gates = ValidationConfig(min_trades=args.min_trades)
     report = run_walk_forward(dataset.bars, split, TrendContinuation, simulation, gates)
+    simulation_payload = asdict(simulation.config)
+    simulation_payload["session_exit_time"] = simulation.config.session_exit_time.isoformat()
     output = {
         "research_only": True,
         "strategy": TrendContinuation.strategy_id,
@@ -66,7 +68,7 @@ def main() -> None:
                     "start": dataset.start.isoformat(), "end": dataset.end.isoformat(),
                     "bars": len(dataset.bars)},
         "split": split.isoformat(),
-        "simulation": asdict(simulation.config),
+        "simulation": simulation_payload,
         "gates": asdict(gates),
         "train": _result_payload(report.train_validation),
         "holdout": _result_payload(report.holdout_validation),
