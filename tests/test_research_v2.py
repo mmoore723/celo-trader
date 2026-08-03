@@ -14,6 +14,7 @@ from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
     AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
     OpeningRangePullback, OpeningRangePullbackConfig,
+    OpeningRangeBreakout, OpeningRangeBreakoutConfig,
     TrendContinuation, TrendContinuationConfig,
 )
 from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
@@ -296,6 +297,16 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertEqual(100.35, signal.stop)
+
+    def test_confirmed_orb_requires_range_and_vwap_aligned_close(self) -> None:
+        bars = [
+            _bar(0, 100.0, 100.2, 99.8, 100.0), _bar(5, 100.0, 100.3, 99.9, 100.2),
+            _bar(10, 100.2, 100.4, 100.0, 100.3), _bar(15, 100.4, 100.8, 100.4, 100.7),
+        ]
+        signal = OpeningRangeBreakout(OpeningRangeBreakoutConfig(min_range_pct=0.001)).evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
 
     def test_orb_pullback_emits_once_per_session(self) -> None:
         bars = [
