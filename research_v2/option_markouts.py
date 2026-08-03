@@ -94,7 +94,8 @@ def run_option_markouts(
 
 def run_databento_cbbo_markouts(
     bars: Iterable[Bar], raw_paths: Iterable[str | Path], strategy: Strategy,
-    underlying: str, hold_minutes: int = 60, max_dte: int = 7,
+    underlying: str, hold_minutes: int = 60, min_dte: int = 0, max_dte: int = 7,
+    min_premium: float = 0.0, max_premium: float | None = None,
     max_wait: timedelta = timedelta(minutes=1), max_spread_pct: float = 0.20,
 ) -> tuple[OptionMarkout, ...]:
     """Run an executable ORB markout directly from Databento CSV files.
@@ -111,7 +112,9 @@ def run_databento_cbbo_markouts(
     expected_underlying = underlying.upper().strip()
     if not completed or not paths or not expected_underlying:
         raise ValueError("bars, raw_paths, and underlying are required")
-    if hold_minutes < 1 or max_dte < 0 or max_wait.total_seconds() <= 0 or max_spread_pct <= 0:
+    if (hold_minutes < 1 or min_dte < 0 or max_dte < min_dte or min_premium < 0
+            or (max_premium is not None and max_premium < min_premium)
+            or max_wait.total_seconds() <= 0 or max_spread_pct <= 0):
         raise ValueError("invalid markout bounds")
 
     decisions: list[tuple[Signal, Bar, str]] = []
@@ -150,7 +153,10 @@ def run_databento_cbbo_markouts(
             if not entry_bar.timestamp <= quote.timestamp <= entry_bar.timestamp + max_wait:
                 continue
             dte = (quote.expiration - entry_bar.timestamp.date()).days
-            if not 0 <= dte <= max_dte or quote.spread / quote.mid > max_spread_pct:
+            is_otm = quote.strike > entry_bar.open if option_type == "call" else quote.strike < entry_bar.open
+            if (not min_dte <= dte <= max_dte or not is_otm
+                    or quote.ask < min_premium or (max_premium is not None and quote.ask > max_premium)
+                    or quote.spread / quote.mid > max_spread_pct):
                 continue
             previous = candidates[index].get(quote.option_symbol)
             if previous is None or quote.timestamp < previous.timestamp:

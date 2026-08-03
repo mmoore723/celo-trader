@@ -36,7 +36,14 @@ def main() -> None:
     source.add_argument("--cbbo-file", type=Path, help="Raw Databento .csv or .csv.zst file (streaming; preferred)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--hold-minutes", type=int, default=60)
-    parser.add_argument("--max-dte", type=int, default=7)
+    # Defaults mirror trading/entry/contract.py: 7–21 DTE, first OTM,
+    # $0.80–$10 premium and the settings page's 8% spread cap. CBBO does not
+    # include open interest, so that live filter is reported as unresolved.
+    parser.add_argument("--min-dte", type=int, default=7)
+    parser.add_argument("--max-dte", type=int, default=21)
+    parser.add_argument("--min-premium", type=float, default=0.80)
+    parser.add_argument("--max-premium", type=float, default=10.00)
+    parser.add_argument("--max-spread-pct", type=float, default=0.08)
     args = parser.parse_args()
 
     bars = load_csv(args.bars).bars
@@ -44,7 +51,9 @@ def main() -> None:
     if args.cbbo_file:
         results = run_databento_cbbo_markouts(
             bars, [args.cbbo_file], strategy, underlying=args.ticker,
-            hold_minutes=args.hold_minutes, max_dte=args.max_dte,
+            hold_minutes=args.hold_minutes, min_dte=args.min_dte, max_dte=args.max_dte,
+            min_premium=args.min_premium, max_premium=args.max_premium,
+            max_spread_pct=args.max_spread_pct,
         )
         input_mode = "streaming_raw_cbbo"
     else:
@@ -58,7 +67,10 @@ def main() -> None:
     summary = {
         "purpose": "Real bid/ask ORB markout diagnostic; not a live-exit or portfolio backtest.",
         "ticker": args.ticker.upper(), "input_mode": input_mode,
-        "hold_minutes": args.hold_minutes, "max_dte": args.max_dte,
+        "hold_minutes": args.hold_minutes, "min_dte": args.min_dte, "max_dte": args.max_dte,
+        "min_premium": args.min_premium, "max_premium": args.max_premium,
+        "max_spread_pct": args.max_spread_pct,
+        "unresolved_live_filter": "Open interest is not present in CBBO; this diagnostic cannot verify the live OI >= 150 gate.",
         "measured_signals": len(results),
         "positive_markouts": sum(value > 0 for value in returns),
         "win_rate_pct": round(sum(value > 0 for value in returns) / len(returns) * 100, 1) if returns else None,

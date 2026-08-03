@@ -175,9 +175,9 @@ class ResearchV2Tests(unittest.TestCase):
             source = Path(directory) / "opra.csv"
             source.write_text(
                 "ts_recv,symbol,bid_px_00,ask_px_00\n"
-                f"{entry_time.isoformat()},TSLA  260109C00102000,4.90,5.10\n"
+                f"{entry_time.isoformat()},TSLA  260109C00103000,4.90,5.10\n"
                 f"{entry_time.isoformat()},TSLA  260109C00100000,4.00,5.80\n"
-                f"{exit_time.isoformat()},TSLA  260109C00102000,5.40,5.60\n",
+                f"{exit_time.isoformat()},TSLA  260109C00103000,5.40,5.60\n",
                 encoding="utf-8",
             )
             results = run_databento_cbbo_markouts(bars, [source], _OneLong(), underlying="TSLA")
