@@ -23,6 +23,7 @@ from research_v2.strategies import SuperTrendReversal
 from research_v2.strategies import EMAPullbackRTH, EMAPullbackRTHConfig
 from research_v2.strategies import TurtleSoupRTH, TurtleSoupRTHConfig
 from research_v2.strategies import GapFillRTH, GapFillRTHConfig
+from research_v2.strategies import OpeningMomentumRTH, OpeningMomentumRTHConfig
 from research_v2.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
@@ -360,6 +361,15 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertTrue(signal.features["no_profit_target"])
+
+    def test_opening_momentum_emits_once_at_opening_window_close(self) -> None:
+        strategy = OpeningMomentumRTH(OpeningMomentumRTHConfig(opening_bars=3, min_move_pct=.001, atr_bars=2))
+        bars = [Bar(datetime(2026,1,1,15,50),100,101,99,100), Bar(datetime(2026,1,1,15,55),100,101,99,100),
+                Bar(datetime(2026,1,2,9,30),100,101,99,100), Bar(datetime(2026,1,2,9,35),100,101,99,100.4), Bar(datetime(2026,1,2,9,40),100.4,101,100.3,100.8)]
+        for index in range(4): self.assertIsNone(strategy.evaluate(bars[:index+1]))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal); assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
 
     def test_regime_selection_uses_train_only_and_preserves_side(self) -> None:
         start = datetime(2026, 1, 2, 9, 30)
