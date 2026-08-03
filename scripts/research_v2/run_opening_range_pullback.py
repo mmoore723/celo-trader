@@ -44,11 +44,13 @@ def main() -> None:
     gates = ValidationConfig(min_trades=args.min_trades)
     report = run_walk_forward(dataset.bars, datetime.fromisoformat(args.split.replace("Z", "+00:00")),
                               OpeningRangePullback, simulation, gates)
+    simulation_payload = asdict(simulation.config)
+    simulation_payload["session_exit_time"] = simulation.config.session_exit_time.isoformat()
     print(json.dumps({
         "research_only": True, "strategy": OpeningRangePullback.strategy_id,
         "dataset": {"path": dataset.source_path, "sha256": dataset.sha256, "start": dataset.start.isoformat(),
                     "end": dataset.end.isoformat(), "bars": len(dataset.bars)},
-        "split": args.split, "simulation": asdict(simulation.config), "gates": asdict(gates),
+        "split": args.split, "simulation": simulation_payload, "gates": asdict(gates),
         "train": _payload(report.train_validation), "holdout": _payload(report.holdout_validation),
         "promoted": report.promoted,
         "promotion_message": ("Eligible only for portfolio comparison; cannot place an order."
