@@ -14,7 +14,7 @@ from research_v2.options import OptionQuote, OptionQuoteBook, load_option_quotes
 from research_v2.option_markouts import run_databento_cbbo_markouts, run_option_markouts
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.providers.databento import normalize_databento_cbbo_files
-from scripts.research_v2.run_paid_databento_job import batch_file_date, day_bars, manifest_filenames, summarize
+from scripts.research_v2.run_paid_databento_job import archive_filenames, batch_file_date, build_strategy, day_bars, manifest_filenames, summarize
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
     AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
@@ -87,6 +87,18 @@ class ResearchV2Tests(unittest.TestCase):
         manifest = {"files": [{"filename": "manifest.json"},
                               {"filename": "opra-pillar-20260708.cbbo-1m.csv.zst"}]}
         self.assertEqual(("opra-pillar-20260708.cbbo-1m.csv.zst",), manifest_filenames(manifest))
+
+    def test_paid_archive_lists_only_daily_cbbo_files(self) -> None:
+        import zipfile
+        with TemporaryDirectory() as directory:
+            archive = Path(directory) / "paid.zip"
+            with zipfile.ZipFile(archive, "w") as handle:
+                handle.writestr("metadata.json", "{}")
+                handle.writestr("opra-pillar-20260708.cbbo-1m.csv.zst", "quotes")
+            self.assertEqual(("opra-pillar-20260708.cbbo-1m.csv.zst",), archive_filenames(archive))
+
+    def test_paid_runner_selects_distinct_orb_hypotheses(self) -> None:
+        self.assertEqual("V2_ORB_PULLBACK", build_strategy("orb_pullback").strategy_id)
 
     def test_databento_cbbo_import_keeps_target_usable_occ_quotes(self) -> None:
         with TemporaryDirectory() as directory:

@@ -716,6 +716,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("CHAN_BREAK",  "strategy_chan_enabled"),
             ("GAP_GO",      "strategy_gapgo_enabled"),
             ("LIQ_SWEEP",   "strategy_liqsweep_enabled"),
+            ("V2_ORB_PULLBACK", "strategy_orb_pullback_v2_enabled"),
         )
         if sid in _approved_strategy_ids and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
     }

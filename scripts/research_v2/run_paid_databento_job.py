@@ -20,15 +20,20 @@ from ftplib import FTP
 import json
 from pathlib import Path
 import re
+import shutil
 import sys
 from typing import Iterable
+from zipfile import ZipFile
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research_v2.data import BarDataset, load_csv
 from research_v2.option_markouts import OptionMarkout, run_databento_cbbo_markouts
-from research_v2.strategies import OpeningRangeBreakout, OpeningRangeBreakoutConfig
+from research_v2.strategies import (
+    OpeningRangeBreakout, OpeningRangeBreakoutConfig,
+    OpeningRangePullback, OpeningRangePullbackConfig,
+)
 
 
 _FILE_DATE = re.compile(r"-(\d{8})\.cbbo-1m\.csv(?:\.zst)?$")
@@ -53,6 +58,28 @@ def manifest_filenames(payload: object) -> tuple[str, ...]:
         name for name in names
         if isinstance(name, str) and batch_file_date(name) is not None
     ))
+
+
+def archive_filenames(archive_path: Path) -> tuple[str, ...]:
+    """List daily CBBO files in a portal ``Download all`` ZIP.
+
+    The portal package is an immutable delivery of an already-paid batch.  We
+    intentionally inspect its directory rather than unpacking the package:
+    the full expanded CSV set can be much larger than a laptop's free space.
+    """
+    with ZipFile(archive_path) as archive:
+        return tuple(sorted(
+            name for name in archive.namelist()
+            if batch_file_date(name) is not None
+        ))
+
+
+def extract_archive_file(archive_path: Path, filename: str, output_path: Path) -> Path:
+    """Extract one compressed daily file, never the whole delivery package."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with ZipFile(archive_path) as archive, archive.open(filename) as source, output_path.open("wb") as target:
+        shutil.copyfileobj(source, target, length=1_048_576)
+    return output_path
 
 
 def ftp_download(
@@ -112,10 +139,22 @@ def summarize(markouts: Iterable[dict[str, object]]) -> dict[str, object]:
     }
 
 
+def build_strategy(strategy_name: str):
+    """Return one pre-defined, causal hypothesis; never tune during a run."""
+    if strategy_name == "orb_breakout":
+        return OpeningRangeBreakout(OpeningRangeBreakoutConfig())
+    if strategy_name == "orb_pullback":
+        return OpeningRangePullback(OpeningRangePullbackConfig())
+    raise ValueError(f"unknown strategy: {strategy_name}")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Stream an already-paid daily Databento CBBO batch job")
-    parser.add_argument("--job-id", required=True)
+    parser = argparse.ArgumentParser(description="Evaluate an already-paid daily Databento CBBO batch job")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--job-id", help="Existing Databento job ID; retrieves one day at a time through FTP")
+    source.add_argument("--archive", type=Path, help="Portal Download all ZIP; reads one day at a time locally")
     parser.add_argument("--ticker", required=True)
+    parser.add_argument("--strategy", choices=("orb_breakout", "orb_pullback"), default="orb_breakout")
     parser.add_argument("--bars", type=Path, required=True, help="Frozen regular-session underlying bars CSV")
     parser.add_argument("--output", type=Path, required=True, help="Resumable JSON result file")
     parser.add_argument("--scratch-dir", type=Path, required=True, help="Small temporary download directory")
@@ -133,10 +172,6 @@ def main() -> None:
     if not (0 <= args.min_dte <= args.max_dte and 0 <= args.min_premium <= args.max_premium):
         parser.error("invalid option eligibility limits")
 
-    # Import only at execution time: unit tests and all non-Databento research
-    # remain usable without a paid-data credential.
-    import databento as db
-
     dataset = load_csv(args.bars)
     existing: dict[str, object] = {}
     if args.output.exists():
@@ -145,18 +180,28 @@ def main() -> None:
     markouts = list(existing.get("markouts", []))
     skipped = list(existing.get("skipped_files", []))
 
-    client = db.Historical()
-    # ``batch.list_files`` is useful for smaller packages but Databento's HTTP
-    # manifest endpoint can time out for this 254-file package.  Job details
-    # are compact and give us the FTP user ID; the package's tiny manifest then
-    # supplies the immutable daily filenames without a new data request.
-    details = client.batch.get_job_details(args.job_id)
-    user_id = str(details.get("user_id") or "").strip()
-    if not user_id:
-        raise RuntimeError("Databento job details did not include its FTP user ID")
-    manifest_path = args.scratch_dir / f"{args.job_id}-manifest.json"
-    ftp_download(client.key, user_id, args.job_id, "manifest.json", manifest_path)
-    filenames = manifest_filenames(json.loads(manifest_path.read_text(encoding="utf-8")))
+    client = None
+    user_id = ""
+    if args.archive:
+        if not args.archive.is_file():
+            parser.error(f"archive does not exist: {args.archive}")
+        filenames = archive_filenames(args.archive)
+        source_description = f"local paid portal archive: {args.archive}"
+    else:
+        # Import only for FTP delivery: local archive analysis needs neither a
+        # Databento credential nor network access.
+        import databento as db
+        client = db.Historical()
+        # ``batch.list_files`` can time out for this 254-file package.  Job
+        # details provide the FTP user ID; the tiny manifest has file names.
+        details = client.batch.get_job_details(args.job_id)
+        user_id = str(details.get("user_id") or "").strip()
+        if not user_id:
+            raise RuntimeError("Databento job details did not include its FTP user ID")
+        manifest_path = args.scratch_dir / f"{args.job_id}-manifest.json"
+        ftp_download(client.key, user_id, args.job_id, "manifest.json", manifest_path)
+        filenames = manifest_filenames(json.loads(manifest_path.read_text(encoding="utf-8")))
+        source_description = f"Databento FTP job: {args.job_id}"
     if not filenames:
         raise RuntimeError("Databento manifest contains no daily CBBO files")
     if args.limit_days:
@@ -166,8 +211,9 @@ def main() -> None:
     base = {
         "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
         "job_id": args.job_id,
+        "data_source": source_description,
         "ticker": args.ticker.upper(),
-        "strategy": "confirmed_opening_range_breakout",
+        "strategy": args.strategy,
         "execution": "entry at actual ask; same-contract exit at actual bid; no midpoint or synthetic option price",
         "bars_path": str(args.bars),
         "bars_sha256": dataset.sha256,
@@ -190,10 +236,13 @@ def main() -> None:
         else:
             raw_path: Path | None = None
             try:
-                raw_path = ftp_download(
-                    client.key, user_id, args.job_id, filename, args.scratch_dir / filename,
-                )
-                strategy = OpeningRangeBreakout(OpeningRangeBreakoutConfig())
+                destination = args.scratch_dir / filename
+                if args.archive:
+                    raw_path = extract_archive_file(args.archive, filename, destination)
+                else:
+                    assert client is not None
+                    raw_path = ftp_download(client.key, user_id, args.job_id, filename, destination)
+                strategy = build_strategy(args.strategy)
                 results = run_databento_cbbo_markouts(
                     bars, [raw_path], strategy, underlying=args.ticker,
                     hold_minutes=args.hold_minutes, min_dte=args.min_dte, max_dte=args.max_dte,
