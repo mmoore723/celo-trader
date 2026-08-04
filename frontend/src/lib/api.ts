@@ -67,6 +67,12 @@ export interface CandidateScorecard {
   days: number; account_scoped: boolean; note: string;
   strategies: CandidateScorecardRow[];
 }
+export interface PaperResearchScorecard {
+  study_id: string; observations: number; closed: number; unavailable: number;
+  quote_measured: number; option_win_rate_pct: number | null;
+  avg_underlying_move_pct: number | null; avg_executable_return_pct: number | null;
+  note: string;
+}
 
 export interface Trade {
   id: number;
@@ -619,6 +625,7 @@ export const api = {
     weeklyRun:     () => request<WeeklyReview & {ok: boolean}>("/api/strategy-health/weekly/run", { method: "POST" }),
     scorecard: (days = 30) => request<StrategyScorecard>(`/api/strategy-health/scorecard?days=${days}`),
     candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
+    qqqOpeningResearch: () => request<PaperResearchScorecard>("/api/strategy-health/paper-research/qqq-opening"),
   },
   aiReasoning: {
     log: (opts?: { limit?: number; eventType?: string; ticker?: string; onlyErrors?: boolean }) => {

@@ -10,6 +10,11 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from database.option_quotes import record_paper_option_quote
+from database.research_observations import (
+    close_due_paper_research_observations,
+    get_paper_research_scorecard,
+    start_paper_research_observation,
+)
 from database.schema import _init_db_at
 from database.trades_query import get_all_trades
 from shadow_ledger import record_router_candidate, resolve_candidate_from_context
@@ -155,3 +160,41 @@ class PaperOptionQuoteTests(unittest.TestCase):
             conn.close()
 
         self.assertEqual((300.0, 303.0, 1.0, 1), tuple(row))
+
+    def test_research_observation_is_deduped_and_never_creates_a_trade(self) -> None:
+        """A paper study stores conservative quote evidence outside trades."""
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paper.db"
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            started = datetime(2026, 8, 3, 10, 1)
+            closed = datetime(2026, 8, 3, 15, 56)
+            common = dict(
+                study_id="QQQ_TEST", observed_at=started, ticker="QQQ", direction="bearish",
+                underlying_entry_price=600.0, broker_account_id="alpaca:paper:test",
+                contract={"symbol": "QQQ260821P00600000", "expiry": "2026-08-21", "strike": 600,
+                          "bid": 5.0, "ask": 5.2, "mid": 5.1},
+            )
+            with patch("database.research_observations.get_conn", return_value=conn):
+                self.assertTrue(start_paper_research_observation(**common))
+                self.assertTrue(start_paper_research_observation(**common))  # duplicate is ignored safely
+                self.assertEqual(1, close_due_paper_research_observations(
+                    study_id="QQQ_TEST", observed_at=closed, ticker="QQQ", underlying_exit_price=594.0,
+                    broker_account_id="alpaca:paper:test",
+                    quote_lookup=lambda symbol: {"symbol": symbol, "bid": 6.0, "ask": 6.2, "mid": 6.1},
+                ))
+                scorecard = get_paper_research_scorecard(
+                    study_id="QQQ_TEST", broker_account_id="alpaca:paper:test",
+                )
+            observation = conn.execute(
+                "SELECT status, underlying_move_pct, executable_return_pct FROM paper_research_option_observations"
+            ).fetchone()
+            trade_count = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
+            conn.close()
+
+        self.assertEqual(("closed", 1.0), tuple(observation)[:2])
+        self.assertAlmostEqual(15.3846153846, float(observation[2]), places=8)
+        self.assertEqual(0, trade_count)
+        self.assertEqual({"observations": 1, "closed": 1, "quote_measured": 1, "option_win_rate_pct": 100.0},
+                         {key: scorecard[key] for key in ("observations", "closed", "quote_measured", "option_win_rate_pct")})

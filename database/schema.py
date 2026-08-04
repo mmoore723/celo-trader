@@ -204,6 +204,45 @@ _CREATE_SHADOW_CANDIDATES_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_shadow_candidates_strategy ON shadow_candidates(strategy_id, final_outcome);",
 ]
 
+# paper_research_option_observations — quote-to-quote measurements for a
+# separately labelled paper study.  These rows are *not* trades: they have no
+# order ID, quantity, P&L, or path into any entry/exit code.  They let us
+# measure the conservative executable result (buy at entry ask, sell at exit
+# bid) before a research idea is even considered for paper execution.
+_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS paper_research_option_observations (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    study_id              TEXT    NOT NULL,
+    observation_date      TEXT    NOT NULL,
+    status                TEXT    NOT NULL DEFAULT 'open', -- open | closed | unavailable
+    created_at            TEXT    NOT NULL,
+    closed_at             TEXT,
+    ticker                TEXT    NOT NULL,
+    direction             TEXT    NOT NULL,
+    trigger_bar           TEXT,
+    broker_account_id     TEXT    NOT NULL DEFAULT '',
+    underlying_entry_price REAL,
+    underlying_exit_price  REAL,
+    underlying_move_pct    REAL,
+    contract_symbol       TEXT,
+    expiry                TEXT,
+    strike                REAL,
+    entry_bid             REAL,
+    entry_ask             REAL,
+    entry_mid             REAL,
+    exit_bid              REAL,
+    exit_ask              REAL,
+    exit_mid              REAL,
+    executable_return_pct REAL,
+    metadata_json         TEXT,
+    UNIQUE(study_id, observation_date, broker_account_id)
+);
+"""
+_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_research_observations_study_date ON paper_research_option_observations(study_id, observation_date);",
+    "CREATE INDEX IF NOT EXISTS idx_research_observations_account ON paper_research_option_observations(broker_account_id, created_at);",
+]
+
 
 
 # ── Initialisation ────────────────────────────────────────────────────────────
@@ -228,11 +267,14 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_SIGNAL_JOURNAL)
         conn.execute(_CREATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_SHADOW_CANDIDATES)
+        conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
         for _idx_sql in _CREATE_SIGNAL_JOURNAL_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_SHADOW_CANDIDATES_IDX:
+            conn.execute(_idx_sql)
+        for _idx_sql in _CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         # ── Migrations ────────────────────────────────────────────────────────
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}

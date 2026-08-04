@@ -114,6 +114,9 @@ _DEFAULTS = {
     # locked-holdout panel increased activity while worsening aggregate results.
     # Candidates remain journaled as `opportunity` for separate evidence.
     "opportunity_tier_enabled": False,
+    # QQQ experiment: a separately labelled quote-to-quote observer only.
+    # It runs exclusively when paper_trading is true and has no order path.
+    "qqq_opening_research_enabled": True,
 
     # Filters
     "volume_filter_enabled":   True,

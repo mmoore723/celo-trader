@@ -41,6 +41,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     from trading.entry import _tick
     from trading.diagnostics import _check_ghost_positions
     from trading.controls import _panic_close_all_positions
+    from trading.research.qqq_opening_continuation import maybe_observe as _maybe_observe_qqq
 
     # This user's own state dict — see trading/state.py::get_user_state.
     # FIX: this function used to ALSO mirror every write into the global
@@ -329,6 +330,10 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             # Old design: one ticker per 10-second tick.  With 10 tickers the
             # cycle took ~100 s, so each ticker was only seen every 1.5 bars.
             _wl_batch = _US.get("scan_watchlist") or ["SPY", "QQQ"]
+            # Independent, non-ordering study. It fetches QQQ only during its
+            # two declared windows and is deliberately outside `_tick` so it
+            # cannot become a router signal or create a broker order.
+            _maybe_observe_qqq(alpaca, tradier)
             for _bi in range(len(_wl_batch)):
                 if _stop.is_set():
                     break

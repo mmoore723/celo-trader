@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard } from "../lib/api";
+import { api, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -70,6 +70,27 @@ function CandidateScorecard({ data }: { data: CandidateScorecard }) {
         return <tr key={row.strategy_id}><td>{STRAT_NAMES[row.strategy_id] ?? row.strategy_id}</td><td>{row.raw_candidates}</td><td>{row.entered}</td><td>{row.blocked}</td><td>{direction}</td><td style={{ color: (row.avg_directional_move_pct ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{avgMove}</td><td>{top ? `${top[0]} (${top[1]})` : "—"}</td></tr>;
       })}
     </tbody></table></div>
+  </div>;
+}
+
+function QQQResearchCard({ data }: { data: PaperResearchScorecard }) {
+  const result = data.avg_executable_return_pct == null ? "Collecting quotes" :
+    `${data.avg_executable_return_pct >= 0 ? "+" : ""}${data.avg_executable_return_pct.toFixed(2)}%`;
+  const underlying = data.avg_underlying_move_pct == null ? "—" :
+    `${data.avg_underlying_move_pct >= 0 ? "+" : ""}${data.avg_underlying_move_pct.toFixed(2)}%`;
+  return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--accent)" }}>
+    <h2 className="text-sm font-semibold" style={{ marginBottom: 6 }}>QQQ paper experiment — not a bot strategy</h2>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", marginBottom: 12 }}>
+      When QQQ falls at least 0.25% in the first 30 minutes, this records a put quote near 10:00 AM and the same contract near 3:55 PM. It never sends an order, changes sizing, or affects the main bot.
+    </p>
+    <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 13 }}>
+      <span><b>{data.observations}</b> signals observed</span>
+      <span><b>{data.quote_measured}</b> quote-to-quote results</span>
+      <span>Option result: <b style={{ color: (data.avg_executable_return_pct ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{result}</b></span>
+      <span>Underlying move: <b>{underlying}</b></span>
+      <span>Win rate: <b>{data.option_win_rate_pct == null ? "—" : `${data.option_win_rate_pct}%`}</b></span>
+    </div>
+    <p style={{ fontSize: 11, color: "var(--ink-faint)", margin: "10px 0 0" }}>{data.note}</p>
   </div>;
 }
 
@@ -212,6 +233,7 @@ function DailyView() {
   });
   const { data: scorecard } = useQuery({ queryKey: ["strategy-health-scorecard"], queryFn: () => api.strategyHealth.scorecard(30), staleTime: 60_000 });
   const { data: candidateScorecard } = useQuery({ queryKey: ["strategy-health-candidate-scorecard"], queryFn: () => api.strategyHealth.candidateScorecard(30), staleTime: 60_000 });
+  const { data: qqqResearch } = useQuery({ queryKey: ["strategy-health-qqq-paper-research"], queryFn: api.strategyHealth.qqqOpeningResearch, staleTime: 60_000 });
 
   const runNow = useMutation({
     mutationFn: api.strategyHealth.run,
@@ -241,6 +263,7 @@ function DailyView() {
       </div>
       {scorecard && <Scorecard data={scorecard} />}
       {candidateScorecard && <CandidateScorecard data={candidateScorecard} />}
+      {qqqResearch && <QQQResearchCard data={qqqResearch} />}
 
       {runNow.isError && (
         <div className="card" style={{ padding: 12, color: "var(--negative)", fontSize: 13 }}>
