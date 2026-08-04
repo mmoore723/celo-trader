@@ -34,5 +34,18 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
         confidence=0.80,
         rvol=float(latest.get("rvol", 0.0) or 0.0),
         trigger_bar=trigger,
-        meta={**candidate.features, "v2_hypothesis": "opening_range_pullback", "research_only": True},
+        # The normal entry path uses entry_bar_high/low to translate the
+        # underlying invalidation level into an option-level structural stop.
+        # Preserve the V2 hypothesis levels too, so the paper journal can
+        # distinguish the research setup from the actual option fill.
+        meta={
+            **candidate.features,
+            "v2_hypothesis": "opening_range_pullback",
+            "research_only": True,
+            "v2_entry_reference": float(candidate.entry_reference),
+            "v2_stop": float(candidate.stop),
+            "v2_target": float(candidate.target),
+            "entry_bar_low": float(candidate.stop) if candidate.side.value == "long" else None,
+            "entry_bar_high": float(candidate.stop) if candidate.side.value == "short" else None,
+        },
     )

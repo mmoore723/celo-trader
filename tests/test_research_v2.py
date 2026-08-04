@@ -100,6 +100,38 @@ class ResearchV2Tests(unittest.TestCase):
     def test_paid_runner_selects_distinct_orb_hypotheses(self) -> None:
         self.assertEqual("V2_ORB_PULLBACK", build_strategy("orb_pullback").strategy_id)
 
+    def test_orb_pullback_adapter_preserves_structural_stop_and_provenance(self) -> None:
+        """The live paper adapter must hand the V2 stop to the normal exit path."""
+        from unittest.mock import patch
+        import pandas as pd
+        from research_v2.models import Signal as V2Signal
+        from strategies.orb_pullback_v2 import evaluate
+
+        frame = pd.DataFrame({
+            "time": pd.date_range("2026-01-02 09:30", periods=18, freq="5min"),
+            "open": [100.0] * 18,
+            "high": [101.0] * 18,
+            "low": [99.0] * 18,
+            "close": [100.0] * 18,
+            "volume": [1000] * 18,
+            "rvol": [1.25] * 18,
+        })
+        candidate = V2Signal(
+            "V2_ORB_PULLBACK", Side.LONG, frame["time"].iloc[-1].to_pydatetime(),
+            100.0, 98.0, 104.0, {"trigger": "upward_breakout_first_retest_bounce"},
+        )
+        with patch("strategies.orb_pullback_v2.OpeningRangePullback.evaluate", return_value=candidate):
+            signal = evaluate(frame, "TSLA")
+
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual("bullish", signal.direction)
+        self.assertEqual(98.0, signal.meta["entry_bar_low"])
+        self.assertIsNone(signal.meta["entry_bar_high"])
+        self.assertEqual(98.0, signal.meta["v2_stop"])
+        self.assertEqual(104.0, signal.meta["v2_target"])
+        self.assertEqual("opening_range_pullback", signal.meta["v2_hypothesis"])
+
     def test_databento_cbbo_import_keeps_target_usable_occ_quotes(self) -> None:
         with TemporaryDirectory() as directory:
             source = Path(directory) / "opra.csv"
