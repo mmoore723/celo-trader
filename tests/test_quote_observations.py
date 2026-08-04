@@ -178,7 +178,7 @@ class PaperOptionQuoteTests(unittest.TestCase):
             )
             with patch("database.research_observations.get_conn", return_value=conn):
                 self.assertTrue(start_paper_research_observation(**common))
-                self.assertTrue(start_paper_research_observation(**common))  # duplicate is ignored safely
+                self.assertFalse(start_paper_research_observation(**common))  # duplicate is ignored safely
                 self.assertEqual(1, close_due_paper_research_observations(
                     study_id="QQQ_TEST", observed_at=closed, ticker="QQQ", underlying_exit_price=594.0,
                     broker_account_id="alpaca:paper:test",

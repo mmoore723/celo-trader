@@ -56,7 +56,7 @@ def start_paper_research_observation(
     status = "open"
     try:
         with get_conn() as conn:
-            conn.execute(
+            result = conn.execute(
                 """INSERT OR IGNORE INTO paper_research_option_observations
                    (study_id, observation_date, status, created_at, ticker, direction,
                     trigger_bar, broker_account_id, underlying_entry_price,
@@ -70,7 +70,10 @@ def start_paper_research_observation(
                     json.dumps(dict(metadata or {}), default=str, sort_keys=True),
                 ),
             )
-        return True
+        # INSERT OR IGNORE returns rowcount=0 for the same study/account/day.
+        # The polling loop can call us repeatedly during the entry window, so
+        # callers must be told the truth rather than logging a phantom start.
+        return bool(result.rowcount)
     except Exception:
         logger.warning("paper research observation start failed", exc_info=True)
         return False
