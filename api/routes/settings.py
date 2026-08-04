@@ -31,6 +31,7 @@ def get_settings_endpoint() -> Settings:
         max_concurrent_positions=int(s.get("max_concurrent_positions", MAX_CONCURRENT_POSITIONS)),
         rr_ratio_mode=str(s.get("rr_ratio_mode", "auto")),
         watchlist=list(s.get("watchlist", ["SPY"])),
+        validated_strategy_ids=list(s.get("validated_strategy_ids", [])),
         # No strategy is enabled by default. A promotion must set its flag
         # deliberately after it survives real option quote validation.
         orb_enabled=bool(s.get("strategy_orb_enabled", False)),
@@ -82,6 +83,9 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     from config import get_settings, save_settings
     current = get_settings()
     data = payload.model_dump()
+    # Strategy promotion is evidence-controlled, not a settings-page action.
+    # Keep the server's reviewed list even if a browser sends this field.
+    data.pop("validated_strategy_ids", None)
     # Map all frontend field names → strategy_*_enabled keys that entry.py reads
     data["strategy_orb_enabled"]   = data.pop("orb_enabled", False)
     data["strategy_vwap_enabled"]  = data.pop("vwap_pullback_enabled", False)

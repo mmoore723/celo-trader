@@ -443,6 +443,7 @@ export interface AppSettings {
   max_concurrent_positions: number;
   rr_ratio_mode: string;
   watchlist: string[];
+  validated_strategy_ids?: string[]; // server-controlled, evidence-based promotion list
   orb_enabled: boolean;
   vwap_pullback_enabled: boolean;
   fvg_enabled: boolean;

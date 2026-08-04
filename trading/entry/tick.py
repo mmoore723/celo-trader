@@ -698,6 +698,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # same accepted risk as GAP_GO above.
         "strategy_liqsweep_enabled": False,
     }
+    _approved_strategy_ids = {
+        str(strategy_id).strip().upper()
+        for strategy_id in _strat_cfg.get("validated_strategy_ids", [])
+        if str(strategy_id).strip()
+    }
     _enabled: set[str] = {
         sid for sid, key in (
             ("INST_ORB",   "strategy_orb_enabled"),
@@ -712,7 +717,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("GAP_GO",      "strategy_gapgo_enabled"),
             ("LIQ_SWEEP",   "strategy_liqsweep_enabled"),
         )
-        if _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, True))
+        if sid in _approved_strategy_ids and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
     }
     # mtf_cache: per-user, per-ticker cache dict (see trading/state.py's
     # "mtf_1h_cache" key + trading/mtf_live_gate.py) — passing both alpaca and

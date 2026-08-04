@@ -115,6 +115,9 @@ _DEFAULTS = {
     "strategy_gapgo_enabled": False,
     "strategy_liqsweep_enabled": False,
     "strategy_instorb_immediate_entry": False,
+    # Server-controlled promotion list. Settings switches can never promote an
+    # unvalidated strategy; promotion requires a reviewed real-quote result.
+    "validated_strategy_ids": [],
 
     # Paper-only lower-confidence research cohort. Disabled after the 2026-08-02
     # locked-holdout panel increased activity while worsening aggregate results.

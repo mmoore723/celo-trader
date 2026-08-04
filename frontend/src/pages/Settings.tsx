@@ -29,17 +29,18 @@ const DEFAULT: AppSettings = {
   max_concurrent_positions: 2,
   rr_ratio_mode: "auto",
   watchlist: ["SPY"],
-  orb_enabled: true,
-  vwap_pullback_enabled: true,
-  fvg_enabled: true,
-  ifvg_enabled: true,
-  bos_mss_enabled: true,   // kept for API compatibility; strategy is disabled in router
-  chan_break_enabled: true,
+  validated_strategy_ids: [],
+  orb_enabled: false,
+  vwap_pullback_enabled: false,
+  fvg_enabled: false,
+  ifvg_enabled: false,
+  bos_mss_enabled: false,
+  chan_break_enabled: false,
   mid_brk_enabled: false,  // disabled 2026-07-23 — 13 backtested configs, all negative, see audit
-  trend_cont_enabled: true,
-  aft_rev_enabled: true,   // Afternoon Reversal — added to Settings 2026-07-20
-  gap_go_enabled: true,    // Gap and Go — added 2026-07-23, flipped ON 2026-07-31
-  liquidity_sweep_enabled: true,  // Liquidity Sweep Reversal — added 2026-07-31, ON by default
+  trend_cont_enabled: false,
+  aft_rev_enabled: false,
+  gap_go_enabled: false,
+  liquidity_sweep_enabled: false,
   opportunity_tier_enabled: false,
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
@@ -392,50 +393,22 @@ export function Settings() {
 
       {/* Strategies */}
       <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Strategies</h3>
-        <Toggle label="ORB — Opening Range Breakout (9:30–9:44)" checked={form.orb_enabled}
-                onChange={(v) => set("orb_enabled", v)} />
-        <Toggle label="VWAP Pullback (all session)" checked={form.vwap_pullback_enabled}
-                onChange={(v) => set("vwap_pullback_enabled", v)} />
-        <Toggle label="Fair Value Gap / FVG (all session)" checked={form.fvg_enabled}
-                onChange={(v) => set("fvg_enabled", v)} />
-        <Toggle label="Inverted FVG / IFVG — zone-flip reversal (all session)" checked={form.ifvg_enabled}
-                onChange={(v) => set("ifvg_enabled", v)} />
-        <div className="flex items-center justify-between gap-3 py-2">
-          <span className="text-sm" style={{ color: "var(--ink-muted)" }}>
-            Channel Breakout
-            <span className="block text-xs mt-0.5">
-              Not active in the live router; this setting cannot enable it.
-            </span>
-          </span>
-          <span className="badge" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)" }}>
-            INACTIVE
-          </span>
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy approval</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          A strategy is tradeable only after it passes real option bid/ask testing and a separate verification period. Settings cannot turn an unvalidated strategy on.
+        </p>
+        {(form.validated_strategy_ids?.length ?? 0) === 0 ? (
+          <div className="rounded-lg p-3 text-sm" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)" }}>
+            No strategy is currently approved for entry. The bot will not open a new trade until a verified strategy is promoted.
+          </div>
+        ) : (
+          <div className="rounded-lg p-3 text-sm" style={{ background: "var(--surface-raised)", color: "var(--ink)" }}>
+            Approved for entry: {form.validated_strategy_ids?.join(", ")}
+          </div>
+        )}
+        <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+          Research-only: ORB, VWAP Pullback, FVG, IFVG, BOS/MSS, Channel Breakout, MID_BRK, Trend Continuation, Afternoon Reversal, Gap and Go, and Liquidity Sweep.
         </div>
-        <div className="flex items-center justify-between gap-3 py-2">
-          <span className="text-sm" style={{ color: "var(--ink-muted)" }}>
-            BOS / MSS
-            <span className="block text-xs mt-0.5">
-              Its sweep/structure confirmation is incorporated into FVG, not run as a separate strategy.
-            </span>
-          </span>
-          <span className="badge" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)" }}>
-            INTEGRATED
-          </span>
-        </div>
-        <Toggle label="Mid-Day Breakdown / MID_BRK — RESEARCH HOLD: keep OFF (session, RVOL, and ADX tests still show no profitable edge)"
-                checked={form.mid_brk_enabled}
-                onChange={(v) => set("mid_brk_enabled", v)} />
-        <Toggle label="Trend Continuation / TREND_CONT (9:45 AM – 2:30 PM)" checked={form.trend_cont_enabled}
-                onChange={(v) => set("trend_cont_enabled", v)} />
-        <Toggle label="Afternoon Reversal / AFT_REV (1:00 PM – 3:30 PM)" checked={form.aft_rev_enabled}
-                onChange={(v) => set("aft_rev_enabled", v)} />
-        <Toggle label="Gap and Go / GAP_GO (9:30–9:45 AM) — trades the continuation of a pre-market gap if price pushes past its own opening bar in the gap direction"
-                checked={form.gap_go_enabled ?? true}
-                onChange={(v) => set("gap_go_enabled", v)} />
-        <Toggle label="Liquidity Sweep Reversal / LIQ_SWEEP (9:45 AM – 3:30 PM) — fades a swept swing high/low"
-                checked={form.liquidity_sweep_enabled ?? true}
-                onChange={(v) => set("liquidity_sweep_enabled", v)} />
       </div>
 
       {/* Display */}

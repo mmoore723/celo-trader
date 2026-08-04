@@ -18,6 +18,9 @@ class Settings(BaseModel):
     max_concurrent_positions: int
     rr_ratio_mode: str
     watchlist: list[str]
+    # Read-only from the dashboard's perspective. The server only fills this
+    # after a reviewed real-quote validation; POST ignores client changes.
+    validated_strategy_ids: list[str] = []
     orb_enabled: bool
     vwap_pullback_enabled: bool
     fvg_enabled: bool
