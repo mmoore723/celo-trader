@@ -100,23 +100,29 @@ _DEFAULTS = {
     # multi-day data) — watch it in signal_only_mode before trusting it.
     "mtf_confirmation_enabled": True,
 
-    # 2026-07-31: INST_ORB immediate-entry (skip retest wait) toggle — see
-    # strategies/inst_orb.py and api/models.py's field comment. ON by default
-    # per explicit user decision.
-    "strategy_instorb_immediate_entry": True,
-
-    # 2026-07-31: Liquidity Sweep Reversal (LIQ_SWEEP) — new strategy, see
-    # strategies/liquidity_sweep.py. ON by default per explicit user
-    # decision. No backtest track record yet.
-    "strategy_liqsweep_enabled": True,
+    # No legacy strategy is trade-enabled by default.  A strategy must first
+    # survive real quote-to-quote validation before it is deliberately promoted
+    # into this list.  Historical dashboards still display old evidence.
+    "strategy_orb_enabled": False,
+    "strategy_bos_enabled": False,
+    "strategy_vwap_enabled": False,
+    "strategy_fvg_enabled": False,
+    "strategy_ifvg_enabled": False,
+    "strategy_chan_enabled": False,
+    "strategy_mid_enabled": False,
+    "strategy_tcont_enabled": False,
+    "strategy_aft_enabled": False,
+    "strategy_gapgo_enabled": False,
+    "strategy_liqsweep_enabled": False,
+    "strategy_instorb_immediate_entry": False,
 
     # Paper-only lower-confidence research cohort. Disabled after the 2026-08-02
     # locked-holdout panel increased activity while worsening aggregate results.
     # Candidates remain journaled as `opportunity` for separate evidence.
     "opportunity_tier_enabled": False,
-    # QQQ experiment: a separately labelled quote-to-quote observer only.
-    # It runs exclusively when paper_trading is true and has no order path.
-    "qqq_opening_research_enabled": True,
+    # QQQ research is intentionally off while TSLA's already-paid real quote
+    # sample is being evaluated. It has no order path when enabled.
+    "qqq_opening_research_enabled": False,
 
     # Filters
     "volume_filter_enabled":   True,

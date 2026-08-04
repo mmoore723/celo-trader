@@ -640,7 +640,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Read the per-strategy enable flags saved by the Risk Settings form.
     # Any flag absent from settings defaults to True (all on by default).
     _strat_cfg = get_settings()
-    # Per-strategy default: True = on unless user disabled it in Settings.
+    # No strategy enters by default. It must be promoted after passing real
+    # option quote validation; prior backtests remain research evidence only.
+    # Historical notes retained below explain why the legacy set is not active.
     # 2026-07-15/16 backtest audits (SPY/QQQ/NVDA, 3mo, post-ADX-gate):
     #   TREND_CONT re-enabled — +$39-41/trade, 58% WR, consistent across runs.
     #   Same 3-month sample both times though — re-audit on 6mo before
@@ -669,10 +671,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Stated policy going forward: every strategy is ON by default; the user
     # opts individual ones OFF via Settings, not the other way around.
     _STRAT_DEFAULTS = {
-        "strategy_vwap_enabled":  True,    # VWAP_PB   — re-enabled 2026-07-20, prior audit predates fill-recording fixes
-        "strategy_tcont_enabled": True,    # TREND_CONT — audit: +$41/trade, re-enabled
-        "strategy_aft_enabled":   True,    # AFT_REV   — re-enabled 2026-07-20, prior audit predates fill-recording fixes
-        "strategy_ifvg_enabled":  True,    # IFVG — newly wired 2026-07-18, no track record yet
+        "strategy_orb_enabled":   False,
+        "strategy_bos_enabled":   False,
+        "strategy_vwap_enabled":  False,
+        "strategy_fvg_enabled":   False,
+        "strategy_ifvg_enabled":  False,
+        "strategy_chan_enabled":  False,
+        "strategy_tcont_enabled": False,
+        "strategy_aft_enabled":   False,
         # MID_BRK 2026-07-23 — disabled after the professional-strategy-alignment
         # audit: 13 distinct backtested configurations (4 structural-stop modes,
         # 2 exit-complexity variants, 4 RVOL ceilings, session-window extension,
@@ -686,11 +692,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # same pattern as VWAP_PB/AFT_REV above. Still has no backtest track
         # record of its own (built from published sources, never run through
         # this bot's backtester) — that risk is accepted, not resolved.
-        "strategy_gapgo_enabled": True,
+        "strategy_gapgo_enabled": False,
         # LIQ_SWEEP 2026-07-31 — new strategy, see strategies/liquidity_sweep.py.
         # ON by default per explicit user decision. Zero backtest history —
         # same accepted risk as GAP_GO above.
-        "strategy_liqsweep_enabled": True,
+        "strategy_liqsweep_enabled": False,
     }
     _enabled: set[str] = {
         sid for sid, key in (
@@ -717,7 +723,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     if paper and bool(settings.get("shadow_ledger_enabled", True)):
         from shadow_ledger import record_router_candidate
         _candidate_observer = record_router_candidate
-    _signals = route_signals(df5, ticker, enabled_strategies=_enabled or None,
+    # Pass the empty set through deliberately.  ``None`` means all strategies
+    # in the router API, whereas an empty set means this account has no
+    # validated strategy currently promoted for entry.
+    _signals = route_signals(df5, ticker, enabled_strategies=_enabled,
                               alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
                               candidate_observer=_candidate_observer)
     # Main-tier setups remain immediate.  Opportunity setups are paper-only

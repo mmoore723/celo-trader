@@ -21,23 +21,16 @@ class Settings(BaseModel):
     orb_enabled: bool
     vwap_pullback_enabled: bool
     fvg_enabled: bool
-    ifvg_enabled: bool = True    # Inverted Fair Value Gap — zone-flip reversal
+    ifvg_enabled: bool = False
     bos_mss_enabled: bool
-    chan_break_enabled: bool = True
+    chan_break_enabled: bool = False
     mid_brk_enabled: bool = False   # research hold: session/RVOL/ADX validation through
                                      # 2026-08-02 remained negative. It requires a positive
                                      # portfolio-level holdout before reactivation.
-    trend_cont_enabled: bool = True
-    aft_rev_enabled: bool = True   # Afternoon Reversal — added 2026-07-20, was previously
-                                    # not exposed in Settings at all (no way to toggle it)
-    gap_go_enabled: bool = True    # Gap and Go — added 2026-07-23. Flipped to ON by
-                                    # default 2026-07-31 per explicit request. See
-                                    # strategies/gap_go.py.
-    liquidity_sweep_enabled: bool = True  # Liquidity Sweep Reversal — added
-                                    # 2026-07-31, fades a swept swing high/low.
-                                    # ON by default per explicit request. No
-                                    # backtest track record yet — see
-                                    # strategies/liquidity_sweep.py.
+    trend_cont_enabled: bool = False
+    aft_rev_enabled: bool = False
+    gap_go_enabled: bool = False
+    liquidity_sweep_enabled: bool = False
     opportunity_tier_enabled: bool = False  # paper-only lower-confidence research cohort
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────
@@ -82,7 +75,7 @@ class Settings(BaseModel):
                                           # to ON by default 2026-07-31 per
                                           # explicit request — still can't be
                                           # backtested (live "as-of-now" fetch).
-    inst_orb_immediate_entry_enabled: bool = True  # 2026-07-31: enter on the
+    inst_orb_immediate_entry_enabled: bool = False  # 2026-07-31: enter on the
                                           # breakout bar itself instead of always
                                           # waiting for the OR-level retest. ON by
                                           # default per explicit request. Trade-off:

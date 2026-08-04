@@ -31,6 +31,7 @@ from research_v2.strategies import OpeningMomentumRTH, OpeningMomentumRTHConfig
 from research_v2.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
 from research_v2.validation import ValidationConfig, validate
 from research_v2.walk_forward import run_walk_forward
+from strategy_router import route_signals
 
 
 def _bar(minute: int, o: float, h: float, low: float, c: float) -> Bar:
@@ -67,6 +68,14 @@ class _TrailingLong(_OneLong):
 
 
 class ResearchV2Tests(unittest.TestCase):
+    def test_empty_production_strategy_set_never_routes_a_signal(self) -> None:
+        # This must return before indicator construction: an empty set is the
+        # deliberate "no validated strategy" safety state, unlike None which
+        # means run the router's entire research universe.
+        import pandas as pd
+        frame = pd.DataFrame({"time": pd.date_range("2026-01-02 09:30", periods=2, freq="5min")})
+        self.assertEqual([], route_signals(frame, "TSLA", enabled_strategies=set(), quiet=True))
+
     def test_paid_batch_helpers_only_accept_daily_cbbo_files(self) -> None:
         self.assertEqual(date(2026, 7, 8), batch_file_date("opra-pillar-20260708.cbbo-1m.csv.zst"))
         self.assertIsNone(batch_file_date("manifest.json"))

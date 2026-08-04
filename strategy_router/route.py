@@ -92,6 +92,11 @@ def route_signals(
     """
     if df.empty or len(df) < 2:
         return []
+    # ``None`` explicitly means a caller wants the router's full research
+    # universe. An empty set is the production safety state: no strategy has
+    # earned promotion, so avoid even building indicators or emitting signals.
+    if enabled_strategies is not None and not enabled_strategies:
+        return []
 
     # Live dotted lookup on the package namespace — see module docstring for
     # why this can't be a plain module-level global in this file.
