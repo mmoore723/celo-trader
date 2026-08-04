@@ -16,14 +16,21 @@ STRATEGY_ID = "V2_ORB_PULLBACK"
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
-    if len(today) < 18 or "time" not in today:
+    if "time" not in today:
+        return None
+    config = OpeningRangePullbackConfig()
+    # The first eligible 5-minute decision is 10:40 (15 completed bars from
+    # 09:30), while the hypothesis entry deadline is 10:45.  Do not require
+    # more history here than the V2 strategy itself needs, or the adapter
+    # would make the setup impossible to emit in its valid time window.
+    if len(today) < config.atr_bars + 1:
         return None
     bars = tuple(
         Bar(pd.Timestamp(row.time).to_pydatetime(), float(row.open), float(row.high),
             float(row.low), float(row.close), float(getattr(row, "volume", 0.0)))
         for row in today.itertuples(index=False)
     )
-    candidate = OpeningRangePullback(OpeningRangePullbackConfig()).evaluate(bars)
+    candidate = OpeningRangePullback(config).evaluate(bars)
     if candidate is None:
         return None
     trigger = pd.Timestamp(candidate.timestamp)

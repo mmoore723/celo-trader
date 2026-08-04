@@ -108,13 +108,15 @@ class ResearchV2Tests(unittest.TestCase):
         from strategies.orb_pullback_v2 import evaluate
 
         frame = pd.DataFrame({
-            "time": pd.date_range("2026-01-02 09:30", periods=18, freq="5min"),
-            "open": [100.0] * 18,
-            "high": [101.0] * 18,
-            "low": [99.0] * 18,
-            "close": [100.0] * 18,
-            "volume": [1000] * 18,
-            "rvol": [1.25] * 18,
+            # 15 completed bars ends at 10:40—the first bar the V2 default
+            # ATR rule permits and still inside its 10:45 entry deadline.
+            "time": pd.date_range("2026-01-02 09:30", periods=15, freq="5min"),
+            "open": [100.0] * 15,
+            "high": [101.0] * 15,
+            "low": [99.0] * 15,
+            "close": [100.0] * 15,
+            "volume": [1000] * 15,
+            "rvol": [1.25] * 15,
         })
         candidate = V2Signal(
             "V2_ORB_PULLBACK", Side.LONG, frame["time"].iloc[-1].to_pydatetime(),
