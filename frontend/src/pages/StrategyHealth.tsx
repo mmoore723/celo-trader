@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard } from "../lib/api";
+import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -27,7 +27,33 @@ const STRAT_NAMES: Record<string, string> = {
   MID_BRK:    "Mid-Day Breakdown",
   AFT_REV:    "Afternoon Reversal",
   TREND_CONT: "Trend Continuation",
+  V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
 };
+
+function ActivePilotCard({ settings }: { settings?: AppSettings }) {
+  const enabled = settings?.strategy_orb_pullback_v2_enabled
+    && settings.validated_strategy_ids?.includes("V2_ORB_PULLBACK");
+  if (!enabled) {
+    return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--ink-faint)" }}>
+      <h2 className="text-sm font-semibold" style={{ marginBottom: 6 }}>What the bot is testing now</h2>
+      <p style={{ fontSize: 13, color: "var(--ink-muted)", margin: 0 }}>
+        No research strategy is currently allowed to place a paper trade. The bot can observe the market, but it will not enter a new position.
+      </p>
+    </div>;
+  }
+  return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--accent)" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+      <h2 className="text-sm font-semibold" style={{ margin: 0 }}>What the bot is testing now</h2>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--positive)", background: "var(--positive-bg)", borderRadius: 999, padding: "2px 8px" }}>PAPER ONLY</span>
+    </div>
+    <p style={{ fontSize: 13, color: "var(--ink)", margin: "0 0 8px", lineHeight: 1.5 }}>
+      <b>TSLA Opening-Range Pullback.</b> The bot marks the first 15 minutes after the open, waits for price to break that range, return to it, and then bounce in the original direction. It only acts after that bounce confirms.
+    </p>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: 0, lineHeight: 1.5 }}>
+      A paper trade uses a realistic rule: buy at the seller’s ask price and value an exit at the buyer’s bid price. The journal will show the setup, contract, exit reason, best move (MFE), and worst move (MAE). Positive past results are a candidate—not a promise—so this stays paper-only while it gathers new evidence.
+    </p>
+  </div>;
+}
 
 function pct(n: number, d: number): string {
   return d > 0 ? `${Math.round((n / d) * 100)}%` : "—";
@@ -234,6 +260,7 @@ function DailyView() {
   const { data: scorecard } = useQuery({ queryKey: ["strategy-health-scorecard"], queryFn: () => api.strategyHealth.scorecard(30), staleTime: 60_000 });
   const { data: candidateScorecard } = useQuery({ queryKey: ["strategy-health-candidate-scorecard"], queryFn: () => api.strategyHealth.candidateScorecard(30), staleTime: 60_000 });
   const { data: qqqResearch } = useQuery({ queryKey: ["strategy-health-qqq-paper-research"], queryFn: api.strategyHealth.qqqOpeningResearch, staleTime: 60_000 });
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get, staleTime: 60_000 });
 
   const runNow = useMutation({
     mutationFn: api.strategyHealth.run,
@@ -261,6 +288,7 @@ function DailyView() {
           {runNow.isPending ? "Running audit…" : "Run Audit Now"}
         </button>
       </div>
+      <ActivePilotCard settings={settings} />
       {scorecard && <Scorecard data={scorecard} />}
       {candidateScorecard && <CandidateScorecard data={candidateScorecard} />}
       {qqqResearch && <QQQResearchCard data={qqqResearch} />}
