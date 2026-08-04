@@ -134,6 +134,17 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(104.0, signal.meta["v2_target"])
         self.assertEqual("opening_range_pullback", signal.meta["v2_hypothesis"])
 
+    def test_incomplete_bot_state_is_treated_as_stopped_on_service_restart(self) -> None:
+        from config import load_bot_state_safely
+        with TemporaryDirectory() as directory:
+            state_file = Path(directory) / "bot_state.json"
+            state_file.write_text("")
+            self.assertIsNone(load_bot_state_safely(state_file))
+            state_file.write_text("{not json")
+            self.assertIsNone(load_bot_state_safely(state_file))
+            state_file.write_text('{"running": true}')
+            self.assertEqual({"running": True}, load_bot_state_safely(state_file))
+
     def test_databento_cbbo_import_keeps_target_usable_occ_quotes(self) -> None:
         with TemporaryDirectory() as directory:
             source = Path(directory) / "opra.csv"

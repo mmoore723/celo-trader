@@ -13,7 +13,7 @@ the BASE_DIR nesting-depth fix applied as part of this split.
 from config.paths import (
     BASE_DIR, _USER_DATA, DB_PATH, DB_PATH_PAPER, DB_PATH_LIVE,
     LOG_PATH, SETTINGS_PATH, _LEGACY_BOT_STATE_PATH,
-    _get_user_id, get_user_data_dir, get_db_path, get_bot_state_path,
+    _get_user_id, get_user_data_dir, get_db_path, get_bot_state_path, load_bot_state_safely,
 )
 
 from config.env_keys import (
@@ -64,7 +64,7 @@ from config.settings_store import (
 __all__ = [
     "BASE_DIR", "_USER_DATA", "DB_PATH", "DB_PATH_PAPER", "DB_PATH_LIVE",
     "LOG_PATH", "SETTINGS_PATH", "_LEGACY_BOT_STATE_PATH",
-    "_get_user_id", "get_user_data_dir", "get_db_path", "get_bot_state_path",
+    "_get_user_id", "get_user_data_dir", "get_db_path", "get_bot_state_path", "load_bot_state_safely",
     "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_PAPER", "ALPACA_BASE_URL",
     "TRADIER_API_KEY", "TRADIER_BASE_URL", "TRADIER_ACCOUNT_ID",
     "POLYGON_API_KEY", "ANTHROPIC_API_KEY",

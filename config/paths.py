@@ -17,6 +17,7 @@ here (not discovered via a bug) because the risk pattern is now well
 understood from two earlier incidents this session.
 """
 
+import json
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -98,3 +99,15 @@ def get_bot_state_path(user_id: str | None = None) -> Path:
         except Exception:
             pass  # non-fatal — worst case the user starts with a fresh state file
     return _path
+
+
+def load_bot_state_safely(path: Path) -> dict | None:
+    """Read a complete bot-state object or treat a partial write as absent."""
+    try:
+        raw = path.read_text().strip()
+        if not raw:
+            return None
+        state = json.loads(raw)
+        return state if isinstance(state, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None

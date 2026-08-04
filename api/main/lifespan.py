@@ -6,7 +6,6 @@ no logic changed, only relocated.
 """
 from __future__ import annotations
 
-import json
 import threading
 from contextlib import asynccontextmanager
 
@@ -32,7 +31,7 @@ def _auto_start_bot_if_needed() -> None:
     state file says it was running.
     """
     try:
-        from config import get_bot_state_path
+        from config import get_bot_state_path, load_bot_state_safely
         from auth.users import list_users
         from trading.loop import run_trading_loop
 
@@ -48,7 +47,9 @@ def _auto_start_bot_if_needed() -> None:
                 _state_file = get_bot_state_path(uid)
                 if not _state_file.exists():
                     continue
-                state = json.loads(_state_file.read_text())
+                state = load_bot_state_safely(_state_file)
+                if state is None:
+                    continue
                 if not state.get("running", False):
                     continue
                 if state.get("auto_start_disabled", False):
