@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import argparse
 from datetime import date
+from ftplib import FTP
 import json
 from pathlib import Path
 import re
-import shutil
 import sys
 from typing import Iterable
 
@@ -32,6 +32,7 @@ from research_v2.strategies import OpeningRangeBreakout, OpeningRangeBreakoutCon
 
 
 _FILE_DATE = re.compile(r"-(\d{8})\.cbbo-1m\.csv(?:\.zst)?$")
+_FTP_HOST = "ftp.databento.com"
 
 
 def batch_file_date(filename: str) -> date | None:
@@ -40,6 +41,36 @@ def batch_file_date(filename: str) -> date | None:
     return date.fromisoformat(
         f"{match.group(1)[:4]}-{match.group(1)[4:6]}-{match.group(1)[6:]}"
     ) if match else None
+
+
+def manifest_filenames(payload: object) -> tuple[str, ...]:
+    """Extract only daily CBBO data files from either manifest shape."""
+    entries = payload.get("files", []) if isinstance(payload, dict) else payload
+    if not isinstance(entries, list):
+        raise ValueError("Databento manifest has no file list")
+    names = [entry.get("filename") if isinstance(entry, dict) else entry for entry in entries]
+    return tuple(sorted(
+        name for name in names
+        if isinstance(name, str) and batch_file_date(name) is not None
+    ))
+
+
+def ftp_download(
+    api_key: str, user_id: str, job_id: str, filename: str, output_path: Path,
+) -> Path:
+    """Download one existing batch file through Databento FTP.
+
+    This is delivery of an already-paid batch object—not a historical streaming
+    request.  The caller owns cleanup of ``output_path`` after it has been
+    analyzed.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    remote = f"/{user_id}/{job_id}/{filename}"
+    with FTP(_FTP_HOST, timeout=120) as ftp:
+        ftp.login(user=api_key, passwd="")
+        with output_path.open("wb") as handle:
+            ftp.retrbinary(f"RETR {remote}", handle.write, blocksize=1_048_576)
+    return output_path
 
 
 def day_bars(dataset: BarDataset, trading_day: date):
@@ -115,11 +146,19 @@ def main() -> None:
     skipped = list(existing.get("skipped_files", []))
 
     client = db.Historical()
-    files = client.batch.list_files(args.job_id)
-    filenames = sorted(
-        item["filename"] for item in files
-        if isinstance(item.get("filename"), str) and batch_file_date(item["filename"]) is not None
-    )
+    # ``batch.list_files`` is useful for smaller packages but Databento's HTTP
+    # manifest endpoint can time out for this 254-file package.  Job details
+    # are compact and give us the FTP user ID; the package's tiny manifest then
+    # supplies the immutable daily filenames without a new data request.
+    details = client.batch.get_job_details(args.job_id)
+    user_id = str(details.get("user_id") or "").strip()
+    if not user_id:
+        raise RuntimeError("Databento job details did not include its FTP user ID")
+    manifest_path = args.scratch_dir / f"{args.job_id}-manifest.json"
+    ftp_download(client.key, user_id, args.job_id, "manifest.json", manifest_path)
+    filenames = manifest_filenames(json.loads(manifest_path.read_text(encoding="utf-8")))
+    if not filenames:
+        raise RuntimeError("Databento manifest contains no daily CBBO files")
     if args.limit_days:
         filenames = filenames[:args.limit_days]
 
@@ -151,12 +190,9 @@ def main() -> None:
         else:
             raw_path: Path | None = None
             try:
-                downloaded = client.batch.download(
-                    args.job_id, output_dir=args.scratch_dir, filename_to_download=filename,
+                raw_path = ftp_download(
+                    client.key, user_id, args.job_id, filename, args.scratch_dir / filename,
                 )
-                if len(downloaded) != 1:
-                    raise RuntimeError(f"expected one downloaded file, received {len(downloaded)}")
-                raw_path = downloaded[0]
                 strategy = OpeningRangeBreakout(OpeningRangeBreakoutConfig())
                 results = run_databento_cbbo_markouts(
                     bars, [raw_path], strategy, underlying=args.ticker,
@@ -184,10 +220,8 @@ def main() -> None:
         print(json.dumps({"processed": len(completed), "candidate_files": len(filenames),
                           "summary": payload["summary"], "latest_file": filename}, indent=2), flush=True)
 
-    # Remove the job subdirectory Databento creates if it is now empty.
-    job_dir = args.scratch_dir / args.job_id
-    if job_dir.exists() and not any(job_dir.iterdir()):
-        shutil.rmtree(job_dir)
+    # Keep the tiny manifest for reproducibility; the only large temporary
+    # artifact is removed after every date above.
 
 
 if __name__ == "__main__":

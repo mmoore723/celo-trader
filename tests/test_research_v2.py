@@ -14,7 +14,7 @@ from research_v2.options import OptionQuote, OptionQuoteBook, load_option_quotes
 from research_v2.option_markouts import run_databento_cbbo_markouts, run_option_markouts
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.providers.databento import normalize_databento_cbbo_files
-from scripts.research_v2.run_paid_databento_job import batch_file_date, day_bars, summarize
+from scripts.research_v2.run_paid_databento_job import batch_file_date, day_bars, manifest_filenames, summarize
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
     AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
@@ -84,6 +84,9 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(bars, day_bars(dataset, date(2026, 1, 2)))
         self.assertEqual((), day_bars(dataset, date(2026, 1, 3)))
         self.assertEqual(1, summarize(({"return_pct": 2.5},))["measured_signals"])
+        manifest = {"files": [{"filename": "manifest.json"},
+                              {"filename": "opra-pillar-20260708.cbbo-1m.csv.zst"}]}
+        self.assertEqual(("opra-pillar-20260708.cbbo-1m.csv.zst",), manifest_filenames(manifest))
 
     def test_databento_cbbo_import_keeps_target_usable_occ_quotes(self) -> None:
         with TemporaryDirectory() as directory:
