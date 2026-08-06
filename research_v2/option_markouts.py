@@ -10,9 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from research_v2.models import Bar, Side, Signal
+from research_v2.exit_rules import PlannedExit
 from research_v2.options import OptionQuote, OptionQuoteBook
 from research_v2.providers.databento import _open_csv, _parse_symbol, _prices, _timestamp
 from research_v2.strategy import Strategy
@@ -205,6 +206,116 @@ def run_databento_cbbo_markouts_for_holds(
                 underlying_exit=later_bars[0].close if later_bars else None,
             ))
         result_sets[hold] = tuple(results)
+    return result_sets
+
+
+def run_databento_cbbo_markouts_for_exit_plans(
+    bars: Iterable[Bar], raw_paths: Iterable[str | Path], strategy: Strategy,
+    underlying: str, exit_plans: Mapping[str, Mapping[object, PlannedExit]],
+    min_dte: int = 0, max_dte: int = 7, min_premium: float = 0.0,
+    max_premium: float | None = None, max_wait: timedelta = timedelta(minutes=1),
+    max_spread_pct: float = 0.20,
+) -> dict[str, tuple[OptionMarkout, ...]]:
+    """Executable markouts for precomputed, causal exit decisions.
+
+    ``exit_plans`` is keyed by candidate label and then signal timestamp.  The
+    option contract is selected once, at the real ask after entry; every exit
+    candidate sells that exact contract at its first real bid after the
+    underlying-driven exit time.  This makes exit variants directly comparable.
+    """
+    completed = tuple(bars)
+    paths = tuple(Path(path) for path in raw_paths)
+    expected_underlying = underlying.upper().strip()
+    labels = tuple(exit_plans)
+    if not completed or not paths or not expected_underlying or not labels:
+        raise ValueError("bars, raw_paths, underlying, and exit_plans are required")
+    if (min_dte < 0 or max_dte < min_dte or min_premium < 0
+            or (max_premium is not None and max_premium < min_premium)
+            or max_wait.total_seconds() <= 0 or max_spread_pct <= 0):
+        raise ValueError("invalid markout bounds")
+
+    decisions: list[tuple[Signal, Bar, str]] = []
+    for signal in strategy_signals(completed, strategy):
+        if not all(signal.timestamp in exit_plans[label] for label in labels):
+            continue
+        entry_bar = next((bar for bar in completed if bar.timestamp > signal.timestamp), None)
+        if entry_bar is not None:
+            decisions.append((signal, entry_bar, "call" if signal.side is Side.LONG else "put"))
+    if not decisions:
+        return {label: () for label in labels}
+
+    def stream_quotes():
+        for raw_path in paths:
+            with _open_csv(raw_path) as handle:
+                import csv
+                reader = csv.DictReader(handle)
+                if not reader.fieldnames or "symbol" not in reader.fieldnames:
+                    raise ValueError(f"{raw_path.name} is missing Databento symbol column")
+                for row in reader:
+                    identity = _parse_symbol(row.get("symbol"), expected_underlying)
+                    prices = _prices(row)
+                    if identity is None or prices is None:
+                        continue
+                    option_symbol, quote_underlying, expiry_text, strike, option_type = identity
+                    yield OptionQuote(
+                        datetime.fromisoformat(_timestamp(row)), option_symbol, quote_underlying,
+                        datetime.fromisoformat(expiry_text).date(), strike, option_type, *prices,
+                    )
+
+    candidates: list[dict[str, OptionQuote]] = [{} for _ in decisions]
+    for quote in stream_quotes():
+        for index, (_, entry_bar, option_type) in enumerate(decisions):
+            if quote.option_type != option_type or not entry_bar.timestamp <= quote.timestamp <= entry_bar.timestamp + max_wait:
+                continue
+            dte = (quote.expiration - entry_bar.timestamp.date()).days
+            is_otm = quote.strike > entry_bar.open if option_type == "call" else quote.strike < entry_bar.open
+            if (not min_dte <= dte <= max_dte or not is_otm or quote.ask < min_premium
+                    or (max_premium is not None and quote.ask > max_premium)
+                    or quote.spread / quote.mid > max_spread_pct):
+                continue
+            previous = candidates[index].get(quote.option_symbol)
+            if previous is None or quote.timestamp < previous.timestamp:
+                candidates[index][quote.option_symbol] = quote
+
+    selected: list[OptionQuote | None] = []
+    for index, (_, entry_bar, _) in enumerate(decisions):
+        usable = candidates[index].values()
+        selected.append(min(usable, key=lambda quote: (
+            (quote.expiration - entry_bar.timestamp.date()).days,
+            abs(quote.strike - entry_bar.open), quote.spread / quote.mid, quote.option_symbol,
+        )) if usable else None)
+
+    exits: dict[str, list[OptionQuote | None]] = {label: [None] * len(decisions) for label in labels}
+    for quote in stream_quotes():
+        for index, (signal, _, _) in enumerate(decisions):
+            chosen = selected[index]
+            if chosen is None or quote.option_symbol != chosen.option_symbol:
+                continue
+            for label in labels:
+                target = exit_plans[label][signal.timestamp].time
+                if target <= quote.timestamp <= target + max_wait:
+                    prior = exits[label][index]
+                    if prior is None or quote.timestamp < prior.timestamp:
+                        exits[label][index] = quote
+
+    result_sets: dict[str, tuple[OptionMarkout, ...]] = {}
+    for label in labels:
+        results: list[OptionMarkout] = []
+        for index, (signal, entry_bar, _) in enumerate(decisions):
+            entry_quote, exit_quote = selected[index], exits[label][index]
+            if entry_quote is None or exit_quote is None:
+                continue
+            later_bars = [bar for bar in completed if bar.timestamp >= exit_quote.timestamp]
+            results.append(OptionMarkout(
+                strategy_id=signal.strategy_id, side=signal.side, signal_time=signal.timestamp,
+                entry_time=entry_quote.timestamp, exit_time=exit_quote.timestamp,
+                contract_symbol=entry_quote.option_symbol, entry_ask=entry_quote.buy_fill(),
+                exit_bid=exit_quote.sell_fill(),
+                return_pct=round((exit_quote.sell_fill() - entry_quote.buy_fill()) / entry_quote.buy_fill() * 100, 4),
+                underlying_entry=entry_bar.open,
+                underlying_exit=later_bars[0].close if later_bars else None,
+            ))
+        result_sets[label] = tuple(results)
     return result_sets
 
 

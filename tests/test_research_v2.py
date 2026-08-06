@@ -13,12 +13,15 @@ from research_v2.regime import select_regimes
 from research_v2.options import OptionQuote, OptionQuoteBook, load_option_quotes
 from research_v2.option_markouts import (
     run_databento_cbbo_markouts, run_databento_cbbo_markouts_for_holds,
+    run_databento_cbbo_markouts_for_exit_plans,
     run_option_markouts,
 )
+from research_v2.exit_rules import planned_exits
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.providers.databento import normalize_databento_cbbo_files
 from scripts.research_v2.run_paid_databento_job import archive_filenames, batch_file_date, build_strategy, day_bars, manifest_filenames, summarize
 from scripts.research_v2.tune_paid_orb_holds import select_training_winner, segmented_summary
+from scripts.research_v2.compare_paid_orb_exits import RULES, select_training_rule
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
     AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
@@ -118,6 +121,18 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(10, summary["holdout"]["measured_signals"])
         chosen = select_training_winner(marks, date(2026, 3, 1))
         self.assertEqual(30, chosen["selected_hold_minutes"])
+        self.assertFalse(chosen["holdout_passed"])
+
+    def test_paid_exit_rule_selector_uses_training_only_then_checks_holdout(self) -> None:
+        def row(day: str, pct: float) -> dict[str, object]:
+            return {"signal_time": f"{day}T10:00:00", "return_pct": pct}
+        marks = {
+            rule: [row("2026-01-02", 1.0)] * 15 + [row("2026-03-03", 1.0)] * 10
+            for rule in RULES
+        }
+        marks["vwap_loss_90m"] = [row("2026-01-02", 3.0)] * 15 + [row("2026-03-03", -1.0)] * 10
+        chosen = select_training_rule(marks, date(2026, 3, 1))
+        self.assertEqual("vwap_loss_90m", chosen["selected_exit_rule"])
         self.assertFalse(chosen["holdout_passed"])
 
     def test_orb_pullback_adapter_preserves_structural_stop_and_provenance(self) -> None:
@@ -313,6 +328,44 @@ class ResearchV2Tests(unittest.TestCase):
                 for hold in (30, 60, 90)
             }
         self.assertEqual(singles, multi)
+
+    def test_vwap_and_ema_exit_plans_wait_for_completed_later_bar(self) -> None:
+        bars = [
+            Bar(datetime(2026, 1, 2, 9, 30), 100, 101, 99, 100, 100),
+            Bar(datetime(2026, 1, 2, 9, 35), 100, 101, 99, 100, 100),
+            Bar(datetime(2026, 1, 2, 9, 40), 101, 102, 100, 101, 100),
+            Bar(datetime(2026, 1, 2, 9, 45), 99, 100, 98, 99, 100),
+        ]
+        signal = Signal("TEST", Side.LONG, bars[1].timestamp, 100, 98, 104, {})
+        plans = planned_exits(bars, signal, bars[2], hold_minutes=90, ema_length=2)
+        self.assertEqual(datetime(2026, 1, 2, 9, 50), plans["vwap_loss_90m"].time)
+        self.assertEqual("vwap_loss", plans["vwap_loss_90m"].reason)
+        self.assertEqual("ema9_loss", plans["ema9_loss_90m"].reason)
+
+    def test_streaming_exit_plans_use_same_entry_contract_and_real_bid(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index) for index in range(25)]
+        ]
+        signal = _OneLong().evaluate(bars[:2])
+        assert signal is not None
+        entry_time = bars[2].timestamp
+        plans = {label: {signal.timestamp: plan} for label, plan in planned_exits(bars, signal, bars[2]).items()}
+        contract = "TSLA  260109C00103000"
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{entry_time.isoformat()},{contract},4.90,5.10\n"
+                f"{(entry_time + timedelta(minutes=90)).isoformat()},{contract},5.40,5.60\n",
+                encoding="utf-8",
+            )
+            results = run_databento_cbbo_markouts_for_exit_plans(
+                bars, [source], _OneLong(), "TSLA", plans,
+            )
+        self.assertEqual(1, len(results["fixed_90m"]))
+        self.assertEqual(contract, results["fixed_90m"][0].contract_symbol)
+        self.assertEqual(5.4, results["fixed_90m"][0].exit_bid)
 
     def test_supertrend_emits_a_completed_bar_flip(self) -> None:
         bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(12)]
