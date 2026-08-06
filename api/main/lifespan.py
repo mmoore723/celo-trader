@@ -31,7 +31,7 @@ def _auto_start_bot_if_needed() -> None:
     state file says it was running.
     """
     try:
-        from config import get_bot_state_path, load_bot_state_safely
+        from config import get_bot_state_path, load_bot_state_safely, get_maintenance_state
         from auth.users import list_users
         from trading.loop import run_trading_loop
 
@@ -41,6 +41,9 @@ def _auto_start_bot_if_needed() -> None:
             # users table may not exist yet on a very first boot — fall back
             # to just admin so a fresh install still auto-resumes correctly.
             user_ids = ["admin"]
+
+        if get_maintenance_state().get("maintenance_mode", False):
+            return
 
         for uid in user_ids:
             try:

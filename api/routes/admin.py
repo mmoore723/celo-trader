@@ -100,8 +100,8 @@ async def reset_user_password(user_id: str, request: Request, body: ResetPasswor
 async def get_maintenance_status(request: Request):
     """Return current maintenance mode state (admin only)."""
     _require_admin(request)
-    from config import get_settings
-    s = get_settings()
+    from config import get_maintenance_state
+    s = get_maintenance_state()
     return {
         "active":  bool(s.get("maintenance_mode", False)),
         "message": str(s.get("maintenance_message", "")),
@@ -112,40 +112,42 @@ async def get_maintenance_status(request: Request):
 async def enable_maintenance(request: Request, body: MaintenanceRequest):
     """
     Emergency maintenance mode:
-      1. Stops the bot loop immediately.
-      2. Closes every open position at the broker.
-      3. Writes maintenance_mode=True + message to settings so:
+      1. Stops every bot loop immediately.
+      2. Writes a system-wide maintenance_mode=True + message so:
          - /api/bot/start is blocked for all users.
          - Non-admin users see the maintenance screen.
+
+    It deliberately does not submit liquidation orders for other users. A
+    cross-account close must be an explicit, separately confirmed operation.
     """
     _require_admin(request)
     from trading.loop import stop_loop
-    from trading.controls import panic_close_all
-    from config import save_settings
+    from config import save_maintenance_state
+    from auth.users import list_users
 
-    # Stop the trading loop first so no new orders are placed
-    try:
-        stop_loop()
-    except Exception as e:
-        logger.warning("enable_maintenance: stop_loop error: %s", e)
-
-    # Emergency-close any open positions
-    try:
-        panic_close_all()
-    except Exception as e:
-        logger.warning("enable_maintenance: panic_close_all error: %s", e)
-
-    # Persist the flag — bot.py checks this before allowing start
-    save_settings({
-        "maintenance_mode":    True,
-        "maintenance_message": body.message.strip(),
-    })
+    # Lock starts and auto-resumes before signalling any loop. This is the
+    # durable safety guarantee even if a single loop is asleep or unhealthy.
+    save_maintenance_state(True, body.message)
+    stopped: list[str] = []
+    warnings: list[str] = []
+    for user in list_users():
+        user_id = str(user["user_id"])
+        try:
+            stop_loop(user_id)
+            stopped.append(user_id)
+        except Exception as e:
+            warnings.append(f"{user_id}: {e}")
 
     logger.info(
         "🔧 MAINTENANCE MODE ENABLED by %s — message: %s",
         request.state.username, body.message.strip() or "(none)"
     )
-    return {"ok": True, "message": "Maintenance mode active. All positions closed."}
+    return {
+        "ok": True,
+        "message": "Maintenance mode active. All bot loops halted; positions were left untouched.",
+        "halted_users": stopped,
+        "warnings": warnings,
+    }
 
 
 @router.post("/maintenance/disable")
@@ -155,12 +157,9 @@ async def disable_maintenance(request: Request):
     Does NOT automatically restart the bot — admin must press Start Bot.
     """
     _require_admin(request)
-    from config import save_settings
+    from config import save_maintenance_state
 
-    save_settings({
-        "maintenance_mode":    False,
-        "maintenance_message": "",
-    })
+    save_maintenance_state(False)
 
     logger.info("✅ MAINTENANCE MODE CLEARED by %s", request.state.username)
     return {"ok": True, "message": "Maintenance mode cleared. You can now restart the bot."}

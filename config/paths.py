@@ -31,6 +31,9 @@ DB_PATH_PAPER = BASE_DIR / "trades_paper.db"     # legacy — now per-user insid
 DB_PATH_LIVE  = BASE_DIR / "trades_live.db"      # legacy — now per-user inside user_data/
 LOG_PATH      = BASE_DIR / "log" / "bot.log"
 SETTINGS_PATH = BASE_DIR / "user_settings.json"  # legacy single-user fallback
+# Operator safety controls are intentionally not stored under any user's
+# settings. A maintenance halt must cover every account.
+SYSTEM_MAINTENANCE_PATH = BASE_DIR / "system_maintenance.json"
 
 
 def _get_user_id() -> str:

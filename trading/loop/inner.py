@@ -227,6 +227,14 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
 
     while not _stop.is_set():
         try:
+            # Maintenance is a global operator safety control. Checking in the
+            # loop also halts accounts that were running before it was enabled.
+            from config import get_maintenance_state
+            if get_maintenance_state().get("maintenance_mode", False):
+                log_event("WARNING", "trading_logic", "🔧 Global maintenance halt received — stopping bot.")
+                _stop.set()
+                break
+
             # ── After-hours deep sleep: 5:00 PM – 8:00 AM ET ─────────────────
             # No scan, no tick, no API calls. Wakes at 8:00 AM on the next
             # weekday. Sleeps in 5-minute chunks so Stop Bot still responds.

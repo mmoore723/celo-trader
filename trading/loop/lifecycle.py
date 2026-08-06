@@ -42,6 +42,11 @@ def run_trading_loop(user_id: str = "admin", poll_interval: int = 10) -> None:
     except Exception as _ctx_err:
         logger.warning("run_trading_loop: could not set user context: %s", _ctx_err)
 
+    from config import get_maintenance_state
+    if get_maintenance_state().get("maintenance_mode", False):
+        logger.warning("run_trading_loop blocked by global maintenance for user %s", user_id)
+        return
+
     _lock  = _get_lock(user_id)
     _stop  = _get_stop_event(user_id)
     if not _lock.acquire(blocking=False):

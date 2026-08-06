@@ -15,6 +15,7 @@ from research_v2.option_markouts import run_databento_cbbo_markouts, run_option_
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.providers.databento import normalize_databento_cbbo_files
 from scripts.research_v2.run_paid_databento_job import archive_filenames, batch_file_date, build_strategy, day_bars, manifest_filenames, summarize
+from scripts.research_v2.tune_paid_orb_holds import select_training_winner, segmented_summary
 from research_v2.simulator import SimulationConfig, Simulator
 from research_v2.strategies import (
     AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
@@ -99,6 +100,22 @@ class ResearchV2Tests(unittest.TestCase):
 
     def test_paid_runner_selects_distinct_orb_hypotheses(self) -> None:
         self.assertEqual("V2_ORB_PULLBACK", build_strategy("orb_pullback").strategy_id)
+
+    def test_paid_hold_tuner_selects_training_only_then_checks_holdout(self) -> None:
+        def row(day: str, pct: float) -> dict[str, object]:
+            return {"signal_time": f"{day}T10:00:00", "return_pct": pct}
+        # 30 min wins the earlier data, but loses the untouched segment.
+        marks = {
+            30: [row("2026-01-02", 10.0)] * 15 + [row("2026-03-03", -1.0)] * 10,
+            60: [row("2026-01-02", 5.0)] * 15 + [row("2026-03-03", 2.0)] * 10,
+            90: [row("2026-01-02", 1.0)] * 15 + [row("2026-03-03", 1.0)] * 10,
+        }
+        summary = segmented_summary(marks[60], date(2026, 3, 1))
+        self.assertEqual(15, summary["training"]["measured_signals"])
+        self.assertEqual(10, summary["holdout"]["measured_signals"])
+        chosen = select_training_winner(marks, date(2026, 3, 1))
+        self.assertEqual(30, chosen["selected_hold_minutes"])
+        self.assertFalse(chosen["holdout_passed"])
 
     def test_orb_pullback_adapter_preserves_structural_stop_and_provenance(self) -> None:
         """The live paper adapter must hand the V2 stop to the normal exit path."""

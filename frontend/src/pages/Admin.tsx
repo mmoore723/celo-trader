@@ -242,8 +242,8 @@ export function Admin() {
 
         <p className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
           {maintActive
-            ? "The bot is halted and all users see the maintenance screen. Type a new message below and save, or clear maintenance when ready."
-            : "Use ONLY when the bot needs to be taken offline. This immediately closes all open positions and locks out all users until you clear it."}
+            ? "Every bot loop is halted and all users see the maintenance screen. Type a new message below and save, or clear maintenance when ready."
+            : "Use when the platform needs to be taken offline. This stops every user's bot and blocks restarts until you clear it. It does not close positions."}
         </p>
 
         {/* Message / ETA input */}
@@ -274,7 +274,7 @@ export function Admin() {
               disabled={maintWorking}
             >
               <AlertTriangle size={14} />
-              {maintWorking ? "Closing positions…" : "🔴 Emergency Close All & Halt"}
+              {maintWorking ? "Halting all bots…" : "🔴 Halt All Trading for Maintenance"}
             </button>
           ) : (
             <>

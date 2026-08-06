@@ -9,7 +9,10 @@ logic changed, only relocated.
 import json
 import logging
 
-from config.paths import get_user_data_dir, _get_user_id, SETTINGS_PATH, BASE_DIR
+from config.paths import (
+    get_user_data_dir, _get_user_id, SETTINGS_PATH, BASE_DIR,
+    SYSTEM_MAINTENANCE_PATH,
+)
 from config.defaults import _DEFAULTS
 from config.env_keys import ALPACA_API_KEY, ALPACA_SECRET_KEY, TRADIER_API_KEY, TRADIER_ACCOUNT_ID
 from config.logging_settings import LOG_LEVEL, LOG_FORMAT
@@ -47,6 +50,33 @@ def save_settings(updates: dict, user_id: str | None = None) -> None:
     current.update(updates)
     with open(_path, "w") as f:
         json.dump(current, f, indent=2)
+
+
+def get_maintenance_state() -> dict:
+    """Return the global maintenance state, never a per-user preference."""
+    default = {"maintenance_mode": False, "maintenance_message": ""}
+    try:
+        payload = json.loads(SYSTEM_MAINTENANCE_PATH.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return default
+        return {
+            "maintenance_mode": bool(payload.get("maintenance_mode", False)),
+            "maintenance_message": str(payload.get("maintenance_message", "")),
+        }
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def save_maintenance_state(active: bool, message: str = "") -> None:
+    """Atomically save the system-wide trading-halt state."""
+    SYSTEM_MAINTENANCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "maintenance_mode": bool(active),
+        "maintenance_message": message.strip() if active else "",
+    }
+    temporary = SYSTEM_MAINTENANCE_PATH.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(SYSTEM_MAINTENANCE_PATH)
 
 
 # ── Per-user API key management ───────────────────────────────────────────────

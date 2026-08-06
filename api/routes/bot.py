@@ -69,6 +69,8 @@ def get_status(request: Request) -> BotStatus:
         lock.release()
     actually_running = not lock_acquired
 
+    from config import get_maintenance_state
+    maintenance = get_maintenance_state()
     return BotStatus(
         running=actually_running,
         mode=str(state.get("mode", _state.get("mode", "stopped"))),
@@ -109,8 +111,8 @@ def get_status(request: Request) -> BotStatus:
         opportunity_window=dict(
             state.get("opportunity_scheduler") or _state.get("opportunity_scheduler") or {}
         ),
-        maintenance_mode=bool(settings.get("maintenance_mode", False)),
-        maintenance_message=str(settings.get("maintenance_message", "")),
+        maintenance_mode=bool(maintenance.get("maintenance_mode", False)),
+        maintenance_message=str(maintenance.get("maintenance_message", "")),
     )
 
 
@@ -118,7 +120,7 @@ def get_status(request: Request) -> BotStatus:
 def start_bot(request: Request) -> BotActionResponse:
     from trading.loop import run_trading_loop
     from trading.state import _get_lock, _get_stop_event
-    from config import get_settings
+    from config import get_settings, get_maintenance_state
 
     user_id  = _get_uid(request)
     lock     = _get_lock(user_id)
@@ -128,7 +130,7 @@ def start_bot(request: Request) -> BotActionResponse:
     mode     = "paper" if settings.get("paper_trading", True) else "live"
 
     # Block start during maintenance — admin must clear it first
-    if settings.get("maintenance_mode", False):
+    if get_maintenance_state().get("maintenance_mode", False):
         return BotActionResponse(
             ok=False,
             message="🔧 System is in maintenance mode. Clear it from the Admin page before starting the bot."
