@@ -35,8 +35,13 @@ CANDIDATES: dict[str, OpeningRangePullbackConfig] = {
     "baseline": OpeningRangePullbackConfig(),
     "tighter_retest_0_05pct": OpeningRangePullbackConfig(retest_tolerance_pct=0.0005),
     "wider_retest_0_20pct": OpeningRangePullbackConfig(retest_tolerance_pct=0.0020),
-    "earlier_window_10_15_10_30": OpeningRangePullbackConfig(
-        breakout_deadline=time(10, 15), entry_deadline=time(10, 30),
+    "earlier_breakout_10_15": OpeningRangePullbackConfig(
+        # The strategy needs 15 completed five-minute bars before it can
+        # evaluate (first possible entry decision is 10:40).  Keep the normal
+        # 10:45 entry deadline, but require that the initiating breakout was
+        # already visible by 10:15.  The prior 10:30 deadline was impossible
+        # and therefore could only produce a misleading zero-trade result.
+        breakout_deadline=time(10, 15), entry_deadline=time(10, 45),
     ),
     "later_window_10_45_11_00": OpeningRangePullbackConfig(
         breakout_deadline=time(10, 45), entry_deadline=time(11, 0),
