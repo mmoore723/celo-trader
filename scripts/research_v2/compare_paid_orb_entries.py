@@ -17,7 +17,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research_v2.data import load_csv
-from research_v2.option_markouts import run_databento_cbbo_markouts_for_holds
+from research_v2.option_markouts import (
+    run_databento_cbbo_markouts_for_labeled_signals, strategy_signals,
+)
 from research_v2.strategies import OpeningRangePullback, OpeningRangePullbackConfig
 from scripts.research_v2.run_paid_databento_job import (
     archive_filenames, batch_file_date, day_bars, extract_archive_file,
@@ -133,18 +135,21 @@ def main() -> None:
             raw_path: Path | None = None
             try:
                 raw_path = extract_archive_file(args.archive, filename, args.scratch_dir / filename)
-                for name, config in CANDIDATES.items():
-                    results = run_databento_cbbo_markouts_for_holds(
-                        bars, [raw_path], OpeningRangePullback(config), args.ticker,
-                        hold_minutes=(args.hold_minutes,), min_dte=args.min_dte, max_dte=args.max_dte,
-                        min_premium=args.min_premium, max_premium=args.max_premium,
-                        max_spread_pct=args.max_spread_pct,
-                    )
-                    # The shared streaming helper returns an empty tuple when
-                    # this configuration generated no signal that day.  Treat
-                    # that as zero measured trades rather than crashing an
-                    # otherwise valid all-history comparison.
-                    rows = results.get(args.hold_minutes, ()) if isinstance(results, dict) else ()
+                signals = {
+                    name: strategy_signals(bars, OpeningRangePullback(config))
+                    for name, config in CANDIDATES.items()
+                }
+                # All five hypotheses now share two passes over the large OPRA
+                # file: one to select actual ask fills and one to read actual
+                # bid exits.  It is exactly the same evidence model as the
+                # earlier version, without re-reading the file five times.
+                results = run_databento_cbbo_markouts_for_labeled_signals(
+                    bars, [raw_path], signals, args.ticker,
+                    hold_minutes=args.hold_minutes, min_dte=args.min_dte, max_dte=args.max_dte,
+                    min_premium=args.min_premium, max_premium=args.max_premium,
+                    max_spread_pct=args.max_spread_pct,
+                )
+                for name, rows in results.items():
                     markouts[name].extend(result_row(row) for row in rows)
                 completed.add(filename)
             finally:
