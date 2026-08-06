@@ -11,7 +11,10 @@ from research_v2.reconciliation import ReferenceTrade, reconcile
 from research_v2.ledger import load_trade_ledger, write_trade_ledger
 from research_v2.regime import select_regimes
 from research_v2.options import OptionQuote, OptionQuoteBook, load_option_quotes
-from research_v2.option_markouts import run_databento_cbbo_markouts, run_option_markouts
+from research_v2.option_markouts import (
+    run_databento_cbbo_markouts, run_databento_cbbo_markouts_for_holds,
+    run_option_markouts,
+)
 from research_v2.providers.alpaca import export_alpaca_csv
 from research_v2.providers.databento import normalize_databento_cbbo_files
 from scripts.research_v2.run_paid_databento_job import archive_filenames, batch_file_date, build_strategy, day_bars, manifest_filenames, summarize
@@ -282,6 +285,34 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(5.1, results[0].entry_ask)
         self.assertEqual(5.4, results[0].exit_bid)
         self.assertAlmostEqual(5.8824, results[0].return_pct, places=4)
+
+    def test_multi_hold_stream_matches_three_single_hold_streams(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index) for index in range(25)]
+        ]
+        entry_time = bars[2].timestamp
+        contract = "TSLA  260109C00103000"
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{entry_time.isoformat()},{contract},4.90,5.10\n"
+                f"{(entry_time + timedelta(minutes=30)).isoformat()},{contract},5.00,5.20\n"
+                f"{(entry_time + timedelta(minutes=60)).isoformat()},{contract},5.40,5.60\n"
+                f"{(entry_time + timedelta(minutes=90)).isoformat()},{contract},5.80,6.00\n",
+                encoding="utf-8",
+            )
+            multi = run_databento_cbbo_markouts_for_holds(
+                bars, [source], _OneLong(), underlying="TSLA", hold_minutes=(30, 60, 90),
+            )
+            singles = {
+                hold: run_databento_cbbo_markouts(
+                    bars, [source], _OneLong(), underlying="TSLA", hold_minutes=hold,
+                )
+                for hold in (30, 60, 90)
+            }
+        self.assertEqual(singles, multi)
 
     def test_supertrend_emits_a_completed_bar_flip(self) -> None:
         bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(12)]

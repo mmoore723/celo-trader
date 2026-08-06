@@ -92,27 +92,29 @@ def run_option_markouts(
     return tuple(results)
 
 
-def run_databento_cbbo_markouts(
+def run_databento_cbbo_markouts_for_holds(
     bars: Iterable[Bar], raw_paths: Iterable[str | Path], strategy: Strategy,
-    underlying: str, hold_minutes: int = 60, min_dte: int = 0, max_dte: int = 7,
+    underlying: str, hold_minutes: Iterable[int] = (60,), min_dte: int = 0, max_dte: int = 7,
     min_premium: float = 0.0, max_premium: float | None = None,
     max_wait: timedelta = timedelta(minutes=1), max_spread_pct: float = 0.20,
-) -> tuple[OptionMarkout, ...]:
-    """Run an executable ORB markout directly from Databento CSV files.
+) -> dict[int, tuple[OptionMarkout, ...]]:
+    """Run fixed-hold executable markouts with two scans of each raw file.
 
     This is the low-memory equivalent of ``run_option_markouts``. Provider
     files can contain millions of option-chain rows, so loading every quote
     into Python is unsafe on the production server. Two sequential passes are
-    enough: pass one finds the first eligible quote per contract at entry;
-    pass two finds the first bid for the selected contract at the fixed exit.
-    It never uses an earlier quote, a midpoint, or a synthetic option price.
+    enough for any number of predeclared holding periods: pass one finds the
+    first eligible quote per contract at entry; pass two finds the first bid
+    for each selected contract at every requested exit. It never uses an
+    earlier quote, a midpoint, or a synthetic option price.
     """
     completed = tuple(bars)
     paths = tuple(Path(path) for path in raw_paths)
+    holds = tuple(sorted(set(hold_minutes)))
     expected_underlying = underlying.upper().strip()
     if not completed or not paths or not expected_underlying:
         raise ValueError("bars, raw_paths, and underlying are required")
-    if (hold_minutes < 1 or min_dte < 0 or max_dte < min_dte or min_premium < 0
+    if (not holds or any(hold < 1 for hold in holds) or min_dte < 0 or max_dte < min_dte or min_premium < 0
             or (max_premium is not None and max_premium < min_premium)
             or max_wait.total_seconds() <= 0 or max_spread_pct <= 0):
         raise ValueError("invalid markout bounds")
@@ -170,31 +172,51 @@ def run_databento_cbbo_markouts(
             abs(quote.strike - entry_bar.open), quote.spread / quote.mid, quote.option_symbol,
         )) if usable else None)
 
-    exits: list[OptionQuote | None] = [None] * len(decisions)
+    exits: dict[int, list[OptionQuote | None]] = {
+        hold: [None] * len(decisions) for hold in holds
+    }
     for quote in stream_quotes():
         for index, (_, entry_bar, _) in enumerate(decisions):
             chosen = selected[index]
             if chosen is None or quote.option_symbol != chosen.option_symbol:
                 continue
-            exit_target = entry_bar.timestamp + timedelta(minutes=hold_minutes)
-            if not exit_target <= quote.timestamp <= exit_target + max_wait:
-                continue
-            if exits[index] is None or quote.timestamp < exits[index].timestamp:
-                exits[index] = quote
+            for hold in holds:
+                exit_target = entry_bar.timestamp + timedelta(minutes=hold)
+                if not exit_target <= quote.timestamp <= exit_target + max_wait:
+                    continue
+                if exits[hold][index] is None or quote.timestamp < exits[hold][index].timestamp:
+                    exits[hold][index] = quote
 
-    results: list[OptionMarkout] = []
-    for index, (signal, entry_bar, _) in enumerate(decisions):
-        entry_quote, exit_quote = selected[index], exits[index]
-        if entry_quote is None or exit_quote is None:
-            continue
-        later_bars = [bar for bar in completed if bar.timestamp >= exit_quote.timestamp]
-        results.append(OptionMarkout(
-            strategy_id=signal.strategy_id, side=signal.side, signal_time=signal.timestamp,
-            entry_time=entry_quote.timestamp, exit_time=exit_quote.timestamp,
-            contract_symbol=entry_quote.option_symbol, entry_ask=entry_quote.buy_fill(),
-            exit_bid=exit_quote.sell_fill(),
-            return_pct=round((exit_quote.sell_fill() - entry_quote.buy_fill()) / entry_quote.buy_fill() * 100, 4),
-            underlying_entry=entry_bar.open,
-            underlying_exit=later_bars[0].close if later_bars else None,
-        ))
-    return tuple(results)
+    result_sets: dict[int, tuple[OptionMarkout, ...]] = {}
+    for hold in holds:
+        results: list[OptionMarkout] = []
+        for index, (signal, entry_bar, _) in enumerate(decisions):
+            entry_quote, exit_quote = selected[index], exits[hold][index]
+            if entry_quote is None or exit_quote is None:
+                continue
+            later_bars = [bar for bar in completed if bar.timestamp >= exit_quote.timestamp]
+            results.append(OptionMarkout(
+                strategy_id=signal.strategy_id, side=signal.side, signal_time=signal.timestamp,
+                entry_time=entry_quote.timestamp, exit_time=exit_quote.timestamp,
+                contract_symbol=entry_quote.option_symbol, entry_ask=entry_quote.buy_fill(),
+                exit_bid=exit_quote.sell_fill(),
+                return_pct=round((exit_quote.sell_fill() - entry_quote.buy_fill()) / entry_quote.buy_fill() * 100, 4),
+                underlying_entry=entry_bar.open,
+                underlying_exit=later_bars[0].close if later_bars else None,
+            ))
+        result_sets[hold] = tuple(results)
+    return result_sets
+
+
+def run_databento_cbbo_markouts(
+    bars: Iterable[Bar], raw_paths: Iterable[str | Path], strategy: Strategy,
+    underlying: str, hold_minutes: int = 60, min_dte: int = 0, max_dte: int = 7,
+    min_premium: float = 0.0, max_premium: float | None = None,
+    max_wait: timedelta = timedelta(minutes=1), max_spread_pct: float = 0.20,
+) -> tuple[OptionMarkout, ...]:
+    """Single-hold compatibility wrapper for existing research callers."""
+    return run_databento_cbbo_markouts_for_holds(
+        bars, raw_paths, strategy, underlying=underlying, hold_minutes=(hold_minutes,),
+        min_dte=min_dte, max_dte=max_dte, min_premium=min_premium,
+        max_premium=max_premium, max_wait=max_wait, max_spread_pct=max_spread_pct,
+    )[hold_minutes]

@@ -18,7 +18,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research_v2.data import load_csv
-from research_v2.option_markouts import run_databento_cbbo_markouts
+from research_v2.option_markouts import run_databento_cbbo_markouts_for_holds
+from research_v2.option_markouts import strategy_signals
 from scripts.research_v2.run_paid_databento_job import (
     archive_filenames, batch_file_date, build_strategy, day_bars,
     extract_archive_file, result_row, summarize, write_checkpoint,
@@ -131,17 +132,23 @@ def main() -> None:
         if not bars:
             skipped.append({"filename": filename, "reason": "no_frozen_underlying_bars"})
             completed.add(filename)
+        elif not strategy_signals(bars, build_strategy(args.strategy)):
+            # Most sessions have no qualifying V2 signal.  There is no reason
+            # to unpack and scan a 40–60 MB option-chain file just to discover
+            # that there cannot be an entry on that date.
+            skipped.append({"filename": filename, "reason": "no_strategy_signal"})
+            completed.add(filename)
         else:
             raw_path: Path | None = None
             try:
                 raw_path = extract_archive_file(args.archive, filename, args.scratch_dir / filename)
-                for hold in holds:
-                    results = run_databento_cbbo_markouts(
-                        bars, [raw_path], build_strategy(args.strategy), underlying=args.ticker,
-                        hold_minutes=hold, min_dte=args.min_dte, max_dte=args.max_dte,
-                        min_premium=args.min_premium, max_premium=args.max_premium,
-                        max_spread_pct=args.max_spread_pct,
-                    )
+                results_by_hold = run_databento_cbbo_markouts_for_holds(
+                    bars, [raw_path], build_strategy(args.strategy), underlying=args.ticker,
+                    hold_minutes=holds, min_dte=args.min_dte, max_dte=args.max_dte,
+                    min_premium=args.min_premium, max_premium=args.max_premium,
+                    max_spread_pct=args.max_spread_pct,
+                )
+                for hold, results in results_by_hold.items():
                     markouts_by_hold[hold].extend(result_row(result) for result in results)
                 completed.add(filename)
             finally:
