@@ -140,7 +140,12 @@ def main() -> None:
                         min_premium=args.min_premium, max_premium=args.max_premium,
                         max_spread_pct=args.max_spread_pct,
                     )
-                    markouts[name].extend(result_row(row) for row in results[args.hold_minutes])
+                    # The shared streaming helper returns an empty tuple when
+                    # this configuration generated no signal that day.  Treat
+                    # that as zero measured trades rather than crashing an
+                    # otherwise valid all-history comparison.
+                    rows = results.get(args.hold_minutes, ()) if isinstance(results, dict) else ()
+                    markouts[name].extend(result_row(row) for row in rows)
                 completed.add(filename)
             finally:
                 if raw_path is not None:
