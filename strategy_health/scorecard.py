@@ -8,7 +8,10 @@ import json
 from database import get_conn, _now_et
 
 
-MIN_ACTIONABLE_TRADES = 20
+# Twenty results can justify a human review of a paper strategy, but it cannot
+# establish a durable edge.  This is deliberately a *review* threshold only;
+# the scorecard never controls sizing or enables a strategy.
+MIN_REVIEW_TRADES = 20
 MAIN_TIER = "main"
 OPPORTUNITY_TIER = "opportunity"
 
@@ -51,10 +54,10 @@ def _finalise(rows: dict[tuple[str, str], dict]) -> list[dict]:
         row["pnl"] = round(row["pnl"], 2)
         row["win_rate"] = round(row["wins"] / n * 100, 1) if n else None
         row["expectancy"] = round(row["pnl"] / n, 2) if n else None
-        row["sample_status"] = "actionable" if n >= MIN_ACTIONABLE_TRADES else "collecting_data"
+        row["sample_status"] = "review_ready" if n >= MIN_REVIEW_TRADES else "collecting_data"
         row["block_reasons"] = dict(sorted(row["block_reasons"].items(), key=lambda item: -item[1]))
         result.append(dict(row))
-    return sorted(result, key=lambda row: (row["sample_status"] != "actionable", -row["pnl"]))
+    return sorted(result, key=lambda row: (row["sample_status"] != "review_ready", -row["pnl"]))
 
 
 def build_scorecard(days: int = 30) -> dict:
@@ -109,7 +112,7 @@ def build_scorecard(days: int = 30) -> dict:
         by_tier.setdefault(tier, {})[(sid, tier)] = row
     return {
         "days": days,
-        "minimum_actionable_trades": MIN_ACTIONABLE_TRADES,
+        "minimum_review_trades": MIN_REVIEW_TRADES,
         # Existing consumers can keep using this as the main-tier scorecard.
         "strategies": _finalise(by_tier[MAIN_TIER]),
         # Opportunity results are deliberately isolated; they never blend into main evidence.

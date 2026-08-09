@@ -51,10 +51,10 @@ export interface StrategyScorecardRow {
   strategy_id: string; closed_trades: number; wins: number; pnl: number;
   blocked_signals: number; entered_signals: number; block_reasons: Record<string, number>;
   win_rate: number | null; expectancy: number | null;
-  sample_status: "actionable" | "collecting_data";
+  sample_status: "review_ready" | "collecting_data";
 }
 export interface StrategyScorecard {
-  days: number; minimum_actionable_trades: number; strategies: StrategyScorecardRow[];
+  days: number; minimum_review_trades: number; strategies: StrategyScorecardRow[];
   opportunity_strategies: StrategyScorecardRow[];
 }
 export interface CandidateScorecardRow {
