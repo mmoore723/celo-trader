@@ -73,6 +73,14 @@ export interface PaperResearchScorecard {
   avg_underlying_move_pct: number | null; avg_executable_return_pct: number | null;
   note: string;
 }
+export interface V2OrbPaperScorecard {
+  strategy_id: string; broker_account_id: string | null; account_scoped: boolean;
+  entered: number; open_trades: number; closed_trades: number; wins: number;
+  win_rate_pct: number | null; pnl: number; average_return_pct: number | null;
+  study_matched_exits: number; nonmatching_exits: number;
+  minimum_review_trades: number; sample_status: "collecting_data" | "review_ready";
+  note: string;
+}
 export interface PaidResearchEvidence {
   study_id: string; label: string; status: "paper_validation_next";
   ticker: string; strategy_id: string; data_scope: string; execution_model: string;
@@ -650,6 +658,7 @@ export const api = {
     candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
     qqqOpeningResearch: () => request<PaperResearchScorecard>("/api/strategy-health/paper-research/qqq-opening"),
     paidTslaV2Orb: () => request<PaidResearchEvidence>("/api/strategy-health/research/paid-tsla-v2-orb"),
+    v2OrbPaperScorecard: () => request<V2OrbPaperScorecard>("/api/strategy-health/paper/v2-orb"),
   },
   aiReasoning: {
     log: (opts?: { limit?: number; eventType?: string; ticker?: string; onlyErrors?: boolean }) => {

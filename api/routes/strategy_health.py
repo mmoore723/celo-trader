@@ -97,6 +97,16 @@ def get_paid_tsla_v2_orb_research() -> dict:
     return v2_orb_tsla_summary()
 
 
+@router.get("/paper/v2-orb")
+def get_v2_orb_paper_scorecard() -> dict:
+    """Account-scoped prospective V2 paper evidence; never a trade control."""
+    from config import get_settings
+    from strategy_health.v2_orb_paper_scorecard import build_v2_orb_paper_scorecard
+    return build_v2_orb_paper_scorecard(
+        broker_account_id=get_settings().get("active_broker_account_id") or None,
+    )
+
+
 @router.get("/latest")
 def get_latest() -> dict:
     from database import get_latest_strategy_audit

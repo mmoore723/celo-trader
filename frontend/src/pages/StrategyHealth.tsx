@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard, type PaidResearchEvidence } from "../lib/api";
+import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard, type PaidResearchEvidence, type V2OrbPaperScorecard } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -181,6 +181,31 @@ function PaidTslaResearchCard({ data }: { data: PaidResearchEvidence }) {
   </div>;
 }
 
+function V2OrbProspectiveCard({ data }: { data: V2OrbPaperScorecard }) {
+  const returnText = data.average_return_pct == null ? "Collecting" : `${data.average_return_pct >= 0 ? "+" : ""}${data.average_return_pct.toFixed(2)}%`;
+  const ready = data.sample_status === "review_ready";
+  return <div className="card" style={{ padding: 16, borderLeft: `3px solid ${ready ? "var(--positive)" : "var(--accent)"}` }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+      <h2 className="text-sm font-semibold" style={{ margin: 0 }}>TSLA V2 paper evidence</h2>
+      <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 999, padding: "2px 8px", color: ready ? "var(--positive)" : "var(--accent)", background: ready ? "var(--positive-bg)" : "var(--accent-bg)" }}>
+        {ready ? "READY TO REVIEW" : "COLLECTING"}
+      </span>
+    </div>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "0 0 10px", lineHeight: 1.5 }}>
+      This is kept separate from every older strategy and from historical research. It only counts the currently selected broker account’s V2 paper trades.
+    </p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
+      <div><div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Closed / needed</div><b>{data.closed_trades} / {data.minimum_review_trades}</b></div>
+      <div><div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Win rate</div><b>{data.win_rate_pct == null ? "—" : `${data.win_rate_pct}%`}</b></div>
+      <div><div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Average return</div><b style={{ color: (data.average_return_pct ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{returnText}</b></div>
+      <div><div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Matching 90-min exits</div><b>{data.study_matched_exits}</b></div>
+    </div>
+    {data.open_trades > 0 && <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "10px 0 0" }}>{data.open_trades} paper trade{data.open_trades === 1 ? " is" : "s are"} still waiting for its 90-minute result.</p>}
+    {data.nonmatching_exits > 0 && <p style={{ fontSize: 12, color: "var(--warning, #b45309)", margin: "10px 0 0" }}>⚠ {data.nonmatching_exits} closed trade{data.nonmatching_exits === 1 ? " did" : "s did"} not use the studied 90-minute exit, so those results are not treated as matching study evidence.</p>}
+    <p style={{ fontSize: 11, color: "var(--ink-faint)", margin: "10px 0 0" }}>{data.note}</p>
+  </div>;
+}
+
 function FunnelTable({ perStrategy }: { perStrategy: Record<string, StrategyFunnelRow> }) {
   const rows = Object.entries(perStrategy).sort((a, b) => b[1].raw_signals - a[1].raw_signals);
   if (rows.length === 0) {
@@ -322,6 +347,7 @@ function DailyView() {
   const { data: candidateScorecard } = useQuery({ queryKey: ["strategy-health-candidate-scorecard"], queryFn: () => api.strategyHealth.candidateScorecard(30), staleTime: 60_000 });
   const { data: qqqResearch } = useQuery({ queryKey: ["strategy-health-qqq-paper-research"], queryFn: api.strategyHealth.qqqOpeningResearch, staleTime: 60_000 });
   const { data: paidTslaResearch } = useQuery({ queryKey: ["strategy-health-paid-tsla-v2-orb"], queryFn: api.strategyHealth.paidTslaV2Orb, staleTime: 60_000 });
+  const { data: v2OrbPaper } = useQuery({ queryKey: ["strategy-health-v2-orb-paper"], queryFn: api.strategyHealth.v2OrbPaperScorecard, staleTime: 60_000 });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get, staleTime: 60_000 });
 
   const runNow = useMutation({
@@ -352,6 +378,7 @@ function DailyView() {
       </div>
       <ActivePilotCard settings={settings} />
       {paidTslaResearch && <PaidTslaResearchCard data={paidTslaResearch} />}
+      {v2OrbPaper && <V2OrbProspectiveCard data={v2OrbPaper} />}
       {scorecard && <Scorecard data={scorecard} />}
       {candidateScorecard && <CandidateScorecard data={candidateScorecard} />}
       {qqqResearch && <QQQResearchCard data={qqqResearch} />}
