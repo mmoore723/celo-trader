@@ -169,6 +169,18 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(104.0, signal.meta["v2_target"])
         self.assertEqual("opening_range_pullback", signal.meta["v2_hypothesis"])
 
+    def test_orb_pullback_adapter_is_hard_scoped_to_paid_tsla_evidence(self) -> None:
+        """A future pilot must not reuse the TSLA-only hypothesis on another ticker."""
+        import pandas as pd
+        from strategies.orb_pullback_v2 import evaluate
+
+        frame = pd.DataFrame(columns=["time"])
+        self.assertIsNone(evaluate(frame, "AAPL"))
+        self.assertIsNone(evaluate(frame, "QQQ"))
+        # TSLA reaches the normal data-availability check instead of being
+        # rejected for its ticker.
+        self.assertIsNone(evaluate(frame, "TSLA"))
+
     def test_incomplete_bot_state_is_treated_as_stopped_on_service_restart(self) -> None:
         from config import load_bot_state_safely
         with TemporaryDirectory() as directory:

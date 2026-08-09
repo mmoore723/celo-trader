@@ -13,9 +13,15 @@ from research_v2.strategies import OpeningRangePullback, OpeningRangePullbackCon
 from strategies.base import Signal
 
 STRATEGY_ID = "V2_ORB_PULLBACK"
+# This hypothesis was tested only on paid TSLA option quotes.  Keep the scope
+# in the strategy adapter—not merely in a screen or router setting—so a future
+# pilot cannot accidentally trade an unvalidated ticker.
+VALIDATED_TICKERS = frozenset({"TSLA"})
 
 
 def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
+    if ticker.strip().upper() not in VALIDATED_TICKERS:
+        return None
     if "time" not in today:
         return None
     config = OpeningRangePullbackConfig()
