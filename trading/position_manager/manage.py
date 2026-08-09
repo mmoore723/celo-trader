@@ -660,8 +660,16 @@ def _manage_open_position(
 
         else:
             from trading.position_manager.close import _close_position
-            _close_position(alpaca, trade, current_price, reason,
-                             bid_price=bid_price, mtf_notes=_mtf_notes)
+            # The V2 paper cohort must close at the observable bid, matching
+            # the paid ask-to-bid markout.  Other strategies retain their
+            # normal midpoint-then-bid execution attempt.
+            from trading.v2_orb_paper_execution import exit_limit_prices
+            _exit_limit, _exit_step = exit_limit_prices(
+                bid=bid_price, midpoint=current_price,
+                v2_paper_pilot=_is_v2_paper_pilot,
+            )
+            _close_position(alpaca, trade, _exit_limit, reason,
+                             bid_price=_exit_step, mtf_notes=_mtf_notes)
 
     except Exception as e:
         from database import log_event

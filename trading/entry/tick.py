@@ -87,6 +87,7 @@ from trading.position_manager import _manage_open_position, _close_position
 
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
 from trading.entry.contract import select_contract, select_v2_orb_paper_contract
+from trading.v2_orb_paper_execution import entry_limit_prices
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
 from trading.opportunity_scheduler import due_ticker as _opportunity_due_ticker
@@ -1384,15 +1385,23 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Stamp the key BEFORE placing so a concurrent tick that reaches here
     # in the same minute sees the lock immediately.
     _US["_last_order_key"] = _entry_key
-    # Smart limit order: submit at the mid-price (bid+ask)/2 first — the same
-    # Paper fills at a less favorable price than mid — record worst case.
-    _order_mid   = round(_c_mid, 2)   # best-case: fill at mid
-    _order_ask   = round(ask_price, 2) # worst-case step-up: fill at ask
-    _spread_save = round((_order_ask - _order_mid) * n_contracts * 100, 2)
-    log_event("INFO", "order",
-              f"💡 [{ticker}] Limit order at mid ${_order_mid:.2f} "
-              f"(ask ${_order_ask:.2f}) — potential saving ${_spread_save:.2f} "
-              f"on {n_contracts} contract(s). Will step up to ask if not filled in 5s.")
+    # The normal path seeks price improvement at midpoint then crosses to ask.
+    # The V2 paid study bought at ask, so its paper cohort crosses directly at
+    # ask instead.  Otherwise a favorable midpoint fill could be mislabeled as
+    # confirmation of the historical ask-to-bid evidence.
+    _order_mid, _order_ask = entry_limit_prices(
+        ask=ask_price, midpoint=_c_mid, v2_paper_pilot=_v2_paid_parity,
+    )
+    _spread_save = round(((_order_ask or _order_mid) - _order_mid) * n_contracts * 100, 2)
+    if _v2_paid_parity:
+        log_event("INFO", "order",
+                  f"🔬 [{ticker}] V2 paper study entry at ask ${_order_mid:.2f} "
+                  f"for {n_contracts} contract(s) — matches the paid historical fill rule.")
+    else:
+        log_event("INFO", "order",
+                  f"💡 [{ticker}] Limit order at mid ${_order_mid:.2f} "
+                  f"(ask ${_order_ask:.2f}) — potential saving ${_spread_save:.2f} "
+                  f"on {n_contracts} contract(s). Will step up to ask if not filled in 5s.")
     order = alpaca.place_option_order(
         symbol          = contract["symbol"],
         qty             = n_contracts,
