@@ -469,7 +469,19 @@ def _manage_open_position(
         _simplified_mode = bool(_gs_exit().get("simplified_exit_mode", True))
         _atr_for_exit        = locals().get("_atr")
         _underlying_for_exit = locals().get("_underlying_now")
-        if _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
+        # The paid V2 study measured a fixed 90-minute ask-to-bid markout.
+        # Use that exact exit only for its TSLA paper pilot.  It would be
+        # misleading to label a generic chandelier/75-minute exit result as
+        # evidence for the studied V2 hypothesis.  A non-paper trade always
+        # stays on the normal risk engine.
+        _is_v2_paper_pilot = (
+            str(trade.get("strategy_id") or "").upper() == "V2_ORB_PULLBACK"
+            and bool(trade.get("paper", True))
+        )
+        if _is_v2_paper_pilot:
+            from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit
+            should_exit, reason = evaluate_v2_orb_paper_exit(entry_time, now_et)
+        elif _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
             from trading.simplified_exit_live import evaluate_simplified_live_exit
             should_exit, reason = evaluate_simplified_live_exit(
                 ps, entry_price, current_price,
