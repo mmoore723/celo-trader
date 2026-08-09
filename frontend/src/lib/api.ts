@@ -83,6 +83,7 @@ export interface PaidResearchEvidence {
     baseline: { measured_signals: number; average_return_pct: number };
     best_past_variant: { measured_signals: number; average_return_pct: number };
   };
+  uncertainty: { label: string; low_pct: number; high_pct: number; interpretation: string };
   what_changed: string; next_step: string; caveat: string;
 }
 

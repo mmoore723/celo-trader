@@ -35,6 +35,12 @@ def v2_orb_tsla_summary() -> dict:
             "baseline": {"measured_signals": 26, "average_return_pct": 6.5852},
             "best_past_variant": {"measured_signals": 25, "average_return_pct": 2.1722},
         },
+        "uncertainty": {
+            "label": "95% bootstrap range for the historical average",
+            "low_pct": -0.1950,
+            "high_pct": 13.0122,
+            "interpretation": "The range still includes a small loss. With only 39 results, the evidence is promising but not sufficient to claim the strategy is profitable.",
+        },
         "what_changed": "Nothing. VWAP and EMA exits, plus five predeclared entry variations, did not beat the unchanged baseline fairly enough to justify a replacement.",
         "next_step": "Run only the unchanged baseline in paper mode and compare its prospective broker fills with this historical evidence.",
         "caveat": "Historical results are not a promise of future profit. This study is small, uses fixed 90-minute markouts, and does not yet include prospective broker-fill latency or commissions.",

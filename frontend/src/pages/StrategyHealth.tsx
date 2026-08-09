@@ -148,6 +148,9 @@ function PaidTslaResearchCard({ data }: { data: PaidResearchEvidence }) {
       </div>
     </div>
     <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "10px 0 0", lineHeight: 1.5 }}><b>Decision:</b> {data.what_changed}</p>
+    <p style={{ fontSize: 12, color: "var(--warning, #b45309)", margin: "6px 0 0", lineHeight: 1.5 }}>
+      <b>How certain is this?</b> {data.uncertainty.label}: {fmt(data.uncertainty.low_pct)} to {fmt(data.uncertainty.high_pct)}. {data.uncertainty.interpretation}
+    </p>
     <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "6px 0 0", lineHeight: 1.5 }}><b>Next:</b> {data.next_step}</p>
     <p style={{ fontSize: 11, color: "var(--ink-faint)", margin: "8px 0 0", lineHeight: 1.45 }}>{data.caveat}</p>
   </div>;
