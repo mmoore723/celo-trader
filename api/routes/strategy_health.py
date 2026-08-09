@@ -90,6 +90,13 @@ def get_qqq_opening_research_scorecard() -> dict:
     }
 
 
+@router.get("/research/paid-tsla-v2-orb")
+def get_paid_tsla_v2_orb_research() -> dict:
+    """Reviewed paid-data study summary; informational only, never a trade control."""
+    from strategy_health.paid_research_evidence import v2_orb_tsla_summary
+    return v2_orb_tsla_summary()
+
+
 @router.get("/latest")
 def get_latest() -> dict:
     from database import get_latest_strategy_audit

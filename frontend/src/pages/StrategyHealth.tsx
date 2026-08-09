@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard } from "../lib/api";
+import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard, type PaidResearchEvidence } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -117,6 +117,39 @@ function QQQResearchCard({ data }: { data: PaperResearchScorecard }) {
       <span>Win rate: <b>{data.option_win_rate_pct == null ? "—" : `${data.option_win_rate_pct}%`}</b></span>
     </div>
     <p style={{ fontSize: 11, color: "var(--ink-faint)", margin: "10px 0 0" }}>{data.note}</p>
+  </div>;
+}
+
+function PaidTslaResearchCard({ data }: { data: PaidResearchEvidence }) {
+  const fmt = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+  return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--accent)" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+      <h2 className="text-sm font-semibold" style={{ margin: 0 }}>What we learned from real option prices</h2>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "var(--accent-bg)", borderRadius: 999, padding: "2px 8px" }}>HISTORICAL RESEARCH</span>
+    </div>
+    <p style={{ fontSize: 13, color: "var(--ink)", margin: "0 0 10px", lineHeight: 1.5 }}>
+      <b>{data.label}.</b> {data.execution_model}
+    </p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Whole paid study</div>
+        <div style={{ fontWeight: 700, fontSize: 17, color: "var(--positive)" }}>{fmt(data.baseline.average_return_pct)}</div>
+        <div style={{ fontSize: 12, color: "var(--ink-muted)" }}>{data.baseline.measured_signals} setups · {data.baseline.win_rate_pct}% positive</div>
+      </div>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Unseen later dates</div>
+        <div style={{ fontWeight: 700, fontSize: 17, color: "var(--positive)" }}>{fmt(data.unseen_holdout.average_return_pct)}</div>
+        <div style={{ fontSize: 12, color: "var(--ink-muted)" }}>{data.unseen_holdout.measured_signals} setups · {data.unseen_holdout.win_rate_pct}% positive</div>
+      </div>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Honest month-by-month check</div>
+        <div style={{ fontWeight: 700, fontSize: 17, color: "var(--positive)" }}>{fmt(data.walkforward.baseline.average_return_pct)}</div>
+        <div style={{ fontSize: 12, color: "var(--ink-muted)" }}>baseline beat best-past tweak: {fmt(data.walkforward.best_past_variant.average_return_pct)}</div>
+      </div>
+    </div>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "10px 0 0", lineHeight: 1.5 }}><b>Decision:</b> {data.what_changed}</p>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "6px 0 0", lineHeight: 1.5 }}><b>Next:</b> {data.next_step}</p>
+    <p style={{ fontSize: 11, color: "var(--ink-faint)", margin: "8px 0 0", lineHeight: 1.45 }}>{data.caveat}</p>
   </div>;
 }
 
@@ -260,6 +293,7 @@ function DailyView() {
   const { data: scorecard } = useQuery({ queryKey: ["strategy-health-scorecard"], queryFn: () => api.strategyHealth.scorecard(30), staleTime: 60_000 });
   const { data: candidateScorecard } = useQuery({ queryKey: ["strategy-health-candidate-scorecard"], queryFn: () => api.strategyHealth.candidateScorecard(30), staleTime: 60_000 });
   const { data: qqqResearch } = useQuery({ queryKey: ["strategy-health-qqq-paper-research"], queryFn: api.strategyHealth.qqqOpeningResearch, staleTime: 60_000 });
+  const { data: paidTslaResearch } = useQuery({ queryKey: ["strategy-health-paid-tsla-v2-orb"], queryFn: api.strategyHealth.paidTslaV2Orb, staleTime: 60_000 });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get, staleTime: 60_000 });
 
   const runNow = useMutation({
@@ -289,6 +323,7 @@ function DailyView() {
         </button>
       </div>
       <ActivePilotCard settings={settings} />
+      {paidTslaResearch && <PaidTslaResearchCard data={paidTslaResearch} />}
       {scorecard && <Scorecard data={scorecard} />}
       {candidateScorecard && <CandidateScorecard data={candidateScorecard} />}
       {qqqResearch && <QQQResearchCard data={qqqResearch} />}

@@ -73,6 +73,18 @@ export interface PaperResearchScorecard {
   avg_underlying_move_pct: number | null; avg_executable_return_pct: number | null;
   note: string;
 }
+export interface PaidResearchEvidence {
+  study_id: string; label: string; status: "paper_validation_next";
+  ticker: string; strategy_id: string; data_scope: string; execution_model: string;
+  baseline: { label: string; measured_signals: number; win_rate_pct: number; average_return_pct: number };
+  unseen_holdout: { label: string; measured_signals: number; win_rate_pct: number; average_return_pct: number };
+  walkforward: {
+    label: string;
+    baseline: { measured_signals: number; average_return_pct: number };
+    best_past_variant: { measured_signals: number; average_return_pct: number };
+  };
+  what_changed: string; next_step: string; caveat: string;
+}
 
 export interface Trade {
   id: number;
@@ -628,6 +640,7 @@ export const api = {
     scorecard: (days = 30) => request<StrategyScorecard>(`/api/strategy-health/scorecard?days=${days}`),
     candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
     qqqOpeningResearch: () => request<PaperResearchScorecard>("/api/strategy-health/paper-research/qqq-opening"),
+    paidTslaV2Orb: () => request<PaidResearchEvidence>("/api/strategy-health/research/paid-tsla-v2-orb"),
   },
   aiReasoning: {
     log: (opts?: { limit?: number; eventType?: string; ticker?: string; onlyErrors?: boolean }) => {
