@@ -11,12 +11,24 @@ both call sites verified to still resolve correctly after this split.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Optional, Tuple
 
 from broker import TradierClient
 from config import MIN_CONTRACT_COST, MAX_CONTRACT_COST, MIN_OPEN_INTEREST, get_settings
 
 logger = logging.getLogger("celo_trader.trading_logic")
+
+
+# These are the contract bounds used in the paid TSLA V2 ORB study.  They are
+# deliberately separate from the generic selector below: changing the latter
+# would silently alter every existing strategy.  The V2 function is called
+# only for a paper trade whose strategy ID is V2_ORB_PULLBACK.
+V2_ORB_PAPER_MIN_DTE = 7
+V2_ORB_PAPER_MAX_DTE = 21
+V2_ORB_PAPER_MIN_PREMIUM = 0.80
+V2_ORB_PAPER_MAX_PREMIUM = 10.00
+V2_ORB_PAPER_MAX_SPREAD_PCT = 0.08
 
 
 def select_contract(
@@ -181,3 +193,122 @@ def select_contract(
         info["reason"] = "filtered"
 
     return None, info
+
+
+def select_v2_orb_paper_contract(
+    tradier: TradierClient,
+    ticker: str,
+    direction: str,
+    current_price: float,
+    max_spend: float,
+) -> Tuple[Optional[dict], dict]:
+    """Select the paid-study style contract for the TSLA V2 ORB paper pilot.
+
+    The paid historical study used the nearest eligible expiry (7--21 DTE),
+    the closest *out-of-the-money* strike, a $0.80--$10.00 ask, and a maximum
+    8% bid/ask spread measured against mid.  This function applies those same
+    observable rules to the broker chain at paper-entry time.  It does not
+    loosen the account's position-budget cap and cannot be used for live
+    orders.  Tradier's chain client also removes obviously invalid/illiquid
+    rows upstream; that limitation is returned in the audit metadata rather
+    than hidden.
+    """
+    info: dict = {
+        "reason": "no_chain_data",
+        "selection_model": "v2_orb_paid_tsla_near_money_otm_v1",
+        "research_eligibility": {
+            "min_dte": V2_ORB_PAPER_MIN_DTE,
+            "max_dte": V2_ORB_PAPER_MAX_DTE,
+            "min_premium": V2_ORB_PAPER_MIN_PREMIUM,
+            "max_premium": V2_ORB_PAPER_MAX_PREMIUM,
+            "max_spread_pct": V2_ORB_PAPER_MAX_SPREAD_PCT,
+        },
+        "upstream_chain_liquidity_filtered": True,
+    }
+    if ticker.strip().upper() != "TSLA":
+        info["reason"] = "unsupported_v2_ticker"
+        return None, info
+    if direction not in {"bullish", "bearish"} or current_price <= 0 or max_spend <= 0:
+        info["reason"] = "invalid_selection_input"
+        return None, info
+
+    option_type = "call" if direction == "bullish" else "put"
+    try:
+        expirations = tradier.get_expirations("TSLA")
+    except Exception as exc:
+        logger.warning("V2 paper get_expirations(TSLA) raised: %s", exc)
+        info["reason"] = "api_error"
+        return None, info
+    if not expirations:
+        info["reason"] = "no_expirations"
+        return None, info
+
+    today = date.today()
+    candidates: list[tuple[int, float, float, str, dict]] = []
+    saw_chain_data = False
+    saw_budget_candidate = False
+    saw_liquid_candidate = False
+    for expiry in expirations:
+        try:
+            expiry_date = date.fromisoformat(str(expiry))
+        except (TypeError, ValueError):
+            continue
+        dte = (expiry_date - today).days
+        if not V2_ORB_PAPER_MIN_DTE <= dte <= V2_ORB_PAPER_MAX_DTE:
+            continue
+        try:
+            chain = tradier.get_option_chain("TSLA", str(expiry), option_type)
+        except Exception as exc:
+            logger.debug("V2 paper get_option_chain(%s) raised: %s", expiry, exc)
+            continue
+        if not chain:
+            continue
+        saw_chain_data = True
+        for raw_contract in chain:
+            contract = dict(raw_contract)
+            try:
+                strike = float(contract.get("strike") or 0)
+                ask = float(contract.get("ask") or 0)
+                bid = float(contract.get("bid") or 0)
+            except (TypeError, ValueError):
+                continue
+            is_otm = strike > current_price if option_type == "call" else strike < current_price
+            if not is_otm or not V2_ORB_PAPER_MIN_PREMIUM <= ask <= V2_ORB_PAPER_MAX_PREMIUM:
+                continue
+            cost = ask * 100
+            if cost > max_spend:
+                saw_budget_candidate = True
+                continue
+            mid = (ask + bid) / 2 if bid > 0 else 0.0
+            spread_pct = (ask - bid) / mid if mid > 0 else float("inf")
+            if spread_pct > V2_ORB_PAPER_MAX_SPREAD_PCT:
+                saw_liquid_candidate = True
+                continue
+            symbol = str(contract.get("symbol") or "")
+            if not symbol:
+                continue
+            contract["expiry"] = str(expiry)
+            contract["selection_model"] = info["selection_model"]
+            candidates.append((dte, abs(strike - current_price), spread_pct, symbol, contract))
+
+    if not candidates:
+        if saw_liquid_candidate:
+            info["reason"] = "illiquid"
+        elif saw_budget_candidate:
+            info["reason"] = "over_budget"
+        elif saw_chain_data:
+            info["reason"] = "filtered"
+        return None, info
+
+    _, _, spread_pct, _, selected = min(candidates, key=lambda item: item[:4])
+    info.update({
+        "reason": "selected",
+        "selected_dte": (date.fromisoformat(selected["expiry"]) - today).days,
+        "selected_spread_pct": round(spread_pct, 6),
+    })
+    logger.info(
+        "V2 paper contract selected: %s exp=%s strike=%.2f ask=%.2f model=%s",
+        selected["symbol"], selected["expiry"], float(selected["strike"]),
+        float(selected["ask"]), info["selection_model"],
+    )
+    return selected, info

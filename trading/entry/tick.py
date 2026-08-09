@@ -86,7 +86,7 @@ from trading.diagnostics import _log_bar_thinking, _check_ghost_positions, _swee
 from trading.position_manager import _manage_open_position, _close_position
 
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
-from trading.entry.contract import select_contract
+from trading.entry.contract import select_contract, select_v2_orb_paper_contract
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
 from trading.opportunity_scheduler import due_ticker as _opportunity_due_ticker
@@ -1000,7 +1000,21 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         max_spend = balance * (_cap_pct / 100.0)
     else:
         max_spend = settings.get("max_position_dollars", 750.0)
-    contract, _sel_info = select_contract(tradier, ticker, direction, current_price, max_spend)
+    # V2's paid TSLA study used a distinct, predeclared contract rule.  Keep
+    # it paper-only and narrow; every other strategy continues using the
+    # generic selector exactly as before.  This makes a future V2 paper result
+    # interpretable against the paid study instead of mixing two contract
+    # definitions under the same strategy name.
+    _v2_paid_parity = (
+        strategy_id == "V2_ORB_PULLBACK"
+        and bool(settings.get("paper_trading", True))
+    )
+    if _v2_paid_parity:
+        contract, _sel_info = select_v2_orb_paper_contract(
+            tradier, ticker, direction, current_price, max_spend,
+        )
+    else:
+        contract, _sel_info = select_contract(tradier, ticker, direction, current_price, max_spend)
     if not contract:
         _reason = _sel_info.get("reason")
         if _reason == "over_budget":
@@ -1509,6 +1523,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                              "symbol": contract.get("symbol"), "strike": contract.get("strike"),
                              "expiry": contract.get("expiry"), "bid": contract.get("bid"),
                              "ask": contract.get("ask"), "spread": contract.get("spread"),
+                             # Present only for the TSLA V2 paper pilot.  This
+                             # lets the learner-facing journal distinguish a
+                             # paid-study-aligned contract from the normal
+                             # generic selector without guessing from price.
+                             "selection_model": contract.get("selection_model"),
+                             "research_eligibility": _sel_info.get("research_eligibility"),
                          },
                          "rr_ratio": rr_audit.get("R_R_Ratio"),
                      }, tier=_signal_tier)
