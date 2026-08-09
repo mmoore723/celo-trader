@@ -18,6 +18,18 @@ def v2_orb_tsla_summary() -> dict:
         "strategy_id": "V2_ORB_PULLBACK",
         "data_scope": "251 TSLA market sessions from the purchased OPRA archive",
         "execution_model": "Each result buys at an observed option ask and exits the same contract at an observed option bid; it never uses a synthetic option price or midpoint.",
+        "paper_pilot": {
+            "contract_rule": "TSLA only. Choose the nearest eligible expiry (7–21 days away), then the closest out-of-the-money strike. The option ask must be $0.80–$10.00 and its bid/ask spread must be 8% or tighter.",
+            "exit_rule": "Hold for 90 minutes, then value the same contract at its observable bid. Platform-wide maintenance and account safety controls still apply.",
+            "why": "These are the same decision rules used by the paid study, so new paper results can be compared fairly instead of mixing different contract or exit rules together.",
+        },
+        "exit_comparison": {
+            "label": "Unseen later-date comparison of exits",
+            "fixed_90m": {"average_return_pct": 4.4572, "measured_signals": 12},
+            "vwap_loss": {"average_return_pct": 3.1571, "measured_signals": 13},
+            "ema9_loss": {"average_return_pct": -3.1414, "measured_signals": 14},
+            "conclusion": "VWAP was positive but weaker than the 90-minute baseline. EMA-9 was negative. They are recorded for learning, not allowed to override this paper exit yet.",
+        },
         "baseline": {
             "label": "Unchanged V2 entry + 90-minute exit",
             "measured_signals": 39,

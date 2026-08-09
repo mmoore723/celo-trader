@@ -84,6 +84,14 @@ export interface PaidResearchEvidence {
     best_past_variant: { measured_signals: number; average_return_pct: number };
   };
   uncertainty: { label: string; low_pct: number; high_pct: number; interpretation: string };
+  paper_pilot: { contract_rule: string; exit_rule: string; why: string };
+  exit_comparison: {
+    label: string;
+    fixed_90m: { average_return_pct: number; measured_signals: number };
+    vwap_loss: { average_return_pct: number; measured_signals: number };
+    ema9_loss: { average_return_pct: number; measured_signals: number };
+    conclusion: string;
+  };
   what_changed: string; next_step: string; caveat: string;
 }
 

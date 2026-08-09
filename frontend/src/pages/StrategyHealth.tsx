@@ -50,7 +50,7 @@ function ActivePilotCard({ settings }: { settings?: AppSettings }) {
       <b>TSLA Opening-Range Pullback.</b> The bot marks the first 15 minutes after the open, waits for price to break that range, return to it, and then bounce in the original direction. It only acts after that bounce confirms.
     </p>
     <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: 0, lineHeight: 1.5 }}>
-      A paper trade uses a realistic rule: buy at the seller’s ask price and value an exit at the buyer’s bid price. The journal will show the setup, contract, exit reason, best move (MFE), and worst move (MAE). Positive past results are a candidate—not a promise—so this stays paper-only while it gathers new evidence.
+      Contract rule: 7–21 days until expiration, closest out-of-the-money TSLA option, $0.80–$10 ask, and an 8% or tighter spread. A paper trade buys at the seller’s ask and records the same contract’s buyer bid at the 90-minute exit. The journal will show the setup, contract, exit reason, best move (MFE), and worst move (MAE). Positive past results are a candidate—not a promise—so this stays paper-only while it gathers new evidence.
     </p>
   </div>;
 }
@@ -148,6 +148,31 @@ function PaidTslaResearchCard({ data }: { data: PaidResearchEvidence }) {
       </div>
     </div>
     <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "10px 0 0", lineHeight: 1.5 }}><b>Decision:</b> {data.what_changed}</p>
+    <div style={{ marginTop: 12, padding: 12, background: "var(--surface-muted, rgba(0,0,0,.025))", borderRadius: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>How a future paper trade will work</div>
+      <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "0 0 5px", lineHeight: 1.5 }}><b>1. Contract:</b> {data.paper_pilot.contract_rule}</p>
+      <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "0 0 5px", lineHeight: 1.5 }}><b>2. Exit:</b> {data.paper_pilot.exit_rule}</p>
+      <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: 0, lineHeight: 1.5 }}><b>Why this matters:</b> {data.paper_pilot.why}</p>
+    </div>
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Why VWAP and EMA are not automatic exits</div>
+      <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "0 0 8px" }}>{data.exit_comparison.label}</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+        {[
+          ["90-minute baseline", data.exit_comparison.fixed_90m],
+          ["VWAP-loss exit", data.exit_comparison.vwap_loss],
+          ["EMA-9-loss exit", data.exit_comparison.ema9_loss],
+        ].map(([label, result]) => {
+          const row = result as { average_return_pct: number; measured_signals: number };
+          return <div key={label as string} style={{ padding: 9, border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>{label as string}</div>
+            <div style={{ fontWeight: 700, color: row.average_return_pct >= 0 ? "var(--positive)" : "var(--negative)" }}>{fmt(row.average_return_pct)}</div>
+            <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>{row.measured_signals} later-date setups</div>
+          </div>;
+        })}
+      </div>
+      <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "8px 0 0", lineHeight: 1.5 }}>{data.exit_comparison.conclusion}</p>
+    </div>
     <p style={{ fontSize: 12, color: "var(--warning, #b45309)", margin: "6px 0 0", lineHeight: 1.5 }}>
       <b>How certain is this?</b> {data.uncertainty.label}: {fmt(data.uncertainty.low_pct)} to {fmt(data.uncertainty.high_pct)}. {data.uncertainty.interpretation}
     </p>
