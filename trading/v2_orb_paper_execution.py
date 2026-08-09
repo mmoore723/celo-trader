@@ -27,3 +27,17 @@ def exit_limit_prices(*, bid: float, midpoint: float, v2_paper_pilot: bool) -> t
     if v2_paper_pilot:
         return round(bid, 2), None
     return round(midpoint, 2), round(bid, 2)
+
+
+def include_tsla_when_v2_pilot_enabled(watchlist: list[str], *, v2_paper_pilot: bool) -> list[str]:
+    """Return a de-duplicated watchlist, adding TSLA only for an enabled pilot.
+
+    The V2 hypothesis is TSLA-only.  A daily momentum scan may omit TSLA, so
+    without this small rule an explicitly enabled pilot could collect zero
+    evidence simply because it was never evaluated.  Disabled pilots preserve
+    the scanner's exact existing list.
+    """
+    result = list(dict.fromkeys(str(ticker).upper().strip() for ticker in watchlist if str(ticker).strip()))
+    if v2_paper_pilot and "TSLA" not in result:
+        result.append("TSLA")
+    return result
