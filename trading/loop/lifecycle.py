@@ -94,7 +94,16 @@ def stop_loop(user_id: str = "admin") -> None:
             # auto_start_disabled = True tells the service-restart auto-start
             # logic NOT to resume the bot — the user explicitly pressed Stop.
             _st["auto_start_disabled"] = True
-            _state_path.write_text(json.dumps(_st, indent=2, default=str))
+            # The loop writes this same dashboard snapshot periodically.  A
+            # direct write can leave an empty/truncated JSON file if the two
+            # writers overlap, which in turn loses the explicit-stop marker.
+            # Replace is atomic on the server filesystem: readers see either
+            # the old complete snapshot or the new complete snapshot.
+            _temporary_state_path = _state_path.with_suffix(".json.tmp")
+            _temporary_state_path.write_text(
+                json.dumps(_st, indent=2, default=str), encoding="utf-8"
+            )
+            _temporary_state_path.replace(_state_path)
     except Exception as _se:
         logger.warning("stop_loop: failed to update bot_state.json: %s", _se)
 
