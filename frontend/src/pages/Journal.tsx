@@ -355,7 +355,7 @@ function ReconcileTab() {
                           </td>
                           <td className="num">{row.contracts ?? "—"}</td>
                           <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                            {row.strategy_id ?? "—"}
+                            {strategyLabel(row.strategy_id)}
                           </td>
                           <td>
                             <span className={`badge ${isOpen ? "badge-blue" : "badge-green"}`}>
@@ -435,8 +435,21 @@ function ReconcileTab() {
 
 type DateWindow = "today" | "week" | "month" | "custom" | "all";
 
-// All known strategy IDs (for the filter dropdown)
-const ALL_STRATEGIES = ["FVG", "IFVG", "INST_ORB", "VWAP_PB", "MID_BRK", "AFT_REV", "TREND_CONT"];
+// Values stay as stable strategy IDs for filtering; labels are written for people.
+const STRATEGY_LABELS: Record<string, string> = {
+  FVG: "Fair Value Gap",
+  IFVG: "Inverted Fair Value Gap",
+  INST_ORB: "Opening Range Breakout",
+  VWAP_PB: "VWAP Pullback",
+  MID_BRK: "Mid-Day Breakdown",
+  AFT_REV: "Afternoon Reversal",
+  TREND_CONT: "Trend Continuation",
+  GAP_GO: "Gap and Go",
+  LIQ_SWEEP: "Liquidity Sweep Reversal",
+  V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
+};
+const ALL_STRATEGIES = Object.keys(STRATEGY_LABELS);
+const strategyLabel = (strategyId?: string | null) => strategyId ? (STRATEGY_LABELS[strategyId] ?? strategyId) : "—";
 
 /** Export the visible trades as a CSV download. */
 function exportCsv(trades: Trade[], mode: string) {
@@ -620,7 +633,7 @@ export function Journal() {
           >
             <option value="all">All Strategies</option>
             {ALL_STRATEGIES.map((s) => (
-              <option key={s} value={s}>{s}</option>
+              <option key={s} value={s}>{STRATEGY_LABELS[s]}</option>
             ))}
           </select>
 
@@ -720,7 +733,7 @@ export function Journal() {
                           </span>
                         </td>
                         <td className="text-xs hidden sm:table-cell" style={{ color: "var(--ink-muted)" }}>
-                          {t.strategy_id ?? "—"}
+                          {strategyLabel(t.strategy_id)}
                         </td>
                         <td className="num">${t.entry_price.toFixed(2)}</td>
                         <td className="num">

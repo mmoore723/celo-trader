@@ -27,6 +27,9 @@ const STRAT_NAMES: Record<string, string> = {
   MID_BRK:    "Mid-Day Breakdown",
   AFT_REV:    "Afternoon Reversal",
   TREND_CONT: "Trend Continuation",
+  GAP_GO: "Gap and Go",
+  LIQ_SWEEP: "Liquidity Sweep Reversal",
+  CHAN_BREAK: "Channel Breakout",
   V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
 };
 
