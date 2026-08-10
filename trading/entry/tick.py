@@ -425,6 +425,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _manage_open_position(alpaca, tradier, _open_trade, balance)
 
     settings = get_settings()
+    # This value is needed by the router-observation lane below, long before
+    # order placement.  Keep one source of truth for the whole tick so paper
+    # evidence collection cannot crash before candidates are recorded.
+    paper = bool(settings.get("paper_trading", True))
     try:
         _max_positions = max(1, min(5, int(settings.get(
             "max_concurrent_positions", MAX_CONCURRENT_POSITIONS))))
@@ -1392,7 +1396,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Place order ───────────────────────────────────────────────────────────
     # Use the raw ask_price for the actual limit order sent to the broker
     # (eff_entry is our internal worst-case planning price, not the bid we send).
-    paper = settings.get("paper_trading", True)
     order = None
 
     # Always route through the broker — the paper/live destination is controlled
