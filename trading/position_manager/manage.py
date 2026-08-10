@@ -473,7 +473,8 @@ def _manage_open_position(
         # The policy is intentionally mode-independent: its paper evidence is
         # a rehearsal of a future, separately approved live promotion, not a
         # different strategy.  This branch does not enable V2 or live trading.
-        _is_v2_orb = str(trade.get("strategy_id") or "").upper() == "V2_ORB_PULLBACK"
+        from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
+        _is_v2_orb = uses_v2_orb_execution_profile(trade.get("strategy_id"))
         if _is_v2_orb:
             from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit
             should_exit, reason = evaluate_v2_orb_paper_exit(entry_time, now_et)

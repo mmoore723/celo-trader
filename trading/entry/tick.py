@@ -88,6 +88,7 @@ from trading.position_manager import _manage_open_position, _close_position
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
 from trading.entry.contract import select_contract, select_v2_orb_contract
 from trading.v2_orb_paper_execution import entry_limit_prices, include_tsla_when_v2_pilot_enabled
+from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
 from trading.opportunity_scheduler import due_ticker as _opportunity_due_ticker
@@ -1026,9 +1027,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # and a future explicitly-approved live mode.  Today V2 remains disabled
     # and paper-only through its settings gate; this removes a hidden cleanup
     # task rather than enabling an order path.
-    _v2_paid_parity = (
-        strategy_id == "V2_ORB_PULLBACK"
-    )
+    _v2_paid_parity = uses_v2_orb_execution_profile(strategy_id)
     if _v2_paid_parity:
         contract, _sel_info = select_v2_orb_contract(
             tradier, ticker, direction, current_price, max_spend,
