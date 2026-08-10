@@ -86,7 +86,7 @@ from trading.diagnostics import _log_bar_thinking, _check_ghost_positions, _swee
 from trading.position_manager import _manage_open_position, _close_position
 
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
-from trading.entry.contract import select_contract, select_v2_orb_paper_contract
+from trading.entry.contract import select_contract, select_v2_orb_contract
 from trading.v2_orb_paper_execution import entry_limit_prices, include_tsla_when_v2_pilot_enabled
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
@@ -1022,16 +1022,15 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     else:
         max_spend = settings.get("max_position_dollars", 750.0)
     # V2's paid TSLA study used a distinct, predeclared contract rule.  Keep
-    # it paper-only and narrow; every other strategy continues using the
-    # generic selector exactly as before.  This makes a future V2 paper result
-    # interpretable against the paid study instead of mixing two contract
-    # definitions under the same strategy name.
+    # Lock the V2 strategy to its reviewed contract definition in *both* paper
+    # and a future explicitly-approved live mode.  Today V2 remains disabled
+    # and paper-only through its settings gate; this removes a hidden cleanup
+    # task rather than enabling an order path.
     _v2_paid_parity = (
         strategy_id == "V2_ORB_PULLBACK"
-        and bool(settings.get("paper_trading", True))
     )
     if _v2_paid_parity:
-        contract, _sel_info = select_v2_orb_paper_contract(
+        contract, _sel_info = select_v2_orb_contract(
             tradier, ticker, direction, current_price, max_spend,
         )
     else:

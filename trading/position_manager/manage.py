@@ -469,16 +469,12 @@ def _manage_open_position(
         _simplified_mode = bool(_gs_exit().get("simplified_exit_mode", True))
         _atr_for_exit        = locals().get("_atr")
         _underlying_for_exit = locals().get("_underlying_now")
-        # The paid V2 study measured a fixed 90-minute ask-to-bid markout.
-        # Use that exact exit only for its TSLA paper pilot.  It would be
-        # misleading to label a generic chandelier/75-minute exit result as
-        # evidence for the studied V2 hypothesis.  A non-paper trade always
-        # stays on the normal risk engine.
-        _is_v2_paper_pilot = (
-            str(trade.get("strategy_id") or "").upper() == "V2_ORB_PULLBACK"
-            and bool(trade.get("paper", True))
-        )
-        if _is_v2_paper_pilot:
+        # The V2 hypothesis has one locked 90-minute ask-to-bid policy.
+        # The policy is intentionally mode-independent: its paper evidence is
+        # a rehearsal of a future, separately approved live promotion, not a
+        # different strategy.  This branch does not enable V2 or live trading.
+        _is_v2_orb = str(trade.get("strategy_id") or "").upper() == "V2_ORB_PULLBACK"
+        if _is_v2_orb:
             from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit
             should_exit, reason = evaluate_v2_orb_paper_exit(entry_time, now_et)
         elif _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
@@ -666,7 +662,7 @@ def _manage_open_position(
             from trading.v2_orb_paper_execution import exit_limit_prices
             _exit_limit, _exit_step = exit_limit_prices(
                 bid=bid_price, midpoint=current_price,
-                v2_paper_pilot=_is_v2_paper_pilot,
+                v2_paper_pilot=_is_v2_orb,
             )
             _close_position(alpaca, trade, _exit_limit, reason,
                              bid_price=_exit_step, mtf_notes=_mtf_notes)

@@ -195,23 +195,25 @@ def select_contract(
     return None, info
 
 
-def select_v2_orb_paper_contract(
+def select_v2_orb_contract(
     tradier: TradierClient,
     ticker: str,
     direction: str,
     current_price: float,
     max_spend: float,
 ) -> Tuple[Optional[dict], dict]:
-    """Select the paid-study style contract for the TSLA V2 ORB paper pilot.
+    """Select the locked V2 ORB contract profile for TSLA.
 
     The paid historical study used the nearest eligible expiry (7--21 DTE),
     the closest *out-of-the-money* strike, a $0.80--$10.00 ask, and a maximum
     8% bid/ask spread measured against mid.  This function applies those same
-    observable rules to the broker chain at paper-entry time.  It does not
-    loosen the account's position-budget cap and cannot be used for live
-    orders.  Tradier's chain client also removes obviously invalid/illiquid
-    rows upstream; that limitation is returned in the audit metadata rather
-    than hidden.
+    observable rules to the broker chain at entry time.  It does not loosen
+    the account's position-budget cap.  The policy is deliberately independent
+    of paper/live mode: paper evidence must exercise the same contract
+    definition that a later, explicitly approved live promotion would use.
+    Tradier's chain client also removes obviously invalid/illiquid rows
+    upstream; that limitation is returned in the audit metadata rather than
+    hidden.
     """
     info: dict = {
         "reason": "no_chain_data",
@@ -312,3 +314,9 @@ def select_v2_orb_paper_contract(
         float(selected["ask"]), info["selection_model"],
     )
     return selected, info
+
+
+# Compatibility alias for callers from the original paper-validation rollout.
+# New execution code uses select_v2_orb_contract so its behavior is not
+# accidentally assumed to be paper-only.
+select_v2_orb_paper_contract = select_v2_orb_contract
