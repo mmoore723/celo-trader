@@ -113,6 +113,7 @@ def get_status(request: Request) -> BotStatus:
         ),
         maintenance_mode=bool(maintenance.get("maintenance_mode", False)),
         maintenance_message=str(maintenance.get("maintenance_message", "")),
+        collection_only=bool(maintenance.get("collection_only", False)),
     )
 
 

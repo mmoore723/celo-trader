@@ -39,6 +39,7 @@ class ResetPasswordRequest(BaseModel):
 
 class MaintenanceRequest(BaseModel):
     message: str = ""   # shown on maintenance screen, e.g. "Back online at 3 PM ET"
+    collection_only: bool = False
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ async def get_maintenance_status(request: Request):
     return {
         "active":  bool(s.get("maintenance_mode", False)),
         "message": str(s.get("maintenance_message", "")),
+        "collection_only": bool(s.get("collection_only", False)),
     }
 
 
@@ -112,7 +114,8 @@ async def get_maintenance_status(request: Request):
 async def enable_maintenance(request: Request, body: MaintenanceRequest):
     """
     Emergency maintenance mode:
-      1. Stops every bot loop immediately.
+      1. Stops every bot loop immediately, unless research collection is
+         explicitly requested.
       2. Writes a system-wide maintenance_mode=True + message so:
          - /api/bot/start is blocked for all users.
          - Non-admin users see the maintenance screen.
@@ -127,16 +130,17 @@ async def enable_maintenance(request: Request, body: MaintenanceRequest):
 
     # Lock starts and auto-resumes before signalling any loop. This is the
     # durable safety guarantee even if a single loop is asleep or unhealthy.
-    save_maintenance_state(True, body.message)
+    save_maintenance_state(True, body.message, collection_only=body.collection_only)
     stopped: list[str] = []
     warnings: list[str] = []
-    for user in list_users():
-        user_id = str(user["user_id"])
-        try:
-            stop_loop(user_id)
-            stopped.append(user_id)
-        except Exception as e:
-            warnings.append(f"{user_id}: {e}")
+    if not body.collection_only:
+        for user in list_users():
+            user_id = str(user["user_id"])
+            try:
+                stop_loop(user_id)
+                stopped.append(user_id)
+            except Exception as e:
+                warnings.append(f"{user_id}: {e}")
 
     logger.info(
         "🔧 MAINTENANCE MODE ENABLED by %s — message: %s",
@@ -144,9 +148,15 @@ async def enable_maintenance(request: Request, body: MaintenanceRequest):
     )
     return {
         "ok": True,
-        "message": "Maintenance mode active. All bot loops halted; positions were left untouched.",
+        "message": (
+            "Maintenance active. Existing loops are collecting research data only; "
+            "no orders or exits can be sent."
+            if body.collection_only else
+            "Maintenance active. All bot loops halted; positions were left untouched."
+        ),
         "halted_users": stopped,
         "warnings": warnings,
+        "collection_only": bool(body.collection_only),
     }
 
 

@@ -34,6 +34,7 @@ export function Admin() {
   // ── Emergency / Maintenance state ─────────────────────────────────────────
   const [maintActive,  setMaintActive]  = useState(false);
   const [maintMessage, setMaintMessage] = useState("");
+  const [collectionOnly, setCollectionOnly] = useState(false);
   const [maintWorking, setMaintWorking] = useState(false);
   const [maintResult,  setMaintResult]  = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -41,17 +42,18 @@ export function Admin() {
   useEffect(() => {
     fetch("/api/admin/maintenance/status", { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) { setMaintActive(d.active); setMaintMessage(d.message || ""); } })
+      .then(d => { if (d) { setMaintActive(d.active); setMaintMessage(d.message || ""); setCollectionOnly(!!d.collection_only); } })
       .catch(() => {});
   }, []);
 
   async function enableMaintenance() {
     const msg = maintMessage.trim();
     const confirmed = window.confirm(
-      "⚠️ EMERGENCY CLOSE ALL TRADES & HALT BOT\n\n" +
+      "⚠️ HALT ALL TRADING\n\n" +
       "This will:\n" +
-      "  • Immediately stop the trading loop\n" +
-      "  • Close ALL open positions at market price\n" +
+      (collectionOnly
+        ? "  • Keep existing paper loops scanning for research only\n  • Prevent every entry, exit, cancellation, and broker order\n"
+        : "  • Immediately stop every bot loop\n") +
       "  • Show the maintenance screen to all users\n" +
       "  • Block the bot from being started\n\n" +
       "Continue?"
@@ -63,12 +65,12 @@ export function Admin() {
       const r = await fetch("/api/admin/maintenance/enable", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg }),
+        body: JSON.stringify({ message: msg, collection_only: collectionOnly }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Failed");
       setMaintActive(true);
-      setMaintResult({ ok: true, msg: "✅ Maintenance mode active. All positions closed." });
+      setMaintResult({ ok: true, msg: collectionOnly ? "✅ Trading halted. Paper research collection remains on." : "✅ Maintenance active. All bot loops halted." });
     } catch (e: any) {
       setMaintResult({ ok: false, msg: e.message || "Failed to enable maintenance mode" });
     } finally {
@@ -242,8 +244,10 @@ export function Admin() {
 
         <p className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
           {maintActive
-            ? "Every bot loop is halted and all users see the maintenance screen. Type a new message below and save, or clear maintenance when ready."
-            : "Use when the platform needs to be taken offline. This stops every user's bot and blocks restarts until you clear it. It does not close positions."}
+            ? (collectionOnly
+              ? "Trading is halted for every user. Existing paper loops may only scan and record research data; no entries, exits, cancellations, or broker orders can be sent."
+              : "Every bot loop is halted and all users see the maintenance screen. Type a new message below and save, or clear maintenance when ready.")
+            : "Use when trading must stop for everyone. You can optionally keep existing paper loops collecting research data without allowing any orders."}
         </p>
 
         {/* Message / ETA input */}
@@ -260,6 +264,21 @@ export function Admin() {
             onChange={e => setMaintMessage(e.target.value)}
           />
         </div>
+
+        {!maintActive && (
+          <label className="flex items-start gap-2 text-xs" style={{ color: "var(--ink-muted)" }}>
+            <input
+              type="checkbox"
+              checked={collectionOnly}
+              onChange={e => setCollectionOnly(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              <strong style={{ color: "var(--ink)" }}>Keep paper research collection running</strong><br />
+              Existing loops can scan and record signals/quotes. Every entry, exit, order cancellation, and broker order remains blocked.
+            </span>
+          </label>
+        )}
 
         {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
@@ -289,7 +308,7 @@ export function Admin() {
                     const r = await fetch("/api/admin/maintenance/enable", {
                       method: "POST", credentials: "include",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ message: maintMessage.trim() }),
+                      body: JSON.stringify({ message: maintMessage.trim(), collection_only: collectionOnly }),
                     });
                     if (r.ok) setMaintResult({ ok: true, msg: "Message updated." });
                   } catch { /* ignore */ } finally { setMaintWorking(false); }

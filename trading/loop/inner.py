@@ -230,10 +230,13 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             # Maintenance is a global operator safety control. Checking in the
             # loop also halts accounts that were running before it was enabled.
             from config import get_maintenance_state
-            if get_maintenance_state().get("maintenance_mode", False):
+            _maintenance = get_maintenance_state()
+            if _maintenance.get("maintenance_mode", False) and not _maintenance.get("collection_only", False):
                 log_event("WARNING", "trading_logic", "🔧 Global maintenance halt received — stopping bot.")
                 _stop.set()
                 break
+            if _maintenance.get("maintenance_mode", False):
+                log_event("INFO", "trading_logic", "🔬 Maintenance collection-only mode — scanning without sending orders.")
 
             # ── After-hours deep sleep: 5:00 PM – 8:00 AM ET ─────────────────
             # No scan, no tick, no API calls. Wakes at 8:00 AM on the next

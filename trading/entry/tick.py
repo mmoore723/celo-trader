@@ -114,6 +114,15 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # correct regardless of how many users' loops are running concurrently.
     _US   = get_user_state()
     _risk = get_user_risk()
+    # This is an execution boundary, not merely a UI flag.  Collection-only
+    # maintenance is allowed to reach the router/quote recorder below, but it
+    # must never manage positions, cancel orders, or submit an entry.
+    from config import get_maintenance_state
+    _maintenance = get_maintenance_state()
+    collection_only = bool(
+        _maintenance.get("maintenance_mode", False)
+        and _maintenance.get("collection_only", False)
+    )
 
     # ── CRITICAL: ticker and status must be initialized before ANY branch ─────
     # Python treats any variable assigned ANYWHERE in a function as local
@@ -347,7 +356,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _et_now_cut = _now_et()
     _cutoff_minutes = SESSION_HARD_CUTOFF_HM[0] * 60 + SESSION_HARD_CUTOFF_HM[1]
     _now_minutes    = _et_now_cut.hour * 60 + _et_now_cut.minute
-    if _now_minutes >= _cutoff_minutes:
+    if _now_minutes >= _cutoff_minutes and not collection_only:
         try:
             # Cancel any pending/working orders first to avoid orphaned fills
             _pending = alpaca.get_open_orders() or []
@@ -419,10 +428,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _bot_trades = [t for t in open_trades if t.get("strategy_id") != "RECOVERED_UNTRACKED"]
     _US["open_trade"] = open_trades[0] if open_trades else None
 
-    _sweep_orphaned_orders(alpaca, _bot_trades)
-
-    for _open_trade in open_trades:
-        _manage_open_position(alpaca, tradier, _open_trade, balance)
+    if not collection_only:
+        _sweep_orphaned_orders(alpaca, _bot_trades)
+        for _open_trade in open_trades:
+            _manage_open_position(alpaca, tradier, _open_trade, balance)
+    else:
+        _US["status"] = "collecting_data"
 
     settings = get_settings()
     # This value is needed by the router-observation lane below, long before
@@ -435,7 +446,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     except (TypeError, ValueError):
         _max_positions = MAX_CONCURRENT_POSITIONS
 
-    if len(_bot_trades) >= _max_positions:
+    if len(_bot_trades) >= _max_positions and not collection_only:
         # All position slots are full — nothing left to do this tick except
         # manage the existing position(s) above.
         _US["status"] = "in_trade"
@@ -463,6 +474,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Pass ET time explicitly — risk.py's is_trading_window() defaults to
     # datetime.now() which is UTC on EC2, making the 9:30–16:00 ET window
     allowed, reason = _risk.can_trade(balance, has_open_position=False, now=_now_et())
+    if collection_only:
+        # Continue to route and record candidates, even if live-entry guards
+        # would have blocked an order.  No execution path is enabled below.
+        allowed, reason = True, "maintenance_collection_only"
     if not allowed:
         logger.debug("Trading blocked: %s", reason)
         if "limit" in reason.lower() or "kill" in reason.lower():
@@ -1384,6 +1399,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Signal-only mode gate ─────────────────────────────────────────────────
     # All quality checks passed. If signal_only_mode is on, broadcast the alert
     # but skip execution — user enters the trade manually in their broker.
+    if collection_only:
+        log_event("INFO", "trading_logic",
+                  f"🔬 [{ticker}] Research record only — maintenance prevents every order and exit.")
+        return
+
     if settings.get("signal_only_mode", False):
         _s1_disp = round(eff_entry * 1.5, 2)
         log_event("INFO", "trading_logic",

@@ -60,6 +60,7 @@ class BotStatus(BaseModel):
     # Maintenance mode — set by admin to halt all trading and show maintenance screen
     maintenance_mode: bool = False
     maintenance_message: str = ""
+    collection_only: bool = False
 
 
 class BotActionResponse(BaseModel):

@@ -54,7 +54,13 @@ def save_settings(updates: dict, user_id: str | None = None) -> None:
 
 def get_maintenance_state() -> dict:
     """Return the global maintenance state, never a per-user preference."""
-    default = {"maintenance_mode": False, "maintenance_message": ""}
+    default = {
+        "maintenance_mode": False,
+        "maintenance_message": "",
+        # When maintenance is active, this keeps already-running paper loops
+        # alive only to record research evidence.  It never authorizes orders.
+        "collection_only": False,
+    }
     try:
         payload = json.loads(SYSTEM_MAINTENANCE_PATH.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
@@ -62,17 +68,26 @@ def get_maintenance_state() -> dict:
         return {
             "maintenance_mode": bool(payload.get("maintenance_mode", False)),
             "maintenance_message": str(payload.get("maintenance_message", "")),
+            "collection_only": bool(payload.get("collection_only", False)),
         }
     except (OSError, json.JSONDecodeError):
         return default
 
 
-def save_maintenance_state(active: bool, message: str = "") -> None:
-    """Atomically save the system-wide trading-halt state."""
+def save_maintenance_state(
+    active: bool, message: str = "", *, collection_only: bool = False
+) -> None:
+    """Atomically save the system-wide trading-halt state.
+
+    ``collection_only`` is meaningful only while the halt is active.  It lets
+    existing paper loops scan and write research records, but execution code
+    treats the halt as an absolute no-order/no-exit boundary.
+    """
     SYSTEM_MAINTENANCE_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "maintenance_mode": bool(active),
         "maintenance_message": message.strip() if active else "",
+        "collection_only": bool(active and collection_only),
     }
     temporary = SYSTEM_MAINTENANCE_PATH.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

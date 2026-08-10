@@ -17,7 +17,7 @@ class GlobalMaintenanceTests(unittest.TestCase):
             path = Path(temporary_dir) / "system_maintenance.json"
             with patch.object(settings_store, "SYSTEM_MAINTENANCE_PATH", path):
                 self.assertEqual(
-                    {"maintenance_mode": False, "maintenance_message": ""},
+                    {"maintenance_mode": False, "maintenance_message": "", "collection_only": False},
                     settings_store.get_maintenance_state(),
                 )
                 settings_store.save_maintenance_state(True, "  Trading halted for maintenance.  ")
@@ -25,13 +25,14 @@ class GlobalMaintenanceTests(unittest.TestCase):
                     {
                         "maintenance_mode": True,
                         "maintenance_message": "Trading halted for maintenance.",
+                        "collection_only": False,
                     },
                     settings_store.get_maintenance_state(),
                 )
                 self.assertEqual(True, json.loads(path.read_text())["maintenance_mode"])
                 settings_store.save_maintenance_state(False, "must not persist")
                 self.assertEqual(
-                    {"maintenance_mode": False, "maintenance_message": ""},
+                    {"maintenance_mode": False, "maintenance_message": "", "collection_only": False},
                     settings_store.get_maintenance_state(),
                 )
 
@@ -41,9 +42,27 @@ class GlobalMaintenanceTests(unittest.TestCase):
             path.write_text("not json")
             with patch.object(settings_store, "SYSTEM_MAINTENANCE_PATH", path):
                 self.assertEqual(
-                    {"maintenance_mode": False, "maintenance_message": ""},
+                    {"maintenance_mode": False, "maintenance_message": "", "collection_only": False},
                     settings_store.get_maintenance_state(),
                 )
+
+    def test_collection_only_is_global_and_clears_with_maintenance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            path = Path(temporary_dir) / "system_maintenance.json"
+            with patch.object(settings_store, "SYSTEM_MAINTENANCE_PATH", path):
+                settings_store.save_maintenance_state(
+                    True, "Recording research data.", collection_only=True
+                )
+                self.assertEqual(
+                    {
+                        "maintenance_mode": True,
+                        "maintenance_message": "Recording research data.",
+                        "collection_only": True,
+                    },
+                    settings_store.get_maintenance_state(),
+                )
+                settings_store.save_maintenance_state(False)
+                self.assertFalse(settings_store.get_maintenance_state()["collection_only"])
 
 
 if __name__ == "__main__":
