@@ -52,13 +52,13 @@ def get_candidate_scorecard(days: int = 30) -> dict:
     for row in rows:
         item = by_strategy.setdefault(row["strategy_id"], {
             "strategy_id": row["strategy_id"], "raw_candidates": 0,
-            "entered": 0, "blocked": 0, "pending": 0, "block_reasons": defaultdict(int),
+            "entered": 0, "blocked": 0, "pending": 0, "observed_only": 0, "block_reasons": defaultdict(int),
             "measured": 0, "correct": 0, "avg_directional_move_parts": [],
         })
         count = int(row["count"])
         item["raw_candidates"] += count
         outcome = str(row["final_outcome"])
-        if outcome in {"entered", "blocked", "pending"}:
+        if outcome in {"entered", "blocked", "pending", "observed_only"}:
             item[outcome] += count
         if outcome == "blocked":
             item["block_reasons"][row["gate_reason"] or "unknown"] += count
@@ -75,7 +75,7 @@ def get_candidate_scorecard(days: int = 30) -> dict:
         strategies.append(item)
     return {
         "days": days, "account_scoped": bool(account_id),
-        "note": "Measured results are the underlying's same-session 60-minute directional move—not option P&L or a virtual fill.",
+        "note": "Every built-in strategy is observed in paper mode. ‘Observed only’ means it was never eligible to order. Measured results are the underlying's same-session 60-minute directional move—not option P&L or a virtual fill.",
         "strategies": sorted(strategies, key=lambda item: item["raw_candidates"], reverse=True),
     }
 

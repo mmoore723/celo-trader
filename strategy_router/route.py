@@ -57,6 +57,8 @@ def route_signals(
     prepared_today: "pd.DataFrame | None" = None,
     adx_now: "float | None" = None,
     candidate_observer=None,
+    observation_only_strategies: "set[str] | None" = None,
+    observation_resolver=None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -86,6 +88,11 @@ def route_signals(
                               frame. Backtests use this to reuse causal
                               indicator values prepared once per session;
                               live callers leave it unset.
+        observation_only_strategies : Optional strategy IDs to evaluate only
+                              for paper evidence. Their raw signals are sent
+                              to ``candidate_observer`` then resolved through
+                              ``observation_resolver``; they are excluded
+                              before all order-facing gates and never returned.
 
     Returns:
         list[Signal] sorted by confidence descending (may be empty).
@@ -95,7 +102,11 @@ def route_signals(
     # ``None`` explicitly means a caller wants the router's full research
     # universe. An empty set is the production safety state: no strategy has
     # earned promotion, so avoid even building indicators or emitting signals.
-    if enabled_strategies is not None and not enabled_strategies:
+    _order_strategies = set(enabled_strategies or ()) if enabled_strategies is not None else None
+    _observation_only = set(observation_only_strategies or ())
+    if _order_strategies is not None:
+        _observation_only -= _order_strategies
+    if _order_strategies is not None and not _order_strategies and not _observation_only:
         return []
 
     # Live dotted lookup on the package namespace — see module docstring for
@@ -138,20 +149,29 @@ def route_signals(
     # Evaluator table — each module's evaluate() self-gates on its own session
     # window. See ACTIVE_STRATEGIES (single source of truth).
     _all_evaluators = ACTIVE_STRATEGIES
+    _selected_strategies = None if _order_strategies is None else _order_strategies | _observation_only
     evaluators = (
-        [(sid, fn) for sid, fn in _all_evaluators if sid in enabled_strategies]
-        if enabled_strategies is not None
-        else _all_evaluators
+        [(sid, fn) for sid, fn in _all_evaluators if sid in _selected_strategies]
+        if _selected_strategies is not None else _all_evaluators
     )
 
     # ── ADX trend-strength gate — skip breakout strategies in chop (< 25) ────
     # Fail-open: if ADX can't be computed (thin data), no strategies are gated.
     _adx_now = adx_now if adx_now is not None else compute_adx(df)
     if _adx_now is not None and _adx_now < ADX_MIN:
-        _gated = [sid for sid, _ in evaluators if sid in ADX_GATED_STRATEGIES]
+        # An observation-only strategy must still be evaluated before this
+        # gate so the learning ledger can answer whether ADX helped or hurt.
+        # The same signal is removed before the order-facing pipeline below.
+        _gated = [
+            sid for sid, _ in evaluators
+            if sid in ADX_GATED_STRATEGIES
+            and (_order_strategies is None or sid in _order_strategies)
+        ]
         if _gated:
-            evaluators = [(sid, fn) for sid, fn in evaluators
-                          if sid not in ADX_GATED_STRATEGIES]
+            evaluators = [
+                (sid, fn) for sid, fn in evaluators
+                if sid in _observation_only or sid not in _gated
+            ]
             if not quiet:
                 try:
                     _db_log("INFO", "bar_eval",
@@ -168,12 +188,21 @@ def route_signals(
         try:
             sig = fn(today, ticker=ticker)   # ticker= needed for cooldown tracking
             if sig is not None:
-                signals.append(sig)
                 if candidate_observer is not None:
                     try:
                         candidate_observer(ticker, sig, _underlying_price)
                     except Exception:
                         logger.warning("candidate observer failed (non-fatal)", exc_info=True)
+                if strategy_id in _observation_only:
+                    if observation_resolver is not None:
+                        try:
+                            observation_resolver(sig)
+                        except Exception:
+                            logger.warning("candidate observation resolve failed (non-fatal)", exc_info=True)
+                    # Do not annotate, gate, rank, select a contract, or
+                    # return an observation-only candidate to the entry loop.
+                    continue
+                signals.append(sig)
                 # Annotations are live-dashboard side effects.  Suppress
                 # them during a quiet historical replay so an A/B test does
                 # not create live chart records or perform DB writes.

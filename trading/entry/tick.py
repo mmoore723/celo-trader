@@ -748,15 +748,23 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # route_signals() caller (backtester, audit tools) omits them and is
     # unaffected. Gate itself still defaults OFF via mtf_confirmation_enabled.
     _candidate_observer = None
+    _observation_only_strategies: set[str] = set()
+    _observation_resolver = None
     if paper and bool(settings.get("shadow_ledger_enabled", True)):
-        from shadow_ledger import record_router_candidate
+        from shadow_ledger import record_router_candidate, mark_candidate_observed_only
         _candidate_observer = record_router_candidate
-    # Pass the empty set through deliberately.  ``None`` means all strategies
-    # in the router API, whereas an empty set means this account has no
-    # validated strategy currently promoted for entry.
+        if bool(settings.get("shadow_observe_all_strategies", True)):
+            from strategy_router.evaluators import ACTIVE_STRATEGIES
+            _observation_only_strategies = {sid for sid, _ in ACTIVE_STRATEGIES} - _enabled
+            _observation_resolver = mark_candidate_observed_only
+    # The router receives approved strategies for potential entry plus a
+    # separate paper-only observation set.  Observed-only signals cannot make
+    # it back out of the router, so they cannot reach contract selection.
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled,
                               alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
-                              candidate_observer=_candidate_observer)
+                              candidate_observer=_candidate_observer,
+                              observation_only_strategies=_observation_only_strategies,
+                              observation_resolver=_observation_resolver)
     # Main-tier setups remain immediate.  Opportunity setups are paper-only
     # candidates collected and ranked over a causal 15-minute window.
     if _opportunity_enabled:

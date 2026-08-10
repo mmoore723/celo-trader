@@ -123,3 +123,17 @@ def resolve_candidate_from_context(
             )
     except Exception:
         logger.warning("shadow candidate resolve failed (non-fatal)", exc_info=True)
+
+
+def mark_candidate_observed_only(signal: object) -> None:
+    """Finalize a raw signal that was measured but never eligible to order.
+
+    This is how disabled/unvalidated strategies enter the learning ledger.
+    It has no contract, broker, sizing, or position-management capability.
+    """
+    meta = getattr(signal, "meta", None)
+    resolve_candidate_from_context(
+        {"strategy_meta": meta if isinstance(meta, dict) else {}},
+        "observed_only", "not_approved_for_entry",
+        "Paper-only observation; this strategy was never allowed to place an order.", None,
+    )

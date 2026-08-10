@@ -127,6 +127,10 @@ _DEFAULTS = {
     # QQQ research is intentionally off while TSLA's already-paid real quote
     # sample is being evaluated. It has no order path when enabled.
     "qqq_opening_research_enabled": False,
+    # Learning ledger: evaluate every built-in strategy in paper mode even
+    # when it is not approved to place an order.  These candidates are marked
+    # observed_only and can never reach contract selection or execution.
+    "shadow_observe_all_strategies": True,
 
     # Filters
     "volume_filter_enabled":   True,
