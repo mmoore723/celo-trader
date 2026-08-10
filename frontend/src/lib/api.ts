@@ -62,6 +62,11 @@ export interface CandidateScorecardRow {
   blocked: number; pending: number; observed_only: number; measured: number; correct: number;
   directional_win_rate: number | null; avg_directional_move_pct: number | null;
   block_reasons: Record<string, number>;
+  outcome_evidence: Record<"observed_only" | "blocked" | "entered", CandidateOutcomeEvidence>;
+}
+export interface CandidateOutcomeEvidence {
+  candidates: number; measured: number; correct: number;
+  directional_win_rate: number | null; avg_directional_move_pct: number | null;
 }
 export interface CandidateScorecard {
   days: number; account_scoped: boolean; note: string;

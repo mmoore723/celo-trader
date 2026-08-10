@@ -119,6 +119,24 @@ function CandidateScorecard({ data }: { data: CandidateScorecard }) {
         return <tr key={row.strategy_id}><td>{STRAT_NAMES[row.strategy_id] ?? row.strategy_id}</td><td>{row.raw_candidates}</td><td>{row.entered}</td><td>{row.observed_only}</td><td>{row.blocked}</td><td>{direction}</td><td style={{ color: (row.avg_directional_move_pct ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{avgMove}</td><td>{top ? `${top[0]} (${top[1]})` : "—"}</td></tr>;
       })}
     </tbody></table></div>
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+      <h3 className="text-sm font-semibold" style={{ margin: "0 0 5px" }}>Are the gates helping?</h3>
+      <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "0 0 10px", lineHeight: 1.45 }}>
+        This compares the same strategy in three situations. “Observed only” is the raw setup before the order system. “Blocked” was rejected by a gate. “Entered” was allowed through. The comparison becomes useful only after enough 60-minute grades.
+      </p>
+      <div style={{ overflowX: "auto" }}><table className="w-full text-sm"><thead><tr><th>Strategy</th><th>Raw observed only</th><th>Blocked by a gate</th><th>Allowed / entered</th></tr></thead><tbody>
+        {data.strategies.map(row => {
+          const text = (bucket: "observed_only" | "blocked" | "entered") => {
+            const evidence = row.outcome_evidence[bucket];
+            if (!evidence.candidates) return "—";
+            if (!evidence.measured) return `${evidence.candidates} waiting for grade`;
+            const move = evidence.avg_directional_move_pct == null ? "—" : `${evidence.avg_directional_move_pct >= 0 ? "+" : ""}${evidence.avg_directional_move_pct.toFixed(2)}%`;
+            return `${evidence.directional_win_rate}% right · ${move} (${evidence.measured})`;
+          };
+          return <tr key={row.strategy_id}><td>{STRAT_NAMES[row.strategy_id] ?? row.strategy_id}</td><td>{text("observed_only")}</td><td>{text("blocked")}</td><td>{text("entered")}</td></tr>;
+        })}
+      </tbody></table></div>
+    </div>
   </div>;
 }
 

@@ -51,11 +51,19 @@ def get_candidate_scorecard(days: int = 30) -> dict:
         ).fetchall()
     by_strategy: dict[str, dict] = {}
     next_outcome_at: str | None = None
+
+    def _evidence_bucket() -> dict:
+        return {"candidates": 0, "measured": 0, "correct": 0, "move_parts": []}
     for row in rows:
         item = by_strategy.setdefault(row["strategy_id"], {
             "strategy_id": row["strategy_id"], "raw_candidates": 0,
             "entered": 0, "blocked": 0, "pending": 0, "observed_only": 0, "block_reasons": defaultdict(int),
             "measured": 0, "correct": 0, "avg_directional_move_parts": [],
+            "outcome_evidence": {
+                "observed_only": _evidence_bucket(),
+                "blocked": _evidence_bucket(),
+                "entered": _evidence_bucket(),
+            },
         })
         count = int(row["count"])
         item["raw_candidates"] += count
@@ -71,12 +79,24 @@ def get_candidate_scorecard(days: int = 30) -> dict:
             next_outcome_at = str(due)
         if row["avg_directional_move_pct"] is not None and int(row["measured"] or 0):
             item["avg_directional_move_parts"].append((float(row["avg_directional_move_pct"]), int(row["measured"])))
+        bucket = item["outcome_evidence"].get(outcome)
+        if bucket is not None:
+            measured = int(row["measured"] or 0)
+            bucket["candidates"] += count
+            bucket["measured"] += measured
+            bucket["correct"] += int(row["correct"] or 0)
+            if row["avg_directional_move_pct"] is not None and measured:
+                bucket["move_parts"].append((float(row["avg_directional_move_pct"]), measured))
     strategies = []
     for item in by_strategy.values():
         item["block_reasons"] = dict(sorted(item["block_reasons"].items(), key=lambda pair: -pair[1]))
         weighted = sum(value * count for value, count in item.pop("avg_directional_move_parts"))
         item["directional_win_rate"] = round(item["correct"] / item["measured"] * 100, 1) if item["measured"] else None
         item["avg_directional_move_pct"] = round(weighted / item["measured"], 3) if item["measured"] else None
+        for bucket in item["outcome_evidence"].values():
+            weighted_bucket = sum(value * count for value, count in bucket.pop("move_parts"))
+            bucket["directional_win_rate"] = round(bucket["correct"] / bucket["measured"] * 100, 1) if bucket["measured"] else None
+            bucket["avg_directional_move_pct"] = round(weighted_bucket / bucket["measured"], 3) if bucket["measured"] else None
         strategies.append(item)
     return {
         "days": days, "account_scoped": bool(account_id),
