@@ -130,6 +130,12 @@ function PaidTslaResearchCard({ data }: { data: PaidResearchEvidence }) {
     <p style={{ fontSize: 13, color: "var(--ink)", margin: "0 0 10px", lineHeight: 1.5 }}>
       <b>{data.label}.</b> {data.execution_model}
     </p>
+    <div style={{ margin: "0 0 12px", padding: 11, border: "1px solid var(--negative)", borderRadius: 8, background: "var(--negative-bg, rgba(220,38,38,.05))" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--negative)", marginBottom: 4 }}>Why the bot is not using a plain ORB</div>
+      <div style={{ fontSize: 12, color: "var(--ink-muted)", lineHeight: 1.45 }}>
+        <b>{data.rejected_comparison.label}:</b> {fmt(data.rejected_comparison.average_return_pct)} average across {data.rejected_comparison.measured_signals} setups ({data.rejected_comparison.win_rate_pct}% positive). {data.rejected_comparison.interpretation}
+      </div>
+    </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
       <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
         <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Whole paid study</div>

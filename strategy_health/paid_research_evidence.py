@@ -18,6 +18,13 @@ def v2_orb_tsla_summary() -> dict:
         "strategy_id": "V2_ORB_PULLBACK",
         "data_scope": "251 TSLA market sessions from the purchased OPRA archive",
         "execution_model": "Each result buys at an observed option ask and exits the same contract at an observed option bid; it never uses a synthetic option price or midpoint.",
+        "rejected_comparison": {
+            "label": "Plain TSLA opening-range breakout (separate 60-minute screen)",
+            "measured_signals": 46,
+            "win_rate_pct": 45.65,
+            "average_return_pct": -0.9179,
+            "interpretation": "This simpler version lost on average using the same conservative ask-to-bid pricing idea, so it was rejected. V2 is not a generic ORB: it waits for a defined pullback after the opening-range move and has its own 90-minute study.",
+        },
         "paper_pilot": {
             "contract_rule": "TSLA only. Choose the nearest eligible expiry (7–21 days away), then the closest out-of-the-money strike. The option ask must be $0.80–$10.00 and its bid/ask spread must be 8% or tighter.",
             "exit_rule": "Hold for 90 minutes, then value the same contract at its observable bid. Platform-wide maintenance and account safety controls still apply.",
