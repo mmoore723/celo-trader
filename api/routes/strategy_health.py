@@ -43,12 +43,14 @@ def get_candidate_scorecard(days: int = 30) -> dict:
             "SELECT strategy_id, final_outcome, gate_reason, "
             "COUNT(*) AS count, SUM(CASE WHEN outcome_observed_at IS NOT NULL THEN 1 ELSE 0 END) AS measured, "
             "SUM(CASE WHEN direction_correct = 1 THEN 1 ELSE 0 END) AS correct, "
-            "AVG(directional_move_pct) AS avg_directional_move_pct "
+            "AVG(directional_move_pct) AS avg_directional_move_pct, "
+            "MIN(CASE WHEN outcome_observed_at IS NULL THEN outcome_due_at END) AS next_outcome_at "
             "FROM shadow_candidates WHERE " + " AND ".join(clauses) +
             " GROUP BY strategy_id, final_outcome, gate_reason",
             tuple(params),
         ).fetchall()
     by_strategy: dict[str, dict] = {}
+    next_outcome_at: str | None = None
     for row in rows:
         item = by_strategy.setdefault(row["strategy_id"], {
             "strategy_id": row["strategy_id"], "raw_candidates": 0,
@@ -64,6 +66,9 @@ def get_candidate_scorecard(days: int = 30) -> dict:
             item["block_reasons"][row["gate_reason"] or "unknown"] += count
         item["measured"] += int(row["measured"] or 0)
         item["correct"] += int(row["correct"] or 0)
+        due = row["next_outcome_at"]
+        if due and (next_outcome_at is None or str(due) < next_outcome_at):
+            next_outcome_at = str(due)
         if row["avg_directional_move_pct"] is not None and int(row["measured"] or 0):
             item["avg_directional_move_parts"].append((float(row["avg_directional_move_pct"]), int(row["measured"])))
     strategies = []
@@ -75,6 +80,9 @@ def get_candidate_scorecard(days: int = 30) -> dict:
         strategies.append(item)
     return {
         "days": days, "account_scoped": bool(account_id),
+        "total_candidates": sum(item["raw_candidates"] for item in strategies),
+        "measured_candidates": sum(item["measured"] for item in strategies),
+        "next_outcome_at": next_outcome_at,
         "note": "Every built-in strategy is observed in paper mode. ‘Observed only’ means it was never eligible to order. Measured results are the underlying's same-session 60-minute directional move—not option P&L or a virtual fill.",
         "strategies": sorted(strategies, key=lambda item: item["raw_candidates"], reverse=True),
     }

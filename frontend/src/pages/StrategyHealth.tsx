@@ -88,6 +88,26 @@ function CandidateScorecard({ data }: { data: CandidateScorecard }) {
     <p style={{ fontSize: 12, color: "var(--ink-muted)", marginBottom: 10 }}>
       Every built-in setup evaluated in the last {data.days} days is counted here. “Blocked” and “observed only” are not losses—they only mean the bot did not take them. {data.note}
     </p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 12 }}>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>1. Setups found</div>
+        <div style={{ fontSize: 18, fontWeight: 700 }}>{data.total_candidates}</div>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>The bot saw these in the market.</div>
+      </div>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>2. 60-minute grades</div>
+        <div style={{ fontSize: 18, fontWeight: 700 }}>{data.measured_candidates} / {data.total_candidates}</div>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>A grade asks: was the signal direction right?</div>
+      </div>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>3. Next automatic grade</div>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>{data.next_outcome_at ? new Date(data.next_outcome_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "All caught up"}</div>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>No manual spreadsheet or trade is required.</div>
+      </div>
+    </div>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "0 0 10px", lineHeight: 1.45 }}>
+      <b>How we use this:</b> first collect outcomes across different days; then compare the strategy and gate combinations. We do not call a strategy profitable from a few signals.
+    </p>
     <div style={{ overflowX: "auto" }}><table className="w-full text-sm"><thead><tr><th>Strategy</th><th>Setups seen</th><th>Entered</th><th>Observed only</th><th>Blocked</th><th>60-min direction</th><th>Avg move</th><th>Top reason blocked</th></tr></thead><tbody>
       {data.strategies.map(row => {
         const top = Object.entries(row.block_reasons).sort((a, b) => b[1] - a[1])[0];

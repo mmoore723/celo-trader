@@ -65,6 +65,7 @@ export interface CandidateScorecardRow {
 }
 export interface CandidateScorecard {
   days: number; account_scoped: boolean; note: string;
+  total_candidates: number; measured_candidates: number; next_outcome_at: string | null;
   strategies: CandidateScorecardRow[];
 }
 export interface PaperResearchScorecard {
