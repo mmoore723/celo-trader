@@ -33,6 +33,7 @@ from research_v2.option_markouts import OptionMarkout, run_databento_cbbo_markou
 from research_v2.strategies import (
     OpeningRangeBreakout, OpeningRangeBreakoutConfig,
     OpeningRangePullback, OpeningRangePullbackConfig,
+    VWAPPullback, VWAPPullbackConfig,
 )
 
 
@@ -145,6 +146,8 @@ def build_strategy(strategy_name: str):
         return OpeningRangeBreakout(OpeningRangeBreakoutConfig())
     if strategy_name == "orb_pullback":
         return OpeningRangePullback(OpeningRangePullbackConfig())
+    if strategy_name == "vwap_pullback":
+        return VWAPPullback(VWAPPullbackConfig())
     raise ValueError(f"unknown strategy: {strategy_name}")
 
 
@@ -154,7 +157,7 @@ def main() -> None:
     source.add_argument("--job-id", help="Existing Databento job ID; retrieves one day at a time through FTP")
     source.add_argument("--archive", type=Path, help="Portal Download all ZIP; reads one day at a time locally")
     parser.add_argument("--ticker", required=True)
-    parser.add_argument("--strategy", choices=("orb_breakout", "orb_pullback"), default="orb_breakout")
+    parser.add_argument("--strategy", choices=("orb_breakout", "orb_pullback", "vwap_pullback"), default="orb_breakout")
     parser.add_argument("--bars", type=Path, required=True, help="Frozen regular-session underlying bars CSV")
     parser.add_argument("--output", type=Path, required=True, help="Resumable JSON result file")
     parser.add_argument("--scratch-dir", type=Path, required=True, help="Small temporary download directory")
