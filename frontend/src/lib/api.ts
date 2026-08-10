@@ -91,6 +91,11 @@ export interface PaidResearchEvidence {
   study_id: string; label: string; status: "paper_validation_next";
   ticker: string; strategy_id: string; data_scope: string; execution_model: string;
   rejected_comparison: { label: string; measured_signals: number; win_rate_pct: number; average_return_pct: number; interpretation: string };
+  rejected_vwap_strategy: {
+    label: string; measured_signals: number; win_rate_pct: number; average_return_pct: number;
+    holdout_measured_signals: number; holdout_win_rate_pct: number; holdout_average_return_pct: number;
+    interpretation: string;
+  };
   baseline: { label: string; measured_signals: number; win_rate_pct: number; average_return_pct: number };
   unseen_holdout: { label: string; measured_signals: number; win_rate_pct: number; average_return_pct: number };
   walkforward: {

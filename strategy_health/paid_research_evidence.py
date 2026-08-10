@@ -25,6 +25,16 @@ def v2_orb_tsla_summary() -> dict:
             "average_return_pct": -0.9179,
             "interpretation": "This simpler version lost on average using the same conservative ask-to-bid pricing idea, so it was rejected. V2 is not a generic ORB: it waits for a defined pullback after the opening-range move and has its own 90-minute study.",
         },
+        "rejected_vwap_strategy": {
+            "label": "TSLA VWAP Pullback (separate 90-minute screen)",
+            "measured_signals": 395,
+            "win_rate_pct": 35.95,
+            "average_return_pct": -2.9914,
+            "holdout_measured_signals": 140,
+            "holdout_win_rate_pct": 39.29,
+            "holdout_average_return_pct": -1.4553,
+            "interpretation": "This was a separate entry strategy, not the VWAP exit comparison below. It lost in both the earlier design period and the later untouched period using actual option asks to enter and actual bids to exit, so it is rejected and cannot be enabled in the bot.",
+        },
         "paper_pilot": {
             "contract_rule": "TSLA only. Choose the nearest eligible expiry (7–21 days away), then the closest out-of-the-money strike. The option ask must be $0.80–$10.00 and its bid/ask spread must be 8% or tighter.",
             "exit_rule": "Hold for 90 minutes, then value the same contract at its observable bid. Platform-wide maintenance and account safety controls still apply.",
