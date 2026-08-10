@@ -342,6 +342,20 @@ class ResearchV2Tests(unittest.TestCase):
             }
         self.assertEqual(singles, multi)
 
+    def test_streaming_markout_returns_empty_result_for_no_signal_day(self) -> None:
+        bars = [_bar(0, 100, 101, 99, 100)]
+        # _OneLong emits only after two bars, so this is a normal quiet day.
+        self.assertEqual(
+            (),
+            run_databento_cbbo_markouts(bars, [Path("unused.csv")], _OneLong(), underlying="TSLA", hold_minutes=90),
+        )
+        self.assertEqual(
+            {30: (), 90: ()},
+            run_databento_cbbo_markouts_for_holds(
+                bars, [Path("unused.csv")], _OneLong(), underlying="TSLA", hold_minutes=(30, 90),
+            ),
+        )
+
     def test_vwap_and_ema_exit_plans_wait_for_completed_later_bar(self) -> None:
         bars = [
             Bar(datetime(2026, 1, 2, 9, 30), 100, 101, 99, 100, 100),

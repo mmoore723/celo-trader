@@ -126,7 +126,11 @@ def run_databento_cbbo_markouts_for_holds(
         if entry_bar is not None:
             decisions.append((signal, entry_bar, "call" if signal.side is Side.LONG else "put"))
     if not decisions:
-        return ()
+        # Preserve the public return type for a quiet session.  The
+        # single-hold wrapper indexes this mapping by its requested hold, so
+        # returning a bare tuple here made a no-signal day crash a long paid
+        # archive study instead of being counted as an ordinary quiet day.
+        return {hold: () for hold in holds}
 
     def stream_quotes():
         for raw_path in paths:
