@@ -64,6 +64,10 @@ const ORB_BEATS: CoachBeat[] = [
   },
 ];
 
+// Version the image URL so a browser that cached the original failed request
+// asks the server for the coach again after a deployment.
+const COACH_IMAGE = "/images/coach-celo-v1.png?v=2";
+
 function CoachChart({ stage }: { stage: CoachBeat["chartStage"] }) {
   const index = ["range", "breakout", "retest", "confirm", "exit"].indexOf(stage);
   const labels = ["Opening range", "Break", "Pullback", "Confirmation", "Exit plan"];
@@ -126,11 +130,17 @@ function CoachChart({ stage }: { stage: CoachBeat["chartStage"] }) {
 export function OrbCoachLesson() {
   const [beatIndex, setBeatIndex] = useState(0);
   const [answer, setAnswer] = useState<number | null>(null);
+  const [guidedReplayActive, setGuidedReplayActive] = useState(false);
   const beat = ORB_BEATS[beatIndex];
 
   const goToBeat = (index: number) => {
     setBeatIndex(Math.min(Math.max(index, 0), ORB_BEATS.length - 1));
     setAnswer(null);
+  };
+
+  const startGuidedReplay = () => {
+    setGuidedReplayActive(true);
+    goToBeat(0);
   };
 
   const answerCopy = useMemo(() => {
@@ -143,10 +153,12 @@ export function OrbCoachLesson() {
       <div className="p-4 sm:p-5" style={{ background: "linear-gradient(125deg, color-mix(in srgb, var(--accent) 15%, var(--surface)), var(--surface) 62%)", borderBottom: "1px solid var(--border)" }}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex gap-3 items-center">
-            <div className="w-12 h-12 rounded-2xl overflow-hidden shrink-0" style={{ border: "2px solid color-mix(in srgb, var(--accent) 45%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface))", boxShadow: "0 0 26px color-mix(in srgb, var(--accent) 28%, transparent)" }}><img src="/images/coach-celo-v1.png" alt="Coach Celo" className="w-full h-full object-contain object-bottom" /></div>
+            <div className="w-12 h-12 rounded-2xl overflow-hidden shrink-0" style={{ border: "2px solid color-mix(in srgb, var(--accent) 45%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface))", boxShadow: "0 0 26px color-mix(in srgb, var(--accent) 28%, transparent)" }}><img src={COACH_IMAGE} alt="Coach Celo" className="w-full h-full object-contain object-bottom" /></div>
             <div><p className="text-[11px] uppercase tracking-[0.16em] font-semibold" style={{ color: "var(--accent)" }}>Coach Celo · Learn by replay</p><h2 className="text-lg font-semibold mt-0.5" style={{ color: "var(--ink)" }}>TSLA Opening-Range Pullback</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>A step-by-step practice replay — not investment advice.</p></div>
           </div>
-          <div className="rounded-lg px-3 py-2 text-xs self-start sm:self-auto" style={{ background: "var(--surface)", color: "var(--ink-muted)", border: "1px solid var(--border)" }}><Sparkles size={13} className="inline mr-1.5" style={{ color: "var(--accent)" }} />Interactive coach mode</div>
+          <button type="button" className="btn btn-ghost btn-sm self-start sm:self-auto" onClick={startGuidedReplay} aria-pressed={guidedReplayActive} title="Restart the five-step guided lesson">
+            <Sparkles size={13} />{guidedReplayActive ? "Guided replay active" : "Start guided replay"}
+          </button>
         </div>
       </div>
       <div className="p-4 sm:p-5 grid gap-4" style={{ gridTemplateColumns: "minmax(0, 1.6fr) minmax(250px, .85fr)" }}>
@@ -166,7 +178,7 @@ export function OrbCoachLesson() {
           </div>
         </div>
         <aside className="rounded-xl p-4 flex flex-col gap-4" style={{ background: "var(--muted)", border: "1px solid var(--border)" }}>
-          <div><div className="flex items-center gap-2 text-xs font-semibold" style={{ color: "var(--accent)" }}><Sparkles size={14} /> Coach Celo · Lesson {beatIndex + 1} of {ORB_BEATS.length}</div><div className="flex items-start gap-3 mt-2"><img src="/images/coach-celo-v1.png" alt="Coach Celo, the strategy instructor" className="w-16 h-24 object-contain object-bottom shrink-0" /><div><h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>{beat.title}</h3><p className="text-xs leading-relaxed mt-1" style={{ color: "var(--ink-muted)" }}>{beat.coach}</p></div></div><div className="rounded-lg p-3 mt-2 text-sm leading-relaxed" style={{ background: "var(--surface)", color: "var(--ink-muted)", borderLeft: "3px solid var(--accent)" }}><strong style={{ color: "var(--ink)" }}>Coach Celo says:</strong> {beat.voice}</div></div>
+          <div><div className="flex items-center gap-2 text-xs font-semibold" style={{ color: "var(--accent)" }}><Sparkles size={14} /> Coach Celo · Lesson {beatIndex + 1} of {ORB_BEATS.length}</div><div className="flex items-start gap-3 mt-2"><img src={COACH_IMAGE} alt="Coach Celo, the strategy instructor" className="w-16 h-24 object-contain object-bottom shrink-0" /><div><h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>{beat.title}</h3><p className="text-xs leading-relaxed mt-1" style={{ color: "var(--ink-muted)" }}>{beat.coach}</p></div></div><div className="rounded-lg p-3 mt-2 text-sm leading-relaxed" style={{ background: "var(--surface)", color: "var(--ink-muted)", borderLeft: "3px solid var(--accent)" }}><strong style={{ color: "var(--ink)" }}>Coach Celo says:</strong> {beat.voice}</div></div>
           <div><p className="text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "var(--ink-muted)" }}>What to watch</p><ul className="flex flex-col gap-2">{beat.watch.map((item) => <li key={item} className="flex gap-2 text-xs" style={{ color: "var(--ink)" }}><Check size={14} className="shrink-0 mt-0.5" style={{ color: "var(--positive)" }} />{item}</li>)}</ul></div>
           <div className="rounded-lg p-3 text-xs leading-relaxed" style={{ background: "var(--negative-bg)", color: "var(--ink-muted)", borderLeft: "3px solid var(--negative)" }}><strong style={{ color: "var(--ink)" }}>Avoid the chop:</strong> {beat.avoid}</div>
           <button className="btn btn-ghost btn-sm mt-auto self-start" onClick={() => goToBeat(0)}><RotateCcw size={13} /> Restart lesson</button>
