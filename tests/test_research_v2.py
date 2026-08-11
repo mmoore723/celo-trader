@@ -107,6 +107,15 @@ class ResearchV2Tests(unittest.TestCase):
     def test_paid_runner_selects_distinct_orb_hypotheses(self) -> None:
         self.assertEqual("V2_ORB_PULLBACK", build_strategy("orb_pullback").strategy_id)
         self.assertEqual("V2_VWAP_PULLBACK", build_strategy("vwap_pullback").strategy_id)
+        self.assertEqual("V2_TREND_CONT", build_strategy("trend_continuation").strategy_id)
+        self.assertEqual("V2_AFTERNOON_REVERSAL", build_strategy("afternoon_reversal").strategy_id)
+
+    def test_paid_markout_rejects_invalid_signal_cap(self) -> None:
+        with self.assertRaises(ValueError):
+            run_databento_cbbo_markouts_for_holds(
+                (_bar(0, 100, 101, 99, 100),), (), _OneLong(), "TSLA",
+                max_signals=0,
+            )
 
     def test_paid_hold_tuner_selects_training_only_then_checks_holdout(self) -> None:
         def row(day: str, pct: float) -> dict[str, object]:

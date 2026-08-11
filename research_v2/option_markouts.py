@@ -98,6 +98,7 @@ def run_databento_cbbo_markouts_for_holds(
     underlying: str, hold_minutes: Iterable[int] = (60,), min_dte: int = 0, max_dte: int = 7,
     min_premium: float = 0.0, max_premium: float | None = None,
     max_wait: timedelta = timedelta(minutes=1), max_spread_pct: float = 0.20,
+    max_signals: int | None = None,
 ) -> dict[int, tuple[OptionMarkout, ...]]:
     """Run fixed-hold executable markouts with two scans of each raw file.
 
@@ -117,11 +118,15 @@ def run_databento_cbbo_markouts_for_holds(
         raise ValueError("bars, raw_paths, and underlying are required")
     if (not holds or any(hold < 1 for hold in holds) or min_dte < 0 or max_dte < min_dte or min_premium < 0
             or (max_premium is not None and max_premium < min_premium)
-            or max_wait.total_seconds() <= 0 or max_spread_pct <= 0):
+            or max_wait.total_seconds() <= 0 or max_spread_pct <= 0
+            or (max_signals is not None and max_signals < 1)):
         raise ValueError("invalid markout bounds")
 
     decisions: list[tuple[Signal, Bar, str]] = []
-    for signal in strategy_signals(completed, strategy):
+    signals = strategy_signals(completed, strategy)
+    if max_signals is not None:
+        signals = signals[:max_signals]
+    for signal in signals:
         entry_bar = next((bar for bar in completed if bar.timestamp > signal.timestamp), None)
         if entry_bar is not None:
             decisions.append((signal, entry_bar, "call" if signal.side is Side.LONG else "put"))
@@ -436,10 +441,12 @@ def run_databento_cbbo_markouts(
     underlying: str, hold_minutes: int = 60, min_dte: int = 0, max_dte: int = 7,
     min_premium: float = 0.0, max_premium: float | None = None,
     max_wait: timedelta = timedelta(minutes=1), max_spread_pct: float = 0.20,
+    max_signals: int | None = None,
 ) -> tuple[OptionMarkout, ...]:
     """Single-hold compatibility wrapper for existing research callers."""
     return run_databento_cbbo_markouts_for_holds(
         bars, raw_paths, strategy, underlying=underlying, hold_minutes=(hold_minutes,),
         min_dte=min_dte, max_dte=max_dte, min_premium=min_premium,
         max_premium=max_premium, max_wait=max_wait, max_spread_pct=max_spread_pct,
+        max_signals=max_signals,
     )[hold_minutes]

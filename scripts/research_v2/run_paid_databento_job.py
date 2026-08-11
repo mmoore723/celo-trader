@@ -6,11 +6,11 @@ were already purchased, evaluates each day from real option quotes, then
 deletes the temporary raw file.  It never creates a Databento request and it
 never talks to a broker.
 
-The initial strategy is the confirmed Opening Range Breakout (ORB).  The
-purpose is to find out whether that underlying setup has any executable TSLA
-option edge when entries pay the ask and exits receive the bid.  A negative
-result rejects ORB; it must not be "tuned" into production by looking at the
-same result repeatedly.
+Each strategy is a pre-defined, causal TSLA hypothesis. The purpose is to
+find out whether its underlying setup has any executable option edge when
+entries pay the ask and exits receive the bid. A negative result rejects that
+strategy; it must not be "tuned" into production by looking at the same
+result repeatedly.
 """
 from __future__ import annotations
 
@@ -33,6 +33,8 @@ from research_v2.option_markouts import OptionMarkout, run_databento_cbbo_markou
 from research_v2.strategies import (
     OpeningRangeBreakout, OpeningRangeBreakoutConfig,
     OpeningRangePullback, OpeningRangePullbackConfig,
+    TrendContinuation, TrendContinuationConfig,
+    AfternoonReversal, AfternoonReversalConfig,
     VWAPPullback, VWAPPullbackConfig,
 )
 
@@ -148,6 +150,10 @@ def build_strategy(strategy_name: str):
         return OpeningRangePullback(OpeningRangePullbackConfig())
     if strategy_name == "vwap_pullback":
         return VWAPPullback(VWAPPullbackConfig())
+    if strategy_name == "trend_continuation":
+        return TrendContinuation(TrendContinuationConfig())
+    if strategy_name == "afternoon_reversal":
+        return AfternoonReversal(AfternoonReversalConfig())
     raise ValueError(f"unknown strategy: {strategy_name}")
 
 
@@ -157,7 +163,14 @@ def main() -> None:
     source.add_argument("--job-id", help="Existing Databento job ID; retrieves one day at a time through FTP")
     source.add_argument("--archive", type=Path, help="Portal Download all ZIP; reads one day at a time locally")
     parser.add_argument("--ticker", required=True)
-    parser.add_argument("--strategy", choices=("orb_breakout", "orb_pullback", "vwap_pullback"), default="orb_breakout")
+    parser.add_argument(
+        "--strategy",
+        choices=(
+            "orb_breakout", "orb_pullback", "vwap_pullback",
+            "trend_continuation", "afternoon_reversal",
+        ),
+        default="orb_breakout",
+    )
     parser.add_argument("--bars", type=Path, required=True, help="Frozen regular-session underlying bars CSV")
     parser.add_argument("--output", type=Path, required=True, help="Resumable JSON result file")
     parser.add_argument("--scratch-dir", type=Path, required=True, help="Small temporary download directory")
@@ -167,11 +180,15 @@ def main() -> None:
     parser.add_argument("--min-premium", type=float, default=0.80)
     parser.add_argument("--max-premium", type=float, default=10.00)
     parser.add_argument("--max-spread-pct", type=float, default=0.08)
+    parser.add_argument(
+        "--max-signals-per-day", type=int, default=0,
+        help="Use only the earliest N completed-bar signals each day (0 = no cap)",
+    )
     parser.add_argument("--limit-days", type=int, default=0, help="Optional safe cap for a trial run")
     args = parser.parse_args()
 
-    if args.hold_minutes < 1 or args.limit_days < 0:
-        parser.error("hold-minutes must be positive and limit-days cannot be negative")
+    if args.hold_minutes < 1 or args.limit_days < 0 or args.max_signals_per_day < 0:
+        parser.error("hold-minutes must be positive and day/signal limits cannot be negative")
     if not (0 <= args.min_dte <= args.max_dte and 0 <= args.min_premium <= args.max_premium):
         parser.error("invalid option eligibility limits")
 
@@ -221,6 +238,7 @@ def main() -> None:
         "bars_path": str(args.bars),
         "bars_sha256": dataset.sha256,
         "hold_minutes": args.hold_minutes,
+        "max_signals_per_day": args.max_signals_per_day or None,
         "eligibility": {"min_dte": args.min_dte, "max_dte": args.max_dte,
                         "min_premium": args.min_premium, "max_premium": args.max_premium,
                         "max_spread_pct": args.max_spread_pct},
@@ -251,6 +269,7 @@ def main() -> None:
                     hold_minutes=args.hold_minutes, min_dte=args.min_dte, max_dte=args.max_dte,
                     min_premium=args.min_premium, max_premium=args.max_premium,
                     max_spread_pct=args.max_spread_pct,
+                    max_signals=args.max_signals_per_day or None,
                 )
                 markouts.extend(result_row(result) for result in results)
                 completed.add(filename)
