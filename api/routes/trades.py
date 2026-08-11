@@ -191,6 +191,13 @@ def get_performance(mode: str = Query("paper")) -> PerformanceStats:
         worst_day=round(min((d.pnl for d in daily), default=0), 2),
         current_streak=streak,
         daily_summaries=daily,
+        account_scoped=bool(account_id),
+        data_scope_note=(
+            "Showing only results recorded for the account currently connected to this bot. "
+            "Older, unlinked history is not mixed in."
+            if account_id else
+            "No connected broker account has been confirmed yet, so this page may include older local history."
+        ),
     )
 
 

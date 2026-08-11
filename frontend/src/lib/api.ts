@@ -554,6 +554,8 @@ export interface PerformanceStats {
   worst_day: number;
   current_streak: number;
   daily_summaries: { date: string; pnl: number; trades: number; win_rate: number }[];
+  account_scoped: boolean;
+  data_scope_note: string;
 }
 
 export interface BacktestResult {

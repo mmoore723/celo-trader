@@ -25,3 +25,5 @@ class PerformanceStats(BaseModel):
     worst_day: float
     current_streak: int
     daily_summaries: list[DailySummary]
+    account_scoped: bool
+    data_scope_note: str

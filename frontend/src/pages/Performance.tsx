@@ -278,6 +278,25 @@ export function Performance() {
         ))}
       </div>
 
+      {perf && (
+        <div
+          role="status"
+          style={{
+            borderRadius: 8,
+            border: `1px solid ${perf.account_scoped ? "rgba(22,163,74,0.25)" : "rgba(234,88,12,0.35)"}`,
+            background: perf.account_scoped ? "rgba(22,163,74,0.06)" : "rgba(234,88,12,0.07)",
+            color: "var(--ink-muted)",
+            padding: "9px 11px",
+            fontSize: 12,
+          }}
+        >
+          <strong style={{ color: "var(--ink)" }}>
+            {perf.account_scoped ? "Account-safe history" : "History needs an account link"}
+          </strong>
+          {" — "}{perf.data_scope_note}
+        </div>
+      )}
+
       {/* ── Key stats strip ───────────────────────────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}
            className="sm:grid-cols-4">
