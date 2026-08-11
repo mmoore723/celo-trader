@@ -13,6 +13,12 @@ from research_v2.strategies import OpeningRangePullback, OpeningRangePullbackCon
 from strategies.base import Signal
 
 STRATEGY_ID = "V2_ORB_PULLBACK"
+# Chosen once on the earlier paid TSLA option data, then positive on the
+# untouched later segment (see paid_tsla_orb_entry_rules.json).  Keep this
+# explicit so the paper cohort does not silently revert to the research
+# baseline's wider 0.10% allowance.
+PAID_RETEST_TOLERANCE_PCT = 0.0005
+V2_ORB_CONFIG = OpeningRangePullbackConfig(retest_tolerance_pct=PAID_RETEST_TOLERANCE_PCT)
 # This hypothesis was tested only on paid TSLA option quotes.  Keep the scope
 # in the strategy adapter—not merely in a screen or router setting—so a future
 # pilot cannot accidentally trade an unvalidated ticker.
@@ -24,7 +30,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
         return None
     if "time" not in today:
         return None
-    config = OpeningRangePullbackConfig()
+    config = V2_ORB_CONFIG
     # The first eligible 5-minute decision is 10:40 (15 completed bars from
     # 09:30), while the hypothesis entry deadline is 10:45.  Do not require
     # more history here than the V2 strategy itself needs, or the adapter

@@ -184,6 +184,13 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(104.0, signal.meta["v2_target"])
         self.assertEqual("opening_range_pullback", signal.meta["v2_hypothesis"])
 
+    def test_orb_pullback_adapter_locks_the_paid_selected_retest_tolerance(self) -> None:
+        """Paper signals must use the paid study's 0.05% winner, not baseline 0.10%."""
+        from strategies.orb_pullback_v2 import PAID_RETEST_TOLERANCE_PCT, V2_ORB_CONFIG
+
+        self.assertEqual(0.0005, PAID_RETEST_TOLERANCE_PCT)
+        self.assertEqual(PAID_RETEST_TOLERANCE_PCT, V2_ORB_CONFIG.retest_tolerance_pct)
+
     def test_orb_pullback_adapter_is_hard_scoped_to_paid_tsla_evidence(self) -> None:
         """A future pilot must not reuse the TSLA-only hypothesis on another ticker."""
         import pandas as pd
