@@ -114,6 +114,14 @@ export interface PaidResearchEvidence {
   };
   what_changed: string; next_step: string; caveat: string;
 }
+export interface PaidTrendResearchProgress {
+  available: boolean; study_id: string; label: string; note: string;
+  ticker?: string; strategy?: string; complete?: boolean;
+  status?: "testing_exit_clock" | "testing_new_dates" | "review_pending";
+  processed_days?: number; total_days?: number; progress_pct?: number;
+  provisional_exit_minutes?: number | null; holdout_signals_seen?: number;
+  decision?: string;
+}
 
 export interface Trade {
   id: number;
@@ -672,6 +680,7 @@ export const api = {
     candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
     qqqOpeningResearch: () => request<PaperResearchScorecard>("/api/strategy-health/paper-research/qqq-opening"),
     paidTslaV2Orb: () => request<PaidResearchEvidence>("/api/strategy-health/research/paid-tsla-v2-orb"),
+    paidTslaTrendProgress: () => request<PaidTrendResearchProgress>("/api/strategy-health/research/paid-tsla-trend-progress"),
     v2OrbPaperScorecard: () => request<V2OrbPaperScorecard>("/api/strategy-health/paper/v2-orb"),
   },
   aiReasoning: {

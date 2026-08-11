@@ -125,6 +125,13 @@ def get_paid_tsla_v2_orb_research() -> dict:
     return v2_orb_tsla_summary()
 
 
+@router.get("/research/paid-tsla-trend-progress")
+def get_paid_tsla_trend_progress() -> dict:
+    """Current local paid-data study status; informational only."""
+    from strategy_health.paid_research_progress import tsla_trend_exit_progress
+    return tsla_trend_exit_progress()
+
+
 @router.get("/paper/v2-orb")
 def get_v2_orb_paper_scorecard() -> dict:
     """Account-scoped prospective V2 paper evidence; never a trade control."""

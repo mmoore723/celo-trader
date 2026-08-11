@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard, type PaidResearchEvidence, type V2OrbPaperScorecard } from "../lib/api";
+import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard, type PaidResearchEvidence, type PaidTrendResearchProgress, type V2OrbPaperScorecard } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -158,6 +158,45 @@ function QQQResearchCard({ data }: { data: PaperResearchScorecard }) {
       <span>Win rate: <b>{data.option_win_rate_pct == null ? "—" : `${data.option_win_rate_pct}%`}</b></span>
     </div>
     <p style={{ fontSize: 11, color: "var(--ink-faint)", margin: "10px 0 0" }}>{data.note}</p>
+  </div>;
+}
+
+function PaidTrendResearchProgressCard({ data }: { data: PaidTrendResearchProgress }) {
+  if (!data.available) return null;
+  const complete = Boolean(data.complete);
+  const stage = data.status === "review_pending" ? "Review required" :
+    data.status === "testing_new_dates" ? "Testing newer dates" : "Comparing exit times";
+  const statusColor = complete ? "var(--warning, #b45309)" : "var(--accent)";
+  return <div className="card" style={{ padding: 16, borderLeft: `3px solid ${statusColor}` }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div>
+        <h2 className="text-sm font-semibold" style={{ margin: 0 }}>{data.label}</h2>
+        <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "4px 0 0" }}>Real historical option-price research — no orders are being placed.</p>
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 700, color: statusColor, background: "var(--accent-bg)", borderRadius: 999, padding: "3px 9px" }}>{stage}</span>
+    </div>
+    <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+      <span><b>{data.processed_days ?? 0}</b> of <b>{data.total_days ?? 0}</b> market days checked</span>
+      <span>{(data.progress_pct ?? 0).toFixed(1)}%</span>
+    </div>
+    <div style={{ height: 8, marginTop: 6, borderRadius: 999, overflow: "hidden", background: "var(--surface-muted, #edf0f5)" }}>
+      <div style={{ height: "100%", width: `${Math.min(100, Math.max(0, data.progress_pct ?? 0))}%`, background: statusColor, transition: "width 300ms ease" }} />
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 9, marginTop: 12 }}>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Current exit leader</div>
+        <div style={{ fontWeight: 700, marginTop: 3 }}>{data.provisional_exit_minutes ? `${data.provisional_exit_minutes} minutes` : "Not selected yet"}</div>
+      </div>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>New-date checks seen</div>
+        <div style={{ fontWeight: 700, marginTop: 3 }}>{data.holdout_signals_seen ?? 0}</div>
+      </div>
+      <div style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-muted)" }}>Trading status</div>
+        <div style={{ fontWeight: 700, marginTop: 3, color: "var(--negative)" }}>Not enabled</div>
+      </div>
+    </div>
+    <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: "12px 0 0", lineHeight: 1.45 }}><b>What this means:</b> {data.decision}</p>
   </div>;
 }
 
@@ -400,6 +439,7 @@ function DailyView() {
   const { data: candidateScorecard } = useQuery({ queryKey: ["strategy-health-candidate-scorecard"], queryFn: () => api.strategyHealth.candidateScorecard(30), staleTime: 60_000 });
   const { data: qqqResearch } = useQuery({ queryKey: ["strategy-health-qqq-paper-research"], queryFn: api.strategyHealth.qqqOpeningResearch, staleTime: 60_000 });
   const { data: paidTslaResearch } = useQuery({ queryKey: ["strategy-health-paid-tsla-v2-orb"], queryFn: api.strategyHealth.paidTslaV2Orb, staleTime: 60_000 });
+  const { data: paidTslaTrendProgress } = useQuery({ queryKey: ["strategy-health-paid-tsla-trend-progress"], queryFn: api.strategyHealth.paidTslaTrendProgress, staleTime: 60_000, refetchInterval: 60_000 });
   const { data: v2OrbPaper } = useQuery({ queryKey: ["strategy-health-v2-orb-paper"], queryFn: api.strategyHealth.v2OrbPaperScorecard, staleTime: 60_000 });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get, staleTime: 60_000 });
 
@@ -430,6 +470,7 @@ function DailyView() {
         </button>
       </div>
       <ActivePilotCard settings={settings} />
+      {paidTslaTrendProgress && <PaidTrendResearchProgressCard data={paidTslaTrendProgress} />}
       {paidTslaResearch && <PaidTslaResearchCard data={paidTslaResearch} />}
       {v2OrbPaper && <V2OrbProspectiveCard data={v2OrbPaper} />}
       {scorecard && <Scorecard data={scorecard} />}
