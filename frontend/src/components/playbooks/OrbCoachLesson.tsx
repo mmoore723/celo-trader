@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Check, ChevronLeft, ChevronRight, Pause, Play, RotateCcw, Volume2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, RotateCcw, Sparkles } from "lucide-react";
 
 type CoachBeat = {
   title: string;
@@ -67,24 +67,52 @@ const ORB_BEATS: CoachBeat[] = [
 function CoachChart({ stage }: { stage: CoachBeat["chartStage"] }) {
   const index = ["range", "breakout", "retest", "confirm", "exit"].indexOf(stage);
   const labels = ["Opening range", "Break", "Pullback", "Confirmation", "Exit plan"];
+  const focus = [
+    { x: 40, width: 142, label: "Watch only — build the range" },
+    { x: 180, width: 80, label: "Breakout candle closes outside" },
+    { x: 252, width: 98, label: "First pullback tests the level" },
+    { x: 344, width: 94, label: "Confirmation above VWAP" },
+    { x: 514, width: 110, label: "Manage the exit plan" },
+  ][index];
+  const candles = [
+    { x: 62, open: 145, close: 126, high: 116, low: 156 }, { x: 86, open: 126, close: 143, high: 151, low: 119 },
+    { x: 110, open: 143, close: 132, high: 149, low: 121 }, { x: 134, open: 132, close: 139, high: 146, low: 123 },
+    { x: 158, open: 139, close: 127, high: 143, low: 117 }, { x: 182, open: 127, close: 100, high: 131, low: 94 },
+    { x: 206, open: 100, close: 88, high: 106, low: 80 }, { x: 230, open: 88, close: 76, high: 94, low: 70 },
+    { x: 254, open: 76, close: 97, high: 104, low: 72 }, { x: 278, open: 97, close: 122, high: 128, low: 90 },
+    { x: 302, open: 122, close: 111, high: 130, low: 102 }, { x: 326, open: 111, close: 94, high: 116, low: 88 },
+    { x: 350, open: 94, close: 75, high: 100, low: 67 }, { x: 374, open: 75, close: 59, high: 81, low: 52 },
+    { x: 398, open: 59, close: 67, high: 76, low: 54 }, { x: 422, open: 67, close: 55, high: 72, low: 48 },
+    { x: 446, open: 55, close: 46, high: 61, low: 40 }, { x: 470, open: 46, close: 51, high: 57, low: 38 },
+    { x: 494, open: 51, close: 43, high: 58, low: 35 }, { x: 518, open: 43, close: 62, high: 67, low: 39 },
+    { x: 542, open: 62, close: 75, high: 81, low: 56 }, { x: 566, open: 75, close: 68, high: 85, low: 63 },
+  ];
   return (
     <div className="rounded-xl p-3" style={{ background: "linear-gradient(150deg, var(--muted), color-mix(in srgb, var(--accent) 8%, var(--muted)))", border: "1px solid var(--border)" }}>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · 5-minute lesson chart</span>
-        <span className="text-[11px]" style={{ color: "var(--ink-muted)" }}>Not a live chart</span>
+        <span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · 5-minute candle replay</span>
+        <span className="text-[11px]" style={{ color: "var(--ink-muted)" }}>Illustrated practice chart</span>
       </div>
-      <svg viewBox="0 0 660 260" className="w-full" role="img" aria-label="Illustrated opening-range pullback chart with the current lesson moment highlighted">
+      <svg viewBox="0 0 660 260" className="w-full" role="img" aria-label="Illustrated candlestick opening-range pullback chart with the current lesson moment highlighted">
         {[40, 90, 140, 190].map((y) => <line key={y} x1="35" y1={y} x2="645" y2={y} stroke="var(--border)" strokeWidth="1" />)}
+        <rect x={focus.x} y="25" width={focus.width} height="180" rx="8" fill="color-mix(in srgb, var(--accent) 10%, transparent)" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="4 4" />
         <rect x="42" y="104" width="144" height="55" rx="6" fill="color-mix(in srgb, var(--accent) 11%, transparent)" stroke="var(--accent)" strokeWidth={index === 0 ? 2 : 1} />
         <text x="49" y="98" fill="var(--ink-muted)" fontSize="11">Opening range</text>
-        <path d="M42 148 C90 137 138 145 184 131 S246 89 300 62 S350 71 397 132 S455 149 502 111 S568 65 640 78" fill="none" stroke="var(--accent)" strokeWidth="3" />
-        <path d="M42 157 C140 153 197 145 260 132 S380 129 472 120 S580 104 640 94" fill="none" stroke="#df911f" strokeWidth="2" />
-        <path d="M42 166 C135 160 211 144 287 128 S372 121 454 118 S574 102 640 91" fill="none" stroke="#8359d5" strokeWidth="2" />
-        <line x1="197" y1="132" x2="197" y2="70" stroke="var(--accent)" strokeDasharray="4 4" />
-        <circle cx="197" cy="132" r={index === 1 ? 9 : 5} fill="var(--accent)" />
-        <circle cx="389" cy="137" r={index === 2 ? 9 : 5} fill="var(--accent)" />
-        <circle cx="481" cy="111" r={index === 3 ? 9 : 5} fill="var(--accent)" />
-        <circle cx="556" cy="83" r={index === 4 ? 9 : 5} fill={stage === "exit" ? "var(--negative)" : "var(--accent)"} />
+        <line x1="35" y1="104" x2="645" y2="104" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="5 4" />
+        {candles.map((candle, candleIndex) => {
+          const up = candle.close < candle.open;
+          const color = up ? "var(--positive)" : "var(--negative)";
+          const bodyY = Math.min(candle.open, candle.close);
+          const bodyHeight = Math.max(5, Math.abs(candle.close - candle.open));
+          return <g key={candle.x} opacity={candleIndex >= 5 ? 1 : 0.82}>
+            <line x1={candle.x + 7} x2={candle.x + 7} y1={candle.high} y2={candle.low} stroke={color} strokeWidth="1.5" />
+            <rect x={candle.x} y={bodyY} width="14" height={bodyHeight} rx="1.5" fill={color} />
+          </g>;
+        })}
+        <path d="M42 157 C126 157 187 147 246 126 S335 105 399 98 S531 77 606 65" fill="none" stroke="#df911f" strokeWidth="2" />
+        <path d="M42 170 C120 163 181 150 244 134 S337 114 404 104 S538 84 606 76" fill="none" stroke="#8359d5" strokeWidth="2" />
+        <text x={focus.x + 5} y="43" fill="var(--accent)" fontSize="10" fontWeight="600">{focus.label}</text>
+        <circle cx={[105, 189, 267, 363, 558][index]} cy={[130, 99, 97, 72, 74][index]} r="7" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2" />
         <text x="45" y="230" fill="var(--ink-muted)" fontSize="11">9:30</text><text x="175" y="230" fill="var(--ink-muted)" fontSize="11">9:45</text><text x="303" y="230" fill="var(--ink-muted)" fontSize="11">10:00</text><text x="434" y="230" fill="var(--ink-muted)" fontSize="11">10:15</text><text x="564" y="230" fill="var(--ink-muted)" fontSize="11">10:30</text>
         <text x="583" y="106" fill="#df911f" fontSize="11">VWAP</text><text x="582" y="123" fill="#8359d5" fontSize="11">Trend line</text>
       </svg>
@@ -97,29 +125,8 @@ function CoachChart({ stage }: { stage: CoachBeat["chartStage"] }) {
 
 export function OrbCoachLesson() {
   const [beatIndex, setBeatIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [answer, setAnswer] = useState<number | null>(null);
   const beat = ORB_BEATS[beatIndex];
-
-  const stop = useCallback(() => {
-    window.speechSynthesis?.cancel();
-    setIsPlaying(false);
-  }, []);
-
-  const play = useCallback(() => {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(beat.voice);
-    utterance.rate = 0.96;
-    utterance.pitch = 1;
-    utterance.onend = () => setIsPlaying(false);
-    utterance.onerror = () => setIsPlaying(false);
-    window.speechSynthesis.speak(utterance);
-    setIsPlaying(true);
-  }, [beat.voice]);
-
-  useEffect(() => () => window.speechSynthesis?.cancel(), []);
-  useEffect(() => { setAnswer(null); stop(); }, [beatIndex, stop]);
 
   const answerCopy = useMemo(() => {
     if (!beat.decision || answer === null) return "Choose an answer to practice the habit before you see the next part.";
@@ -131,10 +138,10 @@ export function OrbCoachLesson() {
       <div className="p-4 sm:p-5" style={{ background: "linear-gradient(125deg, color-mix(in srgb, var(--accent) 15%, var(--surface)), var(--surface) 62%)", borderBottom: "1px solid var(--border)" }}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex gap-3 items-center">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0" style={{ background: "radial-gradient(circle at 35% 30%, #e9f5ff 0 10%, #8eb7ff 31%, #5e77e8 59%, #714fc0 100%)", boxShadow: "0 0 26px color-mix(in srgb, var(--accent) 35%, transparent)" }}><Bot size={22} color="white" /></div>
-            <div><p className="text-[11px] uppercase tracking-[0.16em] font-semibold" style={{ color: "var(--accent)" }}>Coach Celo · Learn by replay</p><h2 className="text-lg font-semibold mt-0.5" style={{ color: "var(--ink)" }}>TSLA Opening-Range Pullback</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Paper-only lesson based on the bot’s current V2 TSLA setup — not investment advice.</p></div>
+            <div className="w-12 h-12 rounded-2xl overflow-hidden shrink-0" style={{ border: "2px solid color-mix(in srgb, var(--accent) 45%, var(--border))", boxShadow: "0 0 26px color-mix(in srgb, var(--accent) 28%, transparent)" }}><img src="/mascot.png" alt="Coach Celo" className="w-full h-full object-cover" style={{ objectPosition: "50% 42%" }} /></div>
+            <div><p className="text-[11px] uppercase tracking-[0.16em] font-semibold" style={{ color: "var(--accent)" }}>Coach Celo · Learn by replay</p><h2 className="text-lg font-semibold mt-0.5" style={{ color: "var(--ink)" }}>TSLA Opening-Range Pullback</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>A step-by-step practice replay — not investment advice.</p></div>
           </div>
-          <button className="btn btn-primary btn-sm self-start sm:self-auto" onClick={isPlaying ? stop : play} aria-label={isPlaying ? "Pause voice lesson" : "Play voice lesson"}>{isPlaying ? <Pause size={14} /> : <Play size={14} />}{isPlaying ? "Pause coach" : "Play coach"}</button>
+          <div className="rounded-lg px-3 py-2 text-xs self-start sm:self-auto" style={{ background: "var(--surface)", color: "var(--ink-muted)", border: "1px solid var(--border)" }}><Sparkles size={13} className="inline mr-1.5" style={{ color: "var(--accent)" }} />Interactive coach mode</div>
         </div>
       </div>
       <div className="p-4 sm:p-5 grid gap-4" style={{ gridTemplateColumns: "minmax(0, 1.6fr) minmax(250px, .85fr)" }}>
@@ -147,10 +154,10 @@ export function OrbCoachLesson() {
           </div>
         </div>
         <aside className="rounded-xl p-4 flex flex-col gap-4" style={{ background: "var(--muted)", border: "1px solid var(--border)" }}>
-          <div><div className="flex items-center gap-2 text-xs font-semibold" style={{ color: "var(--accent)" }}><Volume2 size={14} /> Lesson {beatIndex + 1} of {ORB_BEATS.length}</div><h3 className="text-base font-semibold mt-2" style={{ color: "var(--ink)" }}>{beat.title}</h3><p className="text-sm leading-relaxed mt-2" style={{ color: "var(--ink-muted)" }}>{beat.coach}</p></div>
+          <div><div className="flex items-center gap-2 text-xs font-semibold" style={{ color: "var(--accent)" }}><Sparkles size={14} /> Coach Celo · Lesson {beatIndex + 1} of {ORB_BEATS.length}</div><h3 className="text-base font-semibold mt-2" style={{ color: "var(--ink)" }}>{beat.title}</h3><div className="rounded-lg p-3 mt-2 text-sm leading-relaxed" style={{ background: "var(--surface)", color: "var(--ink-muted)", borderLeft: "3px solid var(--accent)" }}><strong style={{ color: "var(--ink)" }}>Coach Celo says:</strong> {beat.voice}</div><p className="text-sm leading-relaxed mt-2" style={{ color: "var(--ink-muted)" }}>{beat.coach}</p></div>
           <div><p className="text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "var(--ink-muted)" }}>What to watch</p><ul className="flex flex-col gap-2">{beat.watch.map((item) => <li key={item} className="flex gap-2 text-xs" style={{ color: "var(--ink)" }}><Check size={14} className="shrink-0 mt-0.5" style={{ color: "var(--positive)" }} />{item}</li>)}</ul></div>
           <div className="rounded-lg p-3 text-xs leading-relaxed" style={{ background: "var(--negative-bg)", color: "var(--ink-muted)", borderLeft: "3px solid var(--negative)" }}><strong style={{ color: "var(--ink)" }}>Avoid the chop:</strong> {beat.avoid}</div>
-          <button className="btn btn-ghost btn-sm mt-auto self-start" onClick={() => { setBeatIndex(0); setAnswer(null); stop(); }}><RotateCcw size={13} /> Restart lesson</button>
+          <button className="btn btn-ghost btn-sm mt-auto self-start" onClick={() => { setBeatIndex(0); setAnswer(null); }}><RotateCcw size={13} /> Restart lesson</button>
         </aside>
       </div>
       {beat.decision && <div className="mx-4 sm:mx-5 mb-5 rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>

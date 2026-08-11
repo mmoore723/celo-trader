@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research_v2.data import load_csv
-from research_v2.exit_rules import planned_exits
+from research_v2.exit_rules import planned_dynamic_exits, planned_exits
 from research_v2.option_markouts import (
     run_databento_cbbo_markouts_for_exit_plans, strategy_signals,
 )
@@ -27,16 +27,22 @@ from scripts.research_v2.tune_paid_orb_holds import segmented_summary
 
 
 RULES = ("fixed_90m", "vwap_loss_90m", "ema9_loss_90m", "vwap_or_ema9_90m")
+DYNAMIC_RULES = (
+    "fixed_90m",
+    "live_like_chandelier_75m",
+    "confirmed_vwap_ema_90m",
+    "hybrid_chandelier_vwap_ema_90m",
+)
 
 
 def select_training_rule(
     markouts_by_rule: dict[str, list[dict[str, object]]], holdout_start: date,
-    minimum_training_signals: int = 15,
+    minimum_training_signals: int = 15, rules: tuple[str, ...] = RULES,
 ) -> dict[str, object]:
     """Pick a rule from earlier data only, then disclose its later result."""
     summaries = {rule: segmented_summary(rows, holdout_start) for rule, rows in markouts_by_rule.items()}
     eligible = [
-        rule for rule in RULES
+        rule for rule in rules
         if int(summaries[rule]["training"]["measured_signals"]) >= minimum_training_signals
     ]
     if not eligible:
@@ -46,7 +52,7 @@ def select_training_rule(
         key=lambda rule: (
             float(summaries[rule]["training"]["average_return_pct"] or float("-inf")),
             int(summaries[rule]["training"]["measured_signals"]),
-            -RULES.index(rule),
+            -rules.index(rule),
         ),
     )
     holdout = summaries[winner]["holdout"]
@@ -72,6 +78,10 @@ def main() -> None:
         "--strategy", choices=("orb_pullback", "trend_continuation", "afternoon_reversal"),
         default="orb_pullback",
     )
+    parser.add_argument(
+        "--exit-mode", choices=("basic", "dynamic"), default="basic",
+        help="basic compares one-bar VWAP/EMA exits; dynamic replays live-like Chandelier and two-bar confirmation exits.",
+    )
     parser.add_argument("--holdout-start", type=date.fromisoformat, default=date(2026, 3, 1))
     parser.add_argument("--min-dte", type=int, default=7)
     parser.add_argument("--max-dte", type=int, default=21)
@@ -96,22 +106,29 @@ def main() -> None:
         raise RuntimeError("archive contains no daily CBBO files")
     existing: dict[str, object] = json.loads(args.output.read_text()) if args.output.exists() else {}
     completed = set(existing.get("processed_files", []))
+    rules = DYNAMIC_RULES if args.exit_mode == "dynamic" else RULES
     raw_markouts = existing.get("markouts_by_rule", {})
-    markouts_by_rule = {rule: list(raw_markouts.get(rule, [])) for rule in RULES}
+    markouts_by_rule = {rule: list(raw_markouts.get(rule, [])) for rule in rules}
     skipped = list(existing.get("skipped_files", []))
     args.scratch_dir.mkdir(parents=True, exist_ok=True)
 
     base = {
-        "purpose": "Predeclared TSLA strategy VWAP/EMA exit comparison; research-only, never a broker command.",
+        "purpose": "Predeclared strategy exit comparison using paid executable quotes; research-only, never a broker command.",
         "data_source": f"local paid portal archive: {args.archive}",
         "ticker": args.ticker.upper(), "strategy": args.strategy,
         "execution": "entry at actual ask; same-contract exit at actual bid; no midpoint or synthetic option price",
-        "exit_definitions": {
+        "exit_mode": args.exit_mode,
+        "exit_definitions": ({
             "fixed_90m": "exit at 90 minutes after entry bar",
             "vwap_loss_90m": "on a later completed five-minute bar, long close <= session VWAP or short close >= session VWAP; otherwise 90-minute cap",
             "ema9_loss_90m": "on a later completed five-minute bar, long close <= session EMA(9) or short close >= session EMA(9); otherwise 90-minute cap",
             "vwap_or_ema9_90m": "first completed-bar VWAP or EMA(9) loss; otherwise 90-minute cap",
-        },
+        } if args.exit_mode == "basic" else {
+            "fixed_90m": "benchmark only: exit at 90 minutes after entry bar",
+            "live_like_chandelier_75m": "V2 structural stop, then 3 ATR underlying Chandelier trail, otherwise 75-minute cap",
+            "confirmed_vwap_ema_90m": "V2 structural stop, then two completed bars lose both session VWAP and EMA(9), otherwise 90-minute cap",
+            "hybrid_chandelier_vwap_ema_90m": "V2 structural stop, 3 ATR underlying Chandelier, or two-bar VWAP/EMA loss, otherwise 90-minute cap",
+        }),
         "causality": "A bar-close exit decision is not sent until five minutes after that bar's opening timestamp.",
         "bars_path": str(args.bars), "bars_sha256": dataset.sha256,
         "holdout_start": args.holdout_start.isoformat(),
@@ -140,12 +157,13 @@ def main() -> None:
             skipped.append({"filename": filename, "reason": "no_strategy_signal"})
             completed.add(filename)
         else:
-            plans_by_rule = {rule: {} for rule in RULES}
+            plans_by_rule = {rule: {} for rule in rules}
             for signal in signals:
                 entry_bar = next((bar for bar in bars if bar.timestamp > signal.timestamp), None)
                 if entry_bar is None:
                     continue
-                for rule, plan in planned_exits(bars, signal, entry_bar).items():
+                planner = planned_dynamic_exits if args.exit_mode == "dynamic" else planned_exits
+                for rule, plan in planner(bars, signal, entry_bar).items():
                     plans_by_rule[rule][signal.timestamp] = plan
             raw_path: Path | None = None
             try:
@@ -167,7 +185,7 @@ def main() -> None:
                 if raw_path is not None:
                     raw_path.unlink(missing_ok=True)
 
-        selection = select_training_rule(markouts_by_rule, args.holdout_start)
+        selection = select_training_rule(markouts_by_rule, args.holdout_start, rules=rules)
         write_checkpoint(args.output, {
             **base, "processed_files": sorted(completed), "skipped_files": skipped,
             "markouts_by_rule": markouts_by_rule, "selection": selection,
