@@ -74,10 +74,13 @@ def select_training_winner(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Tune one predeclared V2 ORB exit dimension using paid bid/ask data")
+    parser = argparse.ArgumentParser(description="Compare predeclared fixed exit holds using paid bid/ask data")
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--ticker", default="TSLA")
-    parser.add_argument("--strategy", choices=("orb_pullback",), default="orb_pullback")
+    parser.add_argument(
+        "--strategy", choices=("orb_pullback", "trend_continuation", "afternoon_reversal"),
+        default="orb_pullback",
+    )
     parser.add_argument("--bars", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scratch-dir", type=Path, required=True)
@@ -88,10 +91,14 @@ def main() -> None:
     parser.add_argument("--min-premium", type=float, default=0.80)
     parser.add_argument("--max-premium", type=float, default=10.00)
     parser.add_argument("--max-spread-pct", type=float, default=0.08)
+    parser.add_argument(
+        "--max-signals-per-day", type=int, default=0,
+        help="Use only the earliest N signals per day (0 = all); keep this aligned with the base study.",
+    )
     args = parser.parse_args()
 
     holds = tuple(sorted(set(args.hold_minutes)))
-    if not holds or any(hold < 1 for hold in holds):
+    if not holds or any(hold < 1 for hold in holds) or args.max_signals_per_day < 0:
         parser.error("hold-minutes must contain positive unique values")
     if not args.archive.is_file():
         parser.error(f"archive does not exist: {args.archive}")
@@ -110,12 +117,13 @@ def main() -> None:
     args.scratch_dir.mkdir(parents=True, exist_ok=True)
 
     base = {
-        "purpose": "Predeclared V2 TSLA ORB pullback hold-time study; research-only, never a broker command.",
+        "purpose": "Predeclared TSLA strategy hold-time study; research-only, never a broker command.",
         "data_source": f"local paid portal archive: {args.archive}",
         "ticker": args.ticker.upper(), "strategy": args.strategy,
         "execution": "entry at actual ask; same-contract exit at actual bid; no midpoint or synthetic option price",
         "bars_path": str(args.bars), "bars_sha256": dataset.sha256,
         "hold_minutes_tested": list(holds), "holdout_start": args.holdout_start.isoformat(),
+        "max_signals_per_day": args.max_signals_per_day or None,
         "selection_protocol": "Choose highest training average return, then evaluate its untouched holdout.",
         "eligibility": {"min_dte": args.min_dte, "max_dte": args.max_dte,
                         "min_premium": args.min_premium, "max_premium": args.max_premium,
@@ -147,6 +155,7 @@ def main() -> None:
                     hold_minutes=holds, min_dte=args.min_dte, max_dte=args.max_dte,
                     min_premium=args.min_premium, max_premium=args.max_premium,
                     max_spread_pct=args.max_spread_pct,
+                    max_signals=args.max_signals_per_day or None,
                 )
                 for hold, results in results_by_hold.items():
                     markouts_by_hold[hold].extend(result_row(result) for result in results)
