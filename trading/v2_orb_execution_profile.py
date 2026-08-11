@@ -9,6 +9,8 @@ from __future__ import annotations
 
 
 V2_ORB_STRATEGY_ID = "V2_ORB_PULLBACK"
+V2_TREND_STRATEGY_ID = "V2_TREND_CONT"
+V2_PAPER_STRATEGY_IDS = frozenset({V2_ORB_STRATEGY_ID, V2_TREND_STRATEGY_ID})
 
 
 def uses_v2_orb_execution_profile(strategy_id: object) -> bool:
@@ -17,4 +19,4 @@ def uses_v2_orb_execution_profile(strategy_id: object) -> bool:
     This intentionally accepts no paper/live argument.  Mode controls broker
     routing, not the strategy being measured.
     """
-    return str(strategy_id or "").strip().upper() == V2_ORB_STRATEGY_ID
+    return str(strategy_id or "").strip().upper() in V2_PAPER_STRATEGY_IDS

@@ -22,14 +22,16 @@ V2_ORB_PAID_MARKOUT_MINUTES = 90
 def evaluate_v2_orb_paper_exit(
     entry_time: datetime | None,
     now: datetime,
+    strategy_id: object = "V2_ORB_PULLBACK",
 ) -> tuple[bool, str]:
     """Return the exact research markout timing, with a safe bad-state exit."""
     if entry_time is None:
         return True, "v2_orb_missing_entry_time_safety"
     elapsed_minutes = (now - entry_time).total_seconds() / 60
     if elapsed_minutes >= V2_ORB_PAID_MARKOUT_MINUTES:
+        prefix = "v2_trend" if str(strategy_id or "").strip().upper() == "V2_TREND_CONT" else "v2_orb"
         return True, (
-            f"v2_orb_paid_markout_{V2_ORB_PAID_MARKOUT_MINUTES}m "
+            f"{prefix}_paid_markout_{V2_ORB_PAID_MARKOUT_MINUTES}m "
             f"(held={elapsed_minutes:.1f}min)"
         )
     return False, "hold"

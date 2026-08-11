@@ -119,6 +119,7 @@ _DEFAULTS = {
     # unvalidated strategy; promotion requires a reviewed real-quote result.
     "validated_strategy_ids": [],
     "strategy_orb_pullback_v2_enabled": False,
+    "strategy_trend_cont_v2_enabled": False,
 
     # Paper-only lower-confidence research cohort. Disabled after the 2026-08-02
     # locked-holdout panel increased activity while worsening aggregate results.

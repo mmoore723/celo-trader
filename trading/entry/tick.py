@@ -525,11 +525,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         for strategy_id in settings.get("validated_strategy_ids", [])
         if str(strategy_id).strip()
     }
-    _v2_pilot_enabled = bool(
-        settings.get("paper_trading", True)
-        and settings.get("strategy_orb_pullback_v2_enabled", False)
-        and "V2_ORB_PULLBACK" in _v2_pilot_approved
-    )
+    _v2_pilot_enabled = bool(settings.get("paper_trading", True) and (
+        (settings.get("strategy_orb_pullback_v2_enabled", False) and "V2_ORB_PULLBACK" in _v2_pilot_approved)
+        or (settings.get("strategy_trend_cont_v2_enabled", False) and "V2_TREND_CONT" in _v2_pilot_approved)
+    ))
     if not watchlist:
         # Watchlist empty: run an on-demand scan (missed pre-market, or first boot)
         try:
@@ -758,6 +757,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("GAP_GO",      "strategy_gapgo_enabled"),
             ("LIQ_SWEEP",   "strategy_liqsweep_enabled"),
             ("V2_ORB_PULLBACK", "strategy_orb_pullback_v2_enabled"),
+            ("V2_TREND_CONT", "strategy_trend_cont_v2_enabled"),
         )
         if sid in _approved_strategy_ids and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
     }

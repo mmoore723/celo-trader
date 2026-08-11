@@ -477,7 +477,7 @@ def _manage_open_position(
         _is_v2_orb = uses_v2_orb_execution_profile(trade.get("strategy_id"))
         if _is_v2_orb:
             from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit
-            should_exit, reason = evaluate_v2_orb_paper_exit(entry_time, now_et)
+            should_exit, reason = evaluate_v2_orb_paper_exit(entry_time, now_et, trade.get("strategy_id"))
         elif _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
             from trading.simplified_exit_live import evaluate_simplified_live_exit
             should_exit, reason = evaluate_simplified_live_exit(
