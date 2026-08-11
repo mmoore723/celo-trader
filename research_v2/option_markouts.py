@@ -332,6 +332,7 @@ def run_databento_cbbo_markouts_for_exit_plans(
     min_dte: int = 0, max_dte: int = 7, min_premium: float = 0.0,
     max_premium: float | None = None, max_wait: timedelta = timedelta(minutes=1),
     max_spread_pct: float = 0.20,
+    max_signals: int | None = None,
 ) -> dict[str, tuple[OptionMarkout, ...]]:
     """Executable markouts for precomputed, causal exit decisions.
 
@@ -348,11 +349,15 @@ def run_databento_cbbo_markouts_for_exit_plans(
         raise ValueError("bars, raw_paths, underlying, and exit_plans are required")
     if (min_dte < 0 or max_dte < min_dte or min_premium < 0
             or (max_premium is not None and max_premium < min_premium)
-            or max_wait.total_seconds() <= 0 or max_spread_pct <= 0):
+            or max_wait.total_seconds() <= 0 or max_spread_pct <= 0
+            or (max_signals is not None and max_signals < 1)):
         raise ValueError("invalid markout bounds")
 
     decisions: list[tuple[Signal, Bar, str]] = []
-    for signal in strategy_signals(completed, strategy):
+    signals = strategy_signals(completed, strategy)
+    if max_signals is not None:
+        signals = signals[:max_signals]
+    for signal in signals:
         if not all(signal.timestamp in exit_plans[label] for label in labels):
             continue
         entry_bar = next((bar for bar in completed if bar.timestamp > signal.timestamp), None)

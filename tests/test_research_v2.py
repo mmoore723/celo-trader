@@ -116,6 +116,11 @@ class ResearchV2Tests(unittest.TestCase):
                 (_bar(0, 100, 101, 99, 100),), (), _OneLong(), "TSLA",
                 max_signals=0,
             )
+        with self.assertRaises(ValueError):
+            run_databento_cbbo_markouts_for_exit_plans(
+                (_bar(0, 100, 101, 99, 100),), (Path("unused.csv"),), _OneLong(), "TSLA",
+                {"fixed_90m": {}}, max_signals=0,
+            )
 
     def test_paid_hold_tuner_selects_training_only_then_checks_holdout(self) -> None:
         def row(day: str, pct: float) -> dict[str, object]:

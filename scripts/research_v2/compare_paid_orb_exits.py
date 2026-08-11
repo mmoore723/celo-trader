@@ -62,21 +62,31 @@ def select_training_rule(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compare predeclared V2 ORB exits using paid executable quotes")
+    parser = argparse.ArgumentParser(description="Compare predeclared strategy exits using paid executable quotes")
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--bars", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scratch-dir", type=Path, required=True)
     parser.add_argument("--ticker", default="TSLA")
+    parser.add_argument(
+        "--strategy", choices=("orb_pullback", "trend_continuation", "afternoon_reversal"),
+        default="orb_pullback",
+    )
     parser.add_argument("--holdout-start", type=date.fromisoformat, default=date(2026, 3, 1))
     parser.add_argument("--min-dte", type=int, default=7)
     parser.add_argument("--max-dte", type=int, default=21)
     parser.add_argument("--min-premium", type=float, default=0.80)
     parser.add_argument("--max-premium", type=float, default=10.00)
     parser.add_argument("--max-spread-pct", type=float, default=0.08)
+    parser.add_argument(
+        "--max-signals-per-day", type=int, default=0,
+        help="Use only the earliest N signals per day (0 = all); keep this aligned with the base study.",
+    )
     parser.add_argument("--progress-every", type=int, default=25,
                         help="Checkpoint every day but print progress only every N days (0 = final only)")
     args = parser.parse_args()
+    if args.max_signals_per_day < 0:
+        parser.error("max-signals-per-day cannot be negative")
     if not args.archive.is_file():
         parser.error(f"archive does not exist: {args.archive}")
 
@@ -92,9 +102,9 @@ def main() -> None:
     args.scratch_dir.mkdir(parents=True, exist_ok=True)
 
     base = {
-        "purpose": "Predeclared V2 TSLA ORB pullback VWAP/EMA exit comparison; research-only, never a broker command.",
+        "purpose": "Predeclared TSLA strategy VWAP/EMA exit comparison; research-only, never a broker command.",
         "data_source": f"local paid portal archive: {args.archive}",
-        "ticker": args.ticker.upper(), "strategy": "orb_pullback",
+        "ticker": args.ticker.upper(), "strategy": args.strategy,
         "execution": "entry at actual ask; same-contract exit at actual bid; no midpoint or synthetic option price",
         "exit_definitions": {
             "fixed_90m": "exit at 90 minutes after entry bar",
@@ -105,6 +115,7 @@ def main() -> None:
         "causality": "A bar-close exit decision is not sent until five minutes after that bar's opening timestamp.",
         "bars_path": str(args.bars), "bars_sha256": dataset.sha256,
         "holdout_start": args.holdout_start.isoformat(),
+        "max_signals_per_day": args.max_signals_per_day or None,
         "selection_protocol": "Choose highest training average return, then evaluate its untouched holdout.",
         "eligibility": {"min_dte": args.min_dte, "max_dte": args.max_dte,
                         "min_premium": args.min_premium, "max_premium": args.max_premium,
@@ -118,8 +129,10 @@ def main() -> None:
         trading_day = batch_file_date(filename)
         assert trading_day is not None
         bars = day_bars(dataset, trading_day)
-        strategy = build_strategy("orb_pullback")
+        strategy = build_strategy(args.strategy)
         signals = strategy_signals(bars, strategy) if bars else ()
+        if args.max_signals_per_day:
+            signals = signals[:args.max_signals_per_day]
         if not bars:
             skipped.append({"filename": filename, "reason": "no_frozen_underlying_bars"})
             completed.add(filename)
@@ -137,15 +150,15 @@ def main() -> None:
             raw_path: Path | None = None
             try:
                 raw_path = extract_archive_file(args.archive, filename, args.scratch_dir / filename)
-                # OpeningRangePullback is intentionally stateful while it
-                # emits at most one signal per day.  The markout engine must
-                # receive a fresh instance so it can regenerate the same
-                # causal signal rather than inheriting the planning pass.
+                # Some strategies are stateful. The markout engine receives
+                # a fresh instance so it regenerates the same causal signal
+                # instead of inheriting the planning pass.
                 results = run_databento_cbbo_markouts_for_exit_plans(
-                    bars, [raw_path], build_strategy("orb_pullback"), args.ticker, plans_by_rule,
+                    bars, [raw_path], build_strategy(args.strategy), args.ticker, plans_by_rule,
                     min_dte=args.min_dte, max_dte=args.max_dte,
                     min_premium=args.min_premium, max_premium=args.max_premium,
                     max_spread_pct=args.max_spread_pct,
+                    max_signals=args.max_signals_per_day or None,
                 )
                 for rule, rows in results.items():
                     markouts_by_rule[rule].extend(result_row(row) for row in rows)
