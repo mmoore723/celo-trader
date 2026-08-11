@@ -36,6 +36,7 @@ from research_v2.strategies import (
     TrendContinuation, TrendContinuationConfig,
     AfternoonReversal, AfternoonReversalConfig,
     VWAPPullback, VWAPPullbackConfig,
+    MiddayBreakdown, MiddayBreakdownConfig,
 )
 
 
@@ -154,6 +155,8 @@ def build_strategy(strategy_name: str):
         return TrendContinuation(TrendContinuationConfig())
     if strategy_name == "afternoon_reversal":
         return AfternoonReversal(AfternoonReversalConfig())
+    if strategy_name == "midday_breakdown":
+        return MiddayBreakdown(MiddayBreakdownConfig())
     raise ValueError(f"unknown strategy: {strategy_name}")
 
 
@@ -168,6 +171,7 @@ def main() -> None:
         choices=(
             "orb_breakout", "orb_pullback", "vwap_pullback",
             "trend_continuation", "afternoon_reversal",
+            "midday_breakdown",
         ),
         default="orb_breakout",
     )

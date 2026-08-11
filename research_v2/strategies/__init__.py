@@ -12,6 +12,7 @@ from research_v2.strategies.turtle_soup_rth import TurtleSoupRTH, TurtleSoupRTHC
 from research_v2.strategies.gap_fill_rth import GapFillRTH, GapFillRTHConfig
 from research_v2.strategies.opening_momentum_rth import OpeningMomentumRTH, OpeningMomentumRTHConfig
 from research_v2.strategies.supertrend_reversal import SuperTrendReversal, SuperTrendReversalConfig
+from research_v2.strategies.midday_breakdown import MiddayBreakdown, MiddayBreakdownConfig
 
 __all__ = [
     "AfternoonReversal", "AfternoonReversalConfig", "FairValueGap", "FairValueGapConfig",
@@ -25,4 +26,5 @@ __all__ = [
     "GapFillRTH", "GapFillRTHConfig",
     "OpeningMomentumRTH", "OpeningMomentumRTHConfig",
     "SuperTrendReversal", "SuperTrendReversalConfig",
+    "MiddayBreakdown", "MiddayBreakdownConfig",
 ]

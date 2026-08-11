@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, time
 import json
 from pathlib import Path
 import sys
@@ -36,7 +36,13 @@ def main() -> None:
     parser.add_argument("--min-trades", type=int, default=30)
     args = parser.parse_args()
     dataset = load_csv(args.csv)
-    simulation = Simulator(SimulationConfig(risk_fraction=args.risk_pct / 100.0, slippage_bps=args.slippage_bps))
+    # This bot is intraday.  Do not let an afternoon-reversal result borrow an
+    # overnight move that a production option position would not hold.
+    simulation = Simulator(SimulationConfig(
+        risk_fraction=args.risk_pct / 100.0,
+        slippage_bps=args.slippage_bps,
+        session_exit_time=time(15, 55),
+    ))
     gates = ValidationConfig(min_trades=args.min_trades)
     report = run_walk_forward(dataset.bars, datetime.fromisoformat(args.split.replace("Z", "+00:00")),
                               AfternoonReversal, simulation, gates)
@@ -44,7 +50,9 @@ def main() -> None:
         "research_only": True, "strategy": AfternoonReversal.strategy_id,
         "dataset": {"path": dataset.source_path, "sha256": dataset.sha256, "start": dataset.start.isoformat(),
                     "end": dataset.end.isoformat(), "bars": len(dataset.bars)},
-        "split": args.split, "simulation": asdict(simulation.config), "gates": asdict(gates),
+        "split": args.split,
+        "simulation": {**asdict(simulation.config), "session_exit_time": "15:55"},
+        "gates": asdict(gates),
         "train": _payload(report.train_validation), "holdout": _payload(report.holdout_validation),
         "promoted": report.promoted,
         "promotion_message": ("Eligible only for portfolio comparison; cannot place an order."

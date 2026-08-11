@@ -518,6 +518,7 @@ export interface AppSettings {
   liquidity_sweep_enabled?: boolean;  // 2026-07-31: fades a swept swing high/low, ON by
                                        // default — new strategy, no backtest track record
   strategy_orb_pullback_v2_enabled?: boolean; // research-validated opening-range pullback pilot
+  strategy_trend_cont_v2_enabled?: boolean; // paid-quote Trend Continuation paper pilot
   opportunity_tier_enabled?: boolean; // paper-only lower-confidence research cohort
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
   min_grade_filter_enabled?: boolean; // 2026-07-24: blocks entries below min_entry_grade (default off)

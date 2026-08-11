@@ -41,6 +41,8 @@ const DEFAULT: AppSettings = {
   aft_rev_enabled: false,
   gap_go_enabled: false,
   liquidity_sweep_enabled: false,
+  strategy_orb_pullback_v2_enabled: false,
+  strategy_trend_cont_v2_enabled: false,
   opportunity_tier_enabled: false,
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
@@ -393,21 +395,32 @@ export function Settings() {
 
       {/* Strategies */}
       <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy approval</h3>
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Paper strategy controls</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          A strategy is tradeable only after it passes real option bid/ask testing and a separate verification period. Settings cannot turn an unvalidated strategy on.
+          Turn a current paper strategy on or off here. These controls do not enable live orders; V2 strategies are hard-locked to paper mode in the trading engine.
         </p>
-        {(form.validated_strategy_ids?.length ?? 0) === 0 ? (
-          <div className="rounded-lg p-3 text-sm" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)" }}>
-            No strategy is currently approved for entry. The bot will not open a new trade until a verified strategy is promoted.
-          </div>
-        ) : (
-          <div className="rounded-lg p-3 text-sm" style={{ background: "var(--surface-raised)", color: "var(--ink)" }}>
-            Approved for entry: {form.validated_strategy_ids?.join(", ")}
-          </div>
-        )}
+        <div className="rounded-lg px-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+          <Toggle
+            label="TSLA Opening-Range Pullback V2"
+            checked={form.strategy_orb_pullback_v2_enabled ?? false}
+            onChange={(v) => set("strategy_orb_pullback_v2_enabled", v)}
+          />
+          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
+            Waits for a confirmed breakout, pullback, and reclaim. Paper-only candidate with real TSLA option quote evidence.
+          </p>
+        </div>
+        <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+          <Toggle
+            label="TSLA Trend Continuation V2"
+            checked={form.strategy_trend_cont_v2_enabled ?? false}
+            onChange={(v) => set("strategy_trend_cont_v2_enabled", v)}
+          />
+          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
+            Follows a confirmed directional move. Paper-only while the paid option-context study finishes.
+          </p>
+        </div>
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-          Research-only: ORB, VWAP Pullback, FVG, IFVG, BOS/MSS, Channel Breakout, MID_BRK, Trend Continuation, Afternoon Reversal, Gap and Go, and Liquidity Sweep.
+          Old strategies that failed research are intentionally not shown here or in the Playbook. They remain off rather than creating a misleading collection of switches.
         </div>
       </div>
 

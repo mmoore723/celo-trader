@@ -55,6 +55,8 @@ def get_settings_endpoint() -> Settings:
         aft_rev_enabled=bool(s.get("strategy_aft_enabled", False)),
         gap_go_enabled=bool(s.get("strategy_gapgo_enabled", False)),
         liquidity_sweep_enabled=bool(s.get("strategy_liqsweep_enabled", False)),
+        strategy_orb_pullback_v2_enabled=bool(s.get("strategy_orb_pullback_v2_enabled", False)),
+        strategy_trend_cont_v2_enabled=bool(s.get("strategy_trend_cont_v2_enabled", False)),
         opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
@@ -98,6 +100,8 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_aft_enabled"]    = data.pop("aft_rev_enabled", False)
     data["strategy_gapgo_enabled"]  = data.pop("gap_go_enabled", False)
     data["strategy_liqsweep_enabled"] = data.pop("liquidity_sweep_enabled", False)
+    data["strategy_orb_pullback_v2_enabled"] = data.pop("strategy_orb_pullback_v2_enabled", False)
+    data["strategy_trend_cont_v2_enabled"] = data.pop("strategy_trend_cont_v2_enabled", False)
     data["strategy_instorb_immediate_entry"] = data.pop("inst_orb_immediate_entry_enabled", False)
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw

@@ -331,10 +331,12 @@ const TAG_BADGE: Record<string, string> = {
 };
 
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
 import { OrbCoachLesson } from "../components/playbooks/OrbCoachLesson";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
+import { api } from "../lib/api";
 
 // ── How It Works — comprehensive bot explainer ────────────────────────────────
 const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }[] = [
@@ -506,11 +508,41 @@ const LOG_CATEGORIES: { key: string; label: string; emoji: string }[] = [
   { key: "exit",    label: "Exits",                emoji: "🏁" },
 ];
 
+// Only these current V2 paper pilots belong in the learner's Playbook.  The
+// legacy reference data above remains for historic log wording, not lessons.
+const CURRENT_STRATEGIES: Strategy[] = [
+  {
+    id: "v2_orb", name: "TSLA Opening-Range Pullback V2", emoji: "🎯",
+    setup: "Mark the first 15 minutes. Wait for price to break the range, then return and test that same level.",
+    entry: "A completed 5-minute candle must reclaim the broken level, beat the prior candle, and sit on the correct side of VWAP.",
+    stop: "The pullback high or low is the line that proves the idea wrong.",
+    target: "Paper study measures a 90-minute option result. The exit stays paper-only while evidence grows.",
+    notes: "TSLA only. This is the current interactive lesson because it has the clearest paid option-quote evidence.",
+    tags: ["paper", "opening", "pullback"],
+    tuning: [{ param: "When", value: "Break before 10:30 ET; confirmation by 10:45 ET" }, { param: "Chop defense", value: "Close + reclaim + VWAP alignment" }],
+  },
+  {
+    id: "v2_trend", name: "TSLA Trend Continuation V2", emoji: "🌊",
+    setup: "A fast trend is above or below a slower trend, then price closes through its recent range in that same direction.",
+    entry: "The completed 5-minute signal fills on the next bar. It never uses a future candle to decide.",
+    stop: "An ATR-based invalidation sits beyond the entry candle structure.",
+    target: "The current paid option study compares a 90-minute ask-entry/bid-exit result.",
+    notes: "TSLA only. Its paper pilot is active while the paid context study identifies where it works best.",
+    tags: ["paper", "trend", "research"],
+    tuning: [{ param: "Chart", value: "5-minute TSLA bars" }, { param: "Evidence", value: "Paid option context study in progress" }],
+  },
+];
+
 export function Playbooks() {
-  const [tab,           setTab]           = useState<"coach" | "playbooks" | "log-guide" | "how-it-works">("coach");
+  const [tab,           setTab]           = useState<"playbooks" | "log-guide" | "how-it-works">("playbooks");
   const [search,        setSearch]        = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [openSection,   setOpenSection]   = useState<string | null>("routine");   // first section open by default
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get });
+  const currentStrategies = useMemo(() => CURRENT_STRATEGIES.filter((strategy) => (
+    strategy.id === "v2_orb" ? Boolean(settings?.strategy_orb_pullback_v2_enabled) :
+    Boolean(settings?.strategy_trend_cont_v2_enabled)
+  )), [settings]);
 
   // Filter + group log codes by search query and active category
   const filteredLogs = useMemo(() => {
@@ -538,21 +570,19 @@ export function Playbooks() {
   }, [filteredLogs]);
 
   return (
-    <div className="p-4 flex flex-col gap-4">
+    <div className="p-4 flex flex-col gap-4" data-legacy-strategy-count={STRATEGIES.length}>
       {/* Tab bar */}
       <div className="flex gap-2 border-b pb-2" style={{ borderColor: "var(--border)" }}>
-        {(["coach", "playbooks", "log-guide", "how-it-works"] as const).map((t) => (
+        {(["playbooks", "log-guide", "how-it-works"] as const).map((t) => (
           <button
             key={t}
             className={`btn btn-sm ${tab === t ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setTab(t)}
           >
-            {t === "coach" ? "Learn ORB" : t === "playbooks" ? "Strategy Playbooks" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
+            {t === "playbooks" ? "Strategy Playbook" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
           </button>
         ))}
       </div>
-
-      {tab === "coach" && <OrbCoachLesson />}
 
       {tab === "log-guide" && (
         <div className="flex flex-col gap-4">
@@ -663,14 +693,22 @@ export function Playbooks() {
       {tab === "playbooks" && (
       <div className="flex flex-col gap-4">
         <div>
-          <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Strategy Playbooks</h2>
+          <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Strategy Playbook</h2>
           <p className="text-sm mt-0.5" style={{ color: "var(--ink-muted)" }}>
-            Reference cards for every strategy the bot trades. All use the same risk model and two-stage exit.
+            Learn the strategies currently switched on for paper trading. Old, rejected strategies are not shown.
           </p>
         </div>
 
+      {currentStrategies.some((strategy) => strategy.id === "v2_orb") && <OrbCoachLesson />}
+
+      {currentStrategies.length === 0 ? (
+        <div className="card p-5 text-sm" style={{ color: "var(--ink-muted)" }}>
+          No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
+        </div>
+      ) : (
+
       <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))" }}>
-        {STRATEGIES.map((s) => (
+        {currentStrategies.map((s) => (
           <div key={s.id} className="card p-4 flex flex-col gap-3">
             {/* Header */}
             <div className="flex items-start justify-between gap-2">
@@ -752,6 +790,7 @@ export function Playbooks() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Global risk parameters */}
       <div className="flex flex-col gap-2 mt-2">
