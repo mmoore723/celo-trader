@@ -334,6 +334,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
 import { OrbCoachLesson } from "../components/playbooks/OrbCoachLesson";
+import { TrendCoachLesson } from "../components/playbooks/TrendCoachLesson";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { api } from "../lib/api";
@@ -700,6 +701,7 @@ export function Playbooks() {
         </div>
 
       {currentStrategies.some((strategy) => strategy.id === "v2_orb") && <OrbCoachLesson />}
+      {currentStrategies.some((strategy) => strategy.id === "v2_trend") && <TrendCoachLesson />}
 
       {currentStrategies.length === 0 ? (
         <div className="card p-5 text-sm" style={{ color: "var(--ink-muted)" }}>
