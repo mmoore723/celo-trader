@@ -759,7 +759,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("V2_ORB_PULLBACK", "strategy_orb_pullback_v2_enabled"),
             ("V2_TREND_CONT", "strategy_trend_cont_v2_enabled"),
         )
-        if sid in _approved_strategy_ids and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
+        if (sid in _approved_strategy_ids
+            and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
+            and (not sid.startswith("V2_") or bool(_strat_cfg.get("paper_trading", True))) )
     }
     # mtf_cache: per-user, per-ticker cache dict (see trading/state.py's
     # "mtf_1h_cache" key + trading/mtf_live_gate.py) — passing both alpaca and
