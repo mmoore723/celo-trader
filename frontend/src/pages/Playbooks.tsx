@@ -334,8 +334,7 @@ const TAG_BADGE: Record<string, string> = {
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
-import { OrbCoachLesson } from "../components/playbooks/OrbCoachLesson";
-import { TrendCoachLesson } from "../components/playbooks/TrendCoachLesson";
+import { StrategyPlaybookExperience } from "../components/playbooks/StrategyPlaybookExperience";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { api } from "../lib/api";
@@ -696,16 +695,19 @@ export function Playbooks() {
 
       {tab === "playbooks" && (
       <div className="flex flex-col gap-4">
-        <div>
-          <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Strategy Playbook</h2>
-          <p className="text-sm mt-0.5" style={{ color: "var(--ink-muted)" }}>
-            Learn the strategies currently switched on for paper trading. Old, rejected strategies are not shown.
-          </p>
+      {currentStrategies.length === 0 ? (
+        <div className="card p-5 text-sm" style={{ color: "var(--ink-muted)" }}>
+          No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
         </div>
+      ) : (
+        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend")} />
+      )}
 
-      {currentStrategies.some((strategy) => strategy.id === "v2_orb") && <OrbCoachLesson />}
-      {currentStrategies.some((strategy) => strategy.id === "v2_trend") && <TrendCoachLesson />}
-
+      <details className="card p-4">
+        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>
+          Technical reference (optional)
+        </summary>
+        <div className="flex flex-col gap-4 mt-4">
       {currentStrategies.length === 0 ? (
         <div className="card p-5 text-sm" style={{ color: "var(--ink-muted)" }}>
           No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
@@ -848,6 +850,8 @@ export function Playbooks() {
         </div>
       </div>
 
+        </div>
+      </details>
       </div>
       )}
 
