@@ -1,4 +1,4 @@
-"""One locked execution profile for the reviewed V2 TSLA ORB strategy.
+"""Locked execution profile shared by reviewed V2 TSLA paper strategies.
 
 Paper trading is where this profile earns evidence today.  If the strategy is
 ever separately approved for live trading, its *decision rules* must remain
@@ -14,7 +14,7 @@ V2_PAPER_STRATEGY_IDS = frozenset({V2_ORB_STRATEGY_ID, V2_TREND_STRATEGY_ID})
 
 
 def uses_v2_orb_execution_profile(strategy_id: object) -> bool:
-    """Return whether a trade/signal uses the locked V2 ORB decision policy.
+    """Return whether a trade/signal uses the locked V2 paid-data policy.
 
     This intentionally accepts no paper/live argument.  Mode controls broker
     routing, not the strategy being measured.

@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import unittest
 
 from trading.entry.contract import select_v2_orb_paper_contract
+from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 
 
 class _FakeTradier:
@@ -20,6 +21,12 @@ class _FakeTradier:
 
 
 class V2OrbPaperContractTests(unittest.TestCase):
+    def test_only_active_v2_pilots_use_the_paid_contract_profile(self) -> None:
+        self.assertTrue(uses_v2_orb_execution_profile("V2_ORB_PULLBACK"))
+        self.assertTrue(uses_v2_orb_execution_profile("v2_trend_cont"))
+        self.assertFalse(uses_v2_orb_execution_profile("MID_BRK"))
+        self.assertFalse(uses_v2_orb_execution_profile(None))
+
     def test_selects_nearest_expiry_then_nearest_otm_contract(self) -> None:
         near = (date.today() + timedelta(days=7)).isoformat()
         later = (date.today() + timedelta(days=14)).isoformat()

@@ -106,6 +106,7 @@ class ResearchV2Tests(unittest.TestCase):
 
     def test_paid_runner_selects_distinct_orb_hypotheses(self) -> None:
         self.assertEqual("V2_ORB_PULLBACK", build_strategy("orb_pullback").strategy_id)
+        self.assertEqual(0.0005, build_strategy("v2_orb_pullback").config.retest_tolerance_pct)
         self.assertEqual("V2_VWAP_PULLBACK", build_strategy("vwap_pullback").strategy_id)
         self.assertEqual("V2_TREND_CONT", build_strategy("trend_continuation").strategy_id)
         self.assertEqual("V2_AFTERNOON_REVERSAL", build_strategy("afternoon_reversal").strategy_id)

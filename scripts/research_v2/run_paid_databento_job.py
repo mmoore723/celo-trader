@@ -149,6 +149,12 @@ def build_strategy(strategy_name: str):
         return OpeningRangeBreakout(OpeningRangeBreakoutConfig())
     if strategy_name == "orb_pullback":
         return OpeningRangePullback(OpeningRangePullbackConfig())
+    if strategy_name == "v2_orb_pullback":
+        # This is the exact 0.05% retest rule selected before the later
+        # paid-data holdout.  Keep it separate from the legacy/default ORB
+        # pullback so a small-account contract study cannot accidentally test
+        # a different entry rule than the V2 paper pilot.
+        return OpeningRangePullback(OpeningRangePullbackConfig(retest_tolerance_pct=0.0005))
     if strategy_name == "vwap_pullback":
         return VWAPPullback(VWAPPullbackConfig())
     if strategy_name == "trend_continuation":
@@ -169,7 +175,7 @@ def main() -> None:
     parser.add_argument(
         "--strategy",
         choices=(
-            "orb_breakout", "orb_pullback", "vwap_pullback",
+            "orb_breakout", "orb_pullback", "v2_orb_pullback", "vwap_pullback",
             "trend_continuation", "afternoon_reversal",
             "midday_breakdown",
         ),
