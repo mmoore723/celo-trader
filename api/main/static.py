@@ -29,6 +29,11 @@ def mount_frontend(app: FastAPI, root: Path) -> None:
         _images = _DIST / "images"
         if _images.exists():
             app.mount("/images", StaticFiles(directory=str(_images)), name="images")
+        # Coach Celo lesson recordings are Vite public assets. Mount them before
+        # the SPA catch-all so an <audio> request receives an MP3, not index.html.
+        _audio = _DIST / "audio"
+        if _audio.exists():
+            app.mount("/audio", StaticFiles(directory=str(_audio)), name="audio")
 
         # ── Explicit static file routes BEFORE the catch-all ─────────────────────
         # The catch-all /{full_path:path} would otherwise intercept any file
