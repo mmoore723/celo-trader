@@ -23,6 +23,12 @@ def mount_frontend(app: FastAPI, root: Path) -> None:
     if _DIST.exists():
         # Serve static assets (JS, CSS, images)
         app.mount("/assets", StaticFiles(directory=str(_DIST / "assets")), name="assets")
+        # Public images copied by Vite are emitted under dist/images.  Mount the
+        # directory instead of relying on the SPA catch-all, which returns
+        # index.html and makes a browser display a broken image icon.
+        _images = _DIST / "images"
+        if _images.exists():
+            app.mount("/images", StaticFiles(directory=str(_images)), name="images")
 
         # ── Explicit static file routes BEFORE the catch-all ─────────────────────
         # The catch-all /{full_path:path} would otherwise intercept any file
