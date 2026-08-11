@@ -9,6 +9,8 @@ into TradierClient in broker/tradier_client.py.
 
 import logging
 
+import requests
+
 from config import TRADIER_API_KEY, TRADIER_BASE_URL
 from database import log_event
 from logger_config import _LatencyTimer
