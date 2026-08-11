@@ -332,6 +332,7 @@ const TAG_BADGE: Record<string, string> = {
 
 import { useState, useMemo } from "react";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
+import { OrbCoachLesson } from "../components/playbooks/OrbCoachLesson";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 
@@ -506,7 +507,7 @@ const LOG_CATEGORIES: { key: string; label: string; emoji: string }[] = [
 ];
 
 export function Playbooks() {
-  const [tab,           setTab]           = useState<"playbooks" | "log-guide" | "how-it-works">("playbooks");
+  const [tab,           setTab]           = useState<"coach" | "playbooks" | "log-guide" | "how-it-works">("coach");
   const [search,        setSearch]        = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [openSection,   setOpenSection]   = useState<string | null>("routine");   // first section open by default
@@ -540,16 +541,18 @@ export function Playbooks() {
     <div className="p-4 flex flex-col gap-4">
       {/* Tab bar */}
       <div className="flex gap-2 border-b pb-2" style={{ borderColor: "var(--border)" }}>
-        {(["playbooks", "log-guide", "how-it-works"] as const).map((t) => (
+        {(["coach", "playbooks", "log-guide", "how-it-works"] as const).map((t) => (
           <button
             key={t}
             className={`btn btn-sm ${tab === t ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setTab(t)}
           >
-            {t === "playbooks" ? "Strategy Playbooks" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
+            {t === "coach" ? "Learn ORB" : t === "playbooks" ? "Strategy Playbooks" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
           </button>
         ))}
       </div>
+
+      {tab === "coach" && <OrbCoachLesson />}
 
       {tab === "log-guide" && (
         <div className="flex flex-col gap-4">
