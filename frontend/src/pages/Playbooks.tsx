@@ -12,6 +12,7 @@ interface Strategy {
   stop: string;
   target: string;
   notes: string;
+  evidence?: string;
   tags: string[];
   tuning: { param: string; value: string }[];
 }
@@ -519,6 +520,7 @@ const CURRENT_STRATEGIES: Strategy[] = [
     stop: "The pullback high or low is the line that proves the idea wrong.",
     target: "Paper study measures a 90-minute option result. The exit stays paper-only while evidence grows.",
     notes: "TSLA only. This is the current interactive lesson because it has the clearest paid option-quote evidence.",
+    evidence: "What we know: the unchanged pullback rule was positive in 12 later dates that were not used to choose it. That is promising, not a profit guarantee; it remains paper-only.",
     tags: ["paper", "opening", "pullback"],
     tuning: [{ param: "When", value: "Break before 10:30 ET; confirmation by 10:45 ET" }, { param: "Chop defense", value: "Close + reclaim + VWAP alignment" }],
   },
@@ -529,6 +531,7 @@ const CURRENT_STRATEGIES: Strategy[] = [
     stop: "An ATR-based invalidation sits beyond the entry candle structure.",
     target: "The current paid option study compares a 90-minute ask-entry/bid-exit result.",
     notes: "TSLA only. Its paper pilot is active while the paid context study identifies where it works best.",
+    evidence: "What we know: the all-signal paid study is still running. Trend is not considered validated and will be removed from the pilot if the full later-data result fails.",
     tags: ["paper", "trend", "research"],
     tuning: [{ param: "Chart", value: "5-minute TSLA bars" }, { param: "Evidence", value: "Paid option context study in progress" }],
   },
@@ -788,6 +791,12 @@ export function Playbooks() {
               style={{ background: "var(--muted)", color: "var(--ink-muted)" }}
             >
               💡 {s.notes}
+            </div>
+            <div
+              className="text-xs px-3 py-2 rounded-lg leading-relaxed"
+              style={{ background: "color-mix(in srgb, var(--accent) 8%, var(--surface))", color: "var(--ink-muted)", borderLeft: "3px solid var(--accent)" }}
+            >
+              <strong style={{ color: "var(--ink)" }}>Research status:</strong> {s.evidence ?? "No reviewed evidence status is available."}
             </div>
           </div>
         ))}
