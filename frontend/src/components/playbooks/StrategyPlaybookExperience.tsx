@@ -68,31 +68,37 @@ const GUARDRAILS = [
 ];
 
 function CoachChart({ focus }: { focus: number }) {
-  // A deliberately short replay: beginners can see the entire ORB story in one screen.
-  // Each tuple is x, open, close, high, low (smaller y = higher price).
-  const candles = [[74,288,272,299,263],[112,272,280,289,259],[150,280,266,285,254],[188,266,251,273,243],[226,251,260,269,238],[264,260,246,268,237],[302,246,221,253,211],[340,221,205,230,195],[378,205,214,222,198],[416,214,239,245,206],[454,239,230,248,222],[492,230,203,237,194],[530,203,188,211,178],[568,188,173,196,165],[606,173,181,190,166],[644,181,160,187,151],[682,160,146,168,138]];
-  const focusX = [150, 302, 416, 492, 644][focus];
-  const focusY = [273, 221, 239, 203, 160][focus];
+  // Real TSLA 5-minute bars from a completed V2 opening-range pullback session.
+  // This is a deliberately short replay of the setup window, not a fictional all-day staircase.
+  const bars = [["9:30",308.04,311.40,307.09,311.30,33102],["9:35",311.38,312.39,310.515,312.18,14632],["9:40",312.54,313.25,310.79,313.25,11560],["9:45",313.37,317.14,313.37,316.13,36903],["9:50",315.92,316.54,314.475,315.215,24038],["9:55",315.14,315.14,313.44,313.54,17072],["10:00",313.945,315.24,313.715,314.735,16596],["10:05",314.57,315.955,314.415,315.45,6980],["10:10",314.74,315.465,314.4,315.005,7080],["10:15",314.83,315.39,314.06,315.39,8221],["10:20",315.51,315.775,314.64,314.82,8562],["10:25",314.675,314.9,314.33,314.77,4144],["10:30",314.99,317.21,314.99,316.78,9467],["10:35",316.82,317.66,316.69,317.56,10723],["10:40",317,317.66,316.7,317.66,5605],["10:45",317.48,318.28,317.13,317.76,13101]] as const;
+  const left = 50, right = 710, top = 76, bottom = 290, minPrice = 306.5, maxPrice = 319;
+  const y = (price: number) => bottom - ((price - minPrice) / (maxPrice - minPrice)) * (bottom - top);
+  const x = (index: number) => left + index * ((right - left) / (bars.length - 1));
+  let cumulativePV = 0; let cumulativeVolume = 0;
+  const vwap = bars.map(([, , high, low, close, volume]) => { cumulativePV += ((high + low + close) / 3) * volume; cumulativeVolume += volume; return cumulativePV / cumulativeVolume; });
+  const focusIndex = [1, 3, 5, 15, 15][focus];
+  const focusX = x(focusIndex), focusY = y(bars[focusIndex][4]);
+  const rangeHigh = 313.25, rangeLow = 307.09;
+  const stage = focus === 0 ? "Build the range" : focus === 1 ? "Break beyond the range" : focus === 2 ? "First retest" : focus === 3 ? "Finished confirmation" : "Protect below the retest";
   return <div className="rounded-xl p-3 sm:p-4" style={{ background: "#fff", border: "1px solid #e8edf5" }}>
-    <div className="flex items-center justify-between gap-2 mb-3"><span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · 5-minute candle replay</span><span className="text-[11px] shrink-0" style={{ color: "var(--ink-muted)" }}>A single clean setup</span></div>
-    <svg viewBox="0 0 760 385" className="w-full" role="img" aria-label="TSLA lesson chart showing a three candle opening range, breakout, pullback, confirmation, VWAP and fast trend line">
-      {[62,118,174,230,286].map((y) => <line key={`h-${y}`} x1="40" y1={y} x2="710" y2={y} stroke="#edf1f7" strokeWidth="1" />)}
-      {[40,116,192,268,344,420,496,572,648,710].map((x) => <line key={`v-${x}`} x1={x} y1="62" x2={x} y2="286" stroke="#f4f6f9" strokeWidth="1" />)}
-      <rect x="54" y="250" width="112" height="49" rx="5" fill="#eaf2ff" stroke="#2870f4" strokeWidth="1.5" strokeDasharray="5 4" />
-      <text x="63" y="244" fill="#1768e8" fontSize="12" fontWeight="700">OPENING RANGE · 9:30–9:45</text>
-      <line x1="54" y1="250" x2="166" y2="250" stroke="#2870f4" strokeWidth="1.6"/><text x="172" y="254" fill="#1768e8" fontSize="10">range high</text>
-      <line x1="54" y1="299" x2="166" y2="299" stroke="#2870f4" strokeWidth="1.6"/><text x="172" y="303" fill="#1768e8" fontSize="10">range low</text>
-      <rect x={focusX - 23} y={Math.max(58, focusY - 44)} width="50" height="92" rx="6" fill="#2d73f5" fillOpacity=".05" stroke="#2d73f5" strokeWidth="1.3" strokeDasharray="4 4" />
-      {candles.map(([x, open, close, high, low]) => { const green = close < open; const color = green ? "#19a85b" : "#ea514c"; return <g key={x}><line x1={x + 8} x2={x + 8} y1={high} y2={low} stroke={color} strokeWidth="1.6"/><rect x={x} y={Math.min(open, close)} width="16" height={Math.max(6, Math.abs(open - close))} rx="1.5" fill={color}/></g>; })}
-      <path d="M54 304 C154 300 225 282 302 259 S465 215 690 183" fill="none" stroke="#f7921e" strokeWidth="2" />
-      <path d="M54 314 C160 302 236 277 318 247 S500 191 690 153" fill="none" stroke="#7d49dd" strokeWidth="2" />
-      <line x1="310" y1="181" x2="310" y2="222" stroke="#25354d" strokeWidth="1.2" /><circle cx="310" cy="222" r="4" fill="#25354d"/><rect x="286" y="156" width="49" height="19" rx="4" fill="#182132"/><text x="293" y="169" fill="white" fontSize="10" fontWeight="700">BREAK</text>
-      <rect x="400" y="202" width="58" height="44" rx="4" fill="#eff7ff" stroke="#2870f4" strokeWidth="1.5" strokeDasharray="5 4"/><text x="404" y="196" fill="#2870f4" fontSize="11" fontWeight="700">PULLBACK</text>
-      <line x1="505" y1="118" x2="505" y2="188" stroke="#25354d" strokeWidth="1.2"/><circle cx="505" cy="188" r="4" fill="#25354d"/><rect x="478" y="95" width="55" height="19" rx="4" fill="#182132"/><text x="485" y="108" fill="white" fontSize="10" fontWeight="700">PROOF</text>
-      <text x="652" y="184" fill="#ed8515" fontSize="12" fontWeight="700">VWAP</text><text x="630" y="150" fill="#7650d6" fontSize="12" fontWeight="700">fast EMA</text>
+    <div className="flex items-center justify-between gap-2 mb-3"><span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · 5-minute candle replay</span><span className="text-[11px] shrink-0" style={{ color: "#2368e9" }}>{stage}</span></div>
+    <svg viewBox="0 0 760 382" className="w-full" role="img" aria-label="Real TSLA 5-minute ORB lesson chart showing opening range, break, retest, confirmation and VWAP">
+      {[76,130,183,237,290].map((gridY) => <line key={`h-${gridY}`} x1={left} y1={gridY} x2={right} y2={gridY} stroke="#edf1f7" strokeWidth="1" />)}
+      {[0,3,6,9,12,15].map((index) => <line key={`v-${index}`} x1={x(index)} y1={top} x2={x(index)} y2={bottom} stroke="#f4f6f9" strokeWidth="1" />)}
+      <rect x={x(0) - 16} y={y(rangeHigh)} width={x(2) - x(0) + 32} height={y(rangeLow) - y(rangeHigh)} rx="5" fill="#eaf2ff" stroke="#2870f4" strokeWidth="1.5" strokeDasharray="5 4" />
+      <text x={x(0) - 12} y={y(rangeHigh) - 9} fill="#1768e8" fontSize="12" fontWeight="700">OPENING RANGE · 9:30–9:45</text>
+      <line x1={x(0) - 16} y1={y(rangeHigh)} x2={x(2) + 16} y2={y(rangeHigh)} stroke="#2870f4" strokeWidth="1.4"/><text x={x(2) + 20} y={y(rangeHigh) + 4} fill="#1768e8" fontSize="10">range high</text>
+      <line x1={x(0) - 16} y1={y(rangeLow)} x2={x(2) + 16} y2={y(rangeLow)} stroke="#2870f4" strokeWidth="1.4"/><text x={x(2) + 20} y={y(rangeLow) + 4} fill="#1768e8" fontSize="10">range low</text>
+      <rect x={focusX - 19} y={Math.max(top, focusY - 47)} width="38" height="96" rx="6" fill="#2d73f5" fillOpacity=".05" stroke="#2d73f5" strokeWidth="1.3" strokeDasharray="4 4" />
+      {bars.map(([time, open, high, low, close], index) => { const green = close >= open; const color = green ? "#19a85b" : "#ea514c"; const candleX = x(index); return <g key={time}><line x1={candleX} x2={candleX} y1={y(high)} y2={y(low)} stroke={color} strokeWidth="1.5"/><rect x={candleX - 7} y={Math.min(y(open), y(close))} width="14" height={Math.max(4, Math.abs(y(open) - y(close)))} rx="1.2" fill={color}/></g>; })}
+      <path d={vwap.map((value, index) => `${index === 0 ? "M" : "L"}${x(index)} ${y(value)}`).join(" ")} fill="none" stroke="#f7921e" strokeWidth="2" />
+      <text x="654" y={y(vwap[15]) - 8} fill="#ed8515" fontSize="12" fontWeight="700">VWAP</text>
+      <line x1={x(3)} y1={y(317.14) - 40} x2={x(3)} y2={y(316.13)} stroke="#25354d" strokeWidth="1.2" /><circle cx={x(3)} cy={y(316.13)} r="4" fill="#25354d"/><rect x={x(3)-26} y={y(317.14)-61} width="52" height="19" rx="4" fill="#182132"/><text x={x(3)-19} y={y(317.14)-48} fill="white" fontSize="10" fontWeight="700">BREAK</text>
+      <line x1={x(5)} y1={y(313.44) + 32} x2={x(5)} y2={y(313.44)} stroke="#2870f4" strokeWidth="1.2"/><circle cx={x(5)} cy={y(313.44)} r="4" fill="#2870f4"/><rect x={x(5)-29} y={y(313.44)+35} width="58" height="18" rx="4" fill="#2870f4"/><text x={x(5)-22} y={y(313.44)+48} fill="white" fontSize="10" fontWeight="700">RETEST</text>
+      <line x1={x(15)} y1={y(318.28) - 37} x2={x(15)} y2={y(317.76)} stroke="#25354d" strokeWidth="1.2"/><circle cx={x(15)} cy={y(317.76)} r="4" fill="#25354d"/><rect x={x(15)-28} y={y(318.28)-58} width="56" height="19" rx="4" fill="#182132"/><text x={x(15)-21} y={y(318.28)-45} fill="white" fontSize="10" fontWeight="700">PROOF</text>
       <circle cx={focusX} cy={focusY} r="7" fill="#2870f4" stroke="white" strokeWidth="3"/>
-      {[[54,"9:30"],[166,"9:45"],[310,"10:00"],[455,"10:15"],[600,"10:30"],[682,"10:45"]].map(([x,label]) => <text key={String(x)} x={Number(x)} y="329" fill="#6b778c" fontSize="11">{label}</text>)}
-      <text x="42" y="360" fill="#68768a" fontSize="11">1. Build range</text><text x="220" y="360" fill="#68768a" fontSize="11">2. Break</text><text x="382" y="360" fill="#68768a" fontSize="11">3. Pull back</text><text x="530" y="360" fill="#68768a" fontSize="11">4. Confirm</text>
+      {[0,3,6,9,12,15].map((index) => <text key={bars[index][0]} x={x(index) - 13} y="315" fill="#6b778c" fontSize="11">{bars[index][0]}</text>)}
+      <text x="50" y="353" fill="#68768a" fontSize="11">1. Draw the first 15-minute range</text><text x="273" y="353" fill="#68768a" fontSize="11">2. Wait for break + retest</text><text x="510" y="353" fill="#68768a" fontSize="11">3. Enter only on proof above VWAP</text>
     </svg>
   </div>;
 }
