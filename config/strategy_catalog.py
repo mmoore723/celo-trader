@@ -33,8 +33,11 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         strategy_id="V2_SPY_TREND_CONT",
         tickers=frozenset({"SPY"}),
         setting_key="strategy_spy_trend_cont_v2_enabled",
-        exit_minutes=30,
-        evidence="SPY paid-quote Trend Continuation fixed-hold study",
+        # The 90-minute fixed hold was selected using earlier data, then
+        # passed the untouched later-period check (84 later trades).  This
+        # value is deliberately shared with the execution exit below.
+        exit_minutes=90,
+        evidence="SPY paid-quote Trend Continuation 90-minute fixed-hold study",
     ),
 }
 

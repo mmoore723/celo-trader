@@ -3,7 +3,7 @@
 This is intentionally a separate identity from the earlier TSLA experiment.
 It rebuilds complete five-minute candles from live one-minute bars, matching
 the paid SPY study: a signal at a completed five-minute close is eligible on
-the following minute, and its reviewed exit is 30 minutes after entry.
+the following minute, and its reviewed exit is 90 minutes after entry.
 """
 from __future__ import annotations
 
