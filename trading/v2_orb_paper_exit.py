@@ -22,10 +22,10 @@ V2_EXIT_MINUTES_BY_STRATEGY = {
     # Preserved legacy research identity.  It remains separately gated and
     # is not the reviewed SPY rule below.
     "V2_TREND_CONT": 90,
-    # SPY Trend's paid study selected 90 minutes on the earlier period and
-    # passed on 84 untouched later trades.  Do not substitute a shorter hold:
-    # that would no longer be the strategy that was validated.
-    "V2_SPY_TREND_CONT": 90,
+    # One-open-SPY-position paid study selected 30 minutes earlier and passed
+    # 66 untouched later trades. The 90-minute per-signal diagnostic allowed
+    # overlapping SPY positions, so it is not the executable account policy.
+    "V2_SPY_TREND_CONT": 30,
 }
 
 

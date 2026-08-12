@@ -22,8 +22,8 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
             ),
         )
 
-    def test_spy_trend_exit_matches_its_paid_data_selection(self) -> None:
-        self.assertEqual(90, REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"].exit_minutes)
+    def test_spy_trend_exit_matches_its_one_position_paid_data_selection(self) -> None:
+        self.assertEqual(30, REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"].exit_minutes)
 
 
 if __name__ == "__main__":

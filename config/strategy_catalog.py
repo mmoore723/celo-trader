@@ -33,11 +33,13 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         strategy_id="V2_SPY_TREND_CONT",
         tickers=frozenset({"SPY"}),
         setting_key="strategy_spy_trend_cont_v2_enabled",
-        # The 90-minute fixed hold was selected using earlier data, then
-        # passed the untouched later-period check (84 later trades).  This
-        # value is deliberately shared with the execution exit below.
-        exit_minutes=90,
-        evidence="SPY paid-quote Trend Continuation 90-minute fixed-hold study",
+        # The actual bot permits one SPY position at a time.  Under that same
+        # account constraint, the 30-minute fixed hold was selected on earlier
+        # paid data and passed the untouched later period (66 later trades).
+        # The longer per-signal scan allowed overlapping SPY positions and is
+        # diagnostic only, not the executable policy.
+        exit_minutes=30,
+        evidence="SPY paid-quote Trend Continuation 30-minute one-position fixed-hold study",
     ),
 }
 
