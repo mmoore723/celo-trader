@@ -151,9 +151,9 @@ export function StrategyPlaybookExperience({ activeLessonIds }: { activeLessonId
       </div>
         <aside className="rounded-2xl overflow-hidden flex flex-col" style={{ background: "linear-gradient(160deg, #08234a 0%, #0a2e63 100%)", color: "white", boxShadow: "0 18px 36px rgba(11, 35, 75, .15)" }}>
           <audio ref={audioRef} src={audioSrc} preload="metadata" onPlay={() => setNarrationPlaying(true)} onPause={() => setNarrationPlaying(false)} onEnded={() => { setNarrationPlaying(false); setNarrationProgress(0); }} onError={() => setNarrationError(true)} onTimeUpdate={(event) => { const audio = event.currentTarget; setNarrationProgress(audio.duration ? (audio.currentTime / audio.duration) * 100 : 0); }} />
-          <div className="px-5 pt-5 h-[382px] relative overflow-hidden">
+          <div className="px-5 pt-5 h-[270px] relative overflow-hidden">
             <p className="relative z-10 text-center text-base font-bold">Coach Celo</p><div className="mx-auto mt-1 w-8 h-0.5 rounded-full" style={{ background: "#337dff" }} />
-            <div className="absolute inset-x-0 bottom-0 h-[340px] grid place-items-end" style={{ background: "radial-gradient(circle at 50% 55%, rgba(55,124,255,.22), transparent 54%)" }}><img src={COACH_IMAGE} alt="Coach Celo, your strategy instructor" className="h-[340px] w-auto max-w-[88%] object-contain object-bottom" /></div>
+            <div className="absolute inset-x-0 top-[42px] h-[340px] grid place-items-start" style={{ background: "radial-gradient(circle at 50% 40%, rgba(55,124,255,.22), transparent 54%)" }}><img src={COACH_IMAGE} alt="Coach Celo, your strategy instructor" className="h-[370px] w-auto max-w-[88%] object-contain object-top" /></div>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-4">
             <div className="relative -mt-2 rounded-2xl p-4 text-sm leading-relaxed" style={{ background: "#fff", color: "#273955", boxShadow: "0 8px 18px rgba(0,0,0,.17)" }}><span className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 bg-white" /><div className="relative"><strong>Coach Celo says:</strong> {step.lesson}<p className="mt-2 text-xs leading-relaxed" style={{ color: "#64718a" }}>{step.coach}</p></div></div>
