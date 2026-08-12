@@ -30,7 +30,7 @@ from strategy_router import route_signals
 from strategy_router.indicator_frame import _build_indicator_frame
 from regime_manager import compute_adx_series
 from backtest_exit_sim import ExitSimState, evaluate_bt_exit
-from backtest_exit_sim_simplified import evaluate_bt_exit_simplified
+from backtester.simplified_exit import evaluate_bt_exit_simplified
 from backtester.helpers import _get_iv, _estimate_option_price, _simulated_strike, _SIMULATED_DTE
 from trading.opportunity_scheduler import select as select_opportunity_signal
 

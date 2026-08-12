@@ -50,6 +50,10 @@ research/logs/
 research/work/
 research/.venv*/
 research/assets/
+research/legacy/
+
+# Local operational helper scripts are never run on EC2.
+ops/
 
 # FIX 2026-07-24 part 2: first pass only caught daily_universe.json and
 # user_settings.json — EC2's actual `git status` also showed .bot_heartbeat

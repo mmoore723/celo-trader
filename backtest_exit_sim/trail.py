@@ -20,8 +20,8 @@ from trading.position_manager import (
     _VWAP_5M_BREACH_BARS,
 )
 from trading.mtf_features import compute_adx, ema_stack_aligned
-from backtest_trail_multiplier import dynamic_trail_multiplier
-from backtest_stage1_signals import compute_stage1_signals
+from backtest_exit_sim.trail_multiplier import dynamic_trail_multiplier
+from backtest_exit_sim.stage1_signals import compute_stage1_signals
 
 from backtest_exit_sim.constants import _TRAIL_PROFIT_GATE
 from backtest_exit_sim.risk_instance import _risk

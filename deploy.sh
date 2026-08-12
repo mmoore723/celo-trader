@@ -27,6 +27,7 @@ PRODUCTION_PATHS=(
   api
   auth
   backtester
+  backtest_exit_sim
   broker
   config
   database
@@ -58,6 +59,23 @@ PRODUCTION_PATHS=(
   shadow_ledger.py
 )
 
+# Files retired during the August 2026 repository cleanup.  These used to be
+# tracked production paths, so `git add` alone would not remove them from EC2.
+# Keep this one-time list here until the cleanup has shipped; it makes the
+# deletion explicit and prevents stale duplicate modules from surviving a
+# release.
+RETIRED_PRODUCTION_PATHS=(
+  audit_report_2026-07-28.md
+  backtest_exit_sim_simplified.py
+  backtest_stage1_signals.py
+  backtest_trail_multiplier.py
+  backtester_1min_entry.py
+  build_and_deploy.sh
+  celo_dashboard_ec2.log
+  scripts
+  trading/research
+)
+
 FORBIDDEN_DEPLOY_PATHS='^(research/|research_v2/|scripts/research_v2/|research_data/|data/|reports/|audit_reports/|OPRA-|assets/)'
 
 echo "==> Building React frontend..."
@@ -75,9 +93,18 @@ fi
 echo "==> Staging only production application paths..."
 git add -A -- "${PRODUCTION_PATHS[@]}"
 
+echo "==> Removing retired duplicate and legacy paths..."
+git rm -r --ignore-unmatch -- "${RETIRED_PRODUCTION_PATHS[@]}"
+
 # Do not silently include changes that were already staged before this script
 # started.  Stop and show the exact paths instead of creating a mixed commit.
-STAGED_OUTSIDE_ALLOWLIST="$(git diff --cached --name-only | grep -E "$FORBIDDEN_DEPLOY_PATHS" || true)"
+STAGED_OUTSIDE_ALLOWLIST="$(
+  # Retiring an old research/legacy path is safe and intentional.  Only block
+  # an added or modified local artifact from entering a release.
+  git diff --cached --name-status \
+    | awk '$1 !~ /^D/ {print $NF}' \
+    | grep -E "$FORBIDDEN_DEPLOY_PATHS" || true
+)"
 if [ -n "$STAGED_OUTSIDE_ALLOWLIST" ]; then
   echo "Refusing deployment: research or local artifacts are staged:"
   echo "$STAGED_OUTSIDE_ALLOWLIST"

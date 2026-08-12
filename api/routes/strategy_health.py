@@ -111,7 +111,7 @@ def get_candidate_scorecard(days: int = 30) -> dict:
 @router.get("/paper-research/qqq-opening")
 def get_qqq_opening_research_scorecard() -> dict:
     """Quote-to-quote evidence for the isolated QQQ study; never a trade report."""
-    from trading.research.qqq_opening_continuation import scorecard
+    from trading.observers.qqq_opening_downmove import scorecard
     return {
         "note": "Paper observation only: no order is sent. Option result assumes entry at ask and exit at bid.",
         **scorecard(),

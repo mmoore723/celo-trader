@@ -13,7 +13,7 @@ import logging
 import pandas as pd
 
 from signals import bars_to_df
-from backtester_1min_entry import fetch_1min_entry_data
+from backtester.one_minute_data import fetch_1min_entry_data
 
 logger = logging.getLogger("celo_trader.backtester")
 
@@ -156,4 +156,3 @@ class FetchMixin:
                 "1-min entry fetch failed for %s (%s) — every day uses 5-min entries",
                 self.ticker, ex,
             )
-

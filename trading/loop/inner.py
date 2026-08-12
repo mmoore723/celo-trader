@@ -41,7 +41,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     from trading.entry import _tick
     from trading.diagnostics import _check_ghost_positions
     from trading.controls import _panic_close_all_positions
-    from trading.research.qqq_opening_continuation import maybe_observe as _maybe_observe_qqq
+    from trading.observers.qqq_opening_downmove import maybe_observe as _maybe_observe_qqq
 
     # This user's own state dict — see trading/state.py::get_user_state.
     # FIX: this function used to ALSO mirror every write into the global
