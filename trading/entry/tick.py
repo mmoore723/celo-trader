@@ -88,7 +88,10 @@ from trading.position_manager import _manage_open_position, _close_position
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
 from trading.entry.contract import select_contract, select_reviewed_v2_contract
 from trading.v2_orb_paper_execution import entry_limit_prices, include_reviewed_tickers_when_v2_pilots_enabled
-from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
+from trading.v2_orb_execution_profile import (
+    uses_reviewed_paid_execution_profile,
+    uses_v2_orb_execution_profile,
+)
 from trading.orb_retouch_execution import update_one_minute_orb_retouch
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
@@ -813,7 +816,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                               candidate_observer=_candidate_observer,
                               observation_only_strategies=_observation_only_strategies,
                               observation_resolver=_observation_resolver,
-                              injected_signals=_injected_signals)
+                              injected_signals=_injected_signals,
+                              preserve_reviewed_paid_paper_rules=paper)
     # Main-tier setups remain immediate.  Opportunity setups are paper-only
     # candidates collected and ranked over a causal 15-minute window.
     if _opportunity_enabled:
@@ -876,6 +880,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     entry_rvol  = _top.rvol           # Entry_Volume_Multiplier for audit log
     strategy_id = _top.strategy_id   # "INST_ORB" | "BOS_MSS" | "VWAP_PB" | "FVG"
     _signal_tier = getattr(_top, "tier", "main")
+    _reviewed_paid_paper_profile = paper and uses_reviewed_paid_execution_profile(strategy_id)
     _US["last_signal"]     = direction
     _US["last_strategy_id"]= strategy_id
 
@@ -957,7 +962,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Before entering a CALL, confirm SPY is trading ABOVE its intraday VWAP.
     # If SPY is below VWAP the broad market is in a bearish posture; bullish
     # ── SPY macro VWAP check — flip direction rather than block ──────────────
-    if ticker.upper() in ("SPY", "QQQ"):
+    if not _reviewed_paid_paper_profile and ticker.upper() in ("SPY", "QQQ"):
         try:
             from signals import compute_vwap_bands as _cvwap_self
             _self_vwap_data = _cvwap_self(_df_today_1m)
@@ -992,7 +997,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # For non-SPY/QQQ tickers: use SPY as the macro VWAP proxy.
     # Exception: skip the flip when ticker IS SPY — no circular self-check.
-    if ticker.upper() not in ("SPY", "QQQ"):
+    if not _reviewed_paid_paper_profile and ticker.upper() not in ("SPY", "QQQ"):
         _spy_df    = None
         _spy_vwap  = 0.0
         _spy_close = 0.0
@@ -1294,7 +1299,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         n_contracts              = n_contracts,
         entry_volume_multiplier  = entry_rvol,
     )
-    if not rr_allowed:
+    if not rr_allowed and not _reviewed_paid_paper_profile:
         # evaluate_rr() already emitted the Trade_Blocked_Low_RR structured log
         log_event("INFO", "bar_eval",
                   f"🟡 [{ticker}] Skipping this candle — the reward is less than 1.6× the risk "
@@ -1302,6 +1307,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _rr_val = float(rr_audit.get("rr_ratio", 0)) if isinstance(rr_audit, dict) else 0.0
         _skip_log(ticker, "rr_too_low", strategy=strategy_id, confidence=_top.confidence, rr=_rr_val, direction=direction, tier=_signal_tier)
         return
+    if not rr_allowed and _reviewed_paid_paper_profile:
+        log_event("INFO", "bar_eval",
+                  f"🔬 [{ticker}] Reviewed paid-data paper rule preserves its tested entry; "
+                  f"generic R:R diagnostic={rr_audit.get('R_R_Ratio', 'n/a')} is recorded only.")
 
     # ── Slippage-adjusted profit-target sanity check ──────────────────────────
     # After slippage on both entry and exit, the effective reward must still be
@@ -1332,7 +1341,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # stays False until paper-mode results are reviewed.
     from config import AI_DECISION_SUPPORT_ENABLED, AI_DECISION_SUPPORT_ENABLED_LIVE
     _is_paper_trade = settings.get("paper_trading", True)
-    if AI_DECISION_SUPPORT_ENABLED:
+    if AI_DECISION_SUPPORT_ENABLED and not _reviewed_paid_paper_profile:
         if (not _is_paper_trade) and not AI_DECISION_SUPPORT_ENABLED_LIVE:
             # Live trade but the live-specific switch is off — proceed exactly
             # as if decision support didn't exist, but log why it was skipped.

@@ -43,6 +43,7 @@ from strategy_audit_log import audit_plain_english as _audit_plain_english
 
 from strategy_router.evaluators import ACTIVE_STRATEGIES
 from strategy_router.indicator_frame import _build_indicator_frame
+from trading.v2_orb_execution_profile import uses_reviewed_paid_execution_profile
 
 logger = logging.getLogger("celo_trader.strategy_router")
 
@@ -60,6 +61,7 @@ def route_signals(
     observation_only_strategies: "set[str] | None" = None,
     observation_resolver=None,
     injected_signals: "list[Signal] | None" = None,
+    preserve_reviewed_paid_paper_rules: bool = False,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -166,6 +168,7 @@ def route_signals(
         _gated = [
             sid for sid, _ in evaluators
             if sid in ADX_GATED_STRATEGIES
+            and not (preserve_reviewed_paid_paper_rules and uses_reviewed_paid_execution_profile(sid))
             and (_order_strategies is None or sid in _order_strategies)
         ]
         if _gated:
@@ -241,6 +244,16 @@ def route_signals(
                 )
         except Exception as exc:
             logger.warning("Strategy %s raised: %s", strategy_id, exc, exc_info=True)
+
+    # A reviewed paid-data signal has its complete decision rule tested as one
+    # unit.  In paper mode only, do not substitute this legacy router's
+    # independent ADX/VWAP/grade/MTF/confidence/veto opinions for that rule.
+    # The entry path still enforces global halt, broker data, liquidity, budget,
+    # account sizing and the paper-only mode boundary.
+    if (preserve_reviewed_paid_paper_rules and signals
+            and all(uses_reviewed_paid_execution_profile(signal.strategy_id) for signal in signals)):
+        signals.sort(key=lambda signal: signal.confidence, reverse=True)
+        return signals
 
     # ── Sequential quality-gate pipeline (see router_gates.py) ───────────────
     # `quiet` (added 2026-07-21 for the 1-min backtest integration) is threaded

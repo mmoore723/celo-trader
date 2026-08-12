@@ -17,6 +17,7 @@ from strategies.base import Signal
 
 STRATEGY_ID = "V2_SPY_TREND_CONT"
 VALIDATED_TICKERS = frozenset({"SPY"})
+_emitted_trigger_by_session: dict[tuple[str, str], pd.Timestamp] = {}
 
 
 def _complete_five_minute_bars(
@@ -58,6 +59,14 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
     candidate = TrendContinuation(config).evaluate(bars)
     if candidate is None:
         return None
+    session_key = (ticker.strip().upper(), candidate.timestamp.date().isoformat())
+    trigger = pd.Timestamp(candidate.timestamp)
+    # The live loop runs every minute whereas this premise decides on a closed
+    # five-minute candle.  One candle earns one next-minute attempt, exactly as
+    # the paid markout used; it must not be re-emitted on the following minutes.
+    if _emitted_trigger_by_session.get(session_key) == trigger:
+        return None
+    _emitted_trigger_by_session[session_key] = trigger
     latest = today.iloc[-1]
     return Signal(
         strategy_id=STRATEGY_ID,
