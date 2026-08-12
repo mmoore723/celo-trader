@@ -1,3 +1,0 @@
-RUN FULL AUDIT — 1 month(s), 3 ticker(s): SPY, QQQ, NVDA
-Started 21:55:05 — 2 ticker(s) in parallel (set AUDIT_WORKERS=N to change)
-

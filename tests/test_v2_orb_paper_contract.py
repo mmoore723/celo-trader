@@ -54,6 +54,13 @@ class V2OrbPaperContractTests(unittest.TestCase):
         self.assertIsNone(contract)
         self.assertEqual("illiquid", info["reason"])
 
+    def test_spy_uses_the_same_reviewed_quote_rules_with_its_own_audit_label(self) -> None:
+        expiry = (date.today() + timedelta(days=7)).isoformat()
+        broker = _FakeTradier({expiry: [{"symbol": "SPY_NEAR", "strike": 501, "bid": 2.90, "ask": 3.00}]})
+        contract, info = select_v2_orb_paper_contract(broker, "SPY", "bullish", 500, 500)
+        self.assertEqual("selected", info["reason"])
+        self.assertEqual("v2_spy_trend_paid_near_money_otm_v1", contract["selection_model"])
+
 
 if __name__ == "__main__":
     unittest.main()

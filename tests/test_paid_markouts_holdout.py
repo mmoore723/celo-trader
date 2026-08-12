@@ -1,7 +1,7 @@
 from datetime import date
 import unittest
 
-from scripts.research_v2.summarize_paid_markouts_holdout import assess
+from research.jobs.summarize_paid_markouts_holdout import assess
 
 
 def row(day: str, result: float) -> dict[str, object]:

@@ -23,6 +23,8 @@ _debug_harness_unused/
 # Generated audit cache (regenerable, not source)
 audit_reports/_cache/
 audit_reports/_data_cache/
+audit_reports/*.txt
+audit_reports/*.log
 
 # FIX 2026-07-24: daily_universe.json and user_settings.json were listed
 # above but still showed up as tracked (git ls-files) because they were

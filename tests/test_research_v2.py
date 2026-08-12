@@ -1,43 +1,54 @@
 """Contract tests for the order-free V2 research foundation."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from research_v2.data import load_csv, resample_regular_session
-from research_v2.models import Bar, Side, Signal, Trade
-from research_v2.reconciliation import ReferenceTrade, reconcile
-from research_v2.ledger import load_trade_ledger, write_trade_ledger
-from research_v2.regime import select_regimes
-from research_v2.options import OptionQuote, OptionQuoteBook, load_option_quotes
-from research_v2.option_markouts import (
+from research.engine.data import load_csv, resample_regular_session
+from research.engine.models import Bar, Side, Signal, Trade
+from research.engine.reconciliation import ReferenceTrade, reconcile
+from research.engine.ledger import load_trade_ledger, write_trade_ledger
+from research.engine.regime import select_regimes
+from research.engine.options import OptionQuote, OptionQuoteBook, load_option_quotes
+from research.engine.option_markouts import (
     run_databento_cbbo_markouts, run_databento_cbbo_markouts_for_holds,
     run_databento_cbbo_markouts_for_exit_plans,
+    _active_decision_indexes, _window_matcher,
     run_option_markouts,
 )
-from research_v2.exit_rules import planned_exits
-from research_v2.providers.alpaca import export_alpaca_csv
-from research_v2.providers.databento import normalize_databento_cbbo_files
-from scripts.research_v2.run_paid_databento_job import archive_filenames, batch_file_date, build_strategy, day_bars, manifest_filenames, summarize
-from scripts.research_v2.tune_paid_orb_holds import select_training_winner, segmented_summary
-from scripts.research_v2.compare_paid_orb_exits import RULES, select_training_rule
-from research_v2.simulator import SimulationConfig, Simulator
-from research_v2.strategies import (
+from research.engine.indicators import confirmed_signals, macd_histogram, rsi
+from research.jobs.compare_paid_rsi_macd_filters import select_training_variant
+from research.jobs.run_paid_spy_vwap_momentum_filters import _distinct_touch_episodes
+from research.engine.exit_rules import planned_exits, planned_one_minute_dynamic_exits, planned_noise_momentum_exits
+from research.engine.noise_momentum import boundaries_by_timestamp, noise_momentum_signals
+from research.engine.providers.alpaca import export_alpaca_csv
+from research.engine.providers.databento import normalize_databento_cbbo_files
+from research.engine.orb_retouch import one_minute_first_retouch_signals
+from research.jobs.run_paid_databento_job import archive_filenames, batch_file_date, build_strategy, day_bars, day_bars_with_prior_close, extract_archive_file, manifest_filenames, summarize
+from research.jobs.tune_paid_orb_holds import select_training_winner, segmented_summary
+from research.jobs.tune_paid_strategy_holds import non_overlapping_rows, select_robust_hold
+from research.jobs.select_paid_markout_context import choose_context
+from research.jobs.tune_paid_spy_vwap_contexts import select_three_period_context
+from research.jobs.assess_paid_three_period_holds import assess_three_period_holds
+from research.jobs.compare_paid_orb_exits import RULES, select_training_rule
+from research.jobs.compare_paid_one_minute_orb_call_exits import comparable_markouts
+from research.engine.simulator import SimulationConfig, Simulator
+from research.engine.strategies import (
     AfternoonReversal, AfternoonReversalConfig, FairValueGap, FairValueGapConfig,
     OpeningRangePullback, OpeningRangePullbackConfig,
     OpeningRangeBreakout, OpeningRangeBreakoutConfig,
     TrendContinuation, TrendContinuationConfig,
 )
-from research_v2.strategies import VWAPPullback, VWAPPullbackConfig
-from research_v2.strategies import SuperTrendReversal
-from research_v2.strategies import EMAPullbackRTH, EMAPullbackRTHConfig
-from research_v2.strategies import TurtleSoupRTH, TurtleSoupRTHConfig
-from research_v2.strategies import GapFillRTH, GapFillRTHConfig
-from research_v2.strategies import OpeningMomentumRTH, OpeningMomentumRTHConfig
-from research_v2.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
-from research_v2.validation import ValidationConfig, validate
-from research_v2.walk_forward import run_walk_forward
+from research.engine.strategies import VWAPPullback, VWAPPullbackConfig
+from research.engine.strategies import SuperTrendReversal
+from research.engine.strategies import EMAPullbackRTH, EMAPullbackRTHConfig
+from research.engine.strategies import TurtleSoupRTH, TurtleSoupRTHConfig
+from research.engine.strategies import GapFillRTH, GapFillRTHConfig
+from research.engine.strategies import OpeningMomentumRTH, OpeningMomentumRTHConfig
+from research.engine.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
+from research.engine.validation import ValidationConfig, validate
+from research.engine.walk_forward import run_walk_forward
 from strategy_router import route_signals
 
 
@@ -75,6 +86,174 @@ class _TrailingLong(_OneLong):
 
 
 class ResearchV2Tests(unittest.TestCase):
+    def test_quote_window_matcher_merges_without_expanding_boundaries(self) -> None:
+        start = datetime(2026, 1, 2, 10, 0)
+        matcher = _window_matcher(((start, start + timedelta(minutes=1)),
+                                   (start + timedelta(minutes=1), start + timedelta(minutes=2)),
+                                   (start + timedelta(minutes=5), start + timedelta(minutes=6))))
+        self.assertTrue(matcher(start))
+        self.assertTrue(matcher(start + timedelta(minutes=2)))
+        self.assertFalse(matcher(start + timedelta(minutes=3)))
+        self.assertTrue(matcher(start + timedelta(minutes=5, seconds=30)))
+        self.assertFalse(matcher(start - timedelta(microseconds=1)))
+
+    def test_active_decision_indexes_keeps_exact_entry_window_boundaries(self) -> None:
+        start = datetime(2026, 1, 2, 10, 0)
+        starts = (start, start + timedelta(minutes=1), start + timedelta(minutes=5))
+        self.assertEqual([0], list(_active_decision_indexes(starts, start + timedelta(seconds=30), timedelta(minutes=1))))
+        self.assertEqual([0, 1], list(_active_decision_indexes(starts, start + timedelta(minutes=1), timedelta(minutes=1))))
+        self.assertEqual([], list(_active_decision_indexes(starts, start + timedelta(minutes=2, microseconds=1), timedelta(minutes=1))))
+
+    def test_noise_momentum_uses_only_prior_fourteen_sessions(self) -> None:
+        # Every history session moves exactly 1% from its open by 10:00.  On
+        # session 15, a 2% move at the same clock is outside the causal upper
+        # boundary and may signal long.  No future session participates.
+        history = []
+        for day in range(14):
+            start = datetime(2026, 1, 2, 9, 30) + timedelta(days=day)
+            # Dates need only be distinct for this pure domain test.
+            history.extend((
+                Bar(start, 100, 100, 100, 100),
+                Bar(start.replace(hour=10), 100, 101, 100, 101),
+                Bar(start.replace(hour=15, minute=59), 101, 101, 101, 101),
+            ))
+        current = datetime(2026, 1, 16, 9, 30)
+        today = (
+            Bar(current, 100, 100, 100, 100),
+            Bar(current.replace(hour=10), 100, 103, 100, 103),
+            Bar(current.replace(hour=15, minute=59), 103, 103, 103, 103),
+        )
+        signals = noise_momentum_signals((*history, *today))
+        self.assertEqual(1, len(signals))
+        self.assertEqual(Side.LONG, signals[0].side)
+        self.assertEqual(current.replace(hour=10), signals[0].timestamp)
+        bounds = boundaries_by_timestamp((*history, *today))
+        self.assertLess(bounds[signals[0].timestamp][1], 103)
+
+    def test_noise_momentum_exit_waits_for_next_minute_after_half_hour_close(self) -> None:
+        signal = Signal("NOISE", Side.LONG, _bar(30, 102, 102, 102, 102).timestamp, 102, 99, 105, {})
+        entry = _bar(31, 102, 102, 102, 102)
+        later = _bar(60, 101, 101, 100, 101)
+        plans = planned_noise_momentum_exits(
+            (entry, later, _bar(389, 101, 101, 101, 101)), signal, entry,
+            boundaries={later.timestamp: (99, 101.5)},
+        )
+        self.assertEqual(later.timestamp + timedelta(minutes=1), plans["current_band"].time)
+        self.assertEqual("lost_current_noise_boundary", plans["current_band"].reason)
+
+    def test_one_minute_orb_retouch_requires_breakout_then_later_clean_touch(self) -> None:
+        # The first 15 minutes create a 100/90 range.  A close outside the
+        # range only arms the setup; the following clean touch creates it.
+        opening = tuple(_bar(index, 95, 100, 90, 95) for index in range(15))
+        breakout = _bar(15, 100, 102, 100, 101)
+        retouch = _bar(16, 101, 102, 99.98, 101)
+        signals = one_minute_first_retouch_signals((*opening, breakout, retouch))
+        self.assertEqual(1, len(signals))
+        signal = signals[0]
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual(retouch.timestamp, signal.timestamp)
+        self.assertEqual(100, signal.entry_reference)
+        self.assertEqual(90, signal.stop)
+
+    def test_one_minute_orb_retouch_rejects_a_cross_through_range_level(self) -> None:
+        opening = tuple(_bar(index, 95, 100, 90, 95) for index in range(15))
+        breakout = _bar(15, 100, 102, 100, 101)
+        # It reaches the level but then breaks below its allowed retest zone,
+        # so this is a failed breakout, not a clean long entry.
+        failed_touch = _bar(16, 101, 102, 99.80, 100)
+        self.assertEqual((), one_minute_first_retouch_signals((*opening, breakout, failed_touch)))
+
+    def test_rsi_macd_confirmations_only_use_completed_history(self) -> None:
+        self.assertIsNone(rsi([100.0] * 14))
+        self.assertEqual(100.0, rsi(list(range(1, 17))))
+        self.assertIsNone(macd_histogram(list(range(1, 34))))
+        bars = tuple(_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index)
+                     for index in range(40))
+        class SignalAfterThirty:
+            strategy_id = "FILTER_TEST"
+            def evaluate(self, history):
+                if len(history) != 35:
+                    return None
+                last = history[-1]
+                return Signal(self.strategy_id, Side.LONG, last.timestamp, last.close,
+                              last.close - 1, last.close + 2, {})
+        filtered = confirmed_signals(bars, SignalAfterThirty(), require_rsi=True, require_macd=True)
+        self.assertEqual(1, len(filtered))
+        self.assertIn("rsi_14", filtered[0].features)
+        self.assertIn("macd_histogram_12_26_9", filtered[0].features)
+
+    def test_indicators_retain_causal_history_not_short_rolling_windows(self) -> None:
+        # The long positive history must still influence an immediately later
+        # decline. A 14-value rolling RSI would incorrectly discard it.
+        closes = [100.0 + index for index in range(30)] + [129.0 - index for index in range(8)]
+        self.assertGreater(rsi(closes) or 0, 50.0)
+        # A 12/26/9 MACD is not fully formed until 34 completed closes.
+        self.assertIsNone(macd_histogram(list(range(33))))
+        self.assertIsNotNone(macd_histogram(list(range(34))))
+
+    def test_indicator_warmup_does_not_leak_into_strategy_session(self) -> None:
+        prior = tuple(_bar(-200 + index * 5, 80 + index, 81 + index, 79 + index, 80 + index)
+                      for index in range(40))
+        day = tuple(_bar(index * 5, 120 + index, 121 + index, 119 + index, 120 + index)
+                    for index in range(4))
+        class FirstDayBarSignal:
+            strategy_id = "SESSION_ONLY"
+            def evaluate(self, history):
+                if len(history) != 1:
+                    return None
+                bar = history[-1]
+                return Signal(self.strategy_id, Side.LONG, bar.timestamp, bar.close,
+                              bar.close - 1, bar.close + 2, {})
+        results = confirmed_signals(day, FirstDayBarSignal(), indicator_history=prior, require_rsi=True)
+        self.assertEqual(1, len(results))
+
+    def test_rsi_macd_selector_does_not_choose_on_later_dates(self) -> None:
+        def rows(day: str, result: float, count: int):
+            return [{"signal_time": f"{day}T10:00:00", "return_pct": result}] * count
+        markouts = {
+            "base": rows("2026-01-02", 1, 15) + rows("2026-03-02", 1, 10),
+            "rsi_14_aligned": rows("2026-01-02", 3, 15) + rows("2026-03-02", -1, 10),
+            "macd_12_26_9_aligned": rows("2026-01-02", 2, 15) + rows("2026-03-02", 2, 10),
+            "rsi_and_macd_aligned": rows("2026-01-02", 0.5, 15) + rows("2026-03-02", 4, 10),
+        }
+        selection = select_training_variant(markouts, date(2026, 3, 1))
+        self.assertEqual("rsi_14_aligned", selection["selected_variant"])
+        self.assertFalse(selection["later_data_passed"])
+
+    def test_spy_vwap_three_period_selector_does_not_select_using_june_or_july(self) -> None:
+        def rows(day: str, result: float, count: int, side: str = "long"):
+            return [{"signal_time": f"{day}T11:15:00", "side": side, "return_pct": result}] * count
+        # May picks late-morning long. June rejects it; July's positive result
+        # must not retroactively rescue or change that selected context.
+        data = (rows("2026-05-12", 3, 10) + rows("2026-06-10", -2, 10)
+                + rows("2026-07-10", 5, 10) + rows("2026-05-12", 1, 10, "short"))
+        selection = select_three_period_context(data)
+        self.assertEqual("long_late_morning", selection["selected_context"])
+        self.assertFalse(selection["june_passed"])
+        self.assertFalse(selection["decision"] == "paper_candidate")
+
+    def test_three_period_hold_assessment_selects_on_may_only(self) -> None:
+        def rows(day: str, result: float, count: int):
+            return [{"signal_time": f"{day}T11:00:00", "return_pct": result}] * count
+        marks = {
+            30: rows("2026-05-10", 1, 15) + rows("2026-06-10", 2, 10) + rows("2026-07-10", 2, 10),
+            60: rows("2026-05-10", 3, 15) + rows("2026-06-10", -2, 10) + rows("2026-07-10", 9, 10),
+        }
+        assessment = assess_three_period_holds(marks)
+        self.assertEqual(60, assessment["selected_hold_minutes"])
+        self.assertFalse(assessment["june_passed"])
+        self.assertEqual("reject", assessment["decision"])
+    def test_paid_markout_context_selection_uses_training_before_later(self) -> None:
+        rows = [
+            {"signal_time": "2026-01-02T10:00:00", "side": "long", "return_pct": 4},
+            {"signal_time": "2026-01-03T10:00:00", "side": "long", "return_pct": 3},
+            {"signal_time": "2026-01-04T10:00:00", "side": "short", "return_pct": -2},
+            {"signal_time": "2026-01-05T10:00:00", "side": "short", "return_pct": -1},
+            {"signal_time": "2026-02-02T10:00:00", "side": "long", "return_pct": -3},
+        ]
+        selection = choose_context(rows, date(2026, 2, 1), minimum_training_trades=2)
+        self.assertEqual("long_all_day", selection["selected_context"])
+        self.assertFalse(selection["later_passed"])
     def test_empty_production_strategy_set_never_routes_a_signal(self) -> None:
         # This must return before indicator construction: an empty set is the
         # deliberate "no validated strategy" safety state, unlike None which
@@ -90,6 +269,10 @@ class ResearchV2Tests(unittest.TestCase):
         dataset = type("Dataset", (), {"bars": bars})()
         self.assertEqual(bars, day_bars(dataset, date(2026, 1, 2)))
         self.assertEqual((), day_bars(dataset, date(2026, 1, 3)))
+        prior = _bar(-5, 99, 100, 98, 99)
+        later = _bar(5, 101, 102, 100, 101)
+        gap_dataset = type("Dataset", (), {"bars": (prior, *bars, later)})()
+        self.assertEqual((prior, *bars, later), day_bars_with_prior_close(gap_dataset, date(2026, 1, 2)))
         self.assertEqual(1, summarize(({"return_pct": 2.5},))["measured_signals"])
         manifest = {"files": [{"filename": "manifest.json"},
                               {"filename": "opra-pillar-20260708.cbbo-1m.csv.zst"}]}
@@ -104,12 +287,27 @@ class ResearchV2Tests(unittest.TestCase):
                 handle.writestr("opra-pillar-20260708.cbbo-1m.csv.zst", "quotes")
             self.assertEqual(("opra-pillar-20260708.cbbo-1m.csv.zst",), archive_filenames(archive))
 
+    def test_paid_batch_folder_lists_and_stages_only_daily_cbbo_files(self) -> None:
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "delivery"
+            source.mkdir()
+            filename = "opra-pillar-20260708.cbbo-1m.csv.zst"
+            (source / filename).write_text("paid quotes", encoding="utf-8")
+            (source / "manifest.json").write_text("{}", encoding="utf-8")
+            self.assertEqual((filename,), archive_filenames(source))
+            staged = extract_archive_file(source, filename, Path(directory) / "scratch" / filename)
+            self.assertEqual("paid quotes", staged.read_text(encoding="utf-8"))
+            self.assertTrue((source / filename).is_file())
+
     def test_paid_runner_selects_distinct_orb_hypotheses(self) -> None:
         self.assertEqual("V2_ORB_PULLBACK", build_strategy("orb_pullback").strategy_id)
         self.assertEqual(0.0005, build_strategy("v2_orb_pullback").config.retest_tolerance_pct)
         self.assertEqual("V2_VWAP_PULLBACK", build_strategy("vwap_pullback").strategy_id)
         self.assertEqual("V2_TREND_CONT", build_strategy("trend_continuation").strategy_id)
         self.assertEqual("V2_AFTERNOON_REVERSAL", build_strategy("afternoon_reversal").strategy_id)
+        self.assertEqual("V2_GAP_FILL_RTH", build_strategy("gap_fill_rth").strategy_id)
+        self.assertEqual("V2_TURTLE_SOUP_RTH", build_strategy("turtle_soup_rth").strategy_id)
+        self.assertEqual("V2_EMA_PULLBACK_RTH", build_strategy("ema_pullback_rth").strategy_id)
 
     def test_paid_markout_rejects_invalid_signal_cap(self) -> None:
         with self.assertRaises(ValueError):
@@ -139,6 +337,18 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(30, chosen["selected_hold_minutes"])
         self.assertFalse(chosen["holdout_passed"])
 
+    def test_robust_paid_hold_tuner_requires_typical_gain_on_later_data(self) -> None:
+        def row(day: str, pct: float) -> dict[str, object]:
+            return {"signal_time": f"{day}T10:00:00", "return_pct": pct}
+        marks = {
+            30: [row("2026-01-02", 3.0)] * 15 + [row("2026-07-02", 2.0)] * 10,
+            60: [row("2026-01-02", 5.0)] * 15 + [row("2026-07-02", -1.0)] * 10,
+            90: [row("2026-01-02", 1.0)] * 15 + [row("2026-07-02", 1.0)] * 10,
+        }
+        chosen = select_robust_hold(marks, date(2026, 7, 1))
+        self.assertEqual(60, chosen["selected_hold_minutes"])
+        self.assertFalse(chosen["holdout_passed"])
+
     def test_paid_exit_rule_selector_uses_training_only_then_checks_holdout(self) -> None:
         def row(day: str, pct: float) -> dict[str, object]:
             return {"signal_time": f"{day}T10:00:00", "return_pct": pct}
@@ -151,46 +361,52 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual("vwap_loss_90m", chosen["selected_exit_rule"])
         self.assertFalse(chosen["holdout_passed"])
 
-    def test_orb_pullback_adapter_preserves_structural_stop_and_provenance(self) -> None:
-        """The live paper adapter must hand the V2 stop to the normal exit path."""
-        from unittest.mock import patch
+    def test_one_minute_exit_waits_for_completed_confirmation(self) -> None:
+        bars = tuple(
+            _bar(index, 100 + index, 101 + index, 99 + index, 100 + index)
+            for index in range(20)
+        )
+        signal = Signal("one_minute", Side.LONG, bars[14].timestamp, 114, 98, 130)
+        entry = bars[15]
+        plans = planned_one_minute_dynamic_exits(bars, signal, entry)
+        self.assertIn("hybrid_stop_vwap_ema_90m", plans)
+        self.assertGreaterEqual(plans["fixed_90m"].time, entry.timestamp)
+
+    def test_one_minute_exit_names_non_default_cap_truthfully(self) -> None:
+        bars = tuple(
+            _bar(index, 100 + index, 101 + index, 99 + index, 100 + index)
+            for index in range(20)
+        )
+        signal = Signal("one_minute", Side.LONG, bars[14].timestamp, 114, 98, 130)
+        entry = bars[15]
+        plans = planned_one_minute_dynamic_exits(bars, signal, entry, cap_minutes=60)
+        self.assertIn("fixed_60m", plans)
+        self.assertIn("structural_stop_60m", plans)
+        self.assertEqual(entry.timestamp + timedelta(minutes=60), plans["fixed_60m"].time)
+
+    def test_one_minute_exit_comparison_uses_same_signals_for_each_rule(self) -> None:
+        rows = {
+            "fixed_90m": [{"signal_time": "2026-01-01T10:00:00"}],
+            "structural_stop_90m": [
+                {"signal_time": "2026-01-01T10:00:00"}, {"signal_time": "2026-01-02T10:00:00"},
+            ],
+        }
+        common = comparable_markouts(rows)
+        self.assertEqual([{"signal_time": "2026-01-01T10:00:00"}], common["fixed_90m"])
+        self.assertEqual([{"signal_time": "2026-01-01T10:00:00"}], common["structural_stop_90m"])
+
+    def test_orb_pullback_adapter_does_not_emit_the_retired_delayed_candle_model(self) -> None:
+        """The old five-minute evaluator cannot race the quote-level retouch path."""
         import pandas as pd
-        from research_v2.models import Signal as V2Signal
         from strategies.orb_pullback_v2 import evaluate
 
-        frame = pd.DataFrame({
-            # 15 completed bars ends at 10:40—the first bar the V2 default
-            # ATR rule permits and still inside its 10:45 entry deadline.
-            "time": pd.date_range("2026-01-02 09:30", periods=15, freq="5min"),
-            "open": [100.0] * 15,
-            "high": [101.0] * 15,
-            "low": [99.0] * 15,
-            "close": [100.0] * 15,
-            "volume": [1000] * 15,
-            "rvol": [1.25] * 15,
-        })
-        candidate = V2Signal(
-            "V2_ORB_PULLBACK", Side.LONG, frame["time"].iloc[-1].to_pydatetime(),
-            100.0, 98.0, 104.0, {"trigger": "upward_breakout_first_retest_bounce"},
-        )
-        with patch("strategies.orb_pullback_v2.OpeningRangePullback.evaluate", return_value=candidate):
-            signal = evaluate(frame, "TSLA")
-
-        self.assertIsNotNone(signal)
-        assert signal is not None
-        self.assertEqual("bullish", signal.direction)
-        self.assertEqual(98.0, signal.meta["entry_bar_low"])
-        self.assertIsNone(signal.meta["entry_bar_high"])
-        self.assertEqual(98.0, signal.meta["v2_stop"])
-        self.assertEqual(104.0, signal.meta["v2_target"])
-        self.assertEqual("opening_range_pullback", signal.meta["v2_hypothesis"])
+        self.assertIsNone(evaluate(pd.DataFrame({"time": pd.date_range("2026-01-02 09:30", periods=15, freq="5min")}), "TSLA"))
 
     def test_orb_pullback_adapter_locks_the_paid_selected_retest_tolerance(self) -> None:
         """Paper signals must use the paid study's 0.05% winner, not baseline 0.10%."""
-        from strategies.orb_pullback_v2 import PAID_RETEST_TOLERANCE_PCT, V2_ORB_CONFIG
+        from strategies.orb_pullback_v2 import PAID_RETEST_TOLERANCE_PCT
 
         self.assertEqual(0.0005, PAID_RETEST_TOLERANCE_PCT)
-        self.assertEqual(PAID_RETEST_TOLERANCE_PCT, V2_ORB_CONFIG.retest_tolerance_pct)
 
     def test_orb_pullback_adapter_is_hard_scoped_to_paid_tsla_evidence(self) -> None:
         """A future pilot must not reuse the TSLA-only hypothesis on another ticker."""
@@ -656,6 +872,22 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(1, len(dataset.bars))
         self.assertEqual(datetime(2026, 7, 15, 15, 55, tzinfo=dataset.bars[0].timestamp.tzinfo), dataset.bars[0].timestamp)
 
+    def test_alpaca_one_minute_export_requires_final_one_minute_bar(self) -> None:
+        class _Client:
+            def get_bars(self, symbol, timeframe, limit):
+                return ([
+                    {"t": "2026-07-15T19:59:00Z", "o": 100, "h": 101, "l": 99, "c": 100, "v": 2},
+                    {"t": "2026-07-16T13:30:00Z", "o": 101, "h": 102, "l": 100, "c": 101, "v": 3},
+                ], False)
+        with TemporaryDirectory() as directory:
+            path = export_alpaca_csv(
+                _Client(), "SPY", date(2026, 7, 15), date(2026, 7, 17),
+                Path(directory) / "bars.csv", timeframe="1Min",
+            )
+            dataset = load_csv(path)
+        self.assertEqual(1, len(dataset.bars))
+        self.assertEqual(time(15, 59), dataset.bars[0].timestamp.time())
+
     def test_vwap_pullback_requires_touch_then_reclaim(self) -> None:
         bars = []
         for minute in range(25):
@@ -668,6 +900,18 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertIsNotNone(signal)
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
+
+    def test_paid_vwap_study_counts_one_entry_until_price_revisits_vwap(self) -> None:
+        # Two consecutive long reclaim signals are one pullback episode.  A
+        # later move back through VWAP re-arms the strategy for a new setup.
+        bars = tuple(_bar(index, 100, max(103, close + 1), 98, close)
+                     for index, close in enumerate((100, 101, 102, 99, 101)))
+        def signal(index):
+            bar = bars[index]
+            return Signal("V2_VWAP_PULLBACK", Side.LONG, bar.timestamp, bar.close,
+                          bar.close - 1, bar.close + 2, {})
+        kept = _distinct_touch_episodes(bars, (signal(1), signal(2), signal(4)))
+        self.assertEqual((bars[1].timestamp, bars[4].timestamp), tuple(item.timestamp for item in kept))
 
     def test_ema_pullback_requires_prior_pullback_and_fresh_recross(self) -> None:
         config = EMAPullbackRTHConfig(pullback_ema=3, pullback_limit_ema=6, trend_ema=12,
@@ -701,13 +945,37 @@ class ResearchV2Tests(unittest.TestCase):
         # Sweep prior lows; no same-bar reversal entry is allowed.
         bars.append(_bar(5, 100, 100.5, 98.5, 99.7))
         self.assertIsNone(strategy.evaluate(bars))
-        # Only a close above the sweep bar's high confirms the long.
-        bars.append(_bar(6, 100.6, 101.0, 100.3, 100.8))
+        # The next bar must reclaim the prior low.  It does not need to close
+        # above the entire sweep candle, which would be a different setup.
+        bars.append(_bar(6, 99.0, 100.2, 98.8, 100.0))
         signal = strategy.evaluate(bars)
         self.assertIsNotNone(signal)
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertEqual(98.5, signal.stop)
+
+    def test_turtle_soup_requires_reclaim_of_prior_level_for_each_side(self) -> None:
+        config = TurtleSoupRTHConfig(lookback_bars=5, entry_start=datetime(2026, 1, 2, 9, 30).time())
+        strategy = TurtleSoupRTH(config)
+        bars = []
+        for minute in range(5):
+            price = 100 - minute * 0.1
+            bars.append(_bar(minute, price, price + .2, price - .2, price))
+            self.assertIsNone(strategy.evaluate(bars))
+        # An upside sweep that stays above the old high is not a reversal.
+        bars.append(_bar(5, 100, 102, 99.8, 101.5))
+        self.assertIsNone(strategy.evaluate(bars))
+        bars.append(_bar(6, 101.5, 101.7, 100.1, 100.5))
+        self.assertIsNone(strategy.evaluate(bars))
+        # A new sweep followed by a reclaim below the prior high is a short.
+        bars.append(_bar(7, 100.5, 102.3, 100.1, 101.8))
+        self.assertIsNone(strategy.evaluate(bars))
+        bars.append(_bar(8, 101.8, 102.0, 99.9, 100.0))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.SHORT, signal.side)
+        self.assertEqual(102.3, signal.stop)
 
     def test_gap_fill_requires_gap_cross_and_reclaim(self) -> None:
         strategy = GapFillRTH(GapFillRTHConfig(min_gap_pct=0.002, atr_bars=2, entry_start=datetime(2026, 1, 2, 9, 30).time()))
@@ -723,6 +991,11 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertTrue(signal.features["no_profit_target"])
+        # Staying above the reclaimed level must not create duplicate entries
+        # from the same overnight gap.
+        self.assertIsNone(strategy.evaluate(day_one + day_two + [
+            Bar(datetime(2026, 1, 2, 9, 40), 100.6, 101.2, 100.4, 100.9)
+        ]))
 
     def test_opening_momentum_emits_once_at_opening_window_close(self) -> None:
         strategy = OpeningMomentumRTH(OpeningMomentumRTHConfig(opening_bars=3, min_move_pct=.001, atr_bars=2))
@@ -806,6 +1079,29 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
 
+    def test_confirmed_orb_can_limit_direction(self) -> None:
+        bars = [
+            _bar(0, 100.0, 100.2, 99.8, 100.0), _bar(5, 100.0, 100.3, 99.9, 100.2),
+            _bar(10, 100.2, 100.4, 100.0, 100.3), _bar(15, 100.4, 100.8, 100.4, 100.7),
+        ]
+        signal = OpeningRangeBreakout(OpeningRangeBreakoutConfig(
+            min_range_pct=0.001, allow_long=False,
+        )).evaluate(bars)
+        self.assertIsNone(signal)
+
+    def test_orb_rsi_macd_requires_prior_indicator_history(self) -> None:
+        from research.engine.strategies import ORBRsiMacdShort
+        bars = [_bar(index * 5, 100 - index * .03, 100.03 - index * .03,
+                     99.97 - index * .03, 100 - index * .03) for index in range(30)]
+        self.assertIsNone(ORBRsiMacdShort().evaluate(bars[:4]))
+
+    def test_orb_rsi_macd_active_date_rejects_warmup_signals(self) -> None:
+        from datetime import date
+        from research.engine.strategies import ORBRsiMacdShort, ORBRsiMacdShortConfig
+        bars = [_bar(index * 5, 100 - index * .03, 100.03 - index * .03,
+                     99.97 - index * .03, 100 - index * .03) for index in range(30)]
+        self.assertIsNone(ORBRsiMacdShort(ORBRsiMacdShortConfig(active_date=date(2025, 1, 2))).evaluate(bars))
+
     def test_orb_pullback_emits_once_per_session(self) -> None:
         bars = [
             _bar(0, 100.0, 100.2, 99.8, 100.0), _bar(5, 100.0, 100.3, 99.9, 100.1),
@@ -821,6 +1117,16 @@ class ResearchV2Tests(unittest.TestCase):
                 break
         self.assertIsNotNone(first)
         self.assertIsNone(strategy.evaluate(bars))
+
+    def test_one_position_research_filter_keeps_only_non_overlapping_markouts(self) -> None:
+        rows = [
+            {"entry_time": "2026-01-02T10:00:00", "exit_time": "2026-01-02T11:00:00"},
+            {"entry_time": "2026-01-02T10:30:00", "exit_time": "2026-01-02T11:30:00"},
+            {"entry_time": "2026-01-02T11:00:00", "exit_time": "2026-01-02T12:00:00"},
+        ]
+        kept = non_overlapping_rows(rows)
+        self.assertEqual(["2026-01-02T10:00:00", "2026-01-02T11:00:00"],
+                         [row["entry_time"] for row in kept])
 
 
 if __name__ == "__main__":

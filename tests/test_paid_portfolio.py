@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.research_v2.compare_paid_portfolio import _account_summary, _route
+from research.jobs.compare_paid_portfolio import _account_summary, _route
 
 
 def trade(name: str, entry: str, exit_time: str, ask: float, bid: float) -> dict[str, object]:
