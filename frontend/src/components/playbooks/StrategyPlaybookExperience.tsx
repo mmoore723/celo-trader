@@ -68,25 +68,31 @@ const GUARDRAILS = [
 ];
 
 function CoachChart({ focus }: { focus: number }) {
-  const candles = [[49,340,324,350,315],[70,327,337,347,318],[91,337,313,344,303],[112,314,303,323,295],[133,303,314,322,297],[154,315,325,333,307],[175,325,309,331,297],[196,309,296,316,287],[217,297,285,305,277],[238,285,294,301,277],[259,294,278,299,267],[280,278,260,286,250],[301,260,245,268,236],[322,246,226,255,218],[343,226,234,244,217],[364,234,214,241,205],[385,214,196,222,187],[406,196,206,214,188],[427,206,221,230,199],[448,221,211,230,203],[469,211,196,219,186],[490,196,180,204,172],[511,180,167,190,159],[532,167,154,176,145],[553,154,160,170,145],[574,160,147,168,138],[595,147,136,155,127],[616,136,147,156,128],[637,147,128,154,118],[658,128,116,136,106],[679,116,105,125,96],[700,105,112,121,96],[721,112,99,120,91],[742,99,87,108,78],[763,87,79,95,70],[784,79,85,94,70],[805,85,72,92,63]];
-  const focusX = [174, 350, 620, 683, 783][focus];
-  const focusY = [305, 230, 145, 120, 75][focus];
+  // A deliberately short replay: beginners can see the entire ORB story in one screen.
+  // Each tuple is x, open, close, high, low (smaller y = higher price).
+  const candles = [[74,288,272,299,263],[112,272,280,289,259],[150,280,266,285,254],[188,266,251,273,243],[226,251,260,269,238],[264,260,246,268,237],[302,246,221,253,211],[340,221,205,230,195],[378,205,214,222,198],[416,214,239,245,206],[454,239,230,248,222],[492,230,203,237,194],[530,203,188,211,178],[568,188,173,196,165],[606,173,181,190,166],[644,181,160,187,151],[682,160,146,168,138]];
+  const focusX = [150, 302, 416, 492, 644][focus];
+  const focusY = [273, 221, 239, 203, 160][focus];
   return <div className="rounded-xl p-3 sm:p-4" style={{ background: "#fff", border: "1px solid #e8edf5" }}>
-    <div className="flex items-center justify-between gap-2 mb-2"><span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · 5-minute candle replay</span><span className="text-[11px] shrink-0" style={{ color: "var(--ink-muted)" }}>Illustrated practice chart</span></div>
-    <svg viewBox="0 0 900 432" className="w-full" role="img" aria-label="TSLA lesson chart showing the opening range, a break, a pullback, VWAP, and trend line">
-      {[54,110,166,222,278,334].map((y) => <line key={`h-${y}`} x1="25" y1={y} x2="842" y2={y} stroke="#edf1f7" strokeWidth="1" />)}
-      {[25,126,227,328,429,530,631,732,833].map((x) => <line key={`v-${x}`} x1={x} y1="54" x2={x} y2="334" stroke="#f1f4f8" strokeWidth="1" />)}
-      <><rect x="28" y="250" width="300" height="98" rx="4" fill="#edf5ff" fillOpacity=".7" stroke="#2870f4" strokeWidth="2" strokeDasharray="6 5" /><text x="50" y="270" fill="#1870ec" fontSize="13" fontWeight="700">Opening Range</text></>
-      <rect x={focusX - 28} y={Math.max(50, focusY - 60)} width="72" height="150" rx="6" fill="#2d73f5" fillOpacity=".06" stroke="#2d73f5" strokeWidth="1.5" strokeDasharray="5 5" />
-      {candles.map(([x, open, close, high, low]) => { const green = close < open; const color = green ? "#12a857" : "#e64643"; return <g key={x}><line x1={x + 6} x2={x + 6} y1={high} y2={low} stroke={color} strokeWidth="1.4"/><rect x={x} y={Math.min(open, close)} width="12" height={Math.max(5, Math.abs(open - close))} rx="1.3" fill={color}/></g>; })}
-      <path d="M40 341 C140 340 220 329 304 304 S440 253 528 230 S672 201 817 177" fill="none" stroke="#f7921e" strokeWidth="2" />
-      <path d="M40 350 C155 338 260 312 362 278 S565 208 814 124" fill="none" stroke="#7d49dd" strokeWidth="2" />
-      <line x1="350" y1="54" x2="350" y2="250" stroke="#25354d" strokeWidth="1.2" /><circle cx="350" cy="250" r="4" fill="#25354d"/><rect x="326" y="205" width="49" height="20" rx="4" fill="#182132"/><text x="333" y="219" fill="white" fontSize="11" fontWeight="700">Break</text>
-      <rect x="615" y="185" width="112" height="42" rx="4" fill="#eff7ff" stroke="#2870f4" strokeWidth="1.6" strokeDasharray="5 4"/><text x="740" y="196" fill="#2870f4" fontSize="12" fontWeight="700">Pullback</text><text x="740" y="213" fill="#2870f4" fontSize="12" fontWeight="700">Zone</text>
-      <line x1="684" y1="90" x2="684" y2="137" stroke="#25354d" strokeWidth="1.2"/><circle cx="684" cy="137" r="4" fill="#25354d"/><rect x="655" y="63" width="58" height="20" rx="4" fill="#182132"/><text x="662" y="77" fill="white" fontSize="11" fontWeight="700">Confirm</text>
-      <text x="790" y="174" fill="#ed8515" fontSize="13" fontWeight="700">VWAP</text><text x="790" y="120" fill="#7650d6" fontSize="13" fontWeight="700">Trend line</text>
+    <div className="flex items-center justify-between gap-2 mb-3"><span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · 5-minute candle replay</span><span className="text-[11px] shrink-0" style={{ color: "var(--ink-muted)" }}>A single clean setup</span></div>
+    <svg viewBox="0 0 760 385" className="w-full" role="img" aria-label="TSLA lesson chart showing a three candle opening range, breakout, pullback, confirmation, VWAP and fast trend line">
+      {[62,118,174,230,286].map((y) => <line key={`h-${y}`} x1="40" y1={y} x2="710" y2={y} stroke="#edf1f7" strokeWidth="1" />)}
+      {[40,116,192,268,344,420,496,572,648,710].map((x) => <line key={`v-${x}`} x1={x} y1="62" x2={x} y2="286" stroke="#f4f6f9" strokeWidth="1" />)}
+      <rect x="54" y="250" width="112" height="49" rx="5" fill="#eaf2ff" stroke="#2870f4" strokeWidth="1.5" strokeDasharray="5 4" />
+      <text x="63" y="244" fill="#1768e8" fontSize="12" fontWeight="700">OPENING RANGE · 9:30–9:45</text>
+      <line x1="54" y1="250" x2="166" y2="250" stroke="#2870f4" strokeWidth="1.6"/><text x="172" y="254" fill="#1768e8" fontSize="10">range high</text>
+      <line x1="54" y1="299" x2="166" y2="299" stroke="#2870f4" strokeWidth="1.6"/><text x="172" y="303" fill="#1768e8" fontSize="10">range low</text>
+      <rect x={focusX - 23} y={Math.max(58, focusY - 44)} width="50" height="92" rx="6" fill="#2d73f5" fillOpacity=".05" stroke="#2d73f5" strokeWidth="1.3" strokeDasharray="4 4" />
+      {candles.map(([x, open, close, high, low]) => { const green = close < open; const color = green ? "#19a85b" : "#ea514c"; return <g key={x}><line x1={x + 8} x2={x + 8} y1={high} y2={low} stroke={color} strokeWidth="1.6"/><rect x={x} y={Math.min(open, close)} width="16" height={Math.max(6, Math.abs(open - close))} rx="1.5" fill={color}/></g>; })}
+      <path d="M54 304 C154 300 225 282 302 259 S465 215 690 183" fill="none" stroke="#f7921e" strokeWidth="2" />
+      <path d="M54 314 C160 302 236 277 318 247 S500 191 690 153" fill="none" stroke="#7d49dd" strokeWidth="2" />
+      <line x1="310" y1="181" x2="310" y2="222" stroke="#25354d" strokeWidth="1.2" /><circle cx="310" cy="222" r="4" fill="#25354d"/><rect x="286" y="156" width="49" height="19" rx="4" fill="#182132"/><text x="293" y="169" fill="white" fontSize="10" fontWeight="700">BREAK</text>
+      <rect x="400" y="202" width="58" height="44" rx="4" fill="#eff7ff" stroke="#2870f4" strokeWidth="1.5" strokeDasharray="5 4"/><text x="404" y="196" fill="#2870f4" fontSize="11" fontWeight="700">PULLBACK</text>
+      <line x1="505" y1="118" x2="505" y2="188" stroke="#25354d" strokeWidth="1.2"/><circle cx="505" cy="188" r="4" fill="#25354d"/><rect x="478" y="95" width="55" height="19" rx="4" fill="#182132"/><text x="485" y="108" fill="white" fontSize="10" fontWeight="700">PROOF</text>
+      <text x="652" y="184" fill="#ed8515" fontSize="12" fontWeight="700">VWAP</text><text x="630" y="150" fill="#7650d6" fontSize="12" fontWeight="700">fast EMA</text>
       <circle cx={focusX} cy={focusY} r="7" fill="#2870f4" stroke="white" strokeWidth="3"/>
-      {[[25,"9:30"],[126,"10:00"],[227,"10:30"],[328,"11:00"],[429,"12:00"],[530,"13:00"],[631,"14:00"],[732,"15:00"],[805,"16:00"]].map(([x,label]) => <text key={String(x)} x={Number(x)} y="375" fill="#6b778c" fontSize="11">{label}</text>)}
+      {[[54,"9:30"],[166,"9:45"],[310,"10:00"],[455,"10:15"],[600,"10:30"],[682,"10:45"]].map(([x,label]) => <text key={String(x)} x={Number(x)} y="329" fill="#6b778c" fontSize="11">{label}</text>)}
+      <text x="42" y="360" fill="#68768a" fontSize="11">1. Build range</text><text x="220" y="360" fill="#68768a" fontSize="11">2. Break</text><text x="382" y="360" fill="#68768a" fontSize="11">3. Pull back</text><text x="530" y="360" fill="#68768a" fontSize="11">4. Confirm</text>
     </svg>
   </div>;
 }
@@ -145,9 +151,9 @@ export function StrategyPlaybookExperience({ activeLessonIds }: { activeLessonId
       </div>
         <aside className="rounded-2xl overflow-hidden flex flex-col" style={{ background: "linear-gradient(160deg, #08234a 0%, #0a2e63 100%)", color: "white", boxShadow: "0 18px 36px rgba(11, 35, 75, .15)" }}>
           <audio ref={audioRef} src={audioSrc} preload="metadata" onPlay={() => setNarrationPlaying(true)} onPause={() => setNarrationPlaying(false)} onEnded={() => { setNarrationPlaying(false); setNarrationProgress(0); }} onError={() => setNarrationError(true)} onTimeUpdate={(event) => { const audio = event.currentTarget; setNarrationProgress(audio.duration ? (audio.currentTime / audio.duration) * 100 : 0); }} />
-          <div className="px-5 pt-5 h-[286px] relative overflow-hidden">
+          <div className="px-5 pt-5 h-[382px] relative overflow-hidden">
             <p className="relative z-10 text-center text-base font-bold">Coach Celo</p><div className="mx-auto mt-1 w-8 h-0.5 rounded-full" style={{ background: "#337dff" }} />
-            <div className="absolute inset-x-0 bottom-[-26px] h-[250px] grid place-items-end" style={{ background: "radial-gradient(circle at 50% 55%, rgba(55,124,255,.22), transparent 54%)" }}><img src={COACH_IMAGE} alt="Coach Celo, your strategy instructor" className="h-[252px] w-auto object-contain object-bottom" /></div>
+            <div className="absolute inset-x-0 bottom-0 h-[340px] grid place-items-end" style={{ background: "radial-gradient(circle at 50% 55%, rgba(55,124,255,.22), transparent 54%)" }}><img src={COACH_IMAGE} alt="Coach Celo, your strategy instructor" className="h-[340px] w-auto max-w-[88%] object-contain object-bottom" /></div>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-4">
             <div className="relative -mt-2 rounded-2xl p-4 text-sm leading-relaxed" style={{ background: "#fff", color: "#273955", boxShadow: "0 8px 18px rgba(0,0,0,.17)" }}><span className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 bg-white" /><div className="relative"><strong>Coach Celo says:</strong> {step.lesson}<p className="mt-2 text-xs leading-relaxed" style={{ color: "#64718a" }}>{step.coach}</p></div></div>
