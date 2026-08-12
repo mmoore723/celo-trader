@@ -26,7 +26,7 @@ type Course = {
   steps: LessonStep[];
 };
 
-const COACH_IMAGE = "/images/coach-celo-v4.png?v=1";
+const COACH_IMAGE = "/images/coach-celo-v5.png?v=1";
 
 const COURSES: Course[] = [
   {
