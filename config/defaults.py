@@ -117,9 +117,13 @@ _DEFAULTS = {
     "strategy_instorb_immediate_entry": False,
     # Server-controlled promotion list. Settings switches can never promote an
     # unvalidated strategy; promotion requires a reviewed real-quote result.
-    "validated_strategy_ids": [],
+    # Server-reviewed scope.  A per-strategy toggle is still required before
+    # either paper rule can enter; this list only prevents a browser from
+    # promoting an unrelated strategy by sending an arbitrary ID.
+    "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT"],
     "strategy_orb_pullback_v2_enabled": False,
     "strategy_trend_cont_v2_enabled": False,
+    "strategy_spy_trend_cont_v2_enabled": False,
 
     # Paper-only lower-confidence research cohort. Disabled after the 2026-08-02
     # locked-holdout panel increased activity while worsening aggregate results.

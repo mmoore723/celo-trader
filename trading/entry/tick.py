@@ -86,8 +86,8 @@ from trading.diagnostics import _log_bar_thinking, _check_ghost_positions, _swee
 from trading.position_manager import _manage_open_position, _close_position
 
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
-from trading.entry.contract import select_contract, select_v2_orb_contract
-from trading.v2_orb_paper_execution import entry_limit_prices, include_tsla_when_v2_pilot_enabled
+from trading.entry.contract import select_contract, select_reviewed_v2_contract
+from trading.v2_orb_paper_execution import entry_limit_prices, include_reviewed_tickers_when_v2_pilots_enabled
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 from trading.orb_retouch_execution import update_one_minute_orb_retouch
 from trading.entry.skip_log import _skip_log
@@ -518,18 +518,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     from scanner import TICKER_BLACKLIST as _BL
     watchlist = [t for t in (_US.get("scan_watchlist") or []) if t not in _BL]
 
-    # The V2 research hypothesis is TSLA-only.  Add TSLA to the rotation only
-    # when that exact paper pilot has passed both explicit enable switches.
-    # This is observation coverage, not a bypass of the normal entry gates.
-    _v2_pilot_approved = {
-        str(strategy_id).strip().upper()
-        for strategy_id in settings.get("validated_strategy_ids", [])
-        if str(strategy_id).strip()
-    }
-    _v2_pilot_enabled = bool(settings.get("paper_trading", True) and (
-        (settings.get("strategy_orb_pullback_v2_enabled", False) and "V2_ORB_PULLBACK" in _v2_pilot_approved)
-        or (settings.get("strategy_trend_cont_v2_enabled", False) and "V2_TREND_CONT" in _v2_pilot_approved)
-    ))
+    # The scanner stays broad.  Reviewed strategy/ticker pairs are appended
+    # only when their own paper switch is enabled, so a quieter validated
+    # symbol is not silently skipped by a momentum ranking.
+    from config.strategy_catalog import enabled_reviewed_strategy_ids
+    _enabled_reviewed_pilots = (
+        enabled_reviewed_strategy_ids(settings) if settings.get("paper_trading", True) else set()
+    )
     if not watchlist:
         # Watchlist empty: run an on-demand scan (missed pre-market, or first boot)
         try:
@@ -544,12 +539,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         logger.info("on_demand_scan_done", extra={
             "event": "on_demand_scan_done", "watchlist": watchlist,
         })
-    if _v2_pilot_enabled and "TSLA" not in _BL:
-        _with_tsla = include_tsla_when_v2_pilot_enabled(watchlist, v2_paper_pilot=True)
-        if _with_tsla != watchlist:
-            watchlist = _with_tsla
+    if _enabled_reviewed_pilots:
+        _with_reviewed = include_reviewed_tickers_when_v2_pilots_enabled(
+            watchlist, enabled_strategy_ids=_enabled_reviewed_pilots,
+        )
+        if _with_reviewed != watchlist:
+            watchlist = _with_reviewed
             _US["scan_watchlist"] = watchlist
-            logger.info("v2_paper_pilot_added_tsla_to_watchlist")
+            logger.info("reviewed_pilot_added_validated_tickers_to_watchlist")
 
     # A due research candidate gets one confirmation scan at the end of its
     # 15-minute window.  This is causal: it is a real re-evaluation now, never
@@ -759,6 +756,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("LIQ_SWEEP",   "strategy_liqsweep_enabled"),
             ("V2_ORB_PULLBACK", "strategy_orb_pullback_v2_enabled"),
             ("V2_TREND_CONT", "strategy_trend_cont_v2_enabled"),
+            ("V2_SPY_TREND_CONT", "strategy_spy_trend_cont_v2_enabled"),
         )
         if (sid in _approved_strategy_ids
             and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
@@ -1088,7 +1086,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # task rather than enabling an order path.
     _v2_paid_parity = uses_v2_orb_execution_profile(strategy_id)
     if _v2_paid_parity:
-        contract, _sel_info = select_v2_orb_contract(
+        contract, _sel_info = select_reviewed_v2_contract(
             tradier, ticker, direction, current_price, max_spend,
         )
     else:

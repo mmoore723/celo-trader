@@ -195,14 +195,14 @@ def select_contract(
     return None, info
 
 
-def select_v2_orb_contract(
+def select_reviewed_v2_contract(
     tradier: TradierClient,
     ticker: str,
     direction: str,
     current_price: float,
     max_spend: float,
 ) -> Tuple[Optional[dict], dict]:
-    """Select the locked V2 ORB contract profile for TSLA.
+    """Select the locked paid-quote contract profile for a reviewed ticker.
 
     The paid historical study used the nearest eligible expiry (7--21 DTE),
     the closest *out-of-the-money* strike, a $0.80--$10.00 ask, and a maximum
@@ -215,9 +215,14 @@ def select_v2_orb_contract(
     upstream; that limitation is returned in the audit metadata rather than
     hidden.
     """
+    ticker = ticker.strip().upper()
+    selection_model = (
+        "v2_orb_paid_tsla_near_money_otm_v1"
+        if ticker == "TSLA" else "v2_spy_trend_paid_near_money_otm_v1"
+    )
     info: dict = {
         "reason": "no_chain_data",
-        "selection_model": "v2_orb_paid_tsla_near_money_otm_v1",
+        "selection_model": selection_model,
         "research_eligibility": {
             "min_dte": V2_ORB_PAPER_MIN_DTE,
             "max_dte": V2_ORB_PAPER_MAX_DTE,
@@ -227,7 +232,12 @@ def select_v2_orb_contract(
         },
         "upstream_chain_liquidity_filtered": True,
     }
-    if ticker.strip().upper() != "TSLA":
+    try:
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        reviewed_tickers = set().union(*(rule.tickers for rule in REVIEWED_STRATEGIES.values()))
+    except Exception:
+        reviewed_tickers = {"TSLA"}
+    if ticker not in reviewed_tickers:
         info["reason"] = "unsupported_v2_ticker"
         return None, info
     if direction not in {"bullish", "bearish"} or current_price <= 0 or max_spend <= 0:
@@ -236,9 +246,9 @@ def select_v2_orb_contract(
 
     option_type = "call" if direction == "bullish" else "put"
     try:
-        expirations = tradier.get_expirations("TSLA")
+        expirations = tradier.get_expirations(ticker)
     except Exception as exc:
-        logger.warning("V2 paper get_expirations(TSLA) raised: %s", exc)
+        logger.warning("V2 paper get_expirations(%s) raised: %s", ticker, exc)
         info["reason"] = "api_error"
         return None, info
     if not expirations:
@@ -259,7 +269,7 @@ def select_v2_orb_contract(
         if not V2_ORB_PAPER_MIN_DTE <= dte <= V2_ORB_PAPER_MAX_DTE:
             continue
         try:
-            chain = tradier.get_option_chain("TSLA", str(expiry), option_type)
+            chain = tradier.get_option_chain(ticker, str(expiry), option_type)
         except Exception as exc:
             logger.debug("V2 paper get_option_chain(%s) raised: %s", expiry, exc)
             continue
@@ -309,14 +319,18 @@ def select_v2_orb_contract(
         "selected_spread_pct": round(spread_pct, 6),
     })
     logger.info(
-        "V2 paper contract selected: %s exp=%s strike=%.2f ask=%.2f model=%s",
+        "Reviewed V2 contract selected: %s exp=%s strike=%.2f ask=%.2f model=%s",
         selected["symbol"], selected["expiry"], float(selected["strike"]),
         float(selected["ask"]), info["selection_model"],
     )
     return selected, info
 
 
+# Existing callers retain the historic import name while new reviewed
+# strategies use the neutral name above.
+select_v2_orb_contract = select_reviewed_v2_contract
+
 # Compatibility alias for callers from the original paper-validation rollout.
 # New execution code uses select_v2_orb_contract so its behavior is not
 # accidentally assumed to be paper-only.
-select_v2_orb_paper_contract = select_v2_orb_contract
+select_v2_orb_paper_contract = select_reviewed_v2_contract

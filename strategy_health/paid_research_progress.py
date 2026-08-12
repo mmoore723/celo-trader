@@ -12,7 +12,10 @@ from typing import Any
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TREND_EXIT_REPORT = _PROJECT_ROOT / "reports" / "paid_tsla_trend_exit_holds.json"
+# Research artifacts deliberately live outside the deployable application
+# paths.  The endpoint is read-only and simply reports on a local study when
+# the artifact is present; it never needs the paid archive itself.
+TREND_EXIT_REPORT = _PROJECT_ROOT / "research" / "reports" / "paid_tsla_trend_exit_holds.json"
 
 
 def tsla_trend_exit_progress(report_path: Path = TREND_EXIT_REPORT) -> dict[str, Any]:

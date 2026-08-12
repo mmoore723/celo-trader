@@ -40,6 +40,17 @@ def get_settings(user_id: str | None = None) -> dict:
                 break   # first hit wins
             except (json.JSONDecodeError, OSError):
                 pass
+    # Reviewed promotion is owned by code, not by a browser payload.  Merge
+    # rather than replace so older per-user files containing [] cannot erase
+    # a completed paid-quote review after an upgrade.
+    try:
+        from config.strategy_catalog import reviewed_strategy_ids
+        settings["validated_strategy_ids"] = sorted(
+            set(settings.get("validated_strategy_ids", [])) | reviewed_strategy_ids()
+        )
+    except Exception:
+        # Settings must remain available during an incomplete deploy.
+        pass
     return settings
 
 

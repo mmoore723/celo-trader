@@ -14,6 +14,7 @@ FVG as a confidence modifier (running both double-voted the same move).
 from strategies import (
     inst_orb, bos_mss, vwap_pb, fvg, ifvg, mid_brk, aft_rev, trend_cont,
     chan_break, gap_go, liquidity_sweep, orb_pullback_v2, trend_continuation_v2,
+    spy_trend_continuation_v2,
 )
 
 # ── Active evaluator table (single source of truth) ───────────────────────────
@@ -33,6 +34,7 @@ ACTIVE_STRATEGIES = [
     ("LIQ_SWEEP",  liquidity_sweep.evaluate),  # 2026-07-31 — see strategies/liquidity_sweep.py.
     ("V2_ORB_PULLBACK", orb_pullback_v2.evaluate),
     ("V2_TREND_CONT", trend_continuation_v2.evaluate),
+    ("V2_SPY_TREND_CONT", spy_trend_continuation_v2.evaluate),
                                        # Fades a swept swing high/low. ON by default per
                                        # explicit user decision — zero backtest history.
     # ("CHAN_BREAK", chan_break.evaluate),  # disabled — 0% WR in backtests, needs fix

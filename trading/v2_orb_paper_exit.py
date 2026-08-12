@@ -17,6 +17,13 @@ from datetime import datetime
 
 
 V2_ORB_PAID_MARKOUT_MINUTES = 90
+V2_EXIT_MINUTES_BY_STRATEGY = {
+    "V2_ORB_PULLBACK": 90,
+    # Preserved legacy research identity.  It remains separately gated and
+    # is not the reviewed SPY rule below.
+    "V2_TREND_CONT": 90,
+    "V2_SPY_TREND_CONT": 30,
+}
 
 
 def evaluate_v2_orb_paper_exit(
@@ -27,11 +34,18 @@ def evaluate_v2_orb_paper_exit(
     """Return the exact research markout timing, with a safe bad-state exit."""
     if entry_time is None:
         return True, "v2_orb_missing_entry_time_safety"
+    normalized_strategy_id = str(strategy_id or "").strip().upper()
+    hold_minutes = V2_EXIT_MINUTES_BY_STRATEGY.get(
+        normalized_strategy_id, V2_ORB_PAID_MARKOUT_MINUTES,
+    )
     elapsed_minutes = (now - entry_time).total_seconds() / 60
-    if elapsed_minutes >= V2_ORB_PAID_MARKOUT_MINUTES:
-        prefix = "v2_trend" if str(strategy_id or "").strip().upper() == "V2_TREND_CONT" else "v2_orb"
+    if elapsed_minutes >= hold_minutes:
+        prefix = {
+            "V2_TREND_CONT": "v2_trend",
+            "V2_SPY_TREND_CONT": "v2_spy_trend",
+        }.get(normalized_strategy_id, "v2_orb")
         return True, (
-            f"{prefix}_paid_markout_{V2_ORB_PAID_MARKOUT_MINUTES}m "
+            f"{prefix}_paid_markout_{hold_minutes}m "
             f"(held={elapsed_minutes:.1f}min)"
         )
     return False, "hold"

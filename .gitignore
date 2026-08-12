@@ -38,6 +38,17 @@ ec2_log/
 # but are not source code and may carry provider redistribution restrictions.
 research_data/
 
+# Research workspace: paid vendor downloads, intermediate datasets, and study
+# outputs are local evidence, not application source.  Keep this entire class
+# of material out of Git and out of production deployments.
+research/archives/
+research/data/
+research/reports/
+research/logs/
+research/work/
+research/.venv*/
+research/assets/
+
 # FIX 2026-07-24 part 2: first pass only caught daily_universe.json and
 # user_settings.json — EC2's actual `git status` also showed .bot_heartbeat
 # and tax_sweep.json as modified (same already-tracked-before-ignored

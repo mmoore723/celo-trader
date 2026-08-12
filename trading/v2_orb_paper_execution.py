@@ -29,15 +29,17 @@ def exit_limit_prices(*, bid: float, midpoint: float, v2_paper_pilot: bool) -> t
     return round(midpoint, 2), round(bid, 2)
 
 
-def include_tsla_when_v2_pilot_enabled(watchlist: list[str], *, v2_paper_pilot: bool) -> list[str]:
-    """Return a de-duplicated watchlist, adding TSLA only for an enabled pilot.
+def include_reviewed_tickers_when_v2_pilots_enabled(
+    watchlist: list[str], *, enabled_strategy_ids: set[str],
+) -> list[str]:
+    """Append only the validated symbols needed by enabled reviewed pilots."""
+    from config.strategy_catalog import ensure_reviewed_ticker_coverage
+    return ensure_reviewed_ticker_coverage(watchlist, enabled_strategy_ids)
 
-    The V2 hypothesis is TSLA-only.  A daily momentum scan may omit TSLA, so
-    without this small rule an explicitly enabled pilot could collect zero
-    evidence simply because it was never evaluated.  Disabled pilots preserve
-    the scanner's exact existing list.
-    """
-    result = list(dict.fromkeys(str(ticker).upper().strip() for ticker in watchlist if str(ticker).strip()))
-    if v2_paper_pilot and "TSLA" not in result:
-        result.append("TSLA")
-    return result
+
+def include_tsla_when_v2_pilot_enabled(watchlist: list[str], *, v2_paper_pilot: bool) -> list[str]:
+    """Backward-compatible TSLA helper retained for the original pilot tests."""
+    return include_reviewed_tickers_when_v2_pilots_enabled(
+        watchlist,
+        enabled_strategy_ids={"V2_ORB_PULLBACK"} if v2_paper_pilot else set(),
+    )

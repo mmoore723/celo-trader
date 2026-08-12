@@ -11,8 +11,7 @@ from typing import MutableMapping
 
 import pandas as pd
 
-from research_v2.models import Bar, Side
-from research_v2.orb_retouch import first_close_confirmed_breakout, retouch_status
+from strategies.market_structure import Bar, Side, first_close_confirmed_breakout, retouch_status
 from strategies.base import Signal
 
 

@@ -31,6 +31,7 @@ const STRAT_NAMES: Record<string, string> = {
   LIQ_SWEEP: "Liquidity Sweep Reversal",
   CHAN_BREAK: "Channel Breakout",
   V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
+  V2_SPY_TREND_CONT: "SPY Trend Continuation",
 };
 
 function ActivePilotCard({ settings }: { settings?: AppSettings }) {

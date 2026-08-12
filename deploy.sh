@@ -1,5 +1,5 @@
 #!/bin/bash
-# deploy.sh — Build React frontend and push everything to EC2.
+# deploy.sh — Build and deploy only the production application to EC2.
 # Run from your Mac: ./deploy.sh
 #
 # Requirements: ssh key configured, EC2_HOST set below.
@@ -18,19 +18,76 @@ EC2_DIR="/opt/celo_trader"
 # script's bare ssh failed in the same terminal session.
 EC2_KEY="${CELO_KEY_FILE:-$HOME/.ssh/celo_trader.pem}"
 
+# The local research workspace is intentionally excluded from application
+# releases.  Paid data, archives, generated reports, and tuning runs belong
+# in /research and must never be staged by this command. Keep this list
+# explicit: adding a new production area is a conscious deployment decision.
+PRODUCTION_PATHS=(
+  ai_reasoning
+  api
+  auth
+  backtester
+  broker
+  config
+  database
+  frontend
+  logger_config
+  regime_manager
+  risk
+  router_gates
+  scanner
+  signal_journal
+  signals
+  strategy_audit_log
+  strategy_health
+  strategy_router
+  tax_engine
+  trading
+  strategies
+  .gitignore
+  alerts.py
+  broker_health.py
+  candlestick_patterns.py
+  celo-dashboard.service
+  deploy.sh
+  market_data.py
+  nginx_celotrader.conf
+  playbook_examples.json
+  requirements.txt
+  shadow_ledger.py
+)
+
+FORBIDDEN_DEPLOY_PATHS='^(research/|research_v2/|scripts/research_v2/|research_data/|data/|reports/|audit_reports/|OPRA-|assets/)'
+
 echo "==> Building React frontend..."
 cd frontend
 npm run build
 cd ..
 
-echo "==> Committing + pushing to GitHub..."
-# Never sweep local diagnostics, reports, or secrets into a deployment commit.
-# Stage tracked source plus the deliberately versioned frontend build output.
-git add -u
-git add frontend/dist
-if [ -n "$(git ls-files --others --exclude-standard)" ]; then
-  echo "==> Leaving untracked local files out of the deployment commit."
+if [ -n "$(git diff --cached --name-only)" ]; then
+  echo "Refusing deployment: you already have staged files."
+  echo "Review or unstage them first, then run ./deploy.sh again."
+  git diff --cached --name-only
+  exit 1
 fi
+
+echo "==> Staging only production application paths..."
+git add -A -- "${PRODUCTION_PATHS[@]}"
+
+# Do not silently include changes that were already staged before this script
+# started.  Stop and show the exact paths instead of creating a mixed commit.
+STAGED_OUTSIDE_ALLOWLIST="$(git diff --cached --name-only | grep -E "$FORBIDDEN_DEPLOY_PATHS" || true)"
+if [ -n "$STAGED_OUTSIDE_ALLOWLIST" ]; then
+  echo "Refusing deployment: research or local artifacts are staged:"
+  echo "$STAGED_OUTSIDE_ALLOWLIST"
+  echo "Unstage those paths, then run ./deploy.sh again."
+  exit 1
+fi
+
+echo "==> Production files included in this release:"
+git diff --cached --name-only
+
+echo "==> Committing + pushing to GitHub..."
 git commit -m "chore: frontend build $(date +%Y-%m-%d)" --allow-empty
 git push origin main
 

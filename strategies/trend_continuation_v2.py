@@ -5,8 +5,7 @@ from datetime import time
 
 import pandas as pd
 
-from research_v2.models import Bar
-from research_v2.strategies import TrendContinuation, TrendContinuationConfig
+from strategies.market_structure import Bar, TrendContinuation, TrendContinuationConfig
 from strategies.base import Signal
 
 STRATEGY_ID = "V2_TREND_CONT"

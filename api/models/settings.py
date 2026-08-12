@@ -38,6 +38,7 @@ class Settings(BaseModel):
     # execution profile still refuses live mode in trading/entry/tick.py.
     strategy_orb_pullback_v2_enabled: bool = False
     strategy_trend_cont_v2_enabled: bool = False
+    strategy_spy_trend_cont_v2_enabled: bool = False
     opportunity_tier_enabled: bool = False  # paper-only lower-confidence research cohort
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────
