@@ -278,7 +278,9 @@ def run_databento_cbbo_markouts_for_labeled_signals(
     if not decisions:
         return {label: () for label in labels}
 
-    def stream_quotes():
+    def stream_quotes(windows: Iterable[tuple[datetime, datetime]]):
+        """Decode only quotes that can affect one labeled hypothesis."""
+        active_windows = tuple(windows)
         for raw_path in paths:
             with _open_csv(raw_path) as handle:
                 import csv
@@ -286,18 +288,27 @@ def run_databento_cbbo_markouts_for_labeled_signals(
                 if not reader.fieldnames or "symbol" not in reader.fieldnames:
                     raise ValueError(f"{raw_path.name} is missing Databento symbol column")
                 for row in reader:
+                    try:
+                        timestamp = datetime.fromisoformat(_timestamp(row))
+                    except ValueError:
+                        if _parse_symbol(row.get("symbol"), expected_underlying) is not None and _prices(row) is not None:
+                            raise
+                        continue
+                    if not any(start <= timestamp <= end for start, end in active_windows):
+                        continue
                     identity = _parse_symbol(row.get("symbol"), expected_underlying)
                     prices = _prices(row)
                     if identity is None or prices is None:
                         continue
                     option_symbol, quote_underlying, expiry_text, strike, option_type = identity
                     yield OptionQuote(
-                        datetime.fromisoformat(_timestamp(row)), option_symbol, quote_underlying,
+                        timestamp, option_symbol, quote_underlying,
                         datetime.fromisoformat(expiry_text).date(), strike, option_type, *prices,
                     )
 
     candidates: list[dict[str, OptionQuote]] = [{} for _ in decisions]
-    for quote in stream_quotes():
+    entry_windows = tuple((entry_bar.timestamp, entry_bar.timestamp + max_wait) for _, _, entry_bar, _ in decisions)
+    for quote in stream_quotes(entry_windows):
         for index, (_, _, entry_bar, option_type) in enumerate(decisions):
             if quote.option_type != option_type:
                 continue
@@ -322,16 +333,21 @@ def run_databento_cbbo_markouts_for_labeled_signals(
         )) if usable else None)
 
     exits: list[OptionQuote | None] = [None] * len(decisions)
-    for quote in stream_quotes():
-        for index, (_, _, entry_bar, _) in enumerate(decisions):
-            chosen = selected[index]
-            if chosen is None or quote.option_symbol != chosen.option_symbol:
-                continue
-            exit_target = entry_bar.timestamp + timedelta(minutes=hold_minutes)
-            if not exit_target <= quote.timestamp <= exit_target + max_wait:
-                continue
-            if exits[index] is None or quote.timestamp < exits[index].timestamp:
-                exits[index] = quote
+    exit_targets: dict[str, list[tuple[int, datetime, datetime]]] = {}
+    for index, (_, _, entry_bar, _) in enumerate(decisions):
+        chosen = selected[index]
+        if chosen is None:
+            continue
+        target = entry_bar.timestamp + timedelta(minutes=hold_minutes)
+        exit_targets.setdefault(chosen.option_symbol, []).append((index, target, target + max_wait))
+    exit_windows = tuple((target, deadline) for targets in exit_targets.values()
+                         for _, target, deadline in targets)
+    for quote in stream_quotes(exit_windows):
+        for index, target, deadline in exit_targets.get(quote.option_symbol, ()):
+            if target <= quote.timestamp <= deadline:
+                prior = exits[index]
+                if prior is None or quote.timestamp < prior.timestamp:
+                    exits[index] = quote
 
     output: dict[str, list[OptionMarkout]] = {label: [] for label in labels}
     for index, (label, signal, entry_bar, _) in enumerate(decisions):
@@ -391,7 +407,9 @@ def run_databento_cbbo_markouts_for_exit_plans(
     if not decisions:
         return {label: () for label in labels}
 
-    def stream_quotes():
+    def stream_quotes(windows: Iterable[tuple[datetime, datetime]]):
+        """Decode only the entry and plan-exit windows for this session."""
+        active_windows = tuple(windows)
         for raw_path in paths:
             with _open_csv(raw_path) as handle:
                 import csv
@@ -399,18 +417,27 @@ def run_databento_cbbo_markouts_for_exit_plans(
                 if not reader.fieldnames or "symbol" not in reader.fieldnames:
                     raise ValueError(f"{raw_path.name} is missing Databento symbol column")
                 for row in reader:
+                    try:
+                        timestamp = datetime.fromisoformat(_timestamp(row))
+                    except ValueError:
+                        if _parse_symbol(row.get("symbol"), expected_underlying) is not None and _prices(row) is not None:
+                            raise
+                        continue
+                    if not any(start <= timestamp <= end for start, end in active_windows):
+                        continue
                     identity = _parse_symbol(row.get("symbol"), expected_underlying)
                     prices = _prices(row)
                     if identity is None or prices is None:
                         continue
                     option_symbol, quote_underlying, expiry_text, strike, option_type = identity
                     yield OptionQuote(
-                        datetime.fromisoformat(_timestamp(row)), option_symbol, quote_underlying,
+                        timestamp, option_symbol, quote_underlying,
                         datetime.fromisoformat(expiry_text).date(), strike, option_type, *prices,
                     )
 
     candidates: list[dict[str, OptionQuote]] = [{} for _ in decisions]
-    for quote in stream_quotes():
+    entry_windows = tuple((entry_bar.timestamp, entry_bar.timestamp + max_wait) for _, entry_bar, _ in decisions)
+    for quote in stream_quotes(entry_windows):
         for index, (_, entry_bar, option_type) in enumerate(decisions):
             if quote.option_type != option_type or not entry_bar.timestamp <= quote.timestamp <= entry_bar.timestamp + max_wait:
                 continue
@@ -433,17 +460,22 @@ def run_databento_cbbo_markouts_for_exit_plans(
         )) if usable else None)
 
     exits: dict[str, list[OptionQuote | None]] = {label: [None] * len(decisions) for label in labels}
-    for quote in stream_quotes():
-        for index, (signal, _, _) in enumerate(decisions):
-            chosen = selected[index]
-            if chosen is None or quote.option_symbol != chosen.option_symbol:
-                continue
-            for label in labels:
-                target = exit_plans[label][signal.timestamp].time
-                if target <= quote.timestamp <= target + max_wait:
-                    prior = exits[label][index]
-                    if prior is None or quote.timestamp < prior.timestamp:
-                        exits[label][index] = quote
+    exit_targets: dict[str, list[tuple[str, int, datetime, datetime]]] = {}
+    for index, (signal, _, _) in enumerate(decisions):
+        chosen = selected[index]
+        if chosen is None:
+            continue
+        for label in labels:
+            target = exit_plans[label][signal.timestamp].time
+            exit_targets.setdefault(chosen.option_symbol, []).append((label, index, target, target + max_wait))
+    exit_windows = tuple((target, deadline) for targets in exit_targets.values()
+                         for _, _, target, deadline in targets)
+    for quote in stream_quotes(exit_windows):
+        for label, index, target, deadline in exit_targets.get(quote.option_symbol, ()):
+            if target <= quote.timestamp <= deadline:
+                prior = exits[label][index]
+                if prior is None or quote.timestamp < prior.timestamp:
+                    exits[label][index] = quote
 
     result_sets: dict[str, tuple[OptionMarkout, ...]] = {}
     for label in labels:
