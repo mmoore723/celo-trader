@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from config.strategy_catalog import ensure_reviewed_ticker_coverage, is_allowed_ticker
+from config.strategy_catalog import (
+    REVIEWED_STRATEGIES, ensure_reviewed_ticker_coverage, is_allowed_ticker,
+)
 
 
 class ReviewedStrategyCatalogTests(unittest.TestCase):
@@ -19,6 +21,9 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
                 ["QQQ", "NVDA"], {"V2_SPY_TREND_CONT", "V2_ORB_PULLBACK"},
             ),
         )
+
+    def test_spy_trend_exit_matches_its_paid_data_selection(self) -> None:
+        self.assertEqual(90, REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"].exit_minutes)
 
 
 if __name__ == "__main__":

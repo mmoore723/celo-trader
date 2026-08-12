@@ -42,6 +42,7 @@ PRODUCTION_PATHS=(
   strategy_health
   strategy_router
   tax_engine
+  tests
   trading
   strategies
   .gitignore
