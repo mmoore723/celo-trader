@@ -137,7 +137,15 @@ def run_databento_cbbo_markouts_for_holds(
         # archive study instead of being counted as an ordinary quiet day.
         return {hold: () for hold in holds}
 
-    def stream_quotes():
+    def stream_quotes(windows: Iterable[tuple[datetime, datetime]]):
+        """Yield usable quotes only inside a requested time window.
+
+        A daily CBBO file contains the entire option chain.  Most rows cannot
+        possibly affect a signal whose entry/exit evidence is one minute wide.
+        Parse the inexpensive timestamp first and avoid regex-parsing option
+        symbols, prices, and expiration for every irrelevant contract.
+        """
+        active_windows = tuple(windows)
         for raw_path in paths:
             with _open_csv(raw_path) as handle:
                 import csv
@@ -145,20 +153,32 @@ def run_databento_cbbo_markouts_for_holds(
                 if not reader.fieldnames or "symbol" not in reader.fieldnames:
                     raise ValueError(f"{raw_path.name} is missing Databento symbol column")
                 for row in reader:
+                    try:
+                        timestamp = datetime.fromisoformat(_timestamp(row))
+                    except ValueError:
+                        # Keep the prior importer behavior: malformed times on
+                        # unrelated/broken rows are ignored, but a malformed
+                        # otherwise-usable target quote is still reported.
+                        if _parse_symbol(row.get("symbol"), expected_underlying) is not None and _prices(row) is not None:
+                            raise
+                        continue
+                    if not any(start <= timestamp <= end for start, end in active_windows):
+                        continue
                     identity = _parse_symbol(row.get("symbol"), expected_underlying)
                     prices = _prices(row)
                     if identity is None or prices is None:
                         continue
                     option_symbol, quote_underlying, expiry_text, strike, option_type = identity
                     yield OptionQuote(
-                        datetime.fromisoformat(_timestamp(row)), option_symbol, quote_underlying,
+                        timestamp, option_symbol, quote_underlying,
                         datetime.fromisoformat(expiry_text).date(), strike, option_type, *prices,
                     )
 
     # For each signal and contract retain only the earliest executable entry
     # quote. This is at most one compact object per candidate contract.
     candidates: list[dict[str, OptionQuote]] = [{} for _ in decisions]
-    for quote in stream_quotes():
+    entry_windows = tuple((entry_bar.timestamp, entry_bar.timestamp + max_wait) for _, entry_bar, _ in decisions)
+    for quote in stream_quotes(entry_windows):
         for index, (_, entry_bar, option_type) in enumerate(decisions):
             if quote.option_type != option_type:
                 continue
@@ -185,16 +205,21 @@ def run_databento_cbbo_markouts_for_holds(
     exits: dict[int, list[OptionQuote | None]] = {
         hold: [None] * len(decisions) for hold in holds
     }
-    for quote in stream_quotes():
-        for index, (_, entry_bar, _) in enumerate(decisions):
-            chosen = selected[index]
-            if chosen is None or quote.option_symbol != chosen.option_symbol:
-                continue
-            for hold in holds:
-                exit_target = entry_bar.timestamp + timedelta(minutes=hold)
-                if not exit_target <= quote.timestamp <= exit_target + max_wait:
-                    continue
-                if exits[hold][index] is None or quote.timestamp < exits[hold][index].timestamp:
+    exit_targets: dict[str, list[tuple[int, int, datetime, datetime]]] = {}
+    for index, (_, entry_bar, _) in enumerate(decisions):
+        chosen = selected[index]
+        if chosen is None:
+            continue
+        for hold in holds:
+            target = entry_bar.timestamp + timedelta(minutes=hold)
+            exit_targets.setdefault(chosen.option_symbol, []).append((index, hold, target, target + max_wait))
+    exit_windows = tuple((target, deadline) for targets in exit_targets.values()
+                         for _, _, target, deadline in targets)
+    for quote in stream_quotes(exit_windows):
+        for index, hold, target, deadline in exit_targets.get(quote.option_symbol, ()):
+            if target <= quote.timestamp <= deadline:
+                prior = exits[hold][index]
+                if prior is None or quote.timestamp < prior.timestamp:
                     exits[hold][index] = quote
 
     result_sets: dict[int, tuple[OptionMarkout, ...]] = {}
