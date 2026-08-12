@@ -40,7 +40,11 @@ def strategy_signals(bars: Iterable[Bar], strategy: Strategy) -> tuple[Signal, .
     signals: list[Signal] = []
     for bar in bars:
         history.append(bar)
-        signal = strategy.evaluate(tuple(history))
+        # Strategies receive a completed, append-only history and are typed as
+        # read-only consumers.  Passing that list directly avoids allocating
+        # an ever-larger identical tuple for every five-minute candle during
+        # three-year hypothesis screens.
+        signal = strategy.evaluate(history)
         if signal is not None:
             signals.append(signal)
     return tuple(signals)
