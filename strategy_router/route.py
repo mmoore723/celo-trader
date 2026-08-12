@@ -59,6 +59,7 @@ def route_signals(
     candidate_observer=None,
     observation_only_strategies: "set[str] | None" = None,
     observation_resolver=None,
+    injected_signals: "list[Signal] | None" = None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -183,7 +184,23 @@ def route_signals(
     if not evaluators:
         return []
 
-    signals: list[Signal] = []
+    # Some strategies need one additional live input that a completed OHLCV
+    # bar cannot express (the V2 ORB's actual quote-level retouch).  Those
+    # signals are produced by the entry loop but deliberately enter here so
+    # they still receive the same router gates, ranking, annotations, and
+    # paper-only observation behavior as every normal evaluator.
+    signals: list[Signal] = list(injected_signals or [])
+    for sig in tuple(signals):
+        if candidate_observer is not None:
+            try:
+                candidate_observer(ticker, sig, _underlying_price)
+            except Exception:
+                logger.warning("candidate observer failed (non-fatal)", exc_info=True)
+        if not quiet:
+            try:
+                _emit_signal_annotation(ticker, sig, today)
+            except Exception:
+                pass
     for strategy_id, fn in evaluators:
         try:
             sig = fn(today, ticker=ticker)   # ticker= needed for cooldown tracking

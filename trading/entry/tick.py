@@ -89,6 +89,7 @@ from trading.position_manager import _manage_open_position, _close_position
 from trading.entry.contract import select_contract, select_v2_orb_contract
 from trading.v2_orb_paper_execution import entry_limit_prices, include_tsla_when_v2_pilot_enabled
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
+from trading.orb_retouch_execution import update_one_minute_orb_retouch
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
 from trading.opportunity_scheduler import due_ticker as _opportunity_due_ticker
@@ -781,11 +782,40 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # The router receives approved strategies for potential entry plus a
     # separate paper-only observation set.  Observed-only signals cannot make
     # it back out of the router, so they cannot reach contract selection.
+    # The new V2 ORB is not a later-candle-close entry.  A completed one-minute
+    # breakout arms it; the first live quote that revisits the broken 09:45
+    # boundary injects the signal here.  It still travels through *all* normal
+    # router gates and paper-order safeguards below.
+    _live_underlying_quote = None
+    _injected_signals = []
+    if "V2_ORB_PULLBACK" in _enabled:
+        try:
+            _live_underlying_quote = alpaca.get_latest_quote(ticker)
+            _quote_price = None
+            if _live_underlying_quote:
+                _ask, _bid = float(_live_underlying_quote.get("ap", 0) or 0), float(_live_underlying_quote.get("bp", 0) or 0)
+                if _ask > 0 and _bid > 0:
+                    _quote_price = (_ask + _bid) / 2.0
+            _orb_state = _US.setdefault("v2_orb_retouch", {})
+            _orb_signal, _orb_status = update_one_minute_orb_retouch(
+                _orb_state, _df_today_1m, ticker=ticker,
+                quote_price=_quote_price, now=_now_et(),
+            )
+            _US["v2_orb_retouch_status"] = _orb_status
+            if _orb_signal is not None:
+                _injected_signals.append(_orb_signal)
+                log_event("INFO", "bar_eval",
+                          f"🔵 [{ticker}] V2 ORB first retouch reached at ${_quote_price:.2f}; "
+                          "sending the paper setup through normal risk gates.")
+        except Exception as _orb_retouch_ex:
+            logger.warning("V2 ORB retouch evaluator failed (non-fatal): %s", _orb_retouch_ex)
+
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled,
                               alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
                               candidate_observer=_candidate_observer,
                               observation_only_strategies=_observation_only_strategies,
-                              observation_resolver=_observation_resolver)
+                              observation_resolver=_observation_resolver,
+                              injected_signals=_injected_signals)
     # Main-tier setups remain immediate.  Opportunity setups are paper-only
     # candidates collected and ranked over a causal 15-minute window.
     if _opportunity_enabled:
@@ -1035,7 +1065,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 )
 
     # ── Current price ─────────────────────────────────────────────────────────
-    quote = alpaca.get_latest_quote(ticker)
+    quote = _live_underlying_quote or alpaca.get_latest_quote(ticker)
     if not quote:
         return
     current_price = (quote.get("ap", 0) + quote.get("bp", 0)) / 2
