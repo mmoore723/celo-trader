@@ -39,6 +39,7 @@ class Settings(BaseModel):
     strategy_orb_pullback_v2_enabled: bool = False
     strategy_trend_cont_v2_enabled: bool = False
     strategy_spy_trend_cont_v2_enabled: bool = False
+    strategy_tsla_noise_momentum_v2_enabled: bool = True
     opportunity_tier_enabled: bool = False  # paper-only lower-confidence research cohort
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────

@@ -11,8 +11,10 @@ from __future__ import annotations
 V2_ORB_STRATEGY_ID = "V2_ORB_PULLBACK"
 V2_TREND_STRATEGY_ID = "V2_TREND_CONT"
 V2_SPY_TREND_STRATEGY_ID = "V2_SPY_TREND_CONT"
+V2_TSLA_NOISE_MOMENTUM_STRATEGY_ID = "V2_TSLA_NOISE_MOMENTUM"
 V2_PAPER_STRATEGY_IDS = frozenset({
     V2_ORB_STRATEGY_ID, V2_TREND_STRATEGY_ID, V2_SPY_TREND_STRATEGY_ID,
+    V2_TSLA_NOISE_MOMENTUM_STRATEGY_ID,
 })
 # Only these IDs have a predeclared paid-quote contract rule *and* passed an
 # untouched later-data check.  ``V2_TREND_CONT`` remains in the broader V2
@@ -20,6 +22,7 @@ V2_PAPER_STRATEGY_IDS = frozenset({
 REVIEWED_PAID_STRATEGY_IDS = frozenset({
     V2_ORB_STRATEGY_ID,
     V2_SPY_TREND_STRATEGY_ID,
+    V2_TSLA_NOISE_MOMENTUM_STRATEGY_ID,
 })
 
 

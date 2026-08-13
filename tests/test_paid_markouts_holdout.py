@@ -2,6 +2,7 @@ from datetime import date
 import unittest
 
 from research.jobs.summarize_paid_markouts_holdout import assess
+from research.jobs.assess_paid_noise_momentum import assess as assess_noise
 
 
 def row(day: str, result: float) -> dict[str, object]:
@@ -23,6 +24,21 @@ class PaidMarkoutHoldoutTests(unittest.TestCase):
     def test_too_few_later_results_rejects(self):
         rows = [row("2026-03-01", 20)] * 9
         self.assertEqual("reject", assess(rows, date(2026, 3, 1))["decision"])
+
+    def test_noise_screen_requires_both_periods_to_clear_stricter_gate(self):
+        rows = ([row("2026-02-02", 3 if item % 3 else -1) for item in range(1, 41)]
+                + [row("2026-03-02", 2 if item % 3 else -1) for item in range(1, 21)])
+        report = assess_noise(rows, holdout_start=date(2026, 3, 1))
+        self.assertEqual("catalog_review_candidate", report["decision"])
+        self.assertTrue(report["training_passed"])
+        self.assertTrue(report["holdout_passed"])
+
+    def test_noise_screen_rejects_positive_average_when_median_is_negative(self):
+        rows = ([row("2026-02-02", 2) for _ in range(40)]
+                + [row("2026-03-02", -1 if item < 12 else 15) for item in range(1, 21)])
+        report = assess_noise(rows, holdout_start=date(2026, 3, 1))
+        self.assertEqual("reject", report["decision"])
+        self.assertIn("median return is not positive", report["holdout_reasons"])
 
 
 if __name__ == "__main__":

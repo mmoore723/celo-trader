@@ -120,10 +120,13 @@ _DEFAULTS = {
     # Server-reviewed scope.  A per-strategy toggle is still required before
     # either paper rule can enter; this list only prevents a browser from
     # promoting an unrelated strategy by sending an arbitrary ID.
-    "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT"],
+    "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT", "V2_TSLA_NOISE_MOMENTUM"],
     "strategy_orb_pullback_v2_enabled": False,
     "strategy_trend_cont_v2_enabled": False,
     "strategy_spy_trend_cont_v2_enabled": False,
+    # Reviewed TSLA paid-quote strategy. Enabled by default for paper accounts;
+    # individual users can still turn it off from Settings.
+    "strategy_tsla_noise_momentum_v2_enabled": True,
 
     # Paper-only lower-confidence research cohort. Disabled after the 2026-08-02
     # locked-holdout panel increased activity while worsening aggregate results.

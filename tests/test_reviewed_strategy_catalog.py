@@ -13,6 +13,8 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         self.assertFalse(is_allowed_ticker("V2_ORB_PULLBACK", "SPY"))
         self.assertTrue(is_allowed_ticker("V2_SPY_TREND_CONT", "SPY"))
         self.assertFalse(is_allowed_ticker("V2_SPY_TREND_CONT", "QQQ"))
+        self.assertTrue(is_allowed_ticker("V2_TSLA_NOISE_MOMENTUM", "TSLA"))
+        self.assertFalse(is_allowed_ticker("V2_TSLA_NOISE_MOMENTUM", "SPY"))
 
     def test_scanner_list_is_preserved_and_covered_for_enabled_rules(self) -> None:
         self.assertEqual(
@@ -24,6 +26,9 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
 
     def test_spy_trend_exit_matches_its_one_position_paid_data_selection(self) -> None:
         self.assertEqual(30, REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"].exit_minutes)
+
+    def test_tsla_noise_exit_is_a_clock_time_not_a_duration(self) -> None:
+        self.assertIsNone(REVIEWED_STRATEGIES["V2_TSLA_NOISE_MOMENTUM"].exit_minutes)
 
 
 if __name__ == "__main__":

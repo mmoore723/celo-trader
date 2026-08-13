@@ -17,7 +17,7 @@ class ReviewedStrategy:
     strategy_id: str
     tickers: frozenset[str]
     setting_key: str
-    exit_minutes: int
+    exit_minutes: int | None
     evidence: str
 
 
@@ -40,6 +40,13 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         # diagnostic only, not the executable policy.
         exit_minutes=30,
         evidence="SPY paid-quote Trend Continuation 30-minute one-position fixed-hold study",
+    ),
+    "V2_TSLA_NOISE_MOMENTUM": ReviewedStrategy(
+        strategy_id="V2_TSLA_NOISE_MOMENTUM",
+        tickers=frozenset({"TSLA"}),
+        setting_key="strategy_tsla_noise_momentum_v2_enabled",
+        exit_minutes=None,
+        evidence="TSLA paid-quote 14-prior-session adaptive noise-boundary momentum study; next-minute entry and 15:59 ET same-contract exit",
     ),
 }
 

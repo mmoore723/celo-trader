@@ -32,6 +32,18 @@ class V2OrbPaperExitTests(unittest.TestCase):
         self.assertTrue(should_exit)
         self.assertIn("v2_spy_trend_paid_markout_30m", reason)
 
+    def test_tsla_noise_rule_uses_same_session_preclose_not_a_fake_duration(self) -> None:
+        entry = datetime(2026, 8, 3, 10, 0)
+        self.assertEqual(
+            (False, "hold"),
+            evaluate_v2_orb_paper_exit(entry, datetime(2026, 8, 3, 15, 58, 59), "V2_TSLA_NOISE_MOMENTUM"),
+        )
+        should_exit, reason = evaluate_v2_orb_paper_exit(
+            entry, datetime(2026, 8, 3, 15, 59), "V2_TSLA_NOISE_MOMENTUM",
+        )
+        self.assertTrue(should_exit)
+        self.assertIn("v2_tsla_noise_paid_markout_preclose_1559", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,6 +27,7 @@ V2_EXIT_MINUTES_BY_STRATEGY = {
     # overlapping SPY positions, so it is not the executable account policy.
     "V2_SPY_TREND_CONT": 30,
 }
+V2_PRE_CLOSE_EXIT_STRATEGY_IDS = frozenset({"V2_TSLA_NOISE_MOMENTUM"})
 
 
 def evaluate_v2_orb_paper_exit(
@@ -38,6 +39,14 @@ def evaluate_v2_orb_paper_exit(
     if entry_time is None:
         return True, "v2_orb_missing_entry_time_safety"
     normalized_strategy_id = str(strategy_id or "").strip().upper()
+    if normalized_strategy_id in V2_PRE_CLOSE_EXIT_STRATEGY_IDS:
+        # The paid TSLA study did not select a duration. It selected the
+        # same-session 15:59 ET option bid, so preserve that actual rule.
+        cutoff = entry_time.replace(hour=15, minute=59, second=0, microsecond=0)
+        if now >= cutoff:
+            elapsed_minutes = (now - entry_time).total_seconds() / 60
+            return True, f"v2_tsla_noise_paid_markout_preclose_1559 (held={elapsed_minutes:.1f}min)"
+        return False, "hold"
     hold_minutes = V2_EXIT_MINUTES_BY_STRATEGY.get(
         normalized_strategy_id, V2_ORB_PAID_MARKOUT_MINUTES,
     )

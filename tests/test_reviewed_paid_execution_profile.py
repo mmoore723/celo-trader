@@ -20,6 +20,7 @@ class ReviewedPaidExecutionProfileTests(unittest.TestCase):
     def test_only_reviewed_ids_receive_locked_execution_profile(self) -> None:
         self.assertTrue(uses_reviewed_paid_execution_profile("V2_ORB_PULLBACK"))
         self.assertTrue(uses_reviewed_paid_execution_profile("v2_spy_trend_cont"))
+        self.assertTrue(uses_reviewed_paid_execution_profile("V2_TSLA_NOISE_MOMENTUM"))
         self.assertFalse(uses_reviewed_paid_execution_profile("V2_TREND_CONT"))
         self.assertFalse(uses_reviewed_paid_execution_profile("MID_BRK"))
 

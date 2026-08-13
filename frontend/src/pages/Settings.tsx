@@ -44,6 +44,7 @@ const DEFAULT: AppSettings = {
   strategy_orb_pullback_v2_enabled: false,
   strategy_trend_cont_v2_enabled: false,
   strategy_spy_trend_cont_v2_enabled: false,
+  strategy_tsla_noise_momentum_v2_enabled: false,
   opportunity_tier_enabled: false,
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
@@ -418,6 +419,16 @@ export function Settings() {
           />
           <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
             A completed 5-minute SPY trend break enters on the next minute. The reviewed paper exit is 30 minutes after entry using the same option contract.
+          </p>
+        </div>
+        <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+          <Toggle
+            label="TSLA Adaptive Momentum V2"
+            checked={form.strategy_tsla_noise_momentum_v2_enabled ?? false}
+            onChange={(v) => set("strategy_tsla_noise_momentum_v2_enabled", v)}
+          />
+          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
+            Uses 14 completed prior one-minute sessions to define the normal price zone. A new completed half-hour close outside that zone enters on the next minute; the reviewed exit is 3:59 PM ET.
           </p>
         </div>
         <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>

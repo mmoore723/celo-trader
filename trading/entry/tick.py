@@ -93,6 +93,7 @@ from trading.v2_orb_execution_profile import (
     uses_v2_orb_execution_profile,
 )
 from trading.orb_retouch_execution import update_one_minute_orb_retouch
+from trading.noise_momentum_execution import update_noise_momentum
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
 from trading.opportunity_scheduler import due_ticker as _opportunity_due_ticker
@@ -760,6 +761,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("V2_ORB_PULLBACK", "strategy_orb_pullback_v2_enabled"),
             ("V2_TREND_CONT", "strategy_trend_cont_v2_enabled"),
             ("V2_SPY_TREND_CONT", "strategy_spy_trend_cont_v2_enabled"),
+            ("V2_TSLA_NOISE_MOMENTUM", "strategy_tsla_noise_momentum_v2_enabled"),
         )
         if (sid in _approved_strategy_ids
             and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
@@ -810,6 +812,39 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                           "sending the paper setup through normal risk gates.")
         except Exception as _orb_retouch_ex:
             logger.warning("V2 ORB retouch evaluator failed (non-fatal): %s", _orb_retouch_ex)
+
+    # The reviewed TSLA noise-momentum definition needs 14 completed prior
+    # one-minute sessions. Fetch/cache that history once per trading day; if
+    # the broker cannot supply the exact resolution, the strategy declines to
+    # trade rather than replacing the validated input with 5-minute bars.
+    if "V2_TSLA_NOISE_MOMENTUM" in _enabled and ticker.upper() == "TSLA":
+        try:
+            _noise_cache = _US.setdefault("v2_tsla_noise_momentum", {})
+            _noise_day = _now_et().date().isoformat()
+            if _noise_cache.get("history_day") != _noise_day:
+                _history_bars, _history_error = alpaca.get_bars(ticker, "1Min", limit=6500)
+                if _history_error or not _history_bars:
+                    _noise_cache["history_1m"] = pd.DataFrame()
+                    _noise_cache["history_error"] = True
+                else:
+                    _noise_cache["history_1m"] = bars_to_df(_history_bars)
+                    _noise_cache["history_error"] = False
+                _noise_cache["history_day"] = _noise_day
+            _noise_signal, _noise_status = update_noise_momentum(
+                _noise_cache.setdefault("signal_state", {}),
+                _noise_cache.get("history_1m", pd.DataFrame()), _df_today_1m,
+                ticker=ticker, now=_now_et(),
+            )
+            _US["v2_tsla_noise_momentum_status"] = _noise_status
+            if _noise_signal is not None:
+                _injected_signals.append(_noise_signal)
+                log_event(
+                    "INFO", "bar_eval",
+                    f"🔵 [{ticker}] TSLA adaptive noise-boundary transition confirmed; "
+                    "sending the exact reviewed setup through normal account safeguards.",
+                )
+        except Exception as _noise_ex:
+            logger.warning("TSLA noise-momentum evaluator failed closed (non-fatal): %s", _noise_ex)
 
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled,
                               alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
@@ -899,7 +934,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # After any loss, price must move at least 0.3% from the exit level before
     # the same ticker can be re-entered.  Ensures the failed setup has resolved.
     _loss_ctx = (_US.get("ticker_loss_context") or {}).get(ticker)
-    if _loss_ctx:
+    if _loss_ctx and not _reviewed_paid_paper_profile:
         _last_exit_price = _loss_ctx.get("exit_price", 0)
         try:
             _current_price   = float(df5["close"].iloc[-1])
@@ -1279,7 +1314,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _c_mid = (_c_bid + _c_ask) / 2 if _c_bid > 0 else _c_ask
     if _c_mid > 0:
         _spread_pct = (_c_ask - _c_bid) / _c_mid
-        _spread_max = float(settings.get("spread_gate_pct", 8)) / 100.0   # was stale 25, fixed 2026-07-22
+        # Reviewed quote studies own their entry liquidity definition (8% of
+        # mid) so a later display/settings preference cannot silently turn the
+        # historical strategy into a different one. The contract selector has
+        # already applied this same threshold before reaching this point.
+        _spread_max = 0.08 if _reviewed_paid_paper_profile else float(settings.get("spread_gate_pct", 8)) / 100.0
         if _spread_pct > _spread_max:   # user-configurable via Settings → Trade Parameters
             log_event("INFO", "bar_eval",
                       f"🟡 [{ticker}] Skipping — bid-ask spread is "
