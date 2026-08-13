@@ -534,6 +534,17 @@ const CURRENT_STRATEGIES: Strategy[] = [
     tags: ["paper", "trend", "research"],
     tuning: [{ param: "Chart", value: "5-minute TSLA bars" }, { param: "Evidence", value: "Paid option context study in progress" }],
   },
+  {
+    id: "v2_momentum", name: "TSLA Adaptive Momentum V2", emoji: "⚡",
+    setup: "At each half-hour check, compare TSLA's move with its normal move at that same time across the prior 14 sessions.",
+    entry: "A completed one-minute bar outside the adaptive zone signals direction; entry uses the next minute's actual option ask.",
+    stop: "The tested version uses account-wide protections and closes the same selected contract at 3:59 PM ET.",
+    target: "This version has a fixed 3:59 PM bid exit so the entry rule can be measured consistently.",
+    notes: "TSLA only. It ignores movement inside its adaptive normal-movement zone instead of treating every candle as a signal.",
+    evidence: "What we know: 85 earlier trades and 20 later trades passed the predeclared average, median, and profit-factor checks using paid option ask/bid prices.",
+    tags: ["paper", "momentum", "1-minute"],
+    tuning: [{ param: "Baseline", value: "Exactly 14 prior TSLA sessions" }, { param: "Timing", value: "10:00–15:30 ET at half-hour checks" }, { param: "Exit", value: "Same contract's 3:59 PM bid" }],
+  },
 ];
 
 export function Playbooks() {
@@ -544,7 +555,8 @@ export function Playbooks() {
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get });
   const currentStrategies = useMemo(() => CURRENT_STRATEGIES.filter((strategy) => (
     strategy.id === "v2_orb" ? Boolean(settings?.strategy_orb_pullback_v2_enabled) :
-    Boolean(settings?.strategy_trend_cont_v2_enabled)
+    strategy.id === "v2_trend" ? Boolean(settings?.strategy_trend_cont_v2_enabled) :
+    Boolean(settings?.strategy_tsla_noise_momentum_v2_enabled)
   )), [settings]);
 
   // Filter + group log codes by search query and active category
@@ -700,7 +712,7 @@ export function Playbooks() {
           No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
         </div>
       ) : (
-        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend")} />
+        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_momentum")} />
       )}
 
       <details className="card p-4">

@@ -3,7 +3,7 @@ import {
   Check, ChevronLeft, ChevronRight, Play, ShieldCheck,
 } from "lucide-react";
 
-type LessonId = "v2_orb" | "v2_trend";
+type LessonId = "v2_orb" | "v2_trend" | "v2_momentum";
 type LessonStep = {
   label: string;
   title: string;
@@ -57,6 +57,20 @@ const COURSES: Course[] = [
       { label: "Protect", title: "Risk rules protect the trend trade too", lesson: "An invalidation level sits beyond the signal structure. If that structure breaks, the trend idea did not hold and the bot follows its exit rules.", coach: "A trade needs an exit before it needs hope. The same account safety rules protect every strategy.", watch: ["The structural invalidation", "VWAP and momentum changes", "The account-wide guardrails"], avoid: "Do not add contracts because a trend trade is losing.", chartFocus: 4, question: "What should happen when trend structure fails?", answers: ["Exit by the rule", "Double the position", "Move the stop farther away"], correct: 0, answerWhy: "Right. We limit the loss when the original trend story stops being true." },
     ],
   },
+  {
+    id: "v2_momentum",
+    title: "TSLA Adaptive Momentum",
+    shortTitle: "Adaptive Momentum",
+    level: "Intermediate · 5 steps",
+    description: "A one-minute rule that acts only when TSLA moves farther than its own recent normal movement for that time of day.",
+    steps: [
+      { label: "Baseline", title: "Learn what normal looks like", lesson: "Before judging today, the bot looks at the same time of day across the previous 14 TSLA sessions. That creates a changing normal-movement zone, not one fixed number.", coach: "Morning and afternoon do not move the same way. The zone adjusts to the clock so normal noise does not look like momentum.", watch: ["Exactly 14 completed earlier sessions", "The same clock time on each session", "A zone that changes through the day"], avoid: "If fewer than 14 prior sessions are available, the bot does not guess or fill in missing history. It waits.", chartFocus: 0, question: "Why does the zone change during the day?", answers: ["TSLA's normal movement changes by time of day", "To make more trades", "Because the option price chooses it"], correct: 0, answerWhy: "Right. The comparison is fair only when 10:30 is compared with earlier 10:30 behavior, and so on." },
+      { label: "Zone", title: "See the adaptive noise zone", lesson: "The blue band is the normal movement area built from those 14 earlier sessions. Movement inside it is ordinary enough that the bot does nothing.", coach: "A lot of candles look exciting. If they stay in the blue zone, they have not earned a trade.", watch: ["Price still inside the blue zone", "The upper and lower adaptive boundaries", "A completed one-minute candle"], avoid: "Do not trade every green or red candle. Inside the zone is the bot's no-trade area.", chartFocus: 1, question: "Price remains inside the adaptive zone. What should the bot do?", answers: ["Wait", "Buy a call", "Buy a put"], correct: 0, answerWhy: "Right. Inside the zone is normal movement, not enough evidence for momentum." },
+      { label: "Signal", title: "An unusual move earns attention", lesson: "At the half-hour checks, a completed one-minute candle that moves outside the adaptive zone creates a direction signal. Above the upper boundary is bullish; below the lower boundary is bearish.", coach: "The boundary is the evidence. We are not predicting the next candle before it finishes.", watch: ["A finished one-minute candle", "Close outside the correct boundary", "Direction matches the boundary crossed"], avoid: "A temporary spike can disappear before the minute ends. The strategy uses completed bars, not a moving price.", chartFocus: 2, question: "What turns movement into a momentum signal?", answers: ["A close outside the adaptive zone", "Any big-looking candle", "A low option premium"], correct: 0, answerWhy: "Right. The completed close must be outside the learned zone." },
+      { label: "Entry", title: "Enter on the next minute's quote", lesson: "After the signal completes, the option model uses the next minute's actual ask price for entry. It does not pretend that it bought at the previous candle's close.", coach: "This keeps the backtest honest. The signal comes first; the next available option quote is the entry.", watch: ["Signal minute is complete", "Next available option ask", "7–21 days to expiration and a tight spread"], avoid: "A chart signal is not a free fill. The option's bid-ask spread still has to be acceptable.", chartFocus: 3, question: "When does this strategy enter after a valid signal?", answers: ["At the next minute's option ask", "At a perfect past price", "Before the signal minute finishes"], correct: 0, answerWhy: "Right. Entering at the next available quote avoids using information that was not available yet." },
+      { label: "Close", title: "Close the same contract at 3:59", lesson: "This tested version holds the same selected contract until 3:59 PM ET, then records its actual bid as the exit. It does not carry options into the close.", coach: "The exit is a simple clock rule for this version, so we can judge the entry rule cleanly without changing the finish line trade by trade.", watch: ["The exact same contract", "The 3:59 PM bid", "Account-wide safety limits"], avoid: "Never assume a future closing price. The study and paper journal use the available bid at 3:59 PM.", chartFocus: 4, question: "What does this tested version use for its exit?", answers: ["Same contract's 3:59 PM bid", "Tomorrow's opening price", "The highest price of the day"], correct: 0, answerWhy: "Right. The exit is a predeclared, repeatable 3:59 PM rule." },
+    ],
+  },
 ];
 
 const GUARDRAILS = [
@@ -99,6 +113,38 @@ function CoachChart({ focus }: { focus: number }) {
       <circle cx={focusX} cy={focusY} r="7" fill="#2870f4" stroke="white" strokeWidth="3"/>
       {[0,3,6,9,12,15].map((index) => <text key={bars[index][0]} x={x(index) - 13} y="315" fill="#6b778c" fontSize="11">{bars[index][0]}</text>)}
       <text x="50" y="353" fill="#68768a" fontSize="11">1. Draw the first 15-minute range</text><text x="273" y="353" fill="#68768a" fontSize="11">2. Wait for break + retest</text><text x="510" y="353" fill="#68768a" fontSize="11">3. Enter only on proof above VWAP</text>
+    </svg>
+  </div>;
+}
+
+function MomentumChart({ focus }: { focus: number }) {
+  // Educational one-minute replay: the blue band is the 14-prior-session
+  // time-of-day adaptive zone. It is intentionally labeled as a teaching
+  // illustration rather than a live trade chart.
+  const bars = [["10:00",100.00,100.15,99.94,100.08],["10:01",100.07,100.16,99.99,100.03],["10:02",100.03,100.18,100.00,100.14],["10:03",100.14,100.24,100.08,100.19],["10:04",100.19,100.27,100.12,100.17],["10:05",100.17,100.21,100.07,100.09],["10:06",100.09,100.18,100.03,100.15],["10:07",100.15,100.33,100.12,100.29],["10:08",100.29,100.44,100.25,100.41],["10:09",100.41,100.58,100.36,100.53],["10:10",100.53,100.67,100.48,100.62],["10:11",100.62,100.77,100.57,100.72],["10:12",100.72,100.84,100.64,100.78],["10:13",100.78,100.91,100.70,100.88]] as const;
+  const left = 54, right = 710, top = 65, bottom = 268, minPrice = 99.75, maxPrice = 101.05;
+  const x = (index: number) => left + index * ((right - left) / (bars.length - 1));
+  const y = (price: number) => bottom - ((price - minPrice) / (maxPrice - minPrice)) * (bottom - top);
+  const upper = [100.32,100.33,100.34,100.35,100.36,100.37,100.38,100.40,100.42,100.44,100.46,100.48,100.50,100.52];
+  const lower = [99.76,99.75,99.74,99.73,99.72,99.71,99.70,99.69,99.68,99.67,99.66,99.65,99.64,99.63];
+  const focusIndex = [2,5,9,10,13][focus];
+  const stage = ["Build the 14-session baseline", "Inside the normal zone: wait", "Signal: close beyond the upper zone", "Next-minute option entry", "Same contract closes at 3:59 PM"][focus];
+  const zonePath = `${upper.map((value, index) => `${index === 0 ? "M" : "L"}${x(index)} ${y(value)}`).join(" ")} ${lower.slice().reverse().map((value, reverseIndex) => `L${x(lower.length - 1 - reverseIndex)} ${y(value)}`).join(" ")} Z`;
+  return <div className="rounded-xl p-3 sm:p-4" style={{ background: "#fff", border: "1px solid #e8edf5" }}>
+    <div className="flex items-center justify-between gap-2 mb-3"><span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · 1-minute adaptive momentum replay</span><span className="text-[11px] shrink-0" style={{ color: "#2368e9" }}>{stage}</span></div>
+    <svg viewBox="0 0 760 360" className="w-full h-auto" preserveAspectRatio="xMidYMid meet" role="img" aria-label="TSLA adaptive momentum lesson chart showing the 14-session adaptive normal-movement zone, signal, next-minute entry, and 3:59 PM exit">
+      {[65,116,167,218,268].map((gridY) => <line key={`h-${gridY}`} x1={left} y1={gridY} x2={right} y2={gridY} stroke="#edf1f7" strokeWidth="1" />)}
+      {[0,3,6,9,12].map((index) => <line key={`v-${index}`} x1={x(index)} y1={top} x2={x(index)} y2={bottom} stroke="#f4f6f9" strokeWidth="1" />)}
+      <path d={zonePath} fill="#dceaff" fillOpacity=".78" stroke="#5a95ff" strokeWidth="1.2" strokeDasharray="5 4" />
+      <text x="63" y="88" fill="#2269e8" fontSize="12" fontWeight="700">NORMAL MOVEMENT ZONE</text><text x="63" y="103" fill="#5d7190" fontSize="10">Built from the previous 14 TSLA sessions at this time of day</text>
+      {bars.map(([time, open, high, low, close], index) => { const green = close >= open; const color = green ? "#17a35a" : "#e54b47"; const candleX = x(index); return <g key={time}><line x1={candleX} x2={candleX} y1={y(high)} y2={y(low)} stroke={color} strokeWidth="1.2"/><rect x={candleX - 8} y={Math.min(y(open), y(close))} width="16" height={Math.max(3.5, Math.abs(y(open) - y(close)))} rx="1" fill={color}/></g>; })}
+      <rect x={x(focusIndex) - 17} y={top + 10} width="34" height={bottom - top - 20} rx="6" fill="#2870f4" fillOpacity=".045" stroke="#2870f4" strokeWidth="1.25" strokeDasharray="4 4" />
+      <line x1={x(9)} y1={y(100.58) - 36} x2={x(9)} y2={y(100.53)} stroke="#25354d" strokeWidth="1.2"/><circle cx={x(9)} cy={y(100.53)} r="4" fill="#25354d"/><rect x={x(9)-27} y={y(100.58)-57} width="54" height="19" rx="4" fill="#182132"/><text x={x(9)-20} y={y(100.58)-44} fill="white" fontSize="10" fontWeight="700">SIGNAL</text>
+      <line x1={x(10)} y1={y(100.67) - 36} x2={x(10)} y2={y(100.62)} stroke="#2870f4" strokeWidth="1.2"/><circle cx={x(10)} cy={y(100.62)} r="4" fill="#2870f4"/><rect x={x(10)-25} y={y(100.67)-57} width="50" height="19" rx="4" fill="#2870f4"/><text x={x(10)-18} y={y(100.67)-44} fill="white" fontSize="10" fontWeight="700">ENTRY</text>
+      <path d={`M${x(10)} ${y(100.62)} L${x(13)} ${y(100.88)}`} fill="none" stroke="#18a35a" strokeWidth="1.5" strokeDasharray="4 3"/><text x={x(12)-12} y={y(100.88)-18} fill="#13854a" fontSize="11" fontWeight="700">3:59 exit</text>
+      <circle cx={x(focusIndex)} cy={y(bars[focusIndex][4])} r="7" fill="#2870f4" stroke="white" strokeWidth="3" />
+      {[0,3,6,9,12].map((index) => <text key={bars[index][0]} x={x(index)-13} y="295" fill="#6b778c" fontSize="11">{bars[index][0]}</text>)}
+      <text x="54" y="334" fill="#68768a" fontSize="11">1. Learn normal</text><text x="239" y="334" fill="#68768a" fontSize="11">2. Ignore inside-zone noise</text><text x="475" y="334" fill="#68768a" fontSize="11">3. Signal → next-minute entry → 3:59 exit</text>
     </svg>
   </div>;
 }
@@ -150,7 +196,7 @@ export function StrategyPlaybookExperience({ activeLessonIds }: { activeLessonId
           <div className="flex items-start justify-between gap-1" aria-label="Lesson steps">{course.steps.map((item, index) => <button key={item.label} onClick={() => chooseStep(index)} className="flex-1 min-w-0 flex flex-col items-center gap-1.5 group"><span className="w-7 h-7 rounded-full grid place-items-center text-xs font-bold transition-colors" style={{ background: index === stepIndex ? "#1f6fff" : "#f1f3f7", color: index === stepIndex ? "white" : "#546176", boxShadow: index === stepIndex ? "0 0 0 4px #eaf1ff" : "none" }}>{index + 1}</span><span className="text-[11px] font-medium whitespace-nowrap" style={{ color: index === stepIndex ? "#1f6fff" : "#536075" }}>{item.label}</span></button>)}</div>
         </div>
         <div className="p-5 flex flex-col gap-4">
-          <div className="min-w-0"><CoachChart focus={step.chartFocus} /></div>
+          <div className="min-w-0">{course.id === "v2_momentum" ? <MomentumChart focus={step.chartFocus} /> : <CoachChart focus={step.chartFocus} />}</div>
           <div className="flex items-center justify-between gap-3"><button className="btn btn-ghost btn-sm" disabled={stepIndex === 0} onClick={() => chooseStep(stepIndex - 1)}><ChevronLeft size={15} /> Back</button><div className="flex-1 max-w-[440px] h-1 rounded-full" style={{ background: "#e5ecf8" }}><div className="h-full rounded-full" style={{ width: `${((stepIndex + 1) / course.steps.length) * 100}%`, background: "#2870f4" }} /></div><button className="btn btn-primary btn-sm" onClick={() => chooseStep(stepIndex === course.steps.length - 1 ? 0 : stepIndex + 1)}>{stepIndex === course.steps.length - 1 ? "Replay" : "Next"} <ChevronRight size={15} /></button></div>
         </div>
         {showGuardrails ? <div className="mx-5 mb-5 rounded-xl p-4" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface))", border: "1px solid var(--border)" }}><div className="flex gap-3 items-start"><img src={COACH_IMAGE} alt="Coach Celo" className="w-12 h-16 object-contain object-bottom shrink-0" /><div><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Coach Celo explains the account guardrails</p><p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--ink-muted)" }}>These rules are shared by every paper strategy. They control risk across the account.</p></div></div><div className="grid gap-2 mt-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>{GUARDRAILS.map(([title, detail]) => <div key={title} className="rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}><p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>{title}</p><p className="text-xs leading-relaxed mt-1" style={{ color: "var(--ink-muted)" }}>{detail}</p></div>)}</div></div> : <div className="mx-5 mb-5 rounded-xl p-4" style={{ background: "#fbfcff", border: "1px solid #e7edf7" }}><p className="text-base font-bold" style={{ color: "var(--ink)" }}>Try it yourself</p><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{step.question}</p><div className="grid gap-2 mt-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>{step.answers.map((choice, index) => <button key={choice} className="btn text-left justify-start" onClick={() => setAnswer(index)} style={answer === index ? { borderColor: index === step.correct ? "var(--positive)" : "var(--negative)", background: index === step.correct ? "var(--positive-bg)" : "var(--negative-bg)" } : undefined}><span className="w-6 h-6 rounded-full grid place-items-center text-xs mr-1" style={{ background: "#edf4ff", color: "#1f6fff" }}>{index + 1}</span>{choice}</button>)}</div>{answer !== null && <p className="text-xs mt-3 leading-relaxed" style={{ color: answer === step.correct ? "var(--positive)" : "var(--ink-muted)" }}>{answer === step.correct ? step.answerWhy : `Not quite. ${step.answerWhy}`}</p>}</div>}
