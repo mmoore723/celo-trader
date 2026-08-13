@@ -131,7 +131,8 @@ CREATE TABLE IF NOT EXISTS signal_journal (
     reason_detail TEXT,               -- human-readable specifics, e.g. "needs $88, cap is $69"
     trade_id      INTEGER,            -- linked real trade for outcome='entered'
     context_json  TEXT,               -- strategy metadata / selected-contract context at decision time
-    tier          TEXT    NOT NULL DEFAULT 'main' -- 'main' | 'opportunity'
+    tier          TEXT    NOT NULL DEFAULT 'main', -- 'main' | 'opportunity'
+    broker_account_id TEXT            -- account/mode identity at decision time
 );
 """
 _CREATE_SIGNAL_JOURNAL_IDX = [
@@ -139,6 +140,10 @@ _CREATE_SIGNAL_JOURNAL_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_signal_journal_ticker ON signal_journal(ticker);",
     "CREATE INDEX IF NOT EXISTS idx_signal_journal_trade_id ON signal_journal(trade_id);",
 ]
+_CREATE_SIGNAL_JOURNAL_ACCOUNT_IDX = (
+    "CREATE INDEX IF NOT EXISTS idx_signal_journal_account "
+    "ON signal_journal(broker_account_id, ts);"
+)
 
 # option_quote_observations — durable, executable quote evidence for paper
 # trades.  This is deliberately separate from `trades`: a position can have
@@ -358,6 +363,10 @@ def _init_db_at(db_path: Path) -> None:
         if "tier" not in _journal_cols:
             conn.execute("ALTER TABLE signal_journal ADD COLUMN tier TEXT NOT NULL DEFAULT 'main'")
             logger.info("Migration: added tier column to signal_journal in %s", db_path.name)
+        if "broker_account_id" not in _journal_cols:
+            conn.execute("ALTER TABLE signal_journal ADD COLUMN broker_account_id TEXT")
+            logger.info("Migration: added broker_account_id to signal_journal in %s", db_path.name)
+        conn.execute(_CREATE_SIGNAL_JOURNAL_ACCOUNT_IDX)
         conn.commit()
     except Exception:
         conn.rollback()

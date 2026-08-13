@@ -2,7 +2,7 @@
  * Sidebar — navigation + bot start/stop controls.
  */
 import {
-  Activity, BarChart2, BookOpen, Settings,
+  Activity, BarChart2, BookOpen, Settings, ScanSearch,
   FlaskConical, Newspaper, Power, StopCircle, Skull, CalendarDays, ShieldCheck, LogOut,
   Stethoscope, BrainCircuit,
 } from "lucide-react";
@@ -25,6 +25,7 @@ const NAV: NavItem[] = [
   { label: "Live Trading",  to: "/trading",     icon: <Activity size={16} /> },
   { label: "Performance",   to: "/performance", icon: <BarChart2 size={16} /> },
   { label: "Trade Journal", to: "/journal",     icon: <BookOpen size={16} /> },
+  { label: "Scanner Opportunities", to: "/opportunities", icon: <ScanSearch size={16} /> },
   { label: "Backtest",      to: "/backtest",    icon: <FlaskConical size={16} /> },
   { label: "Strategy Health", to: "/strategy-health", icon: <Stethoscope size={16} /> },
   { label: "AI Reasoning Log", to: "/ai-reasoning", icon: <BrainCircuit size={16} /> },

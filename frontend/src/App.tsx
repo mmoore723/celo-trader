@@ -17,6 +17,7 @@ import { TickerBar }       from "./components/layout/TickerBar";
 import { LiveTrading }     from "./pages/LiveTrading";
 import { Performance }     from "./pages/Performance";
 import { Journal }         from "./pages/Journal";
+import { ScannerOpportunities } from "./pages/ScannerOpportunities";
 import { Settings }        from "./pages/Settings";
 import { Backtest }        from "./pages/Backtest";
 import { Playbooks }       from "./pages/Playbooks";
@@ -103,6 +104,7 @@ function AppShell() {
           <Route path="/trading"     element={<LiveTrading />} />
           <Route path="/performance" element={<Performance />} />
           <Route path="/journal"     element={<Journal />} />
+          <Route path="/opportunities" element={<ScannerOpportunities />} />
           <Route path="/backtest"    element={<Backtest />} />
           <Route path="/strategy-health" element={<StrategyHealth />} />
           <Route path="/ai-reasoning" element={<AiReasoning />} />

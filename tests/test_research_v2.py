@@ -13,25 +13,50 @@ from research.engine.regime import select_regimes
 from research.engine.options import OptionQuote, OptionQuoteBook, load_option_quotes
 from research.engine.option_markouts import (
     run_databento_cbbo_markouts, run_databento_cbbo_markouts_for_holds,
+    run_databento_cbbo_markouts_for_labeled_signals,
+    run_databento_cbbo_markouts_for_labeled_signals_and_holds,
     run_databento_cbbo_markouts_for_exit_plans,
     _active_decision_indexes, _window_matcher,
-    run_option_markouts,
+    run_option_markouts, strategy_signals,
 )
 from research.engine.indicators import confirmed_signals, macd_histogram, rsi
-from research.jobs.compare_paid_rsi_macd_filters import select_training_variant
+from research.jobs.compare_paid_rsi_macd_filters import (
+    _completed_five_minute_signals, _distinct_breakout_episodes, select_training_variant,
+)
 from research.jobs.run_paid_spy_vwap_momentum_filters import _distinct_touch_episodes
-from research.engine.exit_rules import planned_exits, planned_one_minute_dynamic_exits, planned_noise_momentum_exits
+from research.engine.exit_rules import (
+    planned_exits, planned_one_minute_dynamic_exits, planned_noise_momentum_exits,
+    planned_range_sweep_reclaim_exits,
+)
 from research.engine.noise_momentum import boundaries_by_timestamp, noise_momentum_signals
 from research.engine.providers.alpaca import export_alpaca_csv
 from research.engine.providers.databento import normalize_databento_cbbo_files
 from research.engine.orb_retouch import one_minute_first_retouch_signals
 from research.jobs.run_paid_databento_job import archive_filenames, batch_file_date, build_strategy, day_bars, day_bars_with_prior_close, extract_archive_file, manifest_filenames, summarize
 from research.jobs.tune_paid_orb_holds import select_training_winner, segmented_summary
-from research.jobs.tune_paid_strategy_holds import non_overlapping_rows, select_robust_hold
+from research.jobs.tune_paid_strategy_holds import (
+    bollinger_w_bottom_signals_by_completed_day, ema_signals_by_completed_day, non_overlapping_rows, select_robust_hold,
+    squeeze_signals_by_completed_day, strategy_bars_for_hold_test,
+)
 from research.jobs.select_paid_markout_context import choose_context
 from research.jobs.tune_paid_spy_vwap_contexts import select_three_period_context
+from research.jobs.assess_paid_regime_context import _label_rows, select_context
 from research.jobs.assess_paid_three_period_holds import assess_three_period_holds
 from research.jobs.compare_paid_orb_exits import RULES, select_training_rule
+from research.jobs.assess_paid_spy_range_sweep_reclaim import (
+    portfolio_markouts as range_sweep_portfolio_markouts,
+    select_training_variant as select_range_sweep_variant,
+)
+from research.jobs.assess_paid_spy_range_sweep_contexts import (
+    context_markouts as range_sweep_context_markouts,
+    select_direction_context as select_range_sweep_direction_context,
+)
+from research.jobs.assess_paid_fvg_contexts import _context_rows as fvg_context_markouts
+from research.jobs.assess_paid_spy_range_sweep_momentum_contexts import (
+    context_markouts as range_sweep_momentum_context_markouts,
+    select_momentum_context as select_range_sweep_momentum_context,
+)
+from research.jobs.compare_paid_spy_range_sweep_long_exits import select_exit_rule as select_range_sweep_exit_rule
 from research.jobs.compare_paid_one_minute_orb_call_exits import comparable_markouts
 from research.engine.simulator import SimulationConfig, Simulator
 from research.engine.strategies import (
@@ -40,7 +65,12 @@ from research.engine.strategies import (
     OpeningRangeBreakout, OpeningRangeBreakoutConfig,
     TrendContinuation, TrendContinuationConfig,
 )
-from research.engine.strategies import VWAPPullback, VWAPPullbackConfig
+from research.engine.strategies import VWAPPullback, VWAPPullbackConfig, VWAPMeanReversion, VWAPMeanReversionConfig
+from research.engine.strategies import TwoLegTrendPullback, TwoLegTrendPullbackConfig
+from research.engine.strategies import (
+    GapZScoreOpeningReversion, GapZScoreOpeningReversionConfig, build_gap_zscore_contexts,
+)
+from research.engine.strategies import VWAPFailedMoveReversion, VWAPFailedMoveReversionConfig, efficiency_ratio
 from research.engine.strategies import SuperTrendReversal
 from research.engine.strategies import ChannelBounce
 from research.engine.strategies import BreakOfStructureMSS
@@ -50,6 +80,11 @@ from research.engine.strategies import GapAndGo
 from research.engine.strategies import LiveMiddayBreakdown
 from research.engine.strategies.channel_bounce import _rvol_for_current_bar
 from research.engine.strategies import EMAPullbackRTH, EMAPullbackRTHConfig
+from research.engine.strategies import BollingerKeltnerSqueezeRTH, BollingerKeltnerSqueezeRTHConfig
+from research.engine.strategies import SqueezeMomentumRTH, SqueezeMomentumRTHConfig
+from research.engine.strategies import BollingerWBottomRTH, BollingerWBottomRTHConfig
+from research.engine.strategies import RangeSweepReclaim, RangeSweepReclaimConfig
+from research.engine.strategies import AfternoonCompressionBreakout, AfternoonCompressionBreakoutConfig
 from research.engine.strategies import TurtleSoupRTH, TurtleSoupRTHConfig
 from research.engine.strategies import GapFillRTH, GapFillRTHConfig
 from research.engine.strategies import BreakoutPullbackContinuation, BreakoutPullbackContinuationConfig
@@ -95,6 +130,195 @@ class _TrailingLong(_OneLong):
 
 
 class ResearchV2Tests(unittest.TestCase):
+    def test_range_sweep_selection_requires_positive_untouched_later_data(self) -> None:
+        rows = {
+            "baseline": [
+                {"signal_time": "2026-06-01T10:00:00", "return_pct": 2.0},
+                {"signal_time": "2026-06-02T10:00:00", "return_pct": 1.0},
+                {"signal_time": "2026-07-02T10:00:00", "return_pct": -1.0},
+            ] * 7,
+            "tighter_quiet": [],
+            "more_vwap_room": [],
+        }
+        result = select_range_sweep_variant(rows, date(2026, 7, 1), minimum_training_signals=10, minimum_later_signals=5)
+        self.assertEqual("baseline", result["selected_variant"])
+        self.assertFalse(result["later_data_passed"])
+
+    def test_range_sweep_scorecard_excludes_overlapping_option_positions(self) -> None:
+        rows = {
+            "baseline": [
+                {"entry_time": "2026-06-01T10:00:00", "exit_time": "2026-06-01T10:30:00"},
+                {"entry_time": "2026-06-01T10:05:00", "exit_time": "2026-06-01T10:35:00"},
+                {"entry_time": "2026-06-01T10:30:00", "exit_time": "2026-06-01T11:00:00"},
+            ],
+            "tighter_quiet": [],
+            "more_vwap_room": [],
+        }
+        portfolio = range_sweep_portfolio_markouts(rows)
+        self.assertEqual(
+            ["2026-06-01T10:00:00", "2026-06-01T10:30:00"],
+            [row["entry_time"] for row in portfolio["baseline"]],
+        )
+
+    def test_range_sweep_direction_context_filters_before_capacity(self) -> None:
+        rows = [
+            {"side": "short", "entry_time": "2026-06-01T10:00:00", "exit_time": "2026-06-01T10:30:00"},
+            {"side": "long", "entry_time": "2026-06-01T10:05:00", "exit_time": "2026-06-01T10:35:00"},
+        ]
+        contexts = range_sweep_context_markouts(rows)
+        self.assertEqual(1, len(contexts["both_directions"]))
+        self.assertEqual(1, len(contexts["long_reclaims_only"]))
+        self.assertEqual("long", contexts["long_reclaims_only"][0]["side"])
+
+    def test_range_sweep_direction_selection_requires_untouched_later_data(self) -> None:
+        def rows(day: str, side: str, value: float, count: int):
+            return [{"signal_time": f"{day}T10:00:00", "return_pct": value, "side": side} for _ in range(count)]
+        contexts = {
+            "both_directions": rows("2026-06-01", "long", 1, 20) + rows("2026-07-02", "long", -1, 10),
+            "long_reclaims_only": rows("2026-06-01", "long", 3, 20) + rows("2026-07-02", "long", -1, 10),
+            "short_reclaims_only": rows("2026-06-01", "short", 2, 20) + rows("2026-07-02", "short", 2, 10),
+        }
+        selection = select_range_sweep_direction_context(contexts, date(2026, 7, 1))
+        self.assertEqual("long_reclaims_only", selection["selected_context"])
+        self.assertFalse(selection["later_data_passed"])
+
+    def test_fvg_contexts_apply_capacity_after_direction_filter(self) -> None:
+        rows = [
+            {"side": "short", "signal_time": "2026-06-01T10:00:00", "entry_time": "2026-06-01T10:00:00", "exit_time": "2026-06-01T10:30:00"},
+            {"side": "long", "signal_time": "2026-06-01T10:05:00", "entry_time": "2026-06-01T10:05:00", "exit_time": "2026-06-01T10:35:00"},
+            {"side": "long", "signal_time": "2026-06-01T10:10:00", "entry_time": "2026-06-01T10:10:00", "exit_time": "2026-06-01T10:40:00"},
+        ]
+        contexts = fvg_context_markouts(rows)
+        self.assertEqual(["2026-06-01T10:00:00"], [row["entry_time"] for row in contexts["all_fvg"]])
+        self.assertEqual(["2026-06-01T10:05:00"], [row["entry_time"] for row in contexts["long_only"]])
+
+    def test_range_sweep_momentum_contexts_filter_before_capacity(self) -> None:
+        rows = [
+            {"side": "short", "entry_time": "2026-06-01T10:00:00", "exit_time": "2026-06-01T10:30:00",
+             "prior_rsi_14": 50.0, "macd_histogram_12_26_9": .1, "prior_macd_histogram_12_26_9": .2},
+            {"side": "long", "entry_time": "2026-06-01T10:05:00", "exit_time": "2026-06-01T10:35:00",
+             "prior_rsi_14": 35.0, "macd_histogram_12_26_9": -.1, "prior_macd_histogram_12_26_9": -.2},
+            {"side": "long", "entry_time": "2026-06-01T10:10:00", "exit_time": "2026-06-01T10:40:00",
+             "prior_rsi_14": 42.0, "macd_histogram_12_26_9": -.2, "prior_macd_histogram_12_26_9": -.3},
+        ]
+        contexts = range_sweep_momentum_context_markouts(rows)
+        self.assertEqual(1, len(contexts["all_reclaims"]))
+        self.assertEqual(["2026-06-01T10:05:00"], [row["entry_time"] for row in contexts["rsi_and_macd_turn"]])
+
+    def test_range_sweep_momentum_selection_requires_positive_later_data(self) -> None:
+        def rows(day: str, value: float, count: int) -> list[dict[str, object]]:
+            return [{"signal_time": f"{day}T10:00:00", "return_pct": value} for _ in range(count)]
+
+        contexts = {
+            "all_reclaims": rows("2026-06-01", 1.0, 20) + rows("2026-07-02", 1.0, 10),
+            "soft_rsi_exhaustion": rows("2026-06-01", 2.0, 20) + rows("2026-07-02", -1.0, 10),
+            "macd_histogram_turn": rows("2026-06-01", 1.5, 20) + rows("2026-07-02", .5, 10),
+            "rsi_and_macd_turn": [],
+        }
+        selection = select_range_sweep_momentum_context(contexts, date(2026, 7, 1))
+        self.assertEqual("soft_rsi_exhaustion", selection["selected_context"])
+        self.assertFalse(selection["later_data_passed"])
+
+    def test_range_sweep_exit_selection_requires_positive_later_data(self) -> None:
+        def row(day: str, pct: float) -> dict[str, object]:
+            return {"signal_time": f"{day}T10:30:00", "return_pct": pct}
+        marks = {
+            rule: [row("2026-06-01", 1.0)] * 10 + [row("2026-07-10", 1.0)] * 10
+            for rule in ("fixed_30m", "vwap_touch_or_stop_60m", "vwap_close_or_stop_60m")
+        }
+        marks["vwap_touch_or_stop_60m"] = [row("2026-06-01", 3.0)] * 10 + [row("2026-07-10", -1.0)] * 10
+        selection = select_range_sweep_exit_rule(marks, date(2026, 7, 1))
+        self.assertEqual("vwap_touch_or_stop_60m", selection["selected_exit_rule"])
+        self.assertFalse(selection["later_data_passed"])
+
+    def test_range_sweep_reclaim_requires_quiet_market_sweep_then_close_back_inside(self) -> None:
+        start = datetime(2026, 1, 2, 10, 0)
+        bars = []
+        # A small back-and-forth range provides the level to sweep.
+        for index in range(21):
+            close = 100.0 + (.08 if index % 2 else -.08)
+            bars.append(Bar(start + timedelta(minutes=index), close, close + .10, close - .10, close, 1000))
+        # The next bar sweeps the old range low. The following completed
+        # green candle closes back inside it but remains below VWAP.
+        bars.append(Bar(start + timedelta(minutes=21), 99.55, 99.62, 99.38, 99.48, 1000))
+        bars.append(Bar(start + timedelta(minutes=22), 99.50, 99.92, 99.45, 99.86, 1000))
+        strategy = RangeSweepReclaim(RangeSweepReclaimConfig(
+            range_bars=20, minimum_sweep_atr=.10, minimum_vwap_room_atr=.01,
+            minimum_reward_risk=.05,
+        ))
+        signal = None
+        for index in range(1, len(bars) + 1):
+            signal = strategy.evaluate(bars[:index])
+            if signal is not None:
+                break
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual("quiet_range_low_swept_then_reclaimed", signal.features["trigger"])
+
+    def test_range_sweep_reclaim_rejects_directional_market(self) -> None:
+        start = datetime(2026, 1, 2, 10, 0)
+        bars = [
+            Bar(start + timedelta(minutes=index), 100 + index * .1, 100.12 + index * .1,
+                99.98 + index * .1, 100.1 + index * .1, 1000)
+            for index in range(23)
+        ]
+        self.assertIsNone(RangeSweepReclaim().evaluate(bars))
+
+    def test_afternoon_compression_breakout_requires_compact_box_then_aligned_break(self) -> None:
+        start = datetime(2026, 1, 2, 12, 0)
+        config = AfternoonCompressionBreakoutConfig(
+            fast_ema=3, slow_ema=5, atr_bars=3, min_compression_bars=3,
+            compression_start=time(12, 30), compression_end=time(12, 33), entry_end=time(13, 0),
+            max_compression_pct=.01,
+        )
+        strategy = AfternoonCompressionBreakout(config)
+        bars = []
+        # Indicator warmup and an upwardly aligned market before the compact box.
+        for index, close in enumerate((100.0, 100.1, 100.2, 100.25, 100.3, 100.35)):
+            bars.append(Bar(start + timedelta(minutes=index), close - .02, close + .04, close - .04, close, 1000))
+            self.assertIsNone(strategy.evaluate(bars))
+        box_start = datetime(2026, 1, 2, 12, 30)
+        for index, close in enumerate((100.35, 100.37, 100.36)):
+            bars.append(Bar(box_start + timedelta(minutes=index), close, 100.40, 100.32, close, 1000))
+            self.assertIsNone(strategy.evaluate(bars))
+        # The first post-box candle closes cleanly above the 12:30–12:32 high.
+        bars.append(Bar(datetime(2026, 1, 2, 12, 33), 100.38, 100.58, 100.36, 100.55, 1000))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual("afternoon_compact_range_upward_expansion", signal.features["trigger"])
+
+    def test_failed_move_reversion_requires_quiet_stretch_then_reclaim(self) -> None:
+        start = datetime(2026, 1, 2, 10, 15)
+        # Alternating prices create a quiet 20-minute context around VWAP.
+        bars = []
+        for index in range(21):
+            close = 100.0 + (.04 if index % 2 else -.04)
+            bars.append(Bar(start + timedelta(minutes=index), close, close + .08, close - .08, close, 1000))
+        # A real downside extension, then a bullish close reclaiming its band.
+        bars.append(Bar(start + timedelta(minutes=21), 99.55, 99.58, 99.45, 99.50, 1000))
+        bars.append(Bar(start + timedelta(minutes=22), 99.52, 99.92, 99.50, 99.90, 1000))
+        strategy = VWAPFailedMoveReversion(VWAPFailedMoveReversionConfig(
+            regime_bars=20, stretch_atr=.8, minimum_reward_risk=.1,
+        ))
+        signal = None
+        for index in range(1, len(bars) + 1):
+            signal = strategy.evaluate(bars[:index])
+            if signal is not None:
+                break
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual("quiet_market_lower_vwap_stretch_reclaimed", signal.features["trigger"])
+
+    def test_failed_move_reversion_rejects_directional_market(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = [Bar(start + timedelta(minutes=index), 100 + index * .1, 100.12 + index * .1,
+                    99.98 + index * .1, 100.1 + index * .1, 1000) for index in range(24)]
+        self.assertGreater(efficiency_ratio([bar.close for bar in bars[-21:]]), .4)
+        self.assertIsNone(VWAPFailedMoveReversion().evaluate(bars))
     def test_breakout_pullback_continuation_requires_all_three_steps(self) -> None:
         """A break alone is not an entry; it needs retest then fresh proof."""
         start = datetime(2026, 1, 2, 9, 30)
@@ -363,6 +587,19 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual("rsi_14_aligned", selection["selected_variant"])
         self.assertFalse(selection["later_data_passed"])
 
+    def test_rsi_macd_selector_rejects_negative_earlier_period(self) -> None:
+        def rows(day: str, result: float, count: int):
+            return [{"signal_time": f"{day}T10:00:00", "return_pct": result}] * count
+        markouts = {
+            "base": rows("2026-01-02", -1, 15) + rows("2026-03-02", 2, 10),
+            "rsi_14_aligned": rows("2026-01-02", -2, 15) + rows("2026-03-02", 3, 10),
+            "macd_12_26_9_aligned": [],
+            "rsi_and_macd_aligned": [],
+        }
+        selection = select_training_variant(markouts, date(2026, 3, 1))
+        self.assertIsNone(selection["selected_variant"])
+        self.assertEqual("no_variant_with_enough_positive_earlier_data", selection["reason"])
+
     def test_spy_vwap_three_period_selector_does_not_select_using_june_or_july(self) -> None:
         def rows(day: str, result: float, count: int, side: str = "long"):
             return [{"signal_time": f"{day}T11:15:00", "side": side, "return_pct": result}] * count
@@ -397,6 +634,15 @@ class ResearchV2Tests(unittest.TestCase):
         selection = choose_context(rows, date(2026, 2, 1), minimum_training_trades=2)
         self.assertEqual("long_all_day", selection["selected_context"])
         self.assertFalse(selection["later_passed"])
+
+    def test_paid_markout_context_selection_rejects_a_losing_training_bucket(self) -> None:
+        def rows(day: str, result: float, count: int, side: str = "long"):
+            return [{"signal_time": f"{day}T10:00:00", "side": side, "return_pct": result}] * count
+        # Both buckets have adequate observations, but neither earned its
+        # place in the earlier period.  A positive later run cannot rescue it.
+        data = rows("2026-01-02", -1, 12) + rows("2026-03-02", 4, 12)
+        selection = choose_context(data, date(2026, 3, 1), minimum_training_trades=10)
+        self.assertIsNone(selection["selected_context"])
     def test_empty_production_strategy_set_never_routes_a_signal(self) -> None:
         # This must return before indicator construction: an empty set is the
         # deliberate "no validated strategy" safety state, unlike None which
@@ -526,6 +772,27 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertIn("fixed_60m", plans)
         self.assertIn("structural_stop_60m", plans)
         self.assertEqual(entry.timestamp + timedelta(minutes=60), plans["fixed_60m"].time)
+
+    def test_range_sweep_exit_waits_until_the_next_minute_after_vwap_touch(self) -> None:
+        bars = tuple(
+            _bar(index, 100, 101, 99, 100)
+            for index in range(18)
+        )
+        signal = Signal("range_sweep", Side.LONG, bars[14].timestamp, 100, 98, 102)
+        entry = bars[15]
+        # The high reaches the live session VWAP on this completed minute.
+        touch = Bar(bars[16].timestamp, 100, 102, 99, 101)
+        plans = planned_range_sweep_reclaim_exits((*bars[:16], touch, *bars[17:]), signal, entry)
+        self.assertEqual(touch.timestamp + timedelta(minutes=1), plans["vwap_touch_or_stop_60m"].time)
+        self.assertEqual("vwap_touched", plans["vwap_touch_or_stop_60m"].reason)
+
+    def test_range_sweep_exit_prefers_structural_stop_when_a_bar_hits_both_levels(self) -> None:
+        bars = tuple(_bar(index, 100, 101, 99, 100) for index in range(18))
+        signal = Signal("range_sweep", Side.LONG, bars[14].timestamp, 100, 98, 102)
+        entry = bars[15]
+        both = Bar(bars[16].timestamp, 100, 103, 97, 101)
+        plans = planned_range_sweep_reclaim_exits((*bars[:16], both, *bars[17:]), signal, entry)
+        self.assertEqual("structural_stop", plans["vwap_touch_or_stop_60m"].reason)
 
     def test_one_minute_exit_comparison_uses_same_signals_for_each_rule(self) -> None:
         rows = {
@@ -723,6 +990,39 @@ class ResearchV2Tests(unittest.TestCase):
             }
         self.assertEqual(singles, multi)
 
+    def test_labeled_multi_hold_stream_matches_separate_labeled_scans(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index) for index in range(25)]
+        ]
+        entry_time = bars[2].timestamp
+        contract = "TSLA  260109C00103000"
+        signals = {"first": (Signal("FIRST", Side.LONG, bars[1].timestamp, 101, 98, 104, {}),),
+                   "second": (Signal("SECOND", Side.LONG, bars[1].timestamp, 101, 98, 104, {}),)}
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{entry_time.isoformat()},{contract},4.90,5.10\n"
+                f"{(entry_time + timedelta(minutes=30)).isoformat()},{contract},5.00,5.20\n"
+                f"{(entry_time + timedelta(minutes=60)).isoformat()},{contract},5.40,5.60\n"
+                f"{(entry_time + timedelta(minutes=90)).isoformat()},{contract},5.80,6.00\n",
+                encoding="utf-8",
+            )
+            fast = run_databento_cbbo_markouts_for_labeled_signals_and_holds(
+                bars, [source], signals, "TSLA", hold_minutes=(30, 60, 90),
+            )
+            separate = {
+                label: {
+                    hold: run_databento_cbbo_markouts_for_labeled_signals(
+                        bars, [source], {label: rows}, "TSLA", hold_minutes=hold,
+                    )[label]
+                    for hold in (30, 60, 90)
+                }
+                for label, rows in signals.items()
+            }
+        self.assertEqual(separate, fast)
+
     def test_streaming_markout_returns_empty_result_for_no_signal_day(self) -> None:
         bars = [_bar(0, 100, 101, 99, 100)]
         # _OneLong emits only after two bars, so this is a normal quiet day.
@@ -881,6 +1181,146 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(102.5, output[0].close)
         self.assertEqual(33, output[0].volume)
 
+    def test_hold_study_uses_the_strategy_defining_candle_timeframe(self) -> None:
+        """A 15-minute EMA formation must never be evaluated as a 1-minute one."""
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index), 100, 101, 99, 100.5, 10)
+            for index in range(30)
+        )
+        self.assertEqual(2, len(strategy_bars_for_hold_test("ema_pullback_rth", bars)))
+        self.assertEqual(1, len(strategy_bars_for_hold_test("bollinger_keltner_squeeze_rth", bars)))
+        self.assertEqual(6, len(strategy_bars_for_hold_test("trend_continuation", bars)))
+        self.assertEqual(6, len(strategy_bars_for_hold_test("bollinger_w_bottom_rth", bars)))
+        self.assertEqual(bars, strategy_bars_for_hold_test("turtle_soup_rth", bars))
+
+    def test_ema_history_only_generates_signals_after_completed_15_minute_bar(self) -> None:
+        # The helper is allowed to return no signals on synthetic data; this
+        # checks its public shape and guards the completion-time contract.
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index), 100, 101, 99, 100, 10)
+            for index in range(30)
+        )
+        signals = ema_signals_by_completed_day(bars)
+        for trading_day, values in signals.items():
+            self.assertEqual(start.date(), trading_day)
+            self.assertTrue(all(value.timestamp.minute % 15 == 0 for value in values))
+
+    def test_squeeze_history_only_generates_signals_after_completed_30_minute_bar(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index), 100, 101, 99, 100, 10)
+            for index in range(60)
+        )
+        signals = squeeze_signals_by_completed_day(bars)
+        for trading_day, values in signals.items():
+            self.assertEqual(start.date(), trading_day)
+            self.assertTrue(all(value.timestamp.minute in {0, 30} for value in values))
+
+    def test_squeeze_momentum_history_only_generates_signals_after_completed_30_minute_bar(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index), 100, 101, 99, 100, 10)
+            for index in range(90)
+        )
+        signals = squeeze_signals_by_completed_day(bars, "squeeze_momentum_rth")
+        for trading_day, values in signals.items():
+            self.assertEqual(start.date(), trading_day)
+            self.assertTrue(all(value.timestamp.minute in {0, 30} for value in values))
+
+    def test_squeeze_momentum_rejects_an_unreleased_compression(self) -> None:
+        strategy = SqueezeMomentumRTH(SqueezeMomentumRTHConfig(length=5, min_squeeze_bars=2))
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=30 * index), 100, 100.05, 99.95, 100 + (index % 2) * .01, 1)
+            for index in range(12)
+        )
+        self.assertTrue(all(strategy.evaluate(bars[:index + 1]) is None for index in range(len(bars))))
+
+    def test_bollinger_w_bottom_requires_every_completed_confirmation_stage(self) -> None:
+        config = BollingerWBottomRTHConfig(
+            length=5, entry_start=time(9, 30), entry_end=time(15, 0),
+            reaction_limit_bars=3, second_low_limit_bars=3, confirmation_limit_bars=3,
+        )
+        strategy = BollingerWBottomRTH(config)
+        start = datetime(2026, 1, 2, 9, 30)
+        # Five quiet bars warm the bands; then a first lower-band reaction,
+        # middle-band rebound, lower-but-in-band retest, and resistance close.
+        bars = tuple(
+            Bar(start + timedelta(minutes=5 * index), 100, 101, 99, 100 + (index % 2) * .2, 1)
+            for index in range(5)
+        ) + (
+            Bar(start + timedelta(minutes=25), 100, 100.2, 94, 95, 1),
+            Bar(start + timedelta(minutes=30), 95, 101, 95, 100.8, 1),
+            Bar(start + timedelta(minutes=35), 100.8, 101, 94.5, 96, 1),
+            Bar(start + timedelta(minutes=40), 96, 102, 96, 101.5, 1),
+        )
+        signals = []
+        for index in range(len(bars)):
+            signal = strategy.evaluate(bars[:index + 1])
+            if signal:
+                signals.append(signal)
+        self.assertEqual(1, len(signals))
+        self.assertEqual(Side.LONG, signals[0].side)
+        self.assertEqual("confirmed_bollinger_w_bottom", signals[0].features["trigger"])
+
+    def test_bollinger_w_bottom_quote_fill_waits_until_after_confirmation_candle(self) -> None:
+        """A five-minute confirmation labelled 10:10 must not fill at 10:10."""
+        start = datetime(2026, 1, 2, 9, 30)
+        dataset_bars = tuple(
+            Bar(start + timedelta(minutes=5 * index), 100, 101, 99, 100 + (index % 2) * .2, 1)
+            for index in range(5)
+        ) + (
+            Bar(start + timedelta(minutes=25), 100, 100.2, 94, 95, 1),
+            Bar(start + timedelta(minutes=30), 95, 101, 95, 100.8, 1),
+            Bar(start + timedelta(minutes=35), 100.8, 101, 94.5, 96, 1),
+            Bar(start + timedelta(minutes=40), 96, 102, 96, 101.5, 1),
+        )
+        # The production configuration needs 20 bars, but the timing helper
+        # is exercised here with its own deterministic, minimal construction.
+        strategy = BollingerWBottomRTH(BollingerWBottomRTHConfig(
+            length=5, entry_start=time(9, 30), entry_end=time(15, 0),
+            reaction_limit_bars=3, second_low_limit_bars=3, confirmation_limit_bars=3,
+        ))
+        raw = strategy_signals(dataset_bars, strategy)
+        self.assertEqual(1, len(raw))
+        self.assertEqual(start + timedelta(minutes=40), raw[0].timestamp)
+
+        completed = bollinger_w_bottom_signals_by_completed_day(
+            dataset_bars,
+            source=BollingerWBottomRTH(BollingerWBottomRTHConfig(
+                length=5, entry_start=time(9, 30), entry_end=time(15, 0),
+                reaction_limit_bars=3, second_low_limit_bars=3, confirmation_limit_bars=3,
+            )),
+        )
+        self.assertEqual(1, len(completed[start.date()]))
+        self.assertEqual(start + timedelta(minutes=45), completed[start.date()][0].timestamp)
+
+    def test_bollinger_keltner_squeeze_requires_a_completed_range_break(self) -> None:
+        config = BollingerKeltnerSqueezeRTHConfig(
+            length=5, min_squeeze_bars=2, entry_start=time(9, 30), entry_end=time(15, 0),
+        )
+        strategy = BollingerKeltnerSqueezeRTH(config)
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = (
+            Bar(start, 100, 105, 95, 100, 1),
+            Bar(start + timedelta(minutes=30), 100, 105, 95, 100.1, 1),
+            Bar(start + timedelta(minutes=60), 100.1, 106, 99, 100.0, 1),
+            Bar(start + timedelta(minutes=90), 100.0, 105, 95, 100.1, 1),
+            Bar(start + timedelta(minutes=120), 100.1, 106, 99, 100.0, 1),
+            Bar(start + timedelta(minutes=150), 100.0, 106, 99, 100.1, 1),
+            Bar(start + timedelta(minutes=180), 100.1, 132, 99, 130, 1),
+        )
+        signals = []
+        for index in range(len(bars)):
+            signal = strategy.evaluate(bars[:index + 1])
+            if signal:
+                signals.append(signal)
+        self.assertEqual(1, len(signals))
+        self.assertEqual(Side.LONG, signals[0].side)
+        self.assertEqual("upward_release_after_compression", signals[0].features["trigger"])
+
     def test_trend_continuation_emits_only_fresh_breakout(self) -> None:
         bars = []
         for minute in range(21):
@@ -893,6 +1333,42 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
         self.assertGreater(signal.target, signal.entry_reference)
+
+    def test_trend_breakout_episode_guard_waits_for_a_return_through_level(self) -> None:
+        start = datetime(2026, 1, 2, 10, 0)
+        bars = (
+            Bar(start, 100, 101, 99, 100.5),
+            Bar(start + timedelta(minutes=5), 101, 102, 100, 101.5),
+            Bar(start + timedelta(minutes=10), 101.5, 101.6, 99.8, 100.0),
+            Bar(start + timedelta(minutes=15), 100.0, 103, 99.9, 102.5),
+        )
+        def signal(index, side, level):
+            entry = bars[index].close
+            return Signal(
+                "V2_TREND_CONT", side, bars[index].timestamp, entry,
+                entry - 1 if side is Side.LONG else entry + 1,
+                entry + 2 if side is Side.LONG else entry - 2,
+                {"prior_high" if side is Side.LONG else "prior_low": level},
+            )
+        # Two long flags above the same breakout level are one setup.  Once
+        # close returns through 101, a later long flag becomes a new attempt.
+        signals = (signal(0, Side.LONG, 101), signal(1, Side.LONG, 101), signal(3, Side.LONG, 101))
+        kept = _distinct_breakout_episodes(bars, signals)
+        self.assertEqual((signals[0], signals[2]), kept)
+
+    def test_spy_trend_research_signals_are_visible_only_after_five_minute_close(self) -> None:
+        # The exact formation is not relevant here: patching the strategy
+        # generator is avoided so this test simply asserts every returned
+        # research signal carries the five-minute completion timestamp.
+        bars = tuple(
+            Bar(datetime(2026, 1, 2, 9, 30) + timedelta(minutes=index),
+                100 + index * .1, 100.2 + index * .1, 99.9 + index * .1,
+                100.1 + index * .1)
+            for index in range(130)
+        )
+        signals = _completed_five_minute_signals(bars, "trend_continuation")
+        for values in signals.values():
+            self.assertTrue(all(value.timestamp.minute % 5 == 0 for value in values))
 
     def test_walk_forward_requires_both_segments_to_pass(self) -> None:
         bars = [_bar(i, 100, 101, 99, 100) for i in range(8)]
@@ -1044,6 +1520,106 @@ class ResearchV2Tests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(Side.LONG, signal.side)
 
+    def test_two_leg_trend_pullback_requires_vwap_protected_reclaim(self) -> None:
+        strategy = TwoLegTrendPullback(TwoLegTrendPullbackConfig(
+            fast_ema=3, slow_ema=6, atr_bars=3, impulse_atr=.5,
+            pullback_min_atr=.15, pullback_max_atr=3.0, entry_start=time(9, 55), entry_end=time(11, 30),
+        ))
+        bars = []
+        for minute in range(25):
+            close = 100 + minute * .08
+            bars.append(_bar(minute, close - .03, close + .08, close - .08, close))
+            self.assertIsNone(strategy.evaluate(bars))
+        # First leg is established, then a controlled dip holds above VWAP.
+        for minute, close in enumerate((101.35, 101.62, 101.92, 101.66, 101.72, 102.02, 101.80, 102.30), start=25):
+            bars.append(_bar(minute, close - .04, close + .10, close - .18, close))
+            result = strategy.evaluate(bars)
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(Side.LONG, result.side)
+        self.assertEqual("impulse_vwap_hold_pullback_1m_reclaim", result.features["trigger"])
+
+    def test_two_leg_trend_pullback_cancels_when_pullback_loses_vwap(self) -> None:
+        strategy = TwoLegTrendPullback(TwoLegTrendPullbackConfig(
+            fast_ema=3, slow_ema=6, atr_bars=3, impulse_atr=.5,
+            pullback_min_atr=.15, pullback_max_atr=3.0, entry_start=time(9, 55), entry_end=time(11, 30),
+        ))
+        bars = []
+        for minute in range(25):
+            close = 100 + minute * .08
+            bars.append(_bar(minute, close - .03, close + .08, close - .08, close))
+            strategy.evaluate(bars)
+        # A valid first leg is present, but the pullback closes through VWAP.
+        for minute, close in enumerate((101.35, 101.62, 101.92, 101.66, 101.72, 100.80), start=25):
+            bars.append(_bar(minute, close - .04, close + .08, close - .25, close))
+            self.assertIsNone(strategy.evaluate(bars))
+        self.assertIsNone(strategy._state)
+
+    def test_vwap_mean_reversion_requires_stretch_then_one_minute_reversal(self) -> None:
+        strategy = VWAPMeanReversion(VWAPMeanReversionConfig(
+            atr_bars=3, rsi_bars=3, stretch_atr=.5, oversold_rsi=49,
+            overbought_rsi=51, stop_atr=.20, minimum_reward_risk=.15,
+        ))
+        bars = []
+        # First create enough calm intraday history and an ordinary red bar;
+        # it must not fire without a genuine extension below VWAP.
+        for minute, close in enumerate((100, 100.1, 100.2, 100.1, 100.15, 100.1, 100.05, 100.0,
+                                        99.95, 99.9, 99.85, 99.8, 99.75, 99.7, 99.65, 99.6,
+                                        99.55, 99.5, 99.45, 99.4, 99.35, 99.3, 99.25, 99.2,
+                                        99.15, 99.1, 99.05, 99.0, 98.95, 98.9, 98.85)):
+            bars.append(_bar(minute, close + .04, close + .08, close - .08, close))
+            self.assertIsNone(strategy.evaluate(bars))
+        # A bullish completed candle after the prior stretched red bar is the
+        # first moment a long may exist.  Fill would still be the *next* bar.
+        bars.append(_bar(31, 98.82, 99.2, 98.8, 99.15))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual("oversold_stretch_then_1m_reversal", signal.features["trigger"])
+
+    def test_gap_zscore_context_uses_only_prior_completed_sessions(self) -> None:
+        bars = []
+        # Seven tiny synthetic sessions establish five prior gap observations.
+        # The large final opening must affect only its own context, never an
+        # earlier one (the causal property this strategy relies on).
+        for offset in range(7):
+            day = date(2026, 2, 2) + timedelta(days=offset)
+            prior_close = 100 + offset
+            opening = prior_close + (4 if offset == 6 else .10 * (offset % 2))
+            bars.extend((
+                Bar(datetime.combine(day, time(9, 30)), opening, opening + .1, opening - .1, opening),
+                Bar(datetime.combine(day, time(15, 59)), prior_close + .2, prior_close + .3, prior_close, prior_close + .2),
+            ))
+        contexts = build_gap_zscore_contexts(bars, gap_window=5, regime_days=5)
+        self.assertEqual(1, len(contexts))
+        context = next(iter(contexts.values()))
+        self.assertGreater(context.gap_zscore, 1)
+
+    def test_gap_zscore_reversion_needs_range_and_vwap_reclaim(self) -> None:
+        day = date(2026, 2, 9)
+        context = {day: __import__('research.engine.strategies', fromlist=['GapZScoreContext']).GapZScoreContext(
+            prior_close=102.0, gap_zscore=-1.5, daily_efficiency=.20,
+        )}
+        strategy = GapZScoreOpeningReversion(context, GapZScoreOpeningReversionConfig(
+            atr_bars=3, minimum_gap_fill_room_atr=.1, entry_start=time(9, 46), entry_end=time(11, 0),
+        ))
+        bars = []
+        for minute in range(15):
+            close = 98.5 + (minute % 3) * .05
+            bars.append(Bar(datetime.combine(day, time(9, 30)) + timedelta(minutes=minute), close, close + .1, close - .1, close))
+            self.assertIsNone(strategy.evaluate(bars))
+        # A completed 09:46 reclaim of the 15-minute range and VWAP is the
+        # first point a signal can exist; a fill would still occur next bar.
+        bars.append(Bar(datetime.combine(day, time(9, 45)), 98.6, 99.8, 98.5, 99.7))
+        self.assertIsNone(strategy.evaluate(bars))
+        bars.append(Bar(datetime.combine(day, time(9, 46)), 99.7, 100.2, 99.6, 100.1))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual("negative_opening_gap_zscore_range_vwap_reclaim", signal.features["trigger"])
+
     def test_paid_vwap_study_counts_one_entry_until_price_revisits_vwap(self) -> None:
         # Two consecutive long reclaim signals are one pullback episode.  A
         # later move back through VWAP re-arms the strategy for a new setup.
@@ -1165,6 +1741,23 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(("TREND_UP:LONG",), result.selected_keys)
         self.assertEqual(30, result.holdout_selected.trade_count)
 
+    def test_paid_regime_context_selects_earlier_data_without_reselecting_later(self) -> None:
+        cutoff = date(2026, 2, 1)
+        def row(day, value):
+            return {"signal_time": f"{day}T10:00:00", "return_pct": value}
+        # All signals have a positive but smaller median in earlier data.
+        # Choppy wins earlier, then fails later; it must remain selected rather
+        # than being swapped for the baseline after the final-exam result.
+        labeled = {
+            "all_signals": [row("2026-01-02", 1)] * 30 + [row("2026-02-02", 1)] * 10,
+            "trend_aligned": [row("2026-01-02", 2)] * 30 + [row("2026-02-02", 2)] * 10,
+            "choppy": [row("2026-01-02", 3)] * 30 + [row("2026-02-02", -3)] * 10,
+        }
+        result = select_context(labeled, cutoff)
+        self.assertEqual("choppy", result["selected_context"])
+        self.assertFalse(result["later_passed"])
+        self.assertEqual("reject", result["decision"])
+
     def test_afternoon_reversal_requires_confirmed_structure_and_break(self) -> None:
         bars = []
         start = datetime(2026, 1, 2, 9, 30)
@@ -1260,6 +1853,25 @@ class ResearchV2Tests(unittest.TestCase):
                 break
         self.assertIsNotNone(first)
         self.assertIsNone(strategy.evaluate(bars))
+
+    def test_failed_opening_range_reversion_requires_meaningful_break_then_close_inside(self) -> None:
+        from research.engine.strategies import FailedOpeningRangeReversion, FailedOpeningRangeReversionConfig
+        # First 15 one-minute bars define a 99.8–100.2 range.  A 10:00 close
+        # breaks meaningfully above it; the next red minute closes back inside.
+        bars = [_bar(index, 100.0, 100.2, 99.8, 100.0) for index in range(15)]
+        bars += [_bar(30, 100.0, 100.75, 100.0, 100.65), _bar(31, 100.65, 100.66, 100.05, 100.15)]
+        strategy = FailedOpeningRangeReversion(FailedOpeningRangeReversionConfig(
+            minimum_excursion_range=.20, minimum_vwap_room_range=.0,
+        ))
+        signal = None
+        for index in range(1, len(bars) + 1):
+            signal = strategy.evaluate(bars[:index])
+            if signal is not None:
+                break
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.SHORT, signal.side)
+        self.assertEqual("upward_opening_range_break_failed_back_inside", signal.features["trigger"])
 
     def test_one_position_research_filter_keeps_only_non_overlapping_markouts(self) -> None:
         rows = [

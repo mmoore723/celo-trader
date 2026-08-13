@@ -47,9 +47,22 @@ def _skip_log(ticker: str, reason: str, *,
     """
     if strategy:
         try:
+            # tick.py sets this immediately after the router chooses the
+            # candidate it is about to evaluate.  Keeping this snapshot with
+            # every terminal skip lets Scanner Opportunities join the raw
+            # candidate to the exact contract/quantity/exit plan that was
+            # considered.  Do not create a context for a bare ``no_signal``
+            # log: there was no candidate and therefore nothing to audit.
+            _snapshot = get_user_state().get("scanner_opportunity_context") or {}
+            _same_candidate = (
+                _snapshot.get("ticker") == ticker.upper()
+                and _snapshot.get("strategy_id") == strategy
+            )
+            _context = _snapshot.get("context") if _same_candidate else None
             _log_journal(ticker, strategy, direction or "unknown", confidence,
                          outcome="blocked", reason_code=reason,
-                         reason_detail=detail or (f"R:R {rr:.2f}" if rr else ""), tier=tier)
+                         reason_detail=detail or (f"R:R {rr:.2f}" if rr else ""),
+                         context=_context, tier=tier)
         except Exception:
             pass   # journal writes are never allowed to affect entry logic
 
@@ -80,4 +93,3 @@ def _skip_log(ticker: str, reason: str, *,
         _skj.dump(_bs, open(_sp, "w"))
     except Exception:
         pass   # non-critical — dashboard still shows whatever was last written
-

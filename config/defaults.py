@@ -124,6 +124,8 @@ _DEFAULTS = {
     "strategy_orb_pullback_v2_enabled": False,
     "strategy_trend_cont_v2_enabled": False,
     "strategy_spy_trend_cont_v2_enabled": False,
+    "strategy_spy_afternoon_fvg_v2_enabled": False,
+    "strategy_spy_afternoon_reversal_v2_enabled": False,
     # Reviewed TSLA paid-quote strategy. Enabled by default for paper accounts;
     # individual users can still turn it off from Settings.
     "strategy_tsla_noise_momentum_v2_enabled": True,

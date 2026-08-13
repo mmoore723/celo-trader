@@ -32,6 +32,8 @@ const STRAT_NAMES: Record<string, string> = {
   CHAN_BREAK: "Channel Breakout",
   V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
   V2_SPY_TREND_CONT: "SPY Trend Continuation",
+  V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
+  V2_SPY_AFTERNOON_REVERSAL: "SPY Afternoon Reversal",
 };
 
 function ActivePilotCard({ settings }: { settings?: AppSettings }) {

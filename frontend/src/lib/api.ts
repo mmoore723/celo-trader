@@ -284,6 +284,40 @@ export interface SignalJournalSummary {
 
 export interface SignalJournalTrendPoint { date: string; count: number }
 
+// Scanner Opportunities is intentionally distinct from Trade Journal.  It
+// begins with every signal the scanner evaluated, then shows a contract/size
+// only if the entry path genuinely reached those decisions.
+export interface ScannerOpportunityContract {
+  symbol?: string | null; strike?: number | null; expiry?: string | null;
+  bid?: number | null; ask?: number | null; spread?: number | null;
+  selection_model?: string | null;
+}
+export interface ScannerOpportunityTrade {
+  id: number; contract_symbol?: string | null; option_type?: string | null;
+  strike?: number | null; expiry?: string | null; contracts?: number | null;
+  entry_price?: number | null; exit_price?: number | null; status?: string | null;
+  entry_time?: string | null; exit_time?: string | null; exit_reason?: string | null;
+  pnl?: number | null;
+}
+export interface ScannerOpportunity {
+  id: string; source: "candidate" | "journal_only"; observed_at: string;
+  ticker: string; strategy_id: string; direction: "bullish" | "bearish" | string;
+  confidence: number; tier: "main" | "opportunity" | string; trigger_bar?: string | null;
+  outcome: "pending" | "blocked" | "observed_only" | "entered" | string;
+  reason_code?: string | null; reason_detail?: string | null;
+  entry_plan: { trigger?: string; underlying_price?: number; estimated_entry_price?: number };
+  contract: ScannerOpportunityContract;
+  planned_quantity?: number | null;
+  exit_plan: { strategy_id?: string; summary?: string };
+  underlying_entry_price?: number | null; underlying_exit_price?: number | null;
+  directional_move_pct?: number | null; direction_correct?: number | null;
+  outcome_observed_at?: string | null; trade?: ScannerOpportunityTrade | null;
+}
+export interface ScannerOpportunitiesResponse {
+  date: string; account_scoped: boolean; available_dates: string[];
+  summary: Record<string, number>; note: string; entries: ScannerOpportunity[];
+}
+
 export interface WatchingContract {
   symbol: string | null;
   strike: number | null;
@@ -520,6 +554,8 @@ export interface AppSettings {
   strategy_orb_pullback_v2_enabled?: boolean; // research-validated opening-range pullback pilot
   strategy_trend_cont_v2_enabled?: boolean; // paid-quote Trend Continuation paper pilot
   strategy_spy_trend_cont_v2_enabled?: boolean; // reviewed SPY paid-quote Trend Continuation pilot
+  strategy_spy_afternoon_fvg_v2_enabled?: boolean; // reviewed SPY paid-quote afternoon FVG pilot
+  strategy_spy_afternoon_reversal_v2_enabled?: boolean; // reviewed SPY higher-low afternoon reversal pilot
   strategy_tsla_noise_momentum_v2_enabled?: boolean; // reviewed TSLA adaptive noise-boundary paper rule
   opportunity_tier_enabled?: boolean; // paper-only lower-confidence research cohort
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
@@ -718,6 +754,16 @@ export const api = {
         `/api/signals/journal/trend?reason=${encodeURIComponent(reason)}&days=${days}`
       ),
     reasons: () => request<{ reasons: Record<string, string> }>("/api/signals/journal/reasons"),
+    opportunities: (opts?: { date?: string; ticker?: string; strategy?: string; outcome?: string; limit?: number }) => {
+      const params = new URLSearchParams();
+      if (opts?.date)     params.set("date", opts.date);
+      if (opts?.ticker)   params.set("ticker", opts.ticker);
+      if (opts?.strategy) params.set("strategy", opts.strategy);
+      if (opts?.outcome)  params.set("outcome", opts.outcome);
+      if (opts?.limit)    params.set("limit", String(opts.limit));
+      const qs = params.toString();
+      return request<ScannerOpportunitiesResponse>(`/api/signals/opportunities${qs ? `?${qs}` : ""}`);
+    },
     watching: () => request<{ watching: WatchingSignal[] }>("/api/signals/watching"),
   },
   tickers: {

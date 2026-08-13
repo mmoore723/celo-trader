@@ -12,13 +12,18 @@ from datetime import datetime
 
 import pandas as pd
 
-from strategies.market_structure import Bar, TrendContinuation, TrendContinuationConfig, resample_regular_session
+from strategies.market_structure import Bar, Side, TrendContinuation, TrendContinuationConfig, resample_regular_session
 from strategies.base import Signal
 
 
 STRATEGY_ID = "V2_SPY_TREND_CONT"
 VALIDATED_TICKERS = frozenset({"SPY"})
 _emitted_trigger_by_session: dict[tuple[str, str], pd.Timestamp] = {}
+# A breakout may keep printing higher completed candles after its first
+# trigger.  They remain one breakout attempt until price actually returns
+# through the broken level.  This mirrors the paid-data research definition
+# and avoids stacking entries into one continuous move.
+_active_breakout_by_session: dict[tuple[str, str], tuple[Side, float]] = {}
 
 
 def _complete_five_minute_bars(
@@ -57,17 +62,38 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
     minimum = max(config.slow_ema, config.atr_bars + 1, config.breakout_bars + 1)
     if len(bars) < minimum:
         return None
+    # The strategy must re-arm as soon as the completed structure candle
+    # closes back through its old breakout level, even if that reset candle is
+    # not itself a new TrendContinuation signal.  Keying from the current
+    # session avoids depending on a future candidate merely to clear state.
+    session_date = pd.Timestamp(today.iloc[-1]["time"]).date().isoformat()
+    session_key = (ticker.strip().upper(), session_date)
+    active = _active_breakout_by_session.get(session_key)
+    if active is not None:
+        active_side, broken_level = active
+        reset = ((active_side is Side.LONG and bars[-1].close <= broken_level)
+                 or (active_side is Side.SHORT and bars[-1].close >= broken_level))
+        if reset:
+            _active_breakout_by_session.pop(session_key, None)
+            active = None
     candidate = TrendContinuation(config).evaluate(bars)
     if candidate is None:
         return None
-    session_key = (ticker.strip().upper(), candidate.timestamp.date().isoformat())
     trigger = pd.Timestamp(candidate.timestamp)
     # The live loop runs every minute whereas this premise decides on a closed
     # five-minute candle.  One candle earns one next-minute attempt, exactly as
     # the paid markout used; it must not be re-emitted on the following minutes.
     if _emitted_trigger_by_session.get(session_key) == trigger:
         return None
+    # Do not emit another entry while the earlier directional breakout remains
+    # intact.  A reset through its broken level above re-arms the strategy.
+    if active is not None and active[0] is candidate.side:
+        return None
     _emitted_trigger_by_session[session_key] = trigger
+    broken_level = candidate.features.get("prior_high" if candidate.side is Side.LONG else "prior_low")
+    if broken_level is None:
+        return None
+    _active_breakout_by_session[session_key] = (candidate.side, float(broken_level))
     latest = today.iloc[-1]
     return Signal(
         strategy_id=STRATEGY_ID,

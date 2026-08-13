@@ -13,6 +13,24 @@ from typing import Optional
 from database import get_conn, _now_et
 
 
+def _account_clause() -> tuple[str, list[str]]:
+    """Return the journal filter for the broker account currently selected.
+
+    Signals are as account-specific as trades: changing an API key must not
+    make its past blocked/entered decisions look like activity of the new
+    account.  Legacy rows predate account identity and are visible only when
+    there is no active identity to protect.
+    """
+    try:
+        from config import get_settings
+        account_id = str(get_settings().get("active_broker_account_id") or "")
+    except Exception:
+        account_id = ""
+    if account_id:
+        return " AND broker_account_id = ?", [account_id]
+    return " AND (broker_account_id IS NULL OR broker_account_id = '')", []
+
+
 def get_todays_rows(
     ticker: Optional[str] = None,
     strategy: Optional[str] = None,
@@ -24,6 +42,9 @@ def get_todays_rows(
     with get_conn() as conn:
         query = "SELECT * FROM signal_journal WHERE ts LIKE ?"
         params: list = [f"{_today}%"]
+        account_sql, account_params = _account_clause()
+        query += account_sql
+        params.extend(account_params)
         if ticker:
             query += " AND ticker = ?"
             params.append(ticker.upper())
@@ -47,10 +68,11 @@ def get_todays_summary() -> dict:
     """
     _today = _now_et().strftime("%Y-%m-%d")
     with get_conn() as conn:
+        account_sql, account_params = _account_clause()
         rows = conn.execute(
             "SELECT outcome, reason_code, COUNT(*) as n FROM signal_journal "
-            "WHERE ts LIKE ? GROUP BY outcome, reason_code",
-            (f"{_today}%",),
+            "WHERE ts LIKE ?" + account_sql + " GROUP BY outcome, reason_code",
+            tuple([f"{_today}%", *account_params]),
         ).fetchall()
     entered = 0
     by_reason: dict[str, int] = {}
@@ -72,13 +94,15 @@ def get_latest_per_ticker_today() -> dict[str, dict]:
     """
     _today = _now_et().strftime("%Y-%m-%d")
     with get_conn() as conn:
+        account_sql, account_params = _account_clause()
         rows = conn.execute(
             """SELECT sj.* FROM signal_journal sj
                INNER JOIN (
                    SELECT ticker, MAX(id) as max_id FROM signal_journal
-                   WHERE ts LIKE ? GROUP BY ticker
+                   WHERE ts LIKE ?""" + account_sql + " GROUP BY ticker\n"
+            + """
                ) latest ON sj.ticker = latest.ticker AND sj.id = latest.max_id""",
-            (f"{_today}%",),
+            tuple([f"{_today}%", *account_params]),
         ).fetchall()
         return {r["ticker"]: dict(r) for r in rows}
 
@@ -95,10 +119,11 @@ def get_trend(reason_code: str, days: int = 7) -> list[dict]:
     from datetime import timedelta
     _cutoff = (_now_et() - timedelta(days=days)).strftime("%Y-%m-%d")
     with get_conn() as conn:
+        account_sql, account_params = _account_clause()
         rows = conn.execute(
             "SELECT substr(ts, 1, 10) as day, COUNT(*) as n FROM signal_journal "
-            "WHERE reason_code = ? AND outcome = 'blocked' AND ts >= ? "
+            "WHERE reason_code = ? AND outcome = 'blocked' AND ts >= ?" + account_sql + " "
             "GROUP BY day ORDER BY day ASC",
-            (reason_code, _cutoff),
+            tuple([reason_code, _cutoff, *account_params]),
         ).fetchall()
         return [{"date": r["day"], "count": r["n"]} for r in rows]

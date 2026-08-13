@@ -13,6 +13,8 @@ new summary bar, filterable row list, and 7-day trend strip.
 from __future__ import annotations
 
 import logging
+import json
+from collections import Counter
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -71,6 +73,201 @@ def get_reason_codes() -> dict:
     """Reference list of reason codes + human-readable labels, for the filter dropdown."""
     from signal_journal import REASON_CODES
     return {"reasons": REASON_CODES}
+
+
+def _json_object(value: object) -> dict:
+    """Return an object from legacy/malformed JSON without breaking the audit UI."""
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(str(value))
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+@router.get("/opportunities")
+def get_scanner_opportunities(
+    date: str | None = Query(None, description="ET calendar date, YYYY-MM-DD"),
+    ticker: str | None = None,
+    strategy: str | None = None,
+    outcome: str | None = Query(None, description="pending | blocked | observed_only | entered"),
+    limit: int = Query(500, ge=1, le=1000),
+) -> dict:
+    """A day-by-day audit of every scanner candidate the router evaluated.
+
+    This deliberately starts with ``shadow_candidates`` rather than the trade
+    journal.  A trade journal can only show orders; this page must also retain
+    the candidates the scanner saw but a gate stopped.  Contract, quantity,
+    and exit-plan details are included only when the entry path actually
+    reached those decisions.  No contract is invented for early gate rejects.
+    """
+    from config import get_settings
+    from database import get_conn, _now_et
+
+    selected_date = (date or _now_et().date().isoformat()).strip()
+    # Keep the date input constrained to the stored ISO calendar shape.  This
+    # also prevents passing a broad SQL pattern through this read-only filter.
+    if len(selected_date) != 10 or selected_date[4] != "-" or selected_date[7] != "-":
+        raise HTTPException(status_code=422, detail="date must use YYYY-MM-DD")
+
+    account_id = get_settings().get("active_broker_account_id") or None
+    clauses = ["sc.observed_at LIKE ?"]
+    params: list[object] = [f"{selected_date}%"]
+    if account_id:
+        clauses.append("sc.broker_account_id = ?")
+        params.append(account_id)
+    else:
+        # Keep legacy data separate too.  Falling back to every row here would
+        # silently blend scanner history from different broker identities.
+        clauses.append("(sc.broker_account_id IS NULL OR sc.broker_account_id = '')")
+    if ticker:
+        clauses.append("sc.ticker = ?")
+        params.append(ticker.upper())
+    if strategy:
+        clauses.append("sc.strategy_id = ?")
+        params.append(strategy)
+    if outcome:
+        clauses.append("sc.final_outcome = ?")
+        params.append(outcome)
+
+    where = " AND ".join(clauses)
+    try:
+        with get_conn() as conn:
+            candidate_rows = conn.execute(
+                "SELECT sc.*, t.ticker AS trade_ticker, t.contract_symbol, t.option_type, "
+                "t.strike, t.expiry, t.contracts, t.entry_price, t.exit_price, "
+                "t.status AS trade_status, t.entry_time, t.exit_time, t.exit_reason, t.realized_pnl "
+                "FROM shadow_candidates sc LEFT JOIN trades t ON t.id = sc.linked_trade_id "
+                f"WHERE {where} ORDER BY sc.observed_at DESC LIMIT ?",
+                tuple(params + [limit]),
+            ).fetchall()
+            # The journal is the durable home for the enriched decision
+            # context.  A candidate ID in strategy_meta is an explicit join,
+            # never a fuzzy same-minute match that could join two setups.
+            journal_where = ["ts LIKE ?"]
+            journal_params: list[object] = [f"{selected_date}%"]
+            if account_id:
+                journal_where.append("broker_account_id = ?")
+                journal_params.append(account_id)
+            else:
+                # A database created before account identities existed may
+                # still have legacy rows.  Only surface those when there is
+                # no active identity to protect, never alongside a new key.
+                journal_where.append("(broker_account_id IS NULL OR broker_account_id = '')")
+            journal_rows = conn.execute(
+                "SELECT * FROM signal_journal WHERE " + " AND ".join(journal_where) + " ORDER BY id DESC",
+                tuple(journal_params),
+            ).fetchall()
+            date_rows = conn.execute(
+                "SELECT DISTINCT substr(observed_at, 1, 10) AS day FROM shadow_candidates "
+                + ("WHERE broker_account_id = ? " if account_id else "WHERE (broker_account_id IS NULL OR broker_account_id = '') ")
+                + "ORDER BY day DESC LIMIT 90",
+                (account_id,) if account_id else (),
+            ).fetchall()
+    except Exception as exc:
+        logger.exception("scanner opportunities query failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    journal_by_candidate: dict[str, dict] = {}
+    orphan_journal: list[dict] = []
+    for raw in journal_rows:
+        row = dict(raw)
+        context = _json_object(row.get("context_json"))
+        meta = context.get("strategy_meta") if isinstance(context.get("strategy_meta"), dict) else {}
+        candidate_id = meta.get("shadow_candidate_id")
+        if candidate_id:
+            journal_by_candidate.setdefault(str(candidate_id), {**row, "_context": context})
+        else:
+            orphan_journal.append({**row, "_context": context})
+
+    entries: list[dict] = []
+    for raw in candidate_rows:
+        row = dict(raw)
+        candidate_id = str(row["candidate_id"])
+        journal = journal_by_candidate.get(candidate_id)
+        context = journal.get("_context", {}) if journal else {}
+        metadata = _json_object(row.get("metadata_json"))
+        # Decision-time context is preferred because it contains the selected
+        # contract if entry evaluation reached it.  Raw metadata remains the
+        # fallback for observed-only candidates.
+        contract = context.get("contract") if isinstance(context.get("contract"), dict) else {}
+        entry_plan = context.get("entry_plan") if isinstance(context.get("entry_plan"), dict) else {}
+        exit_plan = context.get("exit_plan") if isinstance(context.get("exit_plan"), dict) else {}
+        if not entry_plan:
+            entry_plan = {"trigger": metadata.get("entry_trigger") or "Scanner setup detected"}
+        outcome_value = str(row.get("final_outcome") or "pending")
+        reason_code = row.get("gate_reason") or (journal.get("reason_code") if journal else None)
+        reason_detail = row.get("gate_detail") or (journal.get("reason_detail") if journal else None)
+        trade = None
+        if row.get("linked_trade_id"):
+            trade = {
+                "id": row.get("linked_trade_id"), "contract_symbol": row.get("contract_symbol"),
+                "option_type": row.get("option_type"), "strike": row.get("strike"),
+                "expiry": row.get("expiry"), "contracts": row.get("contracts"),
+                "entry_price": row.get("entry_price"), "exit_price": row.get("exit_price"),
+                "status": row.get("trade_status"), "entry_time": row.get("entry_time"),
+                "exit_time": row.get("exit_time"), "exit_reason": row.get("exit_reason"),
+                "pnl": row.get("realized_pnl"),
+            }
+        entries.append({
+            "id": candidate_id, "source": "candidate", "observed_at": row.get("observed_at"),
+            "ticker": row.get("ticker"), "strategy_id": row.get("strategy_id"),
+            "direction": row.get("direction"), "confidence": row.get("confidence"),
+            "tier": row.get("tier"), "trigger_bar": row.get("trigger_bar"),
+            "outcome": outcome_value, "reason_code": reason_code, "reason_detail": reason_detail,
+            "entry_plan": entry_plan, "contract": contract,
+            "planned_quantity": context.get("planned_quantity"), "exit_plan": exit_plan,
+            "underlying_entry_price": row.get("underlying_entry_price"),
+            "underlying_exit_price": row.get("underlying_exit_price"),
+            "directional_move_pct": row.get("directional_move_pct"),
+            "direction_correct": row.get("direction_correct"),
+            "outcome_observed_at": row.get("outcome_observed_at"), "trade": trade,
+        })
+
+    # Pre-link historical journal rows are still worth displaying.  Clearly
+    # label them as journal-only: they do not have a candidate outcome or a
+    # virtual fill behind them, so a learner will not mistake them for one.
+    candidate_ids_in_page = {str(dict(row)["candidate_id"]) for row in candidate_rows}
+    for journal in orphan_journal:
+        context = journal.get("_context", {})
+        meta = context.get("strategy_meta") if isinstance(context.get("strategy_meta"), dict) else {}
+        if str(meta.get("shadow_candidate_id") or "") in candidate_ids_in_page:
+            continue
+        if ticker and journal.get("ticker") != ticker.upper():
+            continue
+        if strategy and journal.get("strategy_id") != strategy:
+            continue
+        if outcome and journal.get("outcome") != outcome:
+            continue
+        entries.append({
+            "id": f"journal-{journal.get('id')}", "source": "journal_only", "observed_at": journal.get("ts"),
+            "ticker": journal.get("ticker"), "strategy_id": journal.get("strategy_id"),
+            "direction": journal.get("direction"), "confidence": journal.get("confidence"),
+            "tier": journal.get("tier") or "main", "trigger_bar": context.get("trigger_bar"),
+            "outcome": journal.get("outcome"), "reason_code": journal.get("reason_code"),
+            "reason_detail": journal.get("reason_detail"),
+            "entry_plan": context.get("entry_plan") if isinstance(context.get("entry_plan"), dict) else {},
+            "contract": context.get("contract") if isinstance(context.get("contract"), dict) else {},
+            "planned_quantity": context.get("planned_quantity"),
+            "exit_plan": context.get("exit_plan") if isinstance(context.get("exit_plan"), dict) else {},
+            "underlying_entry_price": None, "underlying_exit_price": None,
+            "directional_move_pct": None, "direction_correct": None,
+            "outcome_observed_at": None,
+            "trade": {"id": journal.get("trade_id")} if journal.get("trade_id") else None,
+        })
+    entries.sort(key=lambda entry: str(entry.get("observed_at") or ""), reverse=True)
+    entries = entries[:limit]
+    counts = Counter(str(entry.get("outcome") or "pending") for entry in entries)
+    return {
+        "date": selected_date, "account_scoped": bool(account_id),
+        "available_dates": [str(row["day"]) for row in date_rows if row["day"]],
+        "summary": {"total": len(entries), **counts},
+        "note": "A scanner opportunity is not an order. Contract, quantity, and exit plan appear only after the bot actually reached that decision. The later result is the underlying's 60-minute directional move, not pretend option P&L.",
+        "entries": entries,
+    }
 
 
 def resolve_watching_contracts(watched: list[dict]) -> list[dict]:

@@ -448,6 +448,8 @@ const STRATEGY_LABELS: Record<string, string> = {
   LIQ_SWEEP: "Liquidity Sweep Reversal",
   V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
   V2_SPY_TREND_CONT: "SPY Trend Continuation",
+  V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
+  V2_SPY_AFTERNOON_REVERSAL: "SPY Afternoon Reversal",
 };
 const ALL_STRATEGIES = Object.keys(STRATEGY_LABELS);
 const strategyLabel = (strategyId?: string | null) => strategyId ? (STRATEGY_LABELS[strategyId] ?? strategyId) : "—";

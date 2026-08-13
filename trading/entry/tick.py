@@ -761,6 +761,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("V2_ORB_PULLBACK", "strategy_orb_pullback_v2_enabled"),
             ("V2_TREND_CONT", "strategy_trend_cont_v2_enabled"),
             ("V2_SPY_TREND_CONT", "strategy_spy_trend_cont_v2_enabled"),
+            ("V2_SPY_AFTERNOON_FVG", "strategy_spy_afternoon_fvg_v2_enabled"),
+            ("V2_SPY_AFTERNOON_REVERSAL", "strategy_spy_afternoon_reversal_v2_enabled"),
             ("V2_TSLA_NOISE_MOMENTUM", "strategy_tsla_noise_momentum_v2_enabled"),
         )
         if (sid in _approved_strategy_ids
@@ -918,6 +920,21 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _reviewed_paid_paper_profile = paper and uses_reviewed_paid_execution_profile(strategy_id)
     _US["last_signal"]     = direction
     _US["last_strategy_id"]= strategy_id
+    # Durable, read-only explanation for Scanner Opportunities.  It begins
+    # with the signal facts and is enriched below only when contract selection
+    # succeeds.  This snapshot is never read by placement or exit logic.
+    _US["scanner_opportunity_context"] = {
+        "ticker": ticker.upper(),
+        "strategy_id": strategy_id,
+        "context": {
+            "trigger_bar": str(_top.trigger_bar),
+            "strategy_meta": _top.meta,
+            "entry_plan": {
+                "trigger": "qualifying setup reached the entry router",
+                "underlying_price": None,
+            },
+        },
+    }
 
     # ── Minimum confidence gate — REMOVED 2026-07-18 (was dead code) ─────────
     # This used to re-check _top.confidence against a local 0.55 floor. It
@@ -1109,6 +1126,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     current_price = (quote.get("ap", 0) + quote.get("bp", 0)) / 2
     if current_price <= 0:
         return
+    _opportunity_context = _US.get("scanner_opportunity_context", {}).get("context")
+    if isinstance(_opportunity_context, dict):
+        _entry_plan = _opportunity_context.setdefault("entry_plan", {})
+        if isinstance(_entry_plan, dict):
+            _entry_plan["underlying_price"] = round(float(current_price), 4)
 
     # ── Select contract ───────────────────────────────────────────────────────
     opt_type = "call" if direction == "bullish" else "put"
@@ -1182,6 +1204,17 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # All sizing and R:R calculations use the worst-case fill (ask + 5% slippage)
     # so we never enter a trade whose numbers only work at the quoted price.
     eff_entry = _risk.slippage_adjusted_entry(ask_price)
+    if isinstance(_opportunity_context, dict):
+        _opportunity_context["contract"] = {
+            "symbol": contract.get("symbol"), "strike": contract.get("strike"),
+            "expiry": contract.get("expiry"), "bid": contract.get("bid"),
+            "ask": contract.get("ask"), "spread": contract.get("spread"),
+            "selection_model": contract.get("selection_model"),
+        }
+        _entry_plan = _opportunity_context.setdefault("entry_plan", {})
+        if isinstance(_entry_plan, dict):
+            _entry_plan["estimated_entry_price"] = round(float(eff_entry), 4)
+            _entry_plan["trigger"] = "enter only after every router, liquidity, and risk gate clears"
 
     # ── Record what the bot is currently looking at, for the dashboard ───────
     # Surfaces the live contract premium + affordability ceiling proactively
@@ -1264,6 +1297,24 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             _notional_pct * 100, _notional_cap, _max_affordable,
         )
         n_contracts = _max_affordable
+
+    if isinstance(_opportunity_context, dict):
+        _exit_summaries = {
+            "V2_ORB_PULLBACK": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
+            "V2_TREND_CONT": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
+            "V2_SPY_TREND_CONT": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
+            "V2_SPY_AFTERNOON_FVG": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
+            "V2_SPY_AFTERNOON_REVERSAL": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
+            "V2_TSLA_NOISE_MOMENTUM": "Close the same selected contract at 3:59 PM Eastern, before the market closes.",
+        }
+        _opportunity_context["planned_quantity"] = int(n_contracts)
+        _opportunity_context["exit_plan"] = {
+            "strategy_id": strategy_id,
+            "summary": _exit_summaries.get(
+                strategy_id,
+                "Exit on the hard structural stop, 3 ATR Chandelier trail, or 75-minute time cap.",
+            ),
+        }
 
     # ── Persist contract count AFTER clamp so dashboard shows actual count ─────
     # (Previously written before the clamp, so the eval log showed 2c while the
@@ -1480,6 +1531,15 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     if collection_only:
         log_event("INFO", "trading_logic",
                   f"🔬 [{ticker}] Research record only — maintenance prevents every order and exit.")
+        # The scanner reached a complete, actionable plan, but maintenance
+        # deliberately prevented an order.  Resolve the candidate so Scanner
+        # Opportunities says exactly that instead of leaving it "pending".
+        _log_journal(
+            ticker, strategy_id, direction, _top.confidence,
+            outcome="observed_only", reason_code="maintenance_collection_only",
+            reason_detail="Maintenance collection mode kept this complete setup from placing an order.",
+            context=_opportunity_context, tier=_signal_tier,
+        )
         return
 
     if settings.get("signal_only_mode", False):
@@ -1489,6 +1549,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"${contract.get('strike', '')} exp {contract.get('expiry', '')} "
                   f"| {n_contracts}c @ ${eff_entry:.2f} → ${_s1_disp:.2f} "
                   f"[{strategy_id}] — Signal-Only mode is ON. Enter this trade yourself.")
+        # This is intentionally not an order.  Still save the complete plan
+        # so the learner can see the exact contract, size, and intended exit.
+        _log_journal(
+            ticker, strategy_id, direction, _top.confidence,
+            outcome="observed_only", reason_code="signal_only_mode",
+            reason_detail="Manual signal only: all entry checks cleared, but Signal-Only mode did not place an order.",
+            context=_opportunity_context, tier=_signal_tier,
+        )
         return
 
     # ── Place order ───────────────────────────────────────────────────────────
@@ -1551,6 +1619,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 "reason": "broker returned None — fill not confirmed",
             },
         )
+        _log_journal(
+            ticker, strategy_id, direction, _top.confidence,
+            outcome="blocked", reason_code="broker_fill_unconfirmed",
+            reason_detail="The broker did not confirm a fill, so no position was recorded.",
+            context=_opportunity_context, tier=_signal_tier,
+        )
         return
 
     # Use `or ask_price` (not dict.get default) so that a None confirmed_fill_price
@@ -1586,6 +1660,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         log_event("ERROR", "order",
                   f"🔴 [{ticker}] Order reported as filled but 0 contracts "
                   f"actually filled — no position recorded.")
+        _log_journal(
+            ticker, strategy_id, direction, _top.confidence,
+            outcome="blocked", reason_code="broker_fill_unconfirmed",
+            reason_detail="The broker reported zero contracts filled, so no position was recorded.",
+            context=_opportunity_context, tier=_signal_tier,
+        )
         return
 
     # ── Record to database ────────────────────────────────────────────────────
@@ -1650,24 +1730,17 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # defensively: a journal write must never be allowed to affect a trade
     # that already went through.
     try:
+        # Use the progressively enriched plan created before placement rather
+        # than a smaller second context.  The same candidate now links all of
+        # signal → selected contract → actual fill → intended exit.
+        if isinstance(_opportunity_context, dict):
+            _opportunity_context["planned_quantity"] = int(n_contracts)
+            _entry_contract = _opportunity_context.setdefault("contract", {})
+            if isinstance(_entry_contract, dict):
+                _entry_contract["research_eligibility"] = _sel_info.get("research_eligibility")
         _journal_id = _log_journal(ticker, _US.get("last_strategy_id", "INST_ORB"), direction, _top.confidence,
                      outcome="entered", reason_detail=f"R:R={rr_audit['R_R_Ratio']}", trade_id=trade_id,
-                     context={
-                         "trigger_bar": str(_top.trigger_bar),
-                         "strategy_meta": _top.meta,
-                         "contract": {
-                             "symbol": contract.get("symbol"), "strike": contract.get("strike"),
-                             "expiry": contract.get("expiry"), "bid": contract.get("bid"),
-                             "ask": contract.get("ask"), "spread": contract.get("spread"),
-                             # Present only for the TSLA V2 paper pilot.  This
-                             # lets the learner-facing journal distinguish a
-                             # paid-study-aligned contract from the normal
-                             # generic selector without guessing from price.
-                             "selection_model": contract.get("selection_model"),
-                             "research_eligibility": _sel_info.get("research_eligibility"),
-                         },
-                         "rr_ratio": rr_audit.get("R_R_Ratio"),
-                     }, tier=_signal_tier)
+                     context=_opportunity_context, tier=_signal_tier)
         if _journal_id is None:
             logger.error(
                 "signal_trade_link_missing: trade_id=%s ticker=%s strategy=%s",

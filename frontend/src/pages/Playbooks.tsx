@@ -524,15 +524,37 @@ const CURRENT_STRATEGIES: Strategy[] = [
     tuning: [{ param: "When", value: "Break before 10:30 ET; confirmation by 10:45 ET" }, { param: "Chop defense", value: "Close + reclaim + VWAP alignment" }],
   },
   {
-    id: "v2_trend", name: "TSLA Trend Continuation V2", emoji: "🌊",
+    id: "v2_trend", name: "SPY Trend Continuation V2", emoji: "🌊",
     setup: "A fast trend is above or below a slower trend, then price closes through its recent range in that same direction.",
     entry: "The completed 5-minute signal fills on the next bar. It never uses a future candle to decide.",
     stop: "An ATR-based invalidation sits beyond the entry candle structure.",
     target: "The current paid option study compares a 90-minute ask-entry/bid-exit result.",
-    notes: "TSLA only. Its paper pilot is active while the paid context study identifies where it works best.",
-    evidence: "What we know: the all-signal paid study is still running. Trend is not considered validated and will be removed from the pilot if the full later-data result fails.",
+    notes: "SPY only. It evaluates completed five-minute candles and becomes eligible on the following one-minute bar.",
+    evidence: "What we know: this is the reviewed SPY paid-quote 30-minute rule. The lesson uses a simplified chart so the trend structure is easier to see.",
     tags: ["paper", "trend", "research"],
     tuning: [{ param: "Chart", value: "5-minute TSLA bars" }, { param: "Evidence", value: "Paid option context study in progress" }],
+  },
+  {
+    id: "v2_spy_fvg", name: "SPY Afternoon Fair Value Gap V2", emoji: "⚡",
+    setup: "Between 1:30 and 3:00 PM ET, a three-candle move leaves a meaningful price gap in the direction of the 5-minute trend.",
+    entry: "Price returns to that gap for the first time, overlaps it, closes on the favorable half, and stays aligned with VWAP plus EMA trend. Entry is on the following one-minute option quote.",
+    stop: "The confirming retest candle’s invalidation level; account-wide protections still apply.",
+    target: "The reviewed study exits the same selected contract 30 minutes after entry using the observed bid.",
+    notes: "SPY only. This is a narrow afternoon first-retest rule, not the old all-day generic FVG strategy.",
+    evidence: "The selected afternoon context was positive in both the earlier and later paid option-quote periods: 25 measured signals overall, with a +3.30% average option markout.",
+    tags: ["paper", "afternoon", "gap"],
+    tuning: [{ param: "Window", value: "1:30–3:00 PM ET" }, { param: "Gap", value: "≥ 0.5 × ATR on completed 5-minute bars" }, { param: "Trend", value: "EMA 8/20 and session VWAP agree" }, { param: "Exit", value: "Same contract’s 30-minute bid" }],
+  },
+  {
+    id: "v2_spy_afternoon_reversal", name: "SPY Afternoon Reversal V2", emoji: "↗",
+    setup: "After a meaningful morning selloff, SPY forms a higher low and then breaks above a completed swing high during the early afternoon.",
+    entry: "The completed five-minute structure must be above VWAP. The paper model records the following one-minute option ask, not a hindsight price.",
+    stop: "The confirmed higher low or one ATR below the entry—whichever is lower—is the structural invalidation.",
+    target: "The reviewed study exits the same selected contract 30 minutes after entry at its observed bid.",
+    notes: "SPY calls only, from 1:00–2:00 PM ET. This is not the retired all-day generic Afternoon Reversal strategy.",
+    evidence: "The selected long-only context passed both earlier and later paid option-quote periods: 12 measured signals, with positive average markouts in each period.",
+    tags: ["paper", "afternoon", "reversal"],
+    tuning: [{ param: "Window", value: "1:00–2:00 PM ET" }, { param: "Structure", value: "Morning selloff → higher low → break above swing high" }, { param: "Confirmation", value: "Completed 5-minute close above VWAP" }, { param: "Exit", value: "Same contract’s 30-minute bid" }],
   },
   {
     id: "v2_momentum", name: "TSLA Adaptive Momentum V2", emoji: "⚡",
@@ -555,7 +577,9 @@ export function Playbooks() {
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get });
   const currentStrategies = useMemo(() => CURRENT_STRATEGIES.filter((strategy) => (
     strategy.id === "v2_orb" ? Boolean(settings?.strategy_orb_pullback_v2_enabled) :
-    strategy.id === "v2_trend" ? Boolean(settings?.strategy_trend_cont_v2_enabled) :
+    strategy.id === "v2_trend" ? Boolean(settings?.strategy_spy_trend_cont_v2_enabled) :
+    strategy.id === "v2_spy_fvg" ? Boolean(settings?.strategy_spy_afternoon_fvg_v2_enabled) :
+    strategy.id === "v2_spy_afternoon_reversal" ? Boolean(settings?.strategy_spy_afternoon_reversal_v2_enabled) :
     Boolean(settings?.strategy_tsla_noise_momentum_v2_enabled)
   )), [settings]);
 
@@ -712,7 +736,7 @@ export function Playbooks() {
           No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
         </div>
       ) : (
-        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_momentum")} />
+        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_spy_afternoon_reversal" | "v2_momentum")} />
       )}
 
       <details className="card p-4">

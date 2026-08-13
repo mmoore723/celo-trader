@@ -26,6 +26,8 @@ V2_EXIT_MINUTES_BY_STRATEGY = {
     # 66 untouched later trades. The 90-minute per-signal diagnostic allowed
     # overlapping SPY positions, so it is not the executable account policy.
     "V2_SPY_TREND_CONT": 30,
+    "V2_SPY_AFTERNOON_FVG": 30,
+    "V2_SPY_AFTERNOON_REVERSAL": 30,
 }
 V2_PRE_CLOSE_EXIT_STRATEGY_IDS = frozenset({"V2_TSLA_NOISE_MOMENTUM"})
 
@@ -55,6 +57,8 @@ def evaluate_v2_orb_paper_exit(
         prefix = {
             "V2_TREND_CONT": "v2_trend",
             "V2_SPY_TREND_CONT": "v2_spy_trend",
+            "V2_SPY_AFTERNOON_FVG": "v2_spy_afternoon_fvg",
+            "V2_SPY_AFTERNOON_REVERSAL": "v2_spy_afternoon_reversal",
         }.get(normalized_strategy_id, "v2_orb")
         return True, (
             f"{prefix}_paid_markout_{hold_minutes}m "

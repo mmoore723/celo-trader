@@ -4,6 +4,7 @@
  */
 import { useState, useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
@@ -200,6 +201,18 @@ export function LiveTrading() {
     queryFn: api.market.scanner,
     refetchInterval: 60_000,
   });
+
+  // This is deliberately the same durable scanner-candidate trail shown on
+  // Scanner Opportunities.  The old websocket eval log is still useful for
+  // the one-line "Bot Focus" alert above, but it is not a reliable history:
+  // it disappears on refresh and never contained the full contract/exit plan.
+  const { data: scannerOpportunityData } = useQuery({
+    queryKey: ["scanner-opportunities-preview"],
+    queryFn: () => api.signals.opportunities({ limit: 6 }),
+    refetchInterval: 15_000,
+    retry: false,
+  });
+  const scannerOpportunityPreview = scannerOpportunityData?.entries ?? [];
 
   const { data: or } = useQuery({
     queryKey: ["or", ticker],
@@ -688,119 +701,81 @@ export function LiveTrading() {
             </div>
           )}
 
-          {/* Signal History — all recent evaluations */}
+          {/* Keep this as a compact live snapshot of the exact same durable,
+              day-by-day scanner trail shown on Scanner Opportunities. */}
           <div className="border-t px-3 py-2 flex items-center justify-between"
                style={{ borderColor: "var(--border)" }}>
             <span className="text-xs font-semibold uppercase tracking-wider"
-                  style={{ color: "var(--ink-muted)" }}>Signal History</span>
-            <span className="text-[9px]" style={{ color: "var(--ink-faint)" }}>tap to copy</span>
+                  style={{ color: "var(--ink-muted)" }}>Today's Scanner Opportunities</span>
+            <Link to="/opportunities" className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>View all opportunities →</Link>
           </div>
           <div className="overflow-y-auto flex-1" style={{ minHeight: 200 }}>
-            {evalLog.length === 0 ? (
+            {scannerOpportunityPreview.length === 0 ? (
               <p className="text-xs px-3 pb-3" style={{ color: "var(--ink-muted)" }}>
                 {status?.running
-                  ? "Scanning… no contract evaluations yet"
+                  ? "Scanning… opportunities appear here after the scanner evaluates a setup"
                   : "Waiting for bot to start scanning…"}
               </p>
             ) : (
-              evalLog.map((ev: any, i: number) => {
-                // Rejected evaluations (no contract) — compact skip row instead of
-                // the meaningless "1c @ $0.00 → $0.00" template.
-                if (ev.rejected) {
-                  const reasonLabel: Record<string, string> = {
-                    no_signal:        "no setup",
-                    below_confidence: "low confidence",
-                    zero_contracts:   "can't size 1 contract",
-                    spread_too_wide:  "spread too wide",
-                    rr_too_low:       "R:R too low",
-                    macro_vwap_veto:  "macro VWAP conflict",
-                  };
-                  return (
-                    <div key={i}
-                      className="w-full px-3 py-1 border-b"
-                      style={{ borderColor: "var(--border)", fontFamily: "JetBrains Mono, monospace",
-                               fontSize: 10, display: "flex", alignItems: "center", gap: 6,
-                               opacity: 0.65 }}>
-                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{ev.ts ?? ""}</span>
-                      <span style={{ color: "var(--ink-muted)", fontWeight: 600 }}>{ev.ticker}</span>
-                      <span style={{
-                        fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
-                        background: "rgba(139,148,158,0.15)", color: "var(--ink-muted)",
-                      }}>SKIP</span>
-                      <span style={{ color: "var(--ink-muted)" }}>
-                        {reasonLabel[ev.reason] ?? ev.reason}
-                        {ev.strategy ? ` · ${ev.strategy}` : ""}
-                        {ev.confidence ? ` · conf ${(ev.confidence * 100).toFixed(0)}%` : ""}
-                      </span>
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        style={{ padding: "0px 5px", fontSize: 8, marginLeft: "auto" }}
-                        title="Watch this moment on the chart"
-                        onClick={(e) => { e.stopPropagation(); watchAt(ev.ts); }}
-                      >
-                        ▶
-                      </button>
-                    </div>
-                  );
-                }
-                const isCall = (ev.opt_type ?? "").toLowerCase() === "call";
-                const stk    = ev.strike != null
-                  ? `$${ev.strike % 1 === 0 ? ev.strike.toFixed(0) : ev.strike.toFixed(2)}`
-                  : "";
-                const isSignal = ev.mode === "signal";
+              scannerOpportunityPreview.map((opportunity: any) => {
+                const outcomeLabel: Record<string, string> = {
+                  entered: "ENTERED",
+                  observed_only: "OBSERVED",
+                  blocked: "BLOCKED",
+                  pending: "PENDING",
+                };
+                const isEntered = opportunity.outcome === "entered";
+                // Scanner candidates use the same "bullish" / "bearish"
+                // vocabulary as the entry router.  Do not silently call a
+                // bullish setup a put because a different page uses long/short.
+                const isBullish = ["bullish", "long"].includes((opportunity.direction ?? "").toLowerCase());
+                const contract = opportunity.contract ?? {};
+                const trade = opportunity.trade ?? {};
+                const optionType = contract.option_type ?? trade.option_type ?? (isBullish ? "call" : "put");
+                const strike = contract.strike ?? trade.strike;
+                const expiry = contract.expiry ?? trade.expiry;
+                const estimatedEntry = contract.estimated_entry_price ?? contract.ask ?? trade.entry_price;
+                const observedTime = opportunity.observed_at
+                  ? new Date(opportunity.observed_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+                  : "—";
+                const decision = opportunity.reason_detail
+                  ?? opportunity.reason_code
+                  ?? opportunity.entry_plan?.trigger
+                  ?? "Scanner setup detected";
                 return (
-                  <button key={i}
+                  <button key={opportunity.id}
                     className="w-full text-left px-3 py-1.5 border-b hover:bg-muted transition-colors"
                     style={{ borderColor: "var(--border)", fontFamily: "JetBrains Mono, monospace", fontSize: 10 }}
-                    title="Click to copy Discord-ready trade idea"
-                    onClick={() => navigator.clipboard.writeText(toDiscordStr(ev)).catch(() => {})}>
+                    title={`Open ${opportunity.ticker} on the chart`}
+                    onClick={() => setTicker(opportunity.ticker)}>
                     <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
-                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{ev.ts ?? ""}</span>
+                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{observedTime}</span>
                       <span style={{
                         fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
-                        background: isCall ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
-                        color: isCall ? "var(--positive)" : "var(--negative)",
+                        background: isBullish ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
+                        color: isBullish ? "var(--positive)" : "var(--negative)",
                       }}>
-                        {(ev.opt_type ?? "").toUpperCase()}
+                        {String(optionType).toUpperCase()}
                       </span>
-                      <span style={{ color: "var(--accent)", fontWeight: 700, cursor: "pointer" }}
-                        onClick={(e) => { e.stopPropagation(); setTicker(ev.ticker); }}
-                        title={`View ${ev.ticker} chart`}>
-                        {ev.ticker}
+                      <span style={{ color: "var(--accent)", fontWeight: 700 }}>
+                        {opportunity.ticker}
                       </span>
-                      <span style={{ color: "var(--ink)" }}>{stk}</span>
-                      {ev.expiry && <span style={{ color: "var(--ink-muted)" }}>{fmtExp(ev.expiry)}</span>}
-                      {ev.strategy && <span className="badge badge-blue" style={{ fontSize: 7 }}>{ev.strategy}</span>}
-                      {/* mode badge */}
+                      {strike != null && <span style={{ color: "var(--ink)" }}>${Number(strike).toFixed(0)}</span>}
+                      {expiry && <span style={{ color: "var(--ink-muted)" }}>{fmtExp(expiry)}</span>}
+                      {opportunity.strategy_id && <span className="badge badge-blue" style={{ fontSize: 7 }}>{opportunity.strategy_id}</span>}
                       <span style={{
                         fontSize: 7, fontWeight: 700, padding: "1px 4px", borderRadius: 2, marginLeft: "auto",
-                        background: isSignal ? "rgba(234,148,29,0.15)" : "rgba(34,197,94,0.15)",
-                        color: isSignal ? "var(--warning)" : "var(--positive)",
+                        background: isEntered ? "rgba(34,197,94,0.15)" : "rgba(139,148,158,0.15)",
+                        color: isEntered ? "var(--positive)" : "var(--ink-muted)",
                       }}>
-                        {isSignal ? "MANUAL" : "AUTO"}
-                      </span>
-                      {/* Watch this setup — jumps the chart's scrub position to this
-                          moment and auto-plays (chart refactor Phase 3). A <span>, not
-                          a nested <button>, since this whole row is already a <button>. */}
-                      <span
-                        role="button"
-                        style={{ fontSize: 9, color: "var(--accent)", cursor: "pointer", padding: "0 2px" }}
-                        title="Watch this setup on the chart"
-                        onClick={(e) => { e.stopPropagation(); watchAt(ev.ts); }}
-                      >
-                        ▶
+                        {outcomeLabel[opportunity.outcome] ?? String(opportunity.outcome ?? "PENDING").toUpperCase()}
                       </span>
                     </div>
                     <div style={{ display: "flex", gap: 8, color: "var(--ink-muted)" }}>
                       <span>
-                        <span style={{ color: "var(--ink)" }}>{ev.contracts ?? 1}c</span>
-                        {" @ "}
-                        <span style={{ color: "var(--ink)", fontWeight: 600 }}>${(ev.eff_entry ?? 0).toFixed(2)}</span>
-                        {" → "}
-                        <span style={{ color: "var(--positive)", fontWeight: 600 }}>${(ev.s1_target ?? 0).toFixed(2)}</span>
-                        {ev.profit != null && (
-                          <span style={{ color: "var(--positive)", opacity: 0.7 }}>{" "}(+${ev.profit.toFixed(2)})</span>
-                        )}
+                        {opportunity.planned_quantity != null && <><span style={{ color: "var(--ink)" }}>{opportunity.planned_quantity}c planned</span>{" · "}</>}
+                        {estimatedEntry != null && <><span style={{ color: "var(--ink)", fontWeight: 600 }}>est. ${Number(estimatedEntry).toFixed(2)}</span>{" · "}</>}
+                        <span>{decision}</span>
                       </span>
                     </div>
                   </button>
