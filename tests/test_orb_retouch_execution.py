@@ -77,6 +77,32 @@ class OneMinuteOrbRetouchTests(unittest.TestCase):
         self.assertIsNone(signal)
         self.assertEqual("building_or_waiting_for_breakout", status)
 
+    def test_short_first_break_is_not_recast_as_a_later_long_setup(self) -> None:
+        closes = [100.0] * 15 + [99.0]
+        highs = [100.5] * 15 + [99.2]
+        lows = [99.5] * 15 + [98.8]
+        state: dict[str, object] = {}
+        signal, status = update_one_minute_orb_retouch(
+            state, frame(closes, highs, lows), ticker="TSLA", quote_price=99.5,
+            now=datetime(2026, 1, 2, 9, 47),
+        )
+        self.assertIsNone(signal)
+        self.assertEqual("outside_validated_direction", status)
+        self.assertEqual("outside_validated_direction", state["terminal"])
+
+    def test_retouch_window_expires_at_1030_eastern(self) -> None:
+        closes = [100.0] * 15 + [101.0]
+        highs = [100.5] * 15 + [101.2]
+        lows = [99.5] * 15 + [100.8]
+        state: dict[str, object] = {}
+        signal, status = update_one_minute_orb_retouch(
+            state, frame(closes, highs, lows), ticker="TSLA", quote_price=100.53,
+            now=datetime(2026, 1, 2, 10, 31),
+        )
+        self.assertIsNone(signal)
+        self.assertEqual("entry_window_expired", status)
+        self.assertEqual("entry_window_expired", state["terminal"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -42,9 +42,18 @@ from research.engine.strategies import (
 )
 from research.engine.strategies import VWAPPullback, VWAPPullbackConfig
 from research.engine.strategies import SuperTrendReversal
+from research.engine.strategies import ChannelBounce
+from research.engine.strategies import BreakOfStructureMSS
+from research.engine.strategies import LiquiditySweep
+from research.engine.strategies import InverseFairValueGap
+from research.engine.strategies import GapAndGo
+from research.engine.strategies import LiveMiddayBreakdown
+from research.engine.strategies.channel_bounce import _rvol_for_current_bar
 from research.engine.strategies import EMAPullbackRTH, EMAPullbackRTHConfig
 from research.engine.strategies import TurtleSoupRTH, TurtleSoupRTHConfig
 from research.engine.strategies import GapFillRTH, GapFillRTHConfig
+from research.engine.strategies import BreakoutPullbackContinuation, BreakoutPullbackContinuationConfig
+from research.jobs.compare_paid_trend_contexts import strategy_bars as trend_context_strategy_bars
 from research.engine.strategies import OpeningMomentumRTH, OpeningMomentumRTHConfig
 from research.engine.supertrend_simulator import ReversalSimulationConfig, SuperTrendReversalSimulator
 from research.engine.validation import ValidationConfig, validate
@@ -86,6 +95,140 @@ class _TrailingLong(_OneLong):
 
 
 class ResearchV2Tests(unittest.TestCase):
+    def test_breakout_pullback_continuation_requires_all_three_steps(self) -> None:
+        """A break alone is not an entry; it needs retest then fresh proof."""
+        start = datetime(2026, 1, 2, 9, 30)
+        config = BreakoutPullbackContinuationConfig(
+            range_bars=3, fast_ema=3, slow_ema=5, atr_bars=3,
+            entry_start=time(9, 55), entry_end=time(15, 0),
+        )
+        strategy = BreakoutPullbackContinuation(config)
+        bars = []
+        # Calm range, then an upward break.  No signal may occur yet.
+        for index, close in enumerate((100, 100.1, 100.0, 100.2, 100.1, 100.2, 100.4, 100.8)):
+            bars.append(Bar(start + timedelta(minutes=index * 5), close, close + .12, close - .12, close, 1000))
+            self.assertIsNone(strategy.evaluate(bars))
+        # Retest the broken level: still no signal.
+        bars.append(Bar(start + timedelta(minutes=40), 100.75, 100.82, 100.32, 100.58, 1000))
+        self.assertIsNone(strategy.evaluate(bars))
+        # A new completed bullish candle proves the retest held.
+        bars.append(Bar(start + timedelta(minutes=45), 100.6, 100.95, 100.55, 100.9, 1000))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual("up_break_first_retest_confirmation", signal.features["trigger"])
+
+    def test_breakout_pullback_continuation_emits_once_per_session(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        config = BreakoutPullbackContinuationConfig(
+            range_bars=3, fast_ema=3, slow_ema=5, atr_bars=3,
+            entry_start=time(9, 55), entry_end=time(15, 0),
+        )
+        strategy = BreakoutPullbackContinuation(config)
+        bars = []
+        for index, close in enumerate((100, 100.1, 100.0, 100.2, 100.1, 100.2, 100.4, 100.8, 100.58, 100.9, 101.3, 101.8)):
+            bars.append(Bar(start + timedelta(minutes=index * 5), close, close + .12, close - .12, close, 1000))
+            strategy.evaluate(bars)
+        # The first signal has already happened; later bars cannot produce
+        # another same-day entry from the same or a new sequence.
+        self.assertIsNone(strategy.evaluate(bars))
+
+    def test_paid_trend_contexts_uses_completed_five_minute_bars(self) -> None:
+        """The paid quote context study must match the trend strategy cadence."""
+        start = datetime(2026, 1, 2, 9, 30)
+        one_minute = tuple(
+            Bar(start + timedelta(minutes=index), 100, 101, 99, 100 + index * .01, 1000)
+            for index in range(10)
+        )
+        bars = trend_context_strategy_bars(one_minute)
+        self.assertEqual(2, len(bars))
+        self.assertEqual((time(9, 30), time(9, 35)), tuple(bar.timestamp.time() for bar in bars))
+
+    def test_channel_bounce_never_uses_future_bars_to_confirm_a_signal(self) -> None:
+        # A channel screen may inspect only the supplied completed history. A
+        # later bar that would make an old low a better pivot cannot create a
+        # retroactive signal at an earlier timestamp.
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index * 5), 100 + index * .1,
+                100.3 + index * .1, 99.8 + index * .1, 100.1 + index * .1, 1000)
+            for index in range(30)
+        )
+        strategy = ChannelBounce()
+        early = strategy.evaluate(bars[:-1])
+        late = strategy.evaluate(bars)
+        if early is not None:
+            self.assertLess(early.timestamp, bars[-1].timestamp)
+        if late is not None:
+            self.assertEqual(bars[-1].timestamp, late.timestamp)
+
+    def test_bos_mss_does_not_emit_before_its_current_completed_bar(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index * 5), 100 + index * .1,
+                100.3 + index * .1, 99.8 + index * .1, 100.1 + index * .1, 1000)
+            for index in range(30)
+        )
+        candidate = BreakOfStructureMSS().evaluate(bars)
+        if candidate is not None:
+            self.assertEqual(bars[-1].timestamp, candidate.timestamp)
+
+    def test_liquidity_sweep_only_emits_on_its_confirmation_bar(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index), 100 + index * .01,
+                100.2 + index * .01, 99.8 + index * .01, 100.05 + index * .01, 1000)
+            for index in range(35)
+        )
+        candidate = LiquiditySweep().evaluate(bars)
+        if candidate is not None:
+            self.assertEqual(bars[-1].timestamp, candidate.timestamp)
+
+    def test_inverse_fvg_only_emits_on_its_current_completed_bar(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index), 100 + index * .01,
+                100.2 + index * .01, 99.8 + index * .01, 100.05 + index * .01, 1000)
+            for index in range(45)
+        )
+        candidate = InverseFairValueGap().evaluate(bars)
+        if candidate is not None:
+            self.assertEqual(bars[-1].timestamp, candidate.timestamp)
+
+    def test_gap_and_go_only_emits_on_its_current_completed_bar(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        previous = Bar(start - timedelta(days=1), 100, 101, 99, 100, 1000)
+        today = tuple(
+            Bar(start + timedelta(minutes=index * 5), 101 + index * .1,
+                101.3 + index * .1, 100.8 + index * .1, 101.1 + index * .1, 1000)
+            for index in range(4)
+        )
+        candidate = GapAndGo().evaluate((previous, *today))
+        if candidate is not None:
+            self.assertEqual(today[-1].timestamp, candidate.timestamp)
+
+    def test_live_midday_breakdown_only_emits_on_its_current_completed_bar(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        bars = tuple(
+            Bar(start + timedelta(minutes=index * 5), 100 - index * .1,
+                100.2 - index * .1, 99.8 - index * .1, 99.95 - index * .1, 1000)
+            for index in range(45)
+        )
+        candidate = LiveMiddayBreakdown().evaluate(bars)
+        if candidate is not None:
+            self.assertEqual(bars[-1].timestamp, candidate.timestamp)
+
+    def test_rvol_fallback_does_not_read_later_bars(self) -> None:
+        start = datetime(2026, 1, 2, 9, 30)
+        observed = Bar(start, 100, 101, 99, 100, 100)
+        prior = tuple(Bar(start - timedelta(minutes=20 - index), 100, 101, 99, 100, 100)
+                      for index in range(20))
+        future = tuple(Bar(start + timedelta(minutes=index + 1), 100, 101, 99, 100, 10_000)
+                       for index in range(20))
+        with_future = _rvol_for_current_bar((*prior, observed, *future), observed, 10)
+        without_future = _rvol_for_current_bar((*prior, observed), observed, 10)
+        self.assertEqual(without_future, with_future)
     def test_quote_window_matcher_merges_without_expanding_boundaries(self) -> None:
         start = datetime(2026, 1, 2, 10, 0)
         matcher = _window_matcher(((start, start + timedelta(minutes=1)),

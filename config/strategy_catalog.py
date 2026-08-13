@@ -27,7 +27,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         tickers=frozenset({"TSLA"}),
         setting_key="strategy_orb_pullback_v2_enabled",
         exit_minutes=90,
-        evidence="TSLA paid-quote opening-range first-retouch study",
+        evidence="TSLA paid-quote one-minute calls-only opening-range first-retouch study (entry by 10:30 ET)",
     ),
     "V2_SPY_TREND_CONT": ReviewedStrategy(
         strategy_id="V2_SPY_TREND_CONT",

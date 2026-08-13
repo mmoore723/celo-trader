@@ -18,6 +18,12 @@ from strategies.base import Signal
 STRATEGY_ID = "V2_ORB_PULLBACK"
 TICKER = "TSLA"
 RETOUCH_TOLERANCE_PCT = 0.0005
+# These are executable parameters, not generic ORB defaults.  The paid TSLA
+# study selected the first *long* retouch only, with the retouch occurring no
+# later than 10:30 Eastern.  Keeping them here makes the paper pilot match the
+# reviewed rule instead of silently widening it to every ORB direction.
+ENTRY_DEADLINE = time(10, 30)
+VALIDATED_SIDE = Side.LONG
 
 
 def _completed_bars(today: pd.DataFrame, now: datetime) -> tuple[Bar, ...]:
@@ -70,12 +76,21 @@ def update_one_minute_orb_retouch(
     if state.get("terminal"):
         return None, str(state["terminal"])
 
-    context = first_close_confirmed_breakout(bars)
+    context = first_close_confirmed_breakout(bars, entry_deadline=ENTRY_DEADLINE)
     if context is None:
         return None, "building_or_waiting_for_breakout"
+    if context.side is not VALIDATED_SIDE:
+        # The first clean break defines the session's ORB sequence.  A short
+        # break is deliberately not turned into a later long setup: the paid
+        # TSLA rule that passed was calls-only.
+        state["terminal"] = "outside_validated_direction"
+        return None, "outside_validated_direction"
     state["breakout_time"] = context.breakout_time.isoformat()
     state["side"] = context.side.value
     state["retouch_level"] = context.retouch_level
+    if now.time() > ENTRY_DEADLINE:
+        state["terminal"] = "entry_window_expired"
+        return None, "entry_window_expired"
     status = retouch_status(context, float(quote_price), tolerance_pct=RETOUCH_TOLERANCE_PCT)
     if status == "ready":
         return None, "armed_waiting_for_first_retouch"
@@ -100,8 +115,8 @@ def update_one_minute_orb_retouch(
         rvol=float(today.iloc[-1].get("rvol", 0.0) or 0.0),
         trigger_bar=pd.Timestamp(now),
         meta={
-            "v2_hypothesis": "one_minute_opening_range_first_retouch",
-            "research_only": True,
+            "v2_hypothesis": "one_minute_opening_range_first_long_retouch_before_1030",
+            "validated_entry_rule": "calls_only_first_retouch_before_1030_et",
             "entry_timing": "completed_1m_breakout_then_live_quote_first_retouch",
             "or_high": context.range_high,
             "or_low": context.range_low,
