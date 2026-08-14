@@ -120,19 +120,19 @@ _DEFAULTS = {
     # Server-reviewed scope.  A per-strategy toggle is still required before
     # either paper rule can enter; this list only prevents a browser from
     # promoting an unrelated strategy by sending an arbitrary ID.
-    "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT", "V2_TSLA_NOISE_MOMENTUM", "V2_TSLA_TWO_LEG_TREND_PULLBACK"],
-    "strategy_orb_pullback_v2_enabled": False,
+    "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_TSLA_TWO_LEG_TREND_PULLBACK"],
+    "strategy_orb_pullback_v2_enabled": True,
     "strategy_trend_cont_v2_enabled": False,
     # Passed the separately held-back SPY option-quote data at the reviewed
     # 30-minute same-contract exit.  Enable it for new paper settings just as
     # the reviewed TSLA rules are enabled below; users retain the Settings
     # switch to turn it off.
     "strategy_spy_trend_cont_v2_enabled": True,
-    "strategy_spy_afternoon_fvg_v2_enabled": False,
+    "strategy_spy_afternoon_fvg_v2_enabled": True,
     "strategy_spy_afternoon_reversal_v2_enabled": False,
     # Reviewed TSLA paid-quote strategy. Enabled by default for paper accounts;
     # individual users can still turn it off from Settings.
-    "strategy_tsla_noise_momentum_v2_enabled": True,
+    "strategy_tsla_noise_momentum_v2_enabled": False,
     # Earlier 200 TSLA option-quote sessions selected this exact one-minute
     # two-leg rule; 51 untouched later sessions also passed. Paper default ON.
     "strategy_tsla_two_leg_trend_pullback_v2_enabled": True,

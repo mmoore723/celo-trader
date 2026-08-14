@@ -41,12 +41,12 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         exit_minutes=30,
         evidence="SPY paid-quote Trend Continuation 30-minute one-position fixed-hold study",
     ),
-    "V2_TSLA_NOISE_MOMENTUM": ReviewedStrategy(
-        strategy_id="V2_TSLA_NOISE_MOMENTUM",
-        tickers=frozenset({"TSLA"}),
-        setting_key="strategy_tsla_noise_momentum_v2_enabled",
-        exit_minutes=None,
-        evidence="TSLA paid-quote 14-prior-session adaptive noise-boundary momentum study; next-minute entry and 15:59 ET same-contract exit",
+    "V2_SPY_AFTERNOON_FVG": ReviewedStrategy(
+        strategy_id="V2_SPY_AFTERNOON_FVG",
+        tickers=frozenset({"SPY"}),
+        setting_key="strategy_spy_afternoon_fvg_v2_enabled",
+        exit_minutes=30,
+        evidence="SPY paid-quote afternoon first-retest FVG study; stable across May, June, and July 2026",
     ),
     "V2_TSLA_TWO_LEG_TREND_PULLBACK": ReviewedStrategy(
         strategy_id="V2_TSLA_TWO_LEG_TREND_PULLBACK",

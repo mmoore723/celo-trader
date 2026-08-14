@@ -36,12 +36,12 @@ class Settings(BaseModel):
     liquidity_sweep_enabled: bool = False
     # V2 pilots are independently controllable from Settings, but their
     # execution profile still refuses live mode in trading/entry/tick.py.
-    strategy_orb_pullback_v2_enabled: bool = False
+    strategy_orb_pullback_v2_enabled: bool = True
     strategy_trend_cont_v2_enabled: bool = False
     strategy_spy_trend_cont_v2_enabled: bool = True
-    strategy_spy_afternoon_fvg_v2_enabled: bool = False
+    strategy_spy_afternoon_fvg_v2_enabled: bool = True
     strategy_spy_afternoon_reversal_v2_enabled: bool = False
-    strategy_tsla_noise_momentum_v2_enabled: bool = True
+    strategy_tsla_noise_momentum_v2_enabled: bool = False
     strategy_tsla_two_leg_trend_pullback_v2_enabled: bool = True
     opportunity_tier_enabled: bool = False  # paper-only lower-confidence research cohort
     signal_only_mode: bool = False  # True = bot alerts but never places orders

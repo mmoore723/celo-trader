@@ -18,6 +18,16 @@ from config.env_keys import ALPACA_API_KEY, ALPACA_SECRET_KEY, TRADIER_API_KEY, 
 from config.logging_settings import LOG_LEVEL, LOG_FORMAT
 
 
+_RETIRED_STRATEGY_SETTING_KEYS = frozenset({
+    "strategy_orb_enabled", "strategy_bos_enabled", "strategy_vwap_enabled",
+    "strategy_fvg_enabled", "strategy_ifvg_enabled", "strategy_chan_enabled",
+    "strategy_mid_enabled", "strategy_tcont_enabled", "strategy_aft_enabled",
+    "strategy_gapgo_enabled", "strategy_liqsweep_enabled",
+    "strategy_trend_cont_v2_enabled", "strategy_spy_afternoon_reversal_v2_enabled",
+    "strategy_tsla_noise_momentum_v2_enabled",
+})
+
+
 def get_settings(user_id: str | None = None) -> dict:
     """
     Return settings for the given (or current) user, falling back through:
@@ -45,8 +55,11 @@ def get_settings(user_id: str | None = None) -> dict:
     # sample/holdout requirement cannot remain runnable through an old saved
     # settings file.
     try:
-        from config.strategy_catalog import reviewed_strategy_ids
+        from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_strategy_ids
         settings["validated_strategy_ids"] = sorted(reviewed_strategy_ids())
+        approved_setting_keys = {rule.setting_key for rule in REVIEWED_STRATEGIES.values()}
+        for key in _RETIRED_STRATEGY_SETTING_KEYS - approved_setting_keys:
+            settings[key] = False
     except Exception:
         # Settings must remain available during an incomplete deploy.
         pass

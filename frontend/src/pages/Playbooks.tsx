@@ -590,8 +590,7 @@ export function Playbooks() {
     strategy.id === "v2_orb" ? Boolean(settings?.strategy_orb_pullback_v2_enabled) :
     strategy.id === "v2_trend" ? Boolean(settings?.strategy_spy_trend_cont_v2_enabled) :
     strategy.id === "v2_spy_fvg" ? Boolean(settings?.strategy_spy_afternoon_fvg_v2_enabled) :
-    strategy.id === "v2_spy_afternoon_reversal" ? Boolean(settings?.strategy_spy_afternoon_reversal_v2_enabled) :
-    strategy.id === "v2_momentum" ? Boolean(settings?.strategy_tsla_noise_momentum_v2_enabled) :
+    (strategy.id === "v2_spy_afternoon_reversal" || strategy.id === "v2_momentum") ? false :
     Boolean(settings?.strategy_tsla_two_leg_trend_pullback_v2_enabled)
   )), [settings]);
 

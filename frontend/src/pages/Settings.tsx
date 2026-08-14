@@ -41,10 +41,10 @@ const DEFAULT: AppSettings = {
   aft_rev_enabled: false,
   gap_go_enabled: false,
   liquidity_sweep_enabled: false,
-  strategy_orb_pullback_v2_enabled: false,
+  strategy_orb_pullback_v2_enabled: true,
   strategy_trend_cont_v2_enabled: false,
   strategy_spy_trend_cont_v2_enabled: true,
-  strategy_spy_afternoon_fvg_v2_enabled: false,
+  strategy_spy_afternoon_fvg_v2_enabled: true,
   strategy_spy_afternoon_reversal_v2_enabled: false,
   strategy_tsla_noise_momentum_v2_enabled: false,
   strategy_tsla_two_leg_trend_pullback_v2_enabled: true,
@@ -436,42 +436,12 @@ export function Settings() {
         </div>
         <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
           <Toggle
-            label="TSLA Adaptive Momentum V2"
-            checked={form.strategy_tsla_noise_momentum_v2_enabled ?? false}
-            onChange={(v) => set("strategy_tsla_noise_momentum_v2_enabled", v)}
-          />
-          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            Uses 14 completed prior one-minute sessions to define the normal price zone. A new completed half-hour close outside that zone enters on the next minute; the reviewed exit is 3:59 PM ET.
-          </p>
-        </div>
-        <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <Toggle
             label="SPY Afternoon Fair Value Gap V2"
             checked={form.strategy_spy_afternoon_fvg_v2_enabled ?? false}
             onChange={(v) => set("strategy_spy_afternoon_fvg_v2_enabled", v)}
           />
           <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
             Looks only from 1:30 to 3:00 PM ET for SPY’s first return to a confirmed 5-minute price gap, aligned with VWAP and trend. The reviewed exit is 30 minutes after entry using the same option contract.
-          </p>
-        </div>
-        <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <Toggle
-            label="SPY Afternoon Reversal V2"
-            checked={form.strategy_spy_afternoon_reversal_v2_enabled ?? false}
-            onChange={(v) => set("strategy_spy_afternoon_reversal_v2_enabled", v)}
-          />
-          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            SPY calls only: from 1:00 to 2:00 PM ET, it waits for a material morning selloff, a confirmed higher low, a break above the swing high, and price above VWAP. Entry is on the next minute; the reviewed exit is 30 minutes later using the same option contract.
-          </p>
-        </div>
-        <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <Toggle
-            label="TSLA Trend Continuation V2"
-            checked={form.strategy_trend_cont_v2_enabled ?? false}
-            onChange={(v) => set("strategy_trend_cont_v2_enabled", v)}
-          />
-          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            Follows a confirmed directional move. Paper-only while the paid option-context study finishes.
           </p>
         </div>
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>

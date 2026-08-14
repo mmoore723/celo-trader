@@ -55,12 +55,12 @@ def get_settings_endpoint() -> Settings:
         aft_rev_enabled=bool(s.get("strategy_aft_enabled", False)),
         gap_go_enabled=bool(s.get("strategy_gapgo_enabled", False)),
         liquidity_sweep_enabled=bool(s.get("strategy_liqsweep_enabled", False)),
-        strategy_orb_pullback_v2_enabled=bool(s.get("strategy_orb_pullback_v2_enabled", False)),
+        strategy_orb_pullback_v2_enabled=bool(s.get("strategy_orb_pullback_v2_enabled", True)),
         strategy_trend_cont_v2_enabled=bool(s.get("strategy_trend_cont_v2_enabled", False)),
         strategy_spy_trend_cont_v2_enabled=bool(s.get("strategy_spy_trend_cont_v2_enabled", True)),
-        strategy_spy_afternoon_fvg_v2_enabled=bool(s.get("strategy_spy_afternoon_fvg_v2_enabled", False)),
+        strategy_spy_afternoon_fvg_v2_enabled=bool(s.get("strategy_spy_afternoon_fvg_v2_enabled", True)),
         strategy_spy_afternoon_reversal_v2_enabled=bool(s.get("strategy_spy_afternoon_reversal_v2_enabled", False)),
-        strategy_tsla_noise_momentum_v2_enabled=bool(s.get("strategy_tsla_noise_momentum_v2_enabled", True)),
+        strategy_tsla_noise_momentum_v2_enabled=False,
         strategy_tsla_two_leg_trend_pullback_v2_enabled=bool(s.get("strategy_tsla_two_leg_trend_pullback_v2_enabled", True)),
         opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
@@ -112,6 +112,15 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     data["strategy_spy_afternoon_reversal_v2_enabled"] = data.pop("strategy_spy_afternoon_reversal_v2_enabled", False)
     data["strategy_tsla_noise_momentum_v2_enabled"] = data.pop("strategy_tsla_noise_momentum_v2_enabled", False)
     data["strategy_tsla_two_leg_trend_pullback_v2_enabled"] = data.pop("strategy_tsla_two_leg_trend_pullback_v2_enabled", False)
+    for retired_key in (
+        "strategy_orb_enabled", "strategy_vwap_enabled", "strategy_fvg_enabled",
+        "strategy_ifvg_enabled", "strategy_bos_enabled", "strategy_chan_enabled",
+        "strategy_mid_enabled", "strategy_tcont_enabled", "strategy_aft_enabled",
+        "strategy_gapgo_enabled", "strategy_liqsweep_enabled",
+        "strategy_trend_cont_v2_enabled", "strategy_spy_afternoon_reversal_v2_enabled",
+        "strategy_tsla_noise_momentum_v2_enabled",
+    ):
+        data[retired_key] = False
     data["strategy_instorb_immediate_entry"] = data.pop("inst_orb_immediate_entry_enabled", False)
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw
