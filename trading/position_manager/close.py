@@ -138,7 +138,7 @@ def _close_position(
             entry_time      = trade["entry_time"] if isinstance(trade["entry_time"], datetime) else datetime.fromisoformat(trade["entry_time"]),
             entry_reason    = trade.get("entry_reason", ""),
             paper           = paper,
-            strategy_id     = trade.get("strategy_id", "INST_ORB"),
+            strategy_id     = trade.get("strategy_id", "UNKNOWN"),
             annotations_json= trade.get("annotations_json"),
             broker_account_id= trade.get("broker_account_id"),
         )

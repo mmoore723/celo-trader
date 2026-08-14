@@ -77,19 +77,8 @@ COMMISSION_PER_CONTRACT = 0.65
 
 # Trading windows (ET) — ENTRIES ONLY. Position management/exits run all session.
 #
-# FIX 2026-07-20: this used to be a two-session schedule (09:30-11:30 +
-# 14:00-15:45) that blocked the 11:30-14:00 "lunch chop" period entirely.
-# But MID_BRK's own session window is 10:30-13:00 and AFT_REV's is
-# 13:00-15:30 — the old gate silently cut off 60% of MID_BRK's window
-# (11:30-13:00) and 40% of AFT_REV's (13:00-14:00), because select_ticker()
-# in trading/entry.py returns no ticker at all outside these windows, so
-# those strategies' own evaluate() was never even reached during that time.
-# Widened to one continuous window so every strategy's own session logic
-# (not this global gate) is what decides whether a setup is good — per
-# explicit user decision. Un-widening this back to a two-session schedule
-# would silently re-break MID_BRK/AFT_REV the same way; if that's ever
-# revisited, do it by trimming those strategies' own windows instead of
-# narrowing this one, so the mismatch can't reappear silently.
+# The global window remains continuous; each approved strategy owns its
+# narrower, independently tested session window.
 TRADING_WINDOWS_PHASE1 = [
     ("09:30", "15:45"),
 ]

@@ -117,7 +117,7 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
             _entry_px    = float(_ticker_trade.get("entry_price") or 0)
             _opt_type    = (_ticker_trade.get("option_type") or "call").upper()
             _n_contracts = int(_ticker_trade.get("contracts") or 1)
-            _strategy    = _ticker_trade.get("strategy_id", "INST_ORB")
+            _strategy    = _ticker_trade.get("strategy_id", "UNKNOWN")
             _stage1_done = _pos_state.get("stage1_done", _US.get("stage1_done", False))
             _stop_pct    = float(_pos_state.get("current_stop_pct") or 0.20)
 
@@ -184,10 +184,10 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
 
             # Strategy name
             _sname = {
-                "INST_ORB": "Opening Range Breakout", "VWAP_PB": "VWAP Pullback",
-                "BOS_MSS": "Break of Structure",       "FVG": "Fair Value Gap",
-                "CHAN_BREAK": "Channel Breakout",       "MID_BRK": "Mid-Day Breakdown",
-                "TREND_CONT": "Trend Continuation",
+                "V2_ORB_PULLBACK": "TSLA Opening-Range Pullback",
+                "V2_SPY_TREND_CONT": "SPY Trend Continuation",
+                "V2_SPY_AFTERNOON_FVG": "SPY Afternoon Fair Value Gap",
+                "V2_TSLA_TWO_LEG_TREND_PULLBACK": "TSLA Two-Leg Trend Pullback",
             }.get(_strategy, _strategy)
 
             # Throttle: once per minute per position
@@ -416,5 +416,4 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
 
     except Exception as _be:
         logger.debug("_log_bar_thinking error: %s", _be)
-
 

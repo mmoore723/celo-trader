@@ -388,7 +388,7 @@ export interface WatchingContract {
 
 export interface WatchingSignal {
   ticker: string;
-  strategy: string;              // "INST_ORB" — only strategy with a waiting state today
+  strategy: string;              // reviewed V2 strategy ID
   direction: "bullish" | "bearish" | null;
   option_type: "call" | "put" | null;
   phase: "breakout_seen" | "retesting" | "expired";
@@ -587,16 +587,6 @@ export interface AppSettings {
   rr_ratio_mode: string;
   watchlist: string[];
   validated_strategy_ids?: string[]; // server-controlled, evidence-based promotion list
-  orb_enabled: boolean;
-  vwap_pullback_enabled: boolean;
-  fvg_enabled: boolean;
-  ifvg_enabled: boolean;          // Inverted Fair Value Gap
-  bos_mss_enabled: boolean;
-  chan_break_enabled: boolean;
-  mid_brk_enabled: boolean;
-  trend_cont_enabled: boolean;
-  aft_rev_enabled: boolean;    // Afternoon Reversal — added to Settings 2026-07-20
-  gap_go_enabled?: boolean;    // Gap and Go — added 2026-07-23, OFF by default (untested live)
   signal_only_mode?: boolean;  // true = signal alerts only, bot does NOT place orders
   display_timezone?: string;   // e.g. "America/New_York" | "America/Chicago" | "America/Los_Angeles"
   // Trade parameters — user-tunable without touching code
@@ -607,16 +597,9 @@ export interface AppSettings {
   simplified_exit_mode?: boolean; // 3-rule exit (hard stop / 3.0x chandelier / time cap) vs full engine (default true)
   mtf_confirmation_enabled?: boolean; // 2026-07-23: live 1Hour bias gate, OFF by default —
                                        // can't be backtested (live "as-of-now" fetch), watch in signal-only first
-  inst_orb_immediate_entry_enabled?: boolean; // 2026-07-31: enter on the breakout bar instead of
-                                       // waiting for the OR-level retest, ON by default — not backtested
-  liquidity_sweep_enabled?: boolean;  // 2026-07-31: fades a swept swing high/low, ON by
-                                       // default — new strategy, no backtest track record
   strategy_orb_pullback_v2_enabled?: boolean; // research-validated opening-range pullback pilot
-  strategy_trend_cont_v2_enabled?: boolean; // paid-quote Trend Continuation paper pilot
   strategy_spy_trend_cont_v2_enabled?: boolean; // reviewed SPY paid-quote Trend Continuation pilot
   strategy_spy_afternoon_fvg_v2_enabled?: boolean; // reviewed SPY paid-quote afternoon FVG pilot
-  strategy_spy_afternoon_reversal_v2_enabled?: boolean; // reviewed SPY higher-low afternoon reversal pilot
-  strategy_tsla_noise_momentum_v2_enabled?: boolean; // reviewed TSLA adaptive noise-boundary paper rule
   strategy_tsla_two_leg_trend_pullback_v2_enabled?: boolean; // reviewed TSLA VWAP/EMA two-leg paper rule
   opportunity_tier_enabled?: boolean; // paper-only lower-confidence research cohort
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
@@ -642,7 +625,7 @@ export interface NewsArticle {
 export interface ChartAnnotation {
   id: string;
   type: "hline" | "zone" | "marker";
-  strategy: string;         // "FVG" | "BOS_MSS" | "veto" | …
+  strategy: string;         // reviewed V2 strategy ID or generic system event
   label: string;
   ts: string;               // ISO datetime
   color: string;            // hex

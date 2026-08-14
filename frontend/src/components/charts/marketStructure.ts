@@ -14,9 +14,8 @@
  *      and any swing that *confirms* the new trend afterward as BOS (Break
  *      of Structure). This is the same distinction ICT/SMC-style market-
  *      structure reading uses. It is a client-side classification only — the
- *      backend already emits its own "BOS_MSS" annotations from real signal
- *      logic; this is a separate, purely-descriptive overlay for teaching,
- *      not a trading signal, and should never be confused with one.
+ *      this is a purely descriptive chart overlay for teaching, not a
+ *      production strategy signal.
  */
 import type { Bar } from "../../lib/api";
 

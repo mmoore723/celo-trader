@@ -61,7 +61,7 @@ export function getPalette(dark: boolean): ChartPalette {
     structureUp:   dark ? "#4ade80" : "#15803d",
     structureDown: dark ? "#ff6b6b" : "#cc0000",
     choch:         "#f59e0b",   // amber — "something changed, pay attention"
-    bos:           "#8b5cf6",   // violet — matches backend's TREND_CONT/BOS_MSS color family
+    bos:           "#8b5cf6",   // violet — market-structure teaching overlay
     premium:       dark ? "#ef535014" : "#f2364514",   // faint red tint — upper half of range
     discount:      dark ? "#26a69a14" : "#08998114",   // faint teal tint — lower half of range
     killzone:      dark ? "#58a6ff0d" : "#2563eb0d",   // very faint blue — session window

@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS trades (
     realized_pnl    REAL,               -- (exit_price - entry_price) * contracts * 100
     status          TEXT    NOT NULL DEFAULT 'open',   -- 'open' | 'closed'
     paper           INTEGER NOT NULL DEFAULT 1,        -- 1=paper, 0=live
-    strategy_id     TEXT    DEFAULT 'INST_ORB',        -- which router strategy generated signal
+    strategy_id     TEXT    DEFAULT 'UNKNOWN',         -- approved strategy that generated signal
     tier            TEXT    NOT NULL DEFAULT 'main',   -- 'main' | 'opportunity'
     broker_account_id TEXT                             -- account/mode identity at entry
 );
@@ -311,7 +311,7 @@ def _init_db_at(db_path: Path) -> None:
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
         if "strategy_id" not in _cols:
             conn.execute(
-                "ALTER TABLE trades ADD COLUMN strategy_id TEXT DEFAULT 'INST_ORB'"
+                "ALTER TABLE trades ADD COLUMN strategy_id TEXT DEFAULT 'UNKNOWN'"
             )
             logger.info("Migration: added strategy_id column to %s", db_path.name)
         if "stop_price" not in _cols:

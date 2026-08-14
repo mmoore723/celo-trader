@@ -28,7 +28,7 @@ def insert_trade(
     entry_time: datetime,
     entry_reason: str,
     paper: bool = True,
-    strategy_id: str = "INST_ORB",   # which router strategy generated this signal
+    strategy_id: str = "UNKNOWN",   # which reviewed strategy generated this signal
     stop_price: Optional[float] = None,    # option premium stop-loss level at entry
     target_price: Optional[float] = None,  # Stage-1 target at entry
     annotations_json: Optional[str] = None,  # JSON snapshot of entry-time chart annotations

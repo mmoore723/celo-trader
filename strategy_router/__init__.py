@@ -8,19 +8,11 @@ All evaluation logic lives in strategies/; all post-evaluation filtering
 lives in router_gates.py; regime classification lives in regime_manager.py.
 This file only wires them together (2026-07-16 split — was 830 lines).
 
-Strategy IDs (nine active, one OFF by default):
-  GAP_GO      — strategies/gap_go.py    (09:30–09:45)
-  INST_ORB    — strategies/inst_orb.py   (09:45–10:30)
-  VWAP_PB     — strategies/vwap_pb.py   (09:45–EOD)
-  FVG         — strategies/fvg.py        (09:45–EOD)  ← absorbs BOS_MSS sweep logic
-  MID_BRK     — strategies/mid_brk.py   (10:30–13:00)  ← OFF by default, negative expectancy
-  AFT_REV     — strategies/aft_rev.py   (13:00–15:30)
-  TREND_CONT  — strategies/trend_cont.py (09:45–14:30)
-  CHAN_BREAK  — strategies/chan_break.py (09:45–14:00)  ← disabled, 0% WR in backtests
-  LIQ_SWEEP   — strategies/liquidity_sweep.py (09:45–15:30)  ← fades a swept swing high/low
-
-  BOS_MSS (strategies/bos_mss.py) — DISABLED; its sweep detection was merged
-  into FVG as a confidence modifier (running both double-voted the same move).
+Production strategy IDs:
+  V2_ORB_PULLBACK
+  V2_SPY_TREND_CONT
+  V2_SPY_AFTERNOON_FVG
+  V2_TSLA_TWO_LEG_TREND_PULLBACK (one-minute injected execution path)
 
 All signals pass through RiskManager gates in risk.py before entry:
   • 1% risk rule  • 1.6 R:R minimum  • 20% hard stop  • time-box exit
@@ -30,17 +22,8 @@ strategy_router.py into evaluators.py (ACTIVE_STRATEGIES table),
 indicator_frame.py (_build_indicator_frame), and route.py (route_signals);
 no logic changed, only relocated.
 
-_MIN_CONFIDENCE and ADX_GATED_STRATEGIES are defined/re-exported HERE (not
-in route.py) because two archived A/B test scripts monkey-patch them
-directly on the PACKAGE object at runtime — `strategy_router._MIN_CONFIDENCE
-= floor` (scripts/ab_tests/ab_test_confidence_floor.py) and
-`strategy_router.ADX_GATED_STRATEGIES = _orig - {"MID_BRK"}`
-(scripts/ab_tests/ab_test_mid_brk_adx_gate.py) — expecting that mutation to
-change route_signals()'s live behavior. route.py's route_signals() reads
-both via a live dotted lookup on this package object at call time (see
-route.py's own docstring for the mechanics), so this __init__ module's
-namespace is the actual mutable home for both knobs, exactly matching the
-original single-file module's semantics.
+The shared confidence and ADX settings remain package attributes for the
+router's normal live lookup; production contains no A/B-test monkey patches.
 """
 
 from __future__ import annotations

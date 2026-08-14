@@ -31,7 +31,7 @@ from signals.earnings import is_near_earnings
 from signals.vwap import compute_vwap, compute_vwap_bands
 from signals.rvol import compute_rvol
 from signals.atr import compute_atr
-from signals.ranges import get_opening_range, get_consolidation_range
+from signals.ranges import get_opening_range
 from signals.orb_breakout import ORB_SIGNAL_MIN, ORB_RVOL_THRESHOLD, detect_orb_breakout
 
 __all__ = [
@@ -41,6 +41,6 @@ __all__ = [
     "compute_vwap", "compute_vwap_bands",
     "compute_rvol",
     "compute_atr",
-    "get_opening_range", "get_consolidation_range",
+    "get_opening_range",
     "ORB_SIGNAL_MIN", "ORB_RVOL_THRESHOLD", "detect_orb_breakout",
 ]

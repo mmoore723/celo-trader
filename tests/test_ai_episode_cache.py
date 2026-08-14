@@ -44,7 +44,7 @@ class AiEpisodeCacheTests(unittest.TestCase):
         start = datetime.fromisoformat("2026-08-13T10:00:00-04:00")
         cache = {}
         result = SimpleNamespace(action="veto", error=None)
-        key = episode_key("tsla", "v2_trend_cont", "bearish")
+        key = episode_key("tsla", "v2_orb_pullback", "bearish")
         remember_review(cache, key=key, observed_at=start, result=result)
 
         self.assertIs(result, cached_review(cache, key=key, observed_at=start + timedelta(minutes=10)))
@@ -54,7 +54,7 @@ class AiEpisodeCacheTests(unittest.TestCase):
     def test_quiet_gap_starts_a_new_episode(self) -> None:
         start = datetime.fromisoformat("2026-08-13T10:00:00-04:00")
         cache = {}
-        key = episode_key("TSLA", "V2_TREND_CONT", "bearish")
+        key = episode_key("SPY", "V2_SPY_TREND_CONT", "bearish")
         remember_review(cache, key=key, observed_at=start, result=SimpleNamespace(error=None))
         self.assertIsNone(cached_review(cache, key=key, observed_at=start + timedelta(minutes=16)))
         self.assertNotIn(key, cache)

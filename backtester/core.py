@@ -49,16 +49,10 @@ class CoreMixin:
         # Match trading/entry/tick.py: a normal dashboard backtest must only
         # replay strategies currently enabled for paper/live trading. A/B
         # harnesses can explicitly replace this set for a hypothetical test.
-        _strategy_settings = (
-            ("INST_ORB", "strategy_orb_enabled", True),
-            ("VWAP_PB", "strategy_vwap_enabled", True),
-            ("FVG", "strategy_fvg_enabled", True),
-            ("IFVG", "strategy_ifvg_enabled", True),
-            ("MID_BRK", "strategy_mid_enabled", False),
-            ("AFT_REV", "strategy_aft_enabled", True),
-            ("TREND_CONT", "strategy_tcont_enabled", True),
-            ("GAP_GO", "strategy_gapgo_enabled", True),
-            ("LIQ_SWEEP", "strategy_liqsweep_enabled", True),
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        _strategy_settings = tuple(
+            (strategy_id, rule.setting_key, True)
+            for strategy_id, rule in REVIEWED_STRATEGIES.items()
         )
         self.enabled_strategies = {
             strategy_id for strategy_id, key, default in _strategy_settings

@@ -159,7 +159,7 @@ class PaperOptionQuoteTests(unittest.TestCase):
             _init_db_at(db_path)
             conn = sqlite3.connect(db_path)
             signal = SimpleNamespace(
-                strategy_id="INST_ORB", direction="bullish", confidence=0.81,
+                strategy_id="V2_ORB_PULLBACK", direction="bullish", confidence=0.81,
                 trigger_bar="2026-08-03T10:00:00", tier="main", meta={"rvol": 1.8},
             )
             with patch("shadow_ledger.get_conn", return_value=conn):
@@ -173,7 +173,7 @@ class PaperOptionQuoteTests(unittest.TestCase):
             ).fetchone()
             conn.close()
 
-        self.assertEqual(("INST_ORB", "blocked", "budget", "cap reached"), row)
+        self.assertEqual(("V2_ORB_PULLBACK", "blocked", "budget", "cap reached"), row)
 
     def test_shadow_candidate_records_same_session_directional_outcome(self) -> None:
         from shadow_ledger import resolve_due_directional_outcomes
@@ -184,7 +184,7 @@ class PaperOptionQuoteTests(unittest.TestCase):
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             signal = SimpleNamespace(
-                strategy_id="INST_ORB", direction="bullish", confidence=0.81,
+                strategy_id="V2_ORB_PULLBACK", direction="bullish", confidence=0.81,
                 trigger_bar="2026-08-03T10:00:00", tier="main", meta={},
             )
             observed = datetime(2026, 8, 3, 10, 0)

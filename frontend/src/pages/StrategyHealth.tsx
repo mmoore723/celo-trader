@@ -20,21 +20,10 @@ import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
-  INST_ORB:   "Opening Range Breakout",
-  VWAP_PB:    "VWAP Pullback",
-  FVG:        "Fair Value Gap",
-  IFVG:       "Inverted Fair Value Gap",
-  MID_BRK:    "Mid-Day Breakdown",
-  AFT_REV:    "Afternoon Reversal",
-  TREND_CONT: "Trend Continuation",
-  GAP_GO: "Gap and Go",
-  LIQ_SWEEP: "Liquidity Sweep Reversal",
-  CHAN_BREAK: "Channel Breakout",
   V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
   V2_SPY_TREND_CONT: "SPY Trend Continuation",
   V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
   V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
-  V2_SPY_AFTERNOON_REVERSAL: "SPY Afternoon Reversal",
 };
 
 function ActivePilotCard({ settings }: { settings?: AppSettings }) {

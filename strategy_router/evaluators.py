@@ -8,9 +8,8 @@ This is the production execution allowlist. Research strategies live under
 ``research/`` and must not be added here until their paid-quote evidence is
 reviewed and they are promoted in ``config.strategy_catalog``.
 
-Legacy evaluators intentionally remain importable for historical reports, but
-they are not imported or evaluated by the production router. Keeping the
-allowlist narrow prevents a stale per-user toggle from reviving an old rule.
+Legacy and rejected evaluators have been removed from the production tree.
+Research candidates live only under ``research/`` until promotion.
 """
 
 from strategies import (

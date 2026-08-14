@@ -357,13 +357,13 @@ class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
             conn.execute(
                 "INSERT INTO shadow_candidates (candidate_id, observed_at, ticker, strategy_id, direction, confidence, tier, broker_account_id, final_outcome) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("legacy-veto", "2026-08-13T10:23:09-04:00", "TSLA", "V2_TREND_CONT", "bullish", .78,
+                ("legacy-veto", "2026-08-13T10:23:09-04:00", "TSLA", "V2_ORB_PULLBACK", "bullish", .78,
                  "main", "paper:new", "pending"),
             )
             conn.execute(
                 "INSERT INTO signal_journal (ts, ticker, strategy_id, direction, confidence, outcome, reason_code, reason_detail, context_json, tier, broker_account_id) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("2026-08-13T10:23:13-04:00", "TSLA", "V2_TREND_CONT", "bullish", .78,
+                ("2026-08-13T10:23:13-04:00", "TSLA", "V2_ORB_PULLBACK", "bullish", .78,
                  "blocked", "ai_decision_veto", "1-hour trend opposed the bullish setup", "{}", "main", "paper:new"),
             )
             conn.commit()
@@ -396,19 +396,19 @@ class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
             conn.execute(
                 "INSERT INTO shadow_candidates (candidate_id, observed_at, ticker, strategy_id, direction, confidence, tier, broker_account_id, final_outcome, gate_reason, direction_correct, outcome_observed_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("ai-veto", "2026-08-13T10:00:00-04:00", "TSLA", "V2_TREND_CONT", "bullish", .78,
+                ("ai-veto", "2026-08-13T10:00:00-04:00", "TSLA", "V2_ORB_PULLBACK", "bullish", .78,
                  "main", "paper:new", "blocked", "ai_decision_veto", 1, "2026-08-13T11:00:00-04:00"),
             )
             conn.execute(
                 "INSERT INTO shadow_candidates (candidate_id, observed_at, ticker, strategy_id, direction, confidence, tier, broker_account_id, final_outcome, direction_correct, outcome_observed_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("ai-approved", "2026-08-13T10:20:00-04:00", "TSLA", "V2_TREND_CONT", "bullish", .81,
+                ("ai-approved", "2026-08-13T10:20:00-04:00", "TSLA", "V2_ORB_PULLBACK", "bullish", .81,
                  "main", "paper:new", "entered", 1, "2026-08-13T11:20:00-04:00"),
             )
             conn.execute(
                 "INSERT INTO ai_reasoning_log (ts, event_type, ticker, feature_snapshot_json, prompt, response_text, model, applied) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 ("2026-08-13T10:20:02-04:00", "entry_veto", "TSLA",
-                 json.dumps({"candidate_id": "ai-approved", "strategy_id": "V2_TREND_CONT", "direction": "bullish", "decision_action": "approve"}),
+                 json.dumps({"candidate_id": "ai-approved", "strategy_id": "V2_ORB_PULLBACK", "direction": "bullish", "decision_action": "approve"}),
                  "test", "ACTION: approve | SIZE: 1.0 | REASON: aligned", "test", 0),
             )
             for kind, observed_at, bid, ask in (
@@ -456,13 +456,13 @@ class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
                 conn.execute(
                     "INSERT INTO shadow_candidates (candidate_id, observed_at, ticker, strategy_id, direction, confidence, tier, broker_account_id, final_outcome, gate_reason, direction_correct, outcome_observed_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (candidate_id, observed_at, "TSLA", "V2_TREND_CONT", "bullish", .78,
+                    (candidate_id, observed_at, "TSLA", "V2_ORB_PULLBACK", "bullish", .78,
                      "main", "paper:new", "pending", gate_reason, 1, "2026-08-13T11:05:00-04:00"),
                 )
             conn.execute(
                 "INSERT INTO ai_reasoning_log (ts, event_type, ticker, feature_snapshot_json, prompt, response_text, model, applied) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 ("2026-08-13T10:05:02-04:00", "entry_veto", "TSLA",
-                 json.dumps({"candidate_id": "later-approve", "strategy_id": "V2_TREND_CONT", "direction": "bullish", "decision_action": "approve"}),
+                 json.dumps({"candidate_id": "later-approve", "strategy_id": "V2_ORB_PULLBACK", "direction": "bullish", "decision_action": "approve"}),
                  "test", "ACTION: approve | SIZE: 1.0 | REASON: aligned", "test", 0),
             )
             conn.commit()

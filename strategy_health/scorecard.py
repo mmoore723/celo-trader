@@ -62,6 +62,8 @@ def _finalise(rows: dict[tuple[str, str], dict]) -> list[dict]:
 
 def build_scorecard(days: int = 30) -> dict:
     """Combine closed outcomes and signal decisions, split by reporting tier only."""
+    from config.strategy_catalog import reviewed_strategy_ids
+    approved_ids = reviewed_strategy_ids()
     days = max(1, min(int(days), 365))
     cutoff = (_now_et() - timedelta(days=days)).isoformat()
     rows: dict[tuple[str, str], dict] = {}
@@ -88,11 +90,15 @@ def build_scorecard(days: int = 30) -> dict:
             (cutoff,),
         ).fetchall()
     for signal in signals:
+        if (signal["strategy_id"] or "UNKNOWN") not in approved_ids:
+            continue
         if signal["outcome"] == "entered" and signal["trade_id"] is not None:
             tier = _normalise_tier(signal["tier"]) if journal_tier else _tier_from_context(signal["context_json"])
             trade_tiers[int(signal["trade_id"])] = tier
     for trade in trades:
         sid = trade["strategy_id"] or "UNKNOWN"
+        if sid not in approved_ids:
+            continue
         tier = _normalise_tier(trade[tier_column]) if tier_column else trade_tiers.get(trade["id"], MAIN_TIER)
         row = rows.setdefault((sid, tier), _new_row(sid))
         pnl = float(trade["realized_pnl"] or 0.0)
@@ -100,6 +106,8 @@ def build_scorecard(days: int = 30) -> dict:
         row["wins"] += int(pnl > 0)
     for signal in signals:
         sid = signal["strategy_id"] or "UNKNOWN"
+        if sid not in approved_ids:
+            continue
         tier = _normalise_tier(signal["tier"]) if journal_tier else _tier_from_context(signal["context_json"])
         row = rows.setdefault((sid, tier), _new_row(sid))
         if signal["outcome"] == "entered":

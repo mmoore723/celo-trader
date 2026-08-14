@@ -60,7 +60,7 @@ export function buildAndApplyMarkers(
     }
   }
 
-  // FVG/IFVG fill percentage — how much of the gap price re-entered before
+  // Fair-value-gap fill percentage — how much of the gap price re-entered before
   // reversing, computed straight from the zone's own price_low/price_high
   // (already captured by the bot at signal time) plus the bars already on
   // screen. No backend change needed: this is pure frontend arithmetic on
@@ -88,28 +88,6 @@ export function buildAndApplyMarkers(
       markers.push({
         time: toEpochTime(deepestBar.time), position: isBullish ? "belowBar" : "aboveBar",
         color: ann.color, shape: "circle", text: `FVG ${Math.round(deepestPct)}% filled`, size: 1,
-      });
-    }
-  }
-
-  // Execution grade pinned to the bot's own BOS_MSS structure-break level —
-  // NOT the frontend's own swing-detector BOS/CHoCH labels above, which are
-  // a generic teaching overlay. This one is grounded in the bot's actual
-  // signal: find the candle where BOS_MSS fired and grade THAT bar, so the
-  // strength badge sits on the real break, not just any swing point.
-  if (input.showExecutionGrade) {
-    for (const ann of input.annotations) {
-      if (ann.type !== "hline" || ann.strategy !== "BOS_MSS") continue;
-      const annMs = new Date(ann.ts).getTime();
-      const bosBar = input.bars.find((b) => new Date(b.time).getTime() >= annMs) ?? input.bars[input.bars.length - 1];
-      if (!bosBar) continue;
-      const grade = gradeBar(bosBar);
-      if (!grade) continue;
-      const isBullish = ann.direction === "bullish";
-      markers.push({
-        time: toEpochTime(bosBar.time), position: isBullish ? "belowBar" : "aboveBar",
-        color: grade.grade === "strong" ? P.structureUp : grade.grade === "moderate" ? P.stop : P.structureDown,
-        shape: "circle", text: `BOS · ${grade.grade} (${grade.label})`, size: 1,
       });
     }
   }

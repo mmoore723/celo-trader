@@ -30,23 +30,9 @@ const DEFAULT: AppSettings = {
   rr_ratio_mode: "auto",
   watchlist: ["SPY"],
   validated_strategy_ids: [],
-  orb_enabled: false,
-  vwap_pullback_enabled: false,
-  fvg_enabled: false,
-  ifvg_enabled: false,
-  bos_mss_enabled: false,
-  chan_break_enabled: false,
-  mid_brk_enabled: false,  // disabled 2026-07-23 — 13 backtested configs, all negative, see audit
-  trend_cont_enabled: false,
-  aft_rev_enabled: false,
-  gap_go_enabled: false,
-  liquidity_sweep_enabled: false,
   strategy_orb_pullback_v2_enabled: true,
-  strategy_trend_cont_v2_enabled: false,
   strategy_spy_trend_cont_v2_enabled: true,
   strategy_spy_afternoon_fvg_v2_enabled: true,
-  strategy_spy_afternoon_reversal_v2_enabled: false,
-  strategy_tsla_noise_momentum_v2_enabled: false,
   strategy_tsla_two_leg_trend_pullback_v2_enabled: true,
   opportunity_tier_enabled: false,
   signal_only_mode: false,  // true = bot alerts only, no order placement
@@ -62,7 +48,6 @@ const DEFAULT: AppSettings = {
   max_position_dollars_pct: 15,  // added 2026-07-24 — was hardcoded, no UI
   simplified_exit_mode: true,        // added 2026-07-22 — 3-rule exit, on by default (see research note in-form)
   mtf_confirmation_enabled: false,   // added 2026-07-23 — live 1Hour bias gate, off by default (can't backtest)
-  inst_orb_immediate_entry_enabled: false,  // added 2026-07-31 — skip the retest wait, off by default (not backtested)
 };
 
 const TIMEZONES = [
@@ -445,7 +430,7 @@ export function Settings() {
           </p>
         </div>
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-          Old strategies that failed research are intentionally not shown here or in the Playbook. They remain off rather than creating a misleading collection of switches.
+          Only promoted strategies exist in the production controls. Research candidates stay outside the bot until they pass review.
         </div>
       </div>
 
@@ -637,20 +622,6 @@ export function Settings() {
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
           Unlike every other gate, this depends on a live "as-of-now" API
           fetch and can't be validated against the backtester.
-        </p>
-        <Toggle
-          label="INST_ORB immediate entry (skip retest wait)"
-          checked={form.inst_orb_immediate_entry_enabled ?? true}
-          onChange={(v) => set("inst_orb_immediate_entry_enabled", v)}
-        />
-        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          INST_ORB normally waits for price to pull back and retest the
-          opening-range level before entering — cheaper premium, tighter
-          stop. On: it can also enter right on the breakout bar itself if
-          RVOL and cooldown gates clear, so moves that never come back to
-          retest aren't missed entirely. The retest path still runs as a
-          fallback either way. Not backtested — this is a live trade-off
-          between catching more moves and worse fills.
         </p>
         <Toggle
           label="Opportunity cohort (paper-only lower-confidence experiments)"

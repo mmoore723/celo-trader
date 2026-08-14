@@ -26,7 +26,7 @@ logger = logging.getLogger("celo_trader.api.signals")
 @router.get("/journal")
 def get_journal(
     ticker: str | None = None,
-    strategy: str | None = Query(None, description="e.g. VWAP_PB, TREND_CONT"),
+    strategy: str | None = Query(None, description="Reviewed V2 strategy ID"),
     reason: str | None = Query(None, description="reason_code — see signal_journal.REASON_CODES"),
     limit: int = Query(200, ge=1, le=1000),
 ) -> dict:
@@ -168,11 +168,8 @@ def _fallback_contract_recipe(strategy_id: object, direction: object) -> dict[st
     setup became actionable.  A decision-time recipe in the journal always
     overrides this fallback.
     """
-    reviewed_ids = {
-        "V2_ORB_PULLBACK", "V2_TREND_CONT", "V2_SPY_TREND_CONT",
-        "V2_SPY_AFTERNOON_FVG", "V2_SPY_AFTERNOON_REVERSAL",
-        "V2_TSLA_NOISE_MOMENTUM", "V2_TSLA_TWO_LEG_TREND_PULLBACK",
-    }
+    from config.strategy_catalog import reviewed_strategy_ids
+    reviewed_ids = reviewed_strategy_ids()
     reviewed = str(strategy_id or "").upper() in reviewed_ids
     option_type = "CALL" if str(direction or "").lower() in {"bullish", "long", "call"} else "PUT"
     return {
@@ -807,75 +804,5 @@ def resolve_watching_contracts(watched: list[dict]) -> list[dict]:
 
 @router.get("/watching")
 def get_watching() -> dict:
-    """
-    Tickers INST_ORB is currently tracking mid-retest — breakout seen,
-    waiting for a retest touch or bounce confirmation before it would enter.
-    See strategies/inst_orb.py's module docstring for the Phase 1-3 state
-    machine. This is the only strategy in this codebase with an explicit
-    multi-bar "waiting" state; every other strategy either fires on the
-    current bar or doesn't, so there's nothing to watch for them yet.
-    """
-    from datetime import date as _date
-    import strategies.inst_orb as _inst_orb
-
-    today_iso = _date.today().isoformat()
-    watched = [
-        {"ticker": k[0], **v}
-        for k, v in _inst_orb._retest_state.items()
-        if k[1] == today_iso and v.get("phase") in ("breakout_seen", "retesting")
-    ]
-
-    # Setups that were mid-retest a moment ago and then gave up (bounce
-    # failed, a gate blocked it, etc.) — shown briefly as "expired" instead
-    # of just vanishing with no explanation. See _recent_expirations in
-    # strategies/inst_orb.py. Excludes anything that's back in `watched`
-    # above (a new breakout cycle started again for the same ticker/day).
-    watched_tickers = {w["ticker"] for w in watched}
-    expired = [
-        {"ticker": k[0], **v}
-        for k, v in _inst_orb._recent_expirations.items()
-        if k[1] == today_iso and k[0] not in watched_tickers
-    ]
-
-    if not watched and not expired:
-        return {"watching": []}
-
-    try:
-        resolved = resolve_watching_contracts(watched)
-    except Exception as e:
-        logger.exception("watching: resolve_watching_contracts failed")
-        raise HTTPException(status_code=500, detail=str(e))
-
-    out = []
-    for w in resolved:
-        phase = w.get("phase")
-        out.append({
-            "ticker":        w["ticker"],
-            "strategy":      "INST_ORB",
-            "direction":     w.get("direction"),
-            "option_type":   "call" if w.get("direction") == "bullish" else "put" if w.get("direction") == "bearish" else None,
-            "phase":         phase,
-            "phase_label":   "1 of 3 — breakout seen" if phase == "breakout_seen" else "2 of 3 — retesting",
-            "retest_level":  w.get("or_boundary"),
-            "current_price": w.get("current_price"),
-            "breakout_time": str(w.get("breakout_bar")) if w.get("breakout_bar") is not None else None,
-            "retest_time":   str(w.get("retest_bar")) if w.get("retest_bar") is not None else None,
-            "contract":      w.get("contract"),
-        })
-
-    for e in expired:
-        out.append({
-            "ticker":        e["ticker"],
-            "strategy":      "INST_ORB",
-            "direction":     None,
-            "option_type":   None,
-            "phase":         "expired",
-            "phase_label":   f"expired — was {'1 of 3' if e.get('last_phase') == 'breakout_seen' else '2 of 3'}",
-            "retest_level":  None,
-            "current_price": None,
-            "breakout_time": None,
-            "retest_time":   None,
-            "contract":      None,
-        })
-
-    return {"watching": out}
+    """Legacy compatibility endpoint; rebuilt strategies have no hidden wait state."""
+    return {"watching": []}

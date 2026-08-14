@@ -100,21 +100,6 @@ _DEFAULTS = {
     # multi-day data) — watch it in signal_only_mode before trusting it.
     "mtf_confirmation_enabled": True,
 
-    # No legacy strategy is trade-enabled by default.  A strategy must first
-    # survive real quote-to-quote validation before it is deliberately promoted
-    # into this list.  Historical dashboards still display old evidence.
-    "strategy_orb_enabled": False,
-    "strategy_bos_enabled": False,
-    "strategy_vwap_enabled": False,
-    "strategy_fvg_enabled": False,
-    "strategy_ifvg_enabled": False,
-    "strategy_chan_enabled": False,
-    "strategy_mid_enabled": False,
-    "strategy_tcont_enabled": False,
-    "strategy_aft_enabled": False,
-    "strategy_gapgo_enabled": False,
-    "strategy_liqsweep_enabled": False,
-    "strategy_instorb_immediate_entry": False,
     # Server-controlled promotion list. Settings switches can never promote an
     # unvalidated strategy; promotion requires a reviewed real-quote result.
     # Server-reviewed scope.  A per-strategy toggle is still required before
@@ -122,17 +107,14 @@ _DEFAULTS = {
     # promoting an unrelated strategy by sending an arbitrary ID.
     "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_TSLA_TWO_LEG_TREND_PULLBACK"],
     "strategy_orb_pullback_v2_enabled": True,
-    "strategy_trend_cont_v2_enabled": False,
     # Passed the separately held-back SPY option-quote data at the reviewed
     # 30-minute same-contract exit.  Enable it for new paper settings just as
     # the reviewed TSLA rules are enabled below; users retain the Settings
     # switch to turn it off.
     "strategy_spy_trend_cont_v2_enabled": True,
     "strategy_spy_afternoon_fvg_v2_enabled": True,
-    "strategy_spy_afternoon_reversal_v2_enabled": False,
     # Reviewed TSLA paid-quote strategy. Enabled by default for paper accounts;
     # individual users can still turn it off from Settings.
-    "strategy_tsla_noise_momentum_v2_enabled": False,
     # Earlier 200 TSLA option-quote sessions selected this exact one-minute
     # two-leg rule; 51 untouched later sessions also passed. Paper default ON.
     "strategy_tsla_two_leg_trend_pullback_v2_enabled": True,

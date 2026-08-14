@@ -32,35 +32,9 @@ def get_settings_endpoint() -> Settings:
         rr_ratio_mode=str(s.get("rr_ratio_mode", "auto")),
         watchlist=list(s.get("watchlist", ["SPY"])),
         validated_strategy_ids=list(s.get("validated_strategy_ids", [])),
-        # No strategy is enabled by default. A promotion must set its flag
-        # deliberately after it survives real option quote validation.
-        orb_enabled=bool(s.get("strategy_orb_enabled", False)),
-        vwap_pullback_enabled=bool(s.get("strategy_vwap_enabled", False)),
-        fvg_enabled=bool(s.get("strategy_fvg_enabled", False)),
-        # IFVG — wired 2026-07-18. Was previously missing from both this GET
-        # endpoint and the POST mapping below, so the Settings.ifvg_enabled
-        # model field (defaults True) was never actually read from or saved
-        # to storage; entry.py's enable-flag tuple also lacked an entry for
-        # it, so the strategy could never fire regardless of this field.
-        ifvg_enabled=bool(s.get("strategy_ifvg_enabled", False)),
-        bos_mss_enabled=bool(s.get("strategy_bos_enabled", False)),
-        chan_break_enabled=bool(s.get("strategy_chan_enabled", False)),
-        mid_brk_enabled=bool(s.get("strategy_mid_enabled", False)),  # research hold; see Settings/Playbooks
-        trend_cont_enabled=bool(s.get("strategy_tcont_enabled", False)),
-        # AFT_REV — added to Settings 2026-07-20. Previously had NO field in
-        # this model or endpoint at all, so it could never be toggled from
-        # the UI regardless of what entry.py's default said. Re-enabled for
-        # the same reason as VWAP_PB — its -$127/trade (0-for-4) audit
-        # predates the trade-recording fixes.
-        aft_rev_enabled=bool(s.get("strategy_aft_enabled", False)),
-        gap_go_enabled=bool(s.get("strategy_gapgo_enabled", False)),
-        liquidity_sweep_enabled=bool(s.get("strategy_liqsweep_enabled", False)),
         strategy_orb_pullback_v2_enabled=bool(s.get("strategy_orb_pullback_v2_enabled", True)),
-        strategy_trend_cont_v2_enabled=bool(s.get("strategy_trend_cont_v2_enabled", False)),
         strategy_spy_trend_cont_v2_enabled=bool(s.get("strategy_spy_trend_cont_v2_enabled", True)),
         strategy_spy_afternoon_fvg_v2_enabled=bool(s.get("strategy_spy_afternoon_fvg_v2_enabled", True)),
-        strategy_spy_afternoon_reversal_v2_enabled=bool(s.get("strategy_spy_afternoon_reversal_v2_enabled", False)),
-        strategy_tsla_noise_momentum_v2_enabled=False,
         strategy_tsla_two_leg_trend_pullback_v2_enabled=bool(s.get("strategy_tsla_two_leg_trend_pullback_v2_enabled", True)),
         opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
@@ -71,9 +45,6 @@ def get_settings_endpoint() -> Settings:
         vol_roc_threshold=float(s.get("vol_roc_threshold", 0.50)),
         simplified_exit_mode=bool(s.get("simplified_exit_mode", True)),
         mtf_confirmation_enabled=bool(s.get("mtf_confirmation_enabled", True)),
-        # 2026-07-31: INST_ORB immediate-entry (no-retest) toggle — see
-        # strategies/inst_orb.py and api/models.py's field comment.
-        inst_orb_immediate_entry_enabled=bool(s.get("strategy_instorb_immediate_entry", False)),
         # 2026-07-24: hard-cap kill-lock threshold, was hardcoded — see risk.py
         daily_loss_hard_cap_pct=float(s.get("daily_loss_hard_cap_pct", 10.0)),
         # 2026-07-24: grade-based entry filter — see router_gates.py
@@ -93,35 +64,10 @@ def save_settings_endpoint(payload: Settings) -> Settings:
     # Strategy promotion is evidence-controlled, not a settings-page action.
     # Keep the server's reviewed list even if a browser sends this field.
     data.pop("validated_strategy_ids", None)
-    # Map all frontend field names → strategy_*_enabled keys that entry.py reads
-    data["strategy_orb_enabled"]   = data.pop("orb_enabled", False)
-    data["strategy_vwap_enabled"]  = data.pop("vwap_pullback_enabled", False)
-    data["strategy_fvg_enabled"]   = data.pop("fvg_enabled", False)
-    data["strategy_ifvg_enabled"]  = data.pop("ifvg_enabled", False)
-    data["strategy_bos_enabled"]   = data.pop("bos_mss_enabled", False)
-    data["strategy_chan_enabled"]   = data.pop("chan_break_enabled", False)
-    data["strategy_mid_enabled"]    = data.pop("mid_brk_enabled", False)
-    data["strategy_tcont_enabled"]  = data.pop("trend_cont_enabled", False)
-    data["strategy_aft_enabled"]    = data.pop("aft_rev_enabled", False)
-    data["strategy_gapgo_enabled"]  = data.pop("gap_go_enabled", False)
-    data["strategy_liqsweep_enabled"] = data.pop("liquidity_sweep_enabled", False)
     data["strategy_orb_pullback_v2_enabled"] = data.pop("strategy_orb_pullback_v2_enabled", False)
-    data["strategy_trend_cont_v2_enabled"] = data.pop("strategy_trend_cont_v2_enabled", False)
     data["strategy_spy_trend_cont_v2_enabled"] = data.pop("strategy_spy_trend_cont_v2_enabled", False)
     data["strategy_spy_afternoon_fvg_v2_enabled"] = data.pop("strategy_spy_afternoon_fvg_v2_enabled", False)
-    data["strategy_spy_afternoon_reversal_v2_enabled"] = data.pop("strategy_spy_afternoon_reversal_v2_enabled", False)
-    data["strategy_tsla_noise_momentum_v2_enabled"] = data.pop("strategy_tsla_noise_momentum_v2_enabled", False)
     data["strategy_tsla_two_leg_trend_pullback_v2_enabled"] = data.pop("strategy_tsla_two_leg_trend_pullback_v2_enabled", False)
-    for retired_key in (
-        "strategy_orb_enabled", "strategy_vwap_enabled", "strategy_fvg_enabled",
-        "strategy_ifvg_enabled", "strategy_bos_enabled", "strategy_chan_enabled",
-        "strategy_mid_enabled", "strategy_tcont_enabled", "strategy_aft_enabled",
-        "strategy_gapgo_enabled", "strategy_liqsweep_enabled",
-        "strategy_trend_cont_v2_enabled", "strategy_spy_afternoon_reversal_v2_enabled",
-        "strategy_tsla_noise_momentum_v2_enabled",
-    ):
-        data[retired_key] = False
-    data["strategy_instorb_immediate_entry"] = data.pop("inst_orb_immediate_entry_enabled", False)
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw
     # the user's setting and always fell through to the bootstrap 5% auto-tier.

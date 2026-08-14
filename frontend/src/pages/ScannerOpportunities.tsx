@@ -13,12 +13,9 @@ import { api, type ScannerOpportunity } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRATEGY_NAMES: Record<string, string> = {
-  V2_ORB_PULLBACK: "Opening-Range Pullback", V2_TREND_CONT: "Trend Continuation",
+  V2_ORB_PULLBACK: "Opening-Range Pullback",
   V2_SPY_TREND_CONT: "SPY Trend Continuation", V2_SPY_AFTERNOON_FVG: "SPY Afternoon FVG",
-  V2_SPY_AFTERNOON_REVERSAL: "SPY Afternoon Reversal", V2_TSLA_NOISE_MOMENTUM: "TSLA Noise Momentum",
   V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
-  TREND_CONT: "Trend Continuation", INST_ORB: "Opening-Range Breakout", MID_BRK: "Mid-Day Breakdown",
-  VWAP_PB: "VWAP Pullback", FVG: "Fair Value Gap", AFT_REV: "Afternoon Reversal", LIQ_SWEEP: "Liquidity Sweep",
 };
 
 function todayEt(): string {

@@ -26,7 +26,7 @@ def clear_annotations(ticker: str | None = None) -> None:
 def snapshot_annotations(ticker: str, since_iso: str | None = None) -> str | None:
     """
     Return a JSON-encoded copy of this ticker's CURRENT chart annotations
-    (FVG zones, BOS/TREND_CONT/ORB/AFT_REV levels, signal/veto markers) so a
+    (reviewed setup levels, signal markers, and veto markers) so a
     trade can carry its own "why" with it permanently — the live buffer this
     reads from is capped at 100 entries per ticker and gets overwritten as the
     session goes on, so it is NOT a substitute for saving this onto the trade

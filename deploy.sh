@@ -39,13 +39,14 @@ PRODUCTION_PATHS=(
   scanner
   signal_journal
   signals
-  strategy_audit_log
   strategy_health
   strategy_router
   tax_engine
   tests
   trading
   strategies
+  CLAUDE.md
+  README.md
   .gitignore
   alerts.py
   broker_health.py
@@ -54,7 +55,6 @@ PRODUCTION_PATHS=(
   deploy.sh
   market_data.py
   nginx_celotrader.conf
-  playbook_examples.json
   requirements.txt
   shadow_ledger.py
 )

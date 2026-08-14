@@ -7,13 +7,10 @@ strategy_audit_log.py, just summarizing a whole day instead of one bar.
 from __future__ import annotations
 
 _STRAT_NAMES = {
-    "INST_ORB":   "Opening Range Breakout",
-    "VWAP_PB":    "VWAP Pullback",
-    "FVG":        "Fair Value Gap",
-    "IFVG":       "Inverted Fair Value Gap",
-    "MID_BRK":    "Mid-Day Breakdown",
-    "AFT_REV":    "Afternoon Reversal",
-    "TREND_CONT": "Trend Continuation",
+    "V2_ORB_PULLBACK": "TSLA Opening-Range Pullback",
+    "V2_SPY_TREND_CONT": "SPY Trend Continuation",
+    "V2_SPY_AFTERNOON_FVG": "SPY Afternoon Fair Value Gap",
+    "V2_TSLA_TWO_LEG_TREND_PULLBACK": "TSLA Two-Leg Trend Pullback",
 }
 
 

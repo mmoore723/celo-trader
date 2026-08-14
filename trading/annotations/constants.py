@@ -10,18 +10,10 @@ _MAX_ANNOTATIONS = 100   # per-ticker — oldest dropped when exceeded
 
 # Default hex colors keyed by "STRATEGY_direction" or just "STRATEGY"
 _COLORS: dict[str, str] = {
-    "FVG_bullish":    "#06b6d4",   # cyan
-    "FVG_bearish":    "#f97316",   # orange
-    "IFVG_bullish":   "#a855f7",   # purple
-    "IFVG_bearish":   "#ec4899",   # pink
-    "BOS_MSS":        "#84cc16",   # lime
-    "BOS_MSS_bullish":"#84cc16",
-    "BOS_MSS_bearish":"#f87171",   # red-300 (bearish BOS)
-    "VWAP_PB":        "#3b82f6",   # blue
-    "MID_BRK":        "#ef4444",   # red
-    "INST_ORB":       "#eab308",   # gold
-    "AFT_REV":        "#14b8a6",   # teal
-    "TREND_CONT":     "#8b5cf6",   # violet
+    "V2_ORB_PULLBACK": "#eab308",
+    "V2_SPY_TREND_CONT": "#8b5cf6",
+    "V2_SPY_AFTERNOON_FVG": "#06b6d4",
+    "V2_TSLA_TWO_LEG_TREND_PULLBACK": "#3b82f6",
     "signal_bullish": "#22c55e",   # green  — entry marker
     "signal_bearish": "#ef4444",   # red    — entry marker (put)
     "veto":           "#64748b",   # slate  — vetoed

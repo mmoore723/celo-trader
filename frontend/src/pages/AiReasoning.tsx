@@ -1,25 +1,18 @@
-/**
- * AiReasoning.tsx — full prompt/response replay log for every AI call.
- *
- * Added 2026-07-20 per explicit user request: before trusting AI narration
- * or decision support (entry veto/resize), the user wants to see the EXACT
- * prompt sent and EXACT raw response received — not a summary — so
- * hallucination, prompt drift, or a silent model change can be caught by
- * inspection. Every call is logged regardless of success/failure, so this
- * is the complete trail (ai_reasoning_log), not a highlight reel.
- */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import {
+  Bot, CheckCircle2, ChevronDown, ChevronRight,
+  Eye, Filter, ShieldCheck, Sparkles, XCircle,
+} from "lucide-react";
 import { api, type AiReasoningEntry } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const EVENT_LABELS: Record<string, string> = {
-  entry_narration:     "Entry narration (phase 1)",
-  exit_narration:      "Exit narration (phase 1)",
-  entry_veto:          "Entry decision support (phase 2)",
-  daily_audit_summary:  "Daily strategy audit summary",
-  weekly_audit_summary: "Weekly strategy review recommendation",
+  entry_narration: "Entry explanation",
+  exit_narration: "Exit explanation",
+  entry_veto: "Entry decision review",
+  daily_audit_summary: "Daily strategy review",
+  weekly_audit_summary: "Weekly strategy review",
 };
 
 const EVENT_FILTERS = [
@@ -27,103 +20,115 @@ const EVENT_FILTERS = [
   "daily_audit_summary", "weekly_audit_summary",
 ];
 
-function ActionBadge({ entry }: { entry: AiReasoningEntry }) {
-  if (entry.error) {
-    return (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#f0883e", fontSize: 12 }}>
-        <AlertTriangle size={12} /> failed / fell back to approve
-      </span>
-    );
+function parseSnapshot(entry: AiReasoningEntry): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(entry.feature_snapshot_json || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
   }
-  if (entry.event_type === "entry_veto") {
-    return (
-      <span style={{
-        fontSize: 12, fontWeight: 600,
-        color: entry.applied ? "var(--negative)" : "var(--positive)",
-      }}>
-        {entry.applied ? "vetoed / reduced size" : "approved"}
-      </span>
-    );
-  }
-  return null;
 }
 
-function Row({ entry }: { entry: AiReasoningEntry }) {
+function readableValue(value: unknown): string {
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value ?? "—");
+}
+
+function decisionLabel(entry: AiReasoningEntry) {
+  if (entry.error) return { label: "AI unavailable — bot fallback used", tone: "var(--negative)", icon: XCircle };
+  if (entry.event_type !== "entry_veto") return { label: "Explanation only", tone: "#2563eb", icon: Eye };
+  if (entry.applied) return { label: "AI changed the decision", tone: "var(--negative)", icon: ShieldCheck };
+  return { label: "Passive review — no trade control", tone: "var(--positive)", icon: CheckCircle2 };
+}
+
+function ReasoningRow({ entry }: { entry: AiReasoningEntry }) {
   const [open, setOpen] = useState(false);
-  let snapshot: unknown = null;
-  try { snapshot = JSON.parse(entry.feature_snapshot_json); } catch { /* best-effort */ }
+  const [technicalOpen, setTechnicalOpen] = useState(false);
+  const snapshot = parseSnapshot(entry);
+  const decision = decisionLabel(entry);
+  const DecisionIcon = decision.icon;
+  const strategy = snapshot.strategy_id ?? snapshot.strategy ?? snapshot.setup ?? "—";
+  const direction = snapshot.direction ?? snapshot.side ?? "—";
+  const confidence = snapshot.confidence ?? snapshot.score;
+  const keyFacts = ([
+    ["Strategy", strategy],
+    ["Direction", direction],
+    ["Confidence", typeof confidence === "number" ? `${(confidence <= 1 ? confidence * 100 : confidence).toFixed(0)}%` : confidence],
+    ["Trade", entry.trade_id ? `#${entry.trade_id}` : "No trade linked"],
+  ] as Array<[string, unknown]>).filter(([, value]) => value != null && value !== "—");
 
   return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+    <article className="card" style={{ padding: 0, overflow: "hidden" }}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen((value) => !value)}
         style={{
-          width: "100%", display: "flex", alignItems: "center", gap: 10,
-          padding: "10px 12px", background: "transparent", border: "none",
-          cursor: "pointer", textAlign: "left",
+          width: "100%", display: "grid", gridTemplateColumns: "24px 145px 72px minmax(170px, 1fr) minmax(210px, 1.2fr)",
+          alignItems: "center", gap: 10, padding: "13px 14px", background: "transparent",
+          border: 0, cursor: "pointer", textAlign: "left",
         }}
       >
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span style={{ fontSize: 12, color: "var(--ink-faint)", width: 150, flexShrink: 0 }}>
-          {entry.ts?.replace("T", " ").slice(0, 19)}
+        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+        <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>{entry.ts?.replace("T", " ").slice(0, 19)}</span>
+        <strong style={{ fontSize: 13 }}>{entry.ticker || "—"}</strong>
+        <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>{EVENT_LABELS[entry.event_type] ?? entry.event_type}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: decision.tone }}>
+          <DecisionIcon size={14} /> {decision.label}
         </span>
-        <span style={{ fontSize: 12, fontWeight: 600, width: 60, flexShrink: 0 }}>{entry.ticker}</span>
-        <span style={{ fontSize: 12, color: "var(--ink-muted)", width: 220, flexShrink: 0 }}>
-          {EVENT_LABELS[entry.event_type] ?? entry.event_type}
-        </span>
-        <span style={{ fontSize: 12, color: "var(--ink-faint)", width: 140, flexShrink: 0 }}>
-          {entry.model ?? "—"}{entry.latency_ms ? ` · ${entry.latency_ms}ms` : ""}
-        </span>
-        <span style={{ flex: 1 }} />
-        <ActionBadge entry={entry} />
       </button>
 
       {open && (
-        <div style={{ padding: "0 12px 14px 34px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {entry.error && (
-            <div style={{ fontSize: 12, color: "var(--negative)" }}>
-              Error: {entry.error}
-            </div>
-          )}
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-faint)", marginBottom: 4 }}>
-              EXACT PROMPT SENT (system + user, verbatim)
-            </div>
-            <pre style={{
-              whiteSpace: "pre-wrap", fontSize: 12, background: "var(--bg-subtle)",
-              padding: 10, borderRadius: 6, margin: 0, maxHeight: 280, overflowY: "auto",
-            }}>
-              {entry.prompt}
-            </pre>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-faint)", marginBottom: 4 }}>
-              RAW MODEL RESPONSE (verbatim, unedited)
-            </div>
-            <pre style={{
-              whiteSpace: "pre-wrap", fontSize: 12, background: "var(--bg-subtle)",
-              padding: 10, borderRadius: 6, margin: 0, maxHeight: 200, overflowY: "auto",
-            }}>
-              {entry.response_text ?? "(no response — see error above)"}
-            </pre>
-          </div>
-          {snapshot != null && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-faint)", marginBottom: 4 }}>
-                INPUT DATA SNAPSHOT (exact values fed into the prompt)
+        <div style={{ borderTop: "1px solid var(--border)", padding: 14, display: "grid", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 8 }}>
+            {keyFacts.map(([label, value]) => (
+              <div key={String(label)} style={{ background: "var(--bg-subtle)", borderRadius: 8, padding: "9px 10px" }}>
+                <div style={{ fontSize: 10, letterSpacing: ".07em", color: "var(--ink-faint)", textTransform: "uppercase" }}>{label}</div>
+                <div style={{ marginTop: 3, fontSize: 13, fontWeight: 600 }}>{readableValue(value)}</div>
               </div>
-              <pre style={{
-                whiteSpace: "pre-wrap", fontSize: 11, color: "var(--ink-muted)",
-                background: "var(--bg-subtle)", padding: 10, borderRadius: 6, margin: 0,
-                maxHeight: 160, overflowY: "auto",
-              }}>
-                {JSON.stringify(snapshot, null, 2)}
-              </pre>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
+            <section style={{ padding: 12, borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", marginBottom: 7 }}>
+                <Bot size={13} /> WHAT THE AI SAID
+              </div>
+              <div style={{ whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.55 }}>
+                {entry.response_text || (entry.error ? "No response was returned." : "No explanation was recorded.")}
+              </div>
+            </section>
+            <section style={{ padding: 12, borderRadius: 8, border: `1px solid ${entry.error ? "var(--negative)" : "var(--border)"}` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", marginBottom: 7 }}>WHAT ACTUALLY HAPPENED</div>
+              <div style={{ fontSize: 12, lineHeight: 1.55, color: decision.tone, fontWeight: 600 }}>{decision.label}</div>
+              <div style={{ fontSize: 12, color: "var(--ink-muted)", marginTop: 5 }}>
+                {entry.error
+                  ? entry.error
+                  : entry.applied
+                    ? "The AI output was enforced. Review this carefully against later trade results."
+                    : "The deterministic strategy and risk rules remained in control."}
+              </div>
+            </section>
+          </div>
+
+          <button className="btn btn-ghost" onClick={() => setTechnicalOpen((value) => !value)} style={{ justifySelf: "start" }}>
+            {technicalOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Technical audit details
+          </button>
+          {technicalOpen && (
+            <div style={{ display: "grid", gap: 10 }}>
+              <details>
+                <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Exact prompt sent</summary>
+                <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, background: "var(--bg-subtle)", padding: 10, borderRadius: 6, maxHeight: 260, overflow: "auto" }}>{entry.prompt}</pre>
+              </details>
+              <details>
+                <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Exact feature snapshot</summary>
+                <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, background: "var(--bg-subtle)", padding: 10, borderRadius: 6, maxHeight: 220, overflow: "auto" }}>{JSON.stringify(snapshot, null, 2)}</pre>
+              </details>
+              <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>Model: {entry.model ?? "—"} · Latency: {entry.latency_ms ? `${entry.latency_ms}ms` : "—"}</div>
             </div>
           )}
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -131,66 +136,52 @@ export function AiReasoning() {
   const [eventType, setEventType] = useState("");
   const [ticker, setTicker] = useState("");
   const [onlyErrors, setOnlyErrors] = useState(false);
-
   const { data, isLoading } = useQuery({
     queryKey: ["ai-reasoning-log", eventType, ticker, onlyErrors],
-    queryFn: () => api.aiReasoning.log({
-      limit: 100,
-      eventType: eventType || undefined,
-      ticker: ticker || undefined,
-      onlyErrors,
-    }),
+    queryFn: () => api.aiReasoning.log({ limit: 100, eventType: eventType || undefined, ticker: ticker || undefined, onlyErrors }),
     refetchInterval: 30_000,
   });
-
-  if (isLoading) return <PageLoader label="AI Reasoning Log" />;
-
   const entries = data?.entries ?? [];
+  const stats = useMemo(() => ({
+    total: entries.length,
+    passive: entries.filter((entry) => !entry.applied && !entry.error).length,
+    applied: entries.filter((entry) => Boolean(entry.applied)).length,
+    errors: entries.filter((entry) => Boolean(entry.error)).length,
+  }), [entries]);
+
+  if (isLoading) return <PageLoader label="AI Decision Audit" />;
 
   return (
     <div className="p-4 md:p-6 flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>AI Reasoning Log</h1>
-        <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>
-          Every prompt sent to and response received from the AI reasoning layer — narration and
-          decision support alike, successful or failed. This is the literal replay trail, not a
-          summary: use it to check the AI isn't hallucinating, drifting from the intended prompt,
-          or behaving differently after an Anthropic-side model update.
+      <header>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#2563eb", fontSize: 11, fontWeight: 700, letterSpacing: ".11em" }}><Sparkles size={14} /> AI DECISION AUDIT</div>
+        <h1 className="text-lg font-semibold" style={{ color: "var(--ink)", marginTop: 4 }}>What the AI considered—and what the bot actually did</h1>
+        <p style={{ fontSize: 12, color: "var(--ink-muted)", maxWidth: 820 }}>
+          Use this page to verify the AI, not to guess at its role. Passive reviews cannot block a trade. Applied decisions and failures are clearly identified and retain their exact technical audit trail.
         </p>
+      </header>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
+        {[["Calls reviewed", stats.total, "var(--ink)"], ["Passive / advisory", stats.passive, "#2563eb"], ["Applied to trading", stats.applied, "var(--positive)"], ["Failures / fallback", stats.errors, "var(--negative)"]].map(([label, value, color]) => (
+          <div className="card" key={String(label)} style={{ padding: 13 }}><div style={{ fontSize: 11, color: "var(--ink-faint)" }}>{label}</div><div style={{ fontSize: 22, fontWeight: 700, color: String(color), marginTop: 3 }}>{value}</div></div>
+        ))}
       </div>
 
       <div className="card" style={{ padding: 12, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <select className="select" value={eventType} onChange={(e) => setEventType(e.target.value)}>
-          {EVENT_FILTERS.map((v) => (
-            <option key={v} value={v}>{v ? (EVENT_LABELS[v] ?? v) : "All event types"}</option>
-          ))}
+        <Filter size={15} color="var(--ink-faint)" />
+        <select className="select" value={eventType} onChange={(event) => setEventType(event.target.value)}>
+          {EVENT_FILTERS.map((value) => <option key={value} value={value}>{value ? (EVENT_LABELS[value] ?? value) : "All AI events"}</option>)}
         </select>
-        <input
-          className="input"
-          placeholder="Filter by ticker (e.g. SPY)"
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value.toUpperCase())}
-          style={{ maxWidth: 180 }}
-        />
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
-          <input type="checkbox" checked={onlyErrors} onChange={(e) => setOnlyErrors(e.target.checked)} />
-          Only failed / fell-back-to-approve calls
-        </label>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-faint)" }}>
-          {entries.length} entr{entries.length === 1 ? "y" : "ies"} (most recent 100)
-        </span>
+        <input className="input" placeholder="Ticker (for example SPY)" value={ticker} onChange={(event) => setTicker(event.target.value.toUpperCase())} style={{ maxWidth: 190 }} />
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}><input type="checkbox" checked={onlyErrors} onChange={(event) => setOnlyErrors(event.target.checked)} /> Only failures</label>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--ink-faint)" }}>Most recent 100 calls · refreshes every 30 seconds</span>
       </div>
 
       {entries.length === 0 ? (
-        <div className="card" style={{ padding: 20, textAlign: "center", color: "var(--ink-muted)" }}>
-          No AI reasoning calls logged yet for this filter. If AI_REASONING_ENABLED and
-          AI_DECISION_SUPPORT_ENABLED are on, entries will appear here as the bot trades.
+        <div className="card" style={{ padding: 26, textAlign: "center", color: "var(--ink-muted)" }}>
+          No AI calls match these filters. This does not mean the scanner stopped; deterministic strategy decisions are recorded in Scanner Opportunities.
         </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {entries.map((e) => <Row key={e.id} entry={e} />)}
-        </div>
-      )}
+      ) : <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>{entries.map((entry) => <ReasoningRow key={entry.id} entry={entry} />)}</div>}
     </div>
   );
 }

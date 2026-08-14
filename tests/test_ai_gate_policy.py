@@ -12,8 +12,7 @@ class AiGatePolicyTests(unittest.TestCase):
         self.assertEqual(frozenset(), AI_DECISION_ENFORCED_STRATEGY_IDS)
         for strategy_id in (
             "V2_ORB_PULLBACK", "V2_SPY_TREND_CONT",
-            "V2_TSLA_NOISE_MOMENTUM", "V2_TSLA_TWO_LEG_TREND_PULLBACK",
-            "V2_TREND_CONT", "MID_BRK",
+            "V2_SPY_AFTERNOON_FVG", "V2_TSLA_TWO_LEG_TREND_PULLBACK",
         ):
             self.assertFalse(ai_decision_is_enforced(strategy_id))
 

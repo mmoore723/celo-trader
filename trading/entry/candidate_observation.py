@@ -22,11 +22,8 @@ logger = logging.getLogger("celo_trader.candidate_observation")
 
 _EXIT_SUMMARIES = {
     "V2_ORB_PULLBACK": "Hold the same selected contract for 90 minutes, then measure the executable bid.",
-    "V2_TREND_CONT": "Hold the same selected contract for 90 minutes, then measure the executable bid.",
     "V2_SPY_TREND_CONT": "Hold the same selected contract for 30 minutes, then measure the executable bid.",
     "V2_SPY_AFTERNOON_FVG": "Hold the same selected contract for 30 minutes, then measure the executable bid.",
-    "V2_SPY_AFTERNOON_REVERSAL": "Hold the same selected contract for 30 minutes, then measure the executable bid.",
-    "V2_TSLA_NOISE_MOMENTUM": "Measure the same selected contract at 3:59 PM Eastern.",
     "V2_TSLA_TWO_LEG_TREND_PULLBACK": "Hold the same selected contract for 90 minutes, then measure the executable bid.",
 }
 

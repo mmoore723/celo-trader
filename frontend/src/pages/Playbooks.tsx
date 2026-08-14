@@ -3,334 +3,6 @@
  * Lightweight read-only reference; interactive replay lives in the Streamlit legacy.
  */
 
-interface Strategy {
-  id: string;
-  name: string;
-  emoji: string;
-  setup: string;
-  entry: string;
-  stop: string;
-  target: string;
-  notes: string;
-  evidence?: string;
-  tags: string[];
-  tuning: { param: string; value: string }[];
-}
-
-const STRATEGIES: Strategy[] = [
-  {
-    id: "orb",
-    name: "Opening Range Breakout",
-    emoji: "🎯",
-    setup:  "Price forms a tight range during 9:30–9:44 ET. Breakout detected 9:45–10:30; retest entry allowed until 10:45.",
-    entry:  "Candle close above ORB high (long) or below ORB low (short). Dynamic RVOL gate (see tuning).",
-    stop:   "Below ORB low (long) or above ORB high (short). -50% hard stop on option premium.",
-    target: "Stage 1: +50% on premium. Stage 2: ATR trail floor at +15%. Time-box 20 min losing / 90 min after Stage 1.",
-    notes:  "Highest-probability signal. Skipped if price > 3× ATR from boundary (overextended). 20-min cooldown per ticker.",
-    tags:   ["primary", "momentum"],
-    tuning: [
-      { param: "Window",          value: "9:45–10:30 detect / 10:45 retest" },
-      { param: "RVOL (early)",    value: "≥ 1.0× floor before 10:30" },
-      { param: "RVOL (after)",    value: "≥ 0.75× floor after 10:30" },
-      { param: "RVOL (MSA conf)", value: "≥ 0.75× (structure confirmed)" },
-      { param: "Overext. skip",   value: "> 3.0× ATR from boundary" },
-      { param: "Retest tol.",     value: "0.15% of level (min $0.05)" },
-      { param: "Cooldown",        value: "20 min per ticker" },
-    ],
-  },
-  {
-    id: "vwap",
-    name: "VWAP Pullback",
-    emoji: "📈",
-    setup:  "Trending stock pulls back to VWAP after a strong first push above/below. Needs ≥ 8 bars today.",
-    entry:  "Bounce off VWAP with RVOL gate and ≥ 3 of the last 5 bars on correct side of VWAP before the touch.",
-    stop:   "Below VWAP (long) or above VWAP (short). -50% hard stop on premium.",
-    target: "Stage 1: +50%. Stage 2: ATR trail. Time-box 20 min losing / 90 min after Stage 1.",
-    notes:  "Works best when VWAP is flat or slightly sloped, not during chop.",
-    tags:   ["secondary", "mean-reversion"],
-    tuning: [
-      { param: "Window",          value: "9:45 ET onwards (≥ 8 bars)" },
-      { param: "RVOL gate",       value: "Dynamic (≥ 1.0× early / ≥ 0.75× after 10:30 / ≥ 0.75× with MSA)" },
-      { param: "VWAP side check", value: "≥ 3 of last 5 bars on correct side" },
-      { param: "Conf. range",     value: "0.60 – 0.82" },
-      { param: "Conf. formula",   value: "0.60 + proximity×0.15 + (RVOL−min, max 1.0)×0.07" },
-      { param: "Cooldown",        value: "20 min per ticker" },
-    ],
-  },
-  {
-    id: "fvg",
-    name: "Fair Value Gap",
-    emoji: "⚡",
-    setup:  "3-bar pattern: impulse candle leaves a gap between candle 1's high and candle 3's low. Retest of the gap zone.",
-    entry:  "First candle that closes into the FVG zone. Gap must be ≥ 0.5× ATR14 wide. RVOL ≥ 1.5×.",
-    stop:   "Beyond the 50% midpoint of the FVG zone.",
-    target: "Swing high/low that created the FVG move. Stage 1 at +25%, Stage 2 trail.",
-    notes:  "Liquidity sweep of a prior swing in the last 15 bars upgrades confidence to 0.90. No sweep caps at 0.78 (near EMA50) or 0.75 (extended).",
-    tags:   ["structural", "ICT"],
-    tuning: [
-      { param: "Window",        value: "9:45 ET onwards (≥ 6 bars)" },
-      { param: "RVOL gate",     value: "≥ 1.5× (hard — not dynamic)" },
-      { param: "Gap min width", value: "≥ 0.5× ATR14" },
-      { param: "Sweep lookback",value: "15 bars" },
-      { param: "Conf. (sweep)", value: "0.55 – 0.90  (base + 0.07 sweep bonus)" },
-      { param: "Conf. (no swp)",value: "cap 0.78 near EMA50 / 0.75 extended" },
-      { param: "Conf. formula", value: "0.55 + min(gap/ATR, 2.0)×0.10 + min(RVOL−1.5, 1.0)×0.05" },
-      { param: "Cooldown",      value: "20 min per ticker" },
-    ],
-  },
-  {
-    id: "ifvg",
-    name: "Inverted Fair Value Gap",
-    emoji: "🔄",
-    setup:  "FVG zone fully violated (body close through far edge) → zone flips polarity. Entry on retest of the now-inverted zone.",
-    entry:  "Retest bar closes back into the inverted zone within 15 bars of the violation. RVOL ≥ 1.5×. Liquidity sweep REQUIRED.",
-    stop:   "Candle body close through the opposite edge of the IFVG zone.",
-    target: "Next major liquidity level (swing high/low). Stage 1 at +25%, Stage 2 trail.",
-    notes:  "Signal direction is OPPOSITE to the original gap: bullish FVG violated → bearish (puts); bearish FVG violated → bullish (calls). Higher win-rate than FVG because zone is proven twice.",
-    tags:   ["structural", "ICT", "reversal"],
-    tuning: [
-      { param: "Window",           value: "9:45 ET onwards (≥ 8 bars)" },
-      { param: "Gap lookback",     value: "25 bars for original gap" },
-      { param: "Retest window",    value: "≤ 15 bars after violation" },
-      { param: "RVOL gate",        value: "≥ 1.5× on retest bar" },
-      { param: "Sweep",            value: "REQUIRED (hard block — not optional)" },
-      { param: "Gap min width",    value: "≥ 0.5× ATR14" },
-      { param: "VWAP",             value: "Soft gate — conflict deducts 0.05 confidence" },
-      { param: "Conf. range",      value: "0.55 – 0.88" },
-      { param: "Conf. formula",    value: "0.60 + min(gap/ATR,2.0)×0.08 + min(RVOL−1.5,1.0)×0.05 − 0.05 if VWAP conflict" },
-    ],
-  },
-  {
-    id: "bos",
-    name: "BOS / MSS",
-    emoji: "🔓",
-    setup:  "Break of Structure: price takes out a prior swing high (bullish) or swing low (bearish). Requires FVG evidence within last 20 bars.",
-    entry:  "BOS candle close. RVOL ≥ 1.5× hard floor. Skipped if already > 1.5× ATR past the break level.",
-    stop:   "Below last higher low (bullish) or above last lower high (bearish). -50% hard stop on premium.",
-    target: "Next significant swing level. Stage 1 +50%, Stage 2 ATR trail.",
-    notes:  "MSS (Market Structure Shift) is the strongest signal — trend reversal. Needs ≥ 10 bars before it's eligible.",
-    tags:   ["structural", "smc"],
-    tuning: [
-      { param: "Min bars",       value: "≥ 10 bars today" },
-      { param: "RVOL floor",     value: "≥ 1.5× (hard floor, not dynamic)" },
-      { param: "Overext. skip",  value: "> 1.5× ATR past swing level" },
-      { param: "FVG confirm",    value: "Within last 20 bars" },
-      { param: "Cooldown",       value: "20 min per ticker" },
-    ],
-  },
-  {
-    id: "flip",
-    name: "Flip Trading",
-    emoji: "🔄",
-    setup:  "Bot has an open directional trade that fails and price reverses through the original trigger level.",
-    entry:  "Auto-flips CALL→PUT or PUT→CALL when reversal is confirmed at the ORB boundary.",
-    stop:   "Mirror of original — now the opposite ORB level. -50% hard stop on premium.",
-    target: "Same two-stage exit: Stage 1 +50%, Stage 2 ATR trail.",
-    notes:  "Enabled/disabled in Settings. Adds churn risk — keep off if RVOL is low.",
-    tags:   ["adaptive", "risk"],
-    tuning: [
-      { param: "Trigger",    value: "Price crosses ORB boundary opposite to entry" },
-      { param: "Stop",       value: "Opposite ORB level" },
-      { param: "Enable/off", value: "flip_trading_enabled in Settings" },
-    ],
-  },
-  {
-    id: "chan",
-    name: "Channel Breakout",
-    emoji: "🏹",
-    setup:  "Price is range-bound for ≥ 4 bars. Identify horizontal resistance/support.",
-    entry:  "Breakout candle closes above resistance (long) or below support (short). Dynamic RVOL ≥ 1.0×.",
-    stop:   "Back inside the channel.",
-    target: "Channel height projected from breakout point.",
-    notes:  "⚠️ Currently DISABLED. Avoid in the first 15 minutes (ORB window) and last 20 minutes of session.",
-    tags:   ["breakout", "range"],
-    tuning: [
-      { param: "Status",       value: "⚠️ DISABLED in router + backtester" },
-      { param: "RVOL gate",    value: "≥ 1.0× (relaxed vs. other strategies)" },
-      { param: "Min range",    value: "≥ 4 bars of consolidation" },
-      { param: "Cooldown",     value: "20 min per ticker" },
-    ],
-  },
-  {
-    id: "mid",
-    name: "Mid-Day Breakdown",
-    emoji: "📉",
-    setup:  "10:30–13:00 ET only. Price collapses below OR Low with VWAP as resistance. MSA must confirm a Lower High.",
-    entry:  "Enter PUT: price closes below OR Low AND below VWAP AND MSA Lower High confirmed. Dynamic RVOL gate.",
-    stop:   "Above OR Low. If price reclaims it, setup is invalid. -50% hard stop on premium.",
-    target: "Stage 1: +50% below entry. Stage 2: trail to next swing low. Time-box 20 min losing / 90 min after Stage 1.",
-    notes:  "Bearish-only. Window strictly 10:30–13:00 ET. With MSA confirmed the RVOL floor relaxes to 0.75×.",
-    tags:   ["secondary", "bearish"],
-    tuning: [
-      { param: "Window",          value: "10:30–13:00 ET (bearish only)" },
-      { param: "RVOL gate",       value: "Dynamic; 0.75× with MSA confirmed" },
-      { param: "Conf. range",     value: "0.65 – 0.86" },
-      { param: "Conf. formula",   value: "0.65 + min(RVOL−1.0, 2.0)×0.04 + 0.05 if downtrend" },
-      { param: "Cooldown",        value: "20 min per ticker" },
-    ],
-  },
-  {
-    id: "trend",
-    name: "Trend Continuation",
-    emoji: "🌊",
-    setup:  "Established trend (Higher Low for uptrends, Lower High for downtrends). This is the 2nd or 3rd entry — trend must already be proven.",
-    entry:  "Bullish: close above Higher Low bar with RVOL ≥ 1.2× and price above VWAP. Bearish: inverse. Pivot must be ≤ 20 bars old.",
-    stop:   "Below the Higher Low (bullish) or above the Lower High (bearish).",
-    target: "Previous swing high/low. Stage 1 +50%, Stage 2 ATR trail.",
-    notes:  "Lowest RVOL threshold (1.2×) because the trend does the heavy lifting. Active 9:45–14:30 ET.",
-    tags:   ["secondary", "momentum"],
-    tuning: [
-      { param: "Window",        value: "9:45–14:30 ET" },
-      { param: "RVOL min",      value: "≥ 1.2× (lowest of all strategies)" },
-      { param: "Pivot max age", value: "≤ 20 bars (stale pivots skipped)" },
-      { param: "Conf. range",   value: "0.65 – 0.82" },
-      { param: "Conf. formula", value: "0.65 + min((RVOL−1.2)×0.06, 0.08) + depth bonus" },
-      { param: "Cooldown",      value: "20 min per ticker" },
-    ],
-  },
-];
-
-// ── Global risk / exit parameters (shared across all strategies) ─────────────
-const GLOBAL_PARAMS: { param: string; value: string; note?: string }[] = [
-  // ── Entry / sizing ──────────────────────────────────────────────────────────
-  { param: "Min R:R (bootstrap)", value: "1.2× (balance < $5k)" },
-  { param: "Min R:R (standard)",  value: "1.6×" },
-  { param: "Max positions",       value: "2 concurrent" },
-  { param: "Spread max",          value: "$0.10 bid-ask" },
-  { param: "RVOL baseline",       value: "5-min bars, 10-day same-slot avg" },
-  // ── Exit hierarchy ──────────────────────────────────────────────────────────
-  { param: "Stage 1 target",      value: "+50% on option premium",   note: "Exits 50% of contracts" },
-  { param: "Stage 2 trail lock",  value: "+15% profit floor",         note: "Floor locked after Stage 1" },
-  { param: "Hard stop",           value: "−50% on option premium" },
-  { param: "Momentum stop",       value: "−20% early exit",           note: "Only first 20 min if losing" },
-  { param: "Time-box (losing)",   value: "60 min max" },
-  { param: "Time-box (winner)",   value: "90 min after Stage 1" },
-  { param: "ATR trail warmup",    value: "5 min + option ≥ +15%",     note: "Trail doesn't arm before both gates" },
-  // ── Multi-timeframe ATR trail (dynamic) ────────────────────────────────────
-  { param: "ATR source",          value: "5-min bars (falls back to 1-min)",  note: "Less noisy than 1-min" },
-  { param: "Trail mult — base",   value: "2.0× ATR",                  note: "Default when 1h trend is neutral" },
-  { param: "Trail mult — 1h with",value: "2.5× ATR",                  note: "1-hour EMA20 aligned with trade → give runners room" },
-  { param: "Trail mult — 1h vs.", value: "1.5× ATR",                  note: "1-hour EMA20 opposing trade → tighter stop" },
-  { param: "Trail mult — exhaust",value: "1.0× ATR",                  note: "5-min RSI >72 (call) or <28 (put) → very tight" },
-  { param: "Trail mult — MACD",   value: "≤ 1.5× ATR",               note: "5-min MACD hist declining 2 bars → fade signal" },
-  { param: "Trail mult — 15m lvl",value: "1.0× ATR",                  note: "Within 0.3% of 15-min swing level → near wall" },
-  // ── VWAP breach (trend-dead gate) ──────────────────────────────────────────
-  { param: "VWAP breach (5-min)", value: "2 consecutive 5-min bars",  note: "Primary signal when 5m data loaded" },
-  { param: "VWAP breach (1-min)", value: "5 consecutive 1-min bars",  note: "Fallback if 5-min not yet loaded" },
-  { param: "Trend-dead confirm",  value: "ADX < 20 AND EMA stack broken", note: "Both required — prevents false exits on dips" },
-  // ── Risk controls ──────────────────────────────────────────────────────────
-  { param: "Kill lock",           value: "24 hrs after daily cap" },
-];
-
-const TAG_COLORS: Record<string, string> = {
-  primary:       "badge-blue",
-  secondary:     "badge-yellow",
-  momentum:      "badge-green",
-  structural:    "badge-blue",
-  ICT:           "badge-blue",
-  smc:           "badge-blue",
-  adaptive:      "badge-yellow",
-  risk:          "badge-red",
-  breakout:      "badge-green",
-  "mean-reversion": "badge-yellow",
-  range:         "badge-yellow",
-  bearish:       "badge-red",
-};
-
-// ── Log event code explanations ───────────────────────────────────────────
-const LOG_CODES: { code: string; plain: string; detail: string; tag: string }[] = [
-  // ── System events ─────────────────────────────────────────────────────
-  { code: "logging_initialised",   tag: "system",  plain: "Bot started up",
-    detail: "The bot just launched and its logging system is ready. Next step: scan for today's watchlist." },
-  { code: "balance_update",        tag: "system",  plain: "Account balance refreshed",
-    detail: "The bot fetched the latest account balance from Alpaca. Used to size every trade correctly." },
-  { code: "network_error",         tag: "system",  plain: "API connection problem",
-    detail: "The broker API returned an error or timed out. Bot will retry automatically on the next tick." },
-  { code: "reconnecting",          tag: "system",  plain: "Lost connection — trying to reconnect",
-    detail: "WebSocket or API link dropped. Bot pauses new entries until the connection is restored." },
-
-  // ── Scanning / thinking ───────────────────────────────────────────────
-  { code: "bar_eval",              tag: "think",   plain: "Per-candle bot narration",
-    detail: "Fires once per closed 1-minute candle. Shows exactly what the bot is watching: price vs. the Opening Range, volume level (RVOL), VWAP alignment, which gates pass/fail, and what would need to change for a trade to trigger. When a position is open, shows live P&L, stop cushion, Stage 1 distance, and time-box countdown instead." },
-  { code: "bar_evaluation",        tag: "think",   plain: "Per-candle strategy check (legacy label)",
-    detail: "Older label for the same per-candle evaluation. See bar_eval for the current format." },
-  { code: "scan_complete",         tag: "think",   plain: "Pre-market scan finished",
-    detail: "The bot scanned 9:00–9:25 ET for the top RVOL/momentum candidates. These become today's watchlist." },
-
-  // ── Gate checks ──────────────────────────────────────────────────────
-  { code: "RVOL_gate_pass",        tag: "gate",    plain: "Volume check passed ✅",
-    detail: "Relative volume (today vs. 10-day average at this time of day) is ≥ 1.5×. Elevated volume means the move is more likely real and not a fake-out." },
-  { code: "RVOL_gate_fail",        tag: "gate",    plain: "Volume too low — skipping ❌",
-    detail: "RVOL is below the 1.5× threshold. Low volume breakouts fail ~70% of the time. Bot waits for more participation before entering." },
-  { code: "rr_gate_pass",          tag: "gate",    plain: "Risk:Reward ratio is acceptable ✅",
-    detail: "The distance to the target is at least the minimum multiple of the distance to the stop. A good R:R means the math works even if you're right less than half the time." },
-  { code: "rr_gate_fail",          tag: "gate",    plain: "Risk:Reward too poor — skipping ❌",
-    detail: "At current prices, the potential gain doesn't justify the risk. Common when premiums are inflated or the stop is too far away." },
-  { code: "spread_gate_fail",      tag: "gate",    plain: "Bid-ask spread too wide ❌",
-    detail: "The gap between the option's buy price and sell price exceeds 10%. A wide spread means you instantly lose money the moment you enter. Bot skips." },
-  { code: "orb_already_triggered", tag: "gate",    plain: "ORB already used on this ticker today",
-    detail: "The bot only takes one Opening Range Breakout trade per ticker per session. This prevents chasing the same ticker repeatedly if it fails and re-tests." },
-  { code: "vwap_gate_fail",        tag: "gate",    plain: "VWAP alignment missing — skipping ❌",
-    detail: "For a CALL, price must be above VWAP (market buying pressure). For a PUT, below VWAP. Without this, you'd be fighting the macro trend." },
-  { code: "struct_stop_set",       tag: "gate",    plain: "Structural stop level established",
-    detail: "A key price level (swing low for longs, swing high for shorts) was identified as the hard stop anchor. If price closes below/above this, the setup is broken." },
-
-  // ── Trade signals & entries ───────────────────────────────────────────
-  { code: "Trade_Signal",          tag: "signal",  plain: "Valid trade setup — all gates passed 🔥",
-    detail: "Every required condition is met: RVOL ≥ threshold, VWAP aligned, R:R acceptable, spread OK, ORB/strategy trigger confirmed. The bot is about to submit an order." },
-  { code: "entry_placed",          tag: "order",   plain: "Order submitted to broker",
-    detail: "The option buy order was sent to Alpaca. The bot is now waiting for a fill confirmation. If the fill doesn't come back, it cancels to avoid orphaned orders." },
-  { code: "entry_filled",          tag: "order",   plain: "Order filled — position is live ✅",
-    detail: "Broker confirmed the trade executed at the listed price. Stop and Stage 1 target are now set. Time-box countdown begins." },
-  { code: "entry_rejected",        tag: "order",   plain: "Order rejected by broker",
-    detail: "Alpaca rejected the order — usually insufficient buying power or an invalid contract. The rejection reason is logged. No position opened." },
-  { code: "flip_trade",            tag: "signal",  plain: "Bot flipped direction on a reversal 🔄",
-    detail: "A trade failed and price reversed strongly through the original trigger level. The bot auto-flipped from CALL→PUT (or PUT→CALL) to ride the new direction. Only fires if flip trading is enabled in Settings." },
-
-  // ── Position management ───────────────────────────────────────────────
-  { code: "position_narration",    tag: "think",   plain: "Live position status update",
-    detail: "Emitted every minute while in a trade. Shows: current option price vs. entry, unrealized P&L in $ and %, cushion above the stop, distance to Stage 1 target, time-box countdown, and whether momentum (RVOL) is holding." },
-  { code: "stop_tightened",        tag: "risk",    plain: "Stop moved up to protect profits",
-    detail: "After Stage 1 hit or a strong momentum move, the stop was raised toward breakeven or above. This locks in gains even if the trade reverses." },
-  { code: "trailing_stop_update",  tag: "risk",    plain: "Trailing stop adjusted",
-    detail: "As price moved in our favor, the stop followed it upward (for longs) keeping pace with the move. This is how runners ride big moves while protecting gains." },
-
-  // ── Exits ─────────────────────────────────────────────────────────────
-  { code: "stage1_exit",           tag: "exit",    plain: "Took first-half profit (Stage 1) 🎯",
-    detail: "Price hit the Stage 1 target (~50–100% gain on the option). Half the contracts were sold to lock in profit. Remaining contracts run with a tighter trailing stop toward Stage 2." },
-  { code: "stage2_exit",           tag: "exit",    plain: "Closed remaining position (Stage 2)",
-    detail: "The trailing stop or time-box triggered on the remaining contracts. Full position is now flat." },
-  { code: "stop_hit",              tag: "exit",    plain: "Stop loss triggered — position closed 🔴",
-    detail: "Price hit the pre-set stop level. The position was closed to limit the loss. This is normal risk management — not every trade wins. Loss was limited to the pre-calculated amount." },
-  { code: "time_box_exit",         tag: "exit",    plain: "Time-box expired — trade closed ⏱️",
-    detail: "The trade ran out of time: 45 minutes (or 90 min if Stage 1 was already hit). Position closed regardless of P&L. Time-boxes prevent overnight holds and slow bleeders." },
-  { code: "manual_close",          tag: "exit",    plain: "Trade manually closed by user",
-    detail: "You clicked the Close button in the Trade Journal or Live Trading page. Position was closed at market." },
-  { code: "panic_close",           tag: "exit",    plain: "Panic Close — all positions closed 🚨",
-    detail: "Panic Close was triggered. All open option positions were closed at market immediately." },
-
-  // ── Risk controls ─────────────────────────────────────────────────────
-  { code: "kill_lock_active",      tag: "risk",    plain: "Daily loss limit hit — bot locked 🔒",
-    detail: "Total realized losses for the session hit the maximum allowed. Bot stops placing new trades until the next trading day. Existing positions are still managed." },
-  { code: "ghost_position_detected",tag:"risk",    plain: "Open position found without a DB record",
-    detail: "Alpaca shows an open option position that isn't in the bot's trade journal. Could be a leftover from a crash or manual trade. Bot flags it for review — it won't manage a ghost position automatically." },
-  { code: "affordability_block",   tag: "risk",    plain: "Premium too expensive for current buying power",
-    detail: "The cheapest contract for this signal costs more than the account's options buying power allows. Bot skips rather than over-leveraging." },
-];
-
-const TAG_BADGE: Record<string, string> = {
-  system: "badge-blue",
-  signal: "badge-green",
-  order:  "badge-blue",
-  exit:   "badge-red",
-  think:  "badge-yellow",
-  gate:   "badge-yellow",
-  risk:   "badge-red",
-  // aliases used in newer log entries
-  orders: "badge-blue",
-  exits:  "badge-red",
-};
-
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
@@ -338,6 +10,36 @@ import { StrategyPlaybookExperience } from "../components/playbooks/StrategyPlay
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { api } from "../lib/api";
+
+interface Strategy {
+  id: string; name: string; emoji: string; setup: string; entry: string;
+  stop: string; target: string; notes: string; evidence?: string;
+  tags: string[]; tuning: { param: string; value: string }[];
+}
+
+const LOG_CODES = [
+  { code: "bar_eval", tag: "think", plain: "Per-candle evaluation", detail: "Shows what a promoted strategy saw and why it did or did not advance." },
+  { code: "Trade_Signal", tag: "signal", plain: "Promoted setup qualified", detail: "The setup passed its reviewed definition and advanced to account safeguards." },
+  { code: "entry_placed", tag: "order", plain: "Order submitted", detail: "The selected option order was sent to the configured broker account." },
+  { code: "entry_filled", tag: "order", plain: "Order filled", detail: "The broker confirmed the position and its reviewed exit clock began." },
+  { code: "entry_rejected", tag: "order", plain: "Order rejected", detail: "The broker refused the order; no position was opened." },
+  { code: "spread_gate_fail", tag: "gate", plain: "Spread too wide", detail: "The option bid/ask spread failed the account liquidity safeguard." },
+  { code: "affordability_block", tag: "risk", plain: "Contract unaffordable", detail: "No reviewed contract fit the account's current spending limit." },
+  { code: "stop_hit", tag: "exit", plain: "Risk exit", detail: "The position reached its defined safety exit." },
+  { code: "time_box_exit", tag: "exit", plain: "Reviewed timed exit", detail: "The same selected contract reached the strategy's tested exit time." },
+];
+
+const TAG_BADGE: Record<string, string> = { system: "badge-blue", signal: "badge-green", order: "badge-blue", exit: "badge-red", think: "badge-yellow", gate: "badge-yellow", risk: "badge-red" };
+const TAG_COLORS: Record<string, string> = { paper: "badge-blue", opening: "badge-green", pullback: "badge-yellow", trend: "badge-blue", afternoon: "badge-yellow", gap: "badge-green", TSLA: "badge-blue", "1-minute": "badge-blue", VWAP: "badge-green" };
+
+const GLOBAL_PARAMS = [
+  { param: "Trade risk", value: "Account tier", note: "calculated from the active broker balance and Settings" },
+  { param: "Position cap", value: "2 total", note: "never two positions in the same ticker" },
+  { param: "Hard protection", value: "Enabled", note: "the account stop remains active for every reviewed strategy" },
+  { param: "Timed exits", value: "30m / 90m", note: "30 minutes for SPY rules; 90 minutes for the reviewed TSLA rules" },
+  { param: "Quote convention", value: "Ask → bid", note: "entry uses the executable ask and exit uses the same contract's bid" },
+  { param: "Session cutoff", value: "3:55 PM ET", note: "no option position is carried beyond the bot's trading session" },
+];
 
 // ── How It Works — comprehensive bot explainer ────────────────────────────────
 const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }[] = [
@@ -349,10 +51,8 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
       "8:00 AM ET — Bot wakes up, fetches your Alpaca account balance, and updates internal risk sizing.",
       "9:00–9:25 AM ET — Pre-market scan: checks ~140 liquid US stocks and ETFs for gap + volume. Tickers with a 1–4% gap AND elevated relative volume (RVOL ≥ 2×) make the cut. Top 10 become today's watchlist.",
       "9:30 AM ET — Market opens. SPY and QQQ are always added as anchors regardless of gap. Any tickers you pinned in Settings > Watchlist are prepended so the bot always watches them.",
-      "9:45 AM ET — Strategy evaluation begins. Before 9:45 the opening range is still forming — entering too early means fighting the noise. INST_ORB, VWAP Pullback, FVG, IFVG, and Trend Continuation all activate here.",
-      "10:30 AM ET — Mid-Day Breakdown activates (bearish-only, runs until 1:00 PM).",
-      "1:00 PM ET — Afternoon Reversal activates (runs until 3:30 PM).",
-      "2:30 PM ET — Trend Continuation closes its entry window. No new trend-cont entries after this.",
+      "9:45 AM ET — The promoted Opening-Range Pullback and TSLA Two-Leg Trend Pullback can begin evaluating completed data.",
+      "1:30 PM ET — The promoted SPY Afternoon Fair Value Gap enters its reviewed observation window.",
       "3:55 PM ET — Hard session cutoff. All remaining positions are closed regardless of P&L. Options expire and after-hours liquidity evaporates — this is non-negotiable.",
       "After 4:00 PM ET — Bot enters deep sleep. No API calls, no evaluation. Wakes at 8:00 AM next trading day.",
     ],
@@ -390,17 +90,8 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
     emoji: "📡",
     title: "How Strategies Generate Signals",
     body: [
-      "Every tick, strategy_router.py runs all enabled strategies against today's 1-minute bars and returns a ranked list of signals. The highest-confidence signal wins.",
-      "INST_ORB (9:45–10:30): The opening range is the high and low of the first 15 minutes. A breakout above the high = bullish signal (buy calls); below the low = bearish (buy puts). The bot also allows retests of the boundary until 10:45.",
-      "VWAP Pullback (all day): VWAP is the volume-weighted average price — the 'fair price' institutions use as a benchmark. When price trends away from VWAP then pulls back to touch it with slowing momentum, a bounce is likely.",
-      "FVG — Fair Value Gap (all day): A 3-bar impulse candle leaves a gap between bar 1's high and bar 3's low. Price often comes back to 'fill' the gap. The bot enters on the first candle that closes into the gap zone.",
-      "IFVG — Inverted FVG (all day): An existing FVG zone is violated (price closes through it). The zone flips polarity — what was support becomes resistance, or vice versa. Entry on the retest of the inverted zone. Requires a prior liquidity sweep.",
-      "MID_BRK — Mid-Day Breakdown (10:30–1:00 PM): Price collapses below the opening range low WITH VWAP acting as resistance. Bearish-only. Requires a confirmed Lower High in market structure. It is currently on a research hold: changing its session, RVOL ceiling, and ADX filter has not produced a profitable edge. It must pass a whole-portfolio holdout before the bot uses it again.",
-      "AFT_REV — Afternoon Reversal (1:00–3:30 PM): Price reaches a prior swing high or low from earlier in the session and shows reversal momentum. The morning move exhausts and the afternoon fades it.",
-      "TREND_CONT — Trend Continuation (9:45–2:30 PM): An established trend (3+ bars showing Higher Lows for uptrend) is making its second or third entry point. Lower RVOL threshold (1.2×) because the trend does the heavy lifting.",
-      "GAP_GO — Gap and Go (9:30–9:45 AM): trades the continuation of a pre-market gap right after the open. A stock gapping up or down isn't enough on its own — price also has to push PAST its own opening bar's high (up-gaps) or low (down-gaps) in the same direction, proving the gap is being defended, not immediately faded. If it fades back through the open instead, no trade.",
-      "LIQ_SWEEP — Liquidity Sweep Reversal (9:45 AM–3:30 PM): fades a failed breakout instead of trading a real one. When a wick pierces a recent swing high/low but the candle CLOSES back on the other side of that level, that's read as a stop-hunt/trap — the bot trades the reversal, opposite the direction of the wick.",
-      "Each strategy scores signals 0–1 based on quality factors: RVOL level, proximity to key level, gap size vs. ATR, and market structure confirmation. The router applies a conflict veto — if the top two signals disagree on direction by less than 0.05 confidence points, both are rejected as ambiguous.",
+      "The router contains only promoted evaluators: Opening-Range Pullback, SPY Trend Continuation, and SPY Afternoon Fair Value Gap. TSLA Two-Leg Trend Pullback enters through its reviewed one-minute state machine.",
+      "Each strategy keeps the same timeframe, setup, contract-selection rule, and timed exit that passed its paid option-quote study. Account safeguards can still block an otherwise valid setup.",
     ],
   },
   {
@@ -546,28 +237,6 @@ const CURRENT_STRATEGIES: Strategy[] = [
     tuning: [{ param: "Window", value: "1:30–3:00 PM ET" }, { param: "Gap", value: "≥ 0.5 × ATR on completed 5-minute bars" }, { param: "Trend", value: "EMA 8/20 and session VWAP agree" }, { param: "Exit", value: "Same contract’s 30-minute bid" }],
   },
   {
-    id: "v2_spy_afternoon_reversal", name: "SPY Afternoon Reversal V2", emoji: "↗",
-    setup: "After a meaningful morning selloff, SPY forms a higher low and then breaks above a completed swing high during the early afternoon.",
-    entry: "The completed five-minute structure must be above VWAP. The paper model records the following one-minute option ask, not a hindsight price.",
-    stop: "The confirmed higher low or one ATR below the entry—whichever is lower—is the structural invalidation.",
-    target: "The reviewed study exits the same selected contract 30 minutes after entry at its observed bid.",
-    notes: "SPY calls only, from 1:00–2:00 PM ET. This is not the retired all-day generic Afternoon Reversal strategy.",
-    evidence: "The selected long-only context passed both earlier and later paid option-quote periods: 12 measured signals, with positive average markouts in each period.",
-    tags: ["paper", "afternoon", "reversal"],
-    tuning: [{ param: "Window", value: "1:00–2:00 PM ET" }, { param: "Structure", value: "Morning selloff → higher low → break above swing high" }, { param: "Confirmation", value: "Completed 5-minute close above VWAP" }, { param: "Exit", value: "Same contract’s 30-minute bid" }],
-  },
-  {
-    id: "v2_momentum", name: "TSLA Adaptive Momentum V2", emoji: "⚡",
-    setup: "At each half-hour check, compare TSLA's move with its normal move at that same time across the prior 14 sessions.",
-    entry: "A completed one-minute bar outside the adaptive zone signals direction; entry uses the next minute's actual option ask.",
-    stop: "The tested version uses account-wide protections and closes the same selected contract at 3:59 PM ET.",
-    target: "This version has a fixed 3:59 PM bid exit so the entry rule can be measured consistently.",
-    notes: "TSLA only. It ignores movement inside its adaptive normal-movement zone instead of treating every candle as a signal.",
-    evidence: "What we know: 85 earlier trades and 20 later trades passed the predeclared average, median, and profit-factor checks using paid option ask/bid prices.",
-    tags: ["paper", "momentum", "1-minute"],
-    tuning: [{ param: "Baseline", value: "Exactly 14 prior TSLA sessions" }, { param: "Timing", value: "10:00–15:30 ET at half-hour checks" }, { param: "Exit", value: "Same contract's 3:59 PM bid" }],
-  },
-  {
     id: "v2_two_leg", name: "TSLA Two-Leg Trend Pullback V2", emoji: "↗",
     setup: "After 9:45 ET, TSLA must make a real move away from the 9:45 reference: price stays on the correct side of VWAP, EMA 9 is above or below EMA 20, and the first leg travels at least one ATR.",
     entry: "It does not chase that first move. Price must pull back 0.25–1.25 ATR to EMA 9 without closing through VWAP, then a finished one-minute candle must reclaim the pullback’s prior high or low. The following minute’s selected option ask is the entry reference.",
@@ -590,7 +259,6 @@ export function Playbooks() {
     strategy.id === "v2_orb" ? Boolean(settings?.strategy_orb_pullback_v2_enabled) :
     strategy.id === "v2_trend" ? Boolean(settings?.strategy_spy_trend_cont_v2_enabled) :
     strategy.id === "v2_spy_fvg" ? Boolean(settings?.strategy_spy_afternoon_fvg_v2_enabled) :
-    (strategy.id === "v2_spy_afternoon_reversal" || strategy.id === "v2_momentum") ? false :
     Boolean(settings?.strategy_tsla_two_leg_trend_pullback_v2_enabled)
   )), [settings]);
 
@@ -620,7 +288,7 @@ export function Playbooks() {
   }, [filteredLogs]);
 
   return (
-    <div className="p-4 flex flex-col gap-4" data-legacy-strategy-count={STRATEGIES.length}>
+    <div className="p-4 flex flex-col gap-4">
       {/* Tab bar */}
       <div className="flex gap-2 border-b pb-2" style={{ borderColor: "var(--border)" }}>
         {(["playbooks", "log-guide", "how-it-works"] as const).map((t) => (
@@ -747,7 +415,7 @@ export function Playbooks() {
           No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
         </div>
       ) : (
-        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_spy_afternoon_reversal" | "v2_momentum")} />
+        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg")} />
       )}
 
       <details className="card p-4">

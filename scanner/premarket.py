@@ -74,7 +74,8 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
 
     # ── Inject user-pinned tickers from Settings watchlist ───────────────────
     # Tickers the user pinned in Settings > Watchlist are always evaluated and
-    # always appear in the final list — they bypass the gap/RVOL filters so a
+    # always appear in the final list. They bypass the gap/RVOL filters so the
+    # user's explicit watchlist remains visible to the approved strategy catalog.
     try:
         from config import get_settings as _get_s
         _user_pins = [
@@ -219,11 +220,8 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
             # real live entry gate (trading/entry.py::_place_entry, "over_budget"
             # check) compares the FULL contract premium against max_position_dollars_pct
             # (or max_position_dollars), a completely different setting. That
-            # mismatch is exactly how a real signal (BABA, 2026-07-24 10:02 ET,
-            # VWAP_PB PUT, 77% confidence) slipped past this pre-filter and only
-            # got caught at the very last step, after passing every other gate.
-            # Now mirrors the real gate: full estimated premium × 100 shares vs.
-            # the same max_position_dollars_pct/max_position_dollars budget.
+# This must mirror the real gate: full estimated premium × 100 shares vs.
+# the same max_position_dollars_pct/max_position_dollars budget.
             try:
                 from config import get_settings as _get_s_aff
                 _s_aff = _get_s_aff()
@@ -292,5 +290,3 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
     _write_state(top, scores_dict)
 
     return top
-
-

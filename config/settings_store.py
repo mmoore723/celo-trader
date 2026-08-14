@@ -17,13 +17,16 @@ from config.defaults import _DEFAULTS
 from config.env_keys import ALPACA_API_KEY, ALPACA_SECRET_KEY, TRADIER_API_KEY, TRADIER_ACCOUNT_ID
 from config.logging_settings import LOG_LEVEL, LOG_FORMAT
 
-
+# Migration-only safety list. These names are removed from the public model,
+# defaults and UI; forcing old saved values false prevents a pre-rebuild
+# settings file from reactivating deleted code during a rolling deployment.
 _RETIRED_STRATEGY_SETTING_KEYS = frozenset({
     "strategy_orb_enabled", "strategy_bos_enabled", "strategy_vwap_enabled",
     "strategy_fvg_enabled", "strategy_ifvg_enabled", "strategy_chan_enabled",
     "strategy_mid_enabled", "strategy_tcont_enabled", "strategy_aft_enabled",
     "strategy_gapgo_enabled", "strategy_liqsweep_enabled",
-    "strategy_trend_cont_v2_enabled", "strategy_spy_afternoon_reversal_v2_enabled",
+    "strategy_trend_cont_v2_enabled",
+    "strategy_spy_afternoon_reversal_v2_enabled",
     "strategy_tsla_noise_momentum_v2_enabled",
 })
 

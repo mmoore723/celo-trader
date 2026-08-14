@@ -71,60 +71,15 @@ def emit_signal_annotation(ticker: str, sig: Any, today: Any) -> None:
     strategy_router immediately after a strategy fires so the drawing
     appears on the frontend chart in real time.
 
-    Per-strategy rules:
-      FVG / IFVG  → zone band (gap_low … gap_high)
-      BOS_MSS     → hline at bos_level
-      TREND_CONT  → hline at the swing re-entry level (lh_price or hl_price)
-      INST_ORB    → hline at prior swing high/low that was broken
-      AFT_REV     → hline at prior swing high/low
-      VWAP_PB / MID_BRK → marker only (VWAP line already on chart)
-    All strategies also emit a candle marker showing where the signal fired.
+    Every reviewed strategy emits a candle marker showing where its signal
+    fired. Strategy-specific teaching overlays are built from the reviewed
+    signal metadata in the frontend rather than legacy strategy branches.
     """
-    meta   = sig.meta or {}
     ts_str = (sig.trigger_bar.isoformat()
               if hasattr(sig.trigger_bar, "isoformat") else str(sig.trigger_bar))
     arrow  = "↑" if sig.direction == "bullish" else "↓"
 
     _last_close = float(today.iloc[-1]["close"]) if not today.empty else None
-
-    if sig.strategy_id in ("FVG", "IFVG"):
-        gl = meta.get("gap_low")
-        gh = meta.get("gap_high")
-        if gl is not None and gh is not None:
-            emit_annotation(
-                ticker, "zone", sig.strategy_id,
-                label=f"{sig.strategy_id} {arrow}  {sig.confidence:.0%}",
-                ts=ts_str, direction=sig.direction,
-                price_low=gl, price_high=gh,
-            )
-
-    elif sig.strategy_id == "BOS_MSS":
-        lvl = meta.get("bos_level")
-        if lvl:
-            emit_annotation(ticker, "hline", "BOS_MSS",
-                             label=f"BOS {arrow}  {sig.confidence:.0%}",
-                             ts=ts_str, price=lvl, direction=sig.direction)
-
-    elif sig.strategy_id == "TREND_CONT":
-        lvl = meta.get("lh_price") or meta.get("hl_price")
-        if lvl:
-            emit_annotation(ticker, "hline", "TREND_CONT",
-                             label=f"TC {arrow}  {sig.confidence:.0%}",
-                             ts=ts_str, price=lvl, direction=sig.direction)
-
-    elif sig.strategy_id == "INST_ORB":
-        lvl = meta.get("prev_swing_high") or meta.get("prev_swing_low")
-        if lvl:
-            emit_annotation(ticker, "hline", "INST_ORB",
-                             label=f"ORB {arrow}  {sig.confidence:.0%}",
-                             ts=ts_str, price=lvl, direction=sig.direction)
-
-    elif sig.strategy_id == "AFT_REV":
-        lvl = meta.get("prev_swing_high") or meta.get("prev_swing_low")
-        if lvl:
-            emit_annotation(ticker, "hline", "AFT_REV",
-                             label=f"AFT {arrow}  {sig.confidence:.0%}",
-                             ts=ts_str, price=lvl, direction=sig.direction)
 
     if _last_close:
         sig_color = "#22c55e" if sig.direction == "bullish" else "#ef4444"

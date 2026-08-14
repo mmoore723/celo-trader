@@ -41,26 +41,35 @@ from ai_reasoning.feature_snapshot import build_decision_snapshot
 
 logger = logging.getLogger("celo_trader.ai_reasoning.decision_support")
 
-_MAX_TOKENS = 300  # structured response only — action + short rationale, not analysis
+_MAX_TOKENS = 220  # one validated decision record, never free-form analysis
 
 _SYSTEM_PROMPT = (
-    "You are reviewing ONE options trade entry for a day-trading bot. A "
+    "You are a constrained audit component reviewing ONE options trade entry "
+    "for a day-trading bot. You are not a trader, strategist, or creative "
+    "assistant. A "
     "deterministic risk/strategy engine has ALREADY approved this trade — "
     "signal fired, confidence cleared the floor, reward-to-risk cleared the "
     "minimum, spread is acceptable, size was already calculated. Your ONLY "
     "role is a final narrow check: APPROVE as-is, REDUCE size (setup looks "
     "weaker than the deterministic checks alone suggest), or VETO entirely "
     "(only for a genuinely bad setup the deterministic checks missed — "
-    "conflicting multi-timeframe signals, exhausted momentum into the "
-    "entry, or similar). You may NOT suggest a different direction, "
+    "conflicting multi-timeframe signals or explicitly measured exhausted "
+    "momentum). Use ONLY values present in Trade entry data. Never invent, "
+    "estimate, assume, or claim a price, indicator, pattern, news event, or "
+    "market condition that is absent. Missing, null, stale, ambiguous, or "
+    "conflicting data MUST produce APPROVE because the deterministic engine "
+    "remains authoritative. You may NOT suggest a different direction, "
     "ticker, contract, or a size increase — any such suggestion in your "
-    "reasoning is IGNORED by the system reading your response; only your "
-    "action and size fields are used, never your prose. Respond with "
+    "reasoning is ignored by the system. VETO and REDUCE_SIZE require at "
+    "least one exact JSON field name in EVIDENCE; the application validates "
+    "those fields exist and rejects unsupported opinions. Respond with "
     "EXACTLY one line, this format, no markdown:\n\n"
     "ACTION: <approve|veto|reduce_size> | SIZE: <0 to 1; 1.0 for approve, "
-    "e.g. 0.5 to halve size for reduce_size> | REASON: <one short sentence>\n\n"
-    "Example: ACTION: reduce_size | SIZE: 0.5 | REASON: 1-hour trend bias "
-    "opposes the setup despite an aligned 5-minute signal."
+    "e.g. 0.5 to halve size for reduce_size> | EVIDENCE: <comma-separated "
+    "exact JSON field names, or none for approve> | REASON: <one factual "
+    "sentence under 160 characters>\n\n"
+    "Example: ACTION: reduce_size | SIZE: 0.5 | EVIDENCE: trend_1h_bias,"
+    "direction | REASON: trend_1h_bias is bearish while direction is bullish."
 )
 
 
@@ -82,7 +91,7 @@ def _fallback_approve(error: str, latency_ms: Optional[int] = None) -> DecisionR
     )
 
 
-def _parse_response(text: str) -> DecisionResult:
+def _parse_response(text: str, snapshot: dict) -> DecisionResult:
     """Fixed-format keyword parse (not JSON — fewer ways to throw on a
     slightly-off response). Any failure raises; review_entry() fails open."""
     parts = {}
@@ -112,7 +121,20 @@ def _parse_response(text: str) -> DecisionResult:
     elif action == "reduce_size" and size <= 0.0:
         action = "veto"  # a reduce to ~0 is a veto in every way that matters
 
-    rationale = parts.get("REASON", "")[:300]
+    rationale = parts.get("REASON", "").strip()[:160]
+    if not rationale:
+        raise ValueError("missing REASON")
+
+    evidence = [key.strip() for key in parts.get("EVIDENCE", "").split(",") if key.strip()]
+    if action in ("veto", "reduce_size"):
+        if not evidence:
+            raise ValueError("veto/reduce_size requires EVIDENCE")
+        missing = [key for key in evidence if key not in snapshot]
+        if missing:
+            raise ValueError(f"EVIDENCE fields absent from snapshot: {missing}")
+        empty = [key for key in evidence if snapshot.get(key) in (None, "", [], {})]
+        if empty:
+            raise ValueError(f"EVIDENCE fields contain no usable value: {empty}")
     return DecisionResult(
         action=action, size_multiplier=size, rationale=rationale,
         latency_ms=None, model=AI_DECISION_MODEL, error=None,
@@ -178,7 +200,7 @@ def review_entry(
         result = _fallback_approve(error=call.error or "empty response", latency_ms=call.latency_ms)
     else:
         try:
-            result = _parse_response(call.text)
+            result = _parse_response(call.text, snapshot)
             result.latency_ms = call.latency_ms
         except Exception as exc:
             logger.warning("review_entry: response parse failed (non-fatal): %s — text=%r",

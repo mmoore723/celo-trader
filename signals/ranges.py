@@ -1,6 +1,5 @@
 """
-signals/ranges.py — get_opening_range() (the 15-min ORB range) and
-get_consolidation_range() (the wider morning base used by MID_BRK).
+signals/ranges.py — get_opening_range() for the 15-minute ORB range.
 
 Split out of the old single signals.py (2026-08-01, file-size cleanup); no
 logic changed, only relocated.
@@ -61,48 +60,4 @@ def get_opening_range(df: pd.DataFrame) -> Optional[dict]:
         "volume": float(or_bars["volume"].sum()),
         "time":   or_bars.iloc[0]["time"],
         "bars":   n,   # 1–3; callers can check completeness
-    }
-
-
-def get_consolidation_range(
-    df: pd.DataFrame,
-    end_hour: int = 10,
-    end_minute: int = 15,
-) -> Optional[dict]:
-    """
-    Wider morning consolidation range: high/low of all bars from 09:30
-    through end_hour:end_minute (default 10:15 — the first 45 minutes).
-
-    Added 2026-07-17 for MID_BRK: the mechanical 15-min opening range
-    (09:30-09:40, get_opening_range()) can sit well below the level where
-    price actually builds its real morning base. On 2026-07-16 SPY spent
-    ~45 minutes consolidating around 753.5-753.9 before breaking down, but
-    the 15-min OR low was 751.13 — nearly $2.50 lower and never touched
-    until well after MID_BRK's 10:30-13:00 session window had ended,
-    meaning MID_BRK structurally could not catch the real breakdown that
-    day. This wider range is meant to capture the level a chart-reader
-    would actually watch, not just the first three 5-min candles.
-
-    Returns None if no bars fall in [09:30, end_hour:end_minute].
-    """
-    if df.empty:
-        return None
-
-    _start = (9, 30)
-    _end   = (end_hour, end_minute)
-    mask = df["time"].apply(
-        lambda t: _start <= (t.hour, t.minute) <= _end
-    )
-    bars = df[mask].reset_index(drop=True)
-    if bars.empty:
-        return None
-
-    return {
-        "high":   float(bars["high"].max()),
-        "low":    float(bars["low"].min()),
-        "open":   float(bars.iloc[0]["open"]),
-        "close":  float(bars.iloc[-1]["close"]),
-        "volume": float(bars["volume"].sum()),
-        "time":   bars.iloc[0]["time"],
-        "bars":   len(bars),
     }

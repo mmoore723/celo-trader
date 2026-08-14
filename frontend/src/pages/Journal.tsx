@@ -437,23 +437,15 @@ type DateWindow = "today" | "week" | "month" | "custom" | "all";
 
 // Values stay as stable strategy IDs for filtering; labels are written for people.
 const STRATEGY_LABELS: Record<string, string> = {
-  FVG: "Fair Value Gap",
-  IFVG: "Inverted Fair Value Gap",
-  INST_ORB: "Opening Range Breakout",
-  VWAP_PB: "VWAP Pullback",
-  MID_BRK: "Mid-Day Breakdown",
-  AFT_REV: "Afternoon Reversal",
-  TREND_CONT: "Trend Continuation",
-  GAP_GO: "Gap and Go",
-  LIQ_SWEEP: "Liquidity Sweep Reversal",
   V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
   V2_SPY_TREND_CONT: "SPY Trend Continuation",
   V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
   V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
-  V2_SPY_AFTERNOON_REVERSAL: "SPY Afternoon Reversal",
 };
 const ALL_STRATEGIES = Object.keys(STRATEGY_LABELS);
-const strategyLabel = (strategyId?: string | null) => strategyId ? (STRATEGY_LABELS[strategyId] ?? strategyId) : "—";
+const strategyLabel = (strategyId?: string | null) => strategyId
+  ? (STRATEGY_LABELS[strategyId] ?? `Retired historical strategy (${strategyId})`)
+  : "—";
 
 /** Export the visible trades as a CSV download. */
 function exportCsv(trades: Trade[], mode: string) {

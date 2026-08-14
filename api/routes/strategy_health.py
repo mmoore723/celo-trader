@@ -50,11 +50,15 @@ def get_candidate_scorecard(days: int = 30) -> dict:
             tuple(params),
         ).fetchall()
     by_strategy: dict[str, dict] = {}
+    from config.strategy_catalog import reviewed_strategy_ids
+    approved_ids = reviewed_strategy_ids()
     next_outcome_at: str | None = None
 
     def _evidence_bucket() -> dict:
         return {"candidates": 0, "measured": 0, "correct": 0, "move_parts": []}
     for row in rows:
+        if row["strategy_id"] not in approved_ids:
+            continue
         item = by_strategy.setdefault(row["strategy_id"], {
             "strategy_id": row["strategy_id"], "raw_candidates": 0,
             "entered": 0, "blocked": 0, "pending": 0, "observed_only": 0, "block_reasons": defaultdict(int),

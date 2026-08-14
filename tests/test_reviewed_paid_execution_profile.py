@@ -20,10 +20,10 @@ class ReviewedPaidExecutionProfileTests(unittest.TestCase):
     def test_only_reviewed_ids_receive_locked_execution_profile(self) -> None:
         self.assertTrue(uses_reviewed_paid_execution_profile("V2_ORB_PULLBACK"))
         self.assertTrue(uses_reviewed_paid_execution_profile("v2_spy_trend_cont"))
-        self.assertTrue(uses_reviewed_paid_execution_profile("V2_TSLA_NOISE_MOMENTUM"))
+        self.assertTrue(uses_reviewed_paid_execution_profile("V2_TSLA_TWO_LEG_TREND_PULLBACK"))
         self.assertTrue(uses_reviewed_paid_execution_profile("V2_SPY_AFTERNOON_FVG"))
-        self.assertTrue(uses_reviewed_paid_execution_profile("V2_SPY_AFTERNOON_REVERSAL"))
         self.assertFalse(uses_reviewed_paid_execution_profile("V2_TREND_CONT"))
+        self.assertFalse(uses_reviewed_paid_execution_profile("V2_SPY_AFTERNOON_REVERSAL"))
         self.assertFalse(uses_reviewed_paid_execution_profile("MID_BRK"))
 
     def test_reviewed_spy_signal_skips_legacy_filters_only_when_requested(self) -> None:
@@ -80,7 +80,7 @@ class ReviewedPaidExecutionProfileTests(unittest.TestCase):
 
         self.assertEqual(["V2_SPY_AFTERNOON_FVG"], [signal.strategy_id for signal in returned])
 
-    def test_reviewed_afternoon_reversal_preserves_its_paid_definition(self) -> None:
+    def test_reviewed_tsla_two_leg_preserves_its_paid_definition(self) -> None:
         frame = pd.DataFrame({"close": [100.0, 101.0], "volume": [1.0, 1.0]})
 
         def must_not_run(*_args, **_kwargs):
@@ -95,14 +95,14 @@ class ReviewedPaidExecutionProfileTests(unittest.TestCase):
             check_volume_roc_veto=must_not_run,
         )
         with patch.object(router, "ACTIVE_STRATEGIES", [
-            ("V2_SPY_AFTERNOON_REVERSAL", lambda _frame, ticker: _signal("V2_SPY_AFTERNOON_REVERSAL")),
+            ("V2_TSLA_TWO_LEG_TREND_PULLBACK", lambda _frame, ticker: _signal("V2_TSLA_TWO_LEG_TREND_PULLBACK")),
         ]), patch.object(router, "_gates", gates), patch.object(router, "compute_adx", return_value=0.0):
             returned = router.route_signals(
-                frame, "SPY", enabled_strategies={"V2_SPY_AFTERNOON_REVERSAL"}, quiet=True,
+                frame, "TSLA", enabled_strategies={"V2_TSLA_TWO_LEG_TREND_PULLBACK"}, quiet=True,
                 prepared_today=frame, preserve_reviewed_paid_paper_rules=True,
             )
 
-        self.assertEqual(["V2_SPY_AFTERNOON_REVERSAL"], [signal.strategy_id for signal in returned])
+        self.assertEqual(["V2_TSLA_TWO_LEG_TREND_PULLBACK"], [signal.strategy_id for signal in returned])
 
 
 if __name__ == "__main__":

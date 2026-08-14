@@ -104,9 +104,9 @@ class MarketStructureAnalyzer:
         # exact instant it turns, so a genuine reversal starting on merely
         # below-average volume was falling through to the 5-bar-lagged
         # confirmed path instead of registering immediately. Every audit this
-        # session showed entries that die fast (LIQ_SWEEP losses averaging
-        # 4-5 min held) — consistent with entering after the move already
-        # happened, not at the inflection. Loosened to 50% of average instead
+        # Evidence showed late entries that died quickly, consistent with
+        # entering after the move instead of at the inflection. Loosened to
+        # 50% of average instead
         # of 100% — still filters true single-wick noise, no longer defers
         # every merely-quiet-volume pivot to the laggy path.
         VOL_LOOKBACK = 20

@@ -21,27 +21,10 @@ class Settings(BaseModel):
     # Read-only from the dashboard's perspective. The server only fills this
     # after a reviewed real-quote validation; POST ignores client changes.
     validated_strategy_ids: list[str] = []
-    orb_enabled: bool
-    vwap_pullback_enabled: bool
-    fvg_enabled: bool
-    ifvg_enabled: bool = False
-    bos_mss_enabled: bool
-    chan_break_enabled: bool = False
-    mid_brk_enabled: bool = False   # research hold: session/RVOL/ADX validation through
-                                     # 2026-08-02 remained negative. It requires a positive
-                                     # portfolio-level holdout before reactivation.
-    trend_cont_enabled: bool = False
-    aft_rev_enabled: bool = False
-    gap_go_enabled: bool = False
-    liquidity_sweep_enabled: bool = False
-    # V2 pilots are independently controllable from Settings, but their
-    # execution profile still refuses live mode in trading/entry/tick.py.
+    # Only strategies promoted through real-quote backtesting are exposed.
     strategy_orb_pullback_v2_enabled: bool = True
-    strategy_trend_cont_v2_enabled: bool = False
     strategy_spy_trend_cont_v2_enabled: bool = True
     strategy_spy_afternoon_fvg_v2_enabled: bool = True
-    strategy_spy_afternoon_reversal_v2_enabled: bool = False
-    strategy_tsla_noise_momentum_v2_enabled: bool = False
     strategy_tsla_two_leg_trend_pullback_v2_enabled: bool = True
     opportunity_tier_enabled: bool = False  # paper-only lower-confidence research cohort
     signal_only_mode: bool = False  # True = bot alerts but never places orders
@@ -87,15 +70,3 @@ class Settings(BaseModel):
                                           # to ON by default 2026-07-31 per
                                           # explicit request — still can't be
                                           # backtested (live "as-of-now" fetch).
-    inst_orb_immediate_entry_enabled: bool = False  # 2026-07-31: enter on the
-                                          # breakout bar itself instead of always
-                                          # waiting for the OR-level retest. ON by
-                                          # default per explicit request. Trade-off:
-                                          # INST_ORB's retest normally gives a
-                                          # cheaper premium + structural
-                                          # confirmation (see strategies/inst_orb.py's
-                                          # module docstring); this catches moves
-                                          # that never retest at the cost of that
-                                          # confirmation. Not backtested — no
-                                          # historical data captures the
-                                          # raw-breakout-bar fill price/spread.

@@ -4,27 +4,8 @@ strategy_router/route.py — route_signals(): the public router entry point.
 Split out of the old single strategy_router.py (2026-08-01, file-size
 cleanup); no logic changed, only relocated.
 
-A/B-test knob note: _MIN_CONFIDENCE and ADX_GATED_STRATEGIES are read via a
-live dotted lookup on the package object (`_pkg.ATTR`) at the top of
-route_signals(), NOT via a plain module-level global defined in this file.
-Two archived A/B test scripts monkey-patch these directly on the PACKAGE
-object before calling route_signals():
-  - scripts/ab_tests/ab_test_confidence_floor.py does
-    `strategy_router._MIN_CONFIDENCE = floor`
-  - scripts/ab_tests/ab_test_mid_brk_adx_gate.py does
-    `strategy_router.ADX_GATED_STRATEGIES = _orig - {"MID_BRK"}`
-Both scripts expect that mutation to actually change route_signals()'s
-behavior. In the original single-file module, a bare global name inside a
-function always resolved against ITS OWN module's current namespace at call
-time — since `strategy_router` WAS that module, the monkey-patch worked
-automatically. Now that route_signals() lives in a submodule
-(strategy_router/route.py) separate from the package's own namespace
-(strategy_router/__init__.py, i.e. what `import strategy_router` gives you),
-a `from ... import ATTR`-style binding captured once at import time would
-never see a later `strategy_router.ATTR = value` mutation. The live dotted
-lookup at the top of the function reproduces the original semantics exactly.
-See strategy_router/__init__.py's docstring for where the canonical values
-of _MIN_CONFIDENCE and ADX_GATED_STRATEGIES now live.
+Router settings are read from the package at call time so one canonical
+configuration is used throughout the process.
 """
 
 from __future__ import annotations
@@ -39,7 +20,6 @@ from strategies.base import Signal
 from regime_manager import ADX_MIN, compute_adx
 from database import log_event as _db_log
 import router_gates as _gates
-from strategy_audit_log import audit_plain_english as _audit_plain_english
 
 from strategy_router.evaluators import ACTIVE_STRATEGIES
 from strategy_router.indicator_frame import _build_indicator_frame
@@ -298,8 +278,6 @@ def route_signals(
     # otherwise flood the live THINKING panel with fake "in-market" narration.
     # Gating decisions themselves are IDENTICAL either way; only the logging
     # side-effects are suppressed. Never pass quiet=True on the live path.
-    signals = _gates.apply_regime_gate(signals, df, ticker, quiet=quiet)
-    _restore_candidates(signals, candidate_ids)
     signals.sort(key=lambda s: s.confidence, reverse=True)
 
     signals = _gates.apply_session_bias_penalty(signals, today, ticker, quiet=quiet)
@@ -329,11 +307,5 @@ def route_signals(
             "router_result: %d signal(s) for %s — top=%s %.0f%% conf",
             len(signals), ticker, signals[0].strategy_id, signals[0].confidence * 100,
         )
-
-    try:
-        if ticker != "SIM" and not quiet:
-            _audit_plain_english(today, ticker, signals)
-    except Exception:
-        pass
 
     return signals

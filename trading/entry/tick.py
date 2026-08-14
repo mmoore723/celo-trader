@@ -93,7 +93,6 @@ from trading.v2_orb_execution_profile import (
     uses_v2_orb_execution_profile,
 )
 from trading.orb_retouch_execution import update_one_minute_orb_retouch
-from trading.noise_momentum_execution import update_noise_momentum
 from trading.two_leg_trend_pullback_execution import update_two_leg_trend_pullback
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
@@ -683,92 +682,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Read the per-strategy enable flags saved by the Risk Settings form.
     # Any flag absent from settings defaults to True (all on by default).
     _strat_cfg = get_settings()
-    # No strategy enters by default. It must be promoted after passing real
-    # option quote validation; prior backtests remain research evidence only.
-    # Historical notes retained below explain why the legacy set is not active.
-    # 2026-07-15/16 backtest audits (SPY/QQQ/NVDA, 3mo, post-ADX-gate):
-    #   TREND_CONT re-enabled — +$39-41/trade, 58% WR, consistent across runs.
-    #   Same 3-month sample both times though — re-audit on 6mo before
-    #   trusting this as fully confirmed.
-    #   VWAP_PB stays off — even after the 5-gate rework (blowthrough,
-    #   touch proximity, slope, ADX) it's still -$99/trade. A/B-tested a
-    #   proposed loosening (ab_test_vwap_pb.py): it did WORSE, -$168/trade.
-    #   AFT_REV added to disabled list — 0-for-4 across runs, -$127/trade,
-    #   75% of exits hit the 60-min time_box (see diag_aft_rev.py). Needs a
-    #   coherent rework (not just parameter loosening) before re-testing.
-    #
-    # 2026-07-18 audit fix: IFVG (strategies/ifvg.py) was fully implemented and
-    # listed in strategy_router.ACTIVE_STRATEGIES, but was MISSING from this
-    # tuple entirely — meaning it could never appear in `_enabled` and never
-    # fired live or in paper, despite api/models.py's Settings.ifvg_enabled
-    # field already defaulting True. Added below, defaulting to True (on) per
-    # explicit user decision 2026-07-18 — this is a first live test of this
-    # strategy, not a re-enable; it has no prior live/paper track record.
-    #
-    # 2026-07-20: VWAP_PB and AFT_REV flipped back to True per explicit user
-    # decision. Their prior -$99/trade and -$127/trade (0-for-4) audit
-    # numbers were generated BEFORE two trade-recording bug fixes (7d31c52
-    # "paper-mode fill confirmation fabricated fake trades", 07-17; 2c350de
-    # "close_trade_by_id() false-positive", 07-16) — those numbers are not
-    # trustworthy and should not have been driving an off-by-default policy.
-    # Stated policy going forward: every strategy is ON by default; the user
-    # opts individual ones OFF via Settings, not the other way around.
-    _STRAT_DEFAULTS = {
-        "strategy_orb_enabled":   False,
-        "strategy_bos_enabled":   False,
-        "strategy_vwap_enabled":  False,
-        "strategy_fvg_enabled":   False,
-        "strategy_ifvg_enabled":  False,
-        "strategy_chan_enabled":  False,
-        "strategy_tcont_enabled": False,
-        "strategy_aft_enabled":   False,
-        # MID_BRK 2026-07-23 — disabled after the professional-strategy-alignment
-        # audit: 13 distinct backtested configurations (4 structural-stop modes,
-        # 2 exit-complexity variants, 4 RVOL ceilings, session-window extension,
-        # ADX-gate removal, a data-targeted best-hour window), all negative
-        # expectancy, -$44 to -$75/trade. The setup was never modeled on a real
-        # professional strategy — it traded the exact midday window sources say
-        # to build reference levels in, not trade directly. See CLAUDE.md rule 9
-        # research + run_full_audit.py history for the full trail.
-        "strategy_mid_enabled":   False,
-        # GAP_GO — flipped to True 2026-07-31 per explicit user decision,
-        # same pattern as VWAP_PB/AFT_REV above. Still has no backtest track
-        # record of its own (built from published sources, never run through
-        # this bot's backtester) — that risk is accepted, not resolved.
-        "strategy_gapgo_enabled": False,
-        # LIQ_SWEEP 2026-07-31 — new strategy, see strategies/liquidity_sweep.py.
-        # ON by default per explicit user decision. Zero backtest history —
-        # same accepted risk as GAP_GO above.
-        "strategy_liqsweep_enabled": False,
-    }
+    from config.strategy_catalog import REVIEWED_STRATEGIES
     _approved_strategy_ids = {
         str(strategy_id).strip().upper()
         for strategy_id in _strat_cfg.get("validated_strategy_ids", [])
         if str(strategy_id).strip()
     }
     _enabled: set[str] = {
-        sid for sid, key in (
-            ("INST_ORB",   "strategy_orb_enabled"),
-            ("BOS_MSS",    "strategy_bos_enabled"),
-            ("VWAP_PB",    "strategy_vwap_enabled"),
-            ("FVG",        "strategy_fvg_enabled"),
-            ("IFVG",       "strategy_ifvg_enabled"),
-            ("MID_BRK",    "strategy_mid_enabled"),
-            ("AFT_REV",    "strategy_aft_enabled"),
-            ("TREND_CONT", "strategy_tcont_enabled"),
-            ("CHAN_BREAK",  "strategy_chan_enabled"),
-            ("GAP_GO",      "strategy_gapgo_enabled"),
-            ("LIQ_SWEEP",   "strategy_liqsweep_enabled"),
-            ("V2_ORB_PULLBACK", "strategy_orb_pullback_v2_enabled"),
-            ("V2_TREND_CONT", "strategy_trend_cont_v2_enabled"),
-            ("V2_SPY_TREND_CONT", "strategy_spy_trend_cont_v2_enabled"),
-            ("V2_SPY_AFTERNOON_FVG", "strategy_spy_afternoon_fvg_v2_enabled"),
-            ("V2_SPY_AFTERNOON_REVERSAL", "strategy_spy_afternoon_reversal_v2_enabled"),
-            ("V2_TSLA_NOISE_MOMENTUM", "strategy_tsla_noise_momentum_v2_enabled"),
-            ("V2_TSLA_TWO_LEG_TREND_PULLBACK", "strategy_tsla_two_leg_trend_pullback_v2_enabled"),
-        )
+        sid for sid, rule in REVIEWED_STRATEGIES.items()
         if (sid in _approved_strategy_ids
-            and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
+            and _strat_cfg.get(rule.setting_key, False)
             and (not sid.startswith("V2_") or bool(_strat_cfg.get("paper_trading", True))) )
     }
     # mtf_cache: per-user, per-ticker cache dict (see trading/state.py's
@@ -839,39 +762,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                           "sending the paper setup through normal risk gates.")
         except Exception as _orb_retouch_ex:
             logger.warning("V2 ORB retouch evaluator failed (non-fatal): %s", _orb_retouch_ex)
-
-    # The reviewed TSLA noise-momentum definition needs 14 completed prior
-    # one-minute sessions. Fetch/cache that history once per trading day; if
-    # the broker cannot supply the exact resolution, the strategy declines to
-    # trade rather than replacing the validated input with 5-minute bars.
-    if "V2_TSLA_NOISE_MOMENTUM" in _enabled and ticker.upper() == "TSLA":
-        try:
-            _noise_cache = _US.setdefault("v2_tsla_noise_momentum", {})
-            _noise_day = _now_et().date().isoformat()
-            if _noise_cache.get("history_day") != _noise_day:
-                _history_bars, _history_error = alpaca.get_bars(ticker, "1Min", limit=6500)
-                if _history_error or not _history_bars:
-                    _noise_cache["history_1m"] = pd.DataFrame()
-                    _noise_cache["history_error"] = True
-                else:
-                    _noise_cache["history_1m"] = bars_to_df(_history_bars)
-                    _noise_cache["history_error"] = False
-                _noise_cache["history_day"] = _noise_day
-            _noise_signal, _noise_status = update_noise_momentum(
-                _noise_cache.setdefault("signal_state", {}),
-                _noise_cache.get("history_1m", pd.DataFrame()), _df_today_1m,
-                ticker=ticker, now=_now_et(),
-            )
-            _US["v2_tsla_noise_momentum_status"] = _noise_status
-            if _noise_signal is not None:
-                _injected_signals.append(_noise_signal)
-                log_event(
-                    "INFO", "bar_eval",
-                    f"🔵 [{ticker}] TSLA adaptive noise-boundary transition confirmed; "
-                    "sending the exact reviewed setup through normal account safeguards.",
-                )
-        except Exception as _noise_ex:
-            logger.warning("TSLA noise-momentum evaluator failed closed (non-fatal): %s", _noise_ex)
 
     # The reviewed TSLA two-leg continuation uses no uncompleted bar and no
     # generic router threshold.  It retains the exact paid-study sequence,
@@ -960,18 +850,15 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     direction   = _top.direction      # "bullish" | "bearish"
     entry_rvol  = _top.rvol           # Entry_Volume_Multiplier for audit log
-    strategy_id = _top.strategy_id   # "INST_ORB" | "BOS_MSS" | "VWAP_PB" | "FVG"
+    strategy_id = _top.strategy_id
     _signal_tier = getattr(_top, "tier", "main")
     _reviewed_paid_paper_profile = paper and uses_reviewed_paid_execution_profile(strategy_id)
     _US["last_signal"]     = direction
     _US["last_strategy_id"]= strategy_id
     _reviewed_exit_summaries = {
         "V2_ORB_PULLBACK": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
-        "V2_TREND_CONT": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
         "V2_SPY_TREND_CONT": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
         "V2_SPY_AFTERNOON_FVG": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
-        "V2_SPY_AFTERNOON_REVERSAL": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
-        "V2_TSLA_NOISE_MOMENTUM": "Close the same selected contract at 3:59 PM Eastern, before the market closes.",
         "V2_TSLA_TWO_LEG_TREND_PULLBACK": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
     }
     # The Scanner needs a reproducible *recipe* even if a later account or
@@ -1929,7 +1816,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         entry_time      = entry_utc,
         entry_reason    = f"ORB {direction} | R:R={rr_audit['R_R_Ratio']}",
         paper           = paper,
-        strategy_id     = _US.get("last_strategy_id", "INST_ORB"),
+        strategy_id     = _US.get("last_strategy_id", "UNKNOWN"),
         stop_price      = _stop_px,
         target_price    = _target_px,
         annotations_json= _entry_annotations_json,
@@ -1970,13 +1857,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             _entry_contract = _opportunity_context.setdefault("contract", {})
             if isinstance(_entry_contract, dict):
                 _entry_contract["research_eligibility"] = _sel_info.get("research_eligibility")
-        _journal_id = _log_journal(ticker, _US.get("last_strategy_id", "INST_ORB"), direction, _top.confidence,
+        _journal_id = _log_journal(ticker, _US.get("last_strategy_id", "UNKNOWN"), direction, _top.confidence,
                      outcome="entered", reason_detail=f"R:R={rr_audit['R_R_Ratio']}", trade_id=trade_id,
                      context=_opportunity_context, tier=_signal_tier)
         if _journal_id is None:
             logger.error(
                 "signal_trade_link_missing: trade_id=%s ticker=%s strategy=%s",
-                trade_id, ticker, _US.get("last_strategy_id", "INST_ORB"),
+                trade_id, ticker, _US.get("last_strategy_id", "UNKNOWN"),
             )
     except Exception:
         logger.exception("signal_trade_link_write_failed: trade_id=%s", trade_id)
@@ -2019,8 +1906,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         "last_position_narration_minute": None,
     }
 
-    # ── Structural stop: convert entry_bar_high/low → option stop price ───────
-    # VWAP_PB bearish and CHAN_BREAK bearish signals carry entry_bar_high in meta.
+    # ── Structural stop: convert an approved setup's bar level to option price ─
     # We compute the implied option stop once at entry (delta approx 0.40) so
     _signal_meta      = _top.meta if hasattr(_top, "meta") and _top.meta else {}
     _entry_bar_stop   = _signal_meta.get("entry_bar_high") or _signal_meta.get("entry_bar_low")
@@ -2086,7 +1972,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "Risk_Tier_Used":          _tier_label,
             "R_R_Ratio":               rr_audit["R_R_Ratio"],
             "Entry_Volume_Multiplier": round(entry_rvol, 2),
-            "Strategy_ID":             _US.get("last_strategy_id", "INST_ORB"),
+            "Strategy_ID":             _US.get("last_strategy_id", "UNKNOWN"),
             # ── Full trade context ─────────────────────────────────────────
             "ticker":           ticker,
             "contract_symbol":  contract["symbol"],
@@ -2110,14 +1996,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # WHERE the stops are, and WHAT we're targeting — no raw numbers or codes.
     try:
         _strat_name = {
-            "INST_ORB":  "Opening Range Breakout",
-            "VWAP_PB":   "VWAP Pullback",
-            "BOS_MSS":   "Break of Structure",
-            "FVG":       "Fair Value Gap",
-            "CHAN_BREAK": "Channel Rejection",
-            "MID_BRK":   "Mid-Day Breakdown",
-            "TREND_CONT":"Trend Continuation",
-        }.get(_US.get("last_strategy_id", "INST_ORB"), "ORB")
+            "V2_ORB_PULLBACK": "Opening-Range Pullback",
+            "V2_SPY_TREND_CONT": "SPY Trend Continuation",
+            "V2_SPY_AFTERNOON_FVG": "SPY Afternoon Fair Value Gap",
+            "V2_TSLA_TWO_LEG_TREND_PULLBACK": "TSLA Two-Leg Trend Pullback",
+        }.get(_US.get("last_strategy_id", "UNKNOWN"), "Reviewed strategy")
         _stop_px  = round(_risk.dynamic_stop_price(confirmed_price, entry_utc), 2)
         _tgt_px   = round(_risk.stage1_exit_price(confirmed_price), 2)
         _mode_tag = "[PAPER] " if paper else ""
@@ -2141,7 +2024,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         from ai_reasoning.narrator import narrate_entry
         narrate_entry(
             ticker           = ticker,
-            strategy_id      = _US.get("last_strategy_id", "INST_ORB"),
+            strategy_id      = _US.get("last_strategy_id", "UNKNOWN"),
             direction        = direction,
             confidence       = _top.confidence,
             rvol             = entry_rvol,
