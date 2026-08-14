@@ -5,7 +5,7 @@
 import { useState, useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { RefreshCw, Radio, Bot } from "lucide-react";
+import { ChevronDown, Newspaper, RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
 import { useUIStore } from "../store/ui";
@@ -140,6 +140,7 @@ export function LiveTrading() {
   const [logTab,         setLogTab]           = useState<"thinking" | "network">("thinking");
   const [logRawTicker,   setLogRawTicker]     = useState("");
   const [tradeDrawerId,  setTradeDrawerId]    = useState<number | null>(null);
+  const [newsExpanded,   setNewsExpanded]     = useState(false);
   const chartReplayRef  = useRef<BoomerangReplayHandle>(null);
 
   const { status, logs } = useBotStore();
@@ -781,9 +782,9 @@ export function LiveTrading() {
       </div>
 
       {/* ── Open positions + eval log ─────────────────────────────────────── */}
-      <div className="grid gap-4 two-col-grid">
+      <div className="card overflow-hidden">
         {/* Open positions */}
-        <div className="card">
+        <div>
           <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
                style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}>
             Open Positions ({openTrades.length})
@@ -873,10 +874,10 @@ export function LiveTrading() {
           </div>
         </div>
 
-        {/* Board / Log — one card, single grid item, next to Open Positions.
-            Board is the default per-ticker view (see boardData above); Log
-            is the old Thinking/Network scrolling feed. */}
-        <div className="card flex flex-col">
+        {/* Keep the live decision trail attached to the positions it explains.
+            Stacking these sections also removes the large empty column when
+            there are no open positions. */}
+        <div className="flex flex-col border-t" style={{ borderColor: "var(--border)" }}>
         <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
              style={{ borderColor: "var(--border)" }}>
           {(["board", "log"] as const).map((tab) => (
@@ -1177,18 +1178,33 @@ export function LiveTrading() {
       </div>
 
       {/* ── News feed ───────────────────────────────────────────────────────── */}
-      <div className="card">
-        <div className="px-3 py-2 border-b flex items-center gap-2"
-             style={{ borderColor: "var(--border)" }}>
+      <div className="card overflow-hidden">
+        <button
+          type="button"
+          className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-muted transition-colors"
+          onClick={() => setNewsExpanded((open) => !open)}
+          aria-expanded={newsExpanded}
+        >
+          <Newspaper size={14} style={{ color: "var(--ink-muted)" }} />
           <span className="text-xs font-semibold uppercase tracking-wider"
-                style={{ color: "var(--ink-muted)" }}>
-            Market News
-          </span>
+                style={{ color: "var(--ink-muted)" }}>Market Context</span>
           <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
-            {newsSymbols} · via Alpaca
+            {newsArticles.length} headline{newsArticles.length === 1 ? "" : "s"} for {newsSymbols}
           </span>
-        </div>
-        <div className="flex flex-col divide-y" style={{ borderColor: "var(--border)" }}>
+          {!newsExpanded && newsArticles[0]?.headline && (
+            <span className="text-xs truncate ml-2" style={{ color: "var(--ink-muted)", flex: 1 }}>
+              {newsArticles[0].headline}
+            </span>
+          )}
+          <span className="text-[10px] ml-auto" style={{ color: "var(--ink-faint)" }}>via Alpaca</span>
+          <ChevronDown size={14} style={{
+            color: "var(--ink-muted)",
+            transform: newsExpanded ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 160ms ease",
+          }} />
+        </button>
+        {newsExpanded && (
+        <div className="flex flex-col divide-y border-t" style={{ borderColor: "var(--border)" }}>
           {newsArticles.length === 0 ? (
             <p className="px-3 py-3 text-xs" style={{ color: "var(--ink-muted)" }}>
               No news available — Alpaca API key required, or no recent articles for {ticker}.
@@ -1249,6 +1265,7 @@ export function LiveTrading() {
             })
           )}
         </div>
+        )}
       </div>
     </div>
 
