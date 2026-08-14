@@ -15,7 +15,7 @@ from database.option_quotes import record_candidate_option_quote
 from shadow_ledger import record_router_candidate, snapshot_candidate_plan
 from trading.entry.contract import select_contract, select_reviewed_v2_contract
 from trading.state import _now_et
-from trading.v2_orb_paper_execution import uses_v2_orb_execution_profile
+from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 
 logger = logging.getLogger("celo_trader.candidate_observation")
 
