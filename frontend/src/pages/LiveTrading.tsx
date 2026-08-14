@@ -214,6 +214,11 @@ export function LiveTrading() {
   const scannerOpportunityPreview = useMemo(() => {
     const seen = new Set<string>();
     return (scannerOpportunityData?.entries ?? []).filter((entry: any) => {
+      const progressed = ["contract_selected", "contract_preview"].includes(String(entry.plan_status));
+      const operational = entry.outcome === "entered"
+        || progressed
+        || (entry.outcome === "pending" && entry.plan_status !== "observation_only");
+      if (!operational) return false;
       const key = `${entry.ticker}|${entry.strategy_id}|${entry.direction}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -712,14 +717,14 @@ export function LiveTrading() {
           <div className="border-t px-3 py-2 flex items-center justify-between"
                style={{ borderColor: "var(--border)" }}>
             <span className="text-xs font-semibold uppercase tracking-wider"
-                  style={{ color: "var(--ink-muted)" }}>Today's Scanner Opportunities</span>
+                  style={{ color: "var(--ink-muted)" }}>Today's Trade Setups</span>
             <Link to="/opportunities" className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>View all opportunities →</Link>
           </div>
           <div className="overflow-y-auto flex-1 p-2" style={{ minHeight: 240, background: "var(--surface-raised)" }}>
             {scannerOpportunityPreview.length === 0 ? (
               <p className="text-xs px-3 pb-3" style={{ color: "var(--ink-muted)" }}>
                 {status?.running
-                  ? "Scanning… opportunities appear here after the scanner evaluates a setup"
+                  ? "Scanning… a setup appears here when it advances toward a trade"
                   : "Waiting for bot to start scanning…"}
               </p>
             ) : (
@@ -754,9 +759,11 @@ export function LiveTrading() {
                   ? "New Trade Idea"
                   : opportunity.outcome === "blocked"
                     ? "Setup Stopped"
-                    : opportunity.outcome === "observed_only"
-                      ? "Setup Watch"
-                      : "Setup Developing";
+                    : opportunity.plan_status === "contract_selected"
+                      ? "Contract Selected"
+                      : opportunity.plan_status === "contract_preview"
+                        ? "Contract Check"
+                        : "Setup Developing";
                 const accent = isEntered
                   ? "var(--positive)"
                   : opportunity.outcome === "blocked" ? "var(--negative)" : "var(--accent)";

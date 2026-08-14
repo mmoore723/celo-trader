@@ -7,6 +7,7 @@ import {
   Stethoscope, BrainCircuit,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useBotStore } from "../../store/bot";
 import { useUIStore } from "../../store/ui";
 import { useAuth } from "../../contexts/AuthContext";
@@ -44,6 +45,30 @@ export function Sidebar() {
   // accidentally show "Start Bot" and tempt the user to double-start the bot.
   const statusKnown = status !== null;
   const [busy, setBusy] = useState(false);
+  const [opportunitiesSeenAt, setOpportunitiesSeenAt] = useState(() =>
+    localStorage.getItem("celo-opportunities-seen-at") ?? ""
+  );
+  const { data: opportunityData } = useQuery({
+    queryKey: ["sidebar-trade-setups"],
+    queryFn: () => api.signals.opportunities({ limit: 50 }),
+    refetchInterval: 15_000,
+    retry: false,
+  });
+  const seenMs = opportunitiesSeenAt ? new Date(opportunitiesSeenAt).getTime() : 0;
+  const newSetupCount = (opportunityData?.entries ?? []).filter((entry) => {
+    const progressed = ["contract_selected", "contract_preview"].includes(String(entry.plan_status));
+    const operational = entry.outcome === "entered"
+      || progressed
+      || (entry.outcome === "pending" && entry.plan_status !== "observation_only");
+    const observedMs = new Date(entry.observed_at).getTime();
+    return operational && Number.isFinite(observedMs) && observedMs > seenMs;
+  }).length;
+
+  function markOpportunitiesSeen() {
+    const now = new Date().toISOString();
+    localStorage.setItem("celo-opportunities-seen-at", now);
+    setOpportunitiesSeenAt(now);
+  }
 
   async function startBot() {
     setBusy(true);
@@ -76,7 +101,10 @@ export function Sidebar() {
             key={item.to}
             to={item.to}
             end={item.to === "/"}
-            onClick={closeMobileSidebar}
+            onClick={() => {
+              if (item.to === "/opportunities") markOpportunitiesSeen();
+              closeMobileSidebar();
+            }}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -92,6 +120,12 @@ export function Sidebar() {
           >
             {item.icon}
             {item.label}
+            {item.to === "/opportunities" && newSetupCount > 0 && (
+              <span className="ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                    style={{ background: "var(--accent)", color: "white" }}>
+                {newSetupCount > 99 ? "99+" : `${newSetupCount} NEW`}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

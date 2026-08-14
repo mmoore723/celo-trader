@@ -275,6 +275,7 @@ function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
 }
 
 export function ScannerOpportunities() {
+  const [view, setView] = useState<"setups" | "research">("setups");
   const [date, setDate] = useState(todayEt());
   const [outcome, setOutcome] = useState("all");
   const [ticker, setTicker] = useState("all");
@@ -288,6 +289,9 @@ export function ScannerOpportunities() {
     queryKey: ["gate-calibration", 30], queryFn: () => api.signals.gateScorecard(30), staleTime: 60_000,
   });
   const entries = data?.entries ?? [];
+  const visibleEntries = useMemo(() => entries.filter((entry) =>
+    view === "research" ? entry.outcome === "observed_only" : entry.outcome !== "observed_only"
+  ), [entries, view]);
   const tickers = useMemo(() => Array.from(new Set(entries.map((entry) => entry.ticker))).sort(), [entries]);
   const strategies = useMemo(() => Array.from(new Set(entries.map((entry) => entry.strategy_id))).sort(), [entries]);
   if (isLoading && !data) return <PageLoader label="Scanner Opportunities" />;
@@ -297,6 +301,14 @@ export function ScannerOpportunities() {
       <h1 className="text-xl font-semibold mt-1" style={{ color: "var(--ink)" }}>Scanner Opportunities</h1>
       <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Every strategy detection, separated into research observations and decisions that actually reached the trade router.</p>
     </header>
+    <div className="flex gap-2">
+      <button className={`btn ${view === "setups" ? "btn-primary" : "btn-ghost"}`} onClick={() => { setView("setups"); if (outcome === "observed_only") setOutcome("all"); }}>
+        Trade Setups
+      </button>
+      <button className={`btn ${view === "research" ? "btn-primary" : "btn-ghost"}`} onClick={() => { setView("research"); setOutcome("all"); }}>
+        Research Observations
+      </button>
+    </div>
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
       {[["DETECTIONS", data?.summary.total ?? 0, "var(--ink)"], ["ROUTED", data?.summary.routed ?? 0, "var(--ink)"], ["ENTERED", data?.summary.entered ?? 0, "var(--positive)"], ["BLOCKED", data?.summary.blocked ?? 0, "var(--negative)"], ["RESEARCH ONLY", data?.summary.research_only ?? data?.summary.observed_only ?? 0, "var(--accent)"], ["UNRESOLVED", data?.summary.unresolved ?? data?.summary.pending ?? 0, "var(--warning)"]].map(([label, value, color]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold mt-1" style={{ color: String(color) }}>{String(value)}</p></div>)}
     </div>
@@ -308,7 +320,7 @@ export function ScannerOpportunities() {
       <div className="ml-auto text-xs flex items-center gap-1" style={{ color: "var(--ink-muted)" }}><Eye size={14} /> {data?.account_scoped ? "This broker account" : "Legacy records only"}</div>
     </div>
     <p className="text-xs" style={{ color: "var(--ink-muted)" }}><ShieldCheck size={13} style={{ display: "inline", marginRight: 5 }} />{data?.note}</p>
-    {(gateScorecard?.rows.length ?? 0) > 0 && <section className="card p-4">
+    {view === "research" && (gateScorecard?.rows.length ?? 0) > 0 && <section className="card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Are the decision gates helping?</h2><p className="mt-1 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>A saved loser helps. A rejected winner hurts. Results are kept separate for every strategy because a gate can help one setup and damage another.</p></div>
         <span className="badge badge-yellow">30-DAY CALIBRATION</span>
@@ -329,6 +341,6 @@ export function ScannerOpportunities() {
       </div>
       <p className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>{gateScorecard?.policy}</p>
     </section>}
-    {error ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load scanner opportunities: {(error as Error).message}</div> : entries.length === 0 ? <div className="card p-8 text-center"><Filter size={24} style={{ margin: "0 auto", color: "var(--ink-faint)" }} /><p className="mt-2 font-medium" style={{ color: "var(--ink)" }}>No recorded setups for this day</p><p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Choose another trading day, or let the scanner run to begin building its audit trail.</p></div> : <div className="space-y-4">{entries.map((entry) => <ManualPlanCard key={entry.id} entry={entry} />)}</div>}
+    {error ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load scanner opportunities: {(error as Error).message}</div> : visibleEntries.length === 0 ? <div className="card p-8 text-center"><Filter size={24} style={{ margin: "0 auto", color: "var(--ink-faint)" }} /><p className="mt-2 font-medium" style={{ color: "var(--ink)" }}>{view === "research" ? "No research observations for this day" : "No trade setups reached the router today"}</p><p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>{view === "research" ? "Raw observations will appear here without crowding the operational trade feed." : "The scanner may still be observing ideas; only progressed setups appear in this view."}</p></div> : view === "research" ? <div className="card divide-y" style={{ borderColor: "var(--border)" }}>{visibleEntries.map((entry) => <div key={entry.id} className="px-4 py-3 flex flex-wrap items-center gap-3" style={{ opacity: 0.72 }}><span className="text-xs" style={{ color: "var(--ink-faint)", minWidth: 68 }}>{time(entry.observed_at)} ET</span><strong className="text-sm" style={{ color: "var(--ink)" }}>{entry.ticker}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>{STRATEGY_NAMES[entry.strategy_id] ?? entry.strategy_id}</span><span className="badge badge-blue ml-auto">RESEARCH</span><span className="basis-full text-xs" style={{ color: "var(--ink-muted)", marginLeft: 80 }}>{entry.reason_detail || entry.entry_plan?.trigger || "Recorded for strategy measurement"}</span></div>)}</div> : <div className="space-y-4">{visibleEntries.map((entry) => <ManualPlanCard key={entry.id} entry={entry} />)}</div>}
   </div>;
 }
