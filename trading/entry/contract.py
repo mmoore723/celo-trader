@@ -201,6 +201,7 @@ def select_reviewed_v2_contract(
     direction: str,
     current_price: float,
     max_spend: float,
+    for_display: bool = False,
 ) -> Tuple[Optional[dict], dict]:
     """Select the locked paid-quote contract profile for a reviewed ticker.
 
@@ -318,7 +319,7 @@ def select_reviewed_v2_contract(
         "selected_dte": (date.fromisoformat(selected["expiry"]) - today).days,
         "selected_spread_pct": round(spread_pct, 6),
     })
-    logger.info(
+    (logger.debug if for_display else logger.info)(
         "Reviewed V2 contract selected: %s exp=%s strike=%.2f ask=%.2f model=%s",
         selected["symbol"], selected["expiry"], float(selected["strike"]),
         float(selected["ask"]), info["selection_model"],

@@ -448,6 +448,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   LIQ_SWEEP: "Liquidity Sweep Reversal",
   V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
   V2_SPY_TREND_CONT: "SPY Trend Continuation",
+  V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
   V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
   V2_SPY_AFTERNOON_REVERSAL: "SPY Afternoon Reversal",
 };

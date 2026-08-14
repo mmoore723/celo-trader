@@ -26,6 +26,7 @@ from research.jobs.compare_paid_rsi_macd_filters import (
 from research.jobs.run_paid_spy_vwap_momentum_filters import _distinct_touch_episodes
 from research.engine.exit_rules import (
     planned_exits, planned_one_minute_dynamic_exits, planned_noise_momentum_exits,
+    planned_noise_momentum_failure_exits,
     planned_range_sweep_reclaim_exits,
 )
 from research.engine.noise_momentum import boundaries_by_timestamp, noise_momentum_signals
@@ -507,6 +508,29 @@ class ResearchV2Tests(unittest.TestCase):
         )
         self.assertEqual(later.timestamp + timedelta(minutes=1), plans["current_band"].time)
         self.assertEqual("lost_current_noise_boundary", plans["current_band"].reason)
+
+    def test_noise_momentum_failure_exit_uses_frozen_entry_boundary(self) -> None:
+        signal = Signal(
+            "NOISE", Side.LONG, _bar(30, 102, 103, 102, 103).timestamp,
+            103, 101, 107, {"noise_lower": 99.0, "noise_upper": 102.0},
+        )
+        entry = _bar(31, 103, 103, 102.5, 102.8)
+        first_failure = _bar(32, 102.8, 102.9, 101.7, 101.9)
+        second_failure = _bar(33, 101.9, 102.0, 101.2, 101.5)
+        plans = planned_noise_momentum_failure_exits(
+            (entry, first_failure, second_failure), signal, entry,
+        )
+        self.assertEqual(
+            first_failure.timestamp + timedelta(minutes=1), plans["failed_break_1m"].time,
+        )
+        self.assertEqual(
+            second_failure.timestamp + timedelta(minutes=1), plans["failed_break_2m"].time,
+        )
+
+    def test_noise_momentum_failure_exit_rejects_missing_boundary(self) -> None:
+        signal = Signal("NOISE", Side.SHORT, _bar(30, 98, 98, 97, 97).timestamp, 97, 99, 95, {})
+        with self.assertRaisesRegex(ValueError, "noise_lower"):
+            planned_noise_momentum_failure_exits((_bar(31, 97, 98, 96, 97),), signal, _bar(31, 97, 98, 96, 97))
 
     def test_one_minute_orb_retouch_requires_breakout_then_later_clean_touch(self) -> None:
         # The first 15 minutes create a 100/90 range.  A close outside the

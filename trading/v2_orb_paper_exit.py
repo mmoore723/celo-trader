@@ -28,6 +28,7 @@ V2_EXIT_MINUTES_BY_STRATEGY = {
     "V2_SPY_TREND_CONT": 30,
     "V2_SPY_AFTERNOON_FVG": 30,
     "V2_SPY_AFTERNOON_REVERSAL": 30,
+    "V2_TSLA_TWO_LEG_TREND_PULLBACK": 90,
 }
 V2_PRE_CLOSE_EXIT_STRATEGY_IDS = frozenset({"V2_TSLA_NOISE_MOMENTUM"})
 
@@ -59,6 +60,7 @@ def evaluate_v2_orb_paper_exit(
             "V2_SPY_TREND_CONT": "v2_spy_trend",
             "V2_SPY_AFTERNOON_FVG": "v2_spy_afternoon_fvg",
             "V2_SPY_AFTERNOON_REVERSAL": "v2_spy_afternoon_reversal",
+            "V2_TSLA_TWO_LEG_TREND_PULLBACK": "v2_tsla_two_leg_trend_pullback",
         }.get(normalized_strategy_id, "v2_orb")
         return True, (
             f"{prefix}_paid_markout_{hold_minutes}m "

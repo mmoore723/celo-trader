@@ -137,6 +137,7 @@ def build_decision_snapshot(
     ema_aligned: Optional[bool] = None,
     trend_1h_bias: Optional[str] = None,
     trade_id: Optional[int] = None,
+    candidate_id: Optional[str] = None,
 ) -> dict:
     """
     Package one PRE-entry decision-support review's already-computed data
@@ -161,6 +162,7 @@ def build_decision_snapshot(
         "event":           "entry_review",
         "ticker":          ticker,
         "trade_id":        trade_id,
+        "candidate_id":    candidate_id,
         "strategy_id":     strategy_id,
         "direction":       direction,
         "confidence":      round(confidence, 3),

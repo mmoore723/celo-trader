@@ -9,7 +9,10 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
-from database.option_quotes import record_paper_option_quote
+from database.option_quotes import (
+    capture_due_candidate_option_quotes, record_candidate_option_quote,
+    record_paper_option_quote,
+)
 from database.research_observations import (
     close_due_paper_research_observations,
     get_paper_research_scorecard,
@@ -82,6 +85,44 @@ class PaperOptionQuoteTests(unittest.TestCase):
                 observation_kind="unknown", observed_at=datetime(2026, 8, 3, 10),
                 quote=None, source="test",
             )
+
+    def test_candidate_quotes_capture_entry_and_due_horizons_without_trade(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paper.db"
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """INSERT INTO shadow_candidates
+                   (candidate_id, observed_at, ticker, strategy_id, direction,
+                    confidence, tier, broker_account_id)
+                   VALUES ('candidate-1', '2026-08-03T10:00:00-04:00', 'TSLA',
+                           'TEST', 'bullish', .8, 'main', 'acct')"""
+            )
+            conn.commit()
+            quote = {"bid": 4.9, "ask": 5.1, "mid": 5.0}
+            with patch("database.option_quotes.get_conn", return_value=conn):
+                self.assertTrue(record_candidate_option_quote(
+                    candidate_id="candidate-1", contract_symbol="TSLA260807C00300000",
+                    observation_kind="entry",
+                    observed_at=datetime.fromisoformat("2026-08-03T10:00:00-04:00"),
+                    quote=quote, source="test",
+                ))
+                captured = capture_due_candidate_option_quotes(
+                    ticker="TSLA",
+                    observed_at=datetime.fromisoformat("2026-08-03T11:31:00-04:00"),
+                    quote_lookup=lambda symbol: {**quote, "symbol": symbol},
+                    broker_account_id="acct",
+                )
+            kinds = [row[0] for row in conn.execute(
+                "SELECT observation_kind FROM candidate_option_quote_observations ORDER BY id"
+            ).fetchall()]
+            trade_count = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
+            conn.close()
+
+        self.assertEqual(3, captured)
+        self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], kinds)
+        self.assertEqual(0, trade_count)
 
     def test_trade_query_does_not_mix_broker_accounts(self) -> None:
         """A newly connected broker account must not inherit local P&L history."""

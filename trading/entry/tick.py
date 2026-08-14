@@ -45,7 +45,7 @@ from config import (
     TRADIER_ACCOUNT_ID,
     LIQUID_TICKERS,
     STARTING_CAPITAL,
-    MIN_CONTRACT_COST, MAX_CONTRACT_COST,
+    MIN_CONTRACT_COST, MAX_CONTRACT_COST, MIN_OPEN_INTEREST,
     EARNINGS_BLACKOUT_DAYS,
     get_settings, get_risk_tier,
     BOOTSTRAP_RISK_PCT, GROWTH_MODE_RISK_PCT as _GMT_TL, MID_TIER_RISK_PCT as _MTT_TL,
@@ -94,6 +94,7 @@ from trading.v2_orb_execution_profile import (
 )
 from trading.orb_retouch_execution import update_one_minute_orb_retouch
 from trading.noise_momentum_execution import update_noise_momentum
+from trading.two_leg_trend_pullback_execution import update_two_leg_trend_pullback
 from trading.entry.skip_log import _skip_log
 from trading.opportunity_scheduler import clear as _clear_opportunity_window
 from trading.opportunity_scheduler import due_ticker as _opportunity_due_ticker
@@ -764,6 +765,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ("V2_SPY_AFTERNOON_FVG", "strategy_spy_afternoon_fvg_v2_enabled"),
             ("V2_SPY_AFTERNOON_REVERSAL", "strategy_spy_afternoon_reversal_v2_enabled"),
             ("V2_TSLA_NOISE_MOMENTUM", "strategy_tsla_noise_momentum_v2_enabled"),
+            ("V2_TSLA_TWO_LEG_TREND_PULLBACK", "strategy_tsla_two_leg_trend_pullback_v2_enabled"),
         )
         if (sid in _approved_strategy_ids
             and _strat_cfg.get(key, _STRAT_DEFAULTS.get(key, False))
@@ -779,11 +781,34 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _observation_resolver = None
     if paper and bool(settings.get("shadow_ledger_enabled", True)):
         from shadow_ledger import record_router_candidate, mark_candidate_observed_only
-        _candidate_observer = record_router_candidate
+        # Re-price previously selected scanner contracts at fixed horizons.
+        # This is read-only evidence for entered, blocked, and skipped setups;
+        # it has no route into order placement or position management.
+        try:
+            from database.option_quotes import capture_due_candidate_option_quotes
+            capture_due_candidate_option_quotes(
+                ticker=ticker, observed_at=_now_et(),
+                quote_lookup=tradier.get_option_quote,
+                broker_account_id=settings.get("active_broker_account_id") or None,
+            )
+        except Exception:
+            logger.debug("candidate option follow-up sweep failed for %s", ticker, exc_info=True)
         if bool(settings.get("shadow_observe_all_strategies", True)):
             from strategy_router.evaluators import ACTIVE_STRATEGIES
             _observation_only_strategies = {sid for sid, _ in ACTIVE_STRATEGIES} - _enabled
             _observation_resolver = mark_candidate_observed_only
+        if _observation_only_strategies:
+            from trading.entry.candidate_observation import observe_candidate_contract
+            def _candidate_observer(ticker_arg, signal_arg, underlying_arg):
+                if str(getattr(signal_arg, "strategy_id", "")) in _observation_only_strategies:
+                    observe_candidate_contract(
+                        ticker=ticker_arg, signal=signal_arg, underlying_price=underlying_arg,
+                        tradier=tradier, balance=balance, risk=_risk, settings=settings,
+                    )
+                else:
+                    record_router_candidate(ticker_arg, signal_arg, underlying_arg)
+        else:
+            _candidate_observer = record_router_candidate
     # The router receives approved strategies for potential entry plus a
     # separate paper-only observation set.  Observed-only signals cannot make
     # it back out of the router, so they cannot reach contract selection.
@@ -847,6 +872,26 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 )
         except Exception as _noise_ex:
             logger.warning("TSLA noise-momentum evaluator failed closed (non-fatal): %s", _noise_ex)
+
+    # The reviewed TSLA two-leg continuation uses no uncompleted bar and no
+    # generic router threshold.  It retains the exact paid-study sequence,
+    # then enters the ordinary router, contract, sizing, and paper safeguards.
+    if "V2_TSLA_TWO_LEG_TREND_PULLBACK" in _enabled and ticker.upper() == "TSLA":
+        try:
+            _two_leg_state = _US.setdefault("v2_tsla_two_leg_trend_pullback", {})
+            _two_leg_signal, _two_leg_status = update_two_leg_trend_pullback(
+                _two_leg_state, _df_today_1m, ticker=ticker, now=_now_et(),
+            )
+            _US["v2_tsla_two_leg_trend_pullback_status"] = _two_leg_status
+            if _two_leg_signal is not None:
+                _injected_signals.append(_two_leg_signal)
+                log_event(
+                    "INFO", "bar_eval",
+                    f"🔵 [{ticker}] TSLA two-leg VWAP/EMA pullback reclaimed; "
+                    "sending the reviewed paper setup through account safeguards.",
+                )
+        except Exception as _two_leg_ex:
+            logger.warning("TSLA two-leg pullback evaluator failed closed (non-fatal): %s", _two_leg_ex)
 
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled,
                               alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
@@ -920,6 +965,42 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _reviewed_paid_paper_profile = paper and uses_reviewed_paid_execution_profile(strategy_id)
     _US["last_signal"]     = direction
     _US["last_strategy_id"]= strategy_id
+    _reviewed_exit_summaries = {
+        "V2_ORB_PULLBACK": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
+        "V2_TREND_CONT": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
+        "V2_SPY_TREND_CONT": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
+        "V2_SPY_AFTERNOON_FVG": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
+        "V2_SPY_AFTERNOON_REVERSAL": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
+        "V2_TSLA_NOISE_MOMENTUM": "Close the same selected contract at 3:59 PM Eastern, before the market closes.",
+        "V2_TSLA_TWO_LEG_TREND_PULLBACK": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
+    }
+    # The Scanner needs a reproducible *recipe* even if a later account or
+    # liquidity gate stops this setup before a particular option can be
+    # selected.  This describes the exact selector's rules, not a fabricated
+    # historical strike, expiry, or fill.  The selected contract is appended
+    # below only after the broker actually returned one at decision time.
+    _recipe_cap_pct = settings.get("max_position_dollars_pct")
+    try:
+        _recipe_max_spend = (
+            float(balance) * (float(_recipe_cap_pct) / 100.0)
+            if _recipe_cap_pct else float(settings.get("max_position_dollars", 750.0))
+        )
+    except (TypeError, ValueError):
+        _recipe_max_spend = 0.0
+    _reviewed_recipe = uses_v2_orb_execution_profile(strategy_id)
+    _contract_recipe = {
+        "option_type": "CALL" if direction == "bullish" else "PUT",
+        "strike_rule": "closest out-of-the-money strike to the underlying at selection",
+        "premium_rule": (
+            "$0.80–$10.00 ask" if _reviewed_recipe
+            else f"${MIN_CONTRACT_COST:.2f}–${MAX_CONTRACT_COST:.2f} ask"
+        ),
+        "expiration_rule": "7–21 calendar days to expiration" if _reviewed_recipe else "first broker-listed expiration with a qualifying contract",
+        "spread_rule": "bid/ask spread no wider than 8% of mid" if _reviewed_recipe else f"bid/ask spread no wider than {float(settings.get('spread_gate_pct', 8) or 8):.0f}% of mid",
+        "liquidity_rule": "broker-returned liquid chain" if _reviewed_recipe else f"open interest of at least {MIN_OPEN_INTEREST}",
+        "maximum_cost": round(_recipe_max_spend, 2),
+        "selection_model": "reviewed paid-quote profile" if _reviewed_recipe else "standard liquid first-OTM profile",
+    }
     # Durable, read-only explanation for Scanner Opportunities.  It begins
     # with the signal facts and is enriched below only when contract selection
     # succeeds.  This snapshot is never read by placement or exit logic.
@@ -933,8 +1014,120 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 "trigger": "qualifying setup reached the entry router",
                 "underlying_price": None,
             },
+            "contract_recipe": _contract_recipe,
+            # This is recorded before any gate can stop the setup, so the
+            # learner can see the intended exit rule even when no contract
+            # was ultimately affordable or liquid enough to select.
+            "exit_plan": {
+                "strategy_id": strategy_id,
+                "summary": _reviewed_exit_summaries.get(
+                    strategy_id,
+                    "Exit on the hard structural stop, 3 ATR Chandelier trail, or 75-minute time cap.",
+                ),
+            },
         },
     }
+
+    # ── Manual-trade contract preview (display only; never an order) ─────────
+    # Scanner Opportunities is also a learning/manual-review surface.  A
+    # router gate used to stop a signal *before* contract selection, leaving a
+    # learner with no strike, expiry, quote, or estimated size to inspect.
+    # Take one clearly-labelled display snapshot as soon as the strategy has
+    # qualified.  The normal entry path intentionally re-queries immediately
+    # before an order, so this preview can never become a stale execution
+    # instruction or alter the actual order decision.
+    quote = _live_underlying_quote or alpaca.get_latest_quote(ticker)
+    if not quote:
+        return
+    current_price = (quote.get("ap", 0) + quote.get("bp", 0)) / 2
+    if current_price <= 0:
+        return
+    _opportunity_context = _US.get("scanner_opportunity_context", {}).get("context")
+    if isinstance(_opportunity_context, dict):
+        _entry_plan = _opportunity_context.setdefault("entry_plan", {})
+        if isinstance(_entry_plan, dict):
+            _entry_plan["underlying_price"] = round(float(current_price), 4)
+
+    _cap_pct = settings.get("max_position_dollars_pct")
+    if _cap_pct:
+        _preview_max_spend = balance * (float(_cap_pct) / 100.0)
+    else:
+        _preview_max_spend = float(settings.get("max_position_dollars", 750.0))
+    _v2_paid_parity = uses_v2_orb_execution_profile(strategy_id)
+    try:
+        if _v2_paid_parity:
+            _preview_contract, _preview_info = select_reviewed_v2_contract(
+                tradier, ticker, direction, current_price, _preview_max_spend,
+                for_display=True,
+            )
+        else:
+            _preview_contract, _preview_info = select_contract(
+                tradier, ticker, direction, current_price, _preview_max_spend,
+                for_display=True,
+            )
+    except Exception:
+        # The preview is explanatory telemetry only.  A temporary chain
+        # problem must not make the real entry flow less reliable.
+        _preview_contract, _preview_info = None, {"reason": "preview_unavailable"}
+        logger.debug("manual contract preview failed for %s", ticker, exc_info=True)
+    if isinstance(_opportunity_context, dict):
+        _preview = {
+            "status": "selected" if _preview_contract else "not_selected",
+            "observed_at": _now_et().isoformat(),
+            "underlying_price": round(float(current_price), 4),
+            "reason": str(_preview_info.get("reason") or "not_selected"),
+            "cheapest_cost": _preview_info.get("cheapest_cost"),
+            "cheapest_symbol": _preview_info.get("cheapest_symbol"),
+            "illiquid_cost": _preview_info.get("illiquid_cost"),
+            "illiquid_symbol": _preview_info.get("illiquid_symbol"),
+            "liquidity_detail": _preview_info.get("illiquid_fail"),
+        }
+        if _preview_contract:
+            _preview_ask = float(_preview_contract.get("ask") or 0.0)
+            _preview_eff_entry = _risk.slippage_adjusted_entry(_preview_ask)
+            _preview_contracts = _risk.calculate_contracts(_preview_eff_entry, balance)
+            if _signal_tier == "opportunity" and _preview_contracts > 1:
+                _preview_contracts = max(1, _preview_contracts // 2)
+            # Mirror the same notional ceiling later used by the order path.
+            _preview_growth = bool(settings.get("growth_mode", False)) and balance < float(
+                settings.get("growth_risk_boundary_boot", 5000.0)
+            )
+            _preview_risk_pct = _risk.effective_risk_pct(balance)
+            _preview_notional_pct = .45 if _preview_growth else (.30 if _preview_risk_pct > .01 else .20)
+            _preview_notional_cap = balance * _preview_notional_pct
+            _preview_contracts = min(
+                _preview_contracts,
+                max(1, int(_preview_notional_cap // max(_preview_ask * 100, 0.01))),
+            )
+            _preview.update({
+                "symbol": _preview_contract.get("symbol"),
+                "strike": _preview_contract.get("strike"),
+                "expiry": _preview_contract.get("expiry"),
+                "bid": _preview_contract.get("bid"),
+                "ask": _preview_contract.get("ask"),
+                "spread": _preview_contract.get("spread"),
+                "selection_model": _preview_contract.get("selection_model"),
+                "planned_entry_price": round(_preview_eff_entry, 4),
+                "planned_contracts": int(_preview_contracts),
+                "estimated_position_cost": round(_preview_eff_entry * _preview_contracts * 100, 2),
+            })
+        _opportunity_context["contract_preview"] = _preview
+        # Save the plan now—not only when a later gate produces a journal row.
+        # A signal can legitimately stop at an early safety gate below.
+        try:
+            from shadow_ledger import snapshot_candidate_plan
+            snapshot_candidate_plan(_opportunity_context)
+            from database.option_quotes import record_candidate_option_quote
+            _candidate_id = (_top.meta or {}).get("shadow_candidate_id") if isinstance(_top.meta, dict) else None
+            if _candidate_id and _preview_contract:
+                record_candidate_option_quote(
+                    candidate_id=_candidate_id,
+                    contract_symbol=str(_preview_contract.get("symbol") or ""),
+                    observation_kind="entry", observed_at=_now_et(),
+                    quote=_preview_contract, source="tradier_contract_preview",
+                )
+        except Exception:
+            logger.debug("manual plan snapshot failed for %s", ticker, exc_info=True)
 
     # ── Minimum confidence gate — REMOVED 2026-07-18 (was dead code) ─────────
     # This used to re-check _top.confidence against a local 0.55 floor. It
@@ -1119,34 +1312,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     ticker, direction, _spy_close, _spy_vwap,
                 )
 
-    # ── Current price ─────────────────────────────────────────────────────────
-    quote = _live_underlying_quote or alpaca.get_latest_quote(ticker)
-    if not quote:
-        return
-    current_price = (quote.get("ap", 0) + quote.get("bp", 0)) / 2
-    if current_price <= 0:
-        return
-    _opportunity_context = _US.get("scanner_opportunity_context", {}).get("context")
-    if isinstance(_opportunity_context, dict):
-        _entry_plan = _opportunity_context.setdefault("entry_plan", {})
-        if isinstance(_entry_plan, dict):
-            _entry_plan["underlying_price"] = round(float(current_price), 4)
-
     # ── Select contract ───────────────────────────────────────────────────────
     opt_type = "call" if direction == "bullish" else "put"
     # Budget cap now SCALES with the account: max_spend = balance × max_position_dollars_pct.
     # max_position_dollars_pct (15) was previously a dead setting — $750 was a
-    _cap_pct  = settings.get("max_position_dollars_pct")
-    if _cap_pct:
-        max_spend = balance * (_cap_pct / 100.0)
-    else:
-        max_spend = settings.get("max_position_dollars", 750.0)
+    max_spend = _preview_max_spend
     # V2's paid TSLA study used a distinct, predeclared contract rule.  Keep
     # Lock the V2 strategy to its reviewed contract definition in *both* paper
     # and a future explicitly-approved live mode.  Today V2 remains disabled
     # and paper-only through its settings gate; this removes a hidden cleanup
     # task rather than enabling an order path.
-    _v2_paid_parity = uses_v2_orb_execution_profile(strategy_id)
     if _v2_paid_parity:
         contract, _sel_info = select_reviewed_v2_contract(
             tradier, ticker, direction, current_price, max_spend,
@@ -1154,6 +1329,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     else:
         contract, _sel_info = select_contract(tradier, ticker, direction, current_price, max_spend)
     if not contract:
+        if isinstance(_opportunity_context, dict):
+            _opportunity_context["contract_selection"] = {
+                "status": "not_selected",
+                "reason": str(_sel_info.get("reason") or "filtered"),
+                "cheapest_cost": _sel_info.get("cheapest_cost"),
+                "cheapest_symbol": _sel_info.get("cheapest_symbol"),
+                "illiquid_cost": _sel_info.get("illiquid_cost"),
+                "illiquid_symbol": _sel_info.get("illiquid_symbol"),
+                "liquidity_detail": _sel_info.get("illiquid_fail"),
+            }
         _reason = _sel_info.get("reason")
         if _reason == "over_budget":
             # We saw real chain data — report the actual premium needed vs. budget.
@@ -1215,6 +1400,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         if isinstance(_entry_plan, dict):
             _entry_plan["estimated_entry_price"] = round(float(eff_entry), 4)
             _entry_plan["trigger"] = "enter only after every router, liquidity, and risk gate clears"
+        _opportunity_context["contract_selection"] = {
+            "status": "selected",
+            "reason": str(_sel_info.get("reason") or "selected"),
+            "selected_dte": _sel_info.get("selected_dte"),
+            "selected_spread_pct": _sel_info.get("selected_spread_pct"),
+        }
 
     # ── Record what the bot is currently looking at, for the dashboard ───────
     # Surfaces the live contract premium + affordability ceiling proactively
@@ -1299,18 +1490,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         n_contracts = _max_affordable
 
     if isinstance(_opportunity_context, dict):
-        _exit_summaries = {
-            "V2_ORB_PULLBACK": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
-            "V2_TREND_CONT": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
-            "V2_SPY_TREND_CONT": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
-            "V2_SPY_AFTERNOON_FVG": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
-            "V2_SPY_AFTERNOON_REVERSAL": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
-            "V2_TSLA_NOISE_MOMENTUM": "Close the same selected contract at 3:59 PM Eastern, before the market closes.",
-        }
         _opportunity_context["planned_quantity"] = int(n_contracts)
         _opportunity_context["exit_plan"] = {
             "strategy_id": strategy_id,
-            "summary": _exit_summaries.get(
+            "summary": _reviewed_exit_summaries.get(
                 strategy_id,
                 "Exit on the hard structural stop, 3 ATR Chandelier trail, or 75-minute time cap.",
             ),
@@ -1431,7 +1614,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # stays False until paper-mode results are reviewed.
     from config import AI_DECISION_SUPPORT_ENABLED, AI_DECISION_SUPPORT_ENABLED_LIVE
     _is_paper_trade = settings.get("paper_trading", True)
-    if AI_DECISION_SUPPORT_ENABLED and not _reviewed_paid_paper_profile:
+    if AI_DECISION_SUPPORT_ENABLED:
         if (not _is_paper_trade) and not AI_DECISION_SUPPORT_ENABLED_LIVE:
             # Live trade but the live-specific switch is off — proceed exactly
             # as if decision support didn't exist, but log why it was skipped.
@@ -1439,8 +1622,23 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                       f"⚪ [{ticker}] AI decision support skipped — live trade "
                       f"and AI_DECISION_SUPPORT_ENABLED_LIVE is off.")
         else:
-            _ds_result = None
+            from ai_reasoning.episode_cache import (
+                cached_review as _cached_ai_review,
+                episode_key as _ai_episode_key,
+                remember_review as _remember_ai_review,
+                complete_observation as _complete_ai_observation,
+            )
+            _ds_now = _now_et()
+            _ds_cache = _US.setdefault("ai_decision_episode_cache", {})
+            _ds_key = _ai_episode_key(ticker, strategy_id, direction)
+            _ds_result = _cached_ai_review(_ds_cache, key=_ds_key, observed_at=_ds_now)
+            from ai_reasoning.gate_policy import ai_decision_is_enforced
+            _ds_enforced = ai_decision_is_enforced(strategy_id)
+            if _ds_result is not None:
+                logger.debug("Reusing first AI review for active setup episode %s", _ds_key)
             try:
+                if _ds_result is not None:
+                    raise StopIteration  # clean cached decision; skip indicators and API call
                 from trading.mtf_features import (
                     compute_rsi, compute_macd_hist, compute_adx, ema_stack_aligned,
                 )
@@ -1470,16 +1668,17 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 # the data to do that with. This closes that gap for free.
                 try:
                     from trading.mtf_live_gate import get_live_1h_bias
-                    _ds_trend_1h = get_live_1h_bias(
-                        alpaca, ticker, direction, _US.setdefault("mtf_1h_cache", {})
+                    _ds_trend_1h = (
+                        get_live_1h_bias(
+                            alpaca, ticker, direction, _US.setdefault("mtf_1h_cache", {})
+                        ) if _ds_enforced else None
                     )
                     if _ds_trend_1h == "neutral":
                         _ds_trend_1h = None   # no signal either way — keep prior "don't mention it" behavior
                 except Exception:
                     _ds_trend_1h = None   # never let this optional context block the review call
 
-                from ai_reasoning.decision_support import review_entry
-                _ds_result = review_entry(
+                _ds_review_kwargs = dict(
                     ticker=ticker, strategy_id=strategy_id, direction=direction,
                     confidence=_top.confidence, rvol=entry_rvol,
                     contract_symbol=contract["symbol"], option_type=opt_type,
@@ -1488,7 +1687,33 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     rr_ratio=rr_audit["R_R_Ratio"], paper=_is_paper_trade,
                     rsi=_ds_rsi, macd_hist=_ds_macd_hist, adx=_ds_adx,
                     ema_aligned=_ds_ema_align, trend_1h_bias=_ds_trend_1h,
+                    candidate_id=(getattr(_top, "meta", {}) or {}).get("shadow_candidate_id"),
                 )
+                if _ds_enforced:
+                    from ai_reasoning.decision_support import review_entry
+                    _ds_result = review_entry(enforced=True, **_ds_review_kwargs)
+                    _remember_ai_review(
+                        _ds_cache, key=_ds_key, observed_at=_ds_now, result=_ds_result,
+                    )
+                else:
+                    from ai_reasoning.decision_support import observe_entry_async
+                    from ai_reasoning.episode_cache import ObservationScheduled
+                    _ds_marker = ObservationScheduled()
+                    _remember_ai_review(
+                        _ds_cache, key=_ds_key, observed_at=_ds_now, result=_ds_marker,
+                    )
+
+                    def _finish_ai_observation(result, *, cache=_ds_cache, key=_ds_key, marker=_ds_marker):
+                        # Preserve a clean opinion for repeated detections;
+                        # failed work is removed so a later tick can retry.
+                        _complete_ai_observation(
+                            cache, key=key, marker=marker, result=result,
+                        )
+
+                    observe_entry_async(on_complete=_finish_ai_observation, **_ds_review_kwargs)
+                    _ds_result = _ds_marker
+            except StopIteration:
+                pass
             except Exception as _ds_ex:
                 # review_entry() already fails open internally — this outer
                 # try/except is a second, independent safety net in case the
@@ -1498,29 +1723,36 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 logger.warning("AI decision support call failed (non-fatal, trade proceeds): %s", _ds_ex)
                 _ds_result = None
 
-            if _ds_result is not None and _ds_result.action == "veto":
+            from ai_reasoning.gate_policy import ai_decision_effect
+            _ds_effect, _ds_effect_contracts = ai_decision_effect(
+                strategy_id,
+                _ds_result.action if _ds_result is not None else "approve",
+                _ds_result.size_multiplier if _ds_result is not None else 1.0,
+                n_contracts,
+            )
+            if _ds_result is not None and _ds_effect == "observe":
+                # Keep collecting the model's counterfactual opinion, linked
+                # to this candidate's later option marks, without letting an
+                # unvalidated model rewrite a tuned deterministic strategy.
+                log_event(
+                    "INFO", "bar_eval",
+                    f"🟣 [{ticker}] AI review recorded for calibration only — "
+                    f"{_ds_result.action.replace('_', ' ')} was NOT applied. "
+                    f"{_ds_result.rationale or 'No rationale given.'}",
+                )
+            elif _ds_result is not None and _ds_effect == "veto":
                 log_event("INFO", "bar_eval",
                           f"🟣 [{ticker}] AI decision support VETO — "
                           f"{_ds_result.rationale or 'no reason given'}")
                 _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence, tier=_signal_tier,
                          direction=direction, detail=_ds_result.rationale or "AI review declined, no rationale given")
                 return
-            elif _ds_result is not None and _ds_result.action == "reduce_size":
-                _ds_resized = int(n_contracts * _ds_result.size_multiplier)
-                if _ds_resized < 1:
-                    # Floored to 0 contracts — treat as a veto rather than
-                    # place a 0-contract order.
-                    log_event("INFO", "bar_eval",
-                              f"🟣 [{ticker}] AI decision support reduced size to 0 "
-                              f"contracts — treating as VETO. {_ds_result.rationale or ''}")
-                    _skip_log(ticker, "ai_decision_veto", strategy=strategy_id, confidence=_top.confidence, tier=_signal_tier,
-                             direction=direction, detail=f"resized to 0 contracts — {_ds_result.rationale or 'no rationale given'}")
-                    return
-                elif _ds_resized < n_contracts:
+            elif _ds_result is not None and _ds_effect == "reduce_size":
+                if _ds_effect_contracts < n_contracts:
                     log_event("INFO", "bar_eval",
                               f"🟣 [{ticker}] AI decision support reduced size: "
-                              f"{n_contracts} → {_ds_resized} contracts. {_ds_result.rationale or ''}")
-                    n_contracts = _ds_resized
+                              f"{n_contracts} → {_ds_effect_contracts} contracts. {_ds_result.rationale or ''}")
+                    n_contracts = _ds_effect_contracts
                     _US["last_eval_contracts"] = n_contracts
                 # else: multiplier didn't actually change the integer contract
                 # count (e.g. 2c × 0.9 still floors to 2) — nothing to apply.

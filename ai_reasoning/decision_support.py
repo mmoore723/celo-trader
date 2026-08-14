@@ -1,6 +1,4 @@
-"""
-ai_reasoning/decision_support.py — phase 2 of the AI reasoning layer:
-synchronous, trade-gating decision support.
+"""Structured AI opinions for entry-gate calibration.
 
 review_entry() reviews ONE entry the deterministic system (strategy_
 router.py's signal, risk.py's R:R gate, the spread/slippage/sizing checks
@@ -8,9 +6,9 @@ in trading/entry.py) has ALREADY approved. It may only narrow (reduce
 size) or veto that single, already-decided trade — never change
 direction, ticker, or contract, and never increase size.
 
-Contrast with narrator.py (phase 1, fire-and-forget on a daemon thread,
-never affects the trade): this call is synchronous and sits in the entry
-path, so it's held to a stricter contract:
+``review_entry`` is synchronous for strategies whose AI policy has separately
+passed validation.  Unvalidated strategies call ``observe_entry_async`` so
+the model cannot delay or alter their tuned deterministic entry path.
 
   1. FAILS OPEN. Any error, timeout, or unparseable response returns
      action="approve" — never blocks a trade the deterministic system
@@ -33,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
@@ -128,6 +127,8 @@ def review_entry(
     rsi: Optional[float] = None, macd_hist: Optional[list] = None,
     adx: Optional[float] = None, ema_aligned: Optional[bool] = None,
     trend_1h_bias: Optional[str] = None, trade_id: Optional[int] = None,
+    candidate_id: Optional[str] = None,
+    enforced: bool = False,
 ) -> DecisionResult:
     """
     Synchronous review of one already-approved entry. Signature is
@@ -147,6 +148,7 @@ def review_entry(
             n_contracts=n_contracts, entry_price=entry_price, rr_ratio=rr_ratio,
             paper=paper, rsi=rsi, macd_hist=macd_hist, adx=adx,
             ema_aligned=ema_aligned, trend_1h_bias=trend_1h_bias, trade_id=trade_id,
+            candidate_id=candidate_id,
         )
     except Exception as exc:
         # A bad snapshot fails open exactly like an API error would — this
@@ -183,13 +185,19 @@ def review_entry(
                             exc, call.text[:200])
             result = _fallback_approve(error=f"parse_failed: {exc}", latency_ms=call.latency_ms)
 
-    # applied=True reflects THIS function's verdict (a veto or genuine size
-    # reduction from a call that didn't fail/parse-error) — never True for
-    # an approve, real or fail-open. entry.py may still floor a reduce_size
-    # back to the same contract count or to 0; that's entry.py's own
-    # post-flooring outcome, logged separately via log_event() like every
-    # other skip-gate — this flag is decision_support's verdict only.
-    applied = result.action in ("veto", "reduce_size") and result.error is None
+    # Keep the exact parsed verdict beside the exact feature inputs.  The
+    # calibration scorecard can now compare approves and vetoes without
+    # reparsing prose, and candidate_id links either decision to its later
+    # executable option quote.
+    snapshot["decision_action"] = result.action
+    snapshot["decision_size_multiplier"] = result.size_multiplier
+    snapshot["decision_error"] = result.error
+    snapshot["decision_enforced"] = bool(enforced)
+
+    # ``applied`` must mean the recommendation was authorized to affect the
+    # trade, not merely that the model suggested a veto.  Unvalidated
+    # strategy opinions are retained as counterfactual calibration evidence.
+    applied = bool(enforced) and result.action in ("veto", "reduce_size") and result.error is None
 
     log_ai_reasoning(
         event_type="entry_veto", ticker=ticker, feature_snapshot=snapshot,
@@ -198,3 +206,25 @@ def review_entry(
     )
 
     return result
+
+
+def observe_entry_async(*, on_complete=None, **review_kwargs) -> threading.Thread:
+    """Record an unvalidated opinion without delaying the entry path."""
+    def run() -> None:
+        try:
+            result = review_entry(enforced=False, **review_kwargs)
+        except Exception:
+            # review_entry handles expected provider/parse failures itself,
+            # but logging/storage failures must also remain detached from the
+            # order path.  A None callback result lets the episode retry.
+            logger.warning("AI observation worker failed (non-fatal)", exc_info=True)
+            result = None
+        if on_complete is not None:
+            try:
+                on_complete(result)
+            except Exception:
+                logger.debug("AI observation completion callback failed", exc_info=True)
+
+    thread = threading.Thread(target=run, name="ai-entry-observation", daemon=True)
+    thread.start()
+    return thread

@@ -19,6 +19,50 @@ logger = logging.getLogger("celo_trader.shadow_ledger")
 _OUTCOME_MINUTES = 60
 
 
+def snapshot_candidate_plan(context: dict | None) -> None:
+    """Persist the learner-facing plan against its raw scanner candidate.
+
+    A qualified scanner signal can be stopped by an early guard before the
+    normal signal journal writes its final outcome.  Keep the plan snapshot on
+    ``shadow_candidates`` too, so Scanner Opportunities still has the actual
+    contract screen, entry idea, and exit plan that existed at that moment.
+    This is audit-only data; no order, sizing, or position code ever reads it.
+    """
+    try:
+        if not isinstance(context, dict):
+            return
+        meta = context.get("strategy_meta")
+        candidate_id = meta.get("shadow_candidate_id") if isinstance(meta, dict) else None
+        if not candidate_id:
+            return
+        plan = {
+            key: context[key]
+            for key in ("entry_plan", "contract_recipe", "contract_preview", "contract_selection", "contract", "planned_quantity", "exit_plan")
+            if key in context
+        }
+        if not plan:
+            return
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT metadata_json FROM shadow_candidates WHERE candidate_id = ?", (candidate_id,),
+            ).fetchone()
+            if row is None:
+                return
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                metadata = {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata["manual_plan"] = plan
+            conn.execute(
+                "UPDATE shadow_candidates SET metadata_json = ? WHERE candidate_id = ?",
+                (json.dumps(metadata, default=str, sort_keys=True), candidate_id),
+            )
+    except Exception:
+        logger.warning("shadow candidate plan snapshot failed (non-fatal)", exc_info=True)
+
+
 def record_router_candidate(ticker: str, signal: object, underlying_price: float | None = None) -> None:
     """Persist a raw paper candidate and attach its opaque id to the signal."""
     try:
@@ -109,6 +153,7 @@ def resolve_candidate_from_context(
 ) -> None:
     """Attach the final router/entry decision to its previously recorded candidate."""
     try:
+        snapshot_candidate_plan(context)
         meta = (context or {}).get("strategy_meta") if isinstance(context, dict) else None
         candidate_id = meta.get("shadow_candidate_id") if isinstance(meta, dict) else None
         if not candidate_id:

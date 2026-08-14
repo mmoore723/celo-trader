@@ -292,10 +292,36 @@ export interface ScannerOpportunityContract {
   bid?: number | null; ask?: number | null; spread?: number | null;
   selection_model?: string | null;
 }
+export interface ScannerOpportunityContractRecipe {
+  option_type?: string; strike_rule?: string; premium_rule?: string; expiration_rule?: string;
+  spread_rule?: string; liquidity_rule?: string; maximum_cost?: number; selection_model?: string;
+  recipe_source?: "recorded" | "default_profile" | string;
+}
+export interface ScannerOpportunityContractSelection {
+  status?: "selected" | "not_selected" | string; reason?: string;
+  cheapest_cost?: number | null; cheapest_symbol?: string | null;
+  illiquid_cost?: number | null; illiquid_symbol?: string | null; liquidity_detail?: string | null;
+  selected_dte?: number | null; selected_spread_pct?: number | null;
+}
+export interface ScannerOpportunityContractPreview extends ScannerOpportunityContract {
+  status?: "selected" | "not_selected" | string; observed_at?: string;
+  underlying_price?: number | null; reason?: string;
+  cheapest_cost?: number | null; cheapest_symbol?: string | null;
+  illiquid_cost?: number | null; illiquid_symbol?: string | null; liquidity_detail?: string | null;
+  planned_entry_price?: number | null; planned_contracts?: number | null;
+  estimated_position_cost?: number | null;
+}
+export interface ScannerOpportunityQuoteMark {
+  observation_kind: "entry" | "mark_30m" | "mark_60m" | "mark_90m" | string;
+  observed_at: string; contract_symbol: string;
+  bid?: number | null; ask?: number | null; mid?: number | null; last?: number | null;
+  executable_return_pct?: number | null; source?: string;
+}
 export interface ScannerOpportunityTrade {
   id: number; contract_symbol?: string | null; option_type?: string | null;
   strike?: number | null; expiry?: string | null; contracts?: number | null;
   entry_price?: number | null; exit_price?: number | null; status?: string | null;
+  stop_price?: number | null; target_price?: number | null;
   entry_time?: string | null; exit_time?: string | null; exit_reason?: string | null;
   pnl?: number | null;
 }
@@ -307,8 +333,15 @@ export interface ScannerOpportunity {
   reason_code?: string | null; reason_detail?: string | null;
   entry_plan: { trigger?: string; underlying_price?: number; estimated_entry_price?: number };
   contract: ScannerOpportunityContract;
+  contract_preview?: ScannerOpportunityContractPreview;
+  contract_recipe?: ScannerOpportunityContractRecipe;
+  contract_selection?: ScannerOpportunityContractSelection;
   planned_quantity?: number | null;
   exit_plan: { strategy_id?: string; summary?: string };
+  plan_status: "contract_selected" | "contract_preview" | "not_priced" | "observation_only" | string;
+  option_quote_timeline?: ScannerOpportunityQuoteMark[];
+  option_type?: "call" | "put" | string | null;
+  setup_details?: Record<string, string | number | boolean>;
   underlying_entry_price?: number | null; underlying_exit_price?: number | null;
   directional_move_pct?: number | null; direction_correct?: number | null;
   outcome_observed_at?: string | null; trade?: ScannerOpportunityTrade | null;
@@ -316,6 +349,33 @@ export interface ScannerOpportunity {
 export interface ScannerOpportunitiesResponse {
   date: string; account_scoped: boolean; available_dates: string[];
   summary: Record<string, number>; note: string; entries: ScannerOpportunity[];
+}
+export interface GateCalibrationRow {
+  strategy_id: string; gate: "ai_decision_veto" | "macro_vwap_veto" | string;
+  raw_decisions: number; independent_episodes: number; delayed_then_allowed: number;
+  enforced: boolean;
+  vetoes: number; measured: number; avoided_losers: number; rejected_winners: number;
+  option_measured: number; trading_days: number; avoided_loser_rate_pct?: number | null;
+  rejected_winner_rate_pct?: number | null; avg_rejected_option_return_pct?: number | null;
+  status: "collecting_option_outcomes" | "collecting_action_balance" | "collecting_holdout_days" | "validated_candidate" | "failed_chronological_validation" | "descriptive_only" | string;
+  allowed: { decisions: number; measured: number; winners: number; losers: number; option_measured: number; win_rate_pct?: number | null };
+  minimum_evidence: Record<string, number>;
+  validation?: {
+    status: string; recommended_for_enforcement: boolean; option_episodes: number;
+    trading_days: number; veto_episodes: number; approval_episodes: number;
+    minimum_evidence: Record<string, number>;
+    training?: GatePeriodMetrics | null; holdout?: GatePeriodMetrics | null;
+    checks?: Record<string, boolean>;
+  } | null;
+}
+export interface GatePeriodMetrics {
+  episodes: number; days: number; baseline_avg_return_pct?: number | null;
+  ai_policy_avg_return_pct?: number | null; incremental_avg_return_pct?: number | null;
+  baseline_profit_factor?: number | "infinite" | null;
+  ai_policy_profit_factor?: number | "infinite" | null;
+}
+export interface GateCalibrationScorecard {
+  days: number; account_scoped: boolean; policy: string; rows: GateCalibrationRow[];
 }
 
 export interface WatchingContract {
@@ -557,6 +617,7 @@ export interface AppSettings {
   strategy_spy_afternoon_fvg_v2_enabled?: boolean; // reviewed SPY paid-quote afternoon FVG pilot
   strategy_spy_afternoon_reversal_v2_enabled?: boolean; // reviewed SPY higher-low afternoon reversal pilot
   strategy_tsla_noise_momentum_v2_enabled?: boolean; // reviewed TSLA adaptive noise-boundary paper rule
+  strategy_tsla_two_leg_trend_pullback_v2_enabled?: boolean; // reviewed TSLA VWAP/EMA two-leg paper rule
   opportunity_tier_enabled?: boolean; // paper-only lower-confidence research cohort
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
   min_grade_filter_enabled?: boolean; // 2026-07-24: blocks entries below min_entry_grade (default off)
@@ -764,6 +825,7 @@ export const api = {
       const qs = params.toString();
       return request<ScannerOpportunitiesResponse>(`/api/signals/opportunities${qs ? `?${qs}` : ""}`);
     },
+    gateScorecard: (days = 30) => request<GateCalibrationScorecard>(`/api/signals/gate-scorecard?days=${days}`),
     watching: () => request<{ watching: WatchingSignal[] }>("/api/signals/watching"),
   },
   tickers: {

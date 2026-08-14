@@ -567,6 +567,17 @@ const CURRENT_STRATEGIES: Strategy[] = [
     tags: ["paper", "momentum", "1-minute"],
     tuning: [{ param: "Baseline", value: "Exactly 14 prior TSLA sessions" }, { param: "Timing", value: "10:00–15:30 ET at half-hour checks" }, { param: "Exit", value: "Same contract's 3:59 PM bid" }],
   },
+  {
+    id: "v2_two_leg", name: "TSLA Two-Leg Trend Pullback V2", emoji: "↗",
+    setup: "After 9:45 ET, TSLA must make a real move away from the 9:45 reference: price stays on the correct side of VWAP, EMA 9 is above or below EMA 20, and the first leg travels at least one ATR.",
+    entry: "It does not chase that first move. Price must pull back 0.25–1.25 ATR to EMA 9 without closing through VWAP, then a finished one-minute candle must reclaim the pullback’s prior high or low. The following minute’s selected option ask is the entry reference.",
+    stop: "The pullback extreme is the underlying invalidation. If price closes through VWAP or the trend EMAs cross, the setup is cancelled instead of being forced.",
+    target: "The reviewed model holds the same selected contract for 90 minutes, then uses its executable bid—not a midpoint or a made-up option price.",
+    notes: "TSLA only. This is a morning continuation pattern, not a generic all-day trend signal and not the old retired Trend Continuation rule.",
+    evidence: "Older data selected the baseline version: 108 option markouts, +3.19% average, +2.04% median, 1.48 profit factor. The untouched later period also passed: 19 markouts, +4.00% average, +0.50% median, 1.51 profit factor.",
+    tags: ["paper", "TSLA", "1-minute", "VWAP"],
+    tuning: [{ param: "Reference", value: "09:45 ET close" }, { param: "First leg", value: "≥ 1 ATR with VWAP + EMA 9/20 agreement" }, { param: "Pullback", value: "0.25–1.25 ATR into EMA 9; VWAP must hold" }, { param: "Entry", value: "Completed 1-minute reclaim, then next-minute option ask" }, { param: "Exit", value: "Same contract’s 90-minute bid" }],
+  },
 ];
 
 export function Playbooks() {
@@ -580,7 +591,8 @@ export function Playbooks() {
     strategy.id === "v2_trend" ? Boolean(settings?.strategy_spy_trend_cont_v2_enabled) :
     strategy.id === "v2_spy_fvg" ? Boolean(settings?.strategy_spy_afternoon_fvg_v2_enabled) :
     strategy.id === "v2_spy_afternoon_reversal" ? Boolean(settings?.strategy_spy_afternoon_reversal_v2_enabled) :
-    Boolean(settings?.strategy_tsla_noise_momentum_v2_enabled)
+    strategy.id === "v2_momentum" ? Boolean(settings?.strategy_tsla_noise_momentum_v2_enabled) :
+    Boolean(settings?.strategy_tsla_two_leg_trend_pullback_v2_enabled)
   )), [settings]);
 
   // Filter + group log codes by search query and active category

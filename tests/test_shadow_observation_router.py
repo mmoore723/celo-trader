@@ -16,6 +16,37 @@ def _signal(strategy_id: str) -> SimpleNamespace:
 
 
 class ShadowObservationRouterTests(unittest.TestCase):
+    def test_candidate_link_survives_a_gate_that_copies_the_signal(self) -> None:
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        original = _signal("FVG")
+
+        def copy_without_meta(signals, *args, **kwargs):
+            return [SimpleNamespace(**{**signal.__dict__, "meta": {}}) for signal in signals]
+
+        passthrough = lambda signals, *args, **kwargs: list(signals)
+        gates = SimpleNamespace(
+            apply_regime_gate=copy_without_meta,
+            apply_session_bias_penalty=passthrough, apply_vwap_weight=passthrough,
+            apply_confluence_bonus=passthrough, apply_mtf_confirmation=passthrough,
+            apply_grade_filter=passthrough, apply_large_move_gate=passthrough,
+            apply_directional_consensus=passthrough, apply_confidence_floor=passthrough,
+            check_conflict_veto=lambda *args, **kwargs: False,
+            check_volume_roc_veto=lambda *args, **kwargs: False,
+        )
+
+        def observe(_ticker, signal, _price):
+            signal.meta["shadow_candidate_id"] = "candidate-123"
+
+        with patch.object(router, "ACTIVE_STRATEGIES", [("FVG", lambda _frame, ticker: original)]), \
+             patch.object(router, "_gates", gates), patch.object(router, "compute_adx", return_value=30.0), \
+             patch("shadow_ledger.resolve_due_directional_outcomes", return_value=None):
+            returned = router.route_signals(
+                frame, "TSLA", enabled_strategies={"FVG"}, quiet=True,
+                prepared_today=frame, candidate_observer=observe,
+            )
+
+        self.assertEqual("candidate-123", returned[0].meta["shadow_candidate_id"])
+
     def test_adx_gated_observation_is_recorded_but_never_returned(self) -> None:
         frame = pd.DataFrame({"close": [100.0, 101.0]})
         observed: list[str] = []

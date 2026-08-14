@@ -48,6 +48,38 @@ from trading.v2_orb_execution_profile import uses_reviewed_paid_execution_profil
 logger = logging.getLogger("celo_trader.strategy_router")
 
 
+def _candidate_key(signal: Signal) -> tuple[str, str, str]:
+    """Stable identity for one candidate during a single router invocation."""
+    return (
+        str(getattr(signal, "strategy_id", "") or ""),
+        str(getattr(signal, "direction", "") or ""),
+        str(getattr(signal, "trigger_bar", "") or ""),
+    )
+
+
+def _remember_candidate(signal: Signal, candidate_ids: dict[tuple[str, str, str], str]) -> None:
+    meta = getattr(signal, "meta", None)
+    candidate_id = meta.get("shadow_candidate_id") if isinstance(meta, dict) else None
+    if candidate_id:
+        candidate_ids[_candidate_key(signal)] = str(candidate_id)
+
+
+def _restore_candidates(
+    signals: list[Signal], candidate_ids: dict[tuple[str, str, str], str]
+) -> list[Signal]:
+    """Keep the ledger link when a quality gate returns a copied Signal."""
+    for signal in signals:
+        meta = getattr(signal, "meta", None)
+        if not isinstance(meta, dict):
+            meta = {}
+            signal.meta = meta
+        if not meta.get("shadow_candidate_id"):
+            candidate_id = candidate_ids.get(_candidate_key(signal))
+            if candidate_id:
+                meta["shadow_candidate_id"] = candidate_id
+    return signals
+
+
 def route_signals(
     df: pd.DataFrame,
     ticker: str,
@@ -193,10 +225,12 @@ def route_signals(
     # they still receive the same router gates, ranking, annotations, and
     # paper-only observation behavior as every normal evaluator.
     signals: list[Signal] = list(injected_signals or [])
+    candidate_ids: dict[tuple[str, str, str], str] = {}
     for sig in tuple(signals):
         if candidate_observer is not None:
             try:
                 candidate_observer(ticker, sig, _underlying_price)
+                _remember_candidate(sig, candidate_ids)
             except Exception:
                 logger.warning("candidate observer failed (non-fatal)", exc_info=True)
         if not quiet:
@@ -211,6 +245,7 @@ def route_signals(
                 if candidate_observer is not None:
                     try:
                         candidate_observer(ticker, sig, _underlying_price)
+                        _remember_candidate(sig, candidate_ids)
                     except Exception:
                         logger.warning("candidate observer failed (non-fatal)", exc_info=True)
                 if strategy_id in _observation_only:
@@ -252,6 +287,7 @@ def route_signals(
     # account sizing and the paper-only mode boundary.
     if (preserve_reviewed_paid_paper_rules and signals
             and all(uses_reviewed_paid_execution_profile(signal.strategy_id) for signal in signals)):
+        _restore_candidates(signals, candidate_ids)
         signals.sort(key=lambda signal: signal.confidence, reverse=True)
         return signals
 
@@ -263,16 +299,25 @@ def route_signals(
     # Gating decisions themselves are IDENTICAL either way; only the logging
     # side-effects are suppressed. Never pass quiet=True on the live path.
     signals = _gates.apply_regime_gate(signals, df, ticker, quiet=quiet)
+    _restore_candidates(signals, candidate_ids)
     signals.sort(key=lambda s: s.confidence, reverse=True)
 
     signals = _gates.apply_session_bias_penalty(signals, today, ticker, quiet=quiet)
+    _restore_candidates(signals, candidate_ids)
     signals = _gates.apply_vwap_weight(signals, today, ticker)
+    _restore_candidates(signals, candidate_ids)
     signals = _gates.apply_confluence_bonus(signals, ticker, quiet=quiet)
+    _restore_candidates(signals, candidate_ids)
     signals = _gates.apply_mtf_confirmation(signals, ticker, alpaca=alpaca, mtf_cache=mtf_cache, quiet=quiet)
+    _restore_candidates(signals, candidate_ids)
     signals = _gates.apply_grade_filter(signals, today, ticker, quiet=quiet)
+    _restore_candidates(signals, candidate_ids)
     signals = _gates.apply_large_move_gate(signals, today, ticker)
+    _restore_candidates(signals, candidate_ids)
     signals = _gates.apply_directional_consensus(signals, today, ticker, quiet=quiet)
+    _restore_candidates(signals, candidate_ids)
     signals = _gates.apply_confidence_floor(signals, ticker, _MIN_CONFIDENCE, quiet=quiet)
+    _restore_candidates(signals, candidate_ids)
 
     if _gates.check_conflict_veto(signals, today, ticker, _CONFLICT_VETO_BAND, quiet=quiet):
         return []

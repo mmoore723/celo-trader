@@ -6,9 +6,9 @@
  * continue?"  They must remain separate so a blocked signal cannot be
  * mistaken for an order or a synthetic option fill.
  */
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Eye, Filter, ShieldCheck } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleDollarSign, Eye, Filter, ShieldCheck } from "lucide-react";
 import { api, type ScannerOpportunity } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
@@ -16,6 +16,7 @@ const STRATEGY_NAMES: Record<string, string> = {
   V2_ORB_PULLBACK: "Opening-Range Pullback", V2_TREND_CONT: "Trend Continuation",
   V2_SPY_TREND_CONT: "SPY Trend Continuation", V2_SPY_AFTERNOON_FVG: "SPY Afternoon FVG",
   V2_SPY_AFTERNOON_REVERSAL: "SPY Afternoon Reversal", V2_TSLA_NOISE_MOMENTUM: "TSLA Noise Momentum",
+  V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
   TREND_CONT: "Trend Continuation", INST_ORB: "Opening-Range Breakout", MID_BRK: "Mid-Day Breakdown",
   VWAP_PB: "VWAP Pullback", FVG: "Fair Value Gap", AFT_REV: "Afternoon Reversal", LIQ_SWEEP: "Liquidity Sweep",
 };
@@ -33,46 +34,195 @@ function percent(value?: number | null): string { return value == null ? "Waitin
 
 function OutcomeBadge({ outcome }: { outcome: string }) {
   const tone = outcome === "entered" ? "badge-green" : outcome === "observed_only" ? "badge-blue" : outcome === "pending" ? "badge-yellow" : "badge-red";
-  const label = outcome === "observed_only" ? "OBSERVED" : outcome.toUpperCase();
+  const label = outcome === "observed_only" ? "RESEARCH ONLY" : outcome === "pending" ? "UNRESOLVED" : outcome.toUpperCase();
   return <span className={`badge ${tone}`}>{label}</span>;
 }
 
-function OpportunityDetail({ entry }: { entry: ScannerOpportunity }) {
-  const contract = entry.trade?.contract_symbol ? {
+function label(value: string): string {
+  const labels: Record<string, string> = {
+    or_high: "Opening-range high", or_low: "Opening-range low", retest_level: "Retouch level",
+    vwap: "VWAP at signal", v2_entry_reference: "Reclaim close", reference_945: "9:45 reference close", v2_stop: "Setup invalidation",
+    v2_target: "Underlying objective", entry_timing: "Entry timing",
+    validated_entry_rule: "Required entry rule", reviewed_paid_quote_rule: "Quote rule",
+    prior_high: "Prior high", prior_low: "Prior low", impulse_extreme: "First-leg extreme", pullback_low: "Pullback low", pullback_high: "Pullback high", reclaim_level: "Reclaim level", entry_bar_high: "Signal-bar high", entry_bar_low: "Signal-bar low",
+  };
+  return labels[value] ?? value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function detailValue(value: string | number | boolean, key?: string): string {
+  const friendly: Record<string, string> = {
+    completed_1m_breakout_then_live_quote_first_retouch: "1-minute break, then first live-quote retouch",
+    calls_only_first_retouch_before_1030_et: "Calls only; first retouch before 10:30 ET",
+    completed_5m_signal_then_next_1m_entry: "5-minute signal, evaluated on the next 1-minute bar",
+  };
+  if (typeof value === "string" && key && friendly[value]) return friendly[value];
+  return typeof value === "number" ? (Number.isInteger(value) ? String(value) : value.toFixed(2)) : String(value);
+}
+
+function manualChecklist(entry: ScannerOpportunity): { title: string; steps: string[] } {
+  const details = entry.setup_details ?? {};
+  const level = (key: string) => details[key] == null ? "the recorded level" : money(Number(details[key]));
+  if (entry.strategy_id === "V2_ORB_PULLBACK") {
+    return {
+      title: "Manual entry checklist",
+      steps: [
+        `Mark the 9:30–9:45 ET opening range: high ${level("or_high")} and low ${level("or_low")}.`,
+        `Wait for a completed 1-minute candle to break the range in the ${String(entry.option_type ?? "option").toUpperCase()} direction.`,
+        `Do not chase the break. Watch the first return to ${level("retest_level")} and only proceed if the recorded entry rule and contract checks are satisfied.`,
+      ],
+    };
+  }
+  if (entry.strategy_id === "V2_SPY_TREND_CONT") {
+    return {
+      title: "Manual entry checklist",
+      steps: [
+        `Mark the breakout reference at ${level("v2_entry_reference")}.`,
+        "Wait for the completed 5-minute trend signal; the setup is assessed on the next 1-minute bar rather than chased mid-candle.",
+        `Use ${level("v2_stop")} as the underlying setup-invalidation line and ${level("v2_target")} as the underlying objective—not as option-premium stop or target prices.`,
+      ],
+    };
+  }
+  if (entry.strategy_id === "V2_TSLA_TWO_LEG_TREND_PULLBACK") {
+    return {
+      title: "Manual entry checklist",
+      steps: [
+        `After 9:45 ET, mark the reference close at ${level("reference_945")}. Price, VWAP, EMA 9, and EMA 20 must agree with the ${String(entry.option_type ?? "option").toUpperCase()} direction.`,
+        `Wait for the first move to travel at least one ATR, then let price pull back toward EMA 9 without closing through VWAP. The recorded pullback level is ${level(entry.option_type === "call" ? "pullback_low" : "pullback_high")}.`,
+        `Wait for a finished 1-minute candle to reclaim ${level("reclaim_level")}. The bot then evaluates the selected option on the following minute; it does not enter halfway through the candle.`,
+      ],
+    };
+  }
+  return {
+    title: "Manual review checklist",
+    steps: [
+      "Confirm the direction and the scanner trigger shown below before considering a contract.",
+      "Use the recorded underlying price and key levels; do not substitute a later market price for this historical plan.",
+      "A contract can be reviewed manually only when this card says Contract selected.",
+    ],
+  };
+}
+
+function PlanBadge({ entry }: { entry: ScannerOpportunity }) {
+  if (entry.plan_status === "contract_selected") {
+    return <span className="badge badge-green"><CircleCheck size={13} /> CONTRACT SELECTED</span>;
+  }
+  if (entry.plan_status === "contract_preview") {
+    return <span className="badge badge-yellow"><Eye size={13} /> CONTRACT TRACKED</span>;
+  }
+  if (entry.plan_status === "observation_only") {
+    return <span className="badge badge-blue">RESEARCH OBSERVATION</span>;
+  }
+  return <span className="badge badge-yellow"><CircleAlert size={13} /> STOPPED BEFORE PRICING</span>;
+}
+
+function QuoteTimeline({ entry }: { entry: ScannerOpportunity }) {
+  const marks = entry.option_quote_timeline ?? [];
+  if (marks.length === 0) return null;
+  const names: Record<string, string> = {
+    entry: "Entry quote", mark_30m: "+30 min", mark_60m: "+60 min", mark_90m: "+90 min",
+  };
+  return <div className="mt-3 rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+    <div className="flex items-start justify-between gap-3">
+      <div><p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>What happened to this exact option?</p><p className="mt-1 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>Entry uses the observed ask. Later results use the price a seller could realistically hit: the bid.</p></div>
+      <span className="badge badge-blue">MEASURED</span>
+    </div>
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      {marks.map((mark) => {
+        const isEntry = mark.observation_kind === "entry";
+        const result = mark.executable_return_pct;
+        const resultColor = result == null ? "var(--ink-muted)" : result >= 0 ? "var(--positive)" : "var(--negative)";
+        return <div key={mark.observation_kind} className="rounded-lg p-2.5" style={{ border: "1px solid var(--border)", background: "var(--surface-raised)" }}>
+          <p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>{names[mark.observation_kind] ?? mark.observation_kind}</p>
+          <p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>{time(mark.observed_at)} ET · {isEntry ? `Ask ${money(mark.ask)}` : `Bid ${money(mark.bid)}`}</p>
+          <p className="mt-1 text-sm font-semibold" style={{ color: resultColor }}>{isEntry ? "Starting price" : result == null ? "Quote unavailable" : `${result >= 0 ? "+" : ""}${result.toFixed(2)}%`}</p>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+function ContractRecipe({ entry }: { entry: ScannerOpportunity }) {
+  const recipe = entry.contract_recipe;
+  const selection = entry.contract_selection;
+  if (!recipe) return null;
+  const fields: Array<[string, string | number | undefined]> = [
+    ["Contract type", recipe.option_type], ["Strike", recipe.strike_rule],
+    ["Expiration", recipe.expiration_rule], ["Premium", recipe.premium_rule],
+    ["Spread", recipe.spread_rule], ["Liquidity", recipe.liquidity_rule],
+    ["Maximum cost", recipe.maximum_cost == null ? undefined : money(recipe.maximum_cost)],
+  ];
+  const selectionDetail = selection?.status === "not_selected"
+    ? (selection.reason === "over_budget" && selection.cheapest_cost != null
+      ? `No contract selected: the least expensive qualifying contract was ${money(selection.cheapest_cost)}${selection.cheapest_symbol ? ` (${selection.cheapest_symbol})` : ""}.`
+      : selection.reason === "illiquid"
+        ? `No contract selected: ${selection.illiquid_symbol || "the affordable contract"} failed ${selection.liquidity_detail || "the liquidity rule"}.`
+        : `No contract selected: ${String(selection.reason || "the contract screen did not produce a qualifying choice").replace(/_/g, " ")}.`)
+    : null;
+  return <div className="mt-3 rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+    <p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>Contract recipe — use this to recreate the screen in E*TRADE</p>
+    {recipe.recipe_source === "default_profile" && <p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>The setup did not reach contract selection, so this shows the bot’s applicable contract rules—not a historical quote or chosen strike.</p>}
+    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">{fields.filter(([, value]) => value != null).map(([name, value]) => <div key={name}><p style={{ color: "var(--ink-muted)" }}>{name}</p><p className="font-medium" style={{ color: "var(--ink)" }}>{value}</p></div>)}</div>
+    {selectionDetail && <p className="mt-3 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>{selectionDetail}</p>}
+  </div>;
+}
+
+function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
+  const isCall = ["bullish", "long", "call"].includes(String(entry.direction ?? "").toLowerCase());
+  const finalContract = entry.trade?.contract_symbol ? {
     symbol: entry.trade.contract_symbol, strike: entry.trade.strike, expiry: entry.trade.expiry,
   } : entry.contract;
-  const hasContract = Boolean(contract?.symbol || contract?.strike || contract?.expiry);
+  const preview = entry.contract_preview;
+  const hasFinalContract = Boolean(finalContract?.symbol || finalContract?.strike || finalContract?.expiry);
+  const hasPreview = Boolean(preview?.symbol || preview?.strike || preview?.expiry);
+  const contract = hasFinalContract ? finalContract : preview;
+  const hasContract = hasFinalContract || hasPreview;
   const hasMeasuredResult = entry.directional_move_pct != null;
-  const chosenQuantity = entry.trade?.contracts ?? entry.planned_quantity;
-  const exitText = entry.trade?.exit_reason || entry.exit_plan?.summary || "The bot did not reach exit planning before this signal stopped.";
+  const chosenQuantity = entry.trade?.contracts ?? entry.planned_quantity ?? preview?.planned_contracts;
+  const plannedEntry = entry.entry_plan?.estimated_entry_price ?? entry.trade?.entry_price ?? (hasFinalContract ? entry.contract?.ask : preview?.planned_entry_price ?? preview?.ask);
+  const estimate = plannedEntry != null && chosenQuantity != null ? plannedEntry * chosenQuantity * 100 : null;
+  const exitText = entry.exit_plan?.summary || entry.trade?.exit_reason || "The bot did not reach exit planning before this signal stopped.";
+  const setupDetails = Object.entries(entry.setup_details ?? {});
+  const checklist = manualChecklist(entry);
   return (
-    <tr>
-      <td colSpan={8} style={{ padding: 0 }}>
-        <div className="px-5 py-4 grid gap-3 md:grid-cols-3" style={{ background: "var(--surface-raised)", borderBottom: "1px solid var(--border)" }}>
-          <section>
-            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--ink-muted)" }}>1. Entry idea</p>
-            <p className="mt-1 text-sm" style={{ color: "var(--ink)" }}>{entry.entry_plan?.trigger || "Scanner setup detected"}</p>
-            <p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>Underlying when checked: {money(entry.entry_plan?.underlying_price ?? entry.underlying_entry_price)}</p>
-          </section>
-          <section>
-            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--ink-muted)" }}>2. Contract & size</p>
-            {hasContract ? <>
-              <p className="mt-1 text-sm font-medium" style={{ color: "var(--ink)" }}>{contract.symbol || `${entry.ticker} ${contract.strike ?? ""}`}</p>
-              <p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>Strike {contract.strike ?? "—"} · Exp. {contract.expiry || "—"} · {chosenQuantity ?? "—"} contract{chosenQuantity === 1 ? "" : "s"}</p>
-              <p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>Estimated entry {money(entry.entry_plan?.estimated_entry_price ?? entry.trade?.entry_price ?? entry.contract?.ask)}</p>
-            </> : <p className="mt-1 text-sm" style={{ color: "var(--ink-muted)" }}>Not priced. A gate stopped this setup before the bot selected a contract.</p>}
-          </section>
-          <section>
-            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--ink-muted)" }}>3. Exit plan & later result</p>
-            <p className="mt-1 text-sm" style={{ color: "var(--ink)" }}>{exitText}</p>
-            {entry.trade?.status ? <p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>Actual trade: {entry.trade.status} · P&L {entry.trade.pnl == null ? "—" : money(entry.trade.pnl)}</p>
-              : hasMeasuredResult ? <p className="mt-1 text-xs" style={{ color: entry.direction_correct ? "var(--positive)" : "var(--negative)" }}>60-minute underlying move: {percent(entry.directional_move_pct)} {entry.direction_correct ? "in the signal direction" : "against the signal direction"}</p>
-              : <p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>Later outcome is still being measured.</p>}
-          </section>
-          {entry.reason_detail && <p className="md:col-span-3 text-xs rounded-lg px-3 py-2" style={{ background: "var(--surface)", color: "var(--ink-muted)" }}><strong style={{ color: "var(--ink)" }}>Why it stopped:</strong> {entry.reason_detail}</p>}
-        </div>
-      </td>
-    </tr>
+    <article className="card overflow-hidden">
+      <header className="px-4 py-3 flex flex-wrap items-center gap-3" style={{ background: "var(--surface-raised)", borderBottom: "1px solid var(--border)" }}>
+        <div><p className="text-lg font-semibold" style={{ color: "var(--ink)" }}>{entry.ticker} <span className="text-sm font-normal" style={{ color: "var(--ink-muted)" }}>{STRATEGY_NAMES[entry.strategy_id] ?? entry.strategy_id}</span></p><p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>Found {time(entry.observed_at)} ET · Trigger bar {time(entry.trigger_bar)}</p></div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2"><PlanBadge entry={entry} /><OutcomeBadge outcome={entry.outcome} /></div>
+      </header>
+      <div className="p-4 grid gap-4 xl:grid-cols-3">
+        <section className="rounded-xl p-4" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>1. Setup to watch</p>
+          <p className="mt-2 text-base font-semibold" style={{ color: isCall ? "var(--positive)" : "var(--negative)" }}>{isCall ? "CALL setup" : "PUT setup"} · {Math.round(entry.confidence * 100)}% confidence</p>
+          <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink)" }}>{entry.entry_plan?.trigger || "Scanner setup detected"}</p>
+          <div className="mt-3 rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            <p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>{checklist.title}</p>
+            <ol className="mt-2 space-y-1.5 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>{checklist.steps.map((step, index) => <li key={step} className="flex gap-2"><strong style={{ color: "var(--accent)" }}>{index + 1}.</strong><span>{step}</span></li>)}</ol>
+          </div>
+          <p className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>Underlying price when checked: <strong style={{ color: "var(--ink)" }}>{money(entry.entry_plan?.underlying_price ?? entry.underlying_entry_price)}</strong></p>
+          {setupDetails.length > 0 && <div className="mt-3 pt-3 grid grid-cols-2 gap-2" style={{ borderTop: "1px solid var(--border)" }}>{setupDetails.map(([key, value]) => <div key={key}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label(key)}</p><p className="text-sm font-medium" style={{ color: "var(--ink)" }}>{detailValue(value, key)}</p></div>)}</div>}
+        </section>
+        <section className="rounded-xl p-4" style={{ background: hasContract ? "color-mix(in srgb, var(--positive) 7%, var(--surface-raised))" : "var(--surface-raised)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: hasContract ? "var(--positive)" : "var(--ink-muted)" }}>2. {hasFinalContract ? "Executable option plan" : "Potential option snapshot"}</p>
+          {hasContract && contract ? <>
+            <p className="mt-2 text-base font-semibold break-all" style={{ color: "var(--ink)" }}>{contract.symbol || `${entry.ticker} ${entry.option_type?.toUpperCase()} ${contract.strike ?? ""}`}</p>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p style={{ color: "var(--ink-muted)" }}>Type / strike</p><strong style={{ color: "var(--ink)" }}>{entry.option_type?.toUpperCase() || "OPTION"} {contract.strike ?? "—"}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>Expiration</p><strong style={{ color: "var(--ink)" }}>{contract.expiry || "—"}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>Bid / ask</p><strong style={{ color: "var(--ink)" }}>{money(contract.bid)} / {money(contract.ask)}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>Contracts</p><strong style={{ color: "var(--ink)" }}>{chosenQuantity ?? "—"}</strong></div></div>
+            <div className="mt-3 pt-3 grid grid-cols-2 gap-3 text-sm" style={{ borderTop: "1px solid var(--border)" }}><div><p style={{ color: "var(--ink-muted)" }}>Planned entry</p><strong style={{ color: "var(--ink)" }}>{money(plannedEntry)}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>Estimated position cost</p><strong style={{ color: "var(--ink)" }}>{money(estimate ?? preview?.estimated_position_cost)}</strong></div></div>
+            {!hasFinalContract && <p className="mt-3 rounded-lg px-3 py-2 text-xs leading-5" style={{ background: "var(--surface)", color: "var(--ink-muted)" }}>Snapshot at {time(preview?.observed_at)} ET: this is the contract the bot screened when the setup appeared. A later gate stopped the setup, so it is <strong style={{ color: "var(--ink)" }}>not</strong> a fill or open order.</p>}
+            <QuoteTimeline entry={entry} />
+          </> : <><p className="mt-2 text-sm font-medium" style={{ color: "var(--ink)" }}>No live option quote was available for this record.</p><p className="mt-2 text-sm leading-6" style={{ color: "var(--ink-muted)" }}>This was recorded before the newer contract-preview feature, or the market data was unavailable. The recipe below shows the contract rules, not an invented strike or price.</p></>}
+          <ContractRecipe entry={entry} />
+        </section>
+        <section className="rounded-xl p-4" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>3. Exit & decision</p>
+          <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink)" }}>{exitText}</p>
+          {(entry.trade?.stop_price != null || entry.trade?.target_price != null) && <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p style={{ color: "var(--ink-muted)" }}>Premium stop</p><strong style={{ color: "var(--negative)" }}>{money(entry.trade?.stop_price)}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>First target</p><strong style={{ color: "var(--positive)" }}>{money(entry.trade?.target_price)}</strong></div></div>}
+          {entry.reason_detail && <p className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ background: "var(--surface)", color: "var(--ink-muted)" }}><strong style={{ color: "var(--ink)" }}>Bot decision:</strong> {entry.reason_detail}</p>}
+          {entry.trade?.status ? <p className="mt-3 text-sm" style={{ color: "var(--ink-muted)" }}>Actual trade: <strong style={{ color: "var(--ink)" }}>{entry.trade.status}</strong> · Exit {money(entry.trade.exit_price)} · P&L {entry.trade.pnl == null ? "—" : money(entry.trade.pnl)}</p>
+            : hasMeasuredResult ? <p className="mt-3 text-sm" style={{ color: entry.direction_correct ? "var(--positive)" : "var(--negative)" }}>60-minute underlying move: {percent(entry.directional_move_pct)} {entry.direction_correct ? "with" : "against"} the setup</p>
+            : <p className="mt-3 text-sm" style={{ color: "var(--ink-muted)" }}>Later underlying result is still being measured.</p>}
+        </section>
+      </div>
+      <footer className="px-4 py-3 text-xs flex gap-2 items-start" style={{ borderTop: "1px solid var(--border)", color: "var(--ink-muted)" }}><CircleDollarSign size={15} className="shrink-0" />This is the bot's recorded plan at that moment—not a new order or a recommendation. Copy only a <strong style={{ color: "var(--ink)" }}>Contract selected</strong> plan if you are reviewing it manually.</footer>
+    </article>
   );
 }
 
@@ -81,11 +231,13 @@ export function ScannerOpportunities() {
   const [outcome, setOutcome] = useState("all");
   const [ticker, setTicker] = useState("all");
   const [strategy, setStrategy] = useState("all");
-  const [expanded, setExpanded] = useState<string | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ["scanner-opportunities", date, outcome, ticker, strategy],
     queryFn: () => api.signals.opportunities({ date, outcome: outcome === "all" ? undefined : outcome, ticker: ticker === "all" ? undefined : ticker, strategy: strategy === "all" ? undefined : strategy }),
     refetchInterval: 15_000,
+  });
+  const { data: gateScorecard } = useQuery({
+    queryKey: ["gate-calibration", 30], queryFn: () => api.signals.gateScorecard(30), staleTime: 60_000,
   });
   const entries = data?.entries ?? [];
   const tickers = useMemo(() => Array.from(new Set(entries.map((entry) => entry.ticker))).sort(), [entries]);
@@ -95,19 +247,40 @@ export function ScannerOpportunities() {
     <header>
       <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>Scanner audit trail</p>
       <h1 className="text-xl font-semibold mt-1" style={{ color: "var(--ink)" }}>Scanner Opportunities</h1>
-      <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Every real setup the scanner found—whether the bot entered it, stopped it, or observed it for research.</p>
+      <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Every strategy detection, separated into research observations and decisions that actually reached the trade router.</p>
     </header>
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {[["SETUPS", data?.summary.total ?? 0, "var(--ink)"], ["ENTERED", data?.summary.entered ?? 0, "var(--positive)"], ["BLOCKED", data?.summary.blocked ?? 0, "var(--negative)"], ["OBSERVED", data?.summary.observed_only ?? 0, "var(--accent)"]].map(([label, value, color]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold mt-1" style={{ color: String(color) }}>{String(value)}</p></div>)}
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      {[["DETECTIONS", data?.summary.total ?? 0, "var(--ink)"], ["ROUTED", data?.summary.routed ?? 0, "var(--ink)"], ["ENTERED", data?.summary.entered ?? 0, "var(--positive)"], ["BLOCKED", data?.summary.blocked ?? 0, "var(--negative)"], ["RESEARCH ONLY", data?.summary.research_only ?? data?.summary.observed_only ?? 0, "var(--accent)"], ["UNRESOLVED", data?.summary.unresolved ?? data?.summary.pending ?? 0, "var(--warning)"]].map(([label, value, color]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold mt-1" style={{ color: String(color) }}>{String(value)}</p></div>)}
     </div>
     <div className="card p-3 flex flex-wrap items-end gap-3">
-      <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Trading day<input type="date" value={date} onChange={(event) => { setDate(event.target.value); setExpanded(null); }} className="input mt-1 block" /></label>
-      <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Outcome<select value={outcome} onChange={(event) => setOutcome(event.target.value)} className="input mt-1 block"><option value="all">All outcomes</option><option value="entered">Entered</option><option value="blocked">Blocked</option><option value="observed_only">Observed only</option><option value="pending">Waiting for result</option></select></label>
+      <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Trading day<input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="input mt-1 block" /></label>
+      <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Outcome<select value={outcome} onChange={(event) => setOutcome(event.target.value)} className="input mt-1 block"><option value="all">All outcomes</option><option value="entered">Entered</option><option value="blocked">Blocked</option><option value="observed_only">Research only</option><option value="pending">Unresolved</option></select></label>
       <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Ticker<select value={ticker} onChange={(event) => setTicker(event.target.value)} className="input mt-1 block"><option value="all">All tickers</option>{tickers.map((value) => <option key={value}>{value}</option>)}</select></label>
       <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Strategy<select value={strategy} onChange={(event) => setStrategy(event.target.value)} className="input mt-1 block"><option value="all">All strategies</option>{strategies.map((value) => <option key={value}>{STRATEGY_NAMES[value] ?? value}</option>)}</select></label>
       <div className="ml-auto text-xs flex items-center gap-1" style={{ color: "var(--ink-muted)" }}><Eye size={14} /> {data?.account_scoped ? "This broker account" : "Legacy records only"}</div>
     </div>
     <p className="text-xs" style={{ color: "var(--ink-muted)" }}><ShieldCheck size={13} style={{ display: "inline", marginRight: 5 }} />{data?.note}</p>
-    {error ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load scanner opportunities: {(error as Error).message}</div> : entries.length === 0 ? <div className="card p-8 text-center"><Filter size={24} style={{ margin: "0 auto", color: "var(--ink-faint)" }} /><p className="mt-2 font-medium" style={{ color: "var(--ink)" }}>No recorded setups for this day</p><p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Choose another trading day, or let the scanner run to begin building its audit trail.</p></div> : <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr style={{ background: "var(--surface-raised)", color: "var(--ink-muted)" }}><th className="p-3 text-left">Time</th><th className="p-3 text-left">Setup</th><th className="p-3 text-left">Direction</th><th className="p-3 text-left">Decision</th><th className="p-3 text-left">Why</th><th className="p-3 text-right">Later move</th><th className="p-3 text-right">Plan</th><th className="p-3" /></tr></thead><tbody>{entries.map((entry) => <Fragment key={entry.id}><tr className="border-t" style={{ borderColor: "var(--border)" }}><td className="p-3 whitespace-nowrap">{time(entry.observed_at)}</td><td className="p-3"><strong>{entry.ticker}</strong><span className="block text-xs" style={{ color: "var(--ink-muted)" }}>{STRATEGY_NAMES[entry.strategy_id] ?? entry.strategy_id}</span></td><td className="p-3"><span style={{ color: entry.direction === "bullish" ? "var(--positive)" : "var(--negative)" }}>{entry.direction === "bullish" ? "CALL idea" : "PUT idea"}</span><span className="block text-xs" style={{ color: "var(--ink-muted)" }}>{Math.round(entry.confidence * 100)}% confidence</span></td><td className="p-3"><OutcomeBadge outcome={entry.outcome} /></td><td className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>{entry.reason_detail || (entry.outcome === "entered" ? "All gates cleared" : entry.outcome === "observed_only" ? "Paper observation only" : "Still evaluating")}</td><td className="p-3 text-right" style={{ color: entry.directional_move_pct == null ? "var(--ink-muted)" : entry.direction_correct ? "var(--positive)" : "var(--negative)" }}>{percent(entry.directional_move_pct)}</td><td className="p-3 text-right text-xs" style={{ color: "var(--ink-muted)" }}>{entry.planned_quantity ? `${entry.planned_quantity} contract${entry.planned_quantity === 1 ? "" : "s"}` : "Details"}</td><td className="p-3 text-right"><button className="btn btn-ghost btn-sm" onClick={() => setExpanded(expanded === entry.id ? null : entry.id)} aria-expanded={expanded === entry.id}>{expanded === entry.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="sr-only">{expanded === entry.id ? "Hide" : "Show"} details</span></button></td></tr>{expanded === entry.id && <OpportunityDetail entry={entry} />}</Fragment>)}</tbody></table></div>}
+    {(gateScorecard?.rows.length ?? 0) > 0 && <section className="card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Are the decision gates helping?</h2><p className="mt-1 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>A saved loser helps. A rejected winner hurts. Results are kept separate for every strategy because a gate can help one setup and damage another.</p></div>
+        <span className="badge badge-yellow">30-DAY CALIBRATION</span>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {gateScorecard!.rows.map((row) => <div key={`${row.strategy_id}-${row.gate}`} className="rounded-xl p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{STRATEGY_NAMES[row.strategy_id] ?? row.strategy_id}</p><div className="flex gap-1"><span className={`badge ${row.enforced ? "badge-green" : "badge-blue"}`}>{row.enforced ? "ACTIVE GATE" : "OBSERVATION ONLY"}</span><span className={`badge ${row.validation?.recommended_for_enforcement ? "badge-green" : row.status === "failed_chronological_validation" ? "badge-red" : "badge-yellow"}`}>{row.validation?.recommended_for_enforcement ? "PASSED LATER DATA" : row.status === "failed_chronological_validation" ? "DID NOT IMPROVE" : "LEARNING"}</span></div></div>
+          <p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>{row.gate === "ai_decision_veto" ? "AI decision review" : "Market/VWAP alignment"} · {row.independent_episodes} distinct setup episode{row.independent_episodes === 1 ? "" : "s"} across {row.trading_days} day{row.trading_days === 1 ? "" : "s"}</p>
+          <div className="mt-3 grid grid-cols-3 gap-2"><div className="rounded-lg p-2" style={{ background: "var(--positive-bg)" }}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Losers avoided</p><p className="text-lg font-semibold" style={{ color: "var(--positive)" }}>{row.avoided_losers}</p></div><div className="rounded-lg p-2" style={{ background: "var(--negative-bg)" }}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Winners rejected</p><p className="text-lg font-semibold" style={{ color: "var(--negative)" }}>{row.rejected_winners}</p></div><div className="rounded-lg p-2" style={{ background: "var(--surface)" }}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>AI-approved win rate</p><p className="text-lg font-semibold" style={{ color: "var(--ink)" }}>{row.allowed.win_rate_pct == null ? "—" : `${row.allowed.win_rate_pct}%`}</p></div></div>
+          {row.validation?.training && row.validation?.holdout && <div className="mt-3 grid grid-cols-2 gap-2">
+            {[['Earlier data', row.validation.training], ['Later unseen data', row.validation.holdout]].map(([label, period]) => {
+              const metrics = period as NonNullable<typeof row.validation>['training'];
+              return <div key={String(label)} className="rounded-lg p-2" style={{ background: "var(--surface)" }}><p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>{String(label)}</p><p className="mt-1 text-xs" style={{ color: "var(--ink-muted)" }}>Strategy alone: {metrics?.baseline_avg_return_pct?.toFixed(2) ?? '—'}% avg</p><p className="text-xs" style={{ color: (metrics?.incremental_avg_return_pct ?? 0) > 0 ? "var(--positive)" : "var(--negative)" }}>With AI: {metrics?.ai_policy_avg_return_pct?.toFixed(2) ?? '—'}% avg · change {metrics?.incremental_avg_return_pct == null ? '—' : `${metrics.incremental_avg_return_pct > 0 ? '+' : ''}${metrics.incremental_avg_return_pct.toFixed(2)}%`}</p></div>;
+            })}
+          </div>}
+          <p className="mt-2 text-xs" style={{ color: "var(--ink-muted)" }}>Independent option outcomes: {row.validation?.option_episodes ?? 0}/{row.validation?.minimum_evidence.option_episodes ?? 60} · AI vetoes: {row.validation?.veto_episodes ?? row.measured}/{row.validation?.minimum_evidence.veto_episodes ?? 12} · AI approvals: {row.validation?.approval_episodes ?? row.allowed.measured}/{row.validation?.minimum_evidence.approval_episodes ?? 12} · Trading days: {row.validation?.trading_days ?? row.trading_days}/{row.validation?.minimum_evidence.trading_days ?? 20} · Raw one-minute reviews: {row.raw_decisions} · Delayed inside the same setup: {row.delayed_then_allowed}</p>
+        </div>)}
+      </div>
+      <p className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>{gateScorecard?.policy}</p>
+    </section>}
+    {error ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load scanner opportunities: {(error as Error).message}</div> : entries.length === 0 ? <div className="card p-8 text-center"><Filter size={24} style={{ margin: "0 auto", color: "var(--ink-faint)" }} /><p className="mt-2 font-medium" style={{ color: "var(--ink)" }}>No recorded setups for this day</p><p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Choose another trading day, or let the scanner run to begin building its audit trail.</p></div> : <div className="space-y-4">{entries.map((entry) => <ManualPlanCard key={entry.id} entry={entry} />)}</div>}
   </div>;
 }

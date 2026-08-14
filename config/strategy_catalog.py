@@ -48,6 +48,13 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         exit_minutes=None,
         evidence="TSLA paid-quote 14-prior-session adaptive noise-boundary momentum study; next-minute entry and 15:59 ET same-contract exit",
     ),
+    "V2_TSLA_TWO_LEG_TREND_PULLBACK": ReviewedStrategy(
+        strategy_id="V2_TSLA_TWO_LEG_TREND_PULLBACK",
+        tickers=frozenset({"TSLA"}),
+        setting_key="strategy_tsla_two_leg_trend_pullback_v2_enabled",
+        exit_minutes=90,
+        evidence="TSLA paid-quote one-minute VWAP/EMA two-leg pullback study; next-minute option ask and same-contract 90-minute bid",
+    ),
 }
 
 

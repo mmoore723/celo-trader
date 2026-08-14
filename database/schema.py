@@ -175,6 +175,31 @@ _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX = [
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_option_quote_unique_minute ON option_quote_observations(trade_id, observation_kind, observed_minute);",
 ]
 
+# candidate_option_quote_observations — executable option-price evidence for
+# scanner opportunities, including candidates later blocked by an entry gate.
+# These rows are observations only: unlike ``option_quote_observations`` they
+# are linked to a shadow candidate, never to an order or position.
+_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS candidate_option_quote_observations (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id     TEXT    NOT NULL,
+    observed_at      TEXT    NOT NULL,
+    observation_kind TEXT    NOT NULL, -- entry | mark_30m | mark_60m | mark_90m
+    contract_symbol  TEXT    NOT NULL,
+    bid              REAL,
+    ask              REAL,
+    mid              REAL,
+    last             REAL,
+    source           TEXT    NOT NULL,
+    FOREIGN KEY(candidate_id) REFERENCES shadow_candidates(candidate_id),
+    UNIQUE(candidate_id, observation_kind)
+);
+"""
+_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_candidate_option_quote_due ON candidate_option_quote_observations(candidate_id, observation_kind);",
+    "CREATE INDEX IF NOT EXISTS idx_candidate_option_quote_time ON candidate_option_quote_observations(observed_at);",
+]
+
 # shadow_candidates — paper-only evidence for every strategy signal that the
 # live router actually evaluated, including those later rejected by a gate.
 # This is an audit ledger, never an order queue: no execution code may read it
@@ -272,12 +297,13 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_SIGNAL_JOURNAL)
         conn.execute(_CREATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_SHADOW_CANDIDATES)
+        conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
-        for _idx_sql in _CREATE_SIGNAL_JOURNAL_IDX:
-            conn.execute(_idx_sql)
         for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_SHADOW_CANDIDATES_IDX:
+            conn.execute(_idx_sql)
+        for _idx_sql in _CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
@@ -366,6 +392,11 @@ def _init_db_at(db_path: Path) -> None:
         if "broker_account_id" not in _journal_cols:
             conn.execute("ALTER TABLE signal_journal ADD COLUMN broker_account_id TEXT")
             logger.info("Migration: added broker_account_id to signal_journal in %s", db_path.name)
+        # An existing journal can predate ``trade_id``.  Create its indexes
+        # only after the column migrations above; otherwise SQLite rejects the
+        # startup migration before it has a chance to add the missing column.
+        for _idx_sql in _CREATE_SIGNAL_JOURNAL_IDX:
+            conn.execute(_idx_sql)
         conn.execute(_CREATE_SIGNAL_JOURNAL_ACCOUNT_IDX)
         conn.commit()
     except Exception:
