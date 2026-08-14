@@ -993,6 +993,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 "bid": _preview_contract.get("bid"),
                 "ask": _preview_contract.get("ask"),
                 "spread": _preview_contract.get("spread"),
+                "volume": _preview_contract.get("volume"),
+                "open_interest": _preview_contract.get("open_interest"),
                 "selection_model": _preview_contract.get("selection_model"),
                 "planned_entry_price": round(_preview_eff_entry, 4),
                 "planned_contracts": int(_preview_contracts),
@@ -1281,6 +1283,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "symbol": contract.get("symbol"), "strike": contract.get("strike"),
             "expiry": contract.get("expiry"), "bid": contract.get("bid"),
             "ask": contract.get("ask"), "spread": contract.get("spread"),
+            "volume": contract.get("volume"),
+            "open_interest": contract.get("open_interest"),
             "selection_model": contract.get("selection_model"),
         }
         _entry_plan = _opportunity_context.setdefault("entry_plan", {})

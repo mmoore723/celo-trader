@@ -85,6 +85,8 @@ def observe_candidate_contract(
             "symbol": contract.get("symbol"), "strike": contract.get("strike"),
             "expiry": contract.get("expiry"), "bid": contract.get("bid"),
             "ask": contract.get("ask"), "spread": contract.get("spread"),
+            "volume": contract.get("volume"),
+            "open_interest": contract.get("open_interest"),
             "selection_model": contract.get("selection_model"),
             "planned_entry_price": round(effective_entry, 4),
             "planned_contracts": int(quantity),

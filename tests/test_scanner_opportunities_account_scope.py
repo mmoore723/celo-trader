@@ -230,6 +230,7 @@ class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
                     "status": "selected", "observed_at": "2026-08-13T10:05:01-04:00",
                     "underlying_price": 333.12, "symbol": "TSLA260821C00335000",
                     "strike": 335.0, "expiry": "2026-08-21", "bid": 2.10, "ask": 2.20,
+                    "volume": 1136, "open_interest": 1633,
                     "planned_entry_price": 2.31, "planned_contracts": 1,
                     "estimated_position_cost": 231.0,
                 },
@@ -279,6 +280,8 @@ class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
         self.assertEqual(335.0, preview["strike"])
         self.assertEqual(2.31, preview["planned_entry_price"])
         self.assertEqual(1, preview["planned_contracts"])
+        self.assertEqual(1136, preview["volume"])
+        self.assertEqual(1633, preview["open_interest"])
         self.assertEqual("contract_preview", response["entries"][0]["plan_status"])
         timeline = response["entries"][0]["option_quote_timeline"]
         self.assertEqual(["entry", "mark_30m"], [mark["observation_kind"] for mark in timeline])

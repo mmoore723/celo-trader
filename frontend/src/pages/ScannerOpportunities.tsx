@@ -28,6 +28,7 @@ function time(iso?: string | null): string {
 }
 function money(value?: number | null): string { return value == null ? "—" : `$${Number(value).toFixed(2)}`; }
 function percent(value?: number | null): string { return value == null ? "Waiting" : `${value >= 0 ? "+" : ""}${Number(value).toFixed(2)}%`; }
+function integer(value?: number | null): string { return value == null ? "Not recorded" : Number(value).toLocaleString("en-US"); }
 
 function OutcomeBadge({ outcome }: { outcome: string }) {
   const tone = outcome === "entered" ? "badge-green" : outcome === "observed_only" ? "badge-blue" : outcome === "pending" ? "badge-yellow" : "badge-red";
@@ -179,44 +180,94 @@ function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
   const exitText = entry.exit_plan?.summary || entry.trade?.exit_reason || "The bot did not reach exit planning before this signal stopped.";
   const setupDetails = Object.entries(entry.setup_details ?? {});
   const checklist = manualChecklist(entry);
+  const underlyingEntry = entry.entry_plan?.underlying_price ?? entry.underlying_entry_price;
+  const underlyingStop = entry.setup_details?.v2_stop ?? entry.setup_details?.setup_invalidation ?? entry.setup_details?.or_low;
+  const underlyingTarget = entry.setup_details?.v2_target ?? entry.setup_details?.underlying_objective;
+  const potentialMove = typeof underlyingEntry === "number" && typeof underlyingTarget === "number"
+    ? Math.abs(underlyingTarget - underlyingEntry) : null;
+  const stopExplanation = underlyingStop == null
+    ? "No fixed underlying stop was recorded; follow the exit rule below."
+    : money(Number(underlyingStop));
+  const targetExplanation = underlyingTarget == null
+    ? "Time/structure exit"
+    : money(Number(underlyingTarget));
+  const decisionTitle = entry.outcome === "entered" ? "ENTERED"
+    : entry.outcome === "blocked" ? "STOPPED"
+      : entry.outcome === "observed_only" ? "RESEARCH ONLY" : "WAITING";
+  const decisionExplanation = entry.reason_detail
+    || (entry.outcome === "entered" ? "The bot completed the setup, contract, sizing, and entry checks."
+      : entry.outcome === "observed_only" ? "This setup was recorded for research and was not authorized to place an order."
+        : "The setup has not produced a final routing decision yet.");
   return (
-    <article className="card overflow-hidden">
-      <header className="px-4 py-3 flex flex-wrap items-center gap-3" style={{ background: "var(--surface-raised)", borderBottom: "1px solid var(--border)" }}>
-        <div><p className="text-lg font-semibold" style={{ color: "var(--ink)" }}>{entry.ticker} <span className="text-sm font-normal" style={{ color: "var(--ink-muted)" }}>{STRATEGY_NAMES[entry.strategy_id] ?? entry.strategy_id}</span></p><p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>Found {time(entry.observed_at)} ET · Trigger bar {time(entry.trigger_bar)}</p></div>
+    <article className="card overflow-hidden" style={{ borderLeft: "6px solid var(--accent)" }}>
+      <header className="px-5 py-4 flex flex-wrap items-start gap-3" style={{ background: "linear-gradient(135deg, #172033 0%, #242d42 100%)", borderBottom: "1px solid var(--border)" }}>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#70d1c7" }}>Celo trade play sheet</p>
+          <p className="mt-1 text-xl font-semibold text-white">{entry.ticker} {isCall ? "Bullish" : "Bearish"} {STRATEGY_NAMES[entry.strategy_id] ?? entry.strategy_id}</p>
+          <p className="text-xs mt-1" style={{ color: "#cbd5e1" }}>Detected {time(entry.observed_at)} ET · Trigger bar {time(entry.trigger_bar)} · {Math.round(entry.confidence * 100)}% setup confidence</p>
+        </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2"><PlanBadge entry={entry} /><OutcomeBadge outcome={entry.outcome} /></div>
       </header>
-      <div className="p-4 grid gap-4 xl:grid-cols-3">
-        <section className="rounded-xl p-4" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>1. Setup to watch</p>
-          <p className="mt-2 text-base font-semibold" style={{ color: isCall ? "var(--positive)" : "var(--negative)" }}>{isCall ? "CALL setup" : "PUT setup"} · {Math.round(entry.confidence * 100)}% confidence</p>
-          <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink)" }}>{entry.entry_plan?.trigger || "Scanner setup detected"}</p>
-          <div className="mt-3 rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-            <p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>{checklist.title}</p>
-            <ol className="mt-2 space-y-1.5 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>{checklist.steps.map((step, index) => <li key={step} className="flex gap-2"><strong style={{ color: "var(--accent)" }}>{index + 1}.</strong><span>{step}</span></li>)}</ol>
-          </div>
-          <p className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>Underlying price when checked: <strong style={{ color: "var(--ink)" }}>{money(entry.entry_plan?.underlying_price ?? entry.underlying_entry_price)}</strong></p>
-          {setupDetails.length > 0 && <div className="mt-3 pt-3 grid grid-cols-2 gap-2" style={{ borderTop: "1px solid var(--border)" }}>{setupDetails.map(([key, value]) => <div key={key}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label(key)}</p><p className="text-sm font-medium" style={{ color: "var(--ink)" }}>{detailValue(value, key)}</p></div>)}</div>}
+      <div className="px-5 py-5" style={{ background: "var(--surface-raised)", borderBottom: "1px solid var(--border)" }}>
+        <div className="grid gap-5 lg:grid-cols-[1fr_1.15fr]">
+          <section>
+            <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Underlying trade idea</p>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-5 gap-y-4">
+              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Symbol</p><p className="text-lg font-semibold" style={{ color: "var(--ink)" }}>{entry.ticker}</p></div>
+              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Entry trigger</p><p className="text-lg font-semibold" style={{ color: "var(--ink)" }}>{money(underlyingEntry)}</p></div>
+              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Position</p><p className="text-lg font-semibold" style={{ color: isCall ? "var(--positive)" : "var(--negative)" }}>{isCall ? "CALL / Long" : "PUT / Short"}</p></div>
+              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Target</p><p className="font-semibold" style={{ color: "var(--positive)" }}>{targetExplanation}</p></div>
+              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Stop / invalidation</p><p className="font-semibold" style={{ color: underlyingStop == null ? "var(--ink)" : "var(--negative)" }}>{stopExplanation}</p></div>
+              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Potential underlying move</p><p className="font-semibold" style={{ color: "var(--ink)" }}>{potentialMove == null ? "Rule-based exit" : money(potentialMove)}</p></div>
+            </div>
+            <div className="mt-4 rounded-lg px-3 py-3" style={{ background: entry.outcome === "blocked" ? "var(--negative-bg)" : "var(--surface)", border: "1px solid var(--border)" }}>
+              <p className="text-xs font-semibold" style={{ color: entry.outcome === "blocked" ? "var(--negative)" : "var(--ink)" }}>{decisionTitle}: why the bot did or did not enter</p>
+              <p className="mt-1 text-sm leading-5" style={{ color: "var(--ink)" }}>{decisionExplanation}</p>
+            </div>
+          </section>
+          <section className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Suggested option contract</p><span className="text-xs" style={{ color: "var(--ink-muted)" }}>{hasContract ? "Recorded at signal time" : "Not selected"}</span></div>
+            {hasContract && contract ? <>
+              <p className="mt-2 text-base font-semibold break-all" style={{ color: "var(--accent)" }}>{contract.symbol || `${entry.ticker} ${entry.option_type?.toUpperCase()} ${contract.strike ?? ""}`}</p>
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 text-sm">
+                <div><p style={{ color: "var(--ink-muted)" }}>Type</p><strong>{entry.option_type?.toUpperCase() || "OPTION"}</strong></div>
+                <div><p style={{ color: "var(--ink-muted)" }}>Expiration</p><strong>{contract.expiry || "Not recorded"}</strong></div>
+                <div><p style={{ color: "var(--ink-muted)" }}>Strike</p><strong>{contract.strike == null ? "Not recorded" : money(contract.strike)}</strong></div>
+                <div><p style={{ color: "var(--ink-muted)" }}>Quantity</p><strong>{chosenQuantity ?? "Not sized"}</strong></div>
+                <div><p style={{ color: "var(--ink-muted)" }}>Bid</p><strong>{money(contract.bid)}</strong></div>
+                <div><p style={{ color: "var(--ink-muted)" }}>Ask</p><strong>{money(contract.ask)}</strong></div>
+                <div><p style={{ color: "var(--ink-muted)" }}>Volume</p><strong>{integer(contract.volume)}</strong></div>
+                <div><p style={{ color: "var(--ink-muted)" }}>Open interest</p><strong>{integer(contract.open_interest)}</strong></div>
+              </div>
+              <div className="mt-4 pt-3 grid grid-cols-2 gap-4" style={{ borderTop: "1px solid var(--border)" }}><div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Planned option entry</p><p className="text-lg font-semibold">{money(plannedEntry)}</p></div><div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Estimated total cost</p><p className="text-lg font-semibold">{money(estimate ?? preview?.estimated_position_cost)}</p></div></div>
+            </> : <div className="mt-3 rounded-lg p-3" style={{ background: "var(--warning-bg)" }}><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>No contract was selected.</p><p className="mt-1 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>{entry.contract_selection?.reason ? `Contract screen stopped at: ${entry.contract_selection.reason.replace(/_/g, " ")}.` : "The setup stopped before a real strike and quote were recorded. The bot will never fabricate these fields."}</p></div>}
+          </section>
+        </div>
+        <div className="mt-4 rounded-lg px-4 py-3" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface))", border: "1px solid var(--border)" }}><p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>Exit plan</p><p className="mt-1 text-sm" style={{ color: "var(--ink)" }}>{exitText}</p></div>
+      </div>
+      <details className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
+        <summary className="cursor-pointer text-sm font-semibold" style={{ color: "var(--accent)" }}>How to recognize and repeat this setup</summary>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <section className="rounded-xl p-4" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+            <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{checklist.title}</p>
+            <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink)" }}>{entry.entry_plan?.trigger || "Scanner setup detected"}</p>
+            <ol className="mt-3 space-y-2 text-sm leading-5" style={{ color: "var(--ink-muted)" }}>{checklist.steps.map((step, index) => <li key={step} className="flex gap-2"><strong style={{ color: "var(--accent)" }}>{index + 1}.</strong><span>{step}</span></li>)}</ol>
+          </section>
+          <section className="rounded-xl p-4" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+            <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Recorded chart levels</p>
+            {setupDetails.length > 0 ? <div className="mt-3 grid grid-cols-2 gap-3">{setupDetails.map(([key, value]) => <div key={key}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label(key)}</p><p className="text-sm font-medium" style={{ color: "var(--ink)" }}>{detailValue(value, key)}</p></div>)}</div> : <p className="mt-2 text-sm" style={{ color: "var(--ink-muted)" }}>No additional chart levels were recorded for this historical detection.</p>}
+            <ContractRecipe entry={entry} />
+          </section>
+        </div>
+      </details>
+      <div className="px-5 py-4 grid gap-4 md:grid-cols-2">
+        <section>
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>What happened afterward</p>
+          {entry.trade?.status ? <p className="mt-2 text-sm" style={{ color: "var(--ink-muted)" }}>Actual trade: <strong style={{ color: "var(--ink)" }}>{entry.trade.status}</strong> · Exit {money(entry.trade.exit_price)} · P&amp;L {entry.trade.pnl == null ? "—" : money(entry.trade.pnl)}</p>
+            : hasMeasuredResult ? <p className="mt-2 text-sm" style={{ color: entry.direction_correct ? "var(--positive)" : "var(--negative)" }}>60-minute underlying move: {percent(entry.directional_move_pct)} {entry.direction_correct ? "with" : "against"} the setup</p>
+            : <p className="mt-2 text-sm" style={{ color: "var(--ink-muted)" }}>The later result is still being measured.</p>}
         </section>
-        <section className="rounded-xl p-4" style={{ background: hasContract ? "color-mix(in srgb, var(--positive) 7%, var(--surface-raised))" : "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: hasContract ? "var(--positive)" : "var(--ink-muted)" }}>2. {hasFinalContract ? "Executable option plan" : "Potential option snapshot"}</p>
-          {hasContract && contract ? <>
-            <p className="mt-2 text-base font-semibold break-all" style={{ color: "var(--ink)" }}>{contract.symbol || `${entry.ticker} ${entry.option_type?.toUpperCase()} ${contract.strike ?? ""}`}</p>
-            <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p style={{ color: "var(--ink-muted)" }}>Type / strike</p><strong style={{ color: "var(--ink)" }}>{entry.option_type?.toUpperCase() || "OPTION"} {contract.strike ?? "—"}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>Expiration</p><strong style={{ color: "var(--ink)" }}>{contract.expiry || "—"}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>Bid / ask</p><strong style={{ color: "var(--ink)" }}>{money(contract.bid)} / {money(contract.ask)}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>Contracts</p><strong style={{ color: "var(--ink)" }}>{chosenQuantity ?? "—"}</strong></div></div>
-            <div className="mt-3 pt-3 grid grid-cols-2 gap-3 text-sm" style={{ borderTop: "1px solid var(--border)" }}><div><p style={{ color: "var(--ink-muted)" }}>Planned entry</p><strong style={{ color: "var(--ink)" }}>{money(plannedEntry)}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>Estimated position cost</p><strong style={{ color: "var(--ink)" }}>{money(estimate ?? preview?.estimated_position_cost)}</strong></div></div>
-            {!hasFinalContract && <p className="mt-3 rounded-lg px-3 py-2 text-xs leading-5" style={{ background: "var(--surface)", color: "var(--ink-muted)" }}>Snapshot at {time(preview?.observed_at)} ET: this is the contract the bot screened when the setup appeared. A later gate stopped the setup, so it is <strong style={{ color: "var(--ink)" }}>not</strong> a fill or open order.</p>}
-            <QuoteTimeline entry={entry} />
-          </> : <><p className="mt-2 text-sm font-medium" style={{ color: "var(--ink)" }}>No live option quote was available for this record.</p><p className="mt-2 text-sm leading-6" style={{ color: "var(--ink-muted)" }}>This was recorded before the newer contract-preview feature, or the market data was unavailable. The recipe below shows the contract rules, not an invented strike or price.</p></>}
-          <ContractRecipe entry={entry} />
-        </section>
-        <section className="rounded-xl p-4" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>3. Exit & decision</p>
-          <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink)" }}>{exitText}</p>
-          {(entry.trade?.stop_price != null || entry.trade?.target_price != null) && <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p style={{ color: "var(--ink-muted)" }}>Premium stop</p><strong style={{ color: "var(--negative)" }}>{money(entry.trade?.stop_price)}</strong></div><div><p style={{ color: "var(--ink-muted)" }}>First target</p><strong style={{ color: "var(--positive)" }}>{money(entry.trade?.target_price)}</strong></div></div>}
-          {entry.reason_detail && <p className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ background: "var(--surface)", color: "var(--ink-muted)" }}><strong style={{ color: "var(--ink)" }}>Bot decision:</strong> {entry.reason_detail}</p>}
-          {entry.trade?.status ? <p className="mt-3 text-sm" style={{ color: "var(--ink-muted)" }}>Actual trade: <strong style={{ color: "var(--ink)" }}>{entry.trade.status}</strong> · Exit {money(entry.trade.exit_price)} · P&L {entry.trade.pnl == null ? "—" : money(entry.trade.pnl)}</p>
-            : hasMeasuredResult ? <p className="mt-3 text-sm" style={{ color: entry.direction_correct ? "var(--positive)" : "var(--negative)" }}>60-minute underlying move: {percent(entry.directional_move_pct)} {entry.direction_correct ? "with" : "against"} the setup</p>
-            : <p className="mt-3 text-sm" style={{ color: "var(--ink-muted)" }}>Later underlying result is still being measured.</p>}
-        </section>
+        <QuoteTimeline entry={entry} />
       </div>
       <footer className="px-4 py-3 text-xs flex gap-2 items-start" style={{ borderTop: "1px solid var(--border)", color: "var(--ink-muted)" }}><CircleDollarSign size={15} className="shrink-0" />This is the bot's recorded plan at that moment—not a new order or a recommendation. Copy only a <strong style={{ color: "var(--ink)" }}>Contract selected</strong> plan if you are reviewing it manually.</footer>
     </article>

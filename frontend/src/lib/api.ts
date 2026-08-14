@@ -290,6 +290,7 @@ export interface SignalJournalTrendPoint { date: string; count: number }
 export interface ScannerOpportunityContract {
   symbol?: string | null; strike?: number | null; expiry?: string | null;
   bid?: number | null; ask?: number | null; spread?: number | null;
+  volume?: number | null; open_interest?: number | null;
   selection_model?: string | null;
 }
 export interface ScannerOpportunityContractRecipe {
