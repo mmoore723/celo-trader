@@ -209,7 +209,17 @@ export function LiveTrading() {
     refetchInterval: 15_000,
     retry: false,
   });
-  const scannerOpportunityPreview = scannerOpportunityData?.entries ?? [];
+  // The live sidebar is a glanceable alert feed, not the full audit trail.
+  // Collapse repeated observations of the same setup and keep the newest one.
+  const scannerOpportunityPreview = useMemo(() => {
+    const seen = new Set<string>();
+    return (scannerOpportunityData?.entries ?? []).filter((entry: any) => {
+      const key = `${entry.ticker}|${entry.strategy_id}|${entry.direction}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 3);
+  }, [scannerOpportunityData]);
 
   const { data: or } = useQuery({
     queryKey: ["or", ticker],
@@ -739,16 +749,14 @@ export function LiveTrading() {
                   ?? opportunity.entry_plan?.trigger
                   ?? "Scanner setup detected";
                 const quantity = opportunity.planned_quantity ?? trade.contracts;
-                const stop = trade.stop_price ?? opportunity.exit_plan?.stop_price ?? opportunity.exit_plan?.hard_stop;
-                const target = trade.target_price ?? opportunity.exit_plan?.target_price ?? opportunity.exit_plan?.stage_1_target;
                 const strategyName = String(opportunity.strategy_id ?? "Setup").replace(/^V2_/, "").replaceAll("_", " ");
                 const statusTitle = isEntered
-                  ? "New Trade Entered"
+                  ? "New Trade Idea"
                   : opportunity.outcome === "blocked"
-                    ? "Setup Blocked"
+                    ? "Setup Stopped"
                     : opportunity.outcome === "observed_only"
-                      ? "Research Setup Observed"
-                      : "Trade Idea Developing";
+                      ? "Setup Watch"
+                      : "Setup Developing";
                 const accent = isEntered
                   ? "var(--positive)"
                   : opportunity.outcome === "blocked" ? "var(--negative)" : "var(--accent)";
@@ -776,13 +784,18 @@ export function LiveTrading() {
                     </div>
                     <div className="text-[10px] leading-relaxed" style={{ color: "var(--ink)" }}>
                       <div><b>Symbol:</b> {opportunity.ticker} &nbsp; <b>Strategy:</b> {strategyName}</div>
-                      <div><b>Position:</b> {String(optionType).toUpperCase()} {strike != null ? `$${Number(strike).toFixed(0)}` : "— strike not selected"}</div>
-                      <div><b>Expiration:</b> {expiry ? fmtExp(expiry) : "Not selected yet"} &nbsp; <b>Quantity:</b> {quantity != null ? quantity : "—"}</div>
-                      <div><b>Entry:</b> {estimatedEntry != null ? `$${Number(estimatedEntry).toFixed(2)}` : "Waiting for contract/trigger"}</div>
-                      <div><b>Stop:</b> {stop != null ? `$${Number(stop).toFixed(2)}` : "Not calculated yet"} &nbsp; <b>Target:</b> {target != null ? `$${Number(target).toFixed(2)}` : "Not calculated yet"}</div>
+                      <div><b>Position:</b> {String(optionType).toUpperCase()}{strike != null ? ` $${Number(strike).toFixed(0)}` : ""}</div>
+                      {expiry && <div><b>Expiration:</b> {fmtExp(expiry)}</div>}
+                      {(quantity != null || estimatedEntry != null) && (
+                        <div>
+                          {quantity != null && <><b>Quantity:</b> {quantity}</>}
+                          {quantity != null && estimatedEntry != null && "  ·  "}
+                          {estimatedEntry != null && <><b>Entry:</b> ${Number(estimatedEntry).toFixed(2)}</>}
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-2 pt-2 text-[9px] leading-snug" style={{ borderTop: "1px solid var(--border)", color: "var(--ink-muted)" }}>
-                      <b style={{ color: "var(--ink)" }}>{opportunity.outcome === "blocked" ? "Why it stopped:" : "Current decision:"}</b> {decision}
+                    <div className="mt-1.5 text-[9px] leading-snug" style={{ color: "var(--ink-muted)" }}>
+                      <b style={{ color: "var(--ink)" }}>{opportunity.outcome === "blocked" ? "Stopped:" : "Status:"}</b> {decision}
                     </div>
                   </button>
                 );
