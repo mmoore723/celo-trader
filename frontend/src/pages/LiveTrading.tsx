@@ -205,7 +205,7 @@ export function LiveTrading() {
   // it disappears on refresh and never contained the full contract/exit plan.
   const { data: scannerOpportunityData } = useQuery({
     queryKey: ["scanner-opportunities-preview"],
-    queryFn: () => api.signals.opportunities({ limit: 6 }),
+    queryFn: () => api.signals.opportunities({ limit: 4 }),
     refetchInterval: 15_000,
     retry: false,
   });
@@ -594,17 +594,22 @@ export function LiveTrading() {
                   borderBottom: scannerTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
                   background: "none",
                 }}>
-                {tab === "scanner" ? "Premarket Scanner" : `${ticker} Chain`}
+                {tab === "scanner" ? "Ticker Scanner" : `${ticker} Chain`}
               </button>
             ))}
           </div>
 
           {/* Scanner list */}
           {scannerTab === "scanner" && (
-            <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
+            <div>
+              <div className="px-3 py-2 text-[10px] leading-relaxed border-b"
+                   style={{ color: "var(--ink-muted)", borderColor: "var(--border)", background: "var(--surface-raised)" }}>
+                Finds liquid, volatile tickers to watch. It does not create a trade or choose a contract.
+              </div>
+              <div className="overflow-y-auto" style={{ maxHeight: 190 }}>
               {scanner.length === 0 ? (
                 <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                  No scan results yet — bot scans 9:00–9:25 ET
+                  No ranked tickers yet. The full scan begins after the 9:30 ET opening data is available.
                 </p>
               ) : (
                 scanner.map((s) => (
@@ -626,6 +631,7 @@ export function LiveTrading() {
                   </button>
                 ))
               )}
+              </div>
             </div>
           )}
 
@@ -699,7 +705,7 @@ export function LiveTrading() {
                   style={{ color: "var(--ink-muted)" }}>Today's Scanner Opportunities</span>
             <Link to="/opportunities" className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>View all opportunities →</Link>
           </div>
-          <div className="overflow-y-auto flex-1" style={{ minHeight: 200 }}>
+          <div className="overflow-y-auto flex-1 p-2" style={{ minHeight: 240, background: "var(--surface-raised)" }}>
             {scannerOpportunityPreview.length === 0 ? (
               <p className="text-xs px-3 pb-3" style={{ color: "var(--ink-muted)" }}>
                 {status?.running
@@ -732,41 +738,51 @@ export function LiveTrading() {
                   ?? opportunity.reason_code
                   ?? opportunity.entry_plan?.trigger
                   ?? "Scanner setup detected";
+                const quantity = opportunity.planned_quantity ?? trade.contracts;
+                const stop = trade.stop_price ?? opportunity.exit_plan?.stop_price ?? opportunity.exit_plan?.hard_stop;
+                const target = trade.target_price ?? opportunity.exit_plan?.target_price ?? opportunity.exit_plan?.stage_1_target;
+                const strategyName = String(opportunity.strategy_id ?? "Setup").replace(/^V2_/, "").replaceAll("_", " ");
+                const statusTitle = isEntered
+                  ? "New Trade Entered"
+                  : opportunity.outcome === "blocked"
+                    ? "Setup Blocked"
+                    : opportunity.outcome === "observed_only"
+                      ? "Research Setup Observed"
+                      : "Trade Idea Developing";
+                const accent = isEntered
+                  ? "var(--positive)"
+                  : opportunity.outcome === "blocked" ? "var(--negative)" : "var(--accent)";
                 return (
                   <button key={opportunity.id}
-                    className="w-full text-left px-3 py-1.5 border-b hover:bg-muted transition-colors"
-                    style={{ borderColor: "var(--border)", fontFamily: "JetBrains Mono, monospace", fontSize: 10 }}
+                    className="w-full text-left mb-2 rounded-lg hover:bg-muted transition-colors"
+                    style={{
+                      border: "1px solid var(--border)", borderLeft: `4px solid ${accent}`,
+                      background: "var(--surface)", padding: "10px 11px", boxShadow: "var(--shadow-sm)",
+                    }}
                     title={`Open ${opportunity.ticker} on the chart`}
                     onClick={() => setTicker(opportunity.ticker)}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
-                      <span style={{ color: "var(--ink-faint)", fontSize: 9, minWidth: 50 }}>{observedTime}</span>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div>
+                        <div className="text-[11px] font-bold" style={{ color: accent }}>{statusTitle}</div>
+                        <div className="text-[9px] mt-0.5" style={{ color: "var(--ink-faint)" }}>{observedTime}</div>
+                      </div>
                       <span style={{
-                        fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 2,
-                        background: isBullish ? "rgba(0,200,100,0.15)" : "rgba(255,80,80,0.15)",
-                        color: isBullish ? "var(--positive)" : "var(--negative)",
-                      }}>
-                        {String(optionType).toUpperCase()}
-                      </span>
-                      <span style={{ color: "var(--accent)", fontWeight: 700 }}>
-                        {opportunity.ticker}
-                      </span>
-                      {strike != null && <span style={{ color: "var(--ink)" }}>${Number(strike).toFixed(0)}</span>}
-                      {expiry && <span style={{ color: "var(--ink-muted)" }}>{fmtExp(expiry)}</span>}
-                      {opportunity.strategy_id && <span className="badge badge-blue" style={{ fontSize: 7 }}>{opportunity.strategy_id}</span>}
-                      <span style={{
-                        fontSize: 7, fontWeight: 700, padding: "1px 4px", borderRadius: 2, marginLeft: "auto",
+                        fontSize: 8, fontWeight: 700, padding: "2px 5px", borderRadius: 3,
                         background: isEntered ? "rgba(34,197,94,0.15)" : "rgba(139,148,158,0.15)",
                         color: isEntered ? "var(--positive)" : "var(--ink-muted)",
                       }}>
                         {outcomeLabel[opportunity.outcome] ?? String(opportunity.outcome ?? "PENDING").toUpperCase()}
                       </span>
                     </div>
-                    <div style={{ display: "flex", gap: 8, color: "var(--ink-muted)" }}>
-                      <span>
-                        {opportunity.planned_quantity != null && <><span style={{ color: "var(--ink)" }}>{opportunity.planned_quantity}c planned</span>{" · "}</>}
-                        {estimatedEntry != null && <><span style={{ color: "var(--ink)", fontWeight: 600 }}>est. ${Number(estimatedEntry).toFixed(2)}</span>{" · "}</>}
-                        <span>{decision}</span>
-                      </span>
+                    <div className="text-[10px] leading-relaxed" style={{ color: "var(--ink)" }}>
+                      <div><b>Symbol:</b> {opportunity.ticker} &nbsp; <b>Strategy:</b> {strategyName}</div>
+                      <div><b>Position:</b> {String(optionType).toUpperCase()} {strike != null ? `$${Number(strike).toFixed(0)}` : "— strike not selected"}</div>
+                      <div><b>Expiration:</b> {expiry ? fmtExp(expiry) : "Not selected yet"} &nbsp; <b>Quantity:</b> {quantity != null ? quantity : "—"}</div>
+                      <div><b>Entry:</b> {estimatedEntry != null ? `$${Number(estimatedEntry).toFixed(2)}` : "Waiting for contract/trigger"}</div>
+                      <div><b>Stop:</b> {stop != null ? `$${Number(stop).toFixed(2)}` : "Not calculated yet"} &nbsp; <b>Target:</b> {target != null ? `$${Number(target).toFixed(2)}` : "Not calculated yet"}</div>
+                    </div>
+                    <div className="mt-2 pt-2 text-[9px] leading-snug" style={{ borderTop: "1px solid var(--border)", color: "var(--ink-muted)" }}>
+                      <b style={{ color: "var(--ink)" }}>{opportunity.outcome === "blocked" ? "Why it stopped:" : "Current decision:"}</b> {decision}
                     </div>
                   </button>
                 );
