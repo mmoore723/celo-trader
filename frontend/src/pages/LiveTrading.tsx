@@ -1,6 +1,6 @@
 /**
  * LiveTrading.tsx — Main trading cockpit.
- * Real-time chart, signal alert banner (Bot Focus), open positions, eval log, scanner.
+ * Real-time chart, actionable trade alert, open positions, eval log, scanner.
  */
 import { useState, useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -201,7 +201,7 @@ export function LiveTrading() {
 
   // This is deliberately the same durable scanner-candidate trail shown on
   // Scanner Opportunities.  The old websocket eval log is still useful for
-  // the one-line "Bot Focus" alert above, but it is not a reliable history:
+  // the one-line live trade alert above, but it is not a reliable history:
   // it disappears on refresh and never contained the full contract/exit plan.
   const { data: scannerOpportunityData } = useQuery({
     queryKey: ["scanner-opportunities-preview"],
@@ -315,7 +315,16 @@ export function LiveTrading() {
   // compacted.
   const evalLog: any[] = ((status as any)?.eval_log ?? [])
     .filter((ev: any) => !(ev.rejected && ev.reason === "no_signal"));
-  const latestSignal    = evalLog[0] ?? null;
+  // A rejected evaluation is useful in Board/Scanner Opportunities, but it is
+  // not a trade alert. Only surface an evaluation here once contract pricing
+  // and an executable entry plan exist. This also keeps the live page compact
+  // while the scanner is merely idle.
+  const latestSignal = evalLog.find((ev: any) =>
+    !ev.rejected
+    && ["call", "put"].includes(String(ev.opt_type ?? "").toLowerCase())
+    && Number(ev.eff_entry) > 0
+    && Number(ev.contracts) > 0
+  ) ?? null;
   const scannerColor    = (changePct: number) =>
     changePct >= 0 ? "var(--positive)" : "var(--negative)";
 
@@ -377,64 +386,50 @@ export function LiveTrading() {
         </div>
       )}
 
-      {/* ── Bot Focus — Signal Alert Banner ───────────────────────────────── */}
-      {/* Shows the most recent signal prominently. Orange border = manual (enter yourself).
-          Green border = auto-executed. Always visible so you never miss a signal. */}
-      <div
+      {/* Only occupy this space when the bot has a fully priced trade plan. */}
+      {latestSignal && <div
         className="card px-4 py-3"
         style={{
-          borderLeft: latestSignal
-            ? `4px solid ${latestSignal.mode === "signal" ? "var(--warning)" : "var(--positive)"}`
-            : "4px solid var(--border)",
+          borderLeft: `4px solid ${latestSignal.mode === "signal" ? "var(--warning)" : "var(--positive)"}`,
         }}
       >
         {/* Header row */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            {latestSignal?.mode === "signal"
+            {latestSignal.mode === "signal"
               ? <Radio size={14} style={{ color: "var(--warning)" }} />
-              : <Bot   size={14} style={{ color: latestSignal ? "var(--positive)" : "var(--ink-faint)" }} />
+              : <Bot size={14} style={{ color: "var(--positive)" }} />
             }
             <span className="text-xs font-semibold uppercase tracking-wider"
                   style={{ color: "var(--ink-muted)" }}>
-              Bot Focus
+              Latest Trade Alert
             </span>
-            {latestSignal && (
-              <span
-                className="text-[10px] font-bold px-2 py-0.5 rounded uppercase"
-                style={{
-                  background: latestSignal.mode === "signal"
-                    ? "rgba(234,148,29,0.15)" : "rgba(34,197,94,0.15)",
-                  color: latestSignal.mode === "signal" ? "var(--warning)" : "var(--positive)",
-                }}
-              >
-                {latestSignal.mode === "signal" ? "📡 Enter Manually" : "✅ Auto-Executed"}
-              </span>
-            )}
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded uppercase"
+              style={{
+                background: latestSignal.mode === "signal"
+                  ? "rgba(234,148,29,0.15)" : "rgba(34,197,94,0.15)",
+                color: latestSignal.mode === "signal" ? "var(--warning)" : "var(--positive)",
+              }}
+            >
+              {latestSignal.mode === "signal" ? "📡 Enter Manually" : "✅ Auto-Executed"}
+            </span>
           </div>
-          {latestSignal && (
-            <span className="text-[10px] flex items-center gap-2" style={{ color: "var(--ink-faint)" }}>
-              {latestSignal.ts}  ·  tap row to copy
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{ padding: "1px 6px", fontSize: 9 }}
-                title="Watch this setup on the chart"
-                onClick={(e) => { e.stopPropagation(); watchAt(latestSignal.ts); }}
-              >
-                ▶ Watch
-              </button>
-            </span>
-          )}
+          <span className="text-[10px] flex items-center gap-2" style={{ color: "var(--ink-faint)" }}>
+            {latestSignal.ts}  ·  tap row to copy
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ padding: "1px 6px", fontSize: 9 }}
+              title="Watch this setup on the chart"
+              onClick={(e) => { e.stopPropagation(); watchAt(latestSignal.ts); }}
+            >
+              ▶ Watch
+            </button>
+          </span>
         </div>
 
         {/* Signal content */}
-        {!latestSignal ? (
-          <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
-            {status?.running
-              ? `Scanning ${(status as any)?.current_ticker ?? "…"} — no signals yet`
-              : "Start the bot to begin scanning"}
-          </p>
-        ) : (() => {
+        {(() => {
           const isCall = (latestSignal.opt_type ?? "").toLowerCase() === "call";
           const stk    = latestSignal.strike != null
             ? `$${latestSignal.strike % 1 === 0
@@ -500,7 +495,7 @@ export function LiveTrading() {
             </button>
           );
         })()}
-      </div>
+      </div>}
 
       {/* ── Main grid: chart + scanner ────────────────────────────────────── */}
       <div className="grid gap-4 chart-scanner-grid">
