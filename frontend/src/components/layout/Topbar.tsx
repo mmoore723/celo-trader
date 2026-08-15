@@ -38,6 +38,7 @@ export function Topbar() {
   const bal       = status?.account_balance ?? 0;
   const mode      = status?.mode ?? "paper";
   const running   = status?.running ?? false;
+  const brokerConnected = status?.broker_connected ?? false;
   const marketOpen = isMarketOpen();
   const preMarket  = isPreMarket();
 
@@ -115,7 +116,7 @@ export function Topbar() {
         <div className="flex flex-col leading-none">
           <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Balance</span>
           <span className="num text-sm font-semibold" style={{ color: "var(--ink)" }}>
-            {fmt(bal)}
+            {brokerConnected ? fmt(bal) : "Not connected"}
           </span>
         </div>
         <div className="flex flex-col leading-none">
@@ -142,12 +143,12 @@ export function Topbar() {
 
       {/* Connection indicator — desktop only */}
       <div className="hidden sm:flex items-center gap-1.5 text-xs" style={{ color: "var(--ink-muted)" }}>
-        {connected ? (
+        {connected && brokerConnected ? (
           <Wifi size={14} style={{ color: "var(--positive)" }} />
         ) : (
           <WifiOff size={14} style={{ color: "var(--negative)" }} />
         )}
-        {connected ? "Bot Live" : "Reconnecting…"}
+        {!connected ? "Reconnecting…" : brokerConnected ? "Bot Live" : "Broker not connected"}
       </div>
 
       {/* Theme toggle */}

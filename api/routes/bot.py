@@ -54,11 +54,19 @@ def _get_broker_alerts_safe() -> list[dict]:
 @router.get("/status", response_model=BotStatus)
 def get_status(request: Request) -> BotStatus:
     from trading.state import _get_lock, get_user_state
-    from config import get_settings, STARTING_CAPITAL
+    from config import get_api_keys, get_settings
 
     user_id  = _get_uid(request)
     state    = _read_bot_state(user_id)
     settings = get_settings()
+    credentials = get_api_keys(user_id)
+    broker_connected = all(
+        str(credentials.get(key) or "").strip()
+        for key in (
+            "alpaca_api_key", "alpaca_secret_key",
+            "tradier_api_key", "tradier_account_id",
+        )
+    )
     _state   = get_user_state(user_id)
     active_account = str(settings.get("active_broker_account_id") or "")
     state_account = str(state.get("broker_account_id") or _state.get("broker_account_id") or "")
@@ -73,22 +81,23 @@ def get_status(request: Request) -> BotStatus:
     from config import get_maintenance_state
     maintenance = get_maintenance_state()
     return BotStatus(
-        running=actually_running,
-        mode=str(state.get("mode", _state.get("mode", "stopped"))),
-        ticker=state.get("current_ticker") or _state.get("current_ticker"),
-        account_balance=float(0 if not account_matches else (
+        running=actually_running and broker_connected,
+        mode="paper" if settings.get("paper_trading", True) else "live",
+        ticker=(state.get("current_ticker") or _state.get("current_ticker")) if broker_connected else None,
+        broker_connected=broker_connected,
+        account_balance=float(0 if not broker_connected or not account_matches else (
             state.get("account_balance")
             or _state.get("account_balance")
-            or settings.get("last_known_balance", STARTING_CAPITAL)
+            or settings.get("last_known_balance", 0)
         )),
-        day_start_balance=float(0 if not account_matches else (
+        day_start_balance=float(0 if not broker_connected or not account_matches else (
             state.get("day_start_balance")
             or _state.get("day_start_balance")
             or state.get("account_balance")
-            or settings.get("last_known_balance", STARTING_CAPITAL)
+            or settings.get("last_known_balance", 0)
         )),
-        session_pnl=float(0 if not account_matches else state.get("session_pnl", _state.get("session_pnl", 0.0))),
-        options_buying_power=float(state.get("options_buying_power", 0.0)),
+        session_pnl=float(0 if not broker_connected or not account_matches else state.get("session_pnl", _state.get("session_pnl", 0.0))),
+        options_buying_power=float(0 if not broker_connected else state.get("options_buying_power", 0.0)),
         last_update=state.get("last_update"),
         network_ok=bool(state.get("network_ok", True)),
         last_strategy_id=state.get("last_strategy_id") or _state.get("last_strategy_id"),
@@ -122,7 +131,7 @@ def get_status(request: Request) -> BotStatus:
 def start_bot(request: Request) -> BotActionResponse:
     from trading.loop import run_trading_loop
     from trading.state import _get_lock, _get_stop_event
-    from config import get_settings, get_maintenance_state
+    from config import get_api_keys, get_settings, get_maintenance_state
 
     user_id  = _get_uid(request)
     lock     = _get_lock(user_id)
@@ -130,6 +139,27 @@ def start_bot(request: Request) -> BotActionResponse:
     # Never overwrite it here — read whatever the user last saved.
     settings = get_settings()
     mode     = "paper" if settings.get("paper_trading", True) else "live"
+
+    credentials = get_api_keys(user_id)
+    missing_credentials = [
+        label
+        for key, label in (
+            ("alpaca_api_key", "Alpaca API key"),
+            ("alpaca_secret_key", "Alpaca secret key"),
+            ("tradier_api_key", "Tradier API key"),
+            ("tradier_account_id", "Tradier account ID"),
+        )
+        if not str(credentials.get(key) or "").strip()
+    ]
+    if missing_credentials:
+        return BotActionResponse(
+            ok=False,
+            message=(
+                "Broker connection required. Add "
+                + ", ".join(missing_credentials)
+                + " in Settings before starting the bot."
+            ),
+        )
 
     # A full maintenance halt blocks loops. Collection-only maintenance may
     # run the scanner/recorder, while the entry path independently guarantees

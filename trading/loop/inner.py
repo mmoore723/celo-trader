@@ -33,7 +33,7 @@ logger = logging.getLogger("celo_trader.trading_logic")
 def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     """Inner body of the trading loop — called exclusively from run_trading_loop()."""
     from broker import get_clients
-    from config import get_settings, STARTING_CAPITAL, get_trading_windows as _gtw
+    from config import get_api_keys, get_settings, get_trading_windows as _gtw
     from database import init_db, log_event, get_all_trades, get_open_trades
     from risk import RiskManager, DailyLossLimitReached
     from alerts import send_alert
@@ -55,6 +55,26 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
 
     # Resolve stop event for this user
     _stop = _get_stop_event(user_id)
+
+    credentials = get_api_keys(user_id)
+    if not all(
+        str(credentials.get(key) or "").strip()
+        for key in (
+            "alpaca_api_key", "alpaca_secret_key",
+            "tradier_api_key", "tradier_account_id",
+        )
+    ):
+        _US.update({
+            "running": False,
+            "mode": "stopped",
+            "account_balance": 0.0,
+            "day_start_balance": 0.0,
+            "options_buying_power": 0.0,
+            "network_ok": False,
+        })
+        atomic_write_json(get_bot_state_path(user_id), dict(_US))
+        logger.error("Bot start rejected for user %s: broker credentials are incomplete", user_id)
+        return
 
     init_db()
     alpaca, tradier = get_clients()
@@ -87,13 +107,22 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
         acct    = alpaca.get_account()
         balance = float(acct.get("equity", 0)) if acct else 0
         if balance <= 0:
-            balance = float(get_settings().get("last_known_balance", STARTING_CAPITAL))
+            raise RuntimeError("Alpaca returned no positive account equity")
         else:
             from config import save_settings as _save_start
             _save_start({"last_known_balance": round(balance, 2)})
     except Exception as e:
         logger.error("Cannot fetch account balance: %s", e)
-        balance = float(get_settings().get("last_known_balance", STARTING_CAPITAL))
+        _US.update({
+            "running": False,
+            "mode": "stopped",
+            "account_balance": 0.0,
+            "day_start_balance": 0.0,
+            "options_buying_power": 0.0,
+            "network_ok": False,
+        })
+        atomic_write_json(get_bot_state_path(user_id), dict(_US))
+        return
 
     _US["account_balance"] = balance
 

@@ -215,6 +215,32 @@ async def websocket_live(ws: WebSocket) -> None:
         while True:
             # 1. Bot state update
             state = _read_state(user_id)
+            # The WebSocket is the dashboard's primary status source. Apply
+            # the same credential-aware semantics as /api/bot/status so a
+            # stale bot_state.json cannot overwrite "Not connected" with the
+            # old $5,000 research-capital fallback.
+            from config import get_api_keys, get_settings
+            credentials = get_api_keys(user_id)
+            broker_connected = all(
+                str(credentials.get(key) or "").strip()
+                for key in (
+                    "alpaca_api_key", "alpaca_secret_key",
+                    "tradier_api_key", "tradier_account_id",
+                )
+            )
+            state["broker_connected"] = broker_connected
+            state["mode"] = "paper" if get_settings(user_id).get("paper_trading", True) else "live"
+            if not broker_connected:
+                state.update({
+                    "running": False,
+                    "account_balance": 0.0,
+                    "day_start_balance": 0.0,
+                    "session_pnl": 0.0,
+                    "options_buying_power": 0.0,
+                    "network_ok": False,
+                })
+                state.pop("current_ticker", None)
+                state.pop("ticker", None)
             # Remap current_ticker → ticker so BotStatus.ticker populates Bot Focus.
             # bot_state.json writes "current_ticker"; the TypeScript BotStatus interface
             # and LiveTrading.tsx both read status.ticker — without this remap Bot Focus

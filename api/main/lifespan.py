@@ -31,7 +31,13 @@ def _auto_start_bot_if_needed() -> None:
     state file says it was running.
     """
     try:
-        from config import get_bot_state_path, load_bot_state_safely, get_maintenance_state
+        from config import (
+            atomic_update_json,
+            get_api_keys,
+            get_bot_state_path,
+            load_bot_state_safely,
+            get_maintenance_state,
+        )
         from auth.users import list_users
         from trading.loop import run_trading_loop
 
@@ -57,6 +63,29 @@ def _auto_start_bot_if_needed() -> None:
                 if not state.get("running", False):
                     continue
                 if state.get("auto_start_disabled", False):
+                    continue
+                credentials = get_api_keys(uid)
+                if not all(
+                    str(credentials.get(key) or "").strip()
+                    for key in (
+                        "alpaca_api_key", "alpaca_secret_key",
+                        "tradier_api_key", "tradier_account_id",
+                    )
+                ):
+                    # A stale RUNNING flag must not create a fake $5,000
+                    # account or repeatedly probe broker APIs with empty keys.
+                    atomic_update_json(
+                        _state_file,
+                        lambda saved: {
+                            **saved,
+                            "running": False,
+                            "mode": "stopped",
+                            "account_balance": 0.0,
+                            "day_start_balance": 0.0,
+                            "options_buying_power": 0.0,
+                            "network_ok": False,
+                        },
+                    )
                     continue
                 # Bot was running before the restart — resume it
                 t = threading.Thread(

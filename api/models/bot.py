@@ -13,6 +13,7 @@ class BotStatus(BaseModel):
     running: bool
     mode: str                        # "live" | "sim" | "stopped"
     ticker: Optional[str]
+    broker_connected: bool = False   # True only when this user has a complete broker/quote credential set
     account_balance: float
     day_start_balance: float         # Alpaca equity captured once at bot startup — never derived
     session_pnl: float

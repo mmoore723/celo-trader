@@ -103,6 +103,14 @@ class LoopLifecycleTests(unittest.TestCase):
             }), patch(
                 "config.get_maintenance_state",
                 return_value={"maintenance_mode": True, "collection_only": True},
+            ), patch(
+                "config.get_api_keys",
+                return_value={
+                    "alpaca_api_key": "alpaca-key",
+                    "alpaca_secret_key": "alpaca-secret",
+                    "tradier_api_key": "tradier-key",
+                    "tradier_account_id": "tradier-account",
+                },
             ), patch("config.get_bot_state_path", return_value=state_path), patch.object(
                 lifespan.threading, "Thread", ImmediateThread,
             ), patch("database.log_event"):
@@ -110,6 +118,61 @@ class LoopLifecycleTests(unittest.TestCase):
 
         self.assertEqual(1, len(started))
         self.assertEqual({"user_id": "alice"}, started[0]["kwargs"])
+
+    def test_restart_does_not_resume_or_show_money_without_broker_credentials(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "celo_lifespan_missing_credentials",
+            Path(__file__).parents[1] / "api" / "main" / "lifespan.py",
+        )
+        assert spec and spec.loader
+        lifespan = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lifespan)
+
+        started: list[dict] = []
+
+        class ImmediateThread:
+            def __init__(self, *args, **kwargs):
+                self.kwargs = kwargs
+
+            def start(self):
+                started.append(self.kwargs)
+
+        auth_users = types.ModuleType("auth.users")
+        auth_users.list_users = lambda: [{"user_id": "guest"}]
+        trading_loop = types.ModuleType("trading.loop")
+        trading_loop.run_trading_loop = lambda **kwargs: None
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "bot_state.json"
+            state_path.write_text(json.dumps({
+                "running": True,
+                "account_balance": 5000.0,
+                "day_start_balance": 5000.0,
+            }))
+            with patch.dict(sys.modules, {
+                "auth.users": auth_users,
+                "trading.loop": trading_loop,
+            }), patch(
+                "config.get_maintenance_state",
+                return_value={"maintenance_mode": False, "collection_only": False},
+            ), patch(
+                "config.get_api_keys",
+                return_value={
+                    "alpaca_api_key": "", "alpaca_secret_key": "",
+                    "tradier_api_key": "", "tradier_account_id": "",
+                },
+            ), patch("config.get_bot_state_path", return_value=state_path), patch.object(
+                lifespan.threading, "Thread", ImmediateThread,
+            ):
+                lifespan._auto_start_bot_if_needed()
+
+            state = json.loads(state_path.read_text())
+
+        self.assertEqual([], started)
+        self.assertFalse(state["running"])
+        self.assertEqual("stopped", state["mode"])
+        self.assertEqual(0.0, state["account_balance"])
+        self.assertEqual(0.0, state["day_start_balance"])
 
 
 class DurableTradeLineageTests(unittest.TestCase):

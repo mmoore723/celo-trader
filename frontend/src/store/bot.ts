@@ -26,6 +26,7 @@ export interface BotStatus {
   running: boolean;
   mode: string;
   ticker: string | null;
+  broker_connected: boolean;
   account_balance: number;
   day_start_balance: number;
   session_pnl: number;

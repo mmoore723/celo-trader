@@ -337,8 +337,8 @@ export function LiveTrading() {
       {/* ── Stat bar ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3 items-start">
         {[
-          { label: "Balance",     value: `$${(status?.account_balance ?? 0).toFixed(2)}` },
-          { label: "Day Open",    value: `$${(status?.day_start_balance ?? status?.account_balance ?? 0).toFixed(2)}` },
+          { label: "Balance",     value: status?.broker_connected ? `$${status.account_balance.toFixed(2)}` : "Not connected" },
+          { label: "Day Open",    value: status?.broker_connected ? `$${(status.day_start_balance ?? status.account_balance).toFixed(2)}` : "—" },
           { label: "Session P&L", value: (
             <span className="flex items-center gap-1.5 flex-wrap">
               <PnlBadge value={status?.session_pnl} />
