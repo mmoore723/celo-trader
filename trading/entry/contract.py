@@ -16,6 +16,7 @@ from typing import Optional, Tuple
 
 from broker import TradierClient
 from config import MIN_CONTRACT_COST, MAX_CONTRACT_COST, MIN_OPEN_INTEREST, get_settings
+from trading.state import _now_et
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -256,7 +257,7 @@ def select_reviewed_v2_contract(
         info["reason"] = "no_expirations"
         return None, info
 
-    today = date.today()
+    today = _now_et().date()
     candidates: list[tuple[int, float, float, str, dict]] = []
     saw_chain_data = False
     saw_budget_candidate = False

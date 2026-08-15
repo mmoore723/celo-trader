@@ -9,6 +9,8 @@ no logic changed, only relocated.
 
 import logging
 
+from trading.state import _now_et
+
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
@@ -21,10 +23,9 @@ def _run_nightly_strategy_audit_once(alpaca) -> None:
     key so a mid-evening bot restart doesn't re-run the same day's audit.
     """
     import threading
-    from datetime import date
     from config import get_settings, save_settings
 
-    today_str = date.today().isoformat()
+    today_str = _now_et().date().isoformat()
     if get_settings().get("last_strategy_audit_date") == today_str:
         return   # already ran today
 
@@ -34,7 +35,7 @@ def _run_nightly_strategy_audit_once(alpaca) -> None:
             from database import log_event as _le
             run_daily_audit(alpaca)
             save_settings({"last_strategy_audit_date": today_str})
-            _le("INFO", "trading_logic", "📊 Nightly strategy health audit complete — see Strategy Health page.")
+            _le("INFO", "trading_logic", "📊 Nightly strategy audit complete — see Strategy Operations.")
         except Exception as exc:
             logger.warning("Nightly strategy audit failed (non-fatal): %s", exc)
 
@@ -52,10 +53,9 @@ def _run_weekly_strategy_review_once(alpaca) -> None:
     fetch) but is accepted for symmetry with the daily trigger's call site.
     """
     import threading
-    from datetime import date as _date
     from config import get_settings, save_settings
 
-    today = _date.today()
+    today = _now_et().date()
     if today.weekday() != 4:   # 0=Monday .. 4=Friday
         return
 
@@ -69,7 +69,7 @@ def _run_weekly_strategy_review_once(alpaca) -> None:
             from database import log_event as _le
             run_weekly_review()
             save_settings({"last_weekly_review_week": week_label})
-            _le("INFO", "trading_logic", "📈 Weekly strategy review complete — see Strategy Health page.")
+            _le("INFO", "trading_logic", "📈 Weekly strategy review complete — see Strategy Operations.")
         except Exception as exc:
             logger.warning("Weekly strategy review failed (non-fatal): %s", exc)
 

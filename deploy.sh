@@ -4,7 +4,7 @@
 #
 # Requirements: ssh key configured, EC2_HOST set below.
 
-set -e
+set -euo pipefail
 
 EC2_HOST="ec2-user@3.148.153.141"      # ← change this
 EC2_DIR="/opt/celo_trader"
@@ -76,7 +76,28 @@ RETIRED_PRODUCTION_PATHS=(
   trading/research
 )
 
-FORBIDDEN_DEPLOY_PATHS='^(research/|research_v2/|scripts/research_v2/|research_data/|data/|reports/|audit_reports/|OPRA-|assets/)'
+FORBIDDEN_DEPLOY_PATHS='^(\.env|user_data/|research/|research_v2/|scripts/research_v2/|research_data/|data/|reports/|audit_reports/|OPRA-|assets/)'
+
+if [ ! -f "$EC2_KEY" ]; then
+  echo "Refusing deployment: SSH key not found at $EC2_KEY"
+  exit 1
+fi
+
+echo "==> Checking patch integrity..."
+git diff --check
+
+TEST_PYTHON="python3"
+if [ -x ".venv-paid-research/bin/python" ]; then
+  TEST_PYTHON=".venv-paid-research/bin/python"
+fi
+
+echo "==> Running the complete Python acceptance suite..."
+"$TEST_PYTHON" -m unittest discover -s tests -p 'test_*.py'
+
+echo "==> Linting React frontend..."
+cd frontend
+npm run lint
+cd ..
 
 echo "==> Building React frontend..."
 cd frontend
@@ -115,12 +136,34 @@ fi
 echo "==> Production files included in this release:"
 git diff --cached --name-only
 
+if git diff --cached --quiet; then
+  echo "Nothing to deploy. No production changes were staged."
+  exit 0
+fi
+
+if git diff --cached --name-only | grep -Eq '(^|/)(\.env|credentials\.enc|users\.db)$'; then
+  echo "Refusing deployment: a secret-bearing runtime file is staged."
+  exit 1
+fi
+
 echo "==> Committing + pushing to GitHub..."
-git commit -m "chore: frontend build $(date +%Y-%m-%d)" --allow-empty
+git commit -m "chore: production release $(date +%Y-%m-%d)"
 git push origin main
 
+echo "==> Verifying the EC2 checkout is safe to update..."
+REMOTE_TRACKED_DIRTY="$(
+  ssh -i "$EC2_KEY" "$EC2_HOST" \
+    "cd $EC2_DIR && git status --porcelain --untracked-files=no"
+)"
+if [ -n "$REMOTE_TRACKED_DIRTY" ]; then
+  echo "Refusing deployment: EC2 has tracked changes that a checkout could overwrite:"
+  echo "$REMOTE_TRACKED_DIRTY"
+  exit 1
+fi
+
 echo "==> Pulling on EC2..."
-ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && git pull --rebase"
+REMOTE_PREVIOUS_SHA="$(ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && git rev-parse HEAD")"
+ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && git fetch origin main && git checkout main && git pull --ff-only origin main"
 
 echo "==> Installing Python deps on EC2 (full requirements.txt)..."
 # Use the venv pip so all packages land inside the venv that uvicorn runs from.
@@ -131,5 +174,21 @@ ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && $EC2_DIR/venv/bin/pip install -r r
 echo "==> Restarting services on EC2..."
 ssh -i "$EC2_KEY" "$EC2_HOST" "sudo systemctl restart celo-dashboard && sudo systemctl status celo-dashboard --no-pager"
 
+echo "==> Verifying deployed health endpoint..."
+if ! ssh -i "$EC2_KEY" "$EC2_HOST" "curl --fail --silent --show-error --retry 12 --retry-delay 2 http://127.0.0.1:8501/healthz"; then
+  echo "Deployment failed health verification."
+  echo "Previous server commit: $REMOTE_PREVIOUS_SHA"
+  echo "==> Automatically rolling EC2 back to the previous release..."
+  if ssh -i "$EC2_KEY" "$EC2_HOST" \
+    "cd $EC2_DIR && git checkout --detach '$REMOTE_PREVIOUS_SHA' && $EC2_DIR/venv/bin/pip install -r requirements.txt -q && sudo systemctl restart celo-dashboard" \
+    && ssh -i "$EC2_KEY" "$EC2_HOST" \
+      "curl --fail --silent --show-error --retry 12 --retry-delay 2 http://127.0.0.1:8501/healthz"; then
+    echo "Rollback succeeded; EC2 is healthy on $REMOTE_PREVIOUS_SHA."
+  else
+    echo "CRITICAL: rollback did not restore health. Manual server intervention is required."
+  fi
+  exit 1
+fi
+
 echo ""
-echo "✓ Done. Dashboard: http://${EC2_HOST}:8501"
+echo "✓ Done. Dashboard: https://celotrader.com"

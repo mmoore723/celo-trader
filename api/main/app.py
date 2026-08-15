@@ -15,6 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.middleware.auth import require_auth
 from api.main.lifespan import _lifespan
+from auth.security import (
+    allowed_browser_origins, is_production, validate_security_configuration,
+)
+
+validate_security_configuration()
 
 # ── Create app ────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -22,16 +27,35 @@ app = FastAPI(
     title="Celo Trader API",
     description="FastAPI backend for Celo Trader algorithmic options bot",
     version="2.0.0",
+    docs_url=None if is_production() else "/docs",
+    redoc_url=None if is_production() else "/redoc",
+    openapi_url=None if is_production() else "/openapi.json",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://celotrader.com", "http://celotrader.com",
-                   "http://localhost:5173", "http://localhost:3000"],
+    allow_origins=allowed_browser_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=True,  # required for session cookies
 )
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+    if is_production():
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz() -> dict:
+    return {"ok": True, "service": "celo-trader"}
 
 # ── Register API routes ───────────────────────────────────────────────────────
 # Auth is enforced via Depends(require_auth) on each protected router.

@@ -6,10 +6,9 @@ The frontend's /admin page calls these to create/invite/delete users.
 """
 from __future__ import annotations
 import logging
-import os
 
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -30,7 +29,7 @@ class CreateUserRequest(BaseModel):
 
 
 class InviteRequest(BaseModel):
-    hours: int = 48   # link validity window
+    hours: int = Field(default=48, ge=1, le=168)   # link validity window
 
 
 class ResetPasswordRequest(BaseModel):
@@ -184,5 +183,5 @@ async def create_invite(request: Request, body: InviteRequest):
     # Build the link using the request's host (works on both local + EC2)
     base_url = str(request.base_url).rstrip("/")
     link     = f"{base_url}/#/register?token={token}"
-    logger.info("Invite link created by %s: %s", request.state.username, link)
+    logger.info("Invite created by %s (valid %s hours)", request.state.username, body.hours)
     return {"ok": True, "token": token, "link": link, "expires_hours": body.hours}

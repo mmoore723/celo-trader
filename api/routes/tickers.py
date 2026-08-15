@@ -26,7 +26,10 @@ logger = logging.getLogger("celo_trader.api.tickers")
 
 
 def _get_uid(request: Request) -> str:
-    return getattr(request.state, "user_id", "admin")
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authenticated user context is missing")
+    return str(user_id)
 
 
 @router.get("/board")

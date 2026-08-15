@@ -41,6 +41,8 @@ class AlpacaCoreMixin:
         self.data    = "https://data.alpaca.markets"
         _api_key    = _keys.get("alpaca_api_key",    ALPACA_API_KEY)
         _secret_key = _keys.get("alpaca_secret_key", ALPACA_SECRET_KEY)
+        self.api_key = _api_key
+        self.secret_key = _secret_key
         self.headers = {
             "APCA-API-KEY-ID":     _api_key,
             "APCA-API-SECRET-KEY": _secret_key,
@@ -155,7 +157,7 @@ class AlpacaCoreMixin:
     # ── Account ───────────────────────────────────────────────────────────────
 
     def get_account(self) -> dict:
-        if not ALPACA_API_KEY:
+        if not self.api_key:
             return {"equity": STARTING_CAPITAL, "buying_power": STARTING_CAPITAL,
                     "cash": STARTING_CAPITAL, "options_buying_power": STARTING_CAPITAL}
         data = self._get(f"{self.base}/v2/account")
@@ -171,21 +173,17 @@ class AlpacaCoreMixin:
     def is_market_open(self) -> bool:
         """
         Ask Alpaca whether the market is currently open.
-        Falls back to local ET time check when the circuit breaker is active
-        (avoids showing MARKET CLOSED all day just because Alpaca is unreachable).
-        Returns False on unknown API error (safe default — don't trade if unsure).
+        Returns False when the authenticated broker cannot confirm that the
+        market is open. A local clock cannot detect exchange holidays or an
+        emergency closure and therefore must never override broker truth.
         """
-        if not ALPACA_API_KEY:
+        if not self.api_key:
             return _local_market_is_open()
         try:
             data = self._get(f"{self.base}/v2/clock")
             return bool(data.get("is_open", False))
         except _AlpacaCircuitOpenError:
-            # CB is protecting us — use local time as fallback so the UI
-            # doesn't incorrectly show MARKET CLOSED during trading hours.
-            return _local_market_is_open()
+            return False
         except Exception as e:
-            # Fall back to local ET clock — don't return False, which would
-            # wipe scan_watchlist and freeze the bot for the entire session.
-            logger.warning("is_market_open check failed: %s — falling back to local time", e)
-            return _local_market_is_open()
+            logger.warning("is_market_open check failed: %s — failing closed", e)
+            return False

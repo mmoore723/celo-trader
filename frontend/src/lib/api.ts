@@ -346,10 +346,17 @@ export interface ScannerOpportunity {
   underlying_entry_price?: number | null; underlying_exit_price?: number | null;
   directional_move_pct?: number | null; direction_correct?: number | null;
   outcome_observed_at?: string | null; trade?: ScannerOpportunityTrade | null;
+  lifecycle?: "watching" | "pricing" | "ready" | "stopped" | "entered" | "research" | string;
+  episode_id?: string; episode_occurrence?: number; episode_size?: number;
 }
 export interface ScannerOpportunitiesResponse {
   date: string; account_scoped: boolean; available_dates: string[];
-  summary: Record<string, number>; note: string; entries: ScannerOpportunity[];
+  summary: {
+    setups: number; raw_detections: number; actionable: number; entered: number;
+    stopped: number; research: number; watching: number; pricing: number; ready: number;
+    [key: string]: number;
+  };
+  note: string; entries: ScannerOpportunity[];
 }
 export interface GateCalibrationRow {
   strategy_id: string; gate: "ai_decision_veto" | "macro_vwap_veto" | string;
@@ -610,6 +617,31 @@ export interface AppSettings {
                                        // (balance × this%), was hardcoded 15% with no UI.
 }
 
+export interface ReviewedStrategyCatalogEntry {
+  strategy_id: string;
+  display_name: string;
+  version: string;
+  tickers: string[];
+  setting_key: keyof AppSettings;
+  signal_source: "bar_close" | "live_retouch" | "one_minute_state";
+  implementation: string;
+  exit_minutes: number | null;
+  paper_only: boolean;
+  status: "paper_candidate" | "retired";
+  evidence_artifact: string;
+  evidence: string;
+  enabled: boolean;
+}
+
+export interface StrategySettingChange {
+  changed_at: string;
+  actor_user_id: string;
+  strategy_id: string;
+  setting_key: string;
+  previous_enabled: boolean;
+  new_enabled: boolean;
+}
+
 // ── Chart annotations (bot-drawn overlays) ────────────────────────────────────
 // Emitted by strategy_router.py when a signal or veto fires.
 // Frontend polls GET /api/bot/annotations/{ticker} every 5 s.
@@ -726,6 +758,8 @@ export const api = {
   settings: {
     get:  () => request<AppSettings>("/api/settings"),
     save: (s: AppSettings) => request<AppSettings>("/api/settings", { method: "POST", body: JSON.stringify(s) }),
+    strategies: () => request<{strategies: ReviewedStrategyCatalogEntry[]}>("/api/settings/strategies"),
+    strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
   },
   backtest: {
     start: (

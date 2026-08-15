@@ -19,7 +19,7 @@ from strategies.spy_trend_continuation_v2 import _complete_five_minute_bars
 
 STRATEGY_ID = "V2_SPY_AFTERNOON_FVG"
 VALIDATED_TICKERS = frozenset({"SPY"})
-_emitted_trigger_by_session: set[tuple[str, str, str, float, float]] = set()
+_emitted_trigger_by_session: set[tuple[str, str, str, str, float, float]] = set()
 
 _FAST_EMA = 8
 _SLOW_EMA = 20
@@ -119,7 +119,9 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
     return None
 
 
-def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
+def evaluate(
+    today: pd.DataFrame, ticker: str = "", execution_scope: str | None = None,
+) -> Signal | None:
     ticker = ticker.strip().upper()
     if ticker not in VALIDATED_TICKERS:
         return None
@@ -128,7 +130,11 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
         return None
     lower = float(candidate.meta["gap_lower"])
     upper = float(candidate.meta["gap_upper"])
-    key = (ticker, candidate.trigger_bar.date().isoformat(), candidate.direction, lower, upper)
+    from strategies.spy_trend_continuation_v2 import _execution_scope
+    key = (
+        _execution_scope(execution_scope), ticker,
+        candidate.trigger_bar.date().isoformat(), candidate.direction, lower, upper,
+    )
     if key in _emitted_trigger_by_session:
         return None
     _emitted_trigger_by_session.add(key)

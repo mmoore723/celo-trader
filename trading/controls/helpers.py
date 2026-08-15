@@ -9,11 +9,9 @@ cleanup); no logic changed, only relocated.
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import date
 
-from trading.state import get_user_state
+from trading.state import _now_et, get_user_state
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -21,14 +19,14 @@ logger = logging.getLogger("celo_trader.trading_logic")
 def _default_user_id() -> str:
     """
     Resolve the calling user the same way config.py does: read the
-    request-scoped ContextVar set by api/middleware/auth.py, falling back to
-    "admin" for background-thread/single-user code paths.
+    request-scoped ContextVar set by api/middleware/auth.py. Unscoped service
+    work is isolated under the system tenant rather than inheriting admin.
     """
     try:
         from auth.context import get_current_user_id
         return get_current_user_id()
     except Exception:
-        return "admin"
+        return "system"
 
 
 def _refresh_session_pnl(user_id: str | None = None) -> float:
@@ -44,7 +42,7 @@ def _refresh_session_pnl(user_id: str | None = None) -> float:
     state) and the single shared root bot_state.json — any user's manual
     close/panic action recomputed and displayed ADMIN's P&L, not their own.
     """
-    from config import get_bot_state_path
+    from config import get_bot_state_path, atomic_update_json
     uid = user_id or _default_user_id()
     _US = get_user_state(uid)
 
@@ -53,7 +51,7 @@ def _refresh_session_pnl(user_id: str | None = None) -> float:
         pnl = sum(
             (t.get("realized_pnl") or 0)
             for t in get_all_trades(limit=200, user_id=uid)
-            if (t.get("exit_time") or "")[:10] == date.today().isoformat()
+            if (t.get("exit_time") or "")[:10] == _now_et().date().isoformat()
         )
         _US["session_pnl"] = pnl
     except Exception as e:
@@ -63,13 +61,10 @@ def _refresh_session_pnl(user_id: str | None = None) -> float:
     # Flush to this user's bot_state.json so the WebSocket doesn't read a stale value
     try:
         _path = get_bot_state_path(uid)
-        _state = {}
-        if _path.exists():
-            with open(_path) as _f:
-                _state = json.load(_f)
-        _state["session_pnl"] = pnl
-        with open(_path, "w") as _f:
-            json.dump(_state, _f)
+        atomic_update_json(
+            _path,
+            lambda state: {**state, "session_pnl": pnl},
+        )
     except Exception as e:
         logger.warning("_refresh_session_pnl[%s]: bot_state.json write failed: %s", uid, e)
 

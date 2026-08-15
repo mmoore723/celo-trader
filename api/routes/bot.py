@@ -19,13 +19,11 @@ from api.models import BotStatus, BotActionResponse
 router = APIRouter(prefix="/api/bot", tags=["bot"])
 
 
-def _read_bot_state(user_id: str = "admin") -> dict[str, Any]:
+def _read_bot_state(user_id: str) -> dict[str, Any]:
     """
-    FIX: this used to always read the single shared root-level bot_state.json
-    regardless of which user was asking — a non-admin user's dashboard showed
-    admin's balance/positions/status. Now reads that user's own state file
-    (see config.get_bot_state_path, which migrates admin's legacy root file
-    in automatically the first time it's called for "admin").
+    Read only the explicitly identified user's state file. Requiring the
+    caller to provide an identity prevents unauthenticated/background callers
+    from silently inheriting another account's dashboard state.
     """
     try:
         from config import get_bot_state_path
@@ -38,7 +36,10 @@ def _read_bot_state(user_id: str = "admin") -> dict[str, Any]:
 
 
 def _get_uid(request: Request) -> str:
-    return getattr(request.state, "user_id", "admin")
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authenticated user context is missing")
+    return str(user_id)
 
 
 def _get_broker_alerts_safe() -> list[dict]:
@@ -130,8 +131,11 @@ def start_bot(request: Request) -> BotActionResponse:
     settings = get_settings()
     mode     = "paper" if settings.get("paper_trading", True) else "live"
 
-    # Block start during maintenance — admin must clear it first
-    if get_maintenance_state().get("maintenance_mode", False):
+    # A full maintenance halt blocks loops. Collection-only maintenance may
+    # run the scanner/recorder, while the entry path independently guarantees
+    # that no order or exit can be submitted.
+    maintenance = get_maintenance_state()
+    if maintenance.get("maintenance_mode", False) and not maintenance.get("collection_only", False):
         return BotActionResponse(
             ok=False,
             message="🔧 System is in maintenance mode. Clear it from the Admin page before starting the bot."
@@ -156,6 +160,8 @@ def start_bot(request: Request) -> BotActionResponse:
         name=f"celo-bot-{user_id}",
     )
     thread.start()
+    if maintenance.get("maintenance_mode", False):
+        return BotActionResponse(ok=True, message="Data collection started; trading remains globally halted")
     return BotActionResponse(ok=True, message=f"Bot started in {mode} mode")
 
 

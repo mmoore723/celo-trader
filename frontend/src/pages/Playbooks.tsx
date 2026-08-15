@@ -254,13 +254,18 @@ export function Playbooks() {
   const [search,        setSearch]        = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [openSection,   setOpenSection]   = useState<string | null>("routine");   // first section open by default
-  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get });
+  const { data: strategyCatalog } = useQuery({ queryKey: ["strategy-catalog"], queryFn: api.settings.strategies });
+  const enabledStrategyIds = useMemo(() => new Set(
+    (strategyCatalog?.strategies ?? []).filter((strategy) => strategy.enabled).map((strategy) => strategy.strategy_id)
+  ), [strategyCatalog]);
   const currentStrategies = useMemo(() => CURRENT_STRATEGIES.filter((strategy) => (
-    strategy.id === "v2_orb" ? Boolean(settings?.strategy_orb_pullback_v2_enabled) :
-    strategy.id === "v2_trend" ? Boolean(settings?.strategy_spy_trend_cont_v2_enabled) :
-    strategy.id === "v2_spy_fvg" ? Boolean(settings?.strategy_spy_afternoon_fvg_v2_enabled) :
-    Boolean(settings?.strategy_tsla_two_leg_trend_pullback_v2_enabled)
-  )), [settings]);
+    enabledStrategyIds.has(
+      strategy.id === "v2_orb" ? "V2_ORB_PULLBACK" :
+      strategy.id === "v2_trend" ? "V2_SPY_TREND_CONT" :
+      strategy.id === "v2_spy_fvg" ? "V2_SPY_AFTERNOON_FVG" :
+      "V2_TSLA_TWO_LEG_TREND_PULLBACK"
+    )
+  )), [enabledStrategyIds]);
 
   // Filter + group log codes by search query and active category
   const filteredLogs = useMemo(() => {

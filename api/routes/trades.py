@@ -4,8 +4,8 @@ api/routes/trades.py — Trade journal and performance data.
 from __future__ import annotations
 import json as _json
 import logging
-from datetime import date as _date
-from fastapi import APIRouter, Query
+from datetime import date as _date, datetime
+from fastapi import APIRouter, HTTPException, Query
 from api.models import (
     Trade, TradeListResponse, PerformanceStats, DailySummary,
     TradeAnalytics, StrategyRow, HourRow, TickerRow, ExitReasonRow,
@@ -14,6 +14,30 @@ from api.models import (
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
 logger = logging.getLogger("celo_trader.api.trades")
+
+
+def _reconcile_day_bounds(value: str) -> tuple[str, str, str]:
+    """Return an ET trading date and its half-open UTC interval."""
+    import re
+    from datetime import datetime, time, timezone, timedelta
+    from zoneinfo import ZoneInfo
+    from trading.state import _now_et
+
+    date_value = value or _now_et().date().isoformat()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_value):
+        raise ValueError("date must use YYYY-MM-DD")
+    trading_date = datetime.strptime(date_value, "%Y-%m-%d").date()
+    et_start = datetime.combine(
+        trading_date,
+        time.min,
+        tzinfo=ZoneInfo("America/New_York"),
+    )
+    et_end = et_start + timedelta(days=1)
+    return (
+        date_value,
+        et_start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        et_end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+    )
 
 
 def _parse_annotations(raw: object) -> list[dict] | None:
@@ -371,29 +395,23 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
 def reconcile_trades(
     date: str = Query(default="", description="YYYY-MM-DD; defaults to today"),
 ) -> ReconcileResponse:
-    import re
-    from datetime import datetime, timezone, timedelta
     from database import get_all_trades
-    from config import ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL, get_settings as _get_settings
-    import requests as _req
+    from config import get_api_keys, get_settings as _get_settings
+    from broker import get_clients
+    from broker.account_identity import resolve_account_identity
 
     # ── 1. Resolve date ───────────────────────────────────────────────────────
-    if not date or not re.match(r"\d{4}-\d{2}-\d{2}", date):
-        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    date_start = f"{date}T00:00:00Z"
-    date_end   = f"{date}T23:59:59Z"
+    try:
+        date, date_start, date_end = _reconcile_day_bounds(date)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     # ── 2. Fetch Alpaca orders for the date ───────────────────────────────────
-    headers = {
-        "APCA-API-KEY-ID":     ALPACA_API_KEY,
-        "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
-    }
     alpaca_orders: list[dict] = []
     try:
-        resp = _req.get(
-            f"{ALPACA_BASE_URL}/v2/orders",
-            headers=headers,
+        alpaca, _ = get_clients()
+        alpaca_orders = alpaca._get(
+            f"{alpaca.base}/v2/orders",
             params={
                 "status": "all",
                 "after":  date_start,
@@ -401,30 +419,39 @@ def reconcile_trades(
                 "limit":  500,
                 "direction": "asc",
             },
-            timeout=10,
         )
-        resp.raise_for_status()
-        alpaca_orders = resp.json() or []
-    except Exception as _e:
-        # Non-fatal — reconcile will still show DB data with empty Alpaca side
-        alpaca_orders = []
+        alpaca_orders = alpaca_orders or []
+    except Exception as exc:
+        raise HTTPException(
+            503,
+            "Broker reconciliation is unavailable; no comparison was produced",
+        ) from exc
 
     # ── 3. Fetch Alpaca equity ────────────────────────────────────────────────
-    alpaca_equity: float | None = None
     try:
-        acct = _req.get(
-            f"{ALPACA_BASE_URL}/v2/account", headers=headers, timeout=5
-        ).json()
-        alpaca_equity = float(acct.get("equity", 0)) or None
-    except Exception:
-        pass
+        acct = alpaca.get_account()
+        alpaca_equity: float | None = float(acct.get("equity", 0)) or None
+    except Exception as exc:
+        raise HTTPException(503, "Broker account identity could not be verified") from exc
+
+    cfg = _get_settings()
+    paper = bool(cfg.get("paper_trading", True))
+    active_identity = str(cfg.get("active_broker_account_id") or "")
+    keys = get_api_keys()
+    actual_identity = resolve_account_identity(
+        keys.get("alpaca_api_key", ""), paper, acct,
+    )
+    if active_identity and actual_identity != active_identity:
+        raise HTTPException(
+            409,
+            "Connected broker account does not match this user's active account",
+        )
 
     # ── 4. Pull day_start_balance from settings ───────────────────────────────
     day_start_balance: float | None = None
     try:
-        _cfg = _get_settings()
         dsb_key = f"day_start_{date}"
-        raw_dsb = _cfg.get(dsb_key) or _cfg.get("day_start_balance")
+        raw_dsb = cfg.get(dsb_key) or cfg.get("day_start_balance")
         if raw_dsb is not None:
             day_start_balance = float(raw_dsb)
     except Exception:
@@ -446,8 +473,8 @@ def reconcile_trades(
     # right below still scopes them to today via entry_time (open trades have
     # no exit_time yet, so the `or r.get("entry_time")` fallback catches them).
     all_db_rows = get_all_trades(
-        limit=1000, mode="paper", status_filter="all",
-        broker_account_id=_get_settings().get("active_broker_account_id") or None,
+        limit=1000, mode="paper" if paper else "live", status_filter="all",
+        broker_account_id=active_identity or None,
     ) or []
     db_trades = [
         r for r in all_db_rows

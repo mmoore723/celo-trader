@@ -10,7 +10,6 @@ Clients connect to /ws/live and receive JSON messages every second:
 from __future__ import annotations
 import asyncio
 import json
-import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -19,20 +18,16 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import jwt, JWTError
 
-from api.middleware.auth import JWT_ALGORITHM, COOKIE_NAME
+from auth.security import JWT_ALGORITHM, COOKIE_NAME, jwt_secret
+from api.ws_scope import entry_visible_to_user
 
 _ET = ZoneInfo("America/New_York")
 
 router = APIRouter(tags=["websocket"])
 
 _LOG_PATH = Path(__file__).resolve().parents[2] / "log" / "bot.log"
-# KNOWN GAP: bot.log is a single shared file for every user (see
-# logger_config.py) — _tail_log() below broadcasts lines from bot.log
-# regardless of which user generated them, so a connected client currently
-# sees every user's log activity, not just their own. Fixing this requires
-# per-user log files in logger_config.py, which is a larger, separate change
-# from the auth fix below (this endpoint previously had NO auth at all —
-# anyone could connect and watch admin's dashboard with no session cookie).
+# The file remains shared for operations, but every structured entry is tagged
+# with user_id by logger_config and is filtered before WebSocket delivery.
 
 # Track connected clients
 _clients: set[WebSocket] = set()
@@ -64,12 +59,18 @@ def _authenticate_ws(ws: WebSocket) -> str | None:
     token = ws.cookies.get(COOKIE_NAME)
     if not token:
         return None
-    secret = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
     try:
-        payload = jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, jwt_secret(), algorithms=[JWT_ALGORITHM])
     except JWTError:
         return None
-    return payload.get("sub", "admin")
+    user_id = str(payload.get("sub") or "")
+    if not user_id:
+        return None
+    from auth.users import get_user
+    user = get_user(user_id)
+    if not user or int(payload.get("session_version", 0)) != int(user["session_version"]):
+        return None
+    return user_id
 
 
 def _read_state(user_id: str) -> dict:
@@ -118,7 +119,12 @@ _HISTORY_WINDOW_MINUTES = 15   # replay only the last 15 minutes on reconnect.
                                # flooding the THINKING panel on every page refresh.
 
 
-def _tail_log(n: int = 10) -> list[dict]:  # was 30 — 10 is enough context
+def _entry_visible_to_user(entry: dict, user_id: str) -> bool:
+    """Backward-compatible local alias for the framework-free helper."""
+    return entry_visible_to_user(entry, user_id)
+
+
+def _tail_log(n: int = 10, user_id: str = "") -> list[dict]:  # was 30 — 10 is enough context
     """
     Return the last *n* structured log lines from bot.log that fall within
     _HISTORY_WINDOW_MINUTES of now (ET).  Lines older than the window are
@@ -144,6 +150,8 @@ def _tail_log(n: int = 10) -> list[dict]:  # was 30 — 10 is enough context
                 entry = json.loads(line)
             except Exception:
                 entry = {"message": line, "level": "INFO"}
+            if not _entry_visible_to_user(entry, user_id):
+                continue
 
             # Drop entries older than the replay window
             ts_raw = entry.get("timestamp", "")
@@ -182,7 +190,7 @@ async def websocket_live(ws: WebSocket) -> None:
 
     # Send recent log lines on connect, prefixed with a visual separator so
     # users can distinguish yesterday's session from live output.
-    history = _tail_log(10)
+    history = _tail_log(10, user_id=user_id)
     if history:
         await ws.send_json({"type": "log", "data": {
             "message": "── previous session ──",
@@ -240,6 +248,8 @@ async def websocket_live(ws: WebSocket) -> None:
                                     entry = json.loads(line)
                                 except Exception:
                                     entry = {"message": line, "level": "INFO"}
+                                if not _entry_visible_to_user(entry, user_id):
+                                    continue
                                 # Always stamp ts in ET (12h) — parsed from the
                                 # JSON logger's "timestamp" field (UTC ISO 8601).
                                 entry["ts"] = _ts_to_et(entry)

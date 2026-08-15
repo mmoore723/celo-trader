@@ -14,7 +14,7 @@ code (rule 6).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 
 from trading.state import get_user_state, get_user_risk, get_user_trade_log, set_user_trade_log, _now_et
@@ -141,6 +141,10 @@ def _close_position(
             strategy_id     = trade.get("strategy_id", "UNKNOWN"),
             annotations_json= trade.get("annotations_json"),
             broker_account_id= trade.get("broker_account_id"),
+            candidate_id     = trade.get("candidate_id"),
+            parent_trade_id  = trade.get("parent_trade_id") or trade.get("id"),
+            entry_order_id   = trade.get("entry_order_id"),
+            entry_fill_time  = trade.get("entry_fill_time"),
         )
         close_trade(
             trade_id             = partial_id,
@@ -152,6 +156,8 @@ def _close_position(
             mae_price            = _trade_ps_partial.get("min_price"),
             paper                = paper,
             annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
+            exit_order_id        = str(fill.get("id") or "") or None,
+            exit_fill_time       = fill.get("filled_at") or _now_et(),
         )
 
         try:
@@ -247,6 +253,8 @@ def _close_position(
         paper                = paper,
         recap                = _recap,
         annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
+        exit_order_id        = str(fill.get("id") or "") or None,
+        exit_fill_time       = fill.get("filled_at") or _now_et(),
     )
 
     try:
@@ -321,7 +329,7 @@ def _close_position(
         _US["session_pnl"] = sum(
             (t.get("realized_pnl") or 0)
             for t in get_all_trades(limit=100)
-            if (t.get("exit_time") or "")[:10] == date.today().isoformat()
+            if (t.get("exit_time") or "")[:10] == _now_et().date().isoformat()
         )
     except Exception:
         pass
@@ -363,16 +371,13 @@ def _close_position(
         }
 
     try:
-        import json as _json_cl
+        from config import atomic_update_json
         _state_path_cl = get_bot_state_path()
-        if _state_path_cl.exists():
-            with open(_state_path_cl) as _f:
-                _existing_cl = _json_cl.load(_f)
-            _open_positions_cl = _existing_cl.get("open_positions") or {}
-            _open_positions_cl.pop(str(trade["id"]), None)
-            _existing_cl["open_positions"] = _open_positions_cl
-            with open(_state_path_cl, "w") as _f:
-                _json_cl.dump(_existing_cl, _f)
+        def _remove_closed_position(state: dict) -> dict:
+            positions = dict(state.get("open_positions") or {})
+            positions.pop(str(trade["id"]), None)
+            return {**state, "open_positions": positions}
+        atomic_update_json(_state_path_cl, _remove_closed_position)
     except Exception:
         pass
 

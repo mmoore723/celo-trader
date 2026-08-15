@@ -55,6 +55,28 @@ class SpyTrendContinuationV2Tests(unittest.TestCase):
         self.assertIsNotNone(first)
         self.assertIsNone(second)
 
+    def test_dedupe_state_is_isolated_per_user(self) -> None:
+        trigger = datetime(2026, 8, 10, 11, 0)
+        candidate = StructureSignal(
+            Side.LONG, trigger, 101.0, 100.0, 103.0,
+            {"atr": 1.0, "prior_high": 100.5},
+        )
+        frame = pd.DataFrame({
+            "time": [datetime(2026, 8, 10, 11, 1)],
+            "open": [101.0], "high": [101.2], "low": [100.8], "close": [101.0],
+        })
+        spy_trend._emitted_trigger_by_session.clear()
+        spy_trend._active_breakout_by_session.clear()
+        with patch.object(spy_trend, "_complete_five_minute_bars", return_value=self._completed_bars()), patch.object(
+            spy_trend, "TrendContinuation",
+        ) as strategy:
+            strategy.return_value.evaluate.return_value = candidate
+            first_user = spy_trend.evaluate(frame, "SPY", execution_scope="user-a")
+            second_user = spy_trend.evaluate(frame, "SPY", execution_scope="user-b")
+
+        self.assertIsNotNone(first_user)
+        self.assertIsNotNone(second_user)
+
     def test_ignores_new_candle_while_same_breakout_is_intact(self) -> None:
         first = StructureSignal(
             Side.LONG, datetime(2026, 8, 10, 11, 0), 101.0, 100.0, 103.0,

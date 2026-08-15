@@ -12,14 +12,21 @@ import logging
 import time
 from datetime import timedelta
 
-from trading.state import _now_et, _get_stop_event, _get_lock, get_user_state
+from trading.state import (
+    _now_et,
+    _get_stop_event,
+    _get_lock,
+    get_user_state,
+    register_loop_thread,
+    unregister_loop_thread,
+)
 from config import get_bot_state_path
 from trading.loop.inner import _run_trading_loop_inner
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
-def run_trading_loop(user_id: str = "admin", poll_interval: int = 10) -> None:
+def run_trading_loop(user_id: str, poll_interval: int = 10) -> None:
     """
     Singleton-guarded entry point.  One trading loop per user at a time.
 
@@ -61,14 +68,17 @@ def run_trading_loop(user_id: str = "admin", poll_interval: int = 10) -> None:
             "Press Stop first, wait a few seconds, then Start again."
         )
         return
+    _thread = __import__("threading").current_thread()
+    register_loop_thread(user_id, _thread)
     try:
         _stop.clear()
         _run_trading_loop_inner(user_id=user_id, poll_interval=poll_interval)
     finally:
+        unregister_loop_thread(user_id, _thread)
         _lock.release()
 
 
-def stop_loop(user_id: str = "admin") -> None:
+def stop_loop(user_id: str) -> None:
     """Signal the loop for a given user to exit.
 
     FIX: this used to also unconditionally set the global LIVE_STATE alias
@@ -99,11 +109,8 @@ def stop_loop(user_id: str = "admin") -> None:
             # writers overlap, which in turn loses the explicit-stop marker.
             # Replace is atomic on the server filesystem: readers see either
             # the old complete snapshot or the new complete snapshot.
-            _temporary_state_path = _state_path.with_suffix(".json.tmp")
-            _temporary_state_path.write_text(
-                json.dumps(_st, indent=2, default=str), encoding="utf-8"
-            )
-            _temporary_state_path.replace(_state_path)
+            from config import atomic_write_json
+            atomic_write_json(_state_path, _st)
     except Exception as _se:
         logger.warning("stop_loop: failed to update bot_state.json: %s", _se)
 

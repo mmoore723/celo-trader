@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
-import { api, type AppSettings, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard, type PaidResearchEvidence, type PaidTrendResearchProgress, type V2OrbPaperScorecard } from "../lib/api";
+import { api, type ReviewedStrategyCatalogEntry, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard, type PaidResearchEvidence, type PaidTrendResearchProgress, type V2OrbPaperScorecard } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
 const STRAT_NAMES: Record<string, string> = {
@@ -26,28 +26,25 @@ const STRAT_NAMES: Record<string, string> = {
   V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
 };
 
-function ActivePilotCard({ settings }: { settings?: AppSettings }) {
-  const enabled = settings?.strategy_orb_pullback_v2_enabled
-    && settings.validated_strategy_ids?.includes("V2_ORB_PULLBACK");
-  if (!enabled) {
+function ActivePilotCard({ strategies = [] }: { strategies?: ReviewedStrategyCatalogEntry[] }) {
+  const enabled = strategies.filter((strategy) => strategy.enabled && strategy.status === "paper_candidate");
+  if (enabled.length === 0) {
     return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--ink-faint)" }}>
-      <h2 className="text-sm font-semibold" style={{ marginBottom: 6 }}>What the bot is testing now</h2>
+      <h2 className="text-sm font-semibold" style={{ marginBottom: 6 }}>Effective production strategy status</h2>
       <p style={{ fontSize: 13, color: "var(--ink-muted)", margin: 0 }}>
-        No research strategy is currently allowed to place a paper trade. The bot can observe the market, but it will not enter a new position.
+        No reviewed strategy is currently enabled for paper execution. Scanner research may continue, but it cannot place a trade.
       </p>
     </div>;
   }
   return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--accent)" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-      <h2 className="text-sm font-semibold" style={{ margin: 0 }}>What the bot is testing now</h2>
-      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--positive)", background: "var(--positive-bg)", borderRadius: 999, padding: "2px 8px" }}>PAPER ONLY</span>
+      <h2 className="text-sm font-semibold" style={{ margin: 0 }}>Effective production strategy status</h2>
+      <span className="badge badge-green">{enabled.length} ENABLED · PAPER ONLY</span>
     </div>
-    <p style={{ fontSize: 13, color: "var(--ink)", margin: "0 0 8px", lineHeight: 1.5 }}>
-      <b>TSLA Opening-Range Pullback.</b> The bot marks the first 15 minutes after the open, waits for price to break that range, return to it, and then bounce in the original direction. It only acts after that bounce confirms.
-    </p>
-    <p style={{ fontSize: 12, color: "var(--ink-muted)", margin: 0, lineHeight: 1.5 }}>
-      Contract rule: 7–21 days until expiration, closest out-of-the-money TSLA option, $0.80–$10 ask, and an 8% or tighter spread. A paper trade buys at the seller’s ask and records the same contract’s buyer bid at the 90-minute exit. The journal will show the setup, contract, exit reason, best move (MFE), and worst move (MAE). Positive past results are a candidate—not a promise—so this stays paper-only while it gathers new evidence.
-    </p>
+    <div className="mt-3 overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Reviewed strategy</th><th>Validated ticker</th><th>Execution</th><th>Exit policy</th></tr></thead><tbody>
+      {enabled.map((strategy) => <tr key={strategy.strategy_id}><td><strong>{strategy.display_name}</strong><div className="text-[10px]" style={{ color: "var(--ink-faint)" }}>{strategy.strategy_id} · v{strategy.version}</div></td><td>{strategy.tickers.join(", ")}</td><td><span className="badge badge-green">ON</span></td><td>{strategy.exit_minutes == null ? "Registered policy" : `${strategy.exit_minutes}-minute same-contract exit`}</td></tr>)}
+    </tbody></table></div>
+    <p className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>This table is computed from the server-reviewed registry plus this account’s switches. A browser cannot add an unreviewed strategy or widen its ticker scope.</p>
   </div>;
 }
 
@@ -133,7 +130,7 @@ function CandidateScorecard({ data }: { data: CandidateScorecard }) {
   </div>;
 }
 
-function QQQResearchCard({ data }: { data: PaperResearchScorecard }) {
+export function QQQResearchCard({ data }: { data: PaperResearchScorecard }) {
   const result = data.avg_executable_return_pct == null ? "Collecting quotes" :
     `${data.avg_executable_return_pct >= 0 ? "+" : ""}${data.avg_executable_return_pct.toFixed(2)}%`;
   const underlying = data.avg_underlying_move_pct == null ? "—" :
@@ -154,7 +151,7 @@ function QQQResearchCard({ data }: { data: PaperResearchScorecard }) {
   </div>;
 }
 
-function PaidTrendResearchProgressCard({ data }: { data: PaidTrendResearchProgress }) {
+export function PaidTrendResearchProgressCard({ data }: { data: PaidTrendResearchProgress }) {
   if (!data.available) return null;
   const complete = Boolean(data.complete);
   const stage = data.status === "review_pending" ? "Review required" :
@@ -193,7 +190,7 @@ function PaidTrendResearchProgressCard({ data }: { data: PaidTrendResearchProgre
   </div>;
 }
 
-function PaidTslaResearchCard({ data }: { data: PaidResearchEvidence }) {
+export function PaidTslaResearchCard({ data }: { data: PaidResearchEvidence }) {
   const fmt = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
   return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--accent)" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
@@ -266,7 +263,7 @@ function PaidTslaResearchCard({ data }: { data: PaidResearchEvidence }) {
   </div>;
 }
 
-function V2OrbProspectiveCard({ data }: { data: V2OrbPaperScorecard }) {
+export function V2OrbProspectiveCard({ data }: { data: V2OrbPaperScorecard }) {
   const returnText = data.average_return_pct == null ? "Collecting" : `${data.average_return_pct >= 0 ? "+" : ""}${data.average_return_pct.toFixed(2)}%`;
   const ready = data.sample_status === "review_ready";
   return <div className="card" style={{ padding: 16, borderLeft: `3px solid ${ready ? "var(--positive)" : "var(--accent)"}` }}>
@@ -430,11 +427,7 @@ function DailyView() {
   });
   const { data: scorecard } = useQuery({ queryKey: ["strategy-health-scorecard"], queryFn: () => api.strategyHealth.scorecard(30), staleTime: 60_000 });
   const { data: candidateScorecard } = useQuery({ queryKey: ["strategy-health-candidate-scorecard"], queryFn: () => api.strategyHealth.candidateScorecard(30), staleTime: 60_000 });
-  const { data: qqqResearch } = useQuery({ queryKey: ["strategy-health-qqq-paper-research"], queryFn: api.strategyHealth.qqqOpeningResearch, staleTime: 60_000 });
-  const { data: paidTslaResearch } = useQuery({ queryKey: ["strategy-health-paid-tsla-v2-orb"], queryFn: api.strategyHealth.paidTslaV2Orb, staleTime: 60_000 });
-  const { data: paidTslaTrendProgress } = useQuery({ queryKey: ["strategy-health-paid-tsla-trend-progress"], queryFn: api.strategyHealth.paidTslaTrendProgress, staleTime: 60_000, refetchInterval: 60_000 });
-  const { data: v2OrbPaper } = useQuery({ queryKey: ["strategy-health-v2-orb-paper"], queryFn: api.strategyHealth.v2OrbPaperScorecard, staleTime: 60_000 });
-  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get, staleTime: 60_000 });
+  const { data: strategyCatalog } = useQuery({ queryKey: ["strategy-catalog"], queryFn: api.settings.strategies, staleTime: 60_000 });
 
   const runNow = useMutation({
     mutationFn: api.strategyHealth.run,
@@ -444,7 +437,7 @@ function DailyView() {
     },
   });
 
-  if (isLoading) return <PageLoader label="Strategy Health" />;
+  if (isLoading) return <PageLoader label="Strategy Operations" />;
 
   return (
     <div className="flex flex-col gap-4">
@@ -462,13 +455,9 @@ function DailyView() {
           {runNow.isPending ? "Running audit…" : "Run Audit Now"}
         </button>
       </div>
-      <ActivePilotCard settings={settings} />
-      {paidTslaTrendProgress && <PaidTrendResearchProgressCard data={paidTslaTrendProgress} />}
-      {paidTslaResearch && <PaidTslaResearchCard data={paidTslaResearch} />}
-      {v2OrbPaper && <V2OrbProspectiveCard data={v2OrbPaper} />}
+      <ActivePilotCard strategies={strategyCatalog?.strategies} />
       {scorecard && <Scorecard data={scorecard} />}
       {candidateScorecard && <CandidateScorecard data={candidateScorecard} />}
-      {qqqResearch && <QQQResearchCard data={qqqResearch} />}
 
       {runNow.isError && (
         <div className="card" style={{ padding: 12, color: "var(--negative)", fontSize: 13 }}>
@@ -698,7 +687,8 @@ export function StrategyHealth() {
   return (
     <div className="p-4 md:p-6 flex flex-col gap-4">
       <div>
-        <h1 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>Strategy Health</h1>
+        <h1 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>Strategy Operations</h1>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>What is enabled now, whether signals reached the router, and how actual paper trades performed. Research experiments belong in the Simulation Lab.</p>
         <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
           {tabBtn("daily", "Daily Audit")}
           {tabBtn("weekly", "Weekly Review")}

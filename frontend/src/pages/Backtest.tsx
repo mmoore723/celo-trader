@@ -110,10 +110,15 @@ export function Backtest() {
 
   return (
     <div className="p-4 flex flex-col gap-4 max-w-3xl">
+      <header>
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>Research workspace</p>
+        <h1 className="text-xl font-semibold mt-1" style={{ color: "var(--ink)" }}>Simulation Lab</h1>
+        <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Compare configurations on historical bars. Results here are simulations and do not change the strategies currently enabled in Strategy Operations.</p>
+      </header>
       {/* Config */}
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
-          Backtest Configuration
+          Historical simulation configuration
         </h3>
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex flex-col gap-1">

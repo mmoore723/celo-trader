@@ -19,7 +19,7 @@ class AlpacaPositionsMixin:
 
     # ── Panic close (FIX M2: retry wrapper) ──────────────────────────────────
 
-    def close_all_positions(self) -> None:
+    def close_all_positions(self) -> bool:
         """
         Panic button — liquidates everything. Retries 5 times so one network
         hiccup doesn't leave positions open.
@@ -29,11 +29,13 @@ class AlpacaPositionsMixin:
             log_event("WARNING", "broker.alpaca",
                       "🔴 Emergency close triggered — all positions have been liquidated.")
             logger.warning("PANIC BUTTON: all positions closed")
+            return True
         except Exception as e:
             log_event("CRITICAL", "broker.alpaca",
                       f"🔴 [Alpaca] Emergency close FAILED after multiple retries — "
                       f"positions may still be open! Manual action required. ({type(e).__name__})")
             logger.critical("close_all_positions failed after retries: %s", e)
+            return False
 
     def get_positions(self) -> list[dict]:
         try:

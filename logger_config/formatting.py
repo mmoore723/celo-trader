@@ -57,6 +57,18 @@ class _JsonFormatter(logging.Formatter):
             if key not in _skip and not key.startswith("_"):
                 payload[key] = value
 
+        # Every line consumed by the authenticated WebSocket feed must carry
+        # its tenant. ContextVar follows API requests and bot threads, so this
+        # works without callers having to remember an extra={} field. A line
+        # without a resolvable scope is system-only and is not delivered to a
+        # user's dashboard.
+        if "user_id" not in payload:
+            try:
+                from auth.context import get_current_user_id
+                payload["user_id"] = get_current_user_id()
+            except Exception:
+                payload["user_id"] = "system"
+
         # Exception info
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)

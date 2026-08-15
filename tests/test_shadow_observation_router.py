@@ -38,6 +38,7 @@ class ShadowObservationRouterTests(unittest.TestCase):
 
         with patch.object(router, "ACTIVE_STRATEGIES", [("V2_SPY_AFTERNOON_FVG", lambda _frame, ticker: original)]), \
              patch.object(router, "_gates", gates), patch.object(router, "compute_adx", return_value=30.0), \
+             patch.object(router, "is_allowed_ticker", return_value=True), \
              patch("shadow_ledger.resolve_due_directional_outcomes", return_value=None):
             returned = router.route_signals(
                 frame, "TSLA", enabled_strategies={"V2_SPY_AFTERNOON_FVG"}, quiet=True,
@@ -68,7 +69,7 @@ class ShadowObservationRouterTests(unittest.TestCase):
             ("V2_SPY_TREND_CONT", lambda _frame, ticker: _signal("V2_SPY_TREND_CONT")),
         ]), patch.object(router, "_gates", gates), patch.object(router, "compute_adx", return_value=0.0), patch(
             "shadow_ledger.resolve_due_directional_outcomes", return_value=None,
-        ):
+        ), patch.object(router, "is_allowed_ticker", return_value=True):
             returned = router.route_signals(
                 frame, "TSLA", enabled_strategies={"V2_SPY_TREND_CONT"},
                 observation_only_strategies={"V2_ORB_PULLBACK"}, quiet=True,
@@ -80,6 +81,44 @@ class ShadowObservationRouterTests(unittest.TestCase):
         self.assertEqual(["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT"], observed)
         self.assertEqual(["V2_ORB_PULLBACK"], resolved)
         self.assertEqual(["V2_SPY_TREND_CONT"], [signal.strategy_id for signal in returned])
+
+    def test_injected_strategy_runs_without_a_dummy_bar_evaluator(self) -> None:
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        injected = _signal("V2_ORB_PULLBACK")
+        with patch.object(router, "ACTIVE_STRATEGIES", []), \
+             patch.object(router, "compute_adx", return_value=30.0):
+            returned = router.route_signals(
+                frame, "TSLA", enabled_strategies={"V2_ORB_PULLBACK"}, quiet=True,
+                prepared_today=frame, injected_signals=[injected],
+                preserve_reviewed_paid_paper_rules=True,
+            )
+        self.assertEqual([injected], returned)
+
+    def test_disabled_injected_strategy_is_discarded(self) -> None:
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        with patch.object(router, "ACTIVE_STRATEGIES", []), \
+             patch.object(router, "compute_adx", return_value=30.0):
+            returned = router.route_signals(
+                frame, "TSLA", enabled_strategies=set(), quiet=True,
+                prepared_today=frame, injected_signals=[_signal("V2_ORB_PULLBACK")],
+            )
+        self.assertEqual([], returned)
+
+    def test_observation_only_injected_strategy_never_returns_to_entry(self) -> None:
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        resolved: list[str] = []
+        with patch.object(router, "ACTIVE_STRATEGIES", []), \
+             patch.object(router, "compute_adx", return_value=30.0), \
+             patch("shadow_ledger.resolve_due_directional_outcomes", return_value=None):
+            returned = router.route_signals(
+                frame, "TSLA", enabled_strategies=set(),
+                observation_only_strategies={"V2_ORB_PULLBACK"}, quiet=True,
+                prepared_today=frame, injected_signals=[_signal("V2_ORB_PULLBACK")],
+                candidate_observer=lambda *_args: None,
+                observation_resolver=lambda signal: resolved.append(signal.strategy_id),
+            )
+        self.assertEqual(["V2_ORB_PULLBACK"], resolved)
+        self.assertEqual([], returned)
 
 
 if __name__ == "__main__":

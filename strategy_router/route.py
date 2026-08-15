@@ -23,6 +23,7 @@ import router_gates as _gates
 
 from strategy_router.evaluators import ACTIVE_STRATEGIES
 from strategy_router.indicator_frame import _build_indicator_frame
+from config.strategy_catalog import is_allowed_ticker
 from trading.v2_orb_execution_profile import uses_reviewed_paid_execution_profile
 
 logger = logging.getLogger("celo_trader.strategy_router")
@@ -82,7 +83,7 @@ def route_signals(
         df                  : Multi-day 5-min OHLCV DataFrame
         ticker              : Symbol string (log context + cooldown keying)
         enabled_strategies  : Optional set of strategy IDs to run.
-                              If None, all eight run.
+                              If None, all reviewed bar-close strategies run.
         quiet               : If True, skip the "bar_eval" DB narration
                               (e.g. the ADX chop-regime notice) written via
                               _db_log(). Used by strategy_health/engine.py's
@@ -166,8 +167,9 @@ def route_signals(
     _all_evaluators = ACTIVE_STRATEGIES
     _selected_strategies = None if _order_strategies is None else _order_strategies | _observation_only
     evaluators = (
-        [(sid, fn) for sid, fn in _all_evaluators if sid in _selected_strategies]
-        if _selected_strategies is not None else _all_evaluators
+        [(sid, fn) for sid, fn in _all_evaluators
+         if (_selected_strategies is None or sid in _selected_strategies)
+         and is_allowed_ticker(sid, ticker)]
     )
 
     # ── ADX trend-strength gate — skip breakout strategies in chop (< 25) ────
@@ -196,7 +198,7 @@ def route_signals(
                             f"Mean-reversion strategies still active.")
                 except Exception:
                     pass
-    if not evaluators:
+    if not evaluators and not injected_signals:
         return []
 
     # Some strategies need one additional live input that a completed OHLCV
@@ -204,15 +206,30 @@ def route_signals(
     # signals are produced by the entry loop but deliberately enter here so
     # they still receive the same router gates, ranking, annotations, and
     # paper-only observation behavior as every normal evaluator.
-    signals: list[Signal] = list(injected_signals or [])
+    signals: list[Signal] = []
     candidate_ids: dict[tuple[str, str, str], str] = {}
-    for sig in tuple(signals):
+    for sig in tuple(injected_signals or ()):
+        strategy_id = str(getattr(sig, "strategy_id", "") or "").strip().upper()
+        if _selected_strategies is not None and strategy_id not in _selected_strategies:
+            logger.warning("Discarding disabled injected strategy %s", strategy_id)
+            continue
+        if not is_allowed_ticker(strategy_id, ticker):
+            logger.warning("Discarding out-of-scope injected strategy %s for %s", strategy_id, ticker)
+            continue
         if candidate_observer is not None:
             try:
                 candidate_observer(ticker, sig, _underlying_price)
                 _remember_candidate(sig, candidate_ids)
             except Exception:
                 logger.warning("candidate observer failed (non-fatal)", exc_info=True)
+        if strategy_id in _observation_only:
+            if observation_resolver is not None:
+                try:
+                    observation_resolver(sig)
+                except Exception:
+                    logger.warning("candidate observation resolve failed (non-fatal)", exc_info=True)
+            continue
+        signals.append(sig)
         if not quiet:
             try:
                 _emit_signal_annotation(ticker, sig, today)

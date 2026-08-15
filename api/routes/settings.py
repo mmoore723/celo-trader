@@ -3,13 +3,26 @@ api/routes/settings.py — Settings read/write endpoints + API credentials.
 """
 from __future__ import annotations
 from typing import Optional
-from datetime import date
 import json
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from api.models import Settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+@router.get("/strategies")
+def get_strategy_catalog_endpoint() -> dict:
+    """Expose the same reviewed registry used by order routing."""
+    from config import get_settings
+    from config.strategy_catalog import public_strategy_catalog
+    return {"strategies": public_strategy_catalog(get_settings())}
+
+
+@router.get("/strategies/history")
+def get_strategy_setting_history(limit: int = 50) -> dict:
+    from database import get_strategy_setting_changes
+    return {"changes": get_strategy_setting_changes(limit)}
 
 
 @router.get("", response_model=Settings)
@@ -57,7 +70,7 @@ def get_settings_endpoint() -> Settings:
 
 
 @router.post("", response_model=Settings)
-def save_settings_endpoint(payload: Settings) -> Settings:
+def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
     from config import get_settings, save_settings
     current = get_settings()
     data = payload.model_dump()
@@ -83,8 +96,22 @@ def save_settings_endpoint(payload: Settings) -> Settings:
             data["risk_per_trade"] = round(float(_rp_ui) / 100.0, 4)  # 10.0 → 0.10
         except (TypeError, ValueError):
             pass
+    from config.strategy_catalog import REVIEWED_STRATEGIES
+    strategy_changes = [
+        (
+            rule.strategy_id,
+            rule.setting_key,
+            bool(current.get(rule.setting_key, False)),
+            bool(data.get(rule.setting_key, False)),
+        )
+        for rule in REVIEWED_STRATEGIES.values()
+        if bool(current.get(rule.setting_key, False)) != bool(data.get(rule.setting_key, False))
+    ]
     current.update(data)
     save_settings(current)
+    if strategy_changes:
+        from database import record_strategy_setting_changes
+        record_strategy_setting_changes(str(request.state.user_id), strategy_changes)
 
     # ── Hot-reload watchlist into the running bot ─────────────────────────────
     # Inject new pinned tickers into this user's state immediately so the bot
@@ -149,7 +176,7 @@ def get_credentials() -> dict:
 
 
 @router.post("/credentials")
-def save_credentials(payload: CredentialsPayload) -> dict:
+def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
     """
     Save Alpaca + Tradier API keys for the current user (encrypted at rest).
     Note: Alpaca uses the SAME key pair for both paper and live trading.
@@ -170,6 +197,13 @@ def save_credentials(payload: CredentialsPayload) -> dict:
          otherwise a partial payload would DELETE the untouched keys
          instead of leaving them alone.
     """
+    from trading.state import _get_lock
+    if _get_lock(request.state.user_id).locked():
+        raise HTTPException(
+            409,
+            "Stop the bot before changing broker credentials so one session cannot span two accounts.",
+        )
+
     from config import get_api_keys, save_api_keys
     current = get_api_keys()
     if payload.alpaca_api_key is not None:
@@ -180,6 +214,10 @@ def save_credentials(payload: CredentialsPayload) -> dict:
         current["tradier_api_key"] = payload.tradier_api_key.strip()
     if payload.tradier_account_id is not None:
         current["tradier_account_id"] = payload.tradier_account_id.strip()
+    if bool(current.get("alpaca_api_key")) != bool(current.get("alpaca_secret_key")):
+        raise HTTPException(400, "Alpaca API key and secret key must be saved together")
+    if bool(current.get("tradier_api_key")) != bool(current.get("tradier_account_id")):
+        raise HTTPException(400, "Tradier API key and account ID must be saved together")
     alpaca_changed = payload.alpaca_api_key is not None or payload.alpaca_secret_key is not None
     save_api_keys(current)
     if not alpaca_changed:
@@ -204,10 +242,11 @@ def save_credentials(payload: CredentialsPayload) -> dict:
     previous_identity = str(settings.get("active_broker_account_id") or "")
     changed_account = identity != previous_identity
     if changed_account:
+        from trading.state import _now_et
         save_settings({
             "active_broker_account_id": identity,
             "last_known_balance": 0.0,
-            f"day_start_{date.today().isoformat()}": 0.0,
+            f"day_start_{_now_et().date().isoformat()}": 0.0,
         })
         # Clear persisted display state immediately. A running loop retains its
         # old in-memory client, so it is intentionally NOT restarted here: an
@@ -223,7 +262,8 @@ def save_credentials(payload: CredentialsPayload) -> dict:
                 "session_pnl": 0.0,
                 "credentials_restart_required": True,
             })
-            state_path.write_text(json.dumps(state, indent=2, default=str))
+            from config import atomic_write_json
+            atomic_write_json(state_path, state)
         except Exception:
             pass
     return {

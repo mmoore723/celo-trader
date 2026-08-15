@@ -17,6 +17,46 @@ from database.summary import _upsert_daily_summary
 
 logger = logging.getLogger("celo_trader.database")
 
+
+def audit_trade_lineage(trade_id: int) -> list[str]:
+    """Return missing durable links for one trade without changing it."""
+    missing: list[str] = []
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM trades WHERE id = ?", (trade_id,)).fetchone()
+        if row is None:
+            return ["trade"]
+        trade = dict(row)
+        recovered = trade.get("strategy_id") == "RECOVERED_UNTRACKED"
+        if not trade.get("candidate_id") and not recovered:
+            missing.append("candidate_id")
+        elif trade.get("candidate_id"):
+            candidate = conn.execute(
+                "SELECT linked_trade_id FROM shadow_candidates WHERE candidate_id = ?",
+                (trade["candidate_id"],),
+            ).fetchone()
+            if candidate is None or candidate["linked_trade_id"] != trade_id:
+                missing.append("candidate_link")
+        journal = conn.execute(
+            "SELECT id FROM signal_journal WHERE trade_id = ? AND outcome = 'entered' LIMIT 1",
+            (trade_id,),
+        ).fetchone()
+        if journal is None and not recovered:
+            missing.append("signal_journal")
+        if not trade.get("entry_order_id") and not recovered:
+            missing.append("entry_order_id")
+        if not trade.get("entry_fill_time") and not recovered:
+            missing.append("entry_fill_time")
+        if trade.get("status") == "closed":
+            if not trade.get("exit_order_id"):
+                missing.append("exit_order_id")
+            if not trade.get("exit_fill_time"):
+                missing.append("exit_fill_time")
+            if trade.get("peak_price") is None:
+                missing.append("mfe")
+            if trade.get("mae_price") is None:
+                missing.append("mae")
+    return missing
+
 def insert_trade(
     ticker: str,
     contract_symbol: str,
@@ -34,6 +74,10 @@ def insert_trade(
     annotations_json: Optional[str] = None,  # JSON snapshot of entry-time chart annotations
     tier: str = "main",                       # main setup pool | separately measured opportunity pool
     broker_account_id: Optional[str] = None,   # active Alpaca account/mode identity at entry
+    candidate_id: Optional[str] = None,
+    parent_trade_id: Optional[int] = None,
+    entry_order_id: Optional[str] = None,
+    entry_fill_time: Optional[datetime | str] = None,
 ) -> int:
     """
     Insert an open trade.  Returns the new row id so we can update it on close.
@@ -43,8 +87,10 @@ def insert_trade(
         INSERT INTO trades
             (ticker, contract_symbol, option_type, strike, expiry,
              contracts, entry_price, entry_time, entry_reason,
-             status, paper, strategy_id, stop_price, target_price, annotations_json, tier, broker_account_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)
+             status, paper, strategy_id, stop_price, target_price, annotations_json,
+             tier, broker_account_id, candidate_id, parent_trade_id,
+             entry_order_id, entry_fill_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     with get_conn() as conn:
         cur = conn.execute(sql, (
@@ -52,6 +98,8 @@ def insert_trade(
             contracts, entry_price, _to_et_isoformat(entry_time), entry_reason,
             1 if paper else 0, strategy_id, stop_price, target_price, annotations_json,
             tier if tier in ("main", "opportunity") else "main", broker_account_id,
+            candidate_id, parent_trade_id, entry_order_id,
+            _to_et_isoformat(entry_fill_time) if isinstance(entry_fill_time, datetime) else entry_fill_time,
         ))
         trade_id = cur.lastrowid
     logger.info(
@@ -94,6 +142,8 @@ def close_trade(
     paper: bool = True,                   # False → deduct Alpaca commission from P&L
     recap: Optional[str] = None,          # Auto-generated trade recap stored in DB
     annotations_json: Optional[str] = None,  # JSON snapshot of exit-time chart annotations
+    exit_order_id: Optional[str] = None,
+    exit_fill_time: Optional[datetime | str] = None,
 ) -> float:
     """
     Mark a trade closed and compute realised P&L.
@@ -144,11 +194,15 @@ def close_trade(
             UPDATE trades
             SET exit_price = ?, exit_time = ?, exit_reason = ?,
                 realized_pnl = ?, status = 'closed',
-                peak_price = ?, mae_price = ?, recap = ?, annotations_json = ?
+                peak_price = ?, mae_price = ?, recap = ?, annotations_json = ?,
+                exit_order_id = ?, exit_fill_time = ?
             WHERE id = ?
             """,
             (actual_exit, _to_et_isoformat(exit_time), exit_reason,
-             realized_pnl, peak_price, mae_price, recap, merged_annotations, trade_id),
+             realized_pnl, peak_price, mae_price, recap, merged_annotations,
+             exit_order_id,
+             _to_et_isoformat(exit_fill_time) if isinstance(exit_fill_time, datetime) else exit_fill_time,
+             trade_id),
         )
 
     logger.info(

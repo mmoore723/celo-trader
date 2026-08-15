@@ -25,6 +25,8 @@ class TradierCoreMixin:
         from config import get_api_keys as _gak
         _keys = _gak()
         _key  = _keys.get("tradier_api_key", TRADIER_API_KEY)
+        self.api_key = _key
+        self.account_id = _keys.get("tradier_account_id", "")
         self.base    = TRADIER_BASE_URL
         self.headers = {
             "Authorization": f"Bearer {_key}",

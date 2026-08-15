@@ -19,8 +19,8 @@ Retired strategy implementations do not remain in production as hidden or disabl
 
 - **Scanner Opportunities:** every evaluated current-catalog setup and its path toward a contract or rejection.
 - **Trade Journal:** broker-linked entered and closed positions.
-- **Strategy Health:** current deployed paper/live evidence and decision funnel.
-- **Backtest:** explicit historical experiments over a selected configuration and date range.
+- **Strategy Operations:** current deployed paper evidence, decision funnel, gate behavior, and integrity alerts.
+- **Simulation Lab:** explicit historical experiments over a selected configuration and date range. It never changes active strategy settings.
 - **AI Decision Audit:** Claude input, constrained recommendation, enforcement state, errors, and exact technical replay.
 - **Strategy Playbook:** learning material for current-catalog strategies only.
 

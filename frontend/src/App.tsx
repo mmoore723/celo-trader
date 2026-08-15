@@ -14,17 +14,6 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Topbar }          from "./components/layout/Topbar";
 import { Sidebar }         from "./components/layout/Sidebar";
 import { TickerBar }       from "./components/layout/TickerBar";
-import { LiveTrading }     from "./pages/LiveTrading";
-import { Performance }     from "./pages/Performance";
-import { Journal }         from "./pages/Journal";
-import { ScannerOpportunities } from "./pages/ScannerOpportunities";
-import { Settings }        from "./pages/Settings";
-import { Backtest }        from "./pages/Backtest";
-import { Playbooks }       from "./pages/Playbooks";
-import { DailyBrief }      from "./pages/DailyBrief";
-import { StrategyHealth }  from "./pages/StrategyHealth";
-import { AiReasoning }     from "./pages/AiReasoning";
-import { Admin }           from "./pages/Admin";
 import { Register }        from "./pages/Register";
 import { Login }           from "./pages/Login";
 import { Terms }           from "./pages/Terms";
@@ -32,7 +21,24 @@ import { Maintenance }     from "./pages/Maintenance";
 import { ApiSetupModal }   from "./components/ApiSetupModal";
 import { ErrorBoundary }   from "./components/ErrorBoundary";
 import { BrokerAlertBanner } from "./components/BrokerAlertBanner";
-import { useState, useEffect } from "react";
+import { PageLoader } from "./components/PageLoader";
+import { lazy, Suspense, useState, useEffect } from "react";
+
+// Load each authenticated workspace only when the user opens it. The charting
+// libraries are by far the largest dependency; keeping them out of the login,
+// daily brief, and journal bundles makes first load faster and reduces the
+// blast radius of a page-specific rendering failure.
+const LiveTrading = lazy(() => import("./pages/LiveTrading").then((module) => ({ default: module.LiveTrading })));
+const Performance = lazy(() => import("./pages/Performance").then((module) => ({ default: module.Performance })));
+const Journal = lazy(() => import("./pages/Journal").then((module) => ({ default: module.Journal })));
+const ScannerOpportunities = lazy(() => import("./pages/ScannerOpportunities").then((module) => ({ default: module.ScannerOpportunities })));
+const Settings = lazy(() => import("./pages/Settings").then((module) => ({ default: module.Settings })));
+const Backtest = lazy(() => import("./pages/Backtest").then((module) => ({ default: module.Backtest })));
+const Playbooks = lazy(() => import("./pages/Playbooks").then((module) => ({ default: module.Playbooks })));
+const DailyBrief = lazy(() => import("./pages/DailyBrief").then((module) => ({ default: module.DailyBrief })));
+const StrategyHealth = lazy(() => import("./pages/StrategyHealth").then((module) => ({ default: module.StrategyHealth })));
+const AiReasoning = lazy(() => import("./pages/AiReasoning").then((module) => ({ default: module.AiReasoning })));
+const Admin = lazy(() => import("./pages/Admin").then((module) => ({ default: module.Admin })));
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -99,6 +105,7 @@ function AppShell() {
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>
         <ErrorBoundary>
+        <Suspense fallback={<PageLoader label="Loading workspace" />}>
         <Routes>
           <Route path="/"            element={<DailyBrief />} />
           <Route path="/trading"     element={<LiveTrading />} />
@@ -114,6 +121,7 @@ function AppShell() {
           {/* Read-only terms view for already-accepted users */}
           <Route path="/terms"       element={<Terms viewOnly />} />
         </Routes>
+        </Suspense>
         </ErrorBoundary>
       </main>
       <TickerBar />

@@ -7,24 +7,17 @@ contract-selection, entry-side, and exit policy cannot.
 """
 from __future__ import annotations
 
+from config.strategy_catalog import reviewed_strategy_ids
+
 
 V2_ORB_STRATEGY_ID = "V2_ORB_PULLBACK"
 V2_SPY_TREND_STRATEGY_ID = "V2_SPY_TREND_CONT"
 V2_SPY_AFTERNOON_FVG_STRATEGY_ID = "V2_SPY_AFTERNOON_FVG"
 V2_TSLA_TWO_LEG_TREND_PULLBACK_STRATEGY_ID = "V2_TSLA_TWO_LEG_TREND_PULLBACK"
-V2_PAPER_STRATEGY_IDS = frozenset({
-    V2_ORB_STRATEGY_ID, V2_SPY_TREND_STRATEGY_ID,
-    V2_SPY_AFTERNOON_FVG_STRATEGY_ID,
-    V2_TSLA_TWO_LEG_TREND_PULLBACK_STRATEGY_ID,
-})
+V2_PAPER_STRATEGY_IDS = frozenset(reviewed_strategy_ids())
 # Only these IDs have a predeclared paid-quote contract rule *and* passed an
 # untouched later-data check.
-REVIEWED_PAID_STRATEGY_IDS = frozenset({
-    V2_ORB_STRATEGY_ID,
-    V2_SPY_TREND_STRATEGY_ID,
-    V2_SPY_AFTERNOON_FVG_STRATEGY_ID,
-    V2_TSLA_TWO_LEG_TREND_PULLBACK_STRATEGY_ID,
-})
+REVIEWED_PAID_STRATEGY_IDS = V2_PAPER_STRATEGY_IDS
 
 
 def uses_v2_orb_execution_profile(strategy_id: object) -> bool:

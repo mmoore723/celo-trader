@@ -23,6 +23,11 @@ requests>=2.31.0
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 streamlit>=1.35.0
 plotly>=5.22.0
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-jose[cryptography]>=3.3,<4
+bcrypt>=4.1,<5
+cryptography>=42,<46
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # sqlite3 is part of Python stdlib — no extra package needed

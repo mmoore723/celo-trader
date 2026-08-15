@@ -67,6 +67,19 @@ class SpyAfternoonFvgV2Tests(unittest.TestCase):
         self.assertEqual(1.3, first.rvol)
         self.assertIsNone(second)
 
+    def test_retest_dedupe_state_is_isolated_per_user(self) -> None:
+        frame = pd.DataFrame({
+            "time": [datetime(2026, 8, 10, 13, 31)],
+            "open": [102.1], "high": [102.2], "low": [102.0], "close": [102.1],
+            "rvol": [1.3],
+        })
+        with patch.object(afternoon_fvg, "_complete_five_minute_bars", return_value=_valid_bars()):
+            first_user = afternoon_fvg.evaluate(frame, "SPY", execution_scope="user-a")
+            second_user = afternoon_fvg.evaluate(frame, "SPY", execution_scope="user-b")
+
+        self.assertIsNotNone(first_user)
+        self.assertIsNotNone(second_user)
+
 
 if __name__ == "__main__":
     unittest.main()

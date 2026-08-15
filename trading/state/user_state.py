@@ -13,10 +13,8 @@ immediately visible everywhere else that resolves the same user_id. No
 copies, no desync, and (unlike the old single-global-dict design) no
 cross-user leakage either.
 
-LIVE_STATE below is a backward-compat alias that ALWAYS points at the admin
-user's dict specifically — nothing in this codebase should import it
-directly anymore; it's kept only in case an external tool/script still
-reaches for it directly.
+There is intentionally no process-global live-state alias. Every caller must
+resolve a tenant explicitly or through the authenticated ContextVar.
 """
 
 from datetime import datetime
@@ -114,12 +112,6 @@ def get_user_state(user_id: str | None = None) -> dict:
     return USER_STATES[uid]
 
 
-# Backward-compat: LIVE_STATE always refers to the admin user's state.
-# All existing modules that do `from trading.state import LIVE_STATE`
-# continue to work without changes.
-LIVE_STATE: dict = get_user_state("admin")
-
-
 def _update_data_gap() -> None:
     """
     Called on every FAILED bar fetch.  Updates data_gap_minutes and emits a
@@ -163,7 +155,7 @@ def _update_data_gap() -> None:
         logger.warning("Data gap watchdog: %d minutes without a clean bar fetch", gap)
 
 
-def reset_session_state(user_id: str = "admin") -> None:
+def reset_session_state(user_id: str | None = None) -> None:
     """
     Hard-reset the given user's state and purge the SIM trade cache from
     session_state whenever the paper/live trading mode is toggled.
@@ -173,7 +165,8 @@ def reset_session_state(user_id: str = "admin") -> None:
     a non-admin user's reset silently reset the admin account instead of
     their own. Now resolves the caller's own state dict.
     """
-    _US = get_user_state(user_id)
+    uid = user_id or _default_user_id()
+    _US = get_user_state(uid)
     _US["open_trade"]             = None
     _US["open_trades"]            = []
     _US["positions"]              = {}
@@ -202,5 +195,5 @@ def reset_session_state(user_id: str = "admin") -> None:
     _US["opportunity_scheduler"]  = {}
     logger.info(
         "session_state_reset",
-        extra={"event": "session_state_reset", "reason": "paper_trading_mode_toggle", "user_id": user_id},
+        extra={"event": "session_state_reset", "reason": "paper_trading_mode_toggle", "user_id": uid},
     )

@@ -7,17 +7,15 @@ etc.) automatically resolves to the authenticated user's data without any extra
 function-signature changes.
 """
 from __future__ import annotations
-import os
 import logging
 
 from fastapi import Request, HTTPException
 from jose import jwt, JWTError
+from auth.security import (
+    JWT_ALGORITHM, COOKIE_NAME, jwt_secret, origin_is_trusted,
+)
 
 logger = logging.getLogger(__name__)
-
-JWT_ALGORITHM = "HS256"
-COOKIE_NAME   = "celo_session"
-
 
 async def require_auth(request: Request) -> None:
     """
@@ -26,7 +24,6 @@ async def require_auth(request: Request) -> None:
     downstream helpers (config, db, broker) resolve to the correct user.
     """
     # Lazy-read secret so load_dotenv() has run before we access it.
-    secret = os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
     token  = request.cookies.get(COOKIE_NAME)
     if not token:
         raise HTTPException(
@@ -35,7 +32,7 @@ async def require_auth(request: Request) -> None:
             headers={"X-Auth-Code": "no_session"},
         )
     try:
-        payload = jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, jwt_secret(), algorithms=[JWT_ALGORITHM])
     except JWTError:
         raise HTTPException(
             status_code=401,
@@ -43,18 +40,36 @@ async def require_auth(request: Request) -> None:
             headers={"X-Auth-Code": "expired"},
         )
 
-    # Inject user into request-scoped ContextVar
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    from auth.users import get_user
+    user = get_user(str(user_id))
+    if not user or int(payload.get("session_version", 0)) != int(user["session_version"]):
+        raise HTTPException(
+            status_code=401,
+            detail="Session is no longer valid — please sign in again",
+            headers={"X-Auth-Code": "revoked"},
+        )
+
+    # Cookie-authenticated state changes must originate from our own UI.
+    if request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        source = request.headers.get("origin") or request.headers.get("referer")
+        if source and not origin_is_trusted(source):
+            raise HTTPException(status_code=403, detail="Untrusted request origin")
+
+    # Inject current DB truth, not role/name claims cached in the JWT.
     from auth.context import set_current_user
     set_current_user(
-        user_id  = payload.get("sub", "admin"),
-        username = payload.get("username", "admin"),
-        is_admin = bool(payload.get("is_admin", False)),
+        user_id=user["user_id"],
+        username=user["username"],
+        is_admin=bool(user["is_admin"]),
     )
 
     # Also stash on request.state for routes that need to inspect it directly
-    request.state.user_id   = payload.get("sub", "admin")
-    request.state.username  = payload.get("username", "admin")
-    request.state.is_admin  = bool(payload.get("is_admin", False))
+    request.state.user_id = user["user_id"]
+    request.state.username = user["username"]
+    request.state.is_admin = bool(user["is_admin"])
 
 
 # Backward-compat stub — no longer registered but kept for imports

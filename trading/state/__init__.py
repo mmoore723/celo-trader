@@ -11,10 +11,8 @@ immediately visible everywhere else that resolves the same user_id. No
 copies, no desync, and (unlike the old single-global-dict design) no
 cross-user leakage either.
 
-LIVE_STATE below is a backward-compat alias that ALWAYS points at the admin
-user's dict specifically — nothing in this codebase should import it
-directly anymore; it's kept only in case an external tool/script still
-reaches for it directly.
+There is intentionally no process-global live-state alias. Every caller must
+resolve a tenant explicitly or through the authenticated ContextVar.
 
 Split (2026-08-01, file-size cleanup) out of the old single
 trading/state.py into constants.py, locks.py, risk_log.py, and
@@ -41,8 +39,13 @@ from trading.state.constants import (
 from trading.state.locks import (
     _USER_STOP_EVENTS,
     _USER_LOCKS,
+    _USER_THREADS,
     _get_stop_event,
     _get_lock,
+    register_loop_thread,
+    unregister_loop_thread,
+    active_loop_threads,
+    request_graceful_shutdown,
     _stop_event,
     _bot_loop_lock,
     _default_user_id,
@@ -59,7 +62,6 @@ from trading.state.user_state import (
     _make_initial_state,
     USER_STATES,
     get_user_state,
-    LIVE_STATE,
     _update_data_gap,
     reset_session_state,
 )
@@ -73,8 +75,13 @@ __all__ = [
     "logger",
     "_USER_STOP_EVENTS",
     "_USER_LOCKS",
+    "_USER_THREADS",
     "_get_stop_event",
     "_get_lock",
+    "register_loop_thread",
+    "unregister_loop_thread",
+    "active_loop_threads",
+    "request_graceful_shutdown",
     "_stop_event",
     "_bot_loop_lock",
     "_default_user_id",
@@ -87,7 +94,6 @@ __all__ = [
     "_make_initial_state",
     "USER_STATES",
     "get_user_state",
-    "LIVE_STATE",
     "_update_data_gap",
     "reset_session_state",
 ]

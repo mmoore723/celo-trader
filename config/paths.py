@@ -39,20 +39,28 @@ SYSTEM_MAINTENANCE_PATH = BASE_DIR / "system_maintenance.json"
 def _get_user_id() -> str:
     """
     Return the currently authenticated user's ID from the request-scoped ContextVar.
-    Falls back to "admin" so all single-user / background-thread code is unchanged.
+    Unscoped work resolves to the isolated ``system`` tenant.  Authenticated
+    requests and bot workers set an explicit user context before accessing
+    state, so a missing context can never expose the administrator's files.
     """
     try:
         from auth.context import get_current_user_id
         return get_current_user_id()
     except Exception:
-        return "admin"
+        return "system"
 
 
-def get_user_data_dir(user_id: str | None = None) -> Path:
-    """Return the per-user data directory, creating it if needed."""
+def get_user_data_dir(user_id: str | None = None, *, create: bool = True) -> Path:
+    """Return the per-user data directory.
+
+    Reads must pass ``create=False`` so inspecting settings or credentials has
+    no filesystem side effect. State/database writers retain the safe default
+    and create the directory before persisting anything.
+    """
     uid = user_id or _get_user_id()
     p   = _USER_DATA / uid
-    p.mkdir(parents=True, exist_ok=True)
+    if create:
+        p.mkdir(parents=True, exist_ok=True)
     return p
 
 
@@ -88,20 +96,13 @@ def get_bot_state_path(user_id: str | None = None) -> Path:
     Return the per-user bot_state.json path (user_data/{user_id}/bot_state.json),
     creating the user's data directory if needed.
 
-    One-time migration: the very first time this is called for a user whose
-    per-user file doesn't exist yet, if the legacy root-level bot_state.json
-    exists, copy it in so existing "admin" state (account balance, open
-    positions, etc.) isn't silently lost when this ships. Only ever applies
-    once per user — after the copy, the per-user file is authoritative and
-    the legacy file is left untouched (read-only fallback, never written).
+    Legacy state migration is intentionally *not* performed here. Accessors
+    run for every newly-created user, so copying the old global state here
+    leaks the original account balance, P&L and position display into each new
+    account. The primary admin migration belongs in the one-time user
+    bootstrap; every other user must begin with no state file.
     """
-    _path = get_user_data_dir(user_id) / "bot_state.json"
-    if not _path.exists() and _LEGACY_BOT_STATE_PATH.exists():
-        try:
-            _path.write_text(_LEGACY_BOT_STATE_PATH.read_text())
-        except Exception:
-            pass  # non-fatal — worst case the user starts with a fresh state file
-    return _path
+    return get_user_data_dir(user_id) / "bot_state.json"
 
 
 def load_bot_state_safely(path: Path) -> dict | None:

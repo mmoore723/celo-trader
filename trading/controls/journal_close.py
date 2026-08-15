@@ -15,7 +15,6 @@ broker_ok) through function-call boundaries for no real benefit.
 
 from __future__ import annotations
 
-import json
 import logging
 
 from trading.state import _now_et, get_user_state
@@ -121,6 +120,9 @@ def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
                 exit_time            = _now_et(),
                 exit_reason          = "auto_reconciled_no_broker_position",
                 confirmed_fill_price = trade["entry_price"],
+                paper                = paper,
+                exit_order_id        = "reconciled:no_broker_position",
+                exit_fill_time       = _now_et(),
             )
             log_event(
                 "ERROR", "trading_logic",
@@ -150,6 +152,9 @@ def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
             exit_time            = _now_et(),
             exit_reason          = "manual_journal",
             confirmed_fill_price = fill_price,
+            paper                = paper,
+            exit_order_id        = str(fill.get("id") or "") or None,
+            exit_fill_time       = fill.get("filled_at") or _now_et(),
         )
     except Exception as e:
         logger.error("close_trade_by_id [%s]: DB close_trade() failed: %s", trade_id, e)
@@ -177,17 +182,17 @@ def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
 
     # Remove from this user's bot_state.json open_positions
     try:
-        from config import get_bot_state_path
+        from config import get_bot_state_path, atomic_update_json
         _state_path_cb = get_bot_state_path(uid)
-        if _state_path_cb.exists():
-            with open(_state_path_cb) as _f:
-                _existing_cb = json.load(_f)
-            _open_positions_cb = _existing_cb.get("open_positions") or {}
-            _open_positions_cb.pop(str(trade_id), None)
-            _existing_cb["open_positions"] = _open_positions_cb
-            _existing_cb["session_pnl"]    = _US.get("session_pnl", 0.0)
-            with open(_state_path_cb, "w") as _f:
-                json.dump(_existing_cb, _f)
+        def _remove_journal_position(state: dict) -> dict:
+            positions = dict(state.get("open_positions") or {})
+            positions.pop(str(trade_id), None)
+            return {
+                **state,
+                "open_positions": positions,
+                "session_pnl": _US.get("session_pnl", 0.0),
+            }
+        atomic_update_json(_state_path_cb, _remove_journal_position)
     except Exception:
         pass
 

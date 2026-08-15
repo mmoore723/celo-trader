@@ -45,12 +45,21 @@ CREATE TABLE IF NOT EXISTS trades (
     paper           INTEGER NOT NULL DEFAULT 1,        -- 1=paper, 0=live
     strategy_id     TEXT    DEFAULT 'UNKNOWN',         -- approved strategy that generated signal
     tier            TEXT    NOT NULL DEFAULT 'main',   -- 'main' | 'opportunity'
-    broker_account_id TEXT                             -- account/mode identity at entry
+    broker_account_id TEXT,                            -- account/mode identity at entry
+    candidate_id    TEXT,                              -- raw scanner candidate that became this trade
+    parent_trade_id INTEGER,                           -- original row when this row is a partial close
+    entry_order_id  TEXT,                              -- broker buy-to-open order id
+    exit_order_id   TEXT,                              -- broker sell-to-close order id
+    entry_fill_time TEXT,                              -- broker-confirmed entry fill timestamp
+    exit_fill_time  TEXT                               -- broker-confirmed exit fill timestamp
 );
 """
 
 _CREATE_TRADES_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_trades_broker_account ON trades(broker_account_id, entry_time);",
+    "CREATE INDEX IF NOT EXISTS idx_trades_candidate ON trades(candidate_id);",
+    "CREATE INDEX IF NOT EXISTS idx_trades_entry_order ON trades(entry_order_id);",
+    "CREATE INDEX IF NOT EXISTS idx_trades_exit_order ON trades(exit_order_id);",
 ]
 
 _CREATE_DAILY_SUMMARY = """
@@ -84,6 +93,22 @@ CREATE TABLE IF NOT EXISTS strategy_audits (
     ai_summary    TEXT                -- optional Claude-generated summary (NULL if no API key)
 );
 """
+
+_CREATE_STRATEGY_SETTING_CHANGES = """
+CREATE TABLE IF NOT EXISTS strategy_setting_changes (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    changed_at       TEXT    NOT NULL,
+    actor_user_id    TEXT    NOT NULL,
+    strategy_id      TEXT    NOT NULL,
+    setting_key      TEXT    NOT NULL,
+    previous_enabled INTEGER NOT NULL,
+    new_enabled      INTEGER NOT NULL
+);
+"""
+_CREATE_STRATEGY_SETTING_CHANGES_IDX = (
+    "CREATE INDEX IF NOT EXISTS idx_strategy_setting_changes_time "
+    "ON strategy_setting_changes(changed_at DESC);"
+)
 
 # ai_reasoning_log — every prompt/response the AI reasoning layer sends or
 # receives, win or lose. Written by ai_reasoning/narrator.py (phase 1,
@@ -293,6 +318,8 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_DAILY_SUMMARY)
         conn.execute(_CREATE_SYSTEM_EVENTS)
         conn.execute(_CREATE_STRATEGY_AUDITS)
+        conn.execute(_CREATE_STRATEGY_SETTING_CHANGES)
+        conn.execute(_CREATE_STRATEGY_SETTING_CHANGES_IDX)
         conn.execute(_CREATE_AI_REASONING_LOG)
         conn.execute(_CREATE_SIGNAL_JOURNAL)
         conn.execute(_CREATE_OPTION_QUOTE_OBSERVATIONS)
@@ -361,6 +388,14 @@ def _init_db_at(db_path: Path) -> None:
         if "broker_account_id" not in _cols:
             conn.execute("ALTER TABLE trades ADD COLUMN broker_account_id TEXT")
             logger.info("Migration: added broker_account_id to trades in %s", db_path.name)
+        for _trade_column, _trade_type in (
+            ("candidate_id", "TEXT"), ("parent_trade_id", "INTEGER"),
+            ("entry_order_id", "TEXT"), ("exit_order_id", "TEXT"),
+            ("entry_fill_time", "TEXT"), ("exit_fill_time", "TEXT"),
+        ):
+            if _trade_column not in _cols:
+                conn.execute(f"ALTER TABLE trades ADD COLUMN {_trade_column} {_trade_type}")
+                logger.info("Migration: added %s to trades in %s", _trade_column, db_path.name)
         for _idx_sql in _CREATE_TRADES_IDX:
             conn.execute(_idx_sql)
         _shadow_cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_candidates)")}

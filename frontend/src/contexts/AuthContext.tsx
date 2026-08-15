@@ -7,6 +7,7 @@
  *
  * Also exposed: logout() which calls /api/auth/logout and clears state.
  */
+/* oxlint-disable react/only-export-components -- provider and its colocated hook are one authentication boundary */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export interface AuthUser {

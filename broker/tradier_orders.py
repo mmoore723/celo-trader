@@ -12,7 +12,6 @@ from typing import Optional
 
 import requests
 
-from config import TRADIER_API_KEY, TRADIER_ACCOUNT_ID
 from database import log_event
 from broker.common import _retry
 
@@ -37,7 +36,7 @@ class TradierOrdersMixin:
         Uses TRADIER_ACCOUNT_ID from config (was missing before — FIX applied).
         Wraps with retry so transient network issues don't drop orders.
         """
-        if not TRADIER_API_KEY or not TRADIER_ACCOUNT_ID:
+        if not getattr(self, "api_key", "") or not getattr(self, "account_id", ""):
             logger.warning(
                 "Tradier key or account ID missing — order not sent. "
                 "Set TRADIER_API_KEY and TRADIER_ACCOUNT_ID in .env"
@@ -56,7 +55,7 @@ class TradierOrdersMixin:
         if order_type == "limit" and limit_price:
             payload["price"] = str(round(limit_price, 2))
 
-        url = f"{self.base}/accounts/{TRADIER_ACCOUNT_ID}/orders"
+        url = f"{self.base}/accounts/{self.account_id}/orders"
 
         def call():
             r = requests.post(url, headers=self.headers, data=payload, timeout=10)

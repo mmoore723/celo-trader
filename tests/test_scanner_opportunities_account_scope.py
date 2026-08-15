@@ -8,11 +8,45 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from api.routes.signals import get_gate_scorecard, get_scanner_opportunities
+from api.routes.signals import (
+    _assign_opportunity_episodes,
+    _opportunity_lifecycle,
+    get_gate_scorecard,
+    get_scanner_opportunities,
+)
 from database.schema import _init_db_at
 
 
 class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
+    def test_interleaved_ticker_checks_stay_in_the_same_setup_episode(self) -> None:
+        entries = [
+            {"id": "spy-1", "observed_at": "2026-08-14T10:00:00-04:00", "ticker": "SPY", "strategy_id": "V2_SPY_TREND_CONT", "direction": "long", "outcome": "pending", "plan_status": "not_priced"},
+            {"id": "tsla-1", "observed_at": "2026-08-14T10:01:00-04:00", "ticker": "TSLA", "strategy_id": "V2_ORB_PULLBACK", "direction": "long", "outcome": "pending", "plan_status": "not_priced"},
+            {"id": "spy-2", "observed_at": "2026-08-14T10:02:00-04:00", "ticker": "SPY", "strategy_id": "V2_SPY_TREND_CONT", "direction": "long", "outcome": "blocked", "plan_status": "contract_preview"},
+        ]
+
+        episodes = _assign_opportunity_episodes(entries)
+
+        self.assertEqual(2, len(episodes))
+        spy_episode = next(episode for episode in episodes if episode[0]["ticker"] == "SPY")
+        self.assertEqual(["spy-1", "spy-2"], [entry["id"] for entry in spy_episode])
+        self.assertEqual(2, spy_episode[0]["episode_size"])
+        self.assertEqual("stopped", spy_episode[1]["lifecycle"])
+
+    def test_setup_episode_restarts_after_fifteen_quiet_minutes(self) -> None:
+        entries = [
+            {"id": "first", "observed_at": "2026-08-14T10:00:00-04:00", "ticker": "SPY", "strategy_id": "V2_SPY_TREND_CONT", "direction": "long", "outcome": "pending", "plan_status": "not_priced"},
+            {"id": "second", "observed_at": "2026-08-14T10:16:00-04:00", "ticker": "SPY", "strategy_id": "V2_SPY_TREND_CONT", "direction": "long", "outcome": "pending", "plan_status": "not_priced"},
+        ]
+
+        self.assertEqual(2, len(_assign_opportunity_episodes(entries)))
+
+    def test_lifecycle_names_cannot_confuse_research_with_orders(self) -> None:
+        self.assertEqual("research", _opportunity_lifecycle({"outcome": "observed_only"}))
+        self.assertEqual("entered", _opportunity_lifecycle({"outcome": "entered"}))
+        self.assertEqual("stopped", _opportunity_lifecycle({"outcome": "blocked"}))
+        self.assertEqual("ready", _opportunity_lifecycle({"outcome": "pending", "plan_status": "contract_selected"}))
+
     def test_existing_journal_database_is_upgraded_for_detailed_opportunities(self) -> None:
         """A pre-context signal history must migrate before the page reads it."""
         with TemporaryDirectory() as directory:

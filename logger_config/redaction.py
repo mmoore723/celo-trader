@@ -18,8 +18,24 @@ appended to) after the lazy first-call population.
 """
 
 import re
+import threading
 
 _SECRET_PATTERNS: list[re.Pattern] = []
+_PATTERN_LOCK = threading.RLock()
+
+
+def register_secret_values(values) -> None:
+    """Add runtime-loaded per-user secrets to the process redaction set."""
+    candidates = {str(value) for value in values if value and len(str(value)) >= 8}
+    if not candidates:
+        return
+    with _PATTERN_LOCK:
+        existing = {pattern.pattern for pattern in _SECRET_PATTERNS}
+        for value in candidates:
+            escaped = re.escape(value)
+            if escaped not in existing:
+                _SECRET_PATTERNS.append(re.compile(escaped))
+                existing.add(escaped)
 
 
 def _load_secret_patterns() -> None:
@@ -32,10 +48,7 @@ def _load_secret_patterns() -> None:
     try:
         from config import ALPACA_SECRET_KEY, TRADIER_API_KEY, ALPACA_API_KEY
         candidates = [ALPACA_SECRET_KEY, TRADIER_API_KEY, ALPACA_API_KEY]
-        _SECRET_PATTERNS = [
-            re.compile(re.escape(v))
-            for v in candidates
-            if v and len(v) >= 8          # skip empty / placeholder strings
-        ]
+        _SECRET_PATTERNS = []
+        register_secret_values(candidates)
     except Exception:
         pass   # config not yet ready — no patterns this run

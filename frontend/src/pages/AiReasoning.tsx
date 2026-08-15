@@ -141,7 +141,7 @@ export function AiReasoning() {
     queryFn: () => api.aiReasoning.log({ limit: 100, eventType: eventType || undefined, ticker: ticker || undefined, onlyErrors }),
     refetchInterval: 30_000,
   });
-  const entries = data?.entries ?? [];
+  const entries = useMemo(() => data?.entries ?? [], [data?.entries]);
   const stats = useMemo(() => ({
     total: entries.length,
     passive: entries.filter((entry) => !entry.applied && !entry.error).length,

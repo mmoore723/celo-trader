@@ -11,7 +11,7 @@ import logging
 from typing import Optional
 from datetime import date
 
-from config import TRADIER_API_KEY, MIN_OPEN_INTEREST, MAX_BID_ASK_SPREAD
+from config import MIN_OPEN_INTEREST, MAX_BID_ASK_SPREAD
 
 logger = logging.getLogger("celo_trader.broker")
 
@@ -35,7 +35,7 @@ class TradierChainMixin:
         skipped straight to "no_chain_data" with zero retry. One retry after
         a short delay before giving up.
         """
-        if not TRADIER_API_KEY:
+        if not getattr(self, "api_key", ""):
             return []
         try:
             resp = self._get("/markets/options/chains", {
@@ -93,7 +93,7 @@ class TradierChainMixin:
         Uses /markets/quotes — much cheaper than full chain fetch.
         Called every 60s while a position is open instead of the full chain.
         """
-        if not TRADIER_API_KEY:
+        if not getattr(self, "api_key", ""):
             return None
         try:
             resp = self._get("/markets/quotes", {
@@ -123,7 +123,7 @@ class TradierChainMixin:
 
     def get_expirations(self, symbol: str) -> list[str]:
         """Return expiry dates 7–21 days out."""
-        if not TRADIER_API_KEY:
+        if not getattr(self, "api_key", ""):
             return []
         try:
             resp = self._get("/markets/options/expirations", {

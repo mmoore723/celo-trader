@@ -14,17 +14,14 @@ paths.
 from __future__ import annotations
 
 from datetime import datetime
+from config.strategy_catalog import REVIEWED_STRATEGIES
 
 
 V2_ORB_PAID_MARKOUT_MINUTES = 90
 V2_EXIT_MINUTES_BY_STRATEGY = {
-    "V2_ORB_PULLBACK": 90,
-    # One-open-SPY-position paid study selected 30 minutes earlier and passed
-    # 66 untouched later trades. The 90-minute per-signal diagnostic allowed
-    # overlapping SPY positions, so it is not the executable account policy.
-    "V2_SPY_TREND_CONT": 30,
-    "V2_SPY_AFTERNOON_FVG": 30,
-    "V2_TSLA_TWO_LEG_TREND_PULLBACK": 90,
+    strategy_id: rule.exit_minutes
+    for strategy_id, rule in REVIEWED_STRATEGIES.items()
+    if rule.exit_minutes is not None
 }
 
 

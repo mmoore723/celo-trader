@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "strategy_id": "V2_TSLA_TWO_LEG_TREND_PULLBACK",
+  "strategy_version": "2.0.0",
+  "status": "paper_candidate",
+  "ticker_scope": ["TSLA"],
+  "implementation": "trading.two_leg_trend_pullback_execution",
+  "implementation_sha256_at_review": "9ff447b0b9ddb04a413bc913c32f350b72f766ac0ab40042ade5ea5c3130fa91",
+  "market_data": {
+    "source": "paid Databento OPRA CBBO-1m archive",
+    "bars_sha256": "eeae427d707adc321538eb6f102cf513644723936e9d1f88d5549eca10e604ac",
+    "execution_model": "next-minute actual option ask at entry; same-contract actual bid at exit; no overlapping position",
+    "eligibility": {"min_dte": 7, "max_dte": 21, "min_premium": 0.8, "max_premium": 10.0, "max_spread_pct": 0.08}
+  },
+  "selected_policy": {"variant": "baseline", "hold_minutes": 90, "holdout_start": "2026-05-19"},
+  "training": {"measured_signals": 108, "average_return_pct": 3.1853, "median_return_pct": 2.036, "win_rate_pct": 54.63, "profit_factor": 1.4822},
+  "holdout": {"measured_signals": 19, "average_return_pct": 3.9999, "median_return_pct": 0.5025, "win_rate_pct": 52.63, "profit_factor": 1.5129},
+  "monthly_stability": {"decision": "insufficient_or_inconsistent", "trades": 127, "average_return_pct": 3.3072, "median_return_pct": 2.0101, "profit_factor": 1.4875, "losing_or_nonpositive_months": ["2025-11", "2025-12", "2026-02", "2026-03", "2026-04", "2026-06"]},
+  "decision": "Aggregate train/holdout gate passed, but month-level behavior was inconsistent. Retain as paper candidate pending prospective validation.",
+  "source_reports": ["research/reports/paid_tsla_two_leg_tuning_v1.json", "research/reports/paid_tsla_two_leg_monthly_stability_90m.json"]
+}

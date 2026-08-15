@@ -8,25 +8,19 @@ Endpoints:
   POST /api/auth/register — create account via invite token
 """
 from __future__ import annotations
-import os
 import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Response, Request
 from pydantic import BaseModel
 from jose import jwt, JWTError
+from auth.security import JWT_ALGORITHM, COOKIE_NAME, LOGIN_GUARD, jwt_secret
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-JWT_ALGORITHM = "HS256"
-COOKIE_NAME   = "celo_session"
 SESSION_SHORT = timedelta(days=7)
 SESSION_LONG  = timedelta(days=30)
-
-
-def _jwt_secret() -> str:
-    return os.getenv("JWT_SECRET", "celo-trader-change-me-in-prod")
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -52,10 +46,11 @@ def _issue_session(response: Response, user: dict, stay: bool) -> dict:
         "sub":      user["user_id"],
         "username": user["username"],
         "is_admin": user["is_admin"],
+        "session_version": int(user["session_version"]),
         "iat":      int(now.timestamp()),
         "exp":      int((now + duration).timestamp()),
     }
-    token = jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
+    token = jwt.encode(payload, jwt_secret(), algorithm=JWT_ALGORITHM)
     response.set_cookie(
         key=COOKIE_NAME, value=token, httponly=True,
         secure=True, samesite="lax",
@@ -66,18 +61,33 @@ def _issue_session(response: Response, user: dict, stay: bool) -> dict:
 
 
 def decode_session(token: str) -> dict:
-    return jwt.decode(token, _jwt_secret(), algorithms=[JWT_ALGORITHM])
+    return jwt.decode(token, jwt_secret(), algorithms=[JWT_ALGORITHM])
+
+
+def _current_session_user(token: str) -> tuple[dict, dict]:
+    payload = decode_session(token)
+    from auth.users import get_user
+    user = get_user(str(payload.get("sub") or ""))
+    if not user or int(payload.get("session_version", 0)) != int(user["session_version"]):
+        raise JWTError("revoked session")
+    return payload, user
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/login")
-async def auth_login(body: LoginRequest, response: Response):
+async def auth_login(body: LoginRequest, response: Response, request: Request):
     from auth.users import authenticate
+    client = request.client.host if request.client else "unknown"
+    key = f"{client}:{body.username.strip().lower()}"
+    if LOGIN_GUARD.blocked(key):
+        raise HTTPException(429, "Too many failed attempts. Try again later.")
     user = authenticate(body.username, body.password)
     if not user:
+        LOGIN_GUARD.failure(key)
         logger.warning("Failed login for username=%s", body.username)
         raise HTTPException(401, "Incorrect username or password")
+    LOGIN_GUARD.success(key)
     logger.info("Login: username=%s id=%s", user["username"], user["user_id"])
     return _issue_session(response, user, body.stay_signed_in)
 
@@ -88,9 +98,8 @@ async def auth_me(request: Request):
     if not token:
         raise HTTPException(401, "Not authenticated")
     try:
-        p = decode_session(token)
+        p, u = _current_session_user(token)
         from auth.users import get_user, CURRENT_TERMS_VERSION
-        u = get_user(p["sub"]) or {}
         # JWT layer: terms_version baked in when user accepted (re-issued cookie).
         # DB layer: fallback for sessions issued before this feature was added.
         # Either source matching CURRENT_TERMS_VERSION = user has accepted.
@@ -99,10 +108,10 @@ async def auth_me(request: Request):
         accepted_v = jwt_terms if jwt_terms == CURRENT_TERMS_VERSION else db_terms
         return {
             "ok":                    True,
-            "user_id":               p["sub"],
-            "username":              p.get("username", "admin"),
-            "is_admin":              bool(p.get("is_admin", False)),
-            "email":                 p.get("username", "admin"),
+            "user_id":               u["user_id"],
+            "username":              u["username"],
+            "is_admin":              bool(u["is_admin"]),
+            "email":                 u["username"],
             "terms_accepted":        accepted_v == CURRENT_TERMS_VERSION,
             "current_terms_version": CURRENT_TERMS_VERSION,
         }
@@ -125,21 +134,27 @@ async def auth_accept_terms(request: Request, response: Response):
     if not token:
         raise HTTPException(401, "Not authenticated")
     try:
-        p = decode_session(token)
+        p, u = _current_session_user(token)
     except JWTError:
         raise HTTPException(401, "Session expired — please sign in again")
     from auth.users import accept_terms, CURRENT_TERMS_VERSION
     # Write to DB (primary storage)
-    ok = accept_terms(p["sub"], CURRENT_TERMS_VERSION)
+    ok = accept_terms(u["user_id"], CURRENT_TERMS_VERSION)
     if not ok:
-        logger.warning("accept_terms: DB UPDATE matched 0 rows for user_id=%s", p["sub"])
+        raise HTTPException(401, "User account no longer exists")
     # Re-issue the cookie with terms_version embedded so /me can trust the JWT
     # even if the DB row is later missing.  Preserve the original expiry.
     _now_ts  = int(datetime.now(timezone.utc).timestamp())
     _exp     = p.get("exp", _now_ts + int(SESSION_SHORT.total_seconds()))
     _max_age = max(0, _exp - _now_ts)
-    new_payload = {**p, "terms_version": CURRENT_TERMS_VERSION}
-    new_token   = jwt.encode(new_payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
+    new_payload = {
+        **p,
+        "username": u["username"],
+        "is_admin": bool(u["is_admin"]),
+        "session_version": int(u["session_version"]),
+        "terms_version": CURRENT_TERMS_VERSION,
+    }
+    new_token   = jwt.encode(new_payload, jwt_secret(), algorithm=JWT_ALGORITHM)
     response.set_cookie(
         key=COOKIE_NAME, value=new_token, httponly=True,
         secure=True, samesite="lax", max_age=_max_age, path="/",
@@ -149,23 +164,19 @@ async def auth_accept_terms(request: Request, response: Response):
 
 @router.post("/logout")
 async def auth_logout(response: Response):
-    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(
+        COOKIE_NAME, path="/", secure=True, httponly=True, samesite="lax"
+    )
     return {"ok": True}
 
 
 @router.post("/register")
 async def auth_register(body: RegisterRequest, response: Response):
     """Self-registration via a one-time invite link sent by the admin."""
-    from auth.users import consume_invite, create_user, mark_invite_used
-    if not body.token or not consume_invite(body.token):
-        raise HTTPException(400, "Invalid or expired invite link")
-    if len(body.username.strip()) < 3:
-        raise HTTPException(400, "Username must be at least 3 characters")
-    # Complexity enforced inside create_user() via validate_password()
+    from auth.users import create_user_from_invite
     try:
-        user = create_user(body.username, body.password, is_admin=False)
+        user = create_user_from_invite(body.token, body.username, body.password)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    mark_invite_used(body.token, user["user_id"])
     logger.info("New user registered via invite: %s", user["username"])
     return _issue_session(response, user, stay=True)

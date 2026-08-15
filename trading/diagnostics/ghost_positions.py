@@ -10,6 +10,7 @@ cleanup); no logic changed, only relocated.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from trading.state import get_user_state, get_user_risk, _now_et, _default_user_id
@@ -175,4 +176,3 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
             for p in still_unrecorded
         ],
     }
-

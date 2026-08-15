@@ -21,20 +21,20 @@ order-of-operations this loop depends on.
 import json
 import logging
 import time
-from datetime import date, timedelta
+from datetime import timedelta
 
 from trading.state import _now_et, _get_stop_event, get_user_state, set_user_risk
-from config import get_bot_state_path
+from config import get_bot_state_path, atomic_write_json
 from trading.loop.audits import _run_nightly_strategy_audit_once, _run_weekly_strategy_review_once
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
-def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> None:
+def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     """Inner body of the trading loop — called exclusively from run_trading_loop()."""
     from broker import get_clients
     from config import get_settings, STARTING_CAPITAL, get_trading_windows as _gtw
-    from database import init_db, log_event, get_all_trades
+    from database import init_db, log_event, get_all_trades, get_open_trades
     from risk import RiskManager, DailyLossLimitReached
     from alerts import send_alert
     from scanner import run_scan, is_scan_window
@@ -100,8 +100,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
     # Day-start balance: persist per calendar date so mid-session bot restarts
     # don't overwrite the true opening value with the current (already-traded) balance.
     from config import save_settings as _save_dsb
-    import datetime as _dt_dsb
-    _today_key = f"day_start_{_dt_dsb.date.today().isoformat()}"
+    _today_key = f"day_start_{_now_et().date().isoformat()}"
     _saved_dsb = get_settings().get(_today_key)
     if _saved_dsb:
         # Bot restarted mid-session — use the balance saved at first start today
@@ -119,7 +118,7 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 limit=100, mode=_trade_mode,
                 broker_account_id=_US.get("broker_account_id"),
             )
-            if (t.get("exit_time") or "")[:10] == date.today().isoformat()
+            if (t.get("exit_time") or "")[:10] == _now_et().date().isoformat()
         )
     except Exception as e:
         logger.error("Could not recompute session_pnl from DB at startup: %s", e)
@@ -185,9 +184,12 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             _US["current_ticker"]    = "SPY"
             _US["scanner_ran_today"] = False
 
-    # Write initial bot_state.json, carrying forward last-known option price.
+    # Rebuild durable position state before the first market-data tick. A
+    # restart must not briefly show an empty dashboard or forget an armed
+    # trailing/peak state while the broker still holds the contract.
     _prev_opt_px      = None
     _prev_opt_px_time = None
+    _prev_state       = {}
     try:
         _state_path_start = get_bot_state_path(user_id)
         if _state_path_start.exists():
@@ -203,25 +205,58 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
                 _US["eval_log"] = _prev_eval
     except Exception:
         pass
+
+    try:
+        _restored_open = get_open_trades(
+            broker_account_id=_US.get("broker_account_id"),
+        )
+        _US["open_trades"] = _restored_open
+        _US["open_trade"] = _restored_open[0] if _restored_open else None
+        _prior_positions = dict(_prev_state.get("open_positions") or {})
+        _dashboard_positions = {}
+        for _trade in _restored_open:
+            _tid = int(_trade["id"])
+            _saved = dict(_prior_positions.get(str(_tid)) or {})
+            _saved.setdefault("trade_id", _tid)
+            _saved.setdefault("contract_symbol", _trade.get("contract_symbol"))
+            _saved.setdefault("ticker", _trade.get("ticker"))
+            _saved.setdefault("option_type", _trade.get("option_type"))
+            _saved.setdefault("entry_price", _trade.get("entry_price"))
+            _saved.setdefault("contracts", _trade.get("contracts"))
+            _saved.setdefault("entry_time", _trade.get("entry_time"))
+            _US["positions"][_tid] = dict(_saved)
+            _dashboard_positions[str(_tid)] = _saved
+        if _restored_open:
+            _US["status"] = "in_trade"
+        elif _US.get("status") == "in_trade":
+            _US["status"] = "scanning"
+    except Exception as _restore_err:
+        logger.error("Open-position restart reconstruction failed: %s", _restore_err)
+        _restored_open = []
+        _dashboard_positions = {}
+
+    # Write initial bot_state.json, carrying forward last-known option price.
     _US["current_option_price"]      = _prev_opt_px
     _US["current_option_price_time"] = _prev_opt_px_time
     try:
         _state_path_start = get_bot_state_path(user_id)
-        json.dump({
+        atomic_write_json(_state_path_start, {
             "running":              True,
             "auto_start_disabled":  False,   # clear explicit-stop flag on fresh start
             "mode":                 _trade_mode,   # "paper" or "live" — shown in dashboard
             "broker_account_id":    _US.get("broker_account_id"),
             "account_balance":      float(balance),
             "session_pnl":          _US.get("session_pnl", 0.0),
-            "status":               "starting",
-            "current_ticker":       None,
+            "day_start_balance":    _US.get("day_start_balance", balance),
+            "status":               _US.get("status", "starting"),
+            "current_ticker":       _US.get("current_ticker"),
             "last_signal":          None,
             "market_open":          False,
             "last_update":          time.strftime("%H:%M:%S"),
             "current_option_price":      _prev_opt_px,
             "current_option_price_time": _prev_opt_px_time,
-        }, open(_state_path_start, "w"))
+            "open_positions":       _dashboard_positions,
+        })
     except Exception:
         pass
 
@@ -373,14 +408,14 @@ def _run_trading_loop_inner(user_id: str = "admin", poll_interval: int = 10) -> 
             _US["status"]      = "error"
             _US["last_update"] = _now_et().isoformat()
             try:
-                json.dump({
+                atomic_write_json(get_bot_state_path(user_id), {
                     "running":    True,
                     "status":     "error",
                     "last_error": str(e)[:200],
                     "last_update": _US["last_update"],
                     "account_balance": _US.get("account_balance", 0),
                     "market_open": _US.get("market_open", False),
-                }, open(get_bot_state_path(user_id), "w"))
+                })
             except Exception:
                 pass
             _stop.wait(timeout=30)

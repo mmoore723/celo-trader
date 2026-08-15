@@ -134,6 +134,63 @@ def _plan_status(*, contract: dict, preview: dict | None = None, trade: dict | N
     return "not_priced"
 
 
+def _opportunity_lifecycle(entry: dict) -> str:
+    """Return the plain-language stage shown consistently across the UI."""
+    outcome = str(entry.get("outcome") or "pending")
+    plan_status = str(entry.get("plan_status") or "not_priced")
+    if outcome == "entered":
+        return "entered"
+    if outcome == "blocked":
+        return "stopped"
+    if outcome == "observed_only":
+        return "research"
+    if plan_status == "contract_selected":
+        return "ready"
+    if plan_status == "contract_preview":
+        return "pricing"
+    return "watching"
+
+
+def _assign_opportunity_episodes(entries: list[dict]) -> list[list[dict]]:
+    """Group repeated one-minute detections into independent setup episodes.
+
+    A condition that remains true for five minutes is one developing setup,
+    not five possible trades.  A new episode begins after fifteen quiet
+    minutes or when ticker, strategy, direction, or trading day changes.
+    """
+    episodes: list[list[dict]] = []
+    latest_by_identity: dict[tuple[str, str, str, str], list[dict]] = {}
+    ordered = sorted(entries, key=lambda item: str(item.get("observed_at") or ""))
+    for entry in ordered:
+        when = _parse_audit_time(entry.get("observed_at"))
+        identity = (
+            str(entry.get("observed_at") or "")[:10], str(entry.get("ticker") or ""),
+            str(entry.get("strategy_id") or ""), str(entry.get("direction") or ""),
+        )
+        current_episode = latest_by_identity.get(identity)
+        prior = current_episode[-1] if current_episode else None
+        prior_when = _parse_audit_time(prior.get("observed_at")) if prior else None
+        if (not prior or not when or not prior_when
+                or (when - prior_when).total_seconds() > 15 * 60):
+            current_episode = [entry]
+            latest_by_identity[identity] = current_episode
+            episodes.append(current_episode)
+        else:
+            current_episode.append(entry)
+    for index, episode in enumerate(episodes, start=1):
+        first = episode[0]
+        episode_id = "|".join((
+            str(first.get("observed_at") or ""), str(first.get("ticker") or ""),
+            str(first.get("strategy_id") or ""), str(first.get("direction") or ""),
+        ))
+        for occurrence, entry in enumerate(episode, start=1):
+            entry["episode_id"] = episode_id
+            entry["episode_occurrence"] = occurrence
+            entry["episode_size"] = len(episode)
+            entry["lifecycle"] = _opportunity_lifecycle(entry)
+    return episodes
+
+
 def _candidate_quote_timeline(rows: list[dict]) -> list[dict]:
     """Add conservative executable returns to a candidate's quote marks.
 
@@ -471,22 +528,52 @@ def get_scanner_opportunities(
             "outcome_observed_at": None,
             "trade": {"id": journal.get("trade_id")} if journal.get("trade_id") else None,
         })
+    # Add lifecycle/episode metadata before sorting for display. This prevents
+    # five consecutive observations of one condition from being presented as
+    # five independent trade opportunities.
+    episodes = _assign_opportunity_episodes(entries)
     entries.sort(key=lambda entry: str(entry.get("observed_at") or ""), reverse=True)
     if outcome:
         entries = [entry for entry in entries if entry.get("outcome") == outcome]
     entries = entries[:limit]
-    counts = Counter(str(entry.get("outcome") or "pending") for entry in entries)
-    research_only = counts.get("observed_only", 0)
-    unresolved = counts.get("pending", 0)
-    entered = counts.get("entered", 0)
-    blocked = counts.get("blocked", 0)
+
+    # Summary cards count independent episodes, not raw one-minute rows. Use
+    # the furthest stage reached by any observation within that episode.
+    lifecycle_rank = {"research": 0, "watching": 1, "pricing": 2, "ready": 3, "stopped": 4, "entered": 5}
+    episode_stages: list[str] = []
+    visible_ids = {str(entry.get("id")) for entry in entries}
+    for episode in episodes:
+        visible_episode = [entry for entry in episode if str(entry.get("id")) in visible_ids]
+        if not visible_episode:
+            continue
+        stage = max(
+            (str(entry.get("lifecycle") or "watching") for entry in visible_episode),
+            key=lambda value: lifecycle_rank.get(value, -1),
+        )
+        episode_stages.append(stage)
+    stage_counts = Counter(episode_stages)
+    entered = stage_counts.get("entered", 0)
+    blocked = stage_counts.get("stopped", 0)
+    research_only = stage_counts.get("research", 0)
+    watching = stage_counts.get("watching", 0)
+    pricing = stage_counts.get("pricing", 0)
+    ready = stage_counts.get("ready", 0)
     return {
         "date": selected_date, "account_scoped": bool(account_id),
         "available_dates": [str(row["day"]) for row in date_rows if row["day"]],
-        "summary": {"total": len(entries), "routed": entered + blocked + unresolved,
-                    "entered": entered, "blocked": blocked, "research_only": research_only,
-                    "unresolved": unresolved, **counts},
-        "note": "Detections are strategy conditions, not orders, and a continuing setup can appear more than once. Research-only detections were never allowed to order. Routed decisions show whether the bot entered, blocked, or still lacks a terminal record.",
+        "summary": {
+            "setups": len(episode_stages), "raw_detections": len(entries),
+            "actionable": entered + blocked + pricing + ready,
+            "entered": entered, "stopped": blocked, "research": research_only,
+            "watching": watching, "pricing": pricing, "ready": ready,
+            # Transitional aliases for older clients and saved tests. These
+            # retain their historical names while using the corrected episode
+            # semantics rather than raw one-minute detection counts.
+            "total": len(episode_stages), "blocked": blocked,
+            "observed": research_only, "routed": entered + blocked,
+            "unresolved": watching + pricing + ready,
+        },
+        "note": "Setups count independent episodes; raw detections count repeated scanner checks. Watching means the pattern is incomplete. Pricing means contract checks began. Ready means a contract was selected but no entry record exists. Stopped always includes the recorded reason. Entered always links to the actual trade.",
         "entries": entries,
     }
 

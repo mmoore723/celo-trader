@@ -32,7 +32,7 @@ system_events : API errors, alerts, kill-switch triggers for audit trail
 from database.helpers import _now_et, _to_et_isoformat, _merge_annotations_json
 from database.schema import init_db, backfill_daily_summaries, _init_db_at
 from database.connection import get_conn, _conn_for_mode
-from database.trades import insert_trade, save_mtf_bias, close_trade
+from database.trades import insert_trade, save_mtf_bias, close_trade, audit_trade_lineage
 from database.option_quotes import (
     record_paper_option_quote, record_candidate_option_quote,
     capture_due_candidate_option_quotes,
@@ -48,12 +48,13 @@ from database.stats import get_statistics
 from database.strategy_audit import (
     save_strategy_audit, get_latest_strategy_audit, get_strategy_audit_history,
 )
+from database.settings_audit import record_strategy_setting_changes, get_strategy_setting_changes
 
 __all__ = [
     "_now_et", "_to_et_isoformat", "_merge_annotations_json",
     "init_db", "backfill_daily_summaries", "_init_db_at",
     "get_conn", "_conn_for_mode",
-    "insert_trade", "save_mtf_bias", "close_trade", "record_paper_option_quote",
+    "insert_trade", "save_mtf_bias", "close_trade", "audit_trade_lineage", "record_paper_option_quote",
     "record_candidate_option_quote", "capture_due_candidate_option_quotes",
     "start_paper_research_observation", "close_due_paper_research_observations", "get_paper_research_scorecard",
     "get_open_trades", "get_open_trade", "get_all_trades",
@@ -61,4 +62,5 @@ __all__ = [
     "log_event", "log_ai_reasoning", "get_ai_reasoning_log", "get_ai_reasoning_entry",
     "get_statistics",
     "save_strategy_audit", "get_latest_strategy_audit", "get_strategy_audit_history",
+    "record_strategy_setting_changes", "get_strategy_setting_changes",
 ]

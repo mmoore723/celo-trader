@@ -8,10 +8,10 @@ import { Link } from "react-router-dom";
 import { ChevronDown, Newspaper, RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
-import { useUIStore } from "../store/ui";
 import {
   api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle,
 } from "../lib/api";
+import { dedupeLatestEpisodes, lifecycleCopy, opportunityLifecycle } from "../lib/opportunitySemantics.js";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
@@ -144,8 +144,6 @@ export function LiveTrading() {
   const chartReplayRef  = useRef<BoomerangReplayHandle>(null);
 
   const { status, logs } = useBotStore();
-  const { } = useUIStore();
-
   // "Watch this setup" — jump the chart's scrub position to just before a
   // Signal History / Bot Focus entry and auto-play from there (chart refactor
   // Phase 3). Eval log entries only carry a display-only "HH:MM:SS" string
@@ -212,18 +210,7 @@ export function LiveTrading() {
   // The live sidebar is a glanceable alert feed, not the full audit trail.
   // Collapse repeated observations of the same setup and keep the newest one.
   const scannerOpportunityPreview = useMemo(() => {
-    const seen = new Set<string>();
-    return (scannerOpportunityData?.entries ?? []).filter((entry: any) => {
-      const progressed = ["contract_selected", "contract_preview"].includes(String(entry.plan_status));
-      const operational = entry.outcome === "entered"
-        || progressed
-        || (entry.outcome === "pending" && entry.plan_status !== "observation_only");
-      if (!operational) return false;
-      const key = `${entry.ticker}|${entry.strategy_id}|${entry.direction}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).slice(0, 3);
+    return dedupeLatestEpisodes(scannerOpportunityData?.entries ?? [], 3);
   }, [scannerOpportunityData]);
 
   const { data: or } = useQuery({
@@ -729,13 +716,9 @@ export function LiveTrading() {
               </p>
             ) : (
               scannerOpportunityPreview.map((opportunity: any) => {
-                const outcomeLabel: Record<string, string> = {
-                  entered: "ENTERED",
-                  observed_only: "OBSERVED",
-                  blocked: "BLOCKED",
-                  pending: "PENDING",
-                };
-                const isEntered = opportunity.outcome === "entered";
+                const lifecycle = opportunityLifecycle(opportunity);
+                const lifecycleText = lifecycleCopy(opportunity);
+                const isEntered = lifecycle === "entered";
                 // Scanner candidates use the same "bullish" / "bearish"
                 // vocabulary as the entry router.  Do not silently call a
                 // bullish setup a put because a different page uses long/short.
@@ -755,18 +738,10 @@ export function LiveTrading() {
                   ?? "Scanner setup detected";
                 const quantity = opportunity.planned_quantity ?? trade.contracts;
                 const strategyName = String(opportunity.strategy_id ?? "Setup").replace(/^V2_/, "").replaceAll("_", " ");
-                const statusTitle = isEntered
-                  ? "New Trade Idea"
-                  : opportunity.outcome === "blocked"
-                    ? "Setup Stopped"
-                    : opportunity.plan_status === "contract_selected"
-                      ? "Contract Selected"
-                      : opportunity.plan_status === "contract_preview"
-                        ? "Contract Check"
-                        : "Setup Developing";
+                const statusTitle = lifecycleText.title;
                 const accent = isEntered
                   ? "var(--positive)"
-                  : opportunity.outcome === "blocked" ? "var(--negative)" : "var(--accent)";
+                  : lifecycle === "stopped" ? "var(--negative)" : "var(--accent)";
                 return (
                   <button key={opportunity.id}
                     className="w-full text-left mb-2 rounded-lg hover:bg-muted transition-colors"
@@ -786,7 +761,7 @@ export function LiveTrading() {
                         background: isEntered ? "rgba(34,197,94,0.15)" : "rgba(139,148,158,0.15)",
                         color: isEntered ? "var(--positive)" : "var(--ink-muted)",
                       }}>
-                        {outcomeLabel[opportunity.outcome] ?? String(opportunity.outcome ?? "PENDING").toUpperCase()}
+                        {lifecycleText.badge}
                       </span>
                     </div>
                     <div className="text-[10px] leading-relaxed" style={{ color: "var(--ink)" }}>
@@ -802,7 +777,7 @@ export function LiveTrading() {
                       )}
                     </div>
                     <div className="mt-1.5 text-[9px] leading-snug" style={{ color: "var(--ink-muted)" }}>
-                      <b style={{ color: "var(--ink)" }}>{opportunity.outcome === "blocked" ? "Stopped:" : "Status:"}</b> {decision}
+                      <b style={{ color: "var(--ink)" }}>{lifecycle === "stopped" ? "Stopped:" : "Status:"}</b> {decision || lifecycleText.detail}
                     </div>
                   </button>
                 );

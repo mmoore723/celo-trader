@@ -42,7 +42,8 @@ def _auto_start_bot_if_needed() -> None:
             # to just admin so a fresh install still auto-resumes correctly.
             user_ids = ["admin"]
 
-        if get_maintenance_state().get("maintenance_mode", False):
+        maintenance = get_maintenance_state()
+        if maintenance.get("maintenance_mode", False) and not maintenance.get("collection_only", False):
             return
 
         for uid in user_ids:
@@ -86,6 +87,17 @@ def _auto_start_bot_if_needed() -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """FastAPI lifespan hook — runs auto-start on service boot."""
+    """Auto-resume on boot and coordinate loop shutdown on service exit."""
     _auto_start_bot_if_needed()
-    yield
+    try:
+        yield
+    finally:
+        import logging
+        from trading.state import request_graceful_shutdown
+
+        still_running = request_graceful_shutdown(timeout=15.0)
+        if still_running:
+            logging.getLogger("celo_trader").warning(
+                "Trading loops did not finish before shutdown deadline: %s",
+                ", ".join(still_running),
+            )

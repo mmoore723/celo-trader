@@ -47,7 +47,7 @@ const DEFAULT: AppSettings = {
   min_entry_grade: "C",
   max_position_dollars_pct: 15,  // added 2026-07-24 — was hardcoded, no UI
   simplified_exit_mode: true,        // added 2026-07-22 — 3-rule exit, on by default (see research note in-form)
-  mtf_confirmation_enabled: false,   // added 2026-07-23 — live 1Hour bias gate, off by default (can't backtest)
+  mtf_confirmation_enabled: true,
 };
 
 const TIMEZONES = [
@@ -242,6 +242,14 @@ export function Settings() {
     queryKey: ["settings"],
     queryFn: api.settings.get,
   });
+  const { data: strategyCatalog } = useQuery({
+    queryKey: ["strategy-catalog"],
+    queryFn: api.settings.strategies,
+  });
+  const { data: strategyHistory } = useQuery({
+    queryKey: ["strategy-setting-history"],
+    queryFn: () => api.settings.strategyHistory(12),
+  });
 
   useEffect(() => {
     if (data) {
@@ -268,6 +276,8 @@ export function Settings() {
     await api.settings.save(form);
     setSavedForm(form);   // move the anchor forward so discard stays correct
     qc.invalidateQueries({ queryKey: ["settings"] });
+    qc.invalidateQueries({ queryKey: ["strategy-catalog"] });
+    qc.invalidateQueries({ queryKey: ["strategy-setting-history"] });
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -389,49 +399,33 @@ export function Settings() {
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           Turn a current paper strategy on or off here. These controls do not enable live orders; V2 strategies are hard-locked to paper mode in the trading engine.
         </p>
-        <div className="rounded-lg px-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <Toggle
-            label="TSLA Opening-Range Pullback V2"
-            checked={form.strategy_orb_pullback_v2_enabled ?? false}
-            onChange={(v) => set("strategy_orb_pullback_v2_enabled", v)}
-          />
-          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            Waits for a confirmed breakout, pullback, and reclaim. Paper-only candidate with real TSLA option quote evidence.
-          </p>
-        </div>
-        <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <Toggle
-            label="SPY Trend Continuation V2"
-            checked={form.strategy_spy_trend_cont_v2_enabled ?? false}
-            onChange={(v) => set("strategy_spy_trend_cont_v2_enabled", v)}
-          />
-          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            A completed 5-minute SPY trend break enters on the next minute. The reviewed paper exit is 30 minutes after entry using the same option contract.
-          </p>
-        </div>
-        <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <Toggle
-            label="TSLA Two-Leg Trend Pullback V2"
-            checked={form.strategy_tsla_two_leg_trend_pullback_v2_enabled ?? false}
-            onChange={(v) => set("strategy_tsla_two_leg_trend_pullback_v2_enabled", v)}
-          />
-          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            After 9:45 ET, waits for a VWAP/EMA-aligned one-ATR move, a controlled pullback to EMA 9, and a completed one-minute reclaim. It uses the next minute’s selected option ask and exits the same contract at the 90-minute bid.
-          </p>
-        </div>
-        <div className="rounded-lg px-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-          <Toggle
-            label="SPY Afternoon Fair Value Gap V2"
-            checked={form.strategy_spy_afternoon_fvg_v2_enabled ?? false}
-            onChange={(v) => set("strategy_spy_afternoon_fvg_v2_enabled", v)}
-          />
-          <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            Looks only from 1:30 to 3:00 PM ET for SPY’s first return to a confirmed 5-minute price gap, aligned with VWAP and trend. The reviewed exit is 30 minutes after entry using the same option contract.
-          </p>
-        </div>
+        {(strategyCatalog?.strategies ?? []).map((strategy, index) => (
+          <div key={strategy.strategy_id} className={`rounded-lg px-3 ${index ? "mt-2" : ""}`} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+            <Toggle
+              label={`${strategy.display_name} · v${strategy.version}`}
+              checked={Boolean(form[strategy.setting_key])}
+              onChange={(v) => set(strategy.setting_key, v)}
+            />
+            <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
+              {strategy.tickers.join(", ")} · {strategy.signal_source.replaceAll("_", " ")} · {strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`} · {strategy.status.replaceAll("_", " ")}.
+            </p>
+          </div>
+        ))}
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
           Only promoted strategies exist in the production controls. Research candidates stay outside the bot until they pass review.
         </div>
+        {(strategyHistory?.changes.length ?? 0) > 0 && (
+          <details className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+            <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>Recent strategy switch history</summary>
+            <div className="mt-2 flex flex-col gap-1">
+              {strategyHistory!.changes.map((change, index) => (
+                <div key={`${change.changed_at}-${change.strategy_id}-${index}`}>
+                  {new Date(change.changed_at).toLocaleString()} · {change.strategy_id} · {change.previous_enabled ? "ON" : "OFF"} → {change.new_enabled ? "ON" : "OFF"}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
 
       {/* Display */}

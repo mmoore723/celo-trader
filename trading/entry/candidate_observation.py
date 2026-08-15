@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from config import MIN_CONTRACT_COST, MAX_CONTRACT_COST, MIN_OPEN_INTEREST
+from config.strategy_catalog import reviewed_exit_summary
 from database.option_quotes import record_candidate_option_quote
 from shadow_ledger import record_router_candidate, snapshot_candidate_plan
 from trading.entry.contract import select_contract, select_reviewed_v2_contract
@@ -18,14 +19,6 @@ from trading.state import _now_et
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 
 logger = logging.getLogger("celo_trader.candidate_observation")
-
-
-_EXIT_SUMMARIES = {
-    "V2_ORB_PULLBACK": "Hold the same selected contract for 90 minutes, then measure the executable bid.",
-    "V2_SPY_TREND_CONT": "Hold the same selected contract for 30 minutes, then measure the executable bid.",
-    "V2_SPY_AFTERNOON_FVG": "Hold the same selected contract for 30 minutes, then measure the executable bid.",
-    "V2_TSLA_TWO_LEG_TREND_PULLBACK": "Hold the same selected contract for 90 minutes, then measure the executable bid.",
-}
 
 
 def _max_spend(balance: float, settings: dict) -> float:
@@ -110,10 +103,7 @@ def observe_candidate_contract(
         "planned_quantity": int(quantity) if quantity is not None else None,
         "exit_plan": {
             "strategy_id": strategy_id,
-            "summary": _EXIT_SUMMARIES.get(
-                strategy_id,
-                "Measure the hard structural stop, 3 ATR Chandelier trail, and 75-minute time cap.",
-            ),
+            "summary": reviewed_exit_summary(strategy_id, verb="measure"),
         },
     }
     snapshot_candidate_plan(context)

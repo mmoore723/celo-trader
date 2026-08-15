@@ -21,7 +21,6 @@ calls self._wait_for_fill directly and the two form one order lifecycle.
 import logging
 from typing import Optional
 
-from config import ALPACA_API_KEY
 from database import log_event
 from broker.common import _extract_partial_fill
 
@@ -64,7 +63,7 @@ class AlpacaOrdersMixin:
         Alpaca options docs (valid single-leg payload examples):
         https://docs.alpaca.markets/docs/options-orders
         """
-        if not ALPACA_API_KEY:
+        if not getattr(self, "api_key", ""):
             logger.warning("Alpaca keys missing — order not sent")
             return None
 

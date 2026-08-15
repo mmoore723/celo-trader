@@ -66,7 +66,6 @@ def _skip_log(ticker: str, reason: str, *,
         except Exception:
             pass   # journal writes are never allowed to affect entry logic
 
-    import json as _skj
     _US = get_user_state()
     try:
         _entry: dict = {
@@ -86,10 +85,10 @@ def _skip_log(ticker: str, reason: str, *,
         # moments even though it was never removed on purpose. 50 gives real
         # entries room to survive a few minutes of other tickers' activity.
         _US["eval_log"] = _log[:50]
+        from config import atomic_update_json
         _sp = get_bot_state_path()
-        with open(_sp) as _f:
-            _bs = _skj.load(_f)
-        _bs["eval_log"] = _US["eval_log"]
-        _skj.dump(_bs, open(_sp, "w"))
+        atomic_update_json(
+            _sp, lambda state: {**state, "eval_log": _US["eval_log"]},
+        )
     except Exception:
         pass   # non-critical — dashboard still shows whatever was last written

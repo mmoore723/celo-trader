@@ -65,6 +65,8 @@ def _reconcile_if_phantom(alpaca: "AlpacaClient", trade: dict) -> bool:
         confirmed_fill_price  = entry_px,
         paper                 = trade.get("paper", True),
         annotations_json      = _snapshot_exit_annotations(trade.get("ticker", "")),
+        exit_order_id         = "reconciled:no_broker_position",
+        exit_fill_time        = _now_et(),
     )
     log_event(
         "ERROR", "trading_logic",

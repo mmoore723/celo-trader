@@ -31,6 +31,16 @@ logger = logging.getLogger("celo_trader.auth.users")
 # ── Password complexity ───────────────────────────────────────────────────────
 
 _SPECIAL = r"[!@#$%^&*()\-_=+\[\]{}|;:,.<>?/~`'\"]"
+_USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
+
+
+def normalize_username(username: str) -> str:
+    value = username.strip().lower()
+    if not _USERNAME.fullmatch(value):
+        raise ValueError(
+            "Username must be 3–32 characters and use only letters, numbers, dots, dashes, or underscores"
+        )
+    return value
 
 def validate_password(password: str) -> None:
     """
@@ -48,6 +58,8 @@ def validate_password(password: str) -> None:
     failures = []
     if len(password) < 12:
         failures.append("at least 12 characters")
+    if len(password.encode("utf-8")) > 72:
+        failures.append("no more than 72 UTF-8 bytes")
     if not re.search(r"[A-Z]", password):
         failures.append("one uppercase letter")
     if not re.search(r"[a-z]", password):
@@ -65,11 +77,13 @@ def validate_password(password: str) -> None:
 # Use the bcrypt package directly instead.
 # bcrypt hard-limits at 72 bytes — always truncate before hashing/verifying.
 def _hash_pw(plain: str) -> str:
-    return _bcrypt_lib.hashpw(plain[:72].encode(), _bcrypt_lib.gensalt()).decode()
+    return _bcrypt_lib.hashpw(plain.encode(), _bcrypt_lib.gensalt()).decode()
 
 def _verify_pw(plain: str, hashed: str) -> bool:
     try:
-        return _bcrypt_lib.checkpw(plain[:72].encode(), hashed.encode())
+        if len(plain.encode("utf-8")) > 72:
+            return False
+        return _bcrypt_lib.checkpw(plain.encode(), hashed.encode())
     except Exception:
         return False
 
@@ -100,7 +114,8 @@ def get_db() -> sqlite3.Connection:
             is_admin          INTEGER NOT NULL DEFAULT 0,
             created_at        TEXT NOT NULL,
             terms_accepted_at TEXT,
-            terms_version     TEXT
+            terms_version     TEXT,
+            session_version   INTEGER NOT NULL DEFAULT 1
         )
     """)
     conn.execute("""
@@ -124,6 +139,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     for col, typedef in [
         ("terms_accepted_at", "TEXT"),
         ("terms_version",     "TEXT"),
+        ("session_version",   "INTEGER NOT NULL DEFAULT 1"),
     ]:
         if col not in existing:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
@@ -140,8 +156,13 @@ def _migrate_admin_if_needed(conn: sqlite3.Connection) -> None:
         return
 
     pw_hash = os.getenv("DASHBOARD_PASSWORD_HASH", "")
-    pw_plain = os.getenv("DASHBOARD_PASSWORD", "celo2024")
+    pw_plain = os.getenv("DASHBOARD_PASSWORD", "")
     if not pw_hash:
+        if not pw_plain:
+            raise RuntimeError(
+                "Initial admin bootstrap requires DASHBOARD_PASSWORD_HASH or DASHBOARD_PASSWORD"
+            )
+        validate_password(pw_plain)
         pw_hash = _hash_pw(pw_plain)
         logger.info("Migration: hashed DASHBOARD_PASSWORD for admin user")
 
@@ -177,6 +198,7 @@ def create_user(username: str, password: str, is_admin: bool = False,
                 user_id: Optional[str] = None) -> dict:
     """Create a new user. Returns the user dict. Raises ValueError on duplicate or weak password."""
     validate_password(password)          # raises ValueError if requirements not met
+    normalized = normalize_username(username)
     uid     = user_id or str(uuid.uuid4())[:8]
     pw_hash = _hash_pw(password)
     conn    = get_db()
@@ -184,7 +206,7 @@ def create_user(username: str, password: str, is_admin: bool = False,
         conn.execute(
             "INSERT INTO users (id, username, pw_hash, is_admin, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            (uid, username.strip().lower(), pw_hash, 1 if is_admin else 0, _now()),
+            (uid, normalized, pw_hash, 1 if is_admin else 0, _now()),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -194,8 +216,8 @@ def create_user(username: str, password: str, is_admin: bool = False,
 
     # Create the user's data directory
     (_DATA / uid).mkdir(parents=True, exist_ok=True)
-    logger.info("User created: id=%s username=%s admin=%s", uid, username, is_admin)
-    return {"user_id": uid, "username": username, "is_admin": is_admin}
+    logger.info("User created: id=%s username=%s admin=%s", uid, normalized, is_admin)
+    return {"user_id": uid, "username": normalized, "is_admin": is_admin, "session_version": 1}
 
 
 def authenticate(username: str, password: str) -> Optional[dict]:
@@ -212,7 +234,8 @@ def authenticate(username: str, password: str) -> Optional[dict]:
             return None
     except Exception:
         return None
-    return {"user_id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"])}
+    return {"user_id": row["id"], "username": row["username"],
+            "is_admin": bool(row["is_admin"]), "session_version": int(row["session_version"])}
 
 
 def get_user(user_id: str) -> Optional[dict]:
@@ -226,6 +249,7 @@ def get_user(user_id: str) -> Optional[dict]:
         "username":      row["username"],
         "is_admin":      bool(row["is_admin"]),
         "terms_version": row["terms_version"],  # None if never accepted
+        "session_version": int(row["session_version"]),
     }
 
 
@@ -257,7 +281,10 @@ def reset_password(user_id: str, new_password: str) -> bool:
     validate_password(new_password)      # raises ValueError if requirements not met
     pw_hash = _hash_pw(new_password)
     conn = get_db()
-    cur  = conn.execute("UPDATE users SET pw_hash = ? WHERE id = ?", (pw_hash, user_id))
+    cur  = conn.execute(
+        "UPDATE users SET pw_hash = ?, session_version = session_version + 1 WHERE id = ?",
+        (pw_hash, user_id),
+    )
     conn.commit()
     conn.close()
     logger.info("Password reset for user_id=%s", user_id)
@@ -278,6 +305,8 @@ def delete_user(user_id: str) -> bool:
 
 def create_invite(created_by: str, hours: int = 48) -> str:
     """Create a single-use invite token valid for `hours` hours."""
+    if not 1 <= int(hours) <= 168:
+        raise ValueError("Invite validity must be between 1 and 168 hours")
     token      = str(uuid.uuid4())
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
     conn       = get_db()
@@ -318,3 +347,46 @@ def mark_invite_used(token: str, used_by: str) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def create_user_from_invite(token: str, username: str, password: str) -> dict:
+    """Consume an invite and create its user in one atomic transaction."""
+    validate_password(password)
+    normalized = normalize_username(username)
+    uid = str(uuid.uuid4())[:8]
+    pw_hash = _hash_pw(password)
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT expires_at FROM invites WHERE token = ? AND used_by IS NULL", (token,)
+        ).fetchone()
+        if not row:
+            raise ValueError("Invalid or expired invite link")
+        expires = datetime.fromisoformat(row["expires_at"])
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) >= expires:
+            raise ValueError("Invalid or expired invite link")
+        conn.execute(
+            "INSERT INTO users (id, username, pw_hash, is_admin, created_at) VALUES (?, ?, ?, 0, ?)",
+            (uid, normalized, pw_hash, _now()),
+        )
+        used = conn.execute(
+            "UPDATE invites SET used_by = ?, used_at = ? WHERE token = ? AND used_by IS NULL",
+            (uid, _now(), token),
+        )
+        if used.rowcount != 1:
+            raise ValueError("Invalid or expired invite link")
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise ValueError(f"Username '{normalized}' is already taken") from exc
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    (_DATA / uid).mkdir(parents=True, exist_ok=True)
+    logger.info("User registered: id=%s username=%s", uid, normalized)
+    return {"user_id": uid, "username": normalized, "is_admin": False, "session_version": 1}

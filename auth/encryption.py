@@ -37,18 +37,32 @@ def _get_fernet() -> Fernet:
         else:
             key = raw.encode()
     else:
-        # Auto-generate on first run and persist to .env
+        from auth.security import is_production
+        if is_production():
+            raise RuntimeError("ENCRYPTION_KEY is required in production")
+        # Auto-generate on first local run and persist before using it.
         key = Fernet.generate_key()
         _env_path = Path(__file__).resolve().parents[1] / ".env"
         try:
-            with open(_env_path, "a") as f:
-                f.write(f"\nENCRYPTION_KEY={key.decode()}\n")
+            from config.atomic_files import atomic_write_text
+            existing = _env_path.read_text(encoding="utf-8") if _env_path.exists() else ""
+            if any(line.startswith("ENCRYPTION_KEY=") for line in existing.splitlines()):
+                raise RuntimeError("ENCRYPTION_KEY exists in .env but was not loaded")
+            suffix = "" if not existing or existing.endswith("\n") else "\n"
+            atomic_write_text(
+                _env_path,
+                f"{existing}{suffix}ENCRYPTION_KEY={key.decode()}\n",
+                mode=0o600,
+            )
             os.environ["ENCRYPTION_KEY"] = key.decode()
             logger.info("Generated new ENCRYPTION_KEY and saved to .env")
         except Exception as e:
-            logger.warning("Could not save ENCRYPTION_KEY to .env: %s", e)
+            raise RuntimeError("Could not persist local ENCRYPTION_KEY") from e
 
-    _fernet = Fernet(key)
+    try:
+        _fernet = Fernet(key)
+    except Exception as exc:
+        raise RuntimeError("ENCRYPTION_KEY is not a valid Fernet key") from exc
     return _fernet
 
 

@@ -53,6 +53,7 @@ from config import (
     SESSION_HARD_CUTOFF_HM,
     STAGE2_TRAIL_PCT,
     get_bot_state_path,
+    atomic_write_json, atomic_update_json,
 )
 from broker import AlpacaClient, TradierClient, get_clients
 from signals import (
@@ -140,8 +141,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # ── Daily session reset ───────────────────────────────────────────────────
     # If the calendar date has changed since the last tick, reset session P&L
     # Reset to 0 and recalculate from today's closed trades only.
-    from datetime import date as _date
-    _today_str = _date.today().isoformat()
+    _today_str = _now_et().date().isoformat()
     if _US.get("_session_date") != _today_str:
         _US["_session_date"]      = _today_str
         _US["session_pnl"]        = 0.0
@@ -180,36 +180,23 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _state_path = get_bot_state_path()
 
     if not market_open:
-        # Check whether the market is GENUINELY closed vs. an API glitch.
-        # Alpaca's /v2/clock endpoint occasionally returns False during live
-        _now_hm_tick = _now_et().hour * 60 + _now_et().minute
-        _genuinely_closed = _now_hm_tick >= 16 * 60 or _now_hm_tick < 9 * 60 + 30
-
-        if not _genuinely_closed:
-            # API says closed but local clock says we're mid-session.
-            # Override market_open and fall through to normal tick processing.
-            market_open = True
-            _US["market_open"] = True
-            logger.debug("is_market_open()=False overridden — local ET %02d:%02d is "
-                         "within session (9:30–16:00); API glitch assumed",
-                         _now_hm_tick // 60, _now_hm_tick % 60)
-        else:
-            # Genuinely outside market hours — do the full closed-session write
-            # and return early so no trading logic runs overnight / pre-market.
-            _US["status"] = "market_closed"
-            _US["orb_triggered"]     = False
-            _US["flip_eligible"]     = False
-            _US["flip_direction"]    = None
-            _US["flip_ticker"]       = None
-            _US["scanner_ran_today"] = False   # allow fresh scan tomorrow
-            _US["scan_watchlist"]    = []
-            _US["scan_idx"]          = 0
-            _US["opportunity_scheduler"] = {}
-            logger.debug("Market closed — session flags reset for tomorrow")
-            try:
-                _mc_balance = (_US.get("account_balance") or
-                               get_settings().get("last_known_balance", STARTING_CAPITAL))
-                _json.dump({
+        # Broker/calendar truth is authoritative. Never turn a False into
+        # True from wall-clock time: holidays and emergency closures occur
+        # during ordinary weekday session hours.
+        _US["status"] = "market_closed"
+        _US["orb_triggered"]     = False
+        _US["flip_eligible"]     = False
+        _US["flip_direction"]    = None
+        _US["flip_ticker"]       = None
+        _US["scanner_ran_today"] = False   # allow fresh scan tomorrow
+        _US["scan_watchlist"]    = []
+        _US["scan_idx"]          = 0
+        _US["opportunity_scheduler"] = {}
+        logger.debug("Market closed — session flags reset for tomorrow")
+        try:
+            _mc_balance = (_US.get("account_balance") or
+                           get_settings().get("last_known_balance", STARTING_CAPITAL))
+            atomic_write_json(_state_path, {
                     "running":                True,
                     "account_balance":        _mc_balance,
                     "options_buying_power":   _US.get("options_buying_power", 0),
@@ -245,10 +232,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     "last_eval_strike":       _US.get("last_eval_strike"),
                     "current_option_price":      _US.get("current_option_price"),
                     "current_option_price_time": _US.get("current_option_price_time"),
-                }, open(_state_path, "w"))
-            except Exception:
-                pass
-            return   # ← only exits here when GENUINELY closed
+            })
+        except Exception:
+            pass
+        return
 
     # ── Account balance ───────────────────────────────────────────────────────
     from broker import _cb_is_open as _alpaca_circuit_open
@@ -293,7 +280,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # File-read was racy: an intermediate write at line ~1133 could put
     _preserved_eval_log = _US.get("eval_log", [])
     try:
-        _json.dump({
+        atomic_write_json(_state_path, {
             "running":                True,
             "mode":                   "paper" if _is_paper else "live",
             "account_balance":        _US.get("account_balance", 0),
@@ -349,7 +336,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "last_eval_strike":       _US.get("last_eval_strike"),
             # Persist eval_log across ticks — wiped every tick otherwise
             "eval_log":               _preserved_eval_log,
-        }, open(_state_path, "w"))
+        })
     except Exception:
         pass
 
@@ -682,18 +669,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Read the per-strategy enable flags saved by the Risk Settings form.
     # Any flag absent from settings defaults to True (all on by default).
     _strat_cfg = get_settings()
-    from config.strategy_catalog import REVIEWED_STRATEGIES
-    _approved_strategy_ids = {
-        str(strategy_id).strip().upper()
-        for strategy_id in _strat_cfg.get("validated_strategy_ids", [])
-        if str(strategy_id).strip()
-    }
-    _enabled: set[str] = {
-        sid for sid, rule in REVIEWED_STRATEGIES.items()
-        if (sid in _approved_strategy_ids
-            and _strat_cfg.get(rule.setting_key, False)
-            and (not sid.startswith("V2_") or bool(_strat_cfg.get("paper_trading", True))) )
-    }
+    from config.strategy_catalog import (
+        reviewed_strategy_ids, enabled_reviewed_strategy_ids,
+    )
+    _enabled = enabled_reviewed_strategy_ids(
+        _strat_cfg, ticker=ticker, paper=paper,
+    )
     # mtf_cache: per-user, per-ticker cache dict (see trading/state.py's
     # "mtf_1h_cache" key + trading/mtf_live_gate.py) — passing both alpaca and
     # this cache is what turns on the Gap 3 MTF confirmation gate; every other
@@ -717,8 +698,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         except Exception:
             logger.debug("candidate option follow-up sweep failed for %s", ticker, exc_info=True)
         if bool(settings.get("shadow_observe_all_strategies", True)):
-            from strategy_router.evaluators import ACTIVE_STRATEGIES
-            _observation_only_strategies = {sid for sid, _ in ACTIVE_STRATEGIES} - _enabled
+            _observation_only_strategies = reviewed_strategy_ids() - _enabled
             _observation_resolver = mark_candidate_observed_only
         if _observation_only_strategies:
             from trading.entry.candidate_observation import observe_candidate_contract
@@ -741,7 +721,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # router gates and paper-order safeguards below.
     _live_underlying_quote = None
     _injected_signals = []
-    if "V2_ORB_PULLBACK" in _enabled:
+    if "V2_ORB_PULLBACK" in (_enabled | _observation_only_strategies):
         try:
             _live_underlying_quote = alpaca.get_latest_quote(ticker)
             _quote_price = None
@@ -766,7 +746,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # The reviewed TSLA two-leg continuation uses no uncompleted bar and no
     # generic router threshold.  It retains the exact paid-study sequence,
     # then enters the ordinary router, contract, sizing, and paper safeguards.
-    if "V2_TSLA_TWO_LEG_TREND_PULLBACK" in _enabled and ticker.upper() == "TSLA":
+    if ("V2_TSLA_TWO_LEG_TREND_PULLBACK" in (_enabled | _observation_only_strategies)
+            and ticker.upper() == "TSLA"):
         try:
             _two_leg_state = _US.setdefault("v2_tsla_two_leg_trend_pullback", {})
             _two_leg_signal, _two_leg_status = update_two_leg_trend_pullback(
@@ -855,12 +836,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _reviewed_paid_paper_profile = paper and uses_reviewed_paid_execution_profile(strategy_id)
     _US["last_signal"]     = direction
     _US["last_strategy_id"]= strategy_id
-    _reviewed_exit_summaries = {
-        "V2_ORB_PULLBACK": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
-        "V2_SPY_TREND_CONT": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
-        "V2_SPY_AFTERNOON_FVG": "Hold the same selected contract for 30 minutes, then exit at the executable bid.",
-        "V2_TSLA_TWO_LEG_TREND_PULLBACK": "Hold the same selected contract for 90 minutes, then exit at the executable bid.",
-    }
+    from config.strategy_catalog import reviewed_exit_summary
     # The Scanner needs a reproducible *recipe* even if a later account or
     # liquidity gate stops this setup before a particular option can be
     # selected.  This describes the exact selector's rules, not a fabricated
@@ -907,10 +883,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             # was ultimately affordable or liquid enough to select.
             "exit_plan": {
                 "strategy_id": strategy_id,
-                "summary": _reviewed_exit_summaries.get(
-                    strategy_id,
-                    "Exit on the hard structural stop, 3 ATR Chandelier trail, or 75-minute time cap.",
-                ),
+                "summary": reviewed_exit_summary(strategy_id),
             },
         },
     }
@@ -1311,19 +1284,19 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _US["last_eval_strike"]           = contract.get("strike")
     _US["last_eval_contract_symbol"]  = contract.get("symbol")
     try:
-        with open(_state_path) as _f:
-            _bs = _json.load(_f)
-        _bs["last_eval_ticker"]              = ticker
-        _bs["last_eval_opt_type"]            = opt_type
-        _bs["last_eval_premium"]             = ask_price
-        _bs["last_eval_eff_entry"]           = eff_entry
-        _bs["last_eval_time"]                = _US["last_eval_time"]
-        _bs["last_eval_expiry"]              = _US["last_eval_expiry"]
-        _bs["last_eval_strike"]              = _US["last_eval_strike"]
-        _bs["last_eval_contract_symbol"]     = _US["last_eval_contract_symbol"]
-        _bs["risk_budget_usd"]               = round(balance * _risk.effective_risk_pct(balance), 2)
-        _bs["max_affordable_premium"]        = _risk.max_affordable_premium(balance)
-        _json.dump(_bs, open(_state_path, "w"))
+        atomic_update_json(_state_path, lambda state: {
+            **state,
+            "last_eval_ticker": ticker,
+            "last_eval_opt_type": opt_type,
+            "last_eval_premium": ask_price,
+            "last_eval_eff_entry": eff_entry,
+            "last_eval_time": _US["last_eval_time"],
+            "last_eval_expiry": _US["last_eval_expiry"],
+            "last_eval_strike": _US["last_eval_strike"],
+            "last_eval_contract_symbol": _US["last_eval_contract_symbol"],
+            "risk_budget_usd": round(balance * _risk.effective_risk_pct(balance), 2),
+            "max_affordable_premium": _risk.max_affordable_premium(balance),
+        })
     except Exception:
         pass   # non-critical — next full tick write will catch up regardless
 
@@ -1384,10 +1357,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _opportunity_context["planned_quantity"] = int(n_contracts)
         _opportunity_context["exit_plan"] = {
             "strategy_id": strategy_id,
-            "summary": _reviewed_exit_summaries.get(
-                strategy_id,
-                "Exit on the hard structural stop, 3 ATR Chandelier trail, or 75-minute time cap.",
-            ),
+            "summary": reviewed_exit_summary(strategy_id),
         }
 
     # ── Persist contract count AFTER clamp so dashboard shows actual count ─────
@@ -1426,8 +1396,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # moments even though it was never removed on purpose. 50 gives real
         # entries room to survive a few minutes of other tickers' activity.
         _US["eval_log"] = _log[:50]            # update in-memory copy first
-        _bs_c["eval_log"]      = _US["eval_log"]
-        _json.dump(_bs_c, open(_state_path, "w"))
+        atomic_update_json(
+            _state_path, lambda state: {**state, "eval_log": _US["eval_log"]},
+        )
     except Exception:
         pass  # non-critical — next full tick write will catch up
 
@@ -1809,6 +1780,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         logger.warning("Entry annotation snapshot failed for %s — trade will save with no annotations", ticker, exc_info=True)
         _entry_annotations_json = None
 
+    _candidate_id = None
+    if isinstance(_opportunity_context, dict):
+        _candidate_meta = _opportunity_context.get("strategy_meta")
+        if isinstance(_candidate_meta, dict):
+            _candidate_id = _candidate_meta.get("shadow_candidate_id")
     trade_id = insert_trade(
         ticker          = ticker,
         contract_symbol = contract["symbol"],
@@ -1826,6 +1802,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         annotations_json= _entry_annotations_json,
         tier            = _signal_tier,
         broker_account_id=settings.get("active_broker_account_id") or None,
+        candidate_id     = _candidate_id,
+        entry_order_id   = str(order.get("id") or "") or None,
+        entry_fill_time  = order.get("filled_at") or entry_utc,
     )
 
     # Capture the executable chain quote alongside every PAPER entry.  This is
@@ -1869,6 +1848,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 "signal_trade_link_missing: trade_id=%s ticker=%s strategy=%s",
                 trade_id, ticker, _US.get("last_strategy_id", "UNKNOWN"),
             )
+        else:
+            from database import audit_trade_lineage
+            _lineage_missing = audit_trade_lineage(trade_id)
+            if _lineage_missing:
+                logger.error(
+                    "trade_lineage_incomplete: trade_id=%s missing=%s",
+                    trade_id, ",".join(_lineage_missing),
+                )
     except Exception:
         logger.exception("signal_trade_link_write_failed: trade_id=%s", trade_id)
 

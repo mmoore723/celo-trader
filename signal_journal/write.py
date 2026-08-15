@@ -57,6 +57,10 @@ def log_signal_outcome(
             broker_account_id = None
     journal_id: Optional[int] = None
     try:
+        from shadow_ledger import snapshot_candidate_plan
+        snapshot_candidate_plan(context)
+        meta = context.get("strategy_meta") if isinstance(context, dict) else None
+        candidate_id = meta.get("shadow_candidate_id") if isinstance(meta, dict) else None
         with get_conn() as conn:
             cursor = conn.execute(
                 """INSERT INTO signal_journal
@@ -69,17 +73,20 @@ def log_signal_outcome(
                  tier if tier in ("main", "opportunity") else "main", broker_account_id),
             )
             journal_id = int(cursor.lastrowid)
+            # The journal decision and raw-candidate resolution are one audit
+            # event.  Commit them in the same SQLite transaction so a crash
+            # cannot leave an entered journal row beside a pending candidate.
+            if candidate_id:
+                conn.execute(
+                    """UPDATE shadow_candidates
+                       SET final_outcome = ?, gate_reason = ?, gate_detail = ?,
+                           linked_trade_id = ?, resolved_at = ?
+                       WHERE candidate_id = ? AND final_outcome = 'pending'""",
+                    (outcome, reason_code, reason_detail, trade_id, ts, candidate_id),
+                )
     except Exception as exc:
         # Non-fatal by design — see package docstring.
         logger.warning("log_signal_outcome: failed to persist (non-fatal): %s", exc)
-
-    # Paper candidate linkage is evidence-only. It runs after the journal
-    # write and is intentionally unable to alter a real trading decision.
-    try:
-        from shadow_ledger import resolve_candidate_from_context
-        resolve_candidate_from_context(context, outcome, reason_code, reason_detail, trade_id)
-    except Exception:
-        logger.warning("shadow candidate linkage failed (non-fatal)", exc_info=True)
 
     _evt = "SIGNAL_ENTERED" if outcome == "entered" else "SIGNAL_BLOCKED"
     _msg = f"{ticker} {direction} {strategy_id} {confidence:.0%}"

@@ -18,12 +18,19 @@ from strategies.base import Signal
 
 STRATEGY_ID = "V2_SPY_TREND_CONT"
 VALIDATED_TICKERS = frozenset({"SPY"})
-_emitted_trigger_by_session: dict[tuple[str, str], pd.Timestamp] = {}
+_emitted_trigger_by_session: dict[tuple[str, str, str], pd.Timestamp] = {}
 # A breakout may keep printing higher completed candles after its first
 # trigger.  They remain one breakout attempt until price actually returns
 # through the broken level.  This mirrors the paid-data research definition
 # and avoids stacking entries into one continuous move.
-_active_breakout_by_session: dict[tuple[str, str], tuple[Side, float]] = {}
+_active_breakout_by_session: dict[tuple[str, str, str], tuple[Side, float]] = {}
+
+
+def _execution_scope(explicit: str | None = None) -> str:
+    if explicit:
+        return explicit
+    from auth.context import get_current_user_id
+    return get_current_user_id()
 
 
 def _complete_five_minute_bars(
@@ -54,7 +61,9 @@ def _complete_five_minute_bars(
     return resample_regular_session(one_minute, source_minutes=1, target_minutes=5)
 
 
-def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
+def evaluate(
+    today: pd.DataFrame, ticker: str = "", execution_scope: str | None = None,
+) -> Signal | None:
     if ticker.strip().upper() not in VALIDATED_TICKERS:
         return None
     bars = _complete_five_minute_bars(today)
@@ -67,7 +76,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "") -> Signal | None:
     # not itself a new TrendContinuation signal.  Keying from the current
     # session avoids depending on a future candidate merely to clear state.
     session_date = pd.Timestamp(today.iloc[-1]["time"]).date().isoformat()
-    session_key = (ticker.strip().upper(), session_date)
+    session_key = (_execution_scope(execution_scope), ticker.strip().upper(), session_date)
     active = _active_breakout_by_session.get(session_key)
     if active is not None:
         active_side, broken_level = active

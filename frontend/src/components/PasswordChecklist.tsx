@@ -9,6 +9,7 @@
  *   <PasswordChecklist password={pw} />
  *   <button disabled={!isPasswordValid(pw)}>Submit</button>
  */
+/* oxlint-disable react/only-export-components -- validation must stay identical to the rendered checklist */
 import type { CSSProperties } from "react";
 
 // ── Shared validation logic (mirrors auth/users.py validate_password) ─────────

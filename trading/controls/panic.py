@@ -35,7 +35,8 @@ def panic_close_all(user_id: str | None = None) -> None:
     _US = get_user_state(uid)
 
     alpaca, _ = get_clients()
-    alpaca.close_all_positions()
+    if alpaca.close_all_positions() is False:
+        raise RuntimeError("Broker did not confirm the emergency close-all request")
     trades = get_open_trades()
     for trade in trades:
         try:
@@ -43,8 +44,11 @@ def panic_close_all(user_id: str | None = None) -> None:
             exit_px = quote["mid"] if quote else trade["entry_price"]
         except Exception:
             exit_px = trade["entry_price"]
-        close_trade(trade["id"], exit_price=exit_px,
-                    exit_time=_now_et(), exit_reason="panic")
+        close_trade(
+            trade["id"], exit_price=exit_px,
+            exit_time=_now_et(), exit_reason="panic",
+            exit_order_id="alpaca:close_all", exit_fill_time=_now_et(),
+        )
     _US["status"]      = "halted"
     _US["open_trades"] = []
     _US["open_trade"]  = None
@@ -68,7 +72,8 @@ def _panic_close_all_positions(
     _US = get_user_state(uid)
 
     try:
-        alpaca.close_all_positions()
+        if alpaca.close_all_positions() is False:
+            raise RuntimeError("Broker did not confirm the kill-lock close-all request")
     except Exception as ex:
         logger.error("kill_lock_close_all failed: %s", ex)
     trades = get_open_trades()
@@ -83,6 +88,8 @@ def _panic_close_all_positions(
             exit_price  = exit_px,
             exit_time   = _now_et(),
             exit_reason = "kill_lock_force_close",
+            exit_order_id = "alpaca:close_all",
+            exit_fill_time = _now_et(),
         )
     _US["status"]      = "kill_locked"
     _US["open_trade"]  = None

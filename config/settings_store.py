@@ -9,6 +9,8 @@ logic changed, only relocated.
 import json
 import logging
 
+from config.atomic_files import atomic_write_json, atomic_write_text
+
 from config.paths import (
     get_user_data_dir, _get_user_id, SETTINGS_PATH, BASE_DIR,
     SYSTEM_MAINTENANCE_PATH,
@@ -42,8 +44,13 @@ def get_settings(user_id: str | None = None) -> dict:
     uid      = user_id or _get_user_id()
 
     # Load per-user settings if the file exists
-    _user_settings = get_user_data_dir(uid) / "settings.json"
-    _paths = [_user_settings, SETTINGS_PATH]   # user-specific first, then legacy
+    _user_settings = get_user_data_dir(uid, create=False) / "settings.json"
+    # The root legacy file belongs only to the primary migrated admin. Falling
+    # back to it for every UUID user silently clones the admin's preferences,
+    # strategy toggles and broker-account identity into new accounts.
+    _paths = [_user_settings]
+    if uid == "admin":
+        _paths.append(SETTINGS_PATH)
     for _p in _paths:
         if _p.exists():
             try:
@@ -62,7 +69,7 @@ def get_settings(user_id: str | None = None) -> dict:
         settings["validated_strategy_ids"] = sorted(reviewed_strategy_ids())
         approved_setting_keys = {rule.setting_key for rule in REVIEWED_STRATEGIES.values()}
         for key in _RETIRED_STRATEGY_SETTING_KEYS - approved_setting_keys:
-            settings[key] = False
+            settings.pop(key, None)
     except Exception:
         # Settings must remain available during an incomplete deploy.
         pass
@@ -74,8 +81,9 @@ def save_settings(updates: dict, user_id: str | None = None) -> None:
     _path   = get_user_data_dir(uid) / "settings.json"
     current = get_settings(user_id=uid)
     current.update(updates)
-    with open(_path, "w") as f:
-        json.dump(current, f, indent=2)
+    for key in _RETIRED_STRATEGY_SETTING_KEYS:
+        current.pop(key, None)
+    atomic_write_json(_path, current)
 
 
 def get_maintenance_state() -> dict:
@@ -115,9 +123,7 @@ def save_maintenance_state(
         "maintenance_message": message.strip() if active else "",
         "collection_only": bool(active and collection_only),
     }
-    temporary = SYSTEM_MAINTENANCE_PATH.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(SYSTEM_MAINTENANCE_PATH)
+    atomic_write_json(SYSTEM_MAINTENANCE_PATH, payload)
 
 
 # ── Per-user API key management ───────────────────────────────────────────────
@@ -126,20 +132,30 @@ def get_api_keys(user_id: str | None = None) -> dict:
     """
     Return decrypted API keys for the user.  Priority:
       1. user_data/{user_id}/credentials.enc  (UI-saved keys, encrypted)
-      2. .env environment variables           (legacy/admin fallback)
+      2. .env environment variables           (primary legacy admin only)
     """
     uid       = user_id or _get_user_id()
-    cred_path = get_user_data_dir(uid) / "credentials.enc"
+    cred_path = get_user_data_dir(uid, create=False) / "credentials.enc"
     if cred_path.exists():
         try:
             from auth.encryption import decrypt_dict
-            return decrypt_dict(cred_path.read_text().strip())
+            values = decrypt_dict(cred_path.read_text().strip())
+            from logger_config.redaction import register_secret_values
+            register_secret_values(values.values())
+            return values
         except Exception as e:
             import logging as _lg
             _lg.getLogger("celo_trader.config").warning(
                 "Could not decrypt credentials for user %s: %s", uid, e
             )
-    # Fallback to env vars (admin or unset users)
+    # Environment keys are a one-account legacy bridge. Returning them for
+    # every user without credentials lets a new user operate the server
+    # owner's broker account. UUID users receive an explicit empty key set.
+    if uid != "admin":
+        return {
+            "alpaca_api_key": "", "alpaca_secret_key": "",
+            "tradier_api_key": "", "tradier_account_id": "",
+        }
     return {
         "alpaca_api_key":     ALPACA_API_KEY,
         "alpaca_secret_key":  ALPACA_SECRET_KEY,
@@ -153,7 +169,9 @@ def save_api_keys(keys: dict, user_id: str | None = None) -> None:
     uid       = user_id or _get_user_id()
     cred_path = get_user_data_dir(uid) / "credentials.enc"
     from auth.encryption import encrypt_dict
-    cred_path.write_text(encrypt_dict(keys))
+    atomic_write_text(cred_path, encrypt_dict(keys), mode=0o600)
+    from logger_config.redaction import register_secret_values
+    register_secret_values(keys.values())
 
 
 def setup_logging() -> logging.Logger:

@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, CircleDollarSign, Eye, Filter, ShieldCheck } from "lucide-react";
 import { api, type ScannerOpportunity } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
+import { collapseOpportunityEpisodes, lifecycleCopy, opportunityLifecycle } from "../lib/opportunitySemantics.js";
 
 const STRATEGY_NAMES: Record<string, string> = {
   V2_ORB_PULLBACK: "Opening-Range Pullback",
@@ -30,10 +31,12 @@ function money(value?: number | null): string { return value == null ? "—" : `
 function percent(value?: number | null): string { return value == null ? "Waiting" : `${value >= 0 ? "+" : ""}${Number(value).toFixed(2)}%`; }
 function integer(value?: number | null): string { return value == null ? "Not recorded" : Number(value).toLocaleString("en-US"); }
 
-function OutcomeBadge({ outcome }: { outcome: string }) {
-  const tone = outcome === "entered" ? "badge-green" : outcome === "observed_only" ? "badge-blue" : outcome === "pending" ? "badge-yellow" : "badge-red";
-  const label = outcome === "observed_only" ? "RESEARCH ONLY" : outcome === "pending" ? "UNRESOLVED" : outcome.toUpperCase();
-  return <span className={`badge ${tone}`}>{label}</span>;
+function LifecycleBadge({ entry }: { entry: ScannerOpportunity }) {
+  const lifecycle = opportunityLifecycle(entry);
+  const tone = lifecycle === "entered" ? "badge-green"
+    : lifecycle === "stopped" ? "badge-red"
+      : lifecycle === "research" ? "badge-blue" : "badge-yellow";
+  return <span className={`badge ${tone}`}>{lifecycleCopy(entry).badge}</span>;
 }
 
 function label(value: string): string {
@@ -206,7 +209,7 @@ function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
           <p className="mt-1 text-xl font-semibold text-white">{entry.ticker} {isCall ? "Bullish" : "Bearish"} {STRATEGY_NAMES[entry.strategy_id] ?? entry.strategy_id}</p>
           <p className="text-xs mt-1" style={{ color: "#cbd5e1" }}>Detected {time(entry.observed_at)} ET · Trigger bar {time(entry.trigger_bar)} · {Math.round(entry.confidence * 100)}% setup confidence</p>
         </div>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2"><PlanBadge entry={entry} /><OutcomeBadge outcome={entry.outcome} /></div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2"><PlanBadge entry={entry} /><LifecycleBadge entry={entry} /></div>
       </header>
       <div className="px-5 py-5" style={{ background: "var(--surface-raised)", borderBottom: "1px solid var(--border)" }}>
         <div className="grid gap-5 lg:grid-cols-[1fr_1.15fr]">
@@ -288,10 +291,11 @@ export function ScannerOpportunities() {
   const { data: gateScorecard } = useQuery({
     queryKey: ["gate-calibration", 30], queryFn: () => api.signals.gateScorecard(30), staleTime: 60_000,
   });
-  const entries = data?.entries ?? [];
-  const visibleEntries = useMemo(() => entries.filter((entry) =>
+  const entries = useMemo(() => data?.entries ?? [], [data?.entries]);
+  const episodes = useMemo(() => collapseOpportunityEpisodes(entries), [entries]);
+  const visibleEntries = useMemo(() => episodes.filter((entry) =>
     view === "research" ? entry.outcome === "observed_only" : entry.outcome !== "observed_only"
-  ), [entries, view]);
+  ), [episodes, view]);
   const tickers = useMemo(() => Array.from(new Set(entries.map((entry) => entry.ticker))).sort(), [entries]);
   const strategies = useMemo(() => Array.from(new Set(entries.map((entry) => entry.strategy_id))).sort(), [entries]);
   if (isLoading && !data) return <PageLoader label="Scanner Opportunities" />;
@@ -299,7 +303,7 @@ export function ScannerOpportunities() {
     <header>
       <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>Scanner audit trail</p>
       <h1 className="text-xl font-semibold mt-1" style={{ color: "var(--ink)" }}>Scanner Opportunities</h1>
-      <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Every strategy detection, separated into research observations and decisions that actually reached the trade router.</p>
+      <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>A day-by-day record of independent setups: what was developing, what reached contract checks, what stopped, and what actually entered.</p>
     </header>
     <div className="flex gap-2">
       <button className={`btn ${view === "setups" ? "btn-primary" : "btn-ghost"}`} onClick={() => { setView("setups"); if (outcome === "observed_only") setOutcome("all"); }}>
@@ -310,8 +314,9 @@ export function ScannerOpportunities() {
       </button>
     </div>
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-      {[["DETECTIONS", data?.summary.total ?? 0, "var(--ink)"], ["ROUTED", data?.summary.routed ?? 0, "var(--ink)"], ["ENTERED", data?.summary.entered ?? 0, "var(--positive)"], ["BLOCKED", data?.summary.blocked ?? 0, "var(--negative)"], ["RESEARCH ONLY", data?.summary.research_only ?? data?.summary.observed_only ?? 0, "var(--accent)"], ["UNRESOLVED", data?.summary.unresolved ?? data?.summary.pending ?? 0, "var(--warning)"]].map(([label, value, color]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold mt-1" style={{ color: String(color) }}>{String(value)}</p></div>)}
+      {[["INDEPENDENT SETUPS", data?.summary.setups ?? 0, "var(--ink)"], ["DEVELOPING", data?.summary.watching ?? 0, "var(--warning)"], ["CONTRACT CHECK", (data?.summary.pricing ?? 0) + (data?.summary.ready ?? 0), "var(--accent)"], ["ENTERED", data?.summary.entered ?? 0, "var(--positive)"], ["STOPPED", data?.summary.stopped ?? 0, "var(--negative)"], ["RESEARCH", data?.summary.research ?? 0, "var(--ink-muted)" ]].map(([label, value, color]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold mt-1" style={{ color: String(color) }}>{String(value)}</p></div>)}
     </div>
+    <p className="text-xs" style={{ color: "var(--ink-faint)" }}>{data?.summary.raw_detections ?? 0} raw scanner checks were collapsed into {data?.summary.setups ?? 0} independent setup episodes.</p>
     <div className="card p-3 flex flex-wrap items-end gap-3">
       <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Trading day<input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="input mt-1 block" /></label>
       <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Outcome<select value={outcome} onChange={(event) => setOutcome(event.target.value)} className="input mt-1 block"><option value="all">All outcomes</option><option value="entered">Entered</option><option value="blocked">Blocked</option><option value="observed_only">Research only</option><option value="pending">Unresolved</option></select></label>

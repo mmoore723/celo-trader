@@ -398,15 +398,10 @@ def _manage_open_position(
         )
         ps["current_stop_pct"] = _current_stop_pct_display
 
-        import json as _json_m
         _state_path_m = get_bot_state_path()
         try:
-            _existing = {}
-            if _state_path_m.exists():
-                with open(_state_path_m) as _f:
-                    _existing = _json_m.load(_f)
-            _open_positions = _existing.get("open_positions") or {}
-            _open_positions[str(trade_id)] = {
+            from config import atomic_update_json
+            _position_snapshot = {
                 "trade_id":                  trade_id,
                 "contract_symbol":           trade.get("contract_symbol"),
                 "ticker":                    ticker,
@@ -425,13 +420,18 @@ def _manage_open_position(
                 "vwap_breached_bars":        ps.get("vwap_breached_bars", 0),
                 "trend_dead":                trend_dead,
             }
-            _existing["open_positions"]             = _open_positions
-            _existing["current_stop_pct"]           = _current_stop_pct_display
-            _existing["current_option_price"]       = current_price
-            _existing["current_option_price_time"]  = ps["current_option_price_time"]
-            _existing["session_pnl"]                = _US.get("session_pnl", 0.0)
-            with open(_state_path_m, "w") as _f:
-                _json_m.dump(_existing, _f)
+            def _update_position_state(state: dict) -> dict:
+                positions = dict(state.get("open_positions") or {})
+                positions[str(trade_id)] = _position_snapshot
+                return {
+                    **state,
+                    "open_positions": positions,
+                    "current_stop_pct": _current_stop_pct_display,
+                    "current_option_price": current_price,
+                    "current_option_price_time": ps["current_option_price_time"],
+                    "session_pnl": _US.get("session_pnl", 0.0),
+                }
+            atomic_update_json(_state_path_m, _update_position_state)
         except Exception:
             pass
 
@@ -605,6 +605,10 @@ def _manage_open_position(
                 strategy_id     = trade.get("strategy_id", "UNKNOWN"),
                 annotations_json= trade.get("annotations_json"),
                 broker_account_id= trade.get("broker_account_id"),
+                candidate_id     = trade.get("candidate_id"),
+                parent_trade_id  = trade.get("parent_trade_id") or trade.get("id"),
+                entry_order_id   = trade.get("entry_order_id"),
+                entry_fill_time  = trade.get("entry_fill_time"),
             )
             partial_pnl = close_trade(
                 trade_id             = partial_id,
@@ -614,6 +618,8 @@ def _manage_open_position(
                 confirmed_fill_price = fill_price,
                 paper                = paper,
                 annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
+                exit_order_id        = str(fill.get("id") or "") or None,
+                exit_fill_time       = fill.get("filled_at") or _now_et(),
             )
 
             with get_conn() as _conn:

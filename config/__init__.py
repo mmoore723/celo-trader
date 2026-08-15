@@ -61,6 +61,7 @@ from config.settings_store import (
     get_settings, save_settings, get_maintenance_state, save_maintenance_state,
     get_api_keys, save_api_keys, setup_logging,
 )
+from config.atomic_files import atomic_write_text, atomic_write_json, atomic_update_json
 
 __all__ = [
     "BASE_DIR", "_USER_DATA", "DB_PATH", "DB_PATH_PAPER", "DB_PATH_LIVE",
@@ -92,4 +93,5 @@ __all__ = [
     "_DEFAULTS",
     "get_settings", "save_settings", "get_maintenance_state", "save_maintenance_state",
     "get_api_keys", "save_api_keys", "setup_logging",
+    "atomic_write_text", "atomic_write_json", "atomic_update_json",
 ]

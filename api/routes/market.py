@@ -8,6 +8,7 @@ import pytz
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from api.models import Bar, Quote, ScannerResult, OptionsChainRow
+from trading.state import _now_et
 
 # Shared path used by scanner and premarket endpoints
 universe_path = Path(__file__).resolve().parents[2] / "daily_universe.json"
@@ -66,7 +67,7 @@ def get_bars(
             # filesystem cache, which can return stale data from a prior session.
             # 1m bars: yfinance max is 7 days; 5m/15m/60m: use 30 days (enough for
             # 500 bars and avoids the 60-day stale-cache issue we've seen in prod).
-            _today      = _dt.date.today()
+            _today      = _now_et().date()
             _lookback   = 6 if _yf_interval == "1m" else 30
             _start_date = (_today - _dt.timedelta(days=_lookback)).strftime("%Y-%m-%d")
             _end_date   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -220,7 +221,7 @@ def get_scanner() -> list[ScannerResult]:
         import datetime as _dt
 
         state_path = Path(__file__).resolve().parents[2] / "scanner_state.json"
-        today_str  = _dt.date.today().isoformat()
+        today_str  = _now_et().date().isoformat()
         results: list[ScannerResult] = []
         u: dict = {}
 
@@ -400,7 +401,7 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
     yf_bars: dict[str, list] = {}
     try:
         import yfinance as _yf
-        _today = _dt.date.today()
+        _today = _now_et().date()
         _start = (_today - _dt.timedelta(days=35)).strftime("%Y-%m-%d")
         _end   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -663,7 +664,7 @@ def get_opening_range(ticker: str) -> dict:
         try:
             import datetime as _dt
             import yfinance as yf
-            _today      = _dt.date.today()
+            _today      = _now_et().date()
             _start_date = _today.strftime("%Y-%m-%d")
             _end_date   = (_today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
             raw_yf = yf.download(

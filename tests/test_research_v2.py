@@ -829,30 +829,11 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual([{"signal_time": "2026-01-01T10:00:00"}], common["fixed_90m"])
         self.assertEqual([{"signal_time": "2026-01-01T10:00:00"}], common["structural_stop_90m"])
 
-    def test_orb_pullback_adapter_does_not_emit_the_retired_delayed_candle_model(self) -> None:
-        """The old five-minute evaluator cannot race the quote-level retouch path."""
-        import pandas as pd
-        from strategies.orb_pullback_v2 import evaluate
+    def test_orb_retouch_locks_the_paid_selected_retest_tolerance(self) -> None:
+        """Paper signals use the paid study's 0.05% winner, not baseline 0.10%."""
+        from trading.orb_retouch_execution import RETOUCH_TOLERANCE_PCT
 
-        self.assertIsNone(evaluate(pd.DataFrame({"time": pd.date_range("2026-01-02 09:30", periods=15, freq="5min")}), "TSLA"))
-
-    def test_orb_pullback_adapter_locks_the_paid_selected_retest_tolerance(self) -> None:
-        """Paper signals must use the paid study's 0.05% winner, not baseline 0.10%."""
-        from strategies.orb_pullback_v2 import PAID_RETEST_TOLERANCE_PCT
-
-        self.assertEqual(0.0005, PAID_RETEST_TOLERANCE_PCT)
-
-    def test_orb_pullback_adapter_is_hard_scoped_to_paid_tsla_evidence(self) -> None:
-        """A future pilot must not reuse the TSLA-only hypothesis on another ticker."""
-        import pandas as pd
-        from strategies.orb_pullback_v2 import evaluate
-
-        frame = pd.DataFrame(columns=["time"])
-        self.assertIsNone(evaluate(frame, "AAPL"))
-        self.assertIsNone(evaluate(frame, "QQQ"))
-        # TSLA reaches the normal data-availability check instead of being
-        # rejected for its ticker.
-        self.assertIsNone(evaluate(frame, "TSLA"))
+        self.assertEqual(0.0005, RETOUCH_TOLERANCE_PCT)
 
     def test_incomplete_bot_state_is_treated_as_stopped_on_service_restart(self) -> None:
         from config import load_bot_state_safely

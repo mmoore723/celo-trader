@@ -15,10 +15,12 @@ Why ContextVar:
 from __future__ import annotations
 from contextvars import ContextVar
 
-# Default is "admin" so existing single-user code works unchanged during migration.
-_user_id_var:   ContextVar[str]  = ContextVar("celo_user_id",   default="admin")
-_is_admin_var:  ContextVar[bool] = ContextVar("celo_is_admin",  default=True)
-_username_var:  ContextVar[str]  = ContextVar("celo_username",  default="admin")
+# Code running without an authenticated request or an explicitly-scoped bot
+# worker is system work.  It must never inherit the first administrator's
+# files or privileges merely because no ContextVar was set.
+_user_id_var:   ContextVar[str]  = ContextVar("celo_user_id",   default="system")
+_is_admin_var:  ContextVar[bool] = ContextVar("celo_is_admin",  default=False)
+_username_var:  ContextVar[str]  = ContextVar("celo_username",  default="system")
 
 
 def set_current_user(user_id: str, username: str, is_admin: bool) -> None:
