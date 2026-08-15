@@ -171,6 +171,14 @@ echo "==> Installing Python deps on EC2 (full requirements.txt)..."
 # listed in requirements.txt were missing (causing 'No module named yfinance').
 ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && $EC2_DIR/venv/bin/pip install -r requirements.txt -q"
 
+echo "==> Installing the reviewed systemd unit..."
+ssh -i "$EC2_KEY" "$EC2_HOST" \
+  "sudo install -m 0644 $EC2_DIR/celo-dashboard.service /etc/systemd/system/celo-dashboard.service && sudo systemctl daemon-reload"
+
+echo "==> Verifying required production secrets..."
+ssh -i "$EC2_KEY" "$EC2_HOST" \
+  "cd $EC2_DIR && test -f .env && test \$(grep -E '^JWT_SECRET=.{32,}$' .env | wc -l) -eq 1 && test \$(grep -E '^ENCRYPTION_KEY=.+$' .env | wc -l) -eq 1"
+
 echo "==> Restarting services on EC2..."
 ssh -i "$EC2_KEY" "$EC2_HOST" "sudo systemctl restart celo-dashboard && sudo systemctl status celo-dashboard --no-pager"
 
