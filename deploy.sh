@@ -183,14 +183,14 @@ echo "==> Restarting services on EC2..."
 ssh -i "$EC2_KEY" "$EC2_HOST" "sudo systemctl restart celo-dashboard && sudo systemctl status celo-dashboard --no-pager"
 
 echo "==> Verifying deployed health endpoint..."
-if ! ssh -i "$EC2_KEY" "$EC2_HOST" "curl --fail --silent --show-error --retry 12 --retry-delay 2 http://127.0.0.1:8501/healthz"; then
+if ! ssh -i "$EC2_KEY" "$EC2_HOST" "curl --fail --silent --show-error --retry 12 --retry-delay 2 --retry-connrefused http://127.0.0.1:8501/healthz"; then
   echo "Deployment failed health verification."
   echo "Previous server commit: $REMOTE_PREVIOUS_SHA"
   echo "==> Automatically rolling EC2 back to the previous release..."
   if ssh -i "$EC2_KEY" "$EC2_HOST" \
     "cd $EC2_DIR && git checkout --detach '$REMOTE_PREVIOUS_SHA' && $EC2_DIR/venv/bin/pip install -r requirements.txt -q && sudo systemctl restart celo-dashboard" \
     && ssh -i "$EC2_KEY" "$EC2_HOST" \
-      "curl --fail --silent --show-error --retry 12 --retry-delay 2 http://127.0.0.1:8501/healthz"; then
+      "curl --fail --silent --show-error --retry 12 --retry-delay 2 --retry-connrefused http://127.0.0.1:8501/healthz"; then
     echo "Rollback succeeded; EC2 is healthy on $REMOTE_PREVIOUS_SHA."
   else
     echo "CRITICAL: rollback did not restore health. Manual server intervention is required."
