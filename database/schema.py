@@ -81,6 +81,47 @@ CREATE TABLE IF NOT EXISTS system_events (
 );
 """
 
+# broker_order_events — durable, per-account lifecycle evidence for every
+# order the bot tries to send to Alpaca.  This is intentionally append-only:
+# one attempt can have a limit order, a cancellation, and a market fallback,
+# and preserving each transition is what lets the UI prove where an order
+# stopped instead of showing only the final trade row.
+_CREATE_BROKER_ORDER_EVENTS = """
+CREATE TABLE IF NOT EXISTS broker_order_events (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_time        TEXT    NOT NULL,
+    attempt_id        TEXT    NOT NULL,
+    broker            TEXT    NOT NULL DEFAULT 'alpaca',
+    broker_account_id TEXT,
+    paper             INTEGER NOT NULL DEFAULT 1,
+    order_id          TEXT,
+    parent_order_id   TEXT,
+    event_type        TEXT    NOT NULL,
+    status            TEXT,
+    contract_symbol   TEXT,
+    ticker            TEXT,
+    strategy_id       TEXT,
+    side              TEXT,
+    position_intent   TEXT,
+    requested_qty     INTEGER,
+    filled_qty        INTEGER,
+    order_type        TEXT,
+    limit_price       REAL,
+    fill_price        REAL,
+    latency_ms        REAL,
+    message           TEXT,
+    is_issue          INTEGER NOT NULL DEFAULT 0,
+    linked_trade_id   INTEGER
+);
+"""
+_CREATE_BROKER_ORDER_EVENTS_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_broker_order_events_time ON broker_order_events(event_time DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_broker_order_events_attempt ON broker_order_events(attempt_id, id);",
+    "CREATE INDEX IF NOT EXISTS idx_broker_order_events_order ON broker_order_events(order_id);",
+    "CREATE INDEX IF NOT EXISTS idx_broker_order_events_account ON broker_order_events(broker_account_id, event_time DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_broker_order_events_trade ON broker_order_events(linked_trade_id);",
+]
+
 _CREATE_STRATEGY_AUDITS = """
 CREATE TABLE IF NOT EXISTS strategy_audits (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -317,6 +358,7 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_TRADES)
         conn.execute(_CREATE_DAILY_SUMMARY)
         conn.execute(_CREATE_SYSTEM_EVENTS)
+        conn.execute(_CREATE_BROKER_ORDER_EVENTS)
         conn.execute(_CREATE_STRATEGY_AUDITS)
         conn.execute(_CREATE_STRATEGY_SETTING_CHANGES)
         conn.execute(_CREATE_STRATEGY_SETTING_CHANGES_IDX)
@@ -326,6 +368,8 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_SHADOW_CANDIDATES)
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
+        for _idx_sql in _CREATE_BROKER_ORDER_EVENTS_IDX:
+            conn.execute(_idx_sql)
         for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_SHADOW_CANDIDATES_IDX:

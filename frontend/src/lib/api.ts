@@ -723,6 +723,56 @@ export interface BacktestJobStatus {
   estimated_remaining_seconds?: number;
 }
 
+export interface BrokerOrderEvent {
+  id: number;
+  event_time: string;
+  event_type: string;
+  status?: string | null;
+  order_id?: string | null;
+  filled_qty?: number | null;
+  fill_price?: number | null;
+  message?: string | null;
+  is_issue: number | boolean;
+}
+
+export interface BrokerOrderAttempt {
+  attempt_id: string;
+  started_at: string;
+  updated_at: string;
+  order_id?: string | null;
+  contract_symbol?: string | null;
+  ticker?: string | null;
+  strategy_id?: string | null;
+  side?: string | null;
+  position_intent?: string | null;
+  requested_qty?: number | null;
+  filled_qty?: number | null;
+  fill_price?: number | null;
+  final_event: string;
+  final_status?: string | null;
+  linked_trade_id?: number | null;
+  had_issue: boolean;
+  active_issue: boolean;
+  issue_message?: string | null;
+  events: BrokerOrderEvent[];
+}
+
+export interface BrokerOrderFlowResponse {
+  date: string;
+  mode: string;
+  account_scoped: boolean;
+  scope_note?: string;
+  summary: {
+    attempts: number;
+    acknowledged: number;
+    filled: number;
+    rejected_or_failed: number;
+    active_issues: number;
+    unlinked_fills: number;
+  };
+  attempts: BrokerOrderAttempt[];
+}
+
 // ── Bot ────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -742,6 +792,9 @@ export const api = {
     performance:   (mode="paper") => request<PerformanceStats>(`/api/trades/performance?mode=${mode}`),
     analytics:     (mode="paper") => request<TradeAnalytics>(`/api/trades/analytics?mode=${mode}`),
     reconcile:     (date?: string) => request<ReconcileResponse>(`/api/trades/reconcile${date ? `?date=${date}` : ""}`),
+    orderFlow:     (mode="paper", date?: string) => request<BrokerOrderFlowResponse>(
+      `/api/trades/order-flow?mode=${mode}${date ? `&date=${date}` : ""}`
+    ),
     /** Actual daily P&L from Alpaca portfolio history — truth, not bot estimates */
     alpacaDailyPnl: () => request<{date:string; pnl:number}[]>("/api/trades/alpaca-daily-pnl"),
   },

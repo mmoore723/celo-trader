@@ -552,6 +552,11 @@ def _manage_open_position(
                 limit_price     = current_price,
                 step_to_price   = bid_price,
                 position_intent = "sell_to_close",
+                order_context   = {
+                    "ticker": trade.get("ticker"),
+                    "strategy_id": trade.get("strategy_id"),
+                    "trade_id": trade.get("id"),
+                },
             )
 
             if fill is None:
@@ -621,6 +626,13 @@ def _manage_open_position(
                 exit_order_id        = str(fill.get("id") or "") or None,
                 exit_fill_time       = fill.get("filled_at") or _now_et(),
             )
+            try:
+                from database import link_broker_order_to_trade
+                link_broker_order_to_trade(
+                    str(fill.get("id") or ""), partial_id, link_kind="stage-1 exit",
+                )
+            except Exception:
+                logger.warning("stage-1 order-flow link failed for trade %s", partial_id, exc_info=True)
 
             with get_conn() as _conn:
                 _conn.execute(

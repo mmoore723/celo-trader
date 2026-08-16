@@ -5,7 +5,8 @@ from __future__ import annotations
 import json as _json
 import logging
 from datetime import date as _date, datetime
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from api.middleware.auth import require_auth
 from api.models import (
     Trade, TradeListResponse, PerformanceStats, DailySummary,
     TradeAnalytics, StrategyRow, HourRow, TickerRow, ExitReasonRow,
@@ -164,6 +165,41 @@ def get_open_trades_endpoint() -> list[Trade]:
         broker_account_id=get_settings().get("active_broker_account_id") or None
     ) or []
     return [_row_to_trade(r) for r in rows]
+
+
+@router.get("/order-flow", dependencies=[Depends(require_auth)])
+def get_order_flow_endpoint(
+    request: Request,
+    mode: str = Query("paper", enum=["paper", "live"]),
+    date: str | None = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+) -> dict:
+    """Return only this signed-in user's active-account Alpaca lifecycle."""
+    from config import get_settings
+    from database import get_broker_order_flow
+
+    if not getattr(request.state, "user_id", None):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    account_id = get_settings().get("active_broker_account_id") or None
+    if not account_id:
+        return {
+            "date": date or _date.today().isoformat(), "mode": mode,
+            "account_scoped": False,
+            "summary": {"attempts": 0, "acknowledged": 0, "filled": 0,
+                        "rejected_or_failed": 0, "active_issues": 0,
+                        "unlinked_fills": 0},
+            "attempts": [],
+            "scope_note": "Connect an Alpaca account to view its order flow.",
+        }
+    try:
+        result = get_broker_order_flow(
+            mode=mode, trading_date=date,
+            broker_account_id=account_id, limit=limit,
+        )
+        result["scope_note"] = "Showing only the signed-in user's active Alpaca account."
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/performance", response_model=PerformanceStats)

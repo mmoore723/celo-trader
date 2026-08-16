@@ -3,6 +3,7 @@ import unittest
 
 from research.jobs.summarize_paid_markouts_holdout import assess
 from research.jobs.assess_paid_noise_momentum import assess as assess_noise
+from research.jobs.tune_paid_spy_afternoon_compression import summarize_and_select
 
 
 def row(day: str, result: float) -> dict[str, object]:
@@ -39,6 +40,19 @@ class PaidMarkoutHoldoutTests(unittest.TestCase):
         report = assess_noise(rows, holdout_start=date(2026, 3, 1))
         self.assertEqual("reject", report["decision"])
         self.assertIn("median return is not positive", report["holdout_reasons"])
+
+    def test_compression_tuning_selects_on_older_data_not_later_results(self):
+        older_days = [f"2026-06-{day:02d}" for day in range(1, 16)]
+        later_days = [f"2026-07-{day:02d}" for day in range(1, 11)]
+        markouts = {
+            "baseline": [row(day, 2) for day in older_days] + [row(day, 20) for day in later_days],
+            "wider_early": [row(day, 3) for day in older_days] + [row(day, -2) for day in later_days],
+            "later_box": [row(day, 1) for day in older_days] + [row(day, 20) for day in later_days],
+            "wider_baseline": [row(day, -1) for day in older_days] + [row(day, 20) for day in later_days],
+        }
+        report = summarize_and_select(markouts, date(2026, 7, 1))
+        self.assertEqual("wider_early", report["selected_variant"])
+        self.assertFalse(report["later_data_passed"])
 
 
 if __name__ == "__main__":

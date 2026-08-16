@@ -1699,6 +1699,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         limit_price     = _order_mid,
         step_to_price   = _order_ask,
         position_intent = "buy_to_open",
+        order_context   = {
+            "ticker": ticker,
+            "strategy_id": _US.get("last_strategy_id", strategy_id),
+        },
     )
 
     # FIX S1: Only record trade if order actually filled
@@ -1806,6 +1810,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         entry_order_id   = str(order.get("id") or "") or None,
         entry_fill_time  = order.get("filled_at") or entry_utc,
     )
+    try:
+        from database import link_broker_order_to_trade
+        link_broker_order_to_trade(
+            str(order.get("id") or ""), trade_id, link_kind="entry",
+        )
+    except Exception:
+        logger.warning("entry order-flow link failed for trade %s", trade_id, exc_info=True)
 
     # Capture the executable chain quote alongside every PAPER entry.  This is
     # evidence for later execution-fidelity research, not an input to this

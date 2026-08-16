@@ -49,6 +49,9 @@ from database.strategy_audit import (
     save_strategy_audit, get_latest_strategy_audit, get_strategy_audit_history,
 )
 from database.settings_audit import record_strategy_setting_changes, get_strategy_setting_changes
+from database.broker_order_flow import (
+    record_broker_order_event, link_broker_order_to_trade, get_broker_order_flow,
+)
 
 __all__ = [
     "_now_et", "_to_et_isoformat", "_merge_annotations_json",
@@ -63,4 +66,5 @@ __all__ = [
     "get_statistics",
     "save_strategy_audit", "get_latest_strategy_audit", "get_strategy_audit_history",
     "record_strategy_setting_changes", "get_strategy_setting_changes",
+    "record_broker_order_event", "link_broker_order_to_trade", "get_broker_order_flow",
 ]

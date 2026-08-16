@@ -95,6 +95,11 @@ def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
             side            = "sell",
             order_type      = "market",
             position_intent = "sell_to_close",
+            order_context   = {
+                "ticker": trade.get("ticker"),
+                "strategy_id": trade.get("strategy_id"),
+                "trade_id": trade.get("id"),
+            },
         )
         broker_ok = fill is not None
         if fill and fill.get("filled_avg_price"):
@@ -164,6 +169,13 @@ def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
                         f"Check the journal manually."),
             "pnl": None,
         }
+    try:
+        from database import link_broker_order_to_trade
+        link_broker_order_to_trade(
+            str(fill.get("id") or ""), trade["id"], link_kind="manual exit",
+        )
+    except Exception:
+        logger.warning("manual exit order-flow link failed for trade %s", trade_id, exc_info=True)
 
     log_event(
         "INFO", "trading_logic",

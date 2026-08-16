@@ -19,12 +19,23 @@ calls self._wait_for_fill directly and the two form one order lifecycle.
 """
 
 import logging
+import time
+import uuid
+from time import monotonic
 from typing import Optional
 
-from database import log_event
+from database import log_event, record_broker_order_event
 from broker.common import _extract_partial_fill
 
 logger = logging.getLogger("celo_trader.broker")
+
+
+def _record_flow(**event) -> None:
+    """Best-effort observability: monitoring must never break order management."""
+    try:
+        record_broker_order_event(**event)
+    except Exception:
+        logger.warning("broker_order_event_write_failed", exc_info=True)
 
 
 class AlpacaOrdersMixin:
@@ -40,6 +51,7 @@ class AlpacaOrdersMixin:
         limit_price: Optional[float] = None,
         step_to_price: Optional[float] = None,  # buy: step UP to ask; sell: step DOWN to bid
         position_intent: Optional[str] = None,  # 'buy_to_open' | 'sell_to_close' (FIX 2026-07-16)
+        order_context: Optional[dict] = None,
     ) -> Optional[dict]:
         """
         Submit an options order via Alpaca v2 OPTIONS endpoint.
@@ -63,8 +75,27 @@ class AlpacaOrdersMixin:
         Alpaca options docs (valid single-leg payload examples):
         https://docs.alpaca.markets/docs/options-orders
         """
+        attempt_id = uuid.uuid4().hex
+        context = order_context or {}
+        flow_base = {
+            "attempt_id": attempt_id,
+            "contract_symbol": symbol,
+            "ticker": context.get("ticker"),
+            "strategy_id": context.get("strategy_id"),
+            "side": side,
+            "position_intent": position_intent,
+            "requested_qty": qty,
+            "order_type": order_type,
+            "limit_price": limit_price,
+            "linked_trade_id": context.get("trade_id"),
+        }
         if not getattr(self, "api_key", ""):
             logger.warning("Alpaca keys missing — order not sent")
+            _record_flow(
+                **flow_base, event_type="not_sent_missing_credentials",
+                status="not_sent", message="Alpaca credentials are missing",
+                is_issue=True,
+            )
             return None
 
         # Reset from any previous call so a stale reason can never be misread
@@ -98,9 +129,20 @@ class AlpacaOrdersMixin:
                 "limit_price": limit_price,
             },
         )
+        _record_flow(
+            **flow_base, event_type="submit_attempt", status="sending",
+            message=f"Sending {side} {qty} contract(s) to Alpaca",
+        )
+        submit_started = monotonic()
         try:
             order = self._post(f"{self.base}/v2/orders", payload)
             order_id = order.get("id", "")
+            _record_flow(
+                **flow_base, event_type="acknowledged", order_id=order_id,
+                status=order.get("status") or "accepted",
+                latency_ms=round((monotonic() - submit_started) * 1000, 1),
+                message="Alpaca acknowledged the order",
+            )
             # Use module "order" (not "broker.alpaca") so this shows in THINKING tab.
             log_event("INFO", "order",
                       f"📤 [{symbol}] Order sent — {side.upper()} {qty}× {symbol} "
@@ -110,7 +152,10 @@ class AlpacaOrdersMixin:
             # Pass limit_price so paper fallback can use it for confirmed_fill_price.
             confirmed = self._wait_for_fill(order_id, limit_price=limit_price,
                                             step_to_price=step_to_price, side=side,
-                                            symbol=symbol, qty=qty)
+                                            symbol=symbol, qty=qty,
+                                            position_intent=position_intent,
+                                            attempt_id=attempt_id,
+                                            order_context=context)
             if not confirmed:
                 log_event("ERROR", "order",
                           f"🔴 [{symbol}] Order did not fill — no position recorded. "
@@ -157,6 +202,11 @@ class AlpacaOrdersMixin:
             # a transient/retry-worthy rejection) can check this afterward via
             # is_phantom_position_rejection(alpaca.last_rejection_reason).
             self.last_rejection_reason = _reason
+            _record_flow(
+                **flow_base, event_type="submission_error",
+                status="rejected", message=str(_reason), is_issue=True,
+                latency_ms=round((monotonic() - submit_started) * 1000, 1),
+            )
             log_event("ERROR", "order",
                       f"🔴 [{symbol}] Order rejected — {_reason}. No position opened.")
             logger.error(
@@ -177,6 +227,12 @@ class AlpacaOrdersMixin:
                 for _o in _orphans:
                     _oid = _o.get("id", "")
                     if self.cancel_order(_oid):
+                        _record_flow(
+                            **flow_base, event_type="orphan_cancelled",
+                            order_id=_oid, status="cancelled",
+                            message="Resting Alpaca order found and cancelled after submission error",
+                            is_issue=True,
+                        )
                         log_event(
                             "WARNING", "order",
                             f"🟡 [{symbol}] Found and cancelled a resting order "
@@ -189,6 +245,10 @@ class AlpacaOrdersMixin:
                             extra={"event": "orphan_order_cancelled", "symbol": symbol, "order_id": _oid},
                         )
             except Exception as _ce:
+                _record_flow(
+                    **flow_base, event_type="orphan_sweep_failed",
+                    status="unknown", message=str(_ce), is_issue=True,
+                )
                 logger.warning("orphan_order_sweep_failed: %s", _ce)
 
             return None
@@ -202,6 +262,9 @@ class AlpacaOrdersMixin:
         side: str = "buy",
         symbol: Optional[str] = None,
         qty: Optional[int] = None,
+        position_intent: Optional[str] = None,
+        attempt_id: Optional[str] = None,
+        order_context: Optional[dict] = None,
     ) -> Optional[dict]:
         """
         Poll order status until filled or rejected.
@@ -217,7 +280,26 @@ class AlpacaOrdersMixin:
           the limit price while Alpaca's paper simulator fills at a worse price).
         - Live account: cancel if still unfilled after 30 seconds (prevents ghosts).
         """
+        context = order_context or {}
+        attempt_id = attempt_id or uuid.uuid4().hex
+        flow_base = {
+            "attempt_id": attempt_id,
+            "order_id": order_id,
+            "contract_symbol": symbol,
+            "ticker": context.get("ticker"),
+            "strategy_id": context.get("strategy_id"),
+            "side": side,
+            "position_intent": position_intent,
+            "requested_qty": qty,
+            "limit_price": limit_price,
+            "linked_trade_id": context.get("trade_id"),
+        }
         if not order_id or order_id == "paper_simulated":
+            _record_flow(
+                **flow_base, event_type="filled", status="filled",
+                filled_qty=qty or 0, fill_price=limit_price or 0,
+                message="Simulated order filled",
+            )
             return {"id": order_id, "status": "filled",
                     "confirmed_fill_price": limit_price or 0,
                     "filled_qty": qty or 0, "partial_fill": False}
@@ -239,6 +321,7 @@ class AlpacaOrdersMixin:
         # modify the order's limit price from mid up to the ask.
         _STEP_UP_AFTER_SECS = 5
         _stepped_up = False
+        _last_status = None
 
         terminal_states = {"filled", "expired", "canceled", "cancelled",
                            "rejected", "stopped", "suspended", "done_for_day"}
@@ -266,6 +349,11 @@ class AlpacaOrdersMixin:
                         {"limit_price": str(round(step_to_price, 2))},
                     )
                     _stepped_up = True
+                    _record_flow(
+                        **{**flow_base, "limit_price": step_to_price},
+                        event_type="price_step", status="replaced",
+                        message=f"Limit stepped to {step_to_price:.2f}",
+                    )
                     if _is_buy:
                         log_event("INFO", "order",
                                   f"⬆️ [{order_id[:8]}…] Mid-price buy not filled after "
@@ -282,10 +370,21 @@ class AlpacaOrdersMixin:
                                     limit_price or 0, step_to_price, order_id)
                 except Exception as _pe:
                     logger.warning("order_step_failed order=%s: %s", order_id, _pe)
+                    _record_flow(
+                        **flow_base, event_type="price_step_failed",
+                        status="working", message=str(_pe), is_issue=True,
+                    )
 
             try:
                 order = self._get(f"{self.base}/v2/orders/{order_id}")
                 status = order.get("status", "")
+                if status != _last_status:
+                    _record_flow(
+                        **flow_base, event_type="broker_status", status=status,
+                        filled_qty=int(float(order.get("filled_qty") or 0)),
+                        message=f"Alpaca status changed to {status or 'unknown'}",
+                    )
+                    _last_status = status
                 logger.debug("Order %s status: %s", order_id, status)
                 if status == "filled":
                     filled_price = float(order.get("filled_avg_price") or limit_price or 0)
@@ -313,6 +412,11 @@ class AlpacaOrdersMixin:
                     # rather than assume it.
                     order["filled_qty"] = int(float(order.get("filled_qty") or qty or 0))
                     order["partial_fill"] = False
+                    _record_flow(
+                        **flow_base, event_type="filled", status="filled",
+                        filled_qty=order["filled_qty"], fill_price=filled_price,
+                        message="Alpaca confirmed the fill",
+                    )
                     return order
                 if status in terminal_states:
                     # FIX 2026-07-20 (Alpaca fills audit): an order can reach a
@@ -334,13 +438,29 @@ class AlpacaOrdersMixin:
                             "partial_fill_terminal: order=%s status=%s filled_qty=%s",
                             order_id, status, _partial["filled_qty"],
                         )
+                        _record_flow(
+                            **flow_base, event_type="partial_filled", status=status,
+                            filled_qty=_partial["filled_qty"],
+                            fill_price=_partial["confirmed_fill_price"],
+                            message=f"Order ended {status} after a partial fill",
+                            is_issue=True,
+                        )
                         return _partial
                     log_event("WARNING", "order",
                               f"⚠️ Order ended with status '{status}' — no position opened.")
                     logger.warning("Order %s ended with status: %s", order_id, status)
+                    _record_flow(
+                        **flow_base, event_type="terminal_no_fill", status=status,
+                        message=f"Order ended {status} without a fill", is_issue=True,
+                    )
                     return None
             except Exception as e:
                 logger.warning("Status poll failed for %s: %s", order_id, e)
+                if i == effective_wait - 1:
+                    _record_flow(
+                        **flow_base, event_type="status_poll_error",
+                        status="unknown", message=str(e), is_issue=True,
+                    )
             time.sleep(1)
 
         if is_paper:
@@ -351,9 +471,19 @@ class AlpacaOrdersMixin:
                       f"📝 Paper limit order pending after {effective_wait}s — "
                       f"cancelling and re-submitting as market to get real fill price.")
             try:
-                self.cancel_order(order_id)
+                cancelled = self.cancel_order(order_id)
+                _record_flow(
+                    **flow_base, event_type="cancel_requested",
+                    status="canceled" if cancelled else "cancel_unconfirmed",
+                    message="Paper limit order cancelled before market fallback",
+                    is_issue=not bool(cancelled),
+                )
             except Exception as _ce:
                 logger.warning("paper_limit_cancel_failed order=%s: %s", order_id, _ce)
+                _record_flow(
+                    **flow_base, event_type="cancel_failed", status="working",
+                    message=str(_ce), is_issue=True,
+                )
 
             # FIX 2026-07-20 (Alpaca fills audit): the original limit order may
             # have PARTIALLY filled before we cancelled it — cancelling only
@@ -397,6 +527,12 @@ class AlpacaOrdersMixin:
                 log_event("INFO", "order",
                           f"✅ [{symbol}] Original limit order fully filled just before "
                           f"cancel took effect — no market fallback needed.")
+                _record_flow(
+                    **flow_base, event_type="filled", status="filled",
+                    filled_qty=_orig_filled_qty,
+                    fill_price=_orig_filled_price or limit_price or 0,
+                    message="Original limit order filled before cancellation",
+                )
                 return _orig_final
 
             if symbol and _remaining_qty:
@@ -408,8 +544,22 @@ class AlpacaOrdersMixin:
                         "type":          "market",
                         "time_in_force": "day",
                     }
+                    if position_intent:
+                        mkt_payload["position_intent"] = position_intent
                     mkt_order    = self._post(f"{self.base}/v2/orders", mkt_payload)
                     mkt_order_id = mkt_order.get("id", "")
+                    fallback_base = {
+                        **flow_base,
+                        "order_id": mkt_order_id,
+                        "parent_order_id": order_id,
+                        "order_type": "market",
+                        "requested_qty": _remaining_qty,
+                    }
+                    _record_flow(
+                        **fallback_base, event_type="fallback_acknowledged",
+                        status=mkt_order.get("status") or "accepted",
+                        message="Alpaca acknowledged the market fallback",
+                    )
                     log_event("INFO", "order",
                               f"📤 [{symbol}] Market fallback sent for {_remaining_qty} "
                               f"contract(s) (ID: {mkt_order_id[:8]}…). Waiting for fill…")
@@ -446,6 +596,11 @@ class AlpacaOrdersMixin:
                                 mkt_status["confirmed_fill_price"] = filled_price
                                 mkt_status["filled_qty"] = _total_qty
                                 mkt_status["partial_fill"] = _orig_filled_qty > 0
+                                _record_flow(
+                                    **fallback_base, event_type="filled", status="filled",
+                                    filled_qty=_total_qty, fill_price=filled_price,
+                                    message="Market fallback filled",
+                                )
                                 return mkt_status
                             if mkt_status.get("status") in terminal_states:
                                 break
@@ -453,6 +608,10 @@ class AlpacaOrdersMixin:
                             pass
                 except Exception as _me:
                     logger.warning("paper_market_fallback_failed: %s", _me)
+                    _record_flow(
+                        **flow_base, event_type="fallback_unconfirmed",
+                        status="failed", message=str(_me), is_issue=True,
+                    )
 
             # FIX 2026-07-17: this used to fabricate a "confirmed" fill here even
             # though nothing actually filled — the dict's own status field said
@@ -482,6 +641,13 @@ class AlpacaOrdersMixin:
                     "paper_partial_fill_market_fallback_failed: order=%s filled_qty=%s",
                     order_id, _orig_filled_qty,
                 )
+                _record_flow(
+                    **flow_base, event_type="partial_filled",
+                    status="partially_filled", filled_qty=_orig_filled_qty,
+                    fill_price=_orig_filled_price or limit_price or 0,
+                    message="Original order partially filled; market fallback did not complete",
+                    is_issue=True,
+                )
                 return {
                     "id": order_id,
                     "status": "partially_filled",
@@ -494,6 +660,11 @@ class AlpacaOrdersMixin:
                       f"🔴 [{symbol}] Market fallback did not confirm filled — "
                       f"no position recorded. Will look for the next setup.")
             logger.error("paper_market_fallback_unconfirmed: order=%s — returning None, no phantom trade", order_id)
+            _record_flow(
+                **flow_base, event_type="fallback_unconfirmed",
+                status="unconfirmed", message="Market fallback did not confirm a fill",
+                is_issue=True,
+            )
             return None
         else:
             # Live: order didn't fill in 30s — cancel to prevent ghost positions.
@@ -501,8 +672,20 @@ class AlpacaOrdersMixin:
                       f"⚠️ Live order did not fill in {effective_wait}s — cancelling "
                       f"to prevent ghost position. Will look for next setup.")
             logger.error("Order %s timed out waiting for fill after %ds", order_id, effective_wait)
+            _record_flow(
+                **flow_base, event_type="live_timeout", status="timed_out",
+                message=f"Live order did not fill within {effective_wait} seconds",
+                is_issue=True,
+            )
             try:
-                if self.cancel_order(order_id):
+                cancelled = self.cancel_order(order_id)
+                _record_flow(
+                    **flow_base, event_type="cancel_requested",
+                    status="canceled" if cancelled else "cancel_unconfirmed",
+                    message="Live timed-out order cancellation requested",
+                    is_issue=not bool(cancelled),
+                )
+                if cancelled:
                     log_event("WARNING", "order",
                               f"🟡 Timed-out order ({order_id[:8]}…) cancelled.")
                     logger.warning(
@@ -511,6 +694,10 @@ class AlpacaOrdersMixin:
                     )
             except Exception as _ce:
                 logger.warning("Failed to cancel timed-out order %s: %s", order_id, _ce)
+                _record_flow(
+                    **flow_base, event_type="cancel_failed", status="timed_out",
+                    message=str(_ce), is_issue=True,
+                )
 
             # FIX 2026-07-20 (Alpaca fills audit): cancelling a live order only
             # cancels the UNFILLED remainder — if it had partially filled
@@ -533,7 +720,19 @@ class AlpacaOrdersMixin:
                         "partial_fill_live_timeout: order=%s filled_qty=%s",
                         order_id, _partial["filled_qty"],
                     )
+                    _record_flow(
+                        **flow_base, event_type="partial_filled",
+                        status="partially_filled", filled_qty=_partial["filled_qty"],
+                        fill_price=_partial["confirmed_fill_price"],
+                        message="Live order partially filled before timeout cancellation",
+                        is_issue=True,
+                    )
                     return _partial
             except Exception as _fe:
                 logger.warning("live_timeout_refetch_failed order=%s: %s", order_id, _fe)
+            _record_flow(
+                **flow_base, event_type="terminal_no_fill", status="canceled",
+                message="Live timed-out order ended without a confirmed fill",
+                is_issue=True,
+            )
             return None

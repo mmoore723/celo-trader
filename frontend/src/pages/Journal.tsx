@@ -8,7 +8,10 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
 } from "recharts";
 import { ChevronDown, ChevronRight, Download, AlertTriangle, CheckCircle } from "lucide-react";
-import { api, type Trade, type ReconcileResponse, type ReconcileRow } from "../lib/api";
+import {
+  api, type Trade, type ReconcileResponse, type ReconcileRow,
+  type BrokerOrderFlowResponse,
+} from "../lib/api";
 import { TradeChartModal as ChartModal } from "../components/charts/TradeChartModal";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
@@ -29,6 +32,16 @@ function fmtTime(iso: string | undefined): string {
     month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hour12: false,
   });
+}
+
+/** Trading-day inputs must follow New York, not the browser's UTC day. */
+function todayEt(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 /** Format duration between two ISO strings as "Xm" or "Xh Ym" */
@@ -198,6 +211,101 @@ function TradeDetail({ t, onViewChart }: { t: Trade; onViewChart: () => void }) 
 
 // ── Reconcile tab ──────────────────────────────────────────────────────────────
 
+function humanStage(value: string): string {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function OrderFlowTab({ mode }: { mode: "paper" | "live" }) {
+  const [date, setDate] = useState(todayEt);
+  const { data, isLoading, refetch } = useQuery<BrokerOrderFlowResponse>({
+    queryKey: ["broker-order-flow", mode, date],
+    queryFn: () => api.trades.orderFlow(mode, date),
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
+  });
+  const summary = data?.summary;
+  const metrics = [
+    ["Sent", summary?.attempts ?? 0],
+    ["Accepted", summary?.acknowledged ?? 0],
+    ["Filled", summary?.filled ?? 0],
+    ["Failed", summary?.rejected_or_failed ?? 0],
+    ["Active issues", summary?.active_issues ?? 0],
+  ] as const;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <input type="date" className="input input-sm" value={date}
+          onChange={(e) => setDate(e.target.value)} />
+        <button className="btn btn-ghost btn-sm" onClick={() => refetch()}>Refresh</button>
+        <span className="text-xs" style={{ color: "var(--ink-muted)" }}>{data?.scope_note}</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {metrics.map(([label, value]) => (
+          <div className="card px-4 py-3" key={label}>
+            <div className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</div>
+            <div className="text-xl font-semibold num" style={{
+              color: label === "Active issues" && value > 0 ? "var(--negative)" : "var(--ink)",
+            }}>{value}</div>
+          </div>
+        ))}
+      </div>
+      {(summary?.active_issues ?? 0) > 0 && (
+        <div className="card px-4 py-3 flex items-center gap-2"
+          style={{ borderColor: "var(--negative)", color: "var(--negative)" }}>
+          <AlertTriangle size={16} /> One or more Alpaca order lifecycles need attention.
+        </div>
+      )}
+      {isLoading ? <PageLoader label="Alpaca Order Flow" /> : (
+        <div className="flex flex-col gap-3">
+          {(data?.attempts ?? []).length === 0 ? (
+            <div className="card p-8 text-center" style={{ color: "var(--ink-muted)" }}>
+              No Alpaca order attempts for {date}.
+            </div>
+          ) : data!.attempts.map((attempt) => (
+            <div className="card p-4" key={attempt.attempt_id}
+              style={attempt.active_issue ? { borderColor: "var(--negative)" } : {}}>
+              <div className="flex justify-between gap-4 flex-wrap">
+                <div>
+                  <div className="font-semibold">
+                    {attempt.ticker || "Order"} · {attempt.position_intent?.replaceAll("_", " ") || attempt.side}
+                  </div>
+                  <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                    {attempt.contract_symbol || "Contract not selected"} · requested {attempt.requested_qty ?? "—"} · {fmtTime(attempt.started_at)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className={`badge ${attempt.active_issue ? "badge-red" : attempt.filled_qty ? "badge-green" : "badge-blue"}`}>
+                    {humanStage(attempt.final_event)}
+                  </span>
+                  {attempt.linked_trade_id && <div className="text-xs mt-1">Trade #{attempt.linked_trade_id}</div>}
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap mt-3">
+                {attempt.events.map((event) => (
+                  <div key={event.id} title={event.message || ""} className="text-xs px-2 py-1"
+                    style={{
+                      border: "1px solid var(--border)", borderRadius: 6,
+                      color: event.is_issue ? "var(--negative)" : "var(--ink-muted)",
+                    }}>
+                    {humanStage(event.event_type)}{event.status ? ` · ${event.status}` : ""}
+                  </div>
+                ))}
+              </div>
+              {(attempt.issue_message || attempt.fill_price != null) && (
+                <div className="text-xs mt-3" style={{
+                  color: attempt.issue_message ? "var(--negative)" : "var(--ink-muted)",
+                }}>
+                  {attempt.issue_message || `Filled ${attempt.filled_qty} @ $${attempt.fill_price?.toFixed(2)}`}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function fmt$(v: number | null | undefined, decimals = 2): string {
   if (v == null) return "—";
   return `${v >= 0 ? "+" : ""}$${Math.abs(v).toFixed(decimals)}`;
@@ -210,7 +318,7 @@ function fmtPx(v: number | null | undefined): string {
 
 function ReconcileTab() {
   // Default to today in YYYY-MM-DD
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayEt();
   const [date, setDate] = useState<string>(todayStr);
 
   const { data, isLoading, refetch } = useQuery<ReconcileResponse>({
@@ -478,8 +586,7 @@ export function Journal() {
   const botStatus = useBotStore((s) => s.status);
   const defaultMode: "paper" | "live" = botStatus?.is_paper === false ? "live" : "paper";
 
-  // Top-level tab: "journal" | "reconcile"
-  const [mainTab, setMainTab] = useState<"journal" | "reconcile">("journal");
+  const [mainTab, setMainTab] = useState<"journal" | "order-flow" | "reconcile">("journal");
 
   const [mode,        setMode]        = useState<"paper" | "live">(defaultMode);
   const [filter,      setFilter]      = useState<"all" | "open" | "closed">("all");
@@ -559,6 +666,12 @@ export function Journal() {
           Journal
         </button>
         <button
+          className={`btn btn-sm ${mainTab === "order-flow" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setMainTab("order-flow")}
+        >
+          Alpaca Order Flow
+        </button>
+        <button
           className={`btn btn-sm ${mainTab === "reconcile" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setMainTab("reconcile")}
         >
@@ -568,6 +681,7 @@ export function Journal() {
 
       {/* Reconcile tab */}
       {mainTab === "reconcile" && <ReconcileTab />}
+      {mainTab === "order-flow" && <OrderFlowTab mode={mode} />}
 
       {/* Journal tab — hidden when reconcile is active */}
       {mainTab === "journal" && (
