@@ -470,12 +470,13 @@ class AlpacaOrdersMixin:
             log_event("INFO", "order",
                       f"📝 Paper limit order pending after {effective_wait}s — "
                       f"cancelling and re-submitting as market to get real fill price.")
+            cancelled = False
             try:
                 cancelled = self.cancel_order(order_id)
                 _record_flow(
                     **flow_base, event_type="cancel_requested",
-                    status="canceled" if cancelled else "cancel_unconfirmed",
-                    message="Paper limit order cancelled before market fallback",
+                    status="requested" if cancelled else "cancel_unconfirmed",
+                    message="Paper limit order cancellation requested before market fallback",
                     is_issue=not bool(cancelled),
                 )
             except Exception as _ce:
@@ -496,12 +497,59 @@ class AlpacaOrdersMixin:
             # order's actual filled_qty and only submit the REMAINDER.
             _orig_filled_qty   = 0
             _orig_filled_price = None
-            try:
-                _orig_final = self._get(f"{self.base}/v2/orders/{order_id}")
-                _orig_filled_qty   = int(float(_orig_final.get("filled_qty") or 0))
-                _orig_filled_price = float(_orig_final.get("filled_avg_price") or 0) or None
-            except Exception as _ge:
-                logger.warning("paper_orig_order_refetch_failed order=%s: %s", order_id, _ge)
+            _orig_final: dict = {}
+            _orig_terminal = False
+            _orig_status = "unknown"
+
+            # A successful DELETE only means Alpaca accepted the cancellation
+            # request.  It does NOT prove the order stopped working.  Confirm
+            # a terminal broker status before submitting a replacement, or the
+            # original limit and market fallback can both fill and double the
+            # intended position.
+            for _cancel_check in range(5):
+                try:
+                    _orig_final = self._get(f"{self.base}/v2/orders/{order_id}")
+                    _orig_status = str(_orig_final.get("status") or "unknown").lower()
+                    _orig_filled_qty = int(float(_orig_final.get("filled_qty") or 0))
+                    _orig_filled_price = (
+                        float(_orig_final.get("filled_avg_price") or 0) or None
+                    )
+                    if _orig_status in terminal_states:
+                        _orig_terminal = True
+                        break
+                except Exception as _ge:
+                    logger.warning(
+                        "paper_orig_order_refetch_failed order=%s check=%s: %s",
+                        order_id, _cancel_check + 1, _ge,
+                    )
+                if _cancel_check < 4:
+                    time.sleep(1)
+
+            if not _orig_terminal:
+                log_event(
+                    "CRITICAL", "order",
+                    f"🔴 [{symbol}] Original limit order cancellation was not "
+                    f"confirmed (broker status: {_orig_status}). Market fallback was "
+                    f"BLOCKED to prevent a duplicate fill. Manual broker review required."
+                )
+                logger.critical(
+                    "paper_fallback_blocked_cancel_unconfirmed: order=%s status=%s "
+                    "cancel_request_accepted=%s filled_qty=%s",
+                    order_id, _orig_status, cancelled, _orig_filled_qty,
+                )
+                _record_flow(
+                    **flow_base,
+                    event_type="fallback_blocked_cancel_unconfirmed",
+                    status=_orig_status,
+                    filled_qty=_orig_filled_qty or None,
+                    fill_price=_orig_filled_price,
+                    message=(
+                        "Market fallback blocked because the original order was still "
+                        f"working or its cancellation could not be confirmed ({_orig_status})"
+                    ),
+                    is_issue=True,
+                )
+                return None
 
             if _orig_filled_qty > 0:
                 log_event(
@@ -677,11 +725,12 @@ class AlpacaOrdersMixin:
                 message=f"Live order did not fill within {effective_wait} seconds",
                 is_issue=True,
             )
+            cancelled = False
             try:
                 cancelled = self.cancel_order(order_id)
                 _record_flow(
                     **flow_base, event_type="cancel_requested",
-                    status="canceled" if cancelled else "cancel_unconfirmed",
+                    status="requested" if cancelled else "cancel_unconfirmed",
                     message="Live timed-out order cancellation requested",
                     is_issue=not bool(cancelled),
                 )
@@ -705,33 +754,84 @@ class AlpacaOrdersMixin:
             # broker. Re-fetch the order once more to check, instead of
             # unconditionally returning None (which previously made a real
             # partial live position invisible to the bot).
-            try:
-                _final = self._get(f"{self.base}/v2/orders/{order_id}")
-                _partial = _extract_partial_fill(_final, limit_price)
-                if _partial:
-                    log_event(
-                        "WARNING", "order",
-                        f"🟡 Live order timed out and was cancelled, but "
-                        f"{_partial['filled_qty']} contract(s) already filled @ "
-                        f"${_partial['confirmed_fill_price']:.2f} before cancel — "
-                        f"recording the REAL partial position."
-                    )
+            _final: dict = {}
+            _final_status = "unknown"
+            _cancel_terminal = False
+            for _cancel_check in range(5):
+                try:
+                    _final = self._get(f"{self.base}/v2/orders/{order_id}")
+                    _final_status = str(_final.get("status") or "unknown").lower()
+                    if _final_status in terminal_states:
+                        _cancel_terminal = True
+                        break
+                except Exception as _fe:
                     logger.warning(
-                        "partial_fill_live_timeout: order=%s filled_qty=%s",
-                        order_id, _partial["filled_qty"],
+                        "live_timeout_refetch_failed order=%s check=%s: %s",
+                        order_id, _cancel_check + 1, _fe,
                     )
-                    _record_flow(
-                        **flow_base, event_type="partial_filled",
-                        status="partially_filled", filled_qty=_partial["filled_qty"],
-                        fill_price=_partial["confirmed_fill_price"],
-                        message="Live order partially filled before timeout cancellation",
-                        is_issue=True,
-                    )
-                    return _partial
-            except Exception as _fe:
-                logger.warning("live_timeout_refetch_failed order=%s: %s", order_id, _fe)
+                if _cancel_check < 4:
+                    time.sleep(1)
+
+            if not _cancel_terminal:
+                log_event(
+                    "CRITICAL", "order",
+                    f"🔴 Live order {order_id[:8]}… timed out, but Alpaca has not "
+                    f"confirmed cancellation (status: {_final_status}). Check the broker; "
+                    f"the order may still be working."
+                )
+                _record_flow(
+                    **flow_base,
+                    event_type="cancel_unconfirmed",
+                    status=_final_status,
+                    filled_qty=int(float(_final.get("filled_qty") or 0)) or None,
+                    fill_price=(
+                        float(_final.get("filled_avg_price") or 0) or None
+                    ),
+                    message=(
+                        "Live timeout cancellation was not confirmed; the original "
+                        f"order may still be working ({_final_status})"
+                    ),
+                    is_issue=True,
+                )
+                return None
+
+            if _final_status == "filled":
+                _filled_price = float(
+                    _final.get("filled_avg_price") or limit_price or 0
+                )
+                _final["confirmed_fill_price"] = _filled_price
+                _final["filled_qty"] = int(float(_final.get("filled_qty") or qty or 0))
+                _final["partial_fill"] = False
+                _record_flow(
+                    **flow_base, event_type="filled", status="filled",
+                    filled_qty=_final["filled_qty"], fill_price=_filled_price,
+                    message="Live order filled while timeout cancellation was pending",
+                )
+                return _final
+
+            _partial = _extract_partial_fill(_final, limit_price)
+            if _partial:
+                log_event(
+                    "WARNING", "order",
+                    f"🟡 Live order timed out and was cancelled, but "
+                    f"{_partial['filled_qty']} contract(s) already filled @ "
+                    f"${_partial['confirmed_fill_price']:.2f} before cancel — "
+                    f"recording the REAL partial position."
+                )
+                logger.warning(
+                    "partial_fill_live_timeout: order=%s filled_qty=%s",
+                    order_id, _partial["filled_qty"],
+                )
+                _record_flow(
+                    **flow_base, event_type="partial_filled",
+                    status=_final_status, filled_qty=_partial["filled_qty"],
+                    fill_price=_partial["confirmed_fill_price"],
+                    message="Live order partially filled before timeout cancellation",
+                    is_issue=True,
+                )
+                return _partial
             _record_flow(
-                **flow_base, event_type="terminal_no_fill", status="canceled",
+                **flow_base, event_type="terminal_no_fill", status=_final_status,
                 message="Live timed-out order ended without a confirmed fill",
                 is_issue=True,
             )

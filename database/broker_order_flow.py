@@ -21,6 +21,7 @@ _ET = ZoneInfo("America/New_York")
 _TERMINAL_EVENTS = {
     "filled", "partial_filled", "terminal_no_fill", "submission_error",
     "fill_unconfirmed", "fallback_unconfirmed", "live_timeout",
+    "fallback_blocked_cancel_unconfirmed", "cancel_unconfirmed",
     "not_sent_missing_credentials", "orphan_cancelled", "orphan_sweep_failed",
 }
 
@@ -215,7 +216,7 @@ def get_broker_order_flow(
             "attempts": len(attempts),
             "acknowledged": sum(any(e["event_type"] in {"acknowledged", "fallback_acknowledged"} for e in a["events"]) for a in attempts),
             "filled": sum(a["filled_qty"] is not None for a in attempts),
-            "rejected_or_failed": sum(a["final_event"] in {"submission_error", "terminal_no_fill", "fill_unconfirmed", "fallback_unconfirmed", "live_timeout", "not_sent_missing_credentials"} for a in attempts),
+            "rejected_or_failed": sum(a["final_event"] in {"submission_error", "terminal_no_fill", "fill_unconfirmed", "fallback_unconfirmed", "fallback_blocked_cancel_unconfirmed", "cancel_unconfirmed", "live_timeout", "not_sent_missing_credentials"} for a in attempts),
             "active_issues": sum(bool(a["active_issue"]) for a in attempts),
             "unlinked_fills": sum(a["filled_qty"] is not None and a["linked_trade_id"] is None for a in attempts),
         },

@@ -9,7 +9,7 @@ from unittest.mock import patch
 from config.strategy_catalog import (
     REVIEWED_STRATEGIES, enabled_reviewed_strategy_ids,
     ensure_reviewed_ticker_coverage, is_allowed_ticker, public_strategy_catalog,
-    strategy_ids_for_source,
+    reviewed_strategy_ids, reviewed_strategy_integrity_errors, strategy_ids_for_source,
 )
 
 
@@ -73,11 +73,30 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
             self.assertEqual(strategy.strategy_id, evidence["strategy_id"])
             self.assertEqual(strategy.version, evidence["strategy_version"])
             self.assertEqual(strategy.status, evidence["status"])
+            self.assertEqual(strategy.evidence_grade, evidence["evidence_grade"])
             self.assertEqual(sorted(strategy.tickers), evidence["ticker_scope"])
             self.assertEqual(strategy.implementation, evidence["implementation"])
             self.assertTrue(evidence["implementation_sha256_at_review"])
             self.assertTrue(evidence["source_reports"])
             self.assertTrue(evidence["decision"])
+
+    def test_reviewed_implementation_hashes_match_evidence(self) -> None:
+        self.assertEqual({}, reviewed_strategy_integrity_errors())
+
+    def test_integrity_failure_removes_only_drifted_strategy(self) -> None:
+        with patch(
+            "config.strategy_catalog.reviewed_strategy_integrity_errors",
+            return_value={"V2_ORB_PULLBACK": ("implementation_hash_mismatch",)},
+        ):
+            self.assertNotIn("V2_ORB_PULLBACK", reviewed_strategy_ids())
+            self.assertIn("V2_SPY_TREND_CONT", reviewed_strategy_ids())
+            settings = {rule.setting_key: True for rule in REVIEWED_STRATEGIES.values()}
+            orb = next(
+                item for item in public_strategy_catalog(settings)
+                if item["strategy_id"] == "V2_ORB_PULLBACK"
+            )
+            self.assertFalse(orb["enabled"])
+            self.assertEqual(["implementation_hash_mismatch"], orb["integrity_errors"])
 
     def test_public_catalog_resolves_account_switches_server_side(self) -> None:
         settings = {rule.setting_key: False for rule in REVIEWED_STRATEGIES.values()}

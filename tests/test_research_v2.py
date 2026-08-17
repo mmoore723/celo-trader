@@ -1080,6 +1080,47 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(contract, results["fixed_90m"][0].contract_symbol)
         self.assertEqual(5.4, results["fixed_90m"][0].exit_bid)
 
+    def test_exit_plan_can_wait_for_sparse_exit_without_widening_entry(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index) for index in range(25)]
+        ]
+        signal = _OneLong().evaluate(bars[:2])
+        assert signal is not None
+        entry_time = bars[2].timestamp
+        plans = {"fixed_90m": {signal.timestamp: planned_exits(bars, signal, bars[2])["fixed_90m"]}}
+        contract = "TSLA  260109C00103000"
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{entry_time.isoformat()},{contract},4.90,5.10\n"
+                f"{(entry_time + timedelta(minutes=93)).isoformat()},{contract},5.40,5.60\n",
+                encoding="utf-8",
+            )
+            results = run_databento_cbbo_markouts_for_exit_plans(
+                bars, [source], _OneLong(), "TSLA", plans,
+                entry_max_wait=timedelta(minutes=1),
+                exit_max_wait=timedelta(minutes=5),
+            )
+        self.assertEqual(1, len(results["fixed_90m"]))
+        self.assertEqual(entry_time + timedelta(minutes=93), results["fixed_90m"][0].exit_time)
+
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "late-entry.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{(entry_time + timedelta(minutes=2)).isoformat()},{contract},4.90,5.10\n"
+                f"{(entry_time + timedelta(minutes=93)).isoformat()},{contract},5.40,5.60\n",
+                encoding="utf-8",
+            )
+            missing = run_databento_cbbo_markouts_for_exit_plans(
+                bars, [source], _OneLong(), "TSLA", plans,
+                entry_max_wait=timedelta(minutes=1),
+                exit_max_wait=timedelta(minutes=5),
+            )
+        self.assertEqual((), missing["fixed_90m"])
+
     def test_supertrend_emits_a_completed_bar_flip(self) -> None:
         bars = [_bar(i, 100 + i, 101 + i, 99 + i, 100 + i) for i in range(12)]
         bars.extend(_bar(12 + i, 111 - i * 3, 112 - i * 3, 110 - i * 3, 111 - i * 3) for i in range(8))

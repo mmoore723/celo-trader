@@ -24,6 +24,62 @@ from shadow_ledger import record_router_candidate, resolve_candidate_from_contex
 
 
 class PaperOptionQuoteTests(unittest.TestCase):
+    def test_candidate_preview_prices_every_signal_but_reuses_same_tick_selection(self) -> None:
+        """Two same-direction candidates get evidence without two chain screens."""
+        from trading.entry.candidate_observation import observe_candidate_contract
+
+        signals = [
+            SimpleNamespace(
+                strategy_id="V2_SPY_TREND_CONT", direction="bullish",
+                confidence=.81, meta={},
+            ),
+            SimpleNamespace(
+                strategy_id="V2_SPY_AFTERNOON_FVG", direction="bullish",
+                confidence=.78, meta={},
+            ),
+        ]
+        contract = {
+            "symbol": "SPY260821C00780000", "strike": 780, "expiry": "2026-08-21",
+            "bid": 4.9, "ask": 5.1, "spread": .2, "volume": 100,
+            "open_interest": 1000, "selection_model": "reviewed",
+        }
+        risk = SimpleNamespace(
+            slippage_adjusted_entry=lambda ask: ask,
+            calculate_contracts=lambda _entry, _balance: 1,
+        )
+        candidate_ids = iter(("candidate-1", "candidate-2"))
+
+        def record_candidate(_ticker, signal, _underlying):
+            signal.meta["shadow_candidate_id"] = next(candidate_ids)
+
+        cache: dict = {}
+        with patch(
+            "trading.entry.candidate_observation.record_router_candidate",
+            side_effect=record_candidate,
+        ), patch(
+            "trading.entry.candidate_observation.select_reviewed_v2_contract",
+            return_value=(contract, {}),
+        ) as selector, patch(
+            "trading.entry.candidate_observation.snapshot_candidate_plan",
+        ) as snapshot, patch(
+            "trading.entry.candidate_observation.record_candidate_option_quote",
+        ) as quote:
+            for signal in signals:
+                observe_candidate_contract(
+                    ticker="SPY", signal=signal, underlying_price=779.0,
+                    tradier=SimpleNamespace(), balance=5000.0, risk=risk,
+                    settings={"max_position_dollars": 750.0},
+                    selection_cache=cache,
+                )
+
+        self.assertEqual(1, selector.call_count)
+        self.assertEqual(2, snapshot.call_count)
+        self.assertEqual(2, quote.call_count)
+        self.assertEqual(
+            ["candidate-1", "candidate-2"],
+            [call.kwargs["candidate_id"] for call in quote.call_args_list],
+        )
+
     def test_existing_trade_table_migrates_before_account_index(self) -> None:
         """Older databases lack broker_account_id; init must add it before indexing."""
         with TemporaryDirectory() as directory:

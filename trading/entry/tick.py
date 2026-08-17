@@ -684,7 +684,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _observation_only_strategies: set[str] = set()
     _observation_resolver = None
     if paper and bool(settings.get("shadow_ledger_enabled", True)):
-        from shadow_ledger import record_router_candidate, mark_candidate_observed_only
+        from shadow_ledger import mark_candidate_observed_only
         # Re-price previously selected scanner contracts at fixed horizons.
         # This is read-only evidence for entered, blocked, and skipped setups;
         # it has no route into order placement or position management.
@@ -700,18 +700,19 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         if bool(settings.get("shadow_observe_all_strategies", True)):
             _observation_only_strategies = reviewed_strategy_ids() - _enabled
             _observation_resolver = mark_candidate_observed_only
-        if _observation_only_strategies:
-            from trading.entry.candidate_observation import observe_candidate_contract
-            def _candidate_observer(ticker_arg, signal_arg, underlying_arg):
-                if str(getattr(signal_arg, "strategy_id", "")) in _observation_only_strategies:
-                    observe_candidate_contract(
-                        ticker=ticker_arg, signal=signal_arg, underlying_price=underlying_arg,
-                        tradier=tradier, balance=balance, risk=_risk, settings=settings,
-                    )
-                else:
-                    record_router_candidate(ticker_arg, signal_arg, underlying_arg)
-        else:
-            _candidate_observer = record_router_candidate
+        # Price every raw candidate, not only the one which wins same-tick
+        # ranking.  This is a read-only preview: it creates no order or trade,
+        # but it lets the 30/60/90-minute recorder measure whether the router
+        # correctly skipped the other possible setups.  Cache identical chain
+        # selections within this tick so observation does not multiply API use.
+        from trading.entry.candidate_observation import observe_candidate_contract
+        _candidate_preview_cache: dict = {}
+        def _candidate_observer(ticker_arg, signal_arg, underlying_arg):
+            observe_candidate_contract(
+                ticker=ticker_arg, signal=signal_arg, underlying_price=underlying_arg,
+                tradier=tradier, balance=balance, risk=_risk, settings=settings,
+                selection_cache=_candidate_preview_cache,
+            )
     # The router receives approved strategies for potential entry plus a
     # separate paper-only observation set.  Observed-only signals cannot make
     # it back out of the router, so they cannot reach contract selection.

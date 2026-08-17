@@ -9,11 +9,22 @@ single-symbol result into an unsupported universal claim.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+import hashlib
+import json
+from pathlib import Path
 from typing import Iterable, Literal
 
 
 SignalSource = Literal["bar_close", "live_retouch", "one_minute_state"]
 StrategyStatus = Literal["paper_candidate", "retired"]
+EvidenceGrade = Literal[
+    "passed_declared_holdout",
+    "promising_underpowered",
+    "promising_inconsistent",
+]
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass(frozen=True)
@@ -28,6 +39,7 @@ class ReviewedStrategy:
     exit_minutes: int | None
     paper_only: bool
     status: StrategyStatus
+    evidence_grade: EvidenceGrade
     evidence_artifact: str
     evidence: str
 
@@ -44,6 +56,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         exit_minutes=90,
         paper_only=True,
         status="paper_candidate",
+        evidence_grade="promising_inconsistent",
         evidence_artifact="config/strategy_evidence/v2_orb_pullback-2.0.0.json",
         evidence="TSLA paid-quote first-retouch study: promising later data but negative training and inconsistent months; paper candidate only",
     ),
@@ -63,6 +76,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         exit_minutes=30,
         paper_only=True,
         status="paper_candidate",
+        evidence_grade="passed_declared_holdout",
         evidence_artifact="config/strategy_evidence/v2_spy_trend_cont-2.0.0.json",
         evidence="SPY paid-quote Trend Continuation 30-minute one-position fixed-hold study",
     ),
@@ -77,6 +91,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         exit_minutes=30,
         paper_only=True,
         status="paper_candidate",
+        evidence_grade="promising_underpowered",
         evidence_artifact="config/strategy_evidence/v2_spy_afternoon_fvg-2.0.0.json",
         evidence="SPY paid-quote afternoon first-retest FVG study: positive May–July, but one signal short of the predeclared training minimum",
     ),
@@ -91,10 +106,60 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         exit_minutes=90,
         paper_only=True,
         status="paper_candidate",
+        evidence_grade="promising_inconsistent",
         evidence_artifact="config/strategy_evidence/v2_tsla_two_leg_trend_pullback-2.0.0.json",
         evidence="TSLA paid-quote VWAP/EMA two-leg study: positive train/holdout aggregate but inconsistent by month; paper candidate only",
     ),
 }
+
+
+def _implementation_path(implementation: str) -> Path:
+    """Resolve a reviewed callable/module reference to its Python source."""
+    module = implementation[:-len(".evaluate")] if implementation.endswith(".evaluate") else implementation
+    return _PROJECT_ROOT / (module.replace(".", "/") + ".py")
+
+
+@lru_cache(maxsize=1)
+def reviewed_strategy_integrity_errors() -> dict[str, tuple[str, ...]]:
+    """Return evidence/code mismatches which must fail closed for new entries.
+
+    Evidence claims apply to an exact production implementation.  A harmless
+    refactor still requires refreshing the review artifact because otherwise
+    the platform cannot distinguish it from an unreviewed rule change.
+    Existing positions retain their registered exit so this check never traps
+    an already-open trade.
+    """
+    failures: dict[str, tuple[str, ...]] = {}
+    for strategy_id, rule in REVIEWED_STRATEGIES.items():
+        errors: list[str] = []
+        evidence_path = _PROJECT_ROOT / rule.evidence_artifact
+        implementation_path = _implementation_path(rule.implementation)
+        try:
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            failures[strategy_id] = (f"evidence_unreadable:{exc.__class__.__name__}",)
+            continue
+        expected_fields = {
+            "strategy_id": strategy_id,
+            "strategy_version": rule.version,
+            "status": rule.status,
+            "evidence_grade": rule.evidence_grade,
+            "ticker_scope": sorted(rule.tickers),
+            "implementation": rule.implementation,
+        }
+        for field, expected in expected_fields.items():
+            if evidence.get(field) != expected:
+                errors.append(f"{field}_mismatch")
+        try:
+            actual_hash = hashlib.sha256(implementation_path.read_bytes()).hexdigest()
+        except OSError:
+            errors.append("implementation_missing")
+        else:
+            if actual_hash != evidence.get("implementation_sha256_at_review"):
+                errors.append("implementation_hash_mismatch")
+        if errors:
+            failures[strategy_id] = tuple(errors)
+    return failures
 
 
 def public_strategy_catalog(settings: dict) -> list[dict]:
@@ -104,6 +169,7 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
     dashboard, QA report, and runtime all describe the same reviewed rule.
     The user-specific switch is resolved server-side from ``setting_key``.
     """
+    integrity_errors = reviewed_strategy_integrity_errors()
     return [
         {
             "strategy_id": rule.strategy_id,
@@ -116,23 +182,29 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
             "exit_minutes": rule.exit_minutes,
             "paper_only": rule.paper_only,
             "status": rule.status,
+            "evidence_grade": rule.evidence_grade,
             "evidence_artifact": rule.evidence_artifact,
             "evidence": rule.evidence,
-            "enabled": bool(settings.get(rule.setting_key, False)),
+            "enabled": bool(settings.get(rule.setting_key, False)) and strategy_id not in integrity_errors,
+            "integrity_errors": list(integrity_errors.get(strategy_id, ())),
         }
-        for rule in REVIEWED_STRATEGIES.values()
+        for strategy_id, rule in REVIEWED_STRATEGIES.items()
     ]
 
 
 def reviewed_strategy_ids() -> set[str]:
-    """Return server-reviewed IDs; browser settings cannot invent one."""
-    return set(REVIEWED_STRATEGIES)
+    """Return exact evidence-matched IDs; browser settings cannot invent one."""
+    return set(REVIEWED_STRATEGIES) - set(reviewed_strategy_integrity_errors())
 
 
 def is_allowed_ticker(strategy_id: object, ticker: object) -> bool:
     """Return whether a reviewed strategy may run on this ticker."""
     rule = REVIEWED_STRATEGIES.get(str(strategy_id or "").strip().upper())
-    return bool(rule and str(ticker or "").strip().upper() in rule.tickers)
+    return bool(
+        rule
+        and str(strategy_id or "").strip().upper() not in reviewed_strategy_integrity_errors()
+        and str(ticker or "").strip().upper() in rule.tickers
+    )
 
 
 def strategy_ids_for_source(source: SignalSource) -> set[str]:
@@ -165,7 +237,8 @@ def enabled_reviewed_strategy_ids(
     return {
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
-        if bool(settings.get(rule.setting_key, False))
+        if strategy_id not in reviewed_strategy_integrity_errors()
+        and bool(settings.get(rule.setting_key, False))
         and (not normalized_ticker or normalized_ticker in rule.tickers)
         and (paper is None or paper or not rule.paper_only)
     }

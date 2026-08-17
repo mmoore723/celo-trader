@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Check, ChevronLeft, ChevronRight, Play, ShieldCheck,
 } from "lucide-react";
+import type { ReviewedStrategyCatalogEntry } from "../../lib/api";
 
 type LessonId = "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg";
 type LessonStep = {
@@ -24,6 +25,34 @@ type Course = {
   level: string;
   description: string;
   steps: LessonStep[];
+};
+
+const STRATEGY_ID_BY_LESSON: Record<LessonId, string> = {
+  v2_orb: "V2_ORB_PULLBACK",
+  v2_trend: "V2_SPY_TREND_CONT",
+  v2_spy_fvg: "V2_SPY_AFTERNOON_FVG",
+  v2_two_leg: "V2_TSLA_TWO_LEG_TREND_PULLBACK",
+};
+
+const EVIDENCE_LABELS: Record<ReviewedStrategyCatalogEntry["evidence_grade"], { label: string; detail: string; color: string; background: string }> = {
+  passed_declared_holdout: {
+    label: "Passed later-data check",
+    detail: "The rule was chosen on earlier data and remained positive on the predeclared later period.",
+    color: "#137a46",
+    background: "#eaf8f0",
+  },
+  promising_underpowered: {
+    label: "Promising · small sample",
+    detail: "The paid-quote results were positive, but the study finished below its predeclared sample requirement.",
+    color: "#9a5b00",
+    background: "#fff6df",
+  },
+  promising_inconsistent: {
+    label: "Promising · inconsistent months",
+    detail: "The aggregate paid-quote result was positive, but performance was not stable across the measured months.",
+    color: "#9a5b00",
+    background: "#fff6df",
+  },
 };
 
 const COACH_IMAGE = "/images/coach-celo-v5.png?v=1";
@@ -76,12 +105,12 @@ const COURSES: Course[] = [
     title: "TSLA Two-Leg Trend Pullback",
     shortTitle: "Two-Leg Trend Pullback",
     level: "Intermediate · 5 steps",
-    description: "A one-minute TSLA continuation setup that waits for two controlled pullback legs and renewed VWAP/EMA alignment.",
+    description: "A one-minute TSLA continuation setup: one impulse leg, one controlled pullback leg, then a completed reclaim.",
     steps: [
-      { label: "Trend", title: "Begin with aligned trend structure", lesson: "Price, VWAP, and the fast and slow EMAs must point in the same direction before a pullback is considered.", coach: "The trend earns our attention first. Without alignment, there is no continuation trade.", watch: ["Price on the trend side of VWAP", "Fast EMA leading slow EMA", "Completed one-minute bars"], avoid: "Flat or repeatedly crossing lines are chop, not a clean trend.", chartFocus: 0, question: "What must exist before looking for two pullback legs?", answers: ["Aligned trend structure", "A cheap option", "Any large candle"], correct: 0, answerWhy: "Right. This is a continuation setup, so the trend comes first." },
-      { label: "Leg one", title: "Let the first pullback form", lesson: "The first counter-trend move should be controlled and must not destroy the original VWAP/EMA structure.", coach: "One pullback tells us price is pausing. We still wait.", watch: ["A controlled counter-trend move", "VWAP structure remains intact", "No sharp reversal"], avoid: "A collapse through structure is not a healthy first leg.", chartFocus: 1, question: "Is the first pullback itself the entry?", answers: ["No, keep observing", "Yes, always", "Only if the option is cheap"], correct: 0, answerWhy: "Right. The tested setup requires a second leg and confirmation." },
-      { label: "Leg two", title: "Identify the second controlled leg", lesson: "After a partial recovery, price pulls back again without breaking the trend structure. That second leg creates the setup's decision area.", coach: "Two controlled attempts show us where buyers or sellers must defend the trend.", watch: ["Partial recovery between legs", "Second pullback stays controlled", "Trend structure still valid"], avoid: "Do not label random sideways candles as two distinct legs.", chartFocus: 2, question: "What separates two legs from chop?", answers: ["A recovery between two controlled pullbacks", "Many alternating candles", "A news headline"], correct: 0, answerWhy: "Right. The legs must be structurally distinct." },
-      { label: "Resume", title: "Enter only when momentum resumes", lesson: "The completed one-minute confirmation must resume in the original trend direction with VWAP and EMA alignment still intact.", coach: "The pullback creates the location. The resumption candle provides the proof.", watch: ["Completed confirmation bar", "Original trend direction", "VWAP and EMA agreement"], avoid: "A touch of the level is not confirmation; wait for the trend to resume.", chartFocus: 3, question: "What triggers the entry decision?", answers: ["A completed resumption candle", "The first touch", "A prediction"], correct: 0, answerWhy: "Right. The next available option ask follows completed chart proof." },
+      { label: "Trend", title: "Begin with aligned trend structure", lesson: "Price, VWAP, and the fast and slow EMAs must point in the same direction before a pullback is considered.", coach: "The trend earns our attention first. Without alignment, there is no continuation trade.", watch: ["Price on the trend side of VWAP", "Fast EMA leading slow EMA", "Completed one-minute bars"], avoid: "Flat or repeatedly crossing lines are chop, not a clean trend.", chartFocus: 0, question: "What must exist before looking for the impulse and pullback?", answers: ["Aligned trend structure", "A cheap option", "Any large candle"], correct: 0, answerWhy: "Right. This is a continuation setup, so the trend comes first." },
+      { label: "Impulse", title: "Wait for a meaningful first leg", lesson: "After 9:45 ET, TSLA must move at least one ATR away from its 9:45 reference while price stays above VWAP with EMA 9 above EMA 20 for a call. The relationships reverse for a put.", coach: "This impulse is leg one. It proves the trend moved far enough to deserve a pullback watch.", watch: ["At least a one-ATR move", "VWAP holds", "EMA 9 leads EMA 20"], avoid: "A small drift is not the tested impulse, even if it points in the right direction.", chartFocus: 1, question: "What makes the first leg meaningful?", answers: ["At least one ATR with alignment", "Any green candle", "A cheap contract"], correct: 0, answerWhy: "Right. Distance and trend alignment define the first leg." },
+      { label: "Pullback", title: "Let one controlled pullback form", lesson: "The second leg is a 0.25–1.25 ATR pullback toward EMA 9. It must remain on the correct side of VWAP and cannot break the EMA trend.", coach: "The pullback gives us location. It is not an entry by itself.", watch: ["Pullback reaches EMA 9", "Retrace stays within 0.25–1.25 ATR", "VWAP and EMA structure remain intact"], avoid: "A close through VWAP or an EMA cross cancels the setup.", chartFocus: 2, question: "Is the pullback touch the entry?", answers: ["No, wait for reclaim", "Yes, immediately", "Only after a headline"], correct: 0, answerWhy: "Right. The completed reclaim—not the touch—creates the entry decision." },
+      { label: "Reclaim", title: "Enter only when momentum resumes", lesson: "The completed one-minute candle must close beyond the prior candle in the original trend direction and back beyond EMA 9. The next minute's selected option ask is the entry reference.", coach: "Leg one shows force. Leg two tests it. The reclaim provides proof.", watch: ["Completed one-minute reclaim", "Original trend direction", "Next-minute option ask"], avoid: "Do not enter on the forming reclaim candle or borrow a later better price.", chartFocus: 3, question: "What triggers the entry decision?", answers: ["A completed reclaim candle", "The pullback touch", "A prediction"], correct: 0, answerWhy: "Right. The next available option ask follows completed chart proof." },
       { label: "Protect", title: "Use the tested 90-minute plan", lesson: "Entry uses the next available option ask and the same contract is evaluated at its observed bid 90 minutes later, subject to account-wide protection.", coach: "The same entry and exit convention used in testing keeps live paper evidence honest.", watch: ["Next available option ask", "Same contract", "Observed bid after 90 minutes"], avoid: "Do not substitute a candle close or the best later price for an executable option quote.", chartFocus: 4, question: "How is this tested trade measured?", answers: ["Next ask and same-contract 90-minute bid", "Best price of the day", "Underlying close only"], correct: 0, answerWhy: "Right. Real bid/ask timing prevents imaginary fills." },
     ],
   },
@@ -131,6 +160,89 @@ function CoachChart({ focus }: { focus: number }) {
   </div>;
 }
 
+function TrendContinuationChart({ focus }: { focus: number }) {
+  // Real paid-data SPY five-minute sequence from 2026-05-13.  The completed
+  // 12:10 candle broke the prior eight-bar high; the paid option entry used
+  // the next available 12:15 ask and the same contract's 30-minute bid.
+  const bars = [
+    ["11:30",739.260,739.620,738.980,739.620,739.126,738.610],
+    ["11:35",739.560,739.810,739.550,739.810,739.297,738.712],
+    ["11:40",739.810,740.220,739.810,740.110,739.439,738.838],
+    ["11:45",740.040,740.095,739.870,739.910,739.572,738.996],
+    ["11:50",739.880,739.995,739.560,739.960,739.632,739.053],
+    ["11:55",739.840,739.840,739.570,739.750,739.632,739.273],
+    ["12:00",739.700,740.180,739.650,740.135,739.766,739.343],
+    ["12:05",740.155,740.340,739.990,740.330,739.861,739.482],
+    ["12:10",740.335,740.660,740.270,740.610,740.008,739.485],
+    ["12:15",740.755,740.755,740.500,740.665,740.173,739.661],
+    ["12:20",740.690,741.830,740.660,741.620,740.462,739.869],
+    ["12:25",741.670,741.910,741.400,741.760,740.738,740.098],
+  ] as const;
+  const left = 52, right = 710, top = 66, bottom = 286, minPrice = 738.65, maxPrice = 742.05;
+  const x = (index: number) => left + index * ((right - left) / (bars.length - 1));
+  const y = (price: number) => bottom - ((price - minPrice) / (maxPrice - minPrice)) * (bottom - top);
+  const focusIndex = [2, 5, 8, 9, 11][focus];
+  const priorHigh = 740.34;
+  const stage = ["EMA 10 leads EMA 20", "Controlled pause", "12:10 close breaks the 8-bar high", "Next-minute option ask", "Same-contract 30-minute bid"][focus];
+  return <div className="rounded-xl p-3 sm:p-4" style={{ background: "#fff", border: "1px solid #e8edf5" }}>
+    <div className="flex items-center justify-between gap-2 mb-3"><span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>SPY · real 5-minute Trend Continuation replay</span><span className="text-[11px] shrink-0" style={{ color: "#2368e9" }}>{stage}</span></div>
+    <svg viewBox="0 0 760 365" className="w-full h-auto" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Real SPY five-minute Trend Continuation chart with EMA 10, EMA 20, prior eight-bar high, signal close and next-minute entry">
+      {[66,121,176,231,286].map((gridY) => <line key={`h-${gridY}`} x1={left} y1={gridY} x2={right} y2={gridY} stroke="#edf1f7" />)}
+      {bars.map(([time], index) => <line key={time} x1={x(index)} y1={top} x2={x(index)} y2={bottom} stroke="#f4f6f9" />)}
+      <rect x={x(0)-15} y={y(priorHigh)} width={x(7)-x(0)+30} height={y(739.55)-y(priorHigh)} rx="5" fill="#eef4ff" stroke="#397cf3" strokeDasharray="5 4" />
+      <text x={x(0)-10} y={y(priorHigh)-9} fill="#1768e8" fontSize="11" fontWeight="700">PRIOR 8-BAR RANGE · high 740.34</text>
+      {bars.map(([time, open, high, low, close], index) => { const color = close >= open ? "#17a35a" : "#e54b47"; return <g key={`c-${time}`}><line x1={x(index)} x2={x(index)} y1={y(high)} y2={y(low)} stroke={color}/><rect x={x(index)-6} y={Math.min(y(open), y(close))} width="12" height={Math.max(3.2, Math.abs(y(open)-y(close)))} rx="1" fill={color}/></g>; })}
+      <path d={bars.map((bar,index) => `${index ? "L" : "M"}${x(index)} ${y(bar[5])}`).join(" ")} fill="none" stroke="#8055d9" strokeWidth="1.6"/><path d={bars.map((bar,index) => `${index ? "L" : "M"}${x(index)} ${y(bar[6])}`).join(" ")} fill="none" stroke="#ef921e" strokeWidth="1.6"/>
+      <text x={right-55} y={y(bars[bars.length-1][5])-7} fill="#7250cc" fontSize="11" fontWeight="700">EMA 10</text><text x={right-55} y={y(bars[bars.length-1][6])+15} fill="#ed8515" fontSize="11" fontWeight="700">EMA 20</text>
+      <rect x={x(focusIndex)-19} y={top+5} width="38" height={bottom-top-10} rx="6" fill="#2d73f5" fillOpacity=".045" stroke="#2d73f5" strokeDasharray="4 4"/>
+      <line x1={x(8)} y1={y(740.66)-38} x2={x(8)} y2={y(740.61)} stroke="#25354d"/><circle cx={x(8)} cy={y(740.61)} r="4" fill="#25354d"/><rect x={x(8)-31} y={y(740.66)-58} width="62" height="18" rx="4" fill="#182132"/><text x={x(8)-24} y={y(740.66)-45} fill="white" fontSize="9" fontWeight="700">SIGNAL</text>
+      <line x1={x(9)} y1={y(740.50)+41} x2={x(9)} y2={y(740.665)} stroke="#2870f4"/><circle cx={x(9)} cy={y(740.665)} r="4" fill="#2870f4"/><text x={x(9)-30} y={y(740.50)+56} fill="#1768e8" fontSize="10" fontWeight="700">ENTRY QUOTE</text>
+      <circle cx={x(focusIndex)} cy={y(bars[focusIndex][4])} r="7" fill="#2870f4" stroke="white" strokeWidth="3"/>
+      {bars.map(([time], index) => index % 2 === 0 && <text key={`t-${time}`} x={x(index)-17} y="312" fill="#6b778c" fontSize="10">{time}</text>)}
+      <text x="52" y="345" fill="#68768a" fontSize="11">1. Trend alignment</text><text x="272" y="345" fill="#68768a" fontSize="11">2. Completed 8-bar breakout</text><text x="516" y="345" fill="#68768a" fontSize="11">3. Next-minute ask</text>
+    </svg>
+  </div>;
+}
+
+function TwoLegTrendChart({ focus }: { focus: number }) {
+  // Real TSLA one-minute sequence from 2025-08-06.  The reviewed state
+  // machine identified its valid impulse at 10:17, pullback at 10:18 and
+  // completed reclaim at 10:19; the paid option entry followed at 10:20.
+  const bars = [
+    ["10:00",313.945,314.100,313.940,314.100,314.577,314.120,313.176],["10:01",313.715,314.650,313.715,314.445,314.662,314.187,313.238],["10:02",313.955,315.240,313.930,314.770,314.538,314.360,313.263],["10:03",314.375,314.880,314.300,314.880,314.495,314.529,313.275],["10:04",314.970,314.970,314.490,314.735,314.602,314.605,313.306],["10:05",314.570,315.230,314.415,314.955,314.611,314.732,313.325],["10:06",315.120,315.500,315.120,315.385,314.817,315.014,313.341],["10:07",315.450,315.945,315.370,315.885,314.869,315.164,313.364],["10:08",315.955,315.955,315.765,315.780,315.126,315.175,313.383],["10:09",315.945,315.945,315.305,315.450,315.237,315.065,313.397],["10:10",314.740,314.830,314.530,314.830,315.200,314.968,313.407],["10:11",314.825,314.980,314.825,314.845,315.143,315.078,313.412],["10:12",314.560,314.610,314.400,314.610,315.017,315.145,313.417],["10:13",314.725,315.155,314.725,315.135,315.070,314.998,313.443],["10:14",315.080,315.465,315.005,315.005,315.115,314.886,313.462],["10:15",314.830,315.190,314.830,315.020,315.163,314.958,313.477],["10:16",314.770,314.810,314.060,314.550,315.026,314.857,313.490],["10:17",314.455,314.620,314.305,314.530,314.883,314.878,313.498],["10:18",314.420,314.960,314.390,314.960,314.815,314.723,313.507],["10:19",315.330,315.390,315.055,315.390,314.932,314.862,313.524],["10:20",315.510,315.775,315.365,315.365,314.987,314.957,313.545],
+  ] as const;
+  const left = 52, right = 710, top = 64, bottom = 286, minPrice = 312.95, maxPrice = 316.15;
+  const x = (index: number) => left + index * ((right-left)/(bars.length-1)); const y = (price: number) => bottom-((price-minPrice)/(maxPrice-minPrice))*(bottom-top);
+  const focusIndex = [13,17,18,19,20][focus]; const stage = ["VWAP + EMA alignment", "One-ATR impulse", "Controlled pullback toward EMA 9", "Completed reclaim", "Next-minute ask → 90-minute bid"][focus];
+  const events = [
+    { index: 17, label: "IMPULSE", price: 314.62, number: 1 },
+    { index: 18, label: "PULLBACK", price: 314.39, number: 2 },
+    { index: 19, label: "RECLAIM", price: 315.39, number: 3 },
+    { index: 20, label: "ENTRY", price: 315.365, number: 4 },
+  ];
+  return <div className="rounded-xl p-3 sm:p-4" style={{ background: "#fff", border: "1px solid #e8edf5" }}>
+    <div className="flex items-center justify-between gap-2 mb-3"><span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · real 1-minute Two-Leg replay</span><span className="text-[11px] shrink-0" style={{ color: "#2368e9" }}>{stage}</span></div>
+    <svg viewBox="0 0 760 365" className="w-full h-auto" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Real TSLA one-minute Two-Leg Trend Pullback chart showing aligned trend, impulse, pullback, reclaim and next-minute option entry">
+      {[64,120,175,231,286].map((gridY)=><line key={gridY} x1={left} y1={gridY} x2={right} y2={gridY} stroke="#edf1f7"/>)}
+      <line x1={left} y1={y(313.67)} x2={right} y2={y(313.67)} stroke="#5a94ed" strokeDasharray="5 4"/><text x={left+5} y={y(313.67)-7} fill="#1768e8" fontSize="10" fontWeight="700">9:45 REFERENCE · 313.67</text>
+      {bars.map(([time,open,high,low,close],index)=>{const color=close>=open?"#17a35a":"#e54b47";return <g key={time}><line x1={x(index)} x2={x(index)} y1={y(high)} y2={y(low)} stroke={color}/><rect x={x(index)-3.5} y={Math.min(y(open),y(close))} width="7" height={Math.max(3,Math.abs(y(open)-y(close)))} rx=".7" fill={color}/></g>})}
+      <path d={bars.map((bar,index)=>`${index?"L":"M"}${x(index)} ${y(bar[5])}`).join(" ")} fill="none" stroke="#8055d9" strokeWidth="1.5"/><path d={bars.map((bar,index)=>`${index?"L":"M"}${x(index)} ${y(bar[6])}`).join(" ")} fill="none" stroke="#3c7af9" strokeWidth="1.4"/><path d={bars.map((bar,index)=>`${index?"L":"M"}${x(index)} ${y(bar[7])}`).join(" ")} fill="none" stroke="#ef921e" strokeWidth="1.5"/>
+      <text x={right-50} y={y(bars[bars.length-1][5])-9} fill="#7250cc" fontSize="10" fontWeight="700">EMA 9</text><text x={right-50} y={y(bars[bars.length-1][6])+12} fill="#2d73f5" fontSize="10" fontWeight="700">EMA 20</text><text x={right-40} y={y(bars[bars.length-1][7])+15} fill="#ed8515" fontSize="10" fontWeight="700">VWAP</text>
+      <rect x={x(focusIndex)-13} y={top+5} width="26" height={bottom-top-10} rx="5" fill="#2d73f5" fillOpacity=".045" stroke="#2d73f5" strokeDasharray="4 4"/>
+      {events.map((event, eventIndex) => <g key={event.label}>
+        <line x1={x(event.index)} y1={y(event.price) - 19} x2={x(event.index)} y2={y(event.price)} stroke={event.label === "ENTRY" ? "#2870f4" : "#25354d"} strokeWidth="1.1" />
+        <circle cx={x(event.index)} cy={y(event.price)} r="8" fill={event.label === "ENTRY" ? "#2870f4" : "#25354d"} stroke="white" strokeWidth="2" />
+        <text x={x(event.index)} y={y(event.price) + 3.2} textAnchor="middle" fill="white" fontSize="8" fontWeight="800">{event.number}</text>
+        <rect x={350 + eventIndex * 91} y="18" width="82" height="24" rx="12" fill={event.label === "ENTRY" ? "#eaf1ff" : "#f4f6f9"} stroke={event.label === "ENTRY" ? "#2870f4" : "#dfe5ee"} />
+        <text x={391 + eventIndex * 91} y="34" textAnchor="middle" fill={event.label === "ENTRY" ? "#1768e8" : "#36455d"} fontSize="9" fontWeight="800">{event.number}. {event.label}</text>
+      </g>)}
+      <circle cx={x(focusIndex)} cy={y(bars[focusIndex][4])} r="6.5" fill="#2870f4" stroke="white" strokeWidth="3"/>
+      {bars.map(([time],index)=>index%4===0&&<text key={`t-${time}`} x={x(index)-14} y="312" fill="#6b778c" fontSize="10">{time}</text>)}
+      <text x="52" y="345" fill="#68768a" fontSize="11">1. Impulse leg</text><text x="275" y="345" fill="#68768a" fontSize="11">2. Pullback leg</text><text x="510" y="345" fill="#68768a" fontSize="11">3. Completed reclaim</text>
+    </svg>
+  </div>;
+}
+
 function AfternoonFvgChart({ focus }: { focus: number }) {
   // SPY five-minute candles from 2026-05-12. This is a real qualifying
   // paid-data FVG signal at 14:35 ET, not an invented all-day staircase.
@@ -169,7 +281,7 @@ function AfternoonFvgChart({ focus }: { focus: number }) {
 }
 
 
-export function StrategyPlaybookExperience({ activeLessonIds }: { activeLessonIds: LessonId[] }) {
+export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }: { activeLessonIds: LessonId[]; strategyCatalog: ReviewedStrategyCatalogEntry[] }) {
   const [selectedId, setSelectedId] = useState<LessonId>(activeLessonIds[0] ?? "v2_orb");
   const [stepIndex, setStepIndex] = useState(0);
   const [answer, setAnswer] = useState<number | null>(null);
@@ -181,6 +293,8 @@ export function StrategyPlaybookExperience({ activeLessonIds }: { activeLessonId
   const activeCourses = COURSES.filter((course) => activeLessonIds.includes(course.id));
   const course = activeCourses.find((item) => item.id === selectedId) ?? activeCourses[0];
   const step = course?.steps[stepIndex];
+  const catalogEntry = course ? strategyCatalog.find((item) => item.strategy_id === STRATEGY_ID_BY_LESSON[course.id]) : undefined;
+  const evidence = catalogEntry ? EVIDENCE_LABELS[catalogEntry.evidence_grade] : undefined;
 
   useEffect(() => {
     if (activeCourses.length && !activeCourses.some((item) => item.id === selectedId)) {
@@ -211,12 +325,12 @@ export function StrategyPlaybookExperience({ activeLessonIds }: { activeLessonId
     </div>
     <div className="grid gap-4 items-stretch" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(300px, .34fr)" }}>
       <div className="card overflow-hidden p-0" style={{ boxShadow: "0 10px 32px rgba(23,47,82,.07)" }}>
-        <div className="px-5 pt-4 pb-3 grid gap-4 items-center" style={{ gridTemplateColumns: "minmax(250px, .55fr) minmax(400px, 1fr)", borderBottom: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full grid place-items-center font-bold text-base text-white" style={{ background: course.id === "v2_orb" || course.id === "v2_two_leg" ? "#e8262d" : "#296df5" }}>{course.id === "v2_spy_fvg" ? "⚡" : course.id === "v2_orb" || course.id === "v2_two_leg" ? "T" : "↗"}</div><div><div className="flex items-center gap-2"><span className="font-bold text-sm" style={{ color: "var(--ink)" }}>{course.id === "v2_trend" || course.id === "v2_spy_fvg" ? "SPY" : "TSLA"}</span><span className="text-sm" style={{ color: "var(--ink-muted)" }}>{course.shortTitle}</span><span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: "#edf4ff", color: "#2368e9" }}>{course.id === "v2_two_leg" ? "1m" : "5m"}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--ink-muted)" }}>Lesson: {stepIndex + 1} of {course.steps.length}</p></div></div>
+        <div className="px-5 pt-4 pb-3 grid gap-4 items-center" style={{ gridTemplateColumns: "minmax(300px, .62fr) minmax(400px, 1fr)", borderBottom: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full grid place-items-center font-bold text-base text-white" style={{ background: course.id === "v2_orb" || course.id === "v2_two_leg" ? "#e8262d" : "#296df5" }}>{course.id === "v2_spy_fvg" ? "⚡" : course.id === "v2_orb" || course.id === "v2_two_leg" ? "T" : "↗"}</div><div><div className="flex items-center gap-2 flex-wrap"><span className="font-bold text-sm" style={{ color: "var(--ink)" }}>{course.id === "v2_trend" || course.id === "v2_spy_fvg" ? "SPY" : "TSLA"}</span><span className="text-sm" style={{ color: "var(--ink-muted)" }}>{course.shortTitle}</span><span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: "#edf4ff", color: "#2368e9" }}>{course.id === "v2_two_leg" ? "1m" : "5m"}</span>{catalogEntry && evidence && <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" title={evidence.detail} style={{ color: evidence.color, background: evidence.background }}>{evidence.label}</span>}</div><p className="text-[11px] mt-1" style={{ color: "var(--ink-muted)" }}>Lesson {stepIndex + 1} of {course.steps.length}{catalogEntry ? ` · ${catalogEntry.exit_minutes}m timed exit` : ""}</p>{catalogEntry?.integrity_errors.length ? <p className="text-[11px] mt-1 font-semibold" style={{ color: "#c73535" }}>Integrity check blocked this strategy.</p> : null}</div></div>
           <div className="flex items-start justify-between gap-1" aria-label="Lesson steps">{course.steps.map((item, index) => <button key={item.label} onClick={() => chooseStep(index)} className="flex-1 min-w-0 flex flex-col items-center gap-1.5 group"><span className="w-7 h-7 rounded-full grid place-items-center text-xs font-bold transition-colors" style={{ background: index === stepIndex ? "#1f6fff" : "#f1f3f7", color: index === stepIndex ? "white" : "#546176", boxShadow: index === stepIndex ? "0 0 0 4px #eaf1ff" : "none" }}>{index + 1}</span><span className="text-[11px] font-medium whitespace-nowrap" style={{ color: index === stepIndex ? "#1f6fff" : "#536075" }}>{item.label}</span></button>)}</div>
         </div>
         <div className="p-5 flex flex-col gap-4">
-          <div className="min-w-0">{course.id === "v2_spy_fvg" ? <AfternoonFvgChart focus={step.chartFocus} /> : <CoachChart focus={step.chartFocus} />}</div>
+          <div className="min-w-0">{course.id === "v2_spy_fvg" ? <AfternoonFvgChart focus={step.chartFocus} /> : course.id === "v2_trend" ? <TrendContinuationChart focus={step.chartFocus} /> : course.id === "v2_two_leg" ? <TwoLegTrendChart focus={step.chartFocus} /> : <CoachChart focus={step.chartFocus} />}</div>
           <div className="flex items-center justify-between gap-3"><button className="btn btn-ghost btn-sm" disabled={stepIndex === 0} onClick={() => chooseStep(stepIndex - 1)}><ChevronLeft size={15} /> Back</button><div className="flex-1 max-w-[440px] h-1 rounded-full" style={{ background: "#e5ecf8" }}><div className="h-full rounded-full" style={{ width: `${((stepIndex + 1) / course.steps.length) * 100}%`, background: "#2870f4" }} /></div><button className="btn btn-primary btn-sm" onClick={() => chooseStep(stepIndex === course.steps.length - 1 ? 0 : stepIndex + 1)}>{stepIndex === course.steps.length - 1 ? "Replay" : "Next"} <ChevronRight size={15} /></button></div>
         </div>
         {showGuardrails ? <div className="mx-5 mb-5 rounded-xl p-4" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface))", border: "1px solid var(--border)" }}><div className="flex gap-3 items-start"><img src={COACH_IMAGE} alt="Coach Celo" className="w-12 h-16 object-contain object-bottom shrink-0" /><div><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Coach Celo explains the account guardrails</p><p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--ink-muted)" }}>These rules are shared by every paper strategy. They control risk across the account.</p></div></div><div className="grid gap-2 mt-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>{GUARDRAILS.map(([title, detail]) => <div key={title} className="rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}><p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>{title}</p><p className="text-xs leading-relaxed mt-1" style={{ color: "var(--ink-muted)" }}>{detail}</p></div>)}</div></div> : <div className="mx-5 mb-5 rounded-xl p-4" style={{ background: "#fbfcff", border: "1px solid #e7edf7" }}><p className="text-base font-bold" style={{ color: "var(--ink)" }}>Try it yourself</p><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{step.question}</p><div className="grid gap-2 mt-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>{step.answers.map((choice, index) => <button key={choice} className="btn text-left justify-start" onClick={() => setAnswer(index)} style={answer === index ? { borderColor: index === step.correct ? "var(--positive)" : "var(--negative)", background: index === step.correct ? "var(--positive-bg)" : "var(--negative-bg)" } : undefined}><span className="w-6 h-6 rounded-full grid place-items-center text-xs mr-1" style={{ background: "#edf4ff", color: "#1f6fff" }}>{index + 1}</span>{choice}</button>)}</div>{answer !== null && <p className="text-xs mt-3 leading-relaxed" style={{ color: answer === step.correct ? "var(--positive)" : "var(--ink-muted)" }}>{answer === step.correct ? step.answerWhy : `Not quite. ${step.answerWhy}`}</p>}</div>}

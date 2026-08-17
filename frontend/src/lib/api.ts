@@ -629,9 +629,11 @@ export interface ReviewedStrategyCatalogEntry {
   exit_minutes: number | null;
   paper_only: boolean;
   status: "paper_candidate" | "retired";
+  evidence_grade: "passed_declared_holdout" | "promising_underpowered" | "promising_inconsistent";
   evidence_artifact: string;
   evidence: string;
   enabled: boolean;
+  integrity_errors: string[];
 }
 
 export interface StrategySettingChange {

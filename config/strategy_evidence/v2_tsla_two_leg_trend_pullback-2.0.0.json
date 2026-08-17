@@ -3,6 +3,7 @@
   "strategy_id": "V2_TSLA_TWO_LEG_TREND_PULLBACK",
   "strategy_version": "2.0.0",
   "status": "paper_candidate",
+  "evidence_grade": "promising_inconsistent",
   "ticker_scope": ["TSLA"],
   "implementation": "trading.two_leg_trend_pullback_execution",
   "implementation_sha256_at_review": "9ff447b0b9ddb04a413bc913c32f350b72f766ac0ab40042ade5ea5c3130fa91",

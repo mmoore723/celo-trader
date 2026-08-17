@@ -41,6 +41,30 @@ class _PaperFallbackBroker(AlpacaOrdersMixin):
         return True
 
 
+class _UnconfirmedCancelBroker(AlpacaOrdersMixin):
+    base = "https://paper-api.alpaca.markets"
+
+    def __init__(self) -> None:
+        self.posted: list[dict] = []
+
+    def _get(self, _url: str) -> dict:
+        return {"status": "new", "filled_qty": "0"}
+
+    def _post(self, _url: str, payload: dict) -> dict:
+        self.posted.append(payload)
+        return {"id": "should-not-be-submitted", "status": "accepted"}
+
+    def _patch(self, _url: str, _payload: dict) -> dict:
+        return {}
+
+    def cancel_order(self, _order_id: str) -> bool:
+        return False
+
+
+class _LiveUnconfirmedCancelBroker(_UnconfirmedCancelBroker):
+    base = "https://api.alpaca.markets"
+
+
 class BrokerOrderExecutionTests(unittest.TestCase):
     def test_paper_market_fallback_preserves_close_intent(self) -> None:
         broker = _PaperFallbackBroker()
@@ -58,6 +82,45 @@ class BrokerOrderExecutionTests(unittest.TestCase):
         self.assertEqual("filled", result["status"])
         self.assertEqual("sell_to_close", broker.posted[0]["position_intent"])
         self.assertEqual("market", broker.posted[0]["type"])
+
+    def test_paper_fallback_is_blocked_until_cancel_is_broker_confirmed(self) -> None:
+        broker = _UnconfirmedCancelBroker()
+        with patch("config.get_settings", return_value={"paper_trading": True}), patch(
+            "broker.alpaca_orders.time.sleep"
+        ), patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker._wait_for_fill(
+                "limit-order", limit_price=1.30, side="buy",
+                symbol="TSLA260821C00340000", qty=2,
+                position_intent="buy_to_open", attempt_id="attempt-2",
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual([], broker.posted)
+        self.assertTrue(any(
+            call.kwargs.get("event_type") == "fallback_blocked_cancel_unconfirmed"
+            and call.kwargs.get("is_issue") is True
+            for call in record_flow.call_args_list
+        ))
+
+    def test_live_timeout_does_not_claim_cancel_without_broker_confirmation(self) -> None:
+        broker = _LiveUnconfirmedCancelBroker()
+        with patch("config.get_settings", return_value={"paper_trading": False}), patch(
+            "broker.alpaca_orders.time.sleep"
+        ), patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker._wait_for_fill(
+                "live-limit", limit_price=1.30, side="buy",
+                symbol="SPY260821C00780000", qty=1,
+                position_intent="buy_to_open", attempt_id="attempt-live",
+            )
+
+        self.assertIsNone(result)
+        event_types = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
+        self.assertIn("cancel_unconfirmed", event_types)
+        self.assertNotIn("terminal_no_fill", event_types)
 
 
 class BrokerOrderLedgerTests(unittest.TestCase):

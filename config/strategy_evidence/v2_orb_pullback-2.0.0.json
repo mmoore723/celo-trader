@@ -3,6 +3,7 @@
   "strategy_id": "V2_ORB_PULLBACK",
   "strategy_version": "2.0.0",
   "status": "paper_candidate",
+  "evidence_grade": "promising_inconsistent",
   "ticker_scope": ["TSLA"],
   "implementation": "trading.orb_retouch_execution",
   "implementation_sha256_at_review": "9a322d6a02457aac9dc428cd9ac3e99b7f043b7e185eb8de4664d1e1a179825c",

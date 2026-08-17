@@ -32,6 +32,7 @@ def _max_spend(balance: float, settings: dict) -> float:
 def observe_candidate_contract(
     *, ticker: str, signal: object, underlying_price: float | None,
     tradier: Any, balance: float, risk: Any, settings: dict,
+    selection_cache: dict[tuple[object, ...], tuple[dict | None, dict]] | None = None,
 ) -> None:
     """Record a raw candidate and, when possible, its display-only contract."""
     record_router_candidate(ticker, signal, underlying_price)
@@ -45,18 +46,31 @@ def observe_candidate_contract(
 
     reviewed = uses_v2_orb_execution_profile(strategy_id)
     maximum = _max_spend(float(balance), settings)
-    try:
-        if reviewed:
-            contract, info = select_reviewed_v2_contract(
-                tradier, ticker, direction, price, maximum, for_display=True,
+    cache_key = (
+        reviewed, ticker.upper(), direction.lower(), round(price, 4), round(maximum, 2),
+    )
+    cached = selection_cache.get(cache_key) if selection_cache is not None else None
+    if cached is not None:
+        cached_contract, cached_info = cached
+        contract = dict(cached_contract) if cached_contract else None
+        info = dict(cached_info or {})
+    else:
+        try:
+            if reviewed:
+                contract, info = select_reviewed_v2_contract(
+                    tradier, ticker, direction, price, maximum, for_display=True,
+                )
+            else:
+                contract, info = select_contract(
+                    tradier, ticker, direction, price, maximum, for_display=True,
+                )
+        except Exception:
+            contract, info = None, {"reason": "preview_unavailable"}
+            logger.debug("candidate contract screen failed for %s", ticker, exc_info=True)
+        if selection_cache is not None:
+            selection_cache[cache_key] = (
+                dict(contract) if contract else None, dict(info or {}),
             )
-        else:
-            contract, info = select_contract(
-                tradier, ticker, direction, price, maximum, for_display=True,
-            )
-    except Exception:
-        contract, info = None, {"reason": "preview_unavailable"}
-        logger.debug("observation-only contract screen failed for %s", ticker, exc_info=True)
 
     preview: dict[str, Any] = {
         "status": "selected" if contract else "not_selected",

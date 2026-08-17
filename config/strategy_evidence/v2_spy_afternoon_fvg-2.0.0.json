@@ -3,6 +3,7 @@
   "strategy_id": "V2_SPY_AFTERNOON_FVG",
   "strategy_version": "2.0.0",
   "status": "paper_candidate",
+  "evidence_grade": "promising_underpowered",
   "ticker_scope": ["SPY"],
   "implementation": "strategies.spy_afternoon_fvg_v2.evaluate",
   "implementation_sha256_at_review": "4f0b751de90e426df395591c1b92d00cb23195cf57e6f42329db0cb873f5166d",
