@@ -19,7 +19,9 @@ type Period = "1D" | "5D" | "1M" | "3M";
 
 function barLimitForPeriod(tf: string, period: Period): number {
   const barsPerDay: Record<string, number> = {
-    "1Min": 420, "5Min": 90, "15Min": 30, "1Hour": 8,
+    // Regular US session is 390 minutes.  These counts intentionally exclude
+    // extended hours because the chart and bot both use 09:30–16:00 ET.
+    "1Min": 390, "5Min": 78, "15Min": 26, "1Hour": 7,
   };
   // FIX 2026-07-17: "1D" was loading 3 trading days of bars (not 1) — the
   // multiplier below was 3, so selecting "1D" actually rendered 7/15, 7/16,
@@ -184,6 +186,19 @@ export function LiveTrading() {
     retry: false,   // fail fast — retries pile up and delay visible feedback
   });
 
+  // Mid-session, even a one-day-sized tail can include yesterday because the
+  // current session is not complete yet.  A 1D chart must display one actual
+  // trading date, not "the last N bars" spanning two dates.  Keep longer
+  // period views unchanged.
+  const chartBars = useMemo(() => {
+    if (effectivePeriod !== "1D" || bars.length === 0) return bars;
+    const latestDay = bars.reduce((latest, bar) => {
+      const day = String(bar.time ?? "").slice(0, 10);
+      return day > latest ? day : latest;
+    }, "");
+    return bars.filter((bar) => String(bar.time ?? "").slice(0, 10) === latestDay);
+  }, [bars, effectivePeriod]);
+
   const { data: openTrades = [] } = useQuery({
     queryKey: ["open-trades"],
     queryFn: api.trades.open,
@@ -306,7 +321,7 @@ export function LiveTrading() {
     select: (rows) => rows.map((r) => ({ ts: r.ts, message: r.message })),
   });
 
-  const lastClose = bars[bars.length - 1]?.close ?? 0;
+  const lastClose = chartBars[chartBars.length - 1]?.close ?? 0;
   const orHighRaw  = or?.high ?? 0;
   const orLowRaw   = or?.low  ?? 0;
   const orInRange  = lastClose > 0 && orHighRaw > 0 && orLowRaw > 0
@@ -591,7 +606,7 @@ export function LiveTrading() {
             ref={chartReplayRef}
             mode="live"
             resetKey={`${ticker}|${tf}`}
-            bars={bars}
+            bars={chartBars}
             trades={tickerTrades}
             showVwap={showVwap}
             showVwapBands={showVwapBands}

@@ -36,10 +36,24 @@ def get_opening_range(df: pd.DataFrame) -> Optional[dict]:
     if df.empty:
         return None
 
-    # Collect the three OR bars: 9:30, 9:35, 9:40
+    # A full-session broker request can contain the tail of the prior session
+    # early in the day.  Never combine identically timed OR bars from multiple
+    # dates: that produces a fictitious range and can badly distort the chart.
+    times = pd.to_datetime(df["time"], errors="coerce")
+    valid_dates = times.dt.date.dropna()
+    if valid_dates.empty:
+        logger.debug("Opening range timestamps are invalid")
+        return None
+    latest_session = valid_dates.max()
+    session_df = df.loc[times.dt.date == latest_session].copy()
+
+    # Collect the latest session's three OR bars: 9:30, 9:35, 9:40.
     _or_slots = {(9, 30), (9, 35), (9, 40)}
-    or_mask   = df["time"].apply(lambda t: (t.hour, t.minute) in _or_slots)
-    or_bars   = df[or_mask].reset_index(drop=True)
+    session_times = pd.to_datetime(session_df["time"], errors="coerce")
+    or_mask = session_times.apply(
+        lambda t: pd.notna(t) and (t.hour, t.minute) in _or_slots
+    )
+    or_bars = session_df.loc[or_mask].sort_values("time").reset_index(drop=True)
 
     if or_bars.empty:
         logger.debug("Opening range bars (09:30–09:40) not found")
