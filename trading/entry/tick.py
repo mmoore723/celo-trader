@@ -839,10 +839,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Otherwise a late signal can create an overnight position before the
     # fixed 30/90-minute exit becomes eligible.
     if uses_v2_orb_execution_profile(strategy_id):
-        from datetime import time as _time
+        # Keep this distinct from the stdlib ``time`` module imported near the
+        # top of this function.  Reusing ``_time`` here used to replace the
+        # module for the entire function scope, causing every qualified V2
+        # entry to crash after contract selection at ``_time.strftime``.
+        from datetime import time as _datetime_time
         from trading.v2_orb_paper_exit import reviewed_entry_fits_session
         _entry_fits, _entry_fit_reason = reviewed_entry_fits_session(
-            _now_et(), strategy_id, cutoff=_time(*SESSION_HARD_CUTOFF_HM),
+            _now_et(), strategy_id, cutoff=_datetime_time(*SESSION_HARD_CUTOFF_HM),
         )
         if not _entry_fits:
             log_event("INFO", "trading_logic", f"🟡 [{ticker}] {strategy_id} skipped — {_entry_fit_reason}.")
