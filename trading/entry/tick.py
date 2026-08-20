@@ -835,6 +835,19 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     strategy_id = _top.strategy_id
     _signal_tier = getattr(_top, "tier", "main")
     _reviewed_paid_paper_profile = paper and uses_reviewed_paid_execution_profile(strategy_id)
+    # The session cutoff must include the strategy's complete reviewed hold.
+    # Otherwise a late signal can create an overnight position before the
+    # fixed 30/90-minute exit becomes eligible.
+    if uses_v2_orb_execution_profile(strategy_id):
+        from datetime import time as _time
+        from trading.v2_orb_paper_exit import reviewed_entry_fits_session
+        _entry_fits, _entry_fit_reason = reviewed_entry_fits_session(
+            _now_et(), strategy_id, cutoff=_time(*SESSION_HARD_CUTOFF_HM),
+        )
+        if not _entry_fits:
+            log_event("INFO", "trading_logic", f"🟡 [{ticker}] {strategy_id} skipped — {_entry_fit_reason}.")
+            _skip_log(ticker, "reviewed_hold_crosses_session_cutoff")
+            return
     _US["last_signal"]     = direction
     _US["last_strategy_id"]= strategy_id
     from config.strategy_catalog import reviewed_exit_summary

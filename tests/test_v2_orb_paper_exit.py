@@ -4,10 +4,27 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import unittest
 
-from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit
+from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit, reviewed_entry_fits_session
 
 
 class V2OrbPaperExitTests(unittest.TestCase):
+    def test_fixed_hold_entry_must_fit_before_cutoff(self) -> None:
+        self.assertEqual(
+            (True, "fits_session"),
+            reviewed_entry_fits_session(datetime(2026, 8, 19, 15, 24), "V2_SPY_TREND_CONT"),
+        )
+        fits, reason = reviewed_entry_fits_session(
+            datetime(2026, 8, 19, 15, 35), "V2_SPY_TREND_CONT",
+        )
+        self.assertFalse(fits)
+        self.assertIn("latest_entry=15:25 ET", reason)
+
+    def test_non_fixed_hold_strategy_is_unchanged(self) -> None:
+        self.assertEqual(
+            (True, "not_fixed_hold"),
+            reviewed_entry_fits_session(datetime(2026, 8, 19, 15, 50), "OTHER"),
+        )
+
     def test_holds_until_exact_paid_markout_window(self) -> None:
         entry = datetime(2026, 8, 3, 10, 40)
         self.assertEqual((False, "hold"), evaluate_v2_orb_paper_exit(entry, entry + timedelta(minutes=89, seconds=59)))

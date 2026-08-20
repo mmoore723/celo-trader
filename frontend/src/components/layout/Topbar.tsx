@@ -36,6 +36,7 @@ export function Topbar() {
 
   const pnl       = status?.session_pnl ?? 0;
   const bal       = status?.account_balance ?? 0;
+  const dayOpen   = status?.day_start_balance ?? 0;
   const mode      = status?.mode ?? "paper";
   const running   = status?.running ?? false;
   const brokerConnected = status?.broker_connected ?? false;
@@ -114,9 +115,15 @@ export function Topbar() {
       {/* Live metrics — compact on mobile, full on desktop */}
       <div className="flex items-center gap-3 md:gap-5 shrink-0">
         <div className="flex flex-col leading-none">
-          <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Balance</span>
+          <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Current Equity</span>
           <span className="num text-sm font-semibold" style={{ color: "var(--ink)" }}>
             {brokerConnected ? fmt(bal) : "Not connected"}
+          </span>
+        </div>
+        <div className="flex-col leading-none hidden lg:flex">
+          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Day Open</span>
+          <span className="num text-sm font-semibold" style={{ color: "var(--ink)" }}>
+            {brokerConnected ? fmt(dayOpen) : "—"}
           </span>
         </div>
         <div className="flex flex-col leading-none">

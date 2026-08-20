@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import threading
 import contextvars
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -80,23 +82,34 @@ def get_status(request: Request) -> BotStatus:
 
     from config import get_maintenance_state
     maintenance = get_maintenance_state()
+    if broker_connected and account_matches:
+        account_balance = float(
+            state.get("account_balance")
+            or _state.get("account_balance")
+            or settings.get("last_known_balance", 0)
+        )
+        today_key = f"day_start_{datetime.now(ZoneInfo('America/New_York')).date().isoformat()}"
+        day_start_balance = float(
+            state.get("day_start_balance")
+            or _state.get("day_start_balance")
+            or settings.get(today_key)
+            or account_balance
+        )
+        # Equity includes every open position's current mark, so this is live
+        # session P&L rather than closed-trade-only realized P&L.
+        session_pnl = round(account_balance - day_start_balance, 2)
+    else:
+        account_balance = 0.0
+        day_start_balance = 0.0
+        session_pnl = 0.0
     return BotStatus(
         running=actually_running and broker_connected,
         mode="paper" if settings.get("paper_trading", True) else "live",
         ticker=(state.get("current_ticker") or _state.get("current_ticker")) if broker_connected else None,
         broker_connected=broker_connected,
-        account_balance=float(0 if not broker_connected or not account_matches else (
-            state.get("account_balance")
-            or _state.get("account_balance")
-            or settings.get("last_known_balance", 0)
-        )),
-        day_start_balance=float(0 if not broker_connected or not account_matches else (
-            state.get("day_start_balance")
-            or _state.get("day_start_balance")
-            or state.get("account_balance")
-            or settings.get("last_known_balance", 0)
-        )),
-        session_pnl=float(0 if not broker_connected or not account_matches else state.get("session_pnl", _state.get("session_pnl", 0.0))),
+        account_balance=account_balance,
+        day_start_balance=day_start_balance,
+        session_pnl=session_pnl,
         options_buying_power=float(0 if not broker_connected else state.get("options_buying_power", 0.0)),
         last_update=state.get("last_update"),
         network_ok=bool(state.get("network_ok", True)),

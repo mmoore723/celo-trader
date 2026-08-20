@@ -636,8 +636,14 @@ export function Journal() {
   const safePage    = Math.min(page, pageCount - 1);
   const pageTrades  = trades.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
-  const filteredPnl     = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
-  const filteredWins    = trades.filter((t) => (t.pnl ?? 0) > 0).length;
+  const tradePnl = (t: Trade): number | null => {
+    if (t.pnl != null) return t.pnl;
+    const live = botStatus?.open_positions?.[String(t.id)];
+    if (!live || live.current_option_price == null || t.entry_price == null) return null;
+    return (live.current_option_price - t.entry_price) * (t.contracts ?? 0) * 100;
+  };
+  const filteredPnl     = trades.reduce((s, t) => s + (tradePnl(t) ?? 0), 0);
+  const filteredWins    = trades.filter((t) => (tradePnl(t) ?? 0) > 0).length;
   const filteredWinRate = trades.length > 0
     ? ((filteredWins / trades.length) * 100).toFixed(1)
     : "0.0";
@@ -686,6 +692,22 @@ export function Journal() {
       {/* Journal tab — hidden when reconcile is active */}
       {mainTab === "journal" && (
       <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="card px-4 py-3">
+          <div className="text-xs" style={{ color: "var(--ink-muted)" }}>Day Starting Balance</div>
+          <div className="num font-semibold">${(botStatus?.day_start_balance ?? 0).toFixed(2)}</div>
+        </div>
+        <div className="card px-4 py-3">
+          <div className="text-xs" style={{ color: "var(--ink-muted)" }}>Current Equity</div>
+          <div className="num font-semibold">${(botStatus?.account_balance ?? 0).toFixed(2)}</div>
+        </div>
+        <div className="card px-4 py-3">
+          <div className="text-xs" style={{ color: "var(--ink-muted)" }}>Live Session P&amp;L</div>
+          <div className="num font-semibold" style={{ color: (botStatus?.session_pnl ?? 0) >= 0 ? posColor : negColor }}>
+            {(botStatus?.session_pnl ?? 0) >= 0 ? "+" : ""}${(botStatus?.session_pnl ?? 0).toFixed(2)}
+          </div>
+        </div>
+      </div>
       {/* Controls */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -821,6 +843,7 @@ export function Journal() {
                     const hasDetail  = t.status === "closed" && t.entry_price != null;
                     const eff        = t.exit_efficiency_pct;
                     const mfe        = t.mfe_pct;
+                    const displayedPnl = tradePnl(t);
 
                     return [
                       <tr
@@ -864,9 +887,9 @@ export function Journal() {
                         </td>
                         <td className="num hidden sm:table-cell">{t.contracts}</td>
                         <td className="num font-medium"
-                            style={{ color: (t.pnl ?? 0) >= 0 ? posColor : negColor }}>
-                          {t.pnl != null
-                            ? `${t.pnl >= 0 ? "+" : ""}$${t.pnl.toFixed(2)}`
+                            style={{ color: (displayedPnl ?? 0) >= 0 ? posColor : negColor }}>
+                          {displayedPnl != null
+                            ? `${displayedPnl >= 0 ? "+" : ""}$${displayedPnl.toFixed(2)}${t.status === "open" ? " live" : ""}`
                             : "—"}
                         </td>
                         <td className="hidden sm:table-cell"><StatusBadge status={t.status} /></td>

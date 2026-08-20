@@ -8,9 +8,7 @@ import { Link } from "react-router-dom";
 import { ChevronDown, Newspaper, RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
-import {
-  api, type Trade, type OptionsChainRow, type ChartAnnotation, type NewsArticle,
-} from "../lib/api";
+import { api, type Trade, type ChartAnnotation, type NewsArticle } from "../lib/api";
 import { dedupeLatestEpisodes, lifecycleCopy, opportunityLifecycle } from "../lib/opportunitySemantics.js";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
@@ -131,7 +129,6 @@ export function LiveTrading() {
   const [showOR,          setShowOR]          = useState(true);
   const [showSwings,      setShowSwings]      = useState(true);
   const [showPositionCard,setShowPositionCard]= useState(true);
-  const [scannerTab,      setScannerTab]      = useState<"scanner" | "chain">("scanner");
   // Board is the current per-ticker view (trading/watching/blocked).
   const [mainPanelTab,    setMainPanelTab]    = useState<"board" | "log">("board");
   const [boardTicker,     setBoardTicker]     = useState("");
@@ -220,13 +217,6 @@ export function LiveTrading() {
     refetchInterval: 300_000,
   });
 
-  const { data: chain = [] } = useQuery({
-    queryKey: ["chain", ticker],
-    queryFn:  () => api.market.chain(ticker),
-    enabled:  scannerTab === "chain",
-    refetchInterval: 60_000,
-    retry: false,
-  });
 
   // "Board" — one row per ticker, current state only (trading/watching/
   // blocked). See api/routes/tickers.py::get_board() — merges open
@@ -327,9 +317,6 @@ export function LiveTrading() {
     && Number(ev.eff_entry) > 0
     && Number(ev.contracts) > 0
   ) ?? null;
-  const scannerColor    = (changePct: number) =>
-    changePct >= 0 ? "var(--positive)" : "var(--negative)";
-
   return (
     <>
     <div className="p-4 flex flex-col gap-4">
@@ -337,7 +324,7 @@ export function LiveTrading() {
       {/* ── Stat bar ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3 items-start">
         {[
-          { label: "Balance",     value: status?.broker_connected ? `$${status.account_balance.toFixed(2)}` : "Not connected" },
+          { label: "Current Equity", value: status?.broker_connected ? `$${status.account_balance.toFixed(2)}` : "Not connected" },
           { label: "Day Open",    value: status?.broker_connected ? `$${(status.day_start_balance ?? status.account_balance).toFixed(2)}` : "—" },
           { label: "Session P&L", value: (
             <span className="flex items-center gap-1.5 flex-wrap">
@@ -583,122 +570,9 @@ export function LiveTrading() {
           />
         </div>
 
-        {/* Scanner / Chain panel. Current watch state lives in Board below. */}
+        {/* Focused pre-entry callouts. The redundant ticker scanner and raw
+            option-chain widgets were removed from the trading cockpit. */}
         <div className="card flex flex-col">
-          {/* Tab header */}
-          <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
-               style={{ borderColor: "var(--border)" }}>
-            {(["scanner", "chain"] as const).map((tab) => (
-              <button key={tab} onClick={() => setScannerTab(tab)}
-                className="px-3 py-2 transition-colors"
-                style={{
-                  color: scannerTab === tab ? "var(--ink)" : "var(--ink-muted)",
-                  borderBottom: scannerTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
-                  background: "none",
-                }}>
-                {tab === "scanner" ? "Ticker Scanner" : `${ticker} Chain`}
-              </button>
-            ))}
-          </div>
-
-          {/* Scanner list */}
-          {scannerTab === "scanner" && (
-            <div>
-              <div className="px-3 py-2 text-[10px] leading-relaxed border-b"
-                   style={{ color: "var(--ink-muted)", borderColor: "var(--border)", background: "var(--surface-raised)" }}>
-                Finds liquid, volatile tickers to watch. It does not create a trade or choose a contract.
-              </div>
-              <div className="overflow-y-auto" style={{ maxHeight: 190 }}>
-              {scanner.length === 0 ? (
-                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                  No ranked tickers yet. The full scan begins after the 9:30 ET opening data is available.
-                </p>
-              ) : (
-                scanner.map((s) => (
-                  <button key={s.ticker}
-                    className="w-full px-3 py-2 flex items-center justify-between hover:bg-muted transition-colors text-left border-b"
-                    style={{ borderColor: "var(--border)" }}
-                    onClick={() => setTicker(s.ticker)}>
-                    <div>
-                      <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                        {s.ticker}
-                      </div>
-                      <div className="text-xs num" style={{ color: "var(--ink-muted)" }}>
-                        ${s.price.toFixed(2)} · {s.rvol.toFixed(1)}x RVOL
-                      </div>
-                    </div>
-                    <span className="text-xs num font-medium" style={{ color: scannerColor(s.change_pct) }}>
-                      {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
-                    </span>
-                  </button>
-                ))
-              )}
-              </div>
-            </div>
-          )}
-
-          {/* Options chain */}
-          {scannerTab === "chain" && (
-            <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
-              {chain.length === 0 ? (
-                <p className="p-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-                  No chain data — Tradier key required, or no liquid contracts 7–21 DTE
-                </p>
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse",
-                  fontFamily: "JetBrains Mono, monospace", fontSize: 10 }}>
-                  <thead>
-                    <tr style={{ background: "var(--surface-raised)" }}>
-                      <th colSpan={3} style={{ padding: "4px 6px", color: "var(--positive)",
-                        textAlign: "center", borderBottom: "1px solid var(--border)" }}>CALLS</th>
-                      <th style={{ padding: "4px 6px", color: "var(--ink-muted)", textAlign: "center",
-                        borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
-                        borderRight: "1px solid var(--border)" }}>Strike</th>
-                      <th colSpan={3} style={{ padding: "4px 6px", color: "var(--negative)",
-                        textAlign: "center", borderBottom: "1px solid var(--border)" }}>PUTS</th>
-                    </tr>
-                    <tr style={{ background: "var(--surface-raised)" }}>
-                      {["Bid","Mid","Ask"].map((h) => (
-                        <th key={`c-${h}`} style={{ padding: "3px 5px", color: "var(--ink-faint)",
-                          fontWeight: 500, borderBottom: "1px solid var(--border)", textAlign: "right" }}>{h}</th>
-                      ))}
-                      <th style={{ padding: "3px 5px", color: "var(--ink-muted)", fontWeight: 700,
-                        borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
-                        borderRight: "1px solid var(--border)", textAlign: "center" }}>—</th>
-                      {["Bid","Mid","Ask"].map((h) => (
-                        <th key={`p-${h}`} style={{ padding: "3px 5px", color: "var(--ink-faint)",
-                          fontWeight: 500, borderBottom: "1px solid var(--border)", textAlign: "right" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(chain as OptionsChainRow[]).map((row) => (
-                      <tr key={row.strike} style={{ borderBottom: "1px solid var(--border)" }}>
-                        {[row.call_bid, row.call_mid, row.call_ask].map((v, i) => (
-                          <td key={i} style={{ padding: "3px 5px", textAlign: "right",
-                            color: "var(--positive)" }}>
-                            {v != null ? v.toFixed(2) : "—"}
-                          </td>
-                        ))}
-                        <td style={{ padding: "3px 5px", textAlign: "center", fontWeight: 700,
-                          color: "var(--ink)", borderLeft: "1px solid var(--border)",
-                          borderRight: "1px solid var(--border)", background: "var(--surface-raised)" }}>
-                          {row.strike.toFixed(0)}
-                        </td>
-                        {[row.put_bid, row.put_mid, row.put_ask].map((v, i) => (
-                          <td key={i} style={{ padding: "3px 5px", textAlign: "right",
-                            color: "var(--negative)" }}>
-                            {v != null ? v.toFixed(2) : "—"}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
           {/* Keep this as a compact live snapshot of the exact same durable,
               day-by-day scanner trail shown on Scanner Opportunities. */}
           <div className="border-t px-3 py-2 flex items-center justify-between"
@@ -753,7 +627,10 @@ export function LiveTrading() {
                     onClick={() => setTicker(opportunity.ticker)}>
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div>
-                        <div className="text-[11px] font-bold" style={{ color: accent }}>{statusTitle}</div>
+                        <div className="text-[11px] font-bold" style={{ color: accent }}>
+                          {String(optionType).toUpperCase()} IDEA · {opportunity.ticker}
+                        </div>
+                        <div className="text-[10px] font-semibold" style={{ color: "var(--ink)" }}>{statusTitle}</div>
                         <div className="text-[9px] mt-0.5" style={{ color: "var(--ink-faint)" }}>{observedTime}</div>
                       </div>
                       <span style={{

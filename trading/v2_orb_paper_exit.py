@@ -13,7 +13,7 @@ paths.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from config.strategy_catalog import REVIEWED_STRATEGIES
 
 
@@ -23,6 +23,29 @@ V2_EXIT_MINUTES_BY_STRATEGY = {
     for strategy_id, rule in REVIEWED_STRATEGIES.items()
     if rule.exit_minutes is not None
 }
+
+
+def reviewed_entry_fits_session(
+    now: datetime,
+    strategy_id: object,
+    *,
+    cutoff: time = time(15, 55),
+) -> tuple[bool, str]:
+    """Return whether a reviewed fixed-hold entry can exit before cutoff."""
+    normalized = str(strategy_id or "").strip().upper()
+    hold_minutes = V2_EXIT_MINUTES_BY_STRATEGY.get(normalized)
+    if hold_minutes is None:
+        return True, "not_fixed_hold"
+    cutoff_at = now.replace(
+        hour=cutoff.hour, minute=cutoff.minute, second=0, microsecond=0,
+    )
+    if now + timedelta(minutes=hold_minutes) > cutoff_at:
+        latest_entry = cutoff_at - timedelta(minutes=hold_minutes)
+        return False, (
+            f"reviewed_hold_would_cross_cutoff "
+            f"(hold={hold_minutes}m latest_entry={latest_entry:%H:%M} ET)"
+        )
+    return True, "fits_session"
 
 
 def evaluate_v2_orb_paper_exit(
