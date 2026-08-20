@@ -65,7 +65,57 @@ class _LiveUnconfirmedCancelBroker(_UnconfirmedCancelBroker):
     base = "https://api.alpaca.markets"
 
 
+class _ReplacementFillBroker(AlpacaOrdersMixin):
+    base = "https://paper-api.alpaca.markets"
+
+    def __init__(self) -> None:
+        self.get_urls: list[str] = []
+        self.cancelled: list[str] = []
+
+    def _get(self, url: str) -> dict:
+        self.get_urls.append(url)
+        if url.endswith("replacement-order"):
+            return {
+                "id": "replacement-order",
+                "status": "filled",
+                "filled_qty": "2",
+                "filled_avg_price": "1.31",
+            }
+        return {"id": "original-order", "status": "new", "filled_qty": "0"}
+
+    def _patch(self, _url: str, _payload: dict) -> dict:
+        return {"id": "replacement-order", "status": "new"}
+
+    def cancel_order(self, order_id: str) -> bool:
+        self.cancelled.append(order_id)
+        return True
+
+
 class BrokerOrderExecutionTests(unittest.TestCase):
+    def test_price_step_follows_alpaca_replacement_order_id(self) -> None:
+        broker = _ReplacementFillBroker()
+        with patch("config.get_settings", return_value={"paper_trading": True}), patch(
+            "broker.alpaca_orders.time.sleep"
+        ), patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker._wait_for_fill(
+                "original-order", limit_price=1.35, step_to_price=1.30,
+                side="sell", symbol="SPY260821P00780000", qty=2,
+                position_intent="sell_to_close", attempt_id="attempt-replace",
+            )
+
+        self.assertEqual("filled", result["status"])
+        self.assertEqual(1.31, result["confirmed_fill_price"])
+        self.assertTrue(any(url.endswith("replacement-order") for url in broker.get_urls))
+        self.assertEqual([], broker.cancelled)
+        self.assertTrue(any(
+            call.kwargs.get("event_type") == "price_step"
+            and call.kwargs.get("order_id") == "replacement-order"
+            and call.kwargs.get("parent_order_id") == "original-order"
+            for call in record_flow.call_args_list
+        ))
+
     def test_paper_market_fallback_preserves_close_intent(self) -> None:
         broker = _PaperFallbackBroker()
         with patch("config.get_settings", return_value={"paper_trading": True}), patch(
@@ -82,6 +132,26 @@ class BrokerOrderExecutionTests(unittest.TestCase):
         self.assertEqual("filled", result["status"])
         self.assertEqual("sell_to_close", broker.posted[0]["position_intent"])
         self.assertEqual("market", broker.posted[0]["type"])
+
+    def test_paper_entry_does_not_chase_unfilled_limit_at_market(self) -> None:
+        broker = _PaperFallbackBroker()
+        with patch("config.get_settings", return_value={"paper_trading": True}), patch(
+            "broker.alpaca_orders.time.sleep"
+        ), patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker._wait_for_fill(
+                "limit-entry", limit_price=1.30, side="buy",
+                symbol="SPY260821C00780000", qty=2,
+                position_intent="buy_to_open", attempt_id="attempt-entry",
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual([], broker.posted)
+        self.assertTrue(any(
+            call.kwargs.get("event_type") == "entry_expired_no_fill"
+            for call in record_flow.call_args_list
+        ))
 
     def test_paper_fallback_is_blocked_until_cancel_is_broker_confirmed(self) -> None:
         broker = _UnconfirmedCancelBroker()

@@ -344,10 +344,30 @@ class AlpacaOrdersMixin:
             # cruder fallback path.
             if (not _stepped_up and _step_ok and i == _STEP_UP_AFTER_SECS):
                 try:
-                    self._patch(
+                    _previous_order_id = order_id
+                    _replacement = self._patch(
                         f"{self.base}/v2/orders/{order_id}",
                         {"limit_price": str(round(step_to_price, 2))},
                     )
+                    # Alpaca implements PATCH /orders/{id} as an order
+                    # replacement.  The old order becomes ``replaced`` and a
+                    # NEW order ID carries the working/filled order.  Keep
+                    # polling that new ID; otherwise we watch the dead parent,
+                    # misread ``replaced`` as still working, and can submit
+                    # repeated exit attempts while the real child order is
+                    # invisible to the bot.
+                    _replacement_order_id = str(
+                        (_replacement or {}).get("id")
+                        or (_replacement or {}).get("order_id")
+                        or order_id
+                    )
+                    if _replacement_order_id != order_id:
+                        order_id = _replacement_order_id
+                        flow_base = {
+                            **flow_base,
+                            "order_id": order_id,
+                            "parent_order_id": _previous_order_id,
+                        }
                     _stepped_up = True
                     _record_flow(
                         **{**flow_base, "limit_price": step_to_price},
@@ -582,6 +602,45 @@ class AlpacaOrdersMixin:
                     message="Original limit order filled before cancellation",
                 )
                 return _orig_final
+
+            if position_intent == "buy_to_open":
+                # Entry discipline: never turn a stale/unfilled option limit
+                # into an uncapped market buy.  The contract-selection quote
+                # can come from a different feed than Alpaca's simulator; this
+                # week that fallback paid 7%-19% above the reviewed ask and
+                # converted otherwise-positive setups into losses.  A missed
+                # entry is safer and more truthful than chasing it at any
+                # price.  Real partial fills are still surfaced so the bot can
+                # manage the position that actually exists.
+                if _orig_filled_qty > 0:
+                    _record_flow(
+                        **flow_base, event_type="partial_filled",
+                        status="partially_filled", filled_qty=_orig_filled_qty,
+                        fill_price=_orig_filled_price or limit_price or 0,
+                        message=(
+                            "Original entry partially filled; unfilled remainder "
+                            "was not chased with a market order"
+                        ),
+                        is_issue=True,
+                    )
+                    return {
+                        "id": order_id,
+                        "status": "partially_filled",
+                        "confirmed_fill_price": _orig_filled_price or limit_price or 0,
+                        "filled_qty": _orig_filled_qty,
+                        "partial_fill": True,
+                    }
+                log_event(
+                    "WARNING", "order",
+                    f"🟡 [{symbol}] Entry limit did not fill within "
+                    f"{effective_wait}s — setup skipped rather than chased at market.",
+                )
+                _record_flow(
+                    **flow_base, event_type="entry_expired_no_fill",
+                    status=_orig_status, filled_qty=0,
+                    message="Entry canceled without fill; market chase disabled",
+                )
+                return None
 
             if symbol and _remaining_qty:
                 try:
