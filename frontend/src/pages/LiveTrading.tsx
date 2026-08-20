@@ -138,7 +138,23 @@ export function LiveTrading() {
   const [logRawTicker,   setLogRawTicker]     = useState("");
   const [tradeDrawerId,  setTradeDrawerId]    = useState<number | null>(null);
   const [newsExpanded,   setNewsExpanded]     = useState(false);
+  const [chartExpanded,  setChartExpanded]    = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("celo-live-chart-expanded");
+      return saved == null ? false : saved === "true";
+    } catch {
+      return false;
+    }
+  });
   const chartReplayRef  = useRef<BoomerangReplayHandle>(null);
+
+  function toggleChart() {
+    setChartExpanded((expanded) => {
+      const next = !expanded;
+      try { window.localStorage.setItem("celo-live-chart-expanded", String(next)); } catch { /* optional preference */ }
+      return next;
+    });
+  }
 
   const { status, logs } = useBotStore();
   // "Watch this setup" — jump the chart's scrub position to just before a
@@ -487,9 +503,38 @@ export function LiveTrading() {
       </div>}
 
       {/* ── Main grid: chart + scanner ────────────────────────────────────── */}
-      <div className="grid gap-4 chart-scanner-grid">
+      <div className={`grid gap-4 ${chartExpanded ? "chart-scanner-grid" : "grid-cols-1"}`}>
         {/* Chart panel */}
         <div className="card overflow-hidden">
+          <div
+            className="flex items-center gap-3 px-4 py-3"
+            style={{ borderBottom: chartExpanded ? "1px solid var(--border)" : undefined }}
+          >
+            <div className="min-w-0">
+              <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                {ticker} market chart
+              </div>
+              <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                Optional visual detail. Trade-ready information appears in Today&apos;s Trade Setups.
+              </div>
+            </div>
+            <div className="flex-1" />
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost shrink-0"
+              onClick={toggleChart}
+              aria-expanded={chartExpanded}
+              aria-controls="live-market-chart"
+            >
+              {chartExpanded ? "Minimize chart" : "Show chart"}
+              <ChevronDown
+                size={15}
+                aria-hidden="true"
+                style={{ transform: chartExpanded ? "rotate(180deg)" : undefined }}
+              />
+            </button>
+          </div>
+          {chartExpanded && <div id="live-market-chart">
           <div
             className="flex items-center gap-3 px-3 py-2 border-b text-sm flex-wrap"
             style={{ borderColor: "var(--border)" }}
@@ -568,6 +613,7 @@ export function LiveTrading() {
             annotations={annotations}
             narrationEvents={narrationEvents}
           />
+          </div>}
         </div>
 
         {/* Focused pre-entry callouts. The redundant ticker scanner and raw
