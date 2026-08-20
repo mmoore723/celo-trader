@@ -14,6 +14,7 @@ import pandas as pd
 
 from strategies.base import Signal
 from strategies.market_structure import Bar, _atr, _ema
+from strategies.price_action_context import describe_price_action
 from strategies.spy_trend_continuation_v2 import _complete_five_minute_bars
 
 
@@ -58,6 +59,9 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
     fast = _ema(closes[-_FAST_EMA:], _FAST_EMA)
     slow = _ema(closes, _SLOW_EMA)
     vwap = _session_vwap(today)
+    price_action = describe_price_action(
+        today, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
+    ).features()
     newest = len(today) - 3
     oldest = max(1, newest - _SCAN_BARS + 1)
 
@@ -79,6 +83,7 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                         strategy_id=STRATEGY_ID, direction="bullish", confidence=0.80,
                         rvol=0.0, trigger_bar=pd.Timestamp(current.timestamp),
                         meta={
+                            **price_action,
                             "v2_hypothesis": "spy_afternoon_fvg_first_retest_5m",
                             "reviewed_paid_quote_rule": True,
                             "entry_timing": "completed_5m_signal_then_next_1m_entry",
@@ -105,6 +110,7 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                         strategy_id=STRATEGY_ID, direction="bearish", confidence=0.80,
                         rvol=0.0, trigger_bar=pd.Timestamp(current.timestamp),
                         meta={
+                            **price_action,
                             "v2_hypothesis": "spy_afternoon_fvg_first_retest_5m",
                             "reviewed_paid_quote_rule": True,
                             "entry_timing": "completed_5m_signal_then_next_1m_entry",

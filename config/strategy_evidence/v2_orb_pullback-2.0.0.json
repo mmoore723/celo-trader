@@ -6,7 +6,7 @@
   "evidence_grade": "promising_inconsistent",
   "ticker_scope": ["TSLA"],
   "implementation": "trading.orb_retouch_execution",
-  "implementation_sha256_at_review": "9a322d6a02457aac9dc428cd9ac3e99b7f043b7e185eb8de4664d1e1a179825c",
+  "implementation_sha256_at_review": "4423db272d8545c7bb20d47f4e3cd9c58e30dad55e93589486b9fa0b0b88a1dd",
   "market_data": {
     "source": "paid Databento OPRA CBBO-1m archive",
     "bars_sha256": "eeae427d707adc321538eb6f102cf513644723936e9d1f88d5549eca10e604ac",

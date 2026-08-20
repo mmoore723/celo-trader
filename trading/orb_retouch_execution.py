@@ -11,7 +11,8 @@ from typing import MutableMapping
 
 import pandas as pd
 
-from strategies.market_structure import Bar, Side, first_close_confirmed_breakout, retouch_status
+from strategies.market_structure import Bar, Side, _atr, _ema, first_close_confirmed_breakout, retouch_status
+from strategies.price_action_context import describe_price_action
 from strategies.base import Signal
 
 
@@ -108,6 +109,21 @@ def update_one_minute_orb_retouch(
         return None, "invalid_risk"
     direction = "bullish" if context.side is Side.LONG else "bearish"
     target = float(quote_price) + 2 * risk if context.side is Side.LONG else float(quote_price) - 2 * risk
+    session_bars = [bar for bar in bars if bar.timestamp.date() == context.breakout_time.date()]
+    price_action: dict[str, float | str | bool] = {}
+    if len(session_bars) >= 20:
+        atr = _atr(session_bars, 14)
+        closes = [bar.close for bar in session_bars[-20:]]
+        volumes = [max(float(bar.volume), 1.0) for bar in session_bars]
+        vwap = sum(
+            ((bar.high + bar.low + bar.close) / 3.0) * volume
+            for bar, volume in zip(session_bars, volumes)
+        ) / sum(volumes)
+        if atr > 0:
+            price_action = describe_price_action(
+                session_bars, atr=atr, fast_ema=_ema(closes[-9:], 9),
+                slow_ema=_ema(closes, 20), vwap=vwap,
+            ).features()
     return Signal(
         confidence=0.80,
         strategy_id=STRATEGY_ID,
@@ -115,6 +131,7 @@ def update_one_minute_orb_retouch(
         rvol=float(today.iloc[-1].get("rvol", 0.0) or 0.0),
         trigger_bar=pd.Timestamp(now),
         meta={
+            **price_action,
             "v2_hypothesis": "one_minute_opening_range_first_long_retouch_before_1030",
             "validated_entry_rule": "calls_only_first_retouch_before_1030_et",
             "entry_timing": "completed_1m_breakout_then_live_quote_first_retouch",

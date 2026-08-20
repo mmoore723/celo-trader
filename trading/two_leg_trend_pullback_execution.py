@@ -23,6 +23,7 @@ from typing import MutableMapping
 import pandas as pd
 
 from strategies.base import Signal
+from strategies.price_action_context import describe_price_action
 
 
 STRATEGY_ID = "V2_TSLA_TWO_LEG_TREND_PULLBACK"
@@ -172,6 +173,9 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                     confidence=0.80, strategy_id=STRATEGY_ID, direction="bullish", rvol=current.rvol,
                                     trigger_bar=current.timestamp,
                                     meta={
+                                        **describe_price_action(
+                                            history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
+                                        ).features(),
                                         "v2_hypothesis": "two_leg_impulse_vwap_hold_pullback_1m_reclaim",
                                         "validated_entry_rule": "after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_completed_1m_reclaim",
                                         "entry_timing": "completed_1m_reclaim_then_next_1m_option_ask",
@@ -210,6 +214,9 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                     confidence=0.80, strategy_id=STRATEGY_ID, direction="bearish", rvol=current.rvol,
                                     trigger_bar=current.timestamp,
                                     meta={
+                                        **describe_price_action(
+                                            history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
+                                        ).features(),
                                         "v2_hypothesis": "two_leg_impulse_vwap_hold_pullback_1m_reclaim",
                                         "validated_entry_rule": "after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_completed_1m_reclaim",
                                         "entry_timing": "completed_1m_reclaim_then_next_1m_option_ask",

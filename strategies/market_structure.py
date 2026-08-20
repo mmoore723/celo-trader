@@ -11,6 +11,8 @@ from datetime import datetime, time, timedelta
 from enum import Enum
 from typing import Mapping, Sequence
 
+from strategies.price_action_context import describe_price_action
+
 
 class Side(str, Enum):
     LONG = "long"
@@ -125,6 +127,9 @@ class TrendContinuation:
         features = {
             "fast_ema": round(fast, 6), "slow_ema": round(slow, 6), "atr": round(atr, 6),
             "breakout_bars": self.config.breakout_bars,
+            **describe_price_action(
+                bars, atr=atr, fast_ema=fast, slow_ema=slow,
+            ).features(),
         }
         if fast > slow and current.close > prior_high:
             stop = min(current.low, current.close - self.config.stop_atr_multiple * atr)
