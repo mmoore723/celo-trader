@@ -1,7 +1,7 @@
 """
-trading/diagnostics/ghost_positions.py — _check_ghost_positions: detects
-Alpaca positions not tracked in the local DB (e.g. manually opened, or a
-fill the bot missed) and reconciles/alerts on them.
+trading/diagnostics/ghost_positions.py — _check_ghost_positions: detects both
+directions of broker/journal drift: Alpaca positions missing from the local DB
+and journal-open contracts that Alpaca no longer holds.
 
 Split out of the old single trading/diagnostics.py (2026-08-01, file-size
 cleanup); no logic changed, only relocated.
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from typing import Optional
 
 from trading.state import get_user_state, get_user_risk, _now_et, _default_user_id
@@ -21,6 +22,53 @@ logger = logging.getLogger("celo_trader.trading_logic")
 # user's ghost-position alert being acknowledged would silently suppress a
 # DIFFERENT user's still-unresolved ghost alert. Now keyed per user.
 _ghost_alert_logged: dict[str, bool] = {}
+_phantom_alert_logged: dict[str, set[str]] = {}
+_alignment_detected_at: dict[str, str] = {}
+
+
+def _find_db_only_positions(
+    db_open: list[dict],
+    broker_positions: list[dict],
+    open_orders: list[dict],
+    *,
+    now: datetime,
+    grace_seconds: int = 120,
+) -> list[dict]:
+    """Find journal-open contracts that Alpaca no longer holds.
+
+    A newly-created trade may briefly precede Alpaca's positions endpoint and
+    a working exit order may legitimately remove the position between polls.
+    The grace window and working-order exclusion prevent those normal races
+    from becoming false alarms.
+    """
+    held = {str(p.get("symbol") or "") for p in broker_positions}
+    working = {str(o.get("symbol") or "") for o in open_orders}
+    issues: list[dict] = []
+    for trade in db_open:
+        symbol = str(trade.get("contract_symbol") or "")
+        if not symbol or symbol in held or symbol in working:
+            continue
+        try:
+            entered = datetime.fromisoformat(str(trade.get("entry_time") or ""))
+            if entered.tzinfo is None:
+                entered = entered.replace(tzinfo=now.tzinfo)
+            age_seconds = max(0, int((now - entered).total_seconds()))
+        except Exception:
+            age_seconds = grace_seconds + 1
+        if age_seconds <= grace_seconds:
+            continue
+        issues.append({
+            "kind": "journal_open_broker_flat",
+            "trade_id": trade.get("id"),
+            "symbol": symbol,
+            "ticker": trade.get("ticker"),
+            "age_seconds": age_seconds,
+            "message": (
+                f"Trade #{trade.get('id')} is open in the journal, but Alpaca "
+                f"has no {symbol} position or working order."
+            ),
+        })
+    return issues
 
 def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
     """
@@ -48,9 +96,29 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
     db_open    = get_open_trades(broker_account_id=_account_id)
     db_symbols = {t.get("contract_symbol") for t in db_open}
     ghosts     = [p for p in positions if p.get("symbol") not in db_symbols]
+    try:
+        open_orders: list[dict] | None = alpaca.get_open_orders()
+    except Exception as exc:
+        logger.warning("position_alignment_open_orders_failed: %s", exc)
+        open_orders = None
+    # Do not infer broker-flat while the working-order snapshot is unavailable.
+    # An in-flight entry/exit could otherwise become a false reconciliation alarm.
+    phantom_issues = (
+        _find_db_only_positions(db_open, positions, open_orders, now=_now_et())
+        if open_orders is not None
+        else []
+    )
+    current_phantoms = {str(issue["symbol"]) for issue in phantom_issues}
+    previous_phantoms = _phantom_alert_logged.get(_uid, set())
+    for issue in phantom_issues:
+        if issue["symbol"] not in previous_phantoms:
+            log_event("CRITICAL", "reconciliation", f"🚨 {issue['message']}")
+            logger.critical("journal_open_broker_flat", extra={"event": "journal_open_broker_flat", **issue})
+    _phantom_alert_logged[_uid] = current_phantoms
 
-    if not ghosts:
+    if not ghosts and not phantom_issues:
         _ghost_alert_logged[_uid] = False
+        _alignment_detected_at.pop(_uid, None)
         return None
 
     # ── Classify each ghost ───────────────────────────────────────────────────
@@ -61,8 +129,9 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
             _closed_today = _gc.execute(
                 """SELECT contract_symbol FROM trades
                    WHERE status='closed'
-                   AND date(exit_time) = ?""",
-                (_today_str,),
+                   AND date(exit_time) = ?
+                   AND (? IS NULL OR broker_account_id = ?)""",
+                (_today_str, _account_id, _account_id),
             ).fetchall()
         failed_close_symbols = {r[0] for r in _closed_today} & ghost_symbols
     except Exception as _dbe:
@@ -89,7 +158,7 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
 
     # ── Auto-adopt TRUE ghosts into the journal ───────────────────────────────
     true_ghosts = [p for p in ghosts if p.get("symbol") not in failed_close_symbols]
-    if not true_ghosts:
+    if not true_ghosts and not phantom_issues:
         _ghost_alert_logged[_uid] = False
         return None
 
@@ -121,7 +190,7 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
                 entry_price     = _entry_px,
                 entry_time      = _now_et(),
                 entry_reason    = "Recovered from Alpaca — bot entered before DB write",
-                paper           = True,
+                paper           = bool(get_settings().get("paper_trading", True)),
                 broker_account_id = _account_id,
                 strategy_id     = "RECOVERED_UNTRACKED",
             )
@@ -139,7 +208,7 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
             logger.error("ghost_auto_adopt_failed for %s: %s", sym, _ae)
             still_unrecorded.append(p)
 
-    if not still_unrecorded:
+    if not still_unrecorded and not phantom_issues:
         _ghost_alert_logged[_uid] = False
         return None
 
@@ -165,7 +234,8 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
         _ghost_alert_logged[_uid] = True
 
     return {
-        "detected_at": _now_et().isoformat(),
+        "detected_at": _alignment_detected_at.setdefault(_uid, _now_et().isoformat()),
+        "issues": phantom_issues,
         "positions": [
             {
                 "symbol":        p.get("symbol"),

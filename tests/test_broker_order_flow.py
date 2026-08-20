@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from database.broker_order_flow import (
     record_broker_order_event,
 )
 from database.schema import _init_db_at
+from trading.diagnostics.ghost_positions import _find_db_only_positions
 
 
 class _PaperFallbackBroker(AlpacaOrdersMixin):
@@ -191,6 +193,35 @@ class BrokerOrderExecutionTests(unittest.TestCase):
         event_types = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
         self.assertIn("cancel_unconfirmed", event_types)
         self.assertNotIn("terminal_no_fill", event_types)
+
+
+class BrokerPositionAlignmentTests(unittest.TestCase):
+    def test_flags_old_journal_open_trade_when_broker_is_flat(self) -> None:
+        now = datetime.now().astimezone()
+        issues = _find_db_only_positions(
+            [{"id": 186, "ticker": "SPY", "contract_symbol": "SPY260821C00780000",
+              "entry_time": (now - timedelta(minutes=10)).isoformat()}],
+            [], [], now=now,
+        )
+        self.assertEqual(1, len(issues))
+        self.assertEqual("journal_open_broker_flat", issues[0]["kind"])
+
+    def test_does_not_flag_when_position_or_working_order_exists(self) -> None:
+        now = datetime.now().astimezone()
+        trade = {"id": 7, "contract_symbol": "TSLA260821P00340000",
+                 "entry_time": (now - timedelta(minutes=10)).isoformat()}
+        self.assertEqual([], _find_db_only_positions(
+            [trade], [{"symbol": trade["contract_symbol"]}], [], now=now,
+        ))
+        self.assertEqual([], _find_db_only_positions(
+            [trade], [], [{"symbol": trade["contract_symbol"]}], now=now,
+        ))
+
+    def test_allows_short_broker_visibility_grace_period(self) -> None:
+        now = datetime.now().astimezone()
+        trade = {"id": 8, "contract_symbol": "SPY260821P00780000",
+                 "entry_time": (now - timedelta(seconds=30)).isoformat()}
+        self.assertEqual([], _find_db_only_positions([trade], [], [], now=now))
 
 
 class BrokerOrderLedgerTests(unittest.TestCase):

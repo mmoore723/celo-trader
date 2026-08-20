@@ -24,6 +24,52 @@ EMPTY_KEYS = {
 
 
 class BrokerConnectionStatusTests(unittest.TestCase):
+    def test_reconciliation_state_is_exposed_as_global_broker_alert(self) -> None:
+        alignment = {
+            "detected_at": "2026-08-20T08:00:00-04:00",
+            "issues": [{
+                "trade_id": 186,
+                "symbol": "SPY260821P00775000",
+                "message": "Trade #186 is open in the journal, but Alpaca is flat.",
+            }],
+            "positions": [],
+        }
+        connected_keys = {
+            **EMPTY_KEYS,
+            "alpaca_api_key": "paper-key",
+            "alpaca_secret_key": "paper-secret",
+            "tradier_api_key": "market-data-key",
+            "tradier_account_id": "paper-account",
+        }
+        state = {
+            "running": True,
+            "mode": "paper",
+            "account_balance": 5000.0,
+            "day_start_balance": 5000.0,
+            "session_pnl": 0.0,
+            "options_buying_power": 5000.0,
+            "ghost_position_alert": alignment,
+        }
+        with patch("api.routes.bot._read_bot_state", return_value=state), patch(
+            "config.get_api_keys", return_value=connected_keys,
+        ), patch(
+            "config.get_settings", return_value={"paper_trading": True},
+        ), patch(
+            "trading.state.get_user_state", return_value=dict(state),
+        ), patch(
+            "trading.state._get_lock", return_value=threading.Lock(),
+        ), patch(
+            "config.get_maintenance_state",
+            return_value={"maintenance_mode": False, "collection_only": False},
+        ):
+            status = get_status(_request())
+
+        self.assertTrue(status.ghost_position_detected)
+        self.assertTrue(status.broker_connected)
+        self.assertEqual(1, len(status.broker_alerts))
+        self.assertEqual("alpaca reconciliation", status.broker_alerts[0]["broker"])
+        self.assertIn("Trade #186", status.broker_alerts[0]["last_error"])
+
     def test_disconnected_account_never_exposes_starting_capital_as_balance(self) -> None:
         stale_state = {
             "running": True,

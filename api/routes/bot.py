@@ -102,6 +102,26 @@ def get_status(request: Request) -> BotStatus:
         account_balance = 0.0
         day_start_balance = 0.0
         session_pnl = 0.0
+    alignment = state.get("ghost_position_alert") or _state.get("ghost_position_alert")
+    broker_alerts = _get_broker_alerts_safe()
+    if alignment:
+        issues = list(alignment.get("issues") or []) if isinstance(alignment, dict) else []
+        positions = list(alignment.get("positions") or []) if isinstance(alignment, dict) else []
+        detail = (issues[0].get("message") if issues else None) or (
+            f"{len(positions)} Alpaca position(s) are not aligned with the journal"
+        )
+        try:
+            alignment_since = datetime.fromisoformat(
+                str(alignment.get("detected_at") or "")
+            ).timestamp()
+        except (TypeError, ValueError):
+            alignment_since = datetime.now(ZoneInfo("America/New_York")).timestamp()
+        broker_alerts.append({
+            "broker": "alpaca reconciliation",
+            "error_count": max(1, len(issues) + len(positions)),
+            "since": alignment_since,
+            "last_error": detail,
+        })
     return BotStatus(
         running=actually_running and broker_connected,
         mode="paper" if settings.get("paper_trading", True) else "live",
@@ -116,7 +136,7 @@ def get_status(request: Request) -> BotStatus:
         last_strategy_id=state.get("last_strategy_id") or _state.get("last_strategy_id"),
         current_stop_pct=state.get("current_stop_pct"),
         last_signal=state.get("last_signal"),
-        ghost_position_detected=bool(state.get("ghost_position_detected", False)),
+        ghost_position_detected=bool(alignment),
         is_paper=bool(settings.get("paper_trading", True)),
         last_eval_strike=state.get("last_eval_strike") or _state.get("last_eval_strike"),
         last_eval_expiry=state.get("last_eval_expiry") or _state.get("last_eval_expiry"),
@@ -130,7 +150,7 @@ def get_status(request: Request) -> BotStatus:
         # FIX 2026-07-31: same missing-field bug — see BotStatus.open_positions comment
         open_positions=dict(state.get("open_positions") or _state.get("open_positions") or {}),
         # 2026-07-31: see BotStatus.broker_alerts comment + broker_health.py
-        broker_alerts=_get_broker_alerts_safe(),
+        broker_alerts=broker_alerts,
         opportunity_window=dict(
             state.get("opportunity_scheduler") or _state.get("opportunity_scheduler") or {}
         ),

@@ -23,13 +23,6 @@ import { useBotStore } from "../store/bot";
 
 type BrokerAlert = { broker: string; error_count: number; since: number; last_error: string };
 
-function timeAgo(epochSec: number): string {
-  const mins = Math.max(0, Math.round((Date.now() / 1000 - epochSec) / 60));
-  if (mins < 1) return "just now";
-  if (mins === 1) return "1 min ago";
-  return `${mins} min ago`;
-}
-
 export function BrokerAlertBanner() {
   const alerts = useBotStore((s) => s.status?.broker_alerts) ?? [];
   return (
@@ -54,9 +47,10 @@ export function BrokerAlertBanner() {
         >
           {alerts.map((a) => (
             <span key={a.broker}>
-              🔴 {a.broker.toUpperCase()} is failing — {a.error_count} errors in the last few
-              minutes (since {timeAgo(a.since)}). The bot cannot trade on {a.broker} data right
-              now. Check Settings → API Credentials.
+              🔴 {a.broker.toUpperCase()} — {a.last_error || `${a.error_count} recent errors`}.
+              {a.broker.includes("reconciliation")
+                ? " Check Alpaca Order Flow and Reconcile in the Trade Journal."
+                : ` The bot cannot trade on ${a.broker} data right now. Check Settings → API Credentials.`}
             </span>
           ))}
         </div>
@@ -112,9 +106,11 @@ function BrokerAlertToasts({ alerts }: { alerts: BrokerAlert[] }) {
             }}
           >
             <span style={{ flex: 1 }}>
-              <strong>🔴 {a.broker.toUpperCase()} stopped responding.</strong><br />
-              {a.error_count} failed calls — the bot can't trade on {a.broker} data. Check
-              Settings → API Credentials.
+              <strong>🔴 {a.broker.toUpperCase()}</strong><br />
+              {a.last_error || `${a.error_count} failed calls.`}
+              {a.broker.includes("reconciliation")
+                ? " Check Trade Journal → Alpaca Order Flow/Reconcile."
+                : ` The bot can't trade on ${a.broker} data. Check Settings → API Credentials.`}
             </span>
             <button
               onClick={() => setActive((prev) => prev.filter((x) => `${x.broker}:${x.since}` !== key))}
