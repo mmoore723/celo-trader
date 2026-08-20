@@ -3,7 +3,7 @@
  * Pre-Market tab : rich premarket report from /api/market/premarket — ALL watchlist tickers.
  * Post-Market tab: plain-language trade recap anyone can understand.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Trade, type ScannerResult, type PremarketTicker } from "../lib/api";
 import { useBotStore } from "../store/bot";
@@ -11,6 +11,7 @@ import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { TradeChartModal as ChartModal } from "../components/charts/TradeChartModal";
 import type { SimulationOverlay } from "../lib/chart_types";
+import { preferredDailyBriefTicker } from "../lib/dailyBriefSelection.js";
 
 function fmt(n: number) {
   return `${n >= 0 ? "+" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -397,19 +398,28 @@ export function DailyBrief() {
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
-  const pmMap = new Map<string, PremarketTicker>(premarket.map(p => [p.ticker, p]));
+  const pmMap = useMemo(
+    () => new Map<string, PremarketTicker>(premarket.map(p => [p.ticker, p])),
+    [premarket],
+  );
 
-  const { data: settings } = useQuery({
+  const { data: settings, isLoading: settingsLoading } = useQuery({
     queryKey: ["settings"],
     queryFn:  api.settings.get,
     staleTime: 60_000,
   });
-  const pinnedTickers: string[] = settings?.watchlist ?? [];
+  const pinnedTickers: string[] = useMemo(() => settings?.watchlist ?? [], [settings?.watchlist]);
 
-  // Unified list: premarket (has rich data) first, then scanner-only, then any pinned extras
-  const pmTickers      = premarket.map(p => p.ticker);
-  const scannerTickers = scanner.map((s: ScannerResult) => s.ticker);
-  const allTickers     = [...new Set([...pmTickers, ...scannerTickers, ...pinnedTickers])];
+  // Unified list: the user's watchlist first, then rich report and scanner-only extras.
+  const pmTickers = useMemo(() => premarket.map(p => p.ticker), [premarket]);
+  const scannerTickers = useMemo(
+    () => scanner.map((s: ScannerResult) => s.ticker),
+    [scanner],
+  );
+  const allTickers = useMemo(
+    () => [...new Set([...pinnedTickers, ...pmTickers, ...scannerTickers])],
+    [pinnedTickers, pmTickers, scannerTickers],
+  );
 
   const [selected, setSelected]   = useState<string>("");
   const [briefTab, setBriefTab]   = useState<"premarket" | "postmarket">(
@@ -434,10 +444,25 @@ export function DailyBrief() {
     };
   }
 
-  // Auto-select first ticker when data arrives
+  // Wait until both priority sources settle so a fast scanner response cannot
+  // select a hidden scanner-only ticker before the watchlist arrives.
   useEffect(() => {
-    if (!selected && allTickers.length > 0) setSelected(allTickers[0]);
-  }, [allTickers.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    const next = preferredDailyBriefTicker({
+      selected,
+      loading: pmLoading || settingsLoading,
+      pinnedTickers,
+      premarketTickers: pmTickers,
+      scannerTickers,
+    });
+    if (next !== selected) setSelected(next);
+  }, [
+    selected,
+    pmLoading,
+    settingsLoading,
+    pinnedTickers,
+    pmTickers,
+    scannerTickers,
+  ]);
 
   // Today's trades
   const _now = new Date();
@@ -510,9 +535,9 @@ export function DailyBrief() {
           <div className="card overflow-hidden">
             <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "var(--border)" }}>
               <div>
-                <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>🏟️ Premarket Report</h3>
+                <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>🏟️ Daily Market Report</h3>
                 <p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-                  All watchlist tickers · grade, key levels, trade plan · auto-refreshes every 60s.
+                  Watchlist priorities, key levels, and trade plans · live values refresh every 60s.
                 </p>
               </div>
               {pmLoading && (
@@ -524,7 +549,7 @@ export function DailyBrief() {
 
             {allTickers.length === 0 ? (
               <div className="px-4 py-8 text-sm text-center" style={{ color: "var(--ink-muted)" }}>
-                No scan results yet — scanner runs at <strong>9:00–9:25 ET</strong>.
+                No market report is available yet.
                 Add tickers to your watchlist in Settings to always see them here.
               </div>
             ) : (
@@ -614,7 +639,7 @@ export function DailyBrief() {
                         ))}
                       </div>
                       <p className="text-xs" style={{ color: "var(--ink-faint)" }}>
-                        Rich premarket data not yet available. Full report loads when the scanner runs (9:00–9:25 ET).
+                        The live scanner found this ticker, but its full watchlist report is not available yet.
                       </p>
                     </div>
                   ) : (
@@ -623,7 +648,7 @@ export function DailyBrief() {
                       <span className="text-2xl">📌</span>
                       <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{selected}</p>
                       <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                        Pinned ticker — premarket data loads when the scanner runs at 9:00–9:25 ET.
+                        Pinned ticker — its full market report is still loading.
                       </p>
                     </div>
                   )}
