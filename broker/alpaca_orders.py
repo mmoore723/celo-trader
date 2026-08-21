@@ -50,6 +50,8 @@ class AlpacaOrdersMixin:
         order_type: str = "limit",
         limit_price: Optional[float] = None,
         step_to_price: Optional[float] = None,  # buy: step UP to ask; sell: step DOWN to bid
+        max_acceptable_price: Optional[float] = None,  # entry ceiling; never chase above it
+        allow_market_fallback: bool = False,  # emergency exits only
         position_intent: Optional[str] = None,  # 'buy_to_open' | 'sell_to_close' (FIX 2026-07-16)
         order_context: Optional[dict] = None,
     ) -> Optional[dict]:
@@ -102,6 +104,35 @@ class AlpacaOrdersMixin:
         # by this call's caller if this attempt doesn't hit the except block.
         self.last_rejection_reason = None
 
+        # Requote the exact OCC contract at Alpaca immediately before placing
+        # the order. Contract discovery uses Tradier, but Tradier's quote is
+        # not necessarily executable at Alpaca a few seconds later. Work from
+        # Alpaca's own current midpoint and natural side instead.
+        try:
+            broker_quote = self.get_latest_option_quote(symbol)
+        except Exception:
+            broker_quote = None
+        if broker_quote:
+            broker_bid = float(broker_quote.get("bp") or 0)
+            broker_ask = float(broker_quote.get("ap") or 0)
+            if broker_bid > 0 and broker_ask >= broker_bid:
+                broker_mid = round((broker_bid + broker_ask) / 2, 2)
+                if side.lower() == "buy":
+                    ceiling = float(max_acceptable_price or broker_ask)
+                    limit_price = min(broker_mid, ceiling)
+                    step_to_price = min(broker_ask, ceiling)
+                else:
+                    limit_price = broker_mid
+                    step_to_price = broker_bid
+                flow_base["limit_price"] = limit_price
+                _record_flow(
+                    **flow_base, event_type="broker_requote", status="quoted",
+                    message=(
+                        f"Alpaca option quote bid={broker_bid:.2f} "
+                        f"ask={broker_ask:.2f}; working limit={limit_price:.2f}"
+                    ),
+                )
+
         payload: dict = {
             "symbol":        symbol,
             "qty":           str(qty),
@@ -153,6 +184,7 @@ class AlpacaOrdersMixin:
             confirmed = self._wait_for_fill(order_id, limit_price=limit_price,
                                             step_to_price=step_to_price, side=side,
                                             symbol=symbol, qty=qty,
+                                            allow_market_fallback=allow_market_fallback,
                                             position_intent=position_intent,
                                             attempt_id=attempt_id,
                                             order_context=context)
@@ -262,6 +294,7 @@ class AlpacaOrdersMixin:
         side: str = "buy",
         symbol: Optional[str] = None,
         qty: Optional[int] = None,
+        allow_market_fallback: bool = False,
         position_intent: Optional[str] = None,
         attempt_id: Optional[str] = None,
         order_context: Optional[dict] = None,
@@ -315,11 +348,11 @@ class AlpacaOrdersMixin:
         # consistent that market orders should be a last resort, not a 10-second
         # default — extending paper's wait to 20s gives the stepped limit (added
         # below) a real chance to fill before falling back to market.
-        effective_wait = 20 if is_paper else 30   # seconds before giving up
+        effective_wait = 10 if is_paper else 15   # seconds before giving up
 
         # Step-up threshold: on live, after this many seconds without a fill,
         # modify the order's limit price from mid up to the ask.
-        _STEP_UP_AFTER_SECS = 5
+        _STEP_UP_AFTER_SECS = 2
         _stepped_up = False
         _last_status = None
 
@@ -639,6 +672,34 @@ class AlpacaOrdersMixin:
                     **flow_base, event_type="entry_expired_no_fill",
                     status=_orig_status, filled_qty=0,
                     message="Entry canceled without fill; market chase disabled",
+                )
+                return None
+
+            if not allow_market_fallback:
+                if _orig_filled_qty > 0:
+                    _record_flow(
+                        **flow_base, event_type="partial_filled",
+                        status="partially_filled", filled_qty=_orig_filled_qty,
+                        fill_price=_orig_filled_price or limit_price or 0,
+                        message="Limit partially filled; uncapped market fallback disabled",
+                        is_issue=True,
+                    )
+                    return {
+                        "id": order_id,
+                        "status": "partially_filled",
+                        "confirmed_fill_price": _orig_filled_price or limit_price or 0,
+                        "filled_qty": _orig_filled_qty,
+                        "partial_fill": True,
+                    }
+                log_event(
+                    "WARNING", "order",
+                    f"🟡 [{symbol}] Limit did not fill within {effective_wait}s — "
+                    f"uncapped market fallback is disabled; will re-evaluate the live quote.",
+                )
+                _record_flow(
+                    **flow_base, event_type="limit_expired_no_fill",
+                    status=_orig_status, filled_qty=0,
+                    message="Limit canceled without fill; uncapped market fallback disabled",
                 )
                 return None
 

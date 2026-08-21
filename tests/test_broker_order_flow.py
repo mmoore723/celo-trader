@@ -26,9 +26,9 @@ class _PaperFallbackBroker(AlpacaOrdersMixin):
 
     def _get(self, _url: str) -> dict:
         self.get_calls += 1
-        if self.get_calls <= 20:
+        if self.get_calls <= 10:
             return {"status": "new", "filled_qty": "0"}
-        if self.get_calls == 21:
+        if self.get_calls == 11:
             return {"status": "canceled", "filled_qty": "0"}
         return {"status": "filled", "filled_qty": "2", "filled_avg_price": "1.24"}
 
@@ -93,7 +93,43 @@ class _ReplacementFillBroker(AlpacaOrdersMixin):
         return True
 
 
+class _ExecutionQuoteBroker(AlpacaOrdersMixin):
+    base = "https://paper-api.alpaca.markets"
+    api_key = "test-key"
+
+    def __init__(self) -> None:
+        self.posted: list[dict] = []
+        self.wait_kwargs: dict = {}
+
+    def get_latest_option_quote(self, _symbol: str) -> dict:
+        return {"bp": 1.20, "ap": 1.30}
+
+    def _post(self, _url: str, payload: dict) -> dict:
+        self.posted.append(payload)
+        return {"id": "quoted-order", "status": "accepted"}
+
+    def _wait_for_fill(self, _order_id: str, **kwargs) -> dict:
+        self.wait_kwargs = kwargs
+        return {"id": "quoted-order", "status": "filled", "filled_avg_price": "1.30"}
+
+
 class BrokerOrderExecutionTests(unittest.TestCase):
+    def test_entry_uses_alpaca_quote_and_respects_price_ceiling(self) -> None:
+        broker = _ExecutionQuoteBroker()
+        with patch("broker.alpaca_orders._record_flow"), patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker.place_option_order(
+                symbol="SPY260821C00780000", qty=2, side="buy",
+                order_type="limit", limit_price=1.10, step_to_price=1.15,
+                max_acceptable_price=1.28, position_intent="buy_to_open",
+            )
+
+        self.assertEqual("filled", result["status"])
+        self.assertEqual("1.25", broker.posted[0]["limit_price"])
+        self.assertEqual(1.28, broker.wait_kwargs["step_to_price"])
+        self.assertFalse(broker.wait_kwargs["allow_market_fallback"])
+
     def test_price_step_follows_alpaca_replacement_order_id(self) -> None:
         broker = _ReplacementFillBroker()
         with patch("config.get_settings", return_value={"paper_trading": True}), patch(
@@ -128,12 +164,33 @@ class BrokerOrderExecutionTests(unittest.TestCase):
             result = broker._wait_for_fill(
                 "limit-order", limit_price=1.30, side="sell",
                 symbol="TSLA260821P00340000", qty=2,
+                allow_market_fallback=True,
                 position_intent="sell_to_close", attempt_id="attempt-1",
             )
 
         self.assertEqual("filled", result["status"])
         self.assertEqual("sell_to_close", broker.posted[0]["position_intent"])
         self.assertEqual("market", broker.posted[0]["type"])
+
+    def test_routine_exit_does_not_leak_to_market(self) -> None:
+        broker = _PaperFallbackBroker()
+        with patch("config.get_settings", return_value={"paper_trading": True}), patch(
+            "broker.alpaca_orders.time.sleep"
+        ), patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker._wait_for_fill(
+                "limit-exit", limit_price=1.30, side="sell",
+                symbol="SPY260821P00780000", qty=2,
+                position_intent="sell_to_close", attempt_id="routine-exit",
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual([], broker.posted)
+        self.assertTrue(any(
+            call.kwargs.get("event_type") == "limit_expired_no_fill"
+            for call in record_flow.call_args_list
+        ))
 
     def test_paper_entry_does_not_chase_unfilled_limit_at_market(self) -> None:
         broker = _PaperFallbackBroker()

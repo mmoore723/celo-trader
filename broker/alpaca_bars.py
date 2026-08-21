@@ -416,6 +416,24 @@ class AlpacaBarsMixin:
             logger.error("get_latest_quote(%s) failed: %s", symbol, e)
             return None
 
+    def get_latest_option_quote(self, symbol: str) -> Optional[dict]:
+        """Return Alpaca's latest bid/ask for one OCC option contract.
+
+        Contract selection currently uses Tradier, while the order is routed
+        to Alpaca.  Requoting the exact contract at the execution broker keeps
+        a stale/cross-provider ask from becoming an unfillable limit order.
+        Alpaca's endpoint returns a mapping under ``quotes`` even for one
+        requested symbol.
+        """
+        url = f"{self.data}/v1beta1/options/quotes/latest"
+        try:
+            payload = self._get(url, params={"symbols": symbol}) or {}
+            quotes = payload.get("quotes") or {}
+            return quotes.get(symbol) or quotes.get(symbol.upper())
+        except Exception as e:
+            logger.error("get_latest_option_quote(%s) failed: %s", symbol, e)
+            return None
+
     def get_snapshots(self, symbols: list[str]) -> dict[str, dict]:
         """
         Fetch latest price + prev-close for multiple symbols in ONE API call.

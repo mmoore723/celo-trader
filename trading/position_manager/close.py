@@ -61,6 +61,10 @@ def _close_position(
 
     if paper:
         logger.info("[PAPER] SELL %s @ $%.4f (%s)", trade["contract_symbol"], exit_price, reason)
+    _urgent_exit = any(token in (reason or "").lower() for token in (
+        "hard_stop", "initial_atr_stop", "structural_stop", "panic",
+        "kill_lock", "daily_loss", "session_hard_cutoff",
+    ))
     fill = alpaca.place_option_order(
         symbol          = trade["contract_symbol"],
         qty             = trade["contracts"],
@@ -68,6 +72,7 @@ def _close_position(
         order_type      = "limit",
         limit_price     = exit_price,
         step_to_price   = bid_price,
+        allow_market_fallback = _urgent_exit,
         position_intent = "sell_to_close",
         order_context   = {
             "ticker": trade.get("ticker"),

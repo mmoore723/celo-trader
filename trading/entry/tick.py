@@ -1716,6 +1716,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         order_type      = "limit",
         limit_price     = _order_mid,
         step_to_price   = _order_ask,
+        max_acceptable_price = eff_entry,
+        allow_market_fallback = False,
         position_intent = "buy_to_open",
         order_context   = {
             "ticker": ticker,

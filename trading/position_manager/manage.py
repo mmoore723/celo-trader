@@ -551,6 +551,7 @@ def _manage_open_position(
                 order_type      = "limit",
                 limit_price     = current_price,
                 step_to_price   = bid_price,
+                allow_market_fallback = False,
                 position_intent = "sell_to_close",
                 order_context   = {
                     "ticker": trade.get("ticker"),
