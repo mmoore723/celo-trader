@@ -533,11 +533,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     watchlist = [t for t in (_US.get("scan_watchlist") or []) if t not in _BL]
 
     # The scanner stays broad.  Reviewed strategy/ticker pairs are appended
-    # only when their own paper switch is enabled, so a quieter validated
+    # only when their own mode-eligible switch is enabled, so a quieter validated
     # symbol is not silently skipped by a momentum ranking.
     from config.strategy_catalog import enabled_reviewed_strategy_ids
-    _enabled_reviewed_pilots = (
-        enabled_reviewed_strategy_ids(settings) if settings.get("paper_trading", True) else set()
+    _enabled_reviewed_pilots = enabled_reviewed_strategy_ids(
+        settings, paper=bool(settings.get("paper_trading", True)),
     )
     if not watchlist:
         # Watchlist empty: run an on-demand scan (missed pre-market, or first boot)
@@ -557,6 +557,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _with_reviewed = include_reviewed_tickers_when_v2_pilots_enabled(
             watchlist, enabled_strategy_ids=_enabled_reviewed_pilots,
         )
+        # Static catalog scope remains the default. A newly qualified ticker
+        # joins this user's cycle only after that user explicitly enables the
+        # exact published strategy/version in this account's active mode.
+        from config.strategy_ticker_recommendations import approved_dynamic_tickers
+        for _approved_ticker in approved_dynamic_tickers(settings, _enabled_reviewed_pilots):
+            if _approved_ticker not in _with_reviewed and _approved_ticker not in _BL:
+                _with_reviewed.append(_approved_ticker)
         if _with_reviewed != watchlist:
             watchlist = _with_reviewed
             _US["scan_watchlist"] = watchlist
@@ -668,6 +675,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # only).  Requesting 7800 1Min bars would either 403 or silently return
     # 5Min history bars (free-tier friendly) prepended for RVOL context only.
     _df_today_1m = df5.copy()   # save today's 1Min bars before augment
+    # Persist every scanner-evaluated ticker's canonical one-minute history.
+    # This is reusable prospective research data; it cannot place an order.
+    try:
+        from database import record_scanner_candles
+        record_scanner_candles(
+            ticker, _df_today_1m,
+            broker_account_id=settings.get("active_broker_account_id") or None,
+        )
+    except Exception:
+        logger.debug("scanner candle archive failed for %s", ticker, exc_info=True)
     try:
         _hist_bars, _hist_err = alpaca.get_bars(ticker, "5Min", limit=1500)  # ~15 days
         if _hist_bars and not _hist_err:
@@ -706,7 +723,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _candidate_observer = None
     _observation_only_strategies: set[str] = set()
     _observation_resolver = None
-    if paper and bool(settings.get("shadow_ledger_enabled", True)):
+    # Evidence collection is account-mode independent.  A live-mode user must
+    # not have to switch back to paper merely to keep observing disabled
+    # strategy/ticker pairs.  This branch is still read-only: it selects and
+    # re-prices hypothetical contracts, but imports no broker order function
+    # and never adds a signal to the executable return set.
+    if bool(settings.get("shadow_ledger_enabled", True)):
         from shadow_ledger import mark_candidate_observed_only
         # Re-price previously selected scanner contracts at fixed horizons.
         # This is read-only evidence for entered, blocked, and skipped setups;
@@ -737,7 +759,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 selection_cache=_candidate_preview_cache,
             )
     # The router receives approved strategies for potential entry plus a
-    # separate paper-only observation set.  Observed-only signals cannot make
+    # separate observation-only set in either account mode. Observed-only signals cannot make
     # it back out of the router, so they cannot reach contract selection.
     # The new V2 ORB is not a later-candle-close entry.  A completed one-minute
     # breakout arms it; the first live quote that revisits the broken 09:45
@@ -753,11 +775,19 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 _ask, _bid = float(_live_underlying_quote.get("ap", 0) or 0), float(_live_underlying_quote.get("bp", 0) or 0)
                 if _ask > 0 and _bid > 0:
                     _quote_price = (_ask + _bid) / 2.0
-            _orb_state = _US.setdefault("v2_orb_retouch", {})
-            _orb_signal, _orb_status = update_one_minute_orb_retouch(
-                _orb_state, _df_today_1m, ticker=ticker,
-                quote_price=_quote_price, now=_now_et(),
-            )
+            _orb_states = _US.setdefault("v2_orb_retouch", {})
+            _orb_state = _orb_states.setdefault(ticker.upper(), {})
+            if "V2_ORB_PULLBACK" in _observation_only_strategies and ticker.upper() != "TSLA":
+                from trading.cross_ticker_shadow import update_orb
+                _orb_signal, _orb_status = update_orb(
+                    _orb_state, _df_today_1m, ticker=ticker,
+                    quote_price=_quote_price, now=_now_et(),
+                )
+            else:
+                _orb_signal, _orb_status = update_one_minute_orb_retouch(
+                    _orb_state, _df_today_1m, ticker=ticker,
+                    quote_price=_quote_price, now=_now_et(),
+                )
             _US["v2_orb_retouch_status"] = _orb_status
             if _orb_signal is not None:
                 _injected_signals.append(_orb_signal)
@@ -770,13 +800,20 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # The reviewed TSLA two-leg continuation uses no uncompleted bar and no
     # generic router threshold.  It retains the exact paid-study sequence,
     # then enters the ordinary router, contract, sizing, and paper safeguards.
-    if ("V2_TSLA_TWO_LEG_TREND_PULLBACK" in (_enabled | _observation_only_strategies)
-            and ticker.upper() == "TSLA"):
+    if "V2_TSLA_TWO_LEG_TREND_PULLBACK" in (_enabled | _observation_only_strategies):
         try:
-            _two_leg_state = _US.setdefault("v2_tsla_two_leg_trend_pullback", {})
-            _two_leg_signal, _two_leg_status = update_two_leg_trend_pullback(
-                _two_leg_state, _df_today_1m, ticker=ticker, now=_now_et(),
-            )
+            _two_leg_states = _US.setdefault("v2_tsla_two_leg_trend_pullback", {})
+            _two_leg_state = _two_leg_states.setdefault(ticker.upper(), {})
+            if ("V2_TSLA_TWO_LEG_TREND_PULLBACK" in _observation_only_strategies
+                    and ticker.upper() != "TSLA"):
+                from trading.cross_ticker_shadow import update_two_leg
+                _two_leg_signal, _two_leg_status = update_two_leg(
+                    _two_leg_state, _df_today_1m, ticker=ticker, now=_now_et(),
+                )
+            else:
+                _two_leg_signal, _two_leg_status = update_two_leg_trend_pullback(
+                    _two_leg_state, _df_today_1m, ticker=ticker, now=_now_et(),
+                )
             _US["v2_tsla_two_leg_trend_pullback_status"] = _two_leg_status
             if _two_leg_signal is not None:
                 _injected_signals.append(_two_leg_signal)

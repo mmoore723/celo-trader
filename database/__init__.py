@@ -41,6 +41,7 @@ from database.research_observations import (
     start_paper_research_observation, close_due_paper_research_observations,
     get_paper_research_scorecard,
 )
+from database.scanner_candles import record_scanner_candles
 from database.trades_query import get_open_trades, get_open_trade, get_all_trades
 from database.summary import _upsert_daily_summary, get_daily_summaries, get_cumulative_pnl
 from database.events import log_event, log_ai_reasoning, get_ai_reasoning_log, get_ai_reasoning_entry
@@ -60,6 +61,7 @@ __all__ = [
     "insert_trade", "save_mtf_bias", "close_trade", "audit_trade_lineage", "record_paper_option_quote",
     "record_candidate_option_quote", "capture_due_candidate_option_quotes",
     "start_paper_research_observation", "close_due_paper_research_observations", "get_paper_research_scorecard",
+    "record_scanner_candles",
     "get_open_trades", "get_open_trade", "get_all_trades",
     "_upsert_daily_summary", "get_daily_summaries", "get_cumulative_pnl",
     "log_event", "log_ai_reasoning", "get_ai_reasoning_log", "get_ai_reasoning_entry",

@@ -21,6 +21,7 @@ import { Maintenance }     from "./pages/Maintenance";
 import { ApiSetupModal }   from "./components/ApiSetupModal";
 import { ErrorBoundary }   from "./components/ErrorBoundary";
 import { BrokerAlertBanner } from "./components/BrokerAlertBanner";
+import { StrategyRecommendationModal } from "./components/StrategyRecommendationModal";
 import { PageLoader } from "./components/PageLoader";
 import { lazy, Suspense, useState, useEffect } from "react";
 
@@ -86,6 +87,7 @@ function AppShell() {
   return (
     <div className="app-shell">
       {showSetup && <ApiSetupModal onClose={closeSetup} />}
+      {!showSetup && <StrategyRecommendationModal />}
       {/* Mascot watermark — fixed behind all page content */}
       <img
         src="/mascot.png"

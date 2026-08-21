@@ -289,7 +289,7 @@ _CREATE_CANDIDATE_CONTRACT_ALTERNATIVES_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_candidate_contract_alt_symbol ON candidate_contract_alternatives(contract_symbol, observed_at);",
 ]
 
-# shadow_candidates — paper-only evidence for every strategy signal that the
+# shadow_candidates — mode-independent evidence for every strategy signal that the
 # live router actually evaluated, including those later rejected by a gate.
 # This is an audit ledger, never an order queue: no execution code may read it
 # to place, size, or close a trade.
@@ -362,6 +362,31 @@ _CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_research_observations_account ON paper_research_option_observations(broker_account_id, created_at);",
 ]
 
+# scanner_candle_observations — durable one-minute market history for every
+# ticker the live scanner actually evaluates. Five-minute and higher frames
+# are derived from these rows; storing one canonical frame avoids duplicates.
+# This table is research input only and is never an order queue.
+_CREATE_SCANNER_CANDLE_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS scanner_candle_observations (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_account_id TEXT    NOT NULL DEFAULT '',
+    ticker            TEXT    NOT NULL,
+    timeframe         TEXT    NOT NULL DEFAULT '1Min',
+    bar_time          TEXT    NOT NULL,
+    open              REAL    NOT NULL,
+    high              REAL    NOT NULL,
+    low               REAL    NOT NULL,
+    close             REAL    NOT NULL,
+    volume            REAL    NOT NULL DEFAULT 0,
+    source            TEXT    NOT NULL DEFAULT 'alpaca',
+    recorded_at       TEXT    NOT NULL,
+    UNIQUE(broker_account_id, ticker, timeframe, bar_time)
+);
+"""
+_CREATE_SCANNER_CANDLE_OBSERVATIONS_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_scanner_candles_symbol_time ON scanner_candle_observations(broker_account_id, ticker, bar_time);",
+]
+
 
 
 # ── Initialisation ────────────────────────────────────────────────────────────
@@ -392,6 +417,7 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
+        conn.execute(_CREATE_SCANNER_CANDLE_OBSERVATIONS)
         for _idx_sql in _CREATE_BROKER_ORDER_EVENTS_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:
@@ -403,6 +429,8 @@ def _init_db_at(db_path: Path) -> None:
         for _idx_sql in _CREATE_CANDIDATE_CONTRACT_ALTERNATIVES_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS_IDX:
+            conn.execute(_idx_sql)
+        for _idx_sql in _CREATE_SCANNER_CANDLE_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         # ── Migrations ────────────────────────────────────────────────────────
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}

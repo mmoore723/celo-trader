@@ -25,7 +25,11 @@ from datetime import timedelta
 
 from trading.state import _now_et, _get_stop_event, get_user_state, set_user_risk
 from config import get_bot_state_path, atomic_write_json
-from trading.loop.audits import _run_nightly_strategy_audit_once, _run_weekly_strategy_review_once
+from trading.loop.audits import (
+    _run_nightly_strategy_audit_once,
+    _run_nightly_ticker_qualification_once,
+    _run_weekly_strategy_review_once,
+)
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -327,6 +331,7 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                         f"({_wake.strftime('%a %b %d')}). No API calls during this window.",
                     )
                     _run_nightly_strategy_audit_once(alpaca)
+                    _run_nightly_ticker_qualification_once()
                     _run_weekly_strategy_review_once(alpaca)
 
                 # Sleep up to 5 min at a time so Stop Bot stays responsive.

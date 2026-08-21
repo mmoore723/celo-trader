@@ -68,7 +68,7 @@ def snapshot_candidate_plan(context: dict | None) -> None:
 
 
 def record_router_candidate(ticker: str, signal: object, underlying_price: float | None = None) -> None:
-    """Persist a raw paper candidate and attach its opaque id to the signal."""
+    """Persist a raw observed candidate and attach its opaque id to the signal."""
     try:
         from config import get_settings
         meta = getattr(signal, "meta", None)
@@ -77,6 +77,18 @@ def record_router_candidate(ticker: str, signal: object, underlying_price: float
             setattr(signal, "meta", meta)
         if meta.get("shadow_candidate_id"):
             return
+        strategy_id = str(getattr(signal, "strategy_id", "UNKNOWN")).strip().upper()
+        # Qualification is valid only for the exact implementation which
+        # generated the setup.  Older unversioned observations intentionally
+        # remain useful for UI/audit history but cannot promote a ticker.
+        try:
+            from config.strategy_catalog import REVIEWED_STRATEGIES
+            rule = REVIEWED_STRATEGIES.get(strategy_id)
+            if rule is not None:
+                meta.setdefault("strategy_version", rule.version)
+                meta.setdefault("implementation", rule.implementation)
+        except Exception:
+            logger.debug("candidate strategy version stamp unavailable", exc_info=True)
         candidate_id = uuid4().hex
         observed = _now_et()
         observed_at = observed.isoformat()
@@ -94,7 +106,7 @@ def record_router_candidate(ticker: str, signal: object, underlying_price: float
                     underlying_entry_price, outcome_due_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    candidate_id, observed_at, ticker.upper(), str(getattr(signal, "strategy_id", "UNKNOWN")),
+                    candidate_id, observed_at, ticker.upper(), strategy_id,
                     str(getattr(signal, "direction", "unknown")), float(getattr(signal, "confidence", 0.0)),
                     str(getattr(signal, "trigger_bar", "")), str(getattr(signal, "tier", "main")),
                     get_settings().get("active_broker_account_id") or None,
@@ -184,5 +196,5 @@ def mark_candidate_observed_only(signal: object) -> None:
     resolve_candidate_from_context(
         {"strategy_meta": meta if isinstance(meta, dict) else {}},
         "observed_only", "not_approved_for_entry",
-        "Paper-only observation; this strategy was never allowed to place an order.", None,
+        "Observation only; this strategy/ticker pair was not authorized to place an order in the active account mode.", None,
     )

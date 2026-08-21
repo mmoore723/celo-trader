@@ -23,10 +23,15 @@ import router_gates as _gates
 
 from strategy_router.evaluators import ACTIVE_STRATEGIES
 from strategy_router.indicator_frame import _build_indicator_frame
-from config.strategy_catalog import is_allowed_ticker
 from trading.v2_orb_execution_profile import uses_reviewed_paid_execution_profile
 
 logger = logging.getLogger("celo_trader.strategy_router")
+
+
+def _authorized_for_order(strategy_id: object, ticker: object) -> bool:
+    from config import get_settings
+    from config.strategy_ticker_recommendations import is_user_authorized_ticker
+    return is_user_authorized_ticker(strategy_id, ticker, get_settings())
 
 
 def _candidate_key(signal: Signal) -> tuple[str, str, str]:
@@ -166,11 +171,15 @@ def route_signals(
     # window. See ACTIVE_STRATEGIES (single source of truth).
     _all_evaluators = ACTIVE_STRATEGIES
     _selected_strategies = None if _order_strategies is None else _order_strategies | _observation_only
-    evaluators = (
-        [(sid, fn) for sid, fn in _all_evaluators
-         if (_selected_strategies is None or sid in _selected_strategies)
-         and is_allowed_ticker(sid, ticker)]
-    )
+    # Execution scope and research scope are deliberately different.  The
+    # catalog allowlist remains absolute for order-facing strategies, while an
+    # observation-only strategy is allowed to evaluate another active ticker
+    # so its evidence can be measured prospectively.
+    evaluators = [
+        (sid, fn) for sid, fn in _all_evaluators
+        if (_selected_strategies is None or sid in _selected_strategies)
+        and (_authorized_for_order(sid, ticker) or sid in _observation_only)
+    ]
 
     # ── ADX trend-strength gate — skip breakout strategies in chop (< 25) ────
     # Fail-open: if ADX can't be computed (thin data), no strategies are gated.
@@ -213,7 +222,7 @@ def route_signals(
         if _selected_strategies is not None and strategy_id not in _selected_strategies:
             logger.warning("Discarding disabled injected strategy %s", strategy_id)
             continue
-        if not is_allowed_ticker(strategy_id, ticker):
+        if not _authorized_for_order(strategy_id, ticker) and strategy_id not in _observation_only:
             logger.warning("Discarding out-of-scope injected strategy %s for %s", strategy_id, ticker)
             continue
         if candidate_observer is not None:
@@ -237,7 +246,15 @@ def route_signals(
                 pass
     for strategy_id, fn in evaluators:
         try:
-            sig = fn(today, ticker=ticker)   # ticker= needed for cooldown tracking
+            if strategy_id in _observation_only and not _authorized_for_order(strategy_id, ticker):
+                from auth.context import get_current_user_id
+                from trading.cross_ticker_shadow import evaluate_bar_strategy
+                sig = evaluate_bar_strategy(
+                    strategy_id, fn, today, ticker=ticker,
+                    account_scope=get_current_user_id(),
+                )
+            else:
+                sig = fn(today, ticker=ticker)
             if sig is not None:
                 if candidate_observer is not None:
                     try:

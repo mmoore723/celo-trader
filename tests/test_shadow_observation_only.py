@@ -13,7 +13,7 @@ class ShadowObservationOnlyTests(unittest.TestCase):
             mark_candidate_observed_only(signal)
         resolve.assert_called_once_with(
             {"strategy_meta": signal.meta}, "observed_only", "not_approved_for_entry",
-            "Paper-only observation; this strategy was never allowed to place an order.", None,
+            "Observation only; this strategy/ticker pair was not authorized to place an order in the active account mode.", None,
         )
 
 

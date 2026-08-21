@@ -38,7 +38,7 @@ class ShadowObservationRouterTests(unittest.TestCase):
 
         with patch.object(router, "ACTIVE_STRATEGIES", [("V2_SPY_AFTERNOON_FVG", lambda _frame, ticker: original)]), \
              patch.object(router, "_gates", gates), patch.object(router, "compute_adx", return_value=30.0), \
-             patch.object(router, "is_allowed_ticker", return_value=True), \
+             patch.object(router, "_authorized_for_order", return_value=True), \
              patch("shadow_ledger.resolve_due_directional_outcomes", return_value=None):
             returned = router.route_signals(
                 frame, "TSLA", enabled_strategies={"V2_SPY_AFTERNOON_FVG"}, quiet=True,
@@ -69,7 +69,7 @@ class ShadowObservationRouterTests(unittest.TestCase):
             ("V2_SPY_TREND_CONT", lambda _frame, ticker: _signal("V2_SPY_TREND_CONT")),
         ]), patch.object(router, "_gates", gates), patch.object(router, "compute_adx", return_value=0.0), patch(
             "shadow_ledger.resolve_due_directional_outcomes", return_value=None,
-        ), patch.object(router, "is_allowed_ticker", return_value=True):
+        ), patch.object(router, "_authorized_for_order", return_value=True):
             returned = router.route_signals(
                 frame, "TSLA", enabled_strategies={"V2_SPY_TREND_CONT"},
                 observation_only_strategies={"V2_ORB_PULLBACK"}, quiet=True,
@@ -82,11 +82,52 @@ class ShadowObservationRouterTests(unittest.TestCase):
         self.assertEqual(["V2_ORB_PULLBACK"], resolved)
         self.assertEqual(["V2_SPY_TREND_CONT"], [signal.strategy_id for signal in returned])
 
+    def test_out_of_execution_scope_strategy_still_runs_as_shadow_only(self) -> None:
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        calls: list[tuple[str, str]] = []
+        observed: list[str] = []
+
+        def evaluate(_frame, ticker="", execution_scope=None):
+            calls.append((ticker, execution_scope))
+            return _signal("V2_SPY_TREND_CONT")
+
+        with patch.object(router, "ACTIVE_STRATEGIES", [("V2_SPY_TREND_CONT", evaluate)]), \
+             patch.object(router, "compute_adx", return_value=30.0), \
+             patch.object(router, "_authorized_for_order", return_value=False), \
+             patch("auth.context.get_current_user_id", return_value="account-a"), \
+             patch("shadow_ledger.resolve_due_directional_outcomes", return_value=None):
+            returned = router.route_signals(
+                frame, "AAPL", enabled_strategies=set(),
+                observation_only_strategies={"V2_SPY_TREND_CONT"}, quiet=True,
+                prepared_today=frame,
+                candidate_observer=lambda _ticker, signal, _price: observed.append(signal.strategy_id),
+                observation_resolver=lambda _signal: None,
+            )
+
+        self.assertEqual([("SPY", "cross_ticker_shadow:account-a:AAPL")], calls)
+        self.assertEqual(["V2_SPY_TREND_CONT"], observed)
+        self.assertEqual([], returned)
+
+    def test_out_of_execution_scope_order_strategy_remains_blocked(self) -> None:
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        calls: list[str] = []
+        with patch.object(router, "ACTIVE_STRATEGIES", [
+            ("V2_SPY_TREND_CONT", lambda _frame, ticker: calls.append(ticker) or _signal("V2_SPY_TREND_CONT")),
+        ]), patch.object(router, "compute_adx", return_value=30.0), \
+             patch.object(router, "_authorized_for_order", return_value=False):
+            returned = router.route_signals(
+                frame, "AAPL", enabled_strategies={"V2_SPY_TREND_CONT"},
+                quiet=True, prepared_today=frame,
+            )
+        self.assertEqual([], calls)
+        self.assertEqual([], returned)
+
     def test_injected_strategy_runs_without_a_dummy_bar_evaluator(self) -> None:
         frame = pd.DataFrame({"close": [100.0, 101.0]})
         injected = _signal("V2_ORB_PULLBACK")
         with patch.object(router, "ACTIVE_STRATEGIES", []), \
-             patch.object(router, "compute_adx", return_value=30.0):
+             patch.object(router, "compute_adx", return_value=30.0), \
+             patch.object(router, "_authorized_for_order", return_value=True):
             returned = router.route_signals(
                 frame, "TSLA", enabled_strategies={"V2_ORB_PULLBACK"}, quiet=True,
                 prepared_today=frame, injected_signals=[injected],

@@ -659,6 +659,22 @@ export interface StrategySettingChange {
   new_enabled: boolean;
 }
 
+export interface StrategyTickerRecommendation {
+  strategy_id: string;
+  ticker: string;
+  strategy_version: string;
+  display_name: string;
+  evidence_summary: string;
+  evidence_artifact: string;
+  metrics: Record<string, number | string | boolean | null>;
+  published_at: string;
+  decision: "paper_enabled" | "live_enabled" | "observing" | "pending";
+  paper_enabled: boolean;
+  live_enabled: boolean;
+  live_eligible: boolean;
+  account_mode: "paper" | "live";
+}
+
 // ── Chart annotations (bot-drawn overlays) ────────────────────────────────────
 // Emitted by strategy_router.py when a signal or veto fires.
 // Frontend polls GET /api/bot/annotations/{ticker} every 5 s.
@@ -830,6 +846,12 @@ export const api = {
     save: (s: AppSettings) => request<AppSettings>("/api/settings", { method: "POST", body: JSON.stringify(s) }),
     strategies: () => request<{strategies: ReviewedStrategyCatalogEntry[]}>("/api/settings/strategies"),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
+    recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),
+    setRecommendation: (strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") =>
+      request<{ok: boolean; recommendations: StrategyTickerRecommendation[]}>(
+        `/api/settings/strategies/recommendations/${encodeURIComponent(strategyId)}/${encodeURIComponent(ticker)}`,
+        { method: "POST", body: JSON.stringify({ decision }) },
+      ),
   },
   backtest: {
     start: (

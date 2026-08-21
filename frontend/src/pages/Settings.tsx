@@ -251,6 +251,15 @@ export function Settings() {
     queryKey: ["strategy-setting-history"],
     queryFn: () => api.settings.strategyHistory(12),
   });
+  const { data: strategyRecommendations } = useQuery({
+    queryKey: ["strategy-recommendations"],
+    queryFn: api.settings.recommendations,
+  });
+
+  async function decideRecommendation(strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") {
+    await api.settings.setRecommendation(strategyId, ticker, decision);
+    qc.invalidateQueries({ queryKey: ["strategy-recommendations"] });
+  }
 
   useEffect(() => {
     if (data) {
@@ -427,6 +436,51 @@ export function Settings() {
             </div>
           </details>
         )}
+      </div>
+
+      {/* Automatically qualified ticker/strategy matches */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>New strategy matches</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          The research engine may recommend an existing strategy for a new ticker. New matches only observe by default. Nobody—including an admin—can switch one on for your account.
+        </p>
+        {(strategyRecommendations?.recommendations.length ?? 0) === 0 ? (
+          <div className="rounded-lg p-3 text-xs" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)", border: "1px solid var(--border)" }}>
+            No new matches need your decision. Your current strategy choices remain exactly as set above.
+          </div>
+        ) : strategyRecommendations!.recommendations.map((recommendation) => (
+          <div key={`${recommendation.strategy_id}:${recommendation.ticker}`} className="rounded-lg p-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                  {recommendation.ticker} · {recommendation.display_name}
+                </div>
+                <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{recommendation.evidence_summary}</p>
+              </div>
+              <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ color: recommendation.paper_enabled || recommendation.live_enabled ? "var(--accent)" : "var(--ink-muted)", background: "var(--surface)" }}>
+                {recommendation.paper_enabled ? "Enabled for my paper account" : recommendation.live_enabled ? "Enabled for my live account" : recommendation.decision === "pending" ? "Your decision needed" : "Observing only"}
+              </span>
+            </div>
+            <div className="flex gap-2 mt-3">
+              {recommendation.account_mode === "paper" && <button className={`btn ${recommendation.paper_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "paper_enabled")}>
+                Enable for my paper account
+              </button>}
+              {recommendation.account_mode === "live" && recommendation.live_eligible && <button className={`btn ${recommendation.live_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => {
+                if (window.confirm(`Enable ${recommendation.display_name} on ${recommendation.ticker} for real-money trading in your account?`)) decideRecommendation(recommendation.strategy_id, recommendation.ticker, "live_enabled");
+              }}>
+                Enable for my live account
+              </button>}
+              <button className={`btn ${recommendation.decision === "observing" ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "observing")}>
+                Keep observing
+              </button>
+            </div>
+            <p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>
+              {recommendation.live_eligible
+                ? `Activation applies only to your ${recommendation.account_mode} account and does not affect any other user.`
+                : "This strategy is still under paper validation. Live activation becomes available only after it passes the platform's live-promotion review."}
+            </p>
+          </div>
+        ))}
       </div>
 
       {/* Display */}

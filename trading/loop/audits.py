@@ -12,6 +12,7 @@ import logging
 from trading.state import _now_et
 
 logger = logging.getLogger("celo_trader.trading_logic")
+_last_ticker_qualification_date: str | None = None
 
 
 def _run_nightly_strategy_audit_once(alpaca) -> None:
@@ -40,6 +41,31 @@ def _run_nightly_strategy_audit_once(alpaca) -> None:
             logger.warning("Nightly strategy audit failed (non-fatal): %s", exc)
 
     threading.Thread(target=_worker, daemon=True, name="strategy-health-audit").start()
+
+
+def _run_nightly_ticker_qualification_once() -> None:
+    """Aggregate paper and live observations once daily, without trading."""
+    import threading
+    global _last_ticker_qualification_date
+
+    today_str = _now_et().date().isoformat()
+    if _last_ticker_qualification_date == today_str:
+        return
+    _last_ticker_qualification_date = today_str
+
+    def _worker() -> None:
+        try:
+            from strategy_health.ticker_qualification_runner import run_ticker_qualification
+            payload = run_ticker_qualification()
+            logger.info(
+                "Ticker qualification complete: %s pair(s), %s recommendation(s)",
+                len(payload.get("results", [])),
+                len(payload.get("published_recommendations", [])),
+            )
+        except Exception as exc:
+            logger.warning("Nightly ticker qualification failed (non-fatal): %s", exc)
+
+    threading.Thread(target=_worker, daemon=True, name="ticker-qualification").start()
 
 
 def _run_weekly_strategy_review_once(alpaca) -> None:

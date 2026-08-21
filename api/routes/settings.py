@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 import json
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from api.models import Settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -23,6 +23,52 @@ def get_strategy_catalog_endpoint() -> dict:
 def get_strategy_setting_history(limit: int = 50) -> dict:
     from database import get_strategy_setting_changes
     return {"changes": get_strategy_setting_changes(limit)}
+
+
+class StrategyConsentPayload(BaseModel):
+    decision: str
+
+
+@router.get("/strategies/recommendations")
+def get_strategy_recommendations() -> dict:
+    from config import get_settings
+    from config.strategy_ticker_recommendations import public_recommendations
+    return {"recommendations": public_recommendations(get_settings())}
+
+
+@router.post("/strategies/recommendations/{strategy_id}/{ticker}")
+def set_strategy_recommendation_consent(strategy_id: str, ticker: str, payload: StrategyConsentPayload) -> dict:
+    from config import get_settings, save_settings
+    from config.strategy_ticker_recommendations import save_user_consent, public_recommendations
+    if payload.decision not in {"paper_enabled", "live_enabled", "observing"}:
+        raise HTTPException(400, "Decision must be paper_enabled, live_enabled, or observing")
+    settings = get_settings()
+    try:
+        consents = save_user_consent(settings, strategy_id, ticker, payload.decision)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    save_settings({"strategy_ticker_consents": consents})
+    return {"ok": True, "recommendations": public_recommendations(get_settings())}
+
+
+class PublishStrategyRecommendationPayload(BaseModel):
+    strategy_id: str
+    ticker: str
+    evidence_summary: str = Field(min_length=10)
+    evidence_artifact: str = ""
+    metrics: dict = Field(default_factory=dict)
+
+
+@router.post("/strategies/recommendations/publish")
+def publish_strategy_recommendation_endpoint(payload: PublishStrategyRecommendationPayload, request: Request) -> dict:
+    if not getattr(request.state, "is_admin", False):
+        raise HTTPException(403, "Admin access required")
+    from config.strategy_ticker_recommendations import publish_recommendation
+    try:
+        recommendation = publish_recommendation(payload.strategy_id, payload.ticker, evidence_summary=payload.evidence_summary, evidence_artifact=payload.evidence_artifact, metrics=payload.metrics)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "recommendation": recommendation}
 
 
 @router.get("", response_model=Settings)

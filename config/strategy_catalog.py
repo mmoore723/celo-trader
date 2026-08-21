@@ -200,8 +200,8 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
             "evidence_grade": rule.evidence_grade,
             "evidence_artifact": rule.evidence_artifact,
             "evidence": rule.evidence,
-            "enabled": bool(settings.get(rule.setting_key, False)) and strategy_id not in integrity_errors,
-            "integrity_errors": list(integrity_errors.get(strategy_id, ())),
+            "enabled": bool(settings.get(rule.setting_key, False)) and rule.strategy_id not in integrity_errors,
+            "integrity_errors": list(integrity_errors.get(rule.strategy_id, ())),
         }
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
     ]
@@ -249,12 +249,14 @@ def enabled_reviewed_strategy_ids(
     cannot promote an unknown one or widen its paid-evidence ticker scope.
     """
     normalized_ticker = str(ticker or "").strip().upper()
+    if normalized_ticker:
+        from config.strategy_ticker_recommendations import is_user_authorized_ticker
     return {
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
         if strategy_id not in reviewed_strategy_integrity_errors()
         and bool(settings.get(rule.setting_key, False))
-        and (not normalized_ticker or normalized_ticker in rule.tickers)
+        and (not normalized_ticker or is_user_authorized_ticker(strategy_id, normalized_ticker, settings))
         and (paper is None or paper or not rule.paper_only)
     }
 
