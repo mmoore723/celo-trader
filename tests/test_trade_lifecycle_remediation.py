@@ -16,6 +16,7 @@ from config.atomic_files import atomic_update_json
 from database.schema import _init_db_at
 from database.trades import audit_trade_lineage, close_trade, insert_trade
 from signal_journal.write import log_signal_outcome
+from trading.entry.tick import _confirmed_entry_price, _entry_order_wait_seconds
 
 
 class AtomicRuntimeStateTests(unittest.TestCase):
@@ -176,6 +177,23 @@ class LoopLifecycleTests(unittest.TestCase):
 
 
 class DurableTradeLineageTests(unittest.TestCase):
+    def test_entry_patience_does_not_starve_open_position_exits(self) -> None:
+        self.assertEqual(45, _entry_order_wait_seconds(has_open_positions=False))
+        self.assertEqual(10, _entry_order_wait_seconds(has_open_positions=True))
+
+    def test_entry_accounting_prefers_native_broker_average_fill(self) -> None:
+        self.assertEqual(
+            1.87,
+            _confirmed_entry_price({"filled_avg_price": "1.87"}, 1.95),
+        )
+        self.assertEqual(
+            1.84,
+            _confirmed_entry_price({
+                "confirmed_fill_price": 1.84,
+                "filled_avg_price": "1.87",
+            }, 1.95),
+        )
+
     def test_signal_order_fill_and_exit_are_durably_linked(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trades_paper.db"
@@ -236,6 +254,44 @@ class DurableTradeLineageTests(unittest.TestCase):
             self.assertEqual("exit-order-1", row["exit_order_id"])
             self.assertEqual(trade_id, candidate["linked_trade_id"])
             self.assertEqual("entered", candidate["final_outcome"])
+
+    def test_realized_pnl_uses_broker_fill_not_requested_exit_limit(self) -> None:
+        """A worse broker fill must be visible in both exit price and P&L."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trades_paper.db"
+            _init_db_at(path)
+            conn = sqlite3.connect(path)
+            conn.row_factory = sqlite3.Row
+            now = datetime.fromisoformat("2026-08-21T10:01:00-04:00")
+
+            with patch("database.trades.get_conn", return_value=conn):
+                trade_id = insert_trade(
+                    "SPY", "SPY260828P00760000", "put", 760, "2026-08-28",
+                    2, 2.00, now, "reviewed signal",
+                    strategy_id="V2_SPY_TREND_CONT",
+                )
+                with patch("database.trades._upsert_daily_summary"), patch(
+                    "config.get_settings", return_value={"last_known_balance": 5000.0},
+                ), patch("config.save_settings"):
+                    pnl = close_trade(
+                        trade_id,
+                        exit_price=2.40,
+                        exit_time=now,
+                        exit_reason="test_exit",
+                        confirmed_fill_price=2.20,
+                        paper=False,
+                    )
+
+            row = conn.execute(
+                "SELECT exit_price, realized_pnl FROM trades WHERE id = ?",
+                (trade_id,),
+            ).fetchone()
+            conn.close()
+
+            self.assertAlmostEqual(2.20, row["exit_price"])
+            # Gross gain is $40; live round-trip commissions are $2.60.
+            self.assertAlmostEqual(37.40, pnl)
+            self.assertAlmostEqual(37.40, row["realized_pnl"])
 
 
 if __name__ == "__main__":

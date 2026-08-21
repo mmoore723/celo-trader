@@ -1,8 +1,10 @@
-"""Paper-only candidate ledger for measuring router gates honestly.
+"""Candidate ledger for measuring router gates and order lineage honestly.
 
 It records raw strategy signals before the router's quality gates and links
-their later journal outcome.  It is deliberately observational: it never
-requests contracts, sends orders, or participates in position management.
+their later journal outcome.  This module never requests contracts or sends
+orders.  It may, however, persist the authoritative order intent built by the
+entry pipeline so the learner-facing preview and broker submission can be
+audited as one decision.
 """
 from __future__ import annotations
 
@@ -26,7 +28,9 @@ def snapshot_candidate_plan(context: dict | None) -> None:
     normal signal journal writes its final outcome.  Keep the plan snapshot on
     ``shadow_candidates`` too, so Scanner Opportunities still has the actual
     contract screen, entry idea, and exit plan that existed at that moment.
-    This is audit-only data; no order, sizing, or position code ever reads it.
+    This is audit-only persistence.  The live entry pipeline owns the in-memory
+    intent and passes that same object to the broker; this function merely
+    stores a durable copy for Scanner Opportunities and later reconciliation.
     """
     try:
         if not isinstance(context, dict):
@@ -37,7 +41,7 @@ def snapshot_candidate_plan(context: dict | None) -> None:
             return
         plan = {
             key: context[key]
-            for key in ("entry_plan", "contract_recipe", "contract_preview", "contract_selection", "contract", "planned_quantity", "exit_plan")
+            for key in ("entry_plan", "contract_recipe", "contract_preview", "contract_selection", "contract", "planned_quantity", "exit_plan", "order_intent")
             if key in context
         }
         if not plan:

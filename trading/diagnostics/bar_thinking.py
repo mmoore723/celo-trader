@@ -187,6 +187,7 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
                 "V2_ORB_PULLBACK": "TSLA Opening-Range Pullback",
                 "V2_SPY_TREND_CONT": "SPY Trend Continuation",
                 "V2_SPY_AFTERNOON_FVG": "SPY Afternoon Fair Value Gap",
+                "V2_FAILED_OR_BREAK_VWAP_REVERSION": "SPY Failed-Range Recovery",
                 "V2_TSLA_TWO_LEG_TREND_PULLBACK": "TSLA Two-Leg Trend Pullback",
             }.get(_strategy, _strategy)
 
@@ -416,4 +417,3 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
 
     except Exception as _be:
         logger.debug("_log_bar_thinking error: %s", _be)
-

@@ -1243,6 +1243,12 @@ export function LiveTrading() {
           watch: "Distinct pullback legs, the recovery between them, VWAP integrity, and the completed resumption candle.",
           manage: "The reviewed profile enters on the next option ask and measures the same contract's executable bid after 90 minutes.",
         },
+        V2_FAILED_OR_BREAK_VWAP_REVERSION: {
+          name: "SPY Failed-Range Recovery", color: "#2563eb",
+          setup: "SPY completes a meaningful opening-range break, then an opposite-color one-minute candle closes back inside before noon with room to VWAP.",
+          watch: "The fixed 9:30–9:44 range, the completed outside close, failed-break extreme, recovery close, and remaining room to session VWAP.",
+          manage: "After chart proof, one exact 7–21 DTE contract receives a recorded working limit, price ceiling, quantity, and same-contract 30-minute exit.",
+        },
       };
 
       const edu = trade?.strategy_id ? (STRAT_EDU[trade.strategy_id] ?? null) : null;

@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from research.engine.data import load_csv, resample_regular_session
 from research.engine.models import Bar, Side, Signal, Trade
@@ -12,6 +13,7 @@ from research.engine.ledger import load_trade_ledger, write_trade_ledger
 from research.engine.regime import select_regimes
 from research.engine.options import OptionQuote, OptionQuoteBook, load_option_quotes
 from research.engine.option_markouts import (
+    run_databento_cbbo_contract_selection_comparison,
     run_databento_cbbo_markouts, run_databento_cbbo_markouts_for_holds,
     run_databento_cbbo_markouts_for_labeled_signals,
     run_databento_cbbo_markouts_for_labeled_signals_and_holds,
@@ -25,7 +27,7 @@ from research.jobs.compare_paid_rsi_macd_filters import (
 )
 from research.jobs.run_paid_spy_vwap_momentum_filters import _distinct_touch_episodes
 from research.engine.exit_rules import (
-    planned_exits, planned_one_minute_dynamic_exits, planned_noise_momentum_exits,
+    planned_dynamic_exits, planned_exits, planned_one_minute_dynamic_exits, planned_noise_momentum_exits,
     planned_noise_momentum_failure_exits,
     planned_range_sweep_reclaim_exits,
 )
@@ -44,6 +46,8 @@ from research.jobs.tune_paid_spy_vwap_contexts import select_three_period_contex
 from research.jobs.assess_paid_regime_context import _label_rows, select_context
 from research.jobs.assess_paid_three_period_holds import assess_three_period_holds
 from research.jobs.compare_paid_orb_exits import RULES, select_training_rule
+from research.jobs.compare_paid_entry_limits import first_proven_fill, limit_price
+from research.jobs.compare_paid_contract_selection import signals_by_day
 from research.jobs.assess_paid_spy_range_sweep_reclaim import (
     portfolio_markouts as range_sweep_portfolio_markouts,
     select_training_variant as select_range_sweep_variant,
@@ -131,6 +135,21 @@ class _TrailingLong(_OneLong):
 
 
 class ResearchV2Tests(unittest.TestCase):
+    @patch("research.jobs.compare_paid_contract_selection._afternoon_fvg_signals")
+    def test_contract_selection_uses_reviewed_fvg_clock(self, fvg_signals) -> None:
+        expected = {date(2026, 6, 1): ("causal-fvg-signal",)}
+        fvg_signals.return_value = expected
+
+        actual = signals_by_day((), "afternoon_fvg")
+
+        self.assertEqual(expected, actual)
+        config = fvg_signals.call_args.args[1]
+        self.assertEqual(.50, config.min_gap_atr)
+
+    def test_contract_selection_rejects_unsupported_strategy_clock(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported strategy"):
+            signals_by_day((), "future_strategy")
+
     def test_range_sweep_selection_requires_positive_untouched_later_data(self) -> None:
         rows = {
             "baseline": [
@@ -717,6 +736,13 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(0.0005, build_strategy("v2_orb_pullback").config.retest_tolerance_pct)
         self.assertEqual("V2_VWAP_PULLBACK", build_strategy("vwap_pullback").strategy_id)
         self.assertEqual("V2_TREND_CONT", build_strategy("trend_continuation").strategy_id)
+        self.assertEqual(
+            "V2_TWO_LEG_TREND_PULLBACK",
+            build_strategy("two_leg_trend_pullback").strategy_id,
+        )
+        late = build_strategy("spy_two_leg_trend_pullback_late")
+        self.assertEqual("V2_TWO_LEG_TREND_PULLBACK", late.strategy_id)
+        self.assertEqual(time(10, 30), late.config.entry_start)
         self.assertEqual("V2_AFTERNOON_REVERSAL", build_strategy("afternoon_reversal").strategy_id)
         self.assertEqual("V2_GAP_FILL_RTH", build_strategy("gap_fill_rth").strategy_id)
         self.assertEqual("V2_TURTLE_SOUP_RTH", build_strategy("turtle_soup_rth").strategy_id)
@@ -784,6 +810,16 @@ class ResearchV2Tests(unittest.TestCase):
         plans = planned_one_minute_dynamic_exits(bars, signal, entry)
         self.assertIn("hybrid_stop_vwap_ema_90m", plans)
         self.assertGreaterEqual(plans["fixed_90m"].time, entry.timestamp)
+
+    def test_five_minute_dynamic_exit_includes_60_minute_control(self) -> None:
+        bars = tuple(
+            _bar(index, 100 + index, 101 + index, 99 + index, 100 + index)
+            for index in range(30)
+        )
+        signal = Signal("two_leg", Side.LONG, bars[14].timestamp, 114, 98, 130)
+        entry = bars[15]
+        plans = planned_dynamic_exits(bars, signal, entry)
+        self.assertEqual(entry.timestamp + timedelta(minutes=60), plans["fixed_60m"].time)
 
     def test_one_minute_exit_names_non_default_cap_truthfully(self) -> None:
         bars = tuple(
@@ -966,6 +1002,53 @@ class ResearchV2Tests(unittest.TestCase):
         self.assertEqual(5.1, results[0].entry_ask)
         self.assertEqual(5.4, results[0].exit_bid)
         self.assertAlmostEqual(5.8824, results[0].return_pct, places=4)
+
+    def test_contract_selection_comparison_uses_one_signal_and_distinct_rankings(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index)
+                        for index in range(10)]
+        ]
+        signal = _OneLong().evaluate(bars[:2])
+        assert signal is not None
+        entry_time = bars[2].timestamp
+        exit_time = entry_time + timedelta(minutes=30)
+        near = "TSLA  260109C00103000"
+        liquid_14d = "TSLA  260116C00104000"
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{entry_time.isoformat()},{near},4.80,5.00\n"
+                f"{entry_time.isoformat()},{liquid_14d},5.00,5.04\n"
+                f"{exit_time.isoformat()},{near},5.30,5.50\n"
+                f"{exit_time.isoformat()},{liquid_14d},5.50,5.54\n",
+                encoding="utf-8",
+            )
+            results = run_databento_cbbo_contract_selection_comparison(
+                bars, [source], [signal], "TSLA", hold_minutes=30,
+            )
+
+        self.assertEqual(near, results["nearest_expiry"][0].contract_symbol)
+        self.assertEqual(near, results["closest_strike"][0].contract_symbol)
+        self.assertEqual(liquid_14d, results["tightest_spread"][0].contract_symbol)
+        self.assertEqual(liquid_14d, results["target_14_dte"][0].contract_symbol)
+        self.assertEqual(14, results["target_14_dte"][0].dte)
+        self.assertAlmostEqual(9.1270, results["target_14_dte"][0].return_pct, places=4)
+
+    def test_contract_selection_comparison_rejects_unknown_policy_before_scan(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index)
+                        for index in range(3)]
+        ]
+        signal = _OneLong().evaluate(bars[:2])
+        assert signal is not None
+        with self.assertRaisesRegex(ValueError, "unknown contract selection policy"):
+            run_databento_cbbo_contract_selection_comparison(
+                bars, [Path("must-not-open.csv")], [signal], "TSLA", hold_minutes=30,
+                policies=("future_winner",),  # type: ignore[arg-type]
+            )
 
     def test_multi_hold_stream_matches_three_single_hold_streams(self) -> None:
         bars = [
@@ -1928,6 +2011,22 @@ class ResearchV2Tests(unittest.TestCase):
         kept = non_overlapping_rows(rows)
         self.assertEqual(["2026-01-02T10:00:00", "2026-01-02T11:00:00"],
                          [row["entry_time"] for row in kept])
+
+    def test_entry_limit_uses_each_signal_own_quote_window(self) -> None:
+        first = datetime(2026, 1, 2, 10, 0, tzinfo=UTC)
+        quotes = [
+            (first, 1.00, 1.20),
+            (first + timedelta(minutes=10), 2.00, 2.20),
+            (first + timedelta(minutes=11), 1.90, 2.10),
+        ]
+        fill = first_proven_fill(quotes, 0.50, 1, first + timedelta(minutes=10))
+        self.assertEqual((first + timedelta(minutes=11), 2.10), fill)
+
+    def test_entry_limit_does_not_assume_midpoint_fill(self) -> None:
+        first = datetime(2026, 1, 2, 10, 0, tzinfo=UTC)
+        quotes = [(first, 1.00, 1.20), (first + timedelta(minutes=1), 1.05, 1.15)]
+        self.assertIsNone(first_proven_fill(quotes, 0.50, 1, first))
+        self.assertEqual(1.10, limit_price(1.00, 1.20, 0.50))
 
 
 if __name__ == "__main__":

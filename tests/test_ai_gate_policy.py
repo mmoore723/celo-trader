@@ -13,6 +13,7 @@ class AiGatePolicyTests(unittest.TestCase):
         for strategy_id in (
             "V2_ORB_PULLBACK", "V2_SPY_TREND_CONT",
             "V2_SPY_AFTERNOON_FVG", "V2_TSLA_TWO_LEG_TREND_PULLBACK",
+            "V2_FAILED_OR_BREAK_VWAP_REVERSION",
         ):
             self.assertFalse(ai_decision_is_enforced(strategy_id))
 

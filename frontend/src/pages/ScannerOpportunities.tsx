@@ -16,6 +16,7 @@ import { collapseOpportunityEpisodes, lifecycleCopy, opportunityLifecycle } from
 const STRATEGY_NAMES: Record<string, string> = {
   V2_ORB_PULLBACK: "Opening-Range Pullback",
   V2_SPY_TREND_CONT: "SPY Trend Continuation", V2_SPY_AFTERNOON_FVG: "SPY Afternoon FVG",
+  V2_FAILED_OR_BREAK_VWAP_REVERSION: "SPY Failed-Range Recovery",
   V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
 };
 
@@ -167,6 +168,7 @@ function ContractRecipe({ entry }: { entry: ScannerOpportunity }) {
 }
 
 function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
+  const intent = entry.order_intent;
   const isCall = ["bullish", "long", "call"].includes(String(entry.direction ?? "").toLowerCase());
   const finalContract = entry.trade?.contract_symbol ? {
     symbol: entry.trade.contract_symbol, strike: entry.trade.strike, expiry: entry.trade.expiry,
@@ -177,9 +179,16 @@ function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
   const contract = hasFinalContract ? finalContract : preview;
   const hasContract = hasFinalContract || hasPreview;
   const hasMeasuredResult = entry.directional_move_pct != null;
-  const chosenQuantity = entry.trade?.contracts ?? entry.planned_quantity ?? preview?.planned_contracts;
-  const plannedEntry = entry.entry_plan?.estimated_entry_price ?? entry.trade?.entry_price ?? (hasFinalContract ? entry.contract?.ask : preview?.planned_entry_price ?? preview?.ask);
-  const estimate = plannedEntry != null && chosenQuantity != null ? plannedEntry * chosenQuantity * 100 : null;
+  const chosenQuantity = entry.trade?.contracts ?? intent?.quantity ?? entry.planned_quantity ?? preview?.planned_contracts;
+  const firstLimit = entry.trade?.entry_price ?? intent?.confirmed_fill_price ?? intent?.working_limit
+    ?? preview?.working_limit ?? preview?.planned_entry_price
+    ?? (hasFinalContract ? entry.contract?.ask : preview?.ask)
+    ?? entry.entry_plan?.estimated_entry_price;
+  const stepLimit = intent?.step_limit ?? preview?.step_limit;
+  const maximumEntry = intent?.maximum_entry_price ?? preview?.maximum_entry_price
+    ?? entry.entry_plan?.estimated_entry_price ?? firstLimit;
+  const estimate = maximumEntry != null && chosenQuantity != null
+    ? maximumEntry * chosenQuantity * 100 : null;
   const exitText = entry.exit_plan?.summary || entry.trade?.exit_reason || "The bot did not reach exit planning before this signal stopped.";
   const setupDetails = Object.entries(entry.setup_details ?? {});
   const checklist = manualChecklist(entry);
@@ -229,7 +238,7 @@ function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
             </div>
           </section>
           <section className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-            <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Suggested option contract</p><span className="text-xs" style={{ color: "var(--ink-muted)" }}>{hasContract ? "Recorded at signal time" : "Not selected"}</span></div>
+            <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Suggested option contract</p><span className="text-xs" style={{ color: "var(--ink-muted)" }}>{intent?.intent_id ? `Execution plan: ${String(intent.status || "ready").replace(/_/g, " ")}` : hasContract ? "Recorded at signal time" : "Not selected"}</span></div>
             {hasContract && contract ? <>
               <p className="mt-2 text-base font-semibold break-all" style={{ color: "var(--accent)" }}>{contract.symbol || `${entry.ticker} ${entry.option_type?.toUpperCase()} ${contract.strike ?? ""}`}</p>
               <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 text-sm">
@@ -242,7 +251,13 @@ function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
                 <div><p style={{ color: "var(--ink-muted)" }}>Volume</p><strong>{integer(contract.volume)}</strong></div>
                 <div><p style={{ color: "var(--ink-muted)" }}>Open interest</p><strong>{integer(contract.open_interest)}</strong></div>
               </div>
-              <div className="mt-4 pt-3 grid grid-cols-2 gap-4" style={{ borderTop: "1px solid var(--border)" }}><div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Planned option entry</p><p className="text-lg font-semibold">{money(plannedEntry)}</p></div><div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Estimated total cost</p><p className="text-lg font-semibold">{money(estimate ?? preview?.estimated_position_cost)}</p></div></div>
+              <div className="mt-4 pt-3 grid grid-cols-2 sm:grid-cols-4 gap-4" style={{ borderTop: "1px solid var(--border)" }}>
+                <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{entry.trade?.entry_price != null ? "Actual broker fill" : "First limit to try"}</p><p className="text-lg font-semibold">{money(firstLimit)}</p></div>
+                <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Reprice limit</p><p className="text-lg font-semibold">{stepLimit == null ? "No reprice" : money(stepLimit)}</p></div>
+                <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Never pay above</p><p className="text-lg font-semibold" style={{ color: "var(--negative)" }}>{money(maximumEntry)}</p></div>
+                <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Max reserved cost</p><p className="text-lg font-semibold">{money(estimate ?? preview?.estimated_position_cost)}</p></div>
+              </div>
+              {intent?.intent_id && <div className="mt-3 rounded-lg p-3 text-xs" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface))", border: "1px solid var(--border)" }}><strong style={{ color: "var(--ink)" }}>Exact broker plan:</strong><span style={{ color: "var(--ink-muted)" }}> try {money(intent.working_limit)}{intent.step_limit != null ? `, may reprice to ${money(intent.step_limit)}` : ", no reprice"}, never exceed {money(intent.maximum_entry_price)} · Intent {intent.intent_id.slice(0, 8)}</span></div>}
             </> : <div className="mt-3 rounded-lg p-3" style={{ background: "var(--warning-bg)" }}><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>No contract was selected.</p><p className="mt-1 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>{entry.contract_selection?.reason ? `Contract screen stopped at: ${entry.contract_selection.reason.replace(/_/g, " ")}.` : "The setup stopped before a real strike and quote were recorded. The bot will never fabricate these fields."}</p></div>}
           </section>
         </div>

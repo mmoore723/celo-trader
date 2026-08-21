@@ -113,7 +113,45 @@ class _ExecutionQuoteBroker(AlpacaOrdersMixin):
         return {"id": "quoted-order", "status": "filled", "filled_avg_price": "1.30"}
 
 
+class _BoundedWorkingBroker(AlpacaOrdersMixin):
+    base = "https://paper-api.alpaca.markets"
+
+    def __init__(self) -> None:
+        self.get_calls = 0
+
+    def _get(self, _url: str) -> dict:
+        self.get_calls += 1
+        # Five working polls, then cancellation confirmation.
+        return {
+            "status": "new" if self.get_calls <= 5 else "canceled",
+            "filled_qty": "0",
+        }
+
+    def cancel_order(self, _order_id: str) -> bool:
+        return True
+
+
 class BrokerOrderExecutionTests(unittest.TestCase):
+    def test_entry_honors_custom_bounded_working_window(self) -> None:
+        broker = _BoundedWorkingBroker()
+        with patch("config.get_settings", return_value={"paper_trading": True}), patch(
+            "broker.alpaca_orders.time.sleep"
+        ), patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker._wait_for_fill(
+                "bounded-entry", max_wait=5, limit_price=1.25,
+                side="buy", symbol="SPY260821C00780000", qty=1,
+                position_intent="buy_to_open", attempt_id="bounded-intent",
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(6, broker.get_calls)
+        self.assertTrue(any(
+            call.kwargs.get("event_type") == "entry_expired_no_fill"
+            for call in record_flow.call_args_list
+        ))
+
     def test_entry_uses_alpaca_quote_and_respects_price_ceiling(self) -> None:
         broker = _ExecutionQuoteBroker()
         with patch("broker.alpaca_orders._record_flow"), patch(
@@ -123,12 +161,16 @@ class BrokerOrderExecutionTests(unittest.TestCase):
                 symbol="SPY260821C00780000", qty=2, side="buy",
                 order_type="limit", limit_price=1.10, step_to_price=1.15,
                 max_acceptable_price=1.28, position_intent="buy_to_open",
+                order_context={"intent_id": "intent-123", "candidate_id": "candidate-456"},
             )
 
         self.assertEqual("filled", result["status"])
         self.assertEqual("1.25", broker.posted[0]["limit_price"])
         self.assertEqual(1.28, broker.wait_kwargs["step_to_price"])
         self.assertFalse(broker.wait_kwargs["allow_market_fallback"])
+        self.assertEqual("celo-intent-123", broker.posted[0]["client_order_id"])
+        self.assertEqual("intent-123", result["order_intent_id"])
+        self.assertTrue(result["execution_attempt_id"])
 
     def test_price_step_follows_alpaca_replacement_order_id(self) -> None:
         broker = _ReplacementFillBroker()

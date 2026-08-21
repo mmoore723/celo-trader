@@ -18,7 +18,7 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         from strategy_router.evaluators import ACTIVE_STRATEGIES
 
         self.assertEqual(
-            ["V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG"],
+            ["V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION"],
             [strategy_id for strategy_id, _evaluate in ACTIVE_STRATEGIES],
         )
         self.assertEqual({"V2_ORB_PULLBACK"}, strategy_ids_for_source("live_retouch"))
@@ -34,7 +34,7 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
     def test_enabled_registry_enforces_ticker_and_paper_scope(self) -> None:
         settings = {rule.setting_key: True for rule in REVIEWED_STRATEGIES.values()}
         self.assertEqual(
-            {"V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG"},
+            {"V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION"},
             enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=True),
         )
         self.assertEqual(set(), enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=False))
@@ -46,6 +46,8 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         self.assertFalse(is_allowed_ticker("V2_SPY_TREND_CONT", "QQQ"))
         self.assertTrue(is_allowed_ticker("V2_SPY_AFTERNOON_FVG", "SPY"))
         self.assertFalse(is_allowed_ticker("V2_SPY_AFTERNOON_FVG", "TSLA"))
+        self.assertTrue(is_allowed_ticker("V2_FAILED_OR_BREAK_VWAP_REVERSION", "SPY"))
+        self.assertFalse(is_allowed_ticker("V2_FAILED_OR_BREAK_VWAP_REVERSION", "TSLA"))
 
     def test_scanner_list_is_preserved_and_covered_for_enabled_rules(self) -> None:
         self.assertEqual(
@@ -60,6 +62,9 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
 
     def test_spy_afternoon_fvg_uses_reviewed_30_minute_exit(self) -> None:
         self.assertEqual(30, REVIEWED_STRATEGIES["V2_SPY_AFTERNOON_FVG"].exit_minutes)
+
+    def test_spy_failed_range_recovery_uses_reviewed_30_minute_exit(self) -> None:
+        self.assertEqual(30, REVIEWED_STRATEGIES["V2_FAILED_OR_BREAK_VWAP_REVERSION"].exit_minutes)
 
     def test_registry_is_versioned_and_references_real_evidence(self) -> None:
         root = Path(__file__).resolve().parents[1]

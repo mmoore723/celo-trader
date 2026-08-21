@@ -13,6 +13,7 @@ _COLORS: dict[str, str] = {
     "V2_ORB_PULLBACK": "#eab308",
     "V2_SPY_TREND_CONT": "#8b5cf6",
     "V2_SPY_AFTERNOON_FVG": "#06b6d4",
+    "V2_FAILED_OR_BREAK_VWAP_REVERSION": "#8b5cf6",
     "V2_TSLA_TWO_LEG_TREND_PULLBACK": "#3b82f6",
     "signal_bullish": "#22c55e",   # green  — entry marker
     "signal_bearish": "#ef4444",   # red    — entry marker (put)

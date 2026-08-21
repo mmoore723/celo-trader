@@ -266,6 +266,29 @@ _CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_candidate_option_quote_time ON candidate_option_quote_observations(observed_at);",
 ]
 
+# Alternative eligible contracts considered by the reviewed selector.  These
+# are shadow measurements only and are never read by the order path.
+_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES = """
+CREATE TABLE IF NOT EXISTS candidate_contract_alternatives (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id     TEXT    NOT NULL,
+    contract_symbol  TEXT    NOT NULL,
+    observed_at      TEXT    NOT NULL,
+    observation_kind TEXT    NOT NULL, -- entry | mark_30m | mark_60m | mark_90m
+    bid              REAL,
+    ask              REAL,
+    mid              REAL,
+    policy_json      TEXT,
+    source           TEXT    NOT NULL,
+    FOREIGN KEY(candidate_id) REFERENCES shadow_candidates(candidate_id),
+    UNIQUE(candidate_id, contract_symbol, observation_kind)
+);
+"""
+_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_candidate_contract_alt_due ON candidate_contract_alternatives(candidate_id, observation_kind);",
+    "CREATE INDEX IF NOT EXISTS idx_candidate_contract_alt_symbol ON candidate_contract_alternatives(contract_symbol, observed_at);",
+]
+
 # shadow_candidates — paper-only evidence for every strategy signal that the
 # live router actually evaluated, including those later rejected by a gate.
 # This is an audit ledger, never an order queue: no execution code may read it
@@ -367,6 +390,7 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_SHADOW_CANDIDATES)
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
+        conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
         for _idx_sql in _CREATE_BROKER_ORDER_EVENTS_IDX:
             conn.execute(_idx_sql)
@@ -375,6 +399,8 @@ def _init_db_at(db_path: Path) -> None:
         for _idx_sql in _CREATE_SHADOW_CANDIDATES_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS_IDX:
+            conn.execute(_idx_sql)
+        for _idx_sql in _CREATE_CANDIDATE_CONTRACT_ALTERNATIVES_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)

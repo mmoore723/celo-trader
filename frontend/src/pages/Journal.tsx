@@ -549,6 +549,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   V2_SPY_TREND_CONT: "SPY Trend Continuation",
   V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
   V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
+  V2_FAILED_OR_BREAK_VWAP_REVERSION: "SPY Failed-Range Recovery",
 };
 const ALL_STRATEGIES = Object.keys(STRATEGY_LABELS);
 const strategyLabel = (strategyId?: string | null) => strategyId

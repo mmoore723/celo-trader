@@ -265,7 +265,9 @@ class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
                     "underlying_price": 333.12, "symbol": "TSLA260821C00335000",
                     "strike": 335.0, "expiry": "2026-08-21", "bid": 2.10, "ask": 2.20,
                     "volume": 1136, "open_interest": 1633,
-                    "planned_entry_price": 2.31, "planned_contracts": 1,
+                    "planned_entry_price": 2.20, "working_limit": 2.20,
+                    "step_limit": None, "maximum_entry_price": 2.31,
+                    "planned_contracts": 1,
                     "estimated_position_cost": 231.0,
                 },
                 "exit_plan": {"summary": "Hold the same selected contract for 90 minutes, then exit at the executable bid."},
@@ -312,7 +314,10 @@ class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
         self.assertEqual("selected", preview["status"])
         self.assertEqual("TSLA260821C00335000", preview["symbol"])
         self.assertEqual(335.0, preview["strike"])
-        self.assertEqual(2.31, preview["planned_entry_price"])
+        self.assertEqual(2.20, preview["planned_entry_price"])
+        self.assertEqual(2.20, preview["working_limit"])
+        self.assertIsNone(preview["step_limit"])
+        self.assertEqual(2.31, preview["maximum_entry_price"])
         self.assertEqual(1, preview["planned_contracts"])
         self.assertEqual(1136, preview["volume"])
         self.assertEqual(1633, preview["open_interest"])
@@ -335,7 +340,9 @@ class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
                     "contract_preview": {
                         "status": "selected", "symbol": "TSLA260821C00335000", "strike": 335.0,
                         "expiry": "2026-08-21", "bid": 2.10, "ask": 2.20,
-                        "planned_entry_price": 2.31, "planned_contracts": 1,
+                        "planned_entry_price": 2.20, "working_limit": 2.20,
+                        "step_limit": None, "maximum_entry_price": 2.31,
+                        "planned_contracts": 1,
                     },
                     "exit_plan": {"summary": "Exit after 90 minutes at the executable bid."},
                 },

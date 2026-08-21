@@ -46,6 +46,16 @@ class V2OrbPaperContractTests(unittest.TestCase):
         self.assertEqual("TSLA_NEAR", contract["symbol"])
         self.assertEqual(7, info["selected_dte"])
         self.assertEqual("v2_orb_paid_tsla_near_money_otm_v1", contract["selection_model"])
+        self.assertEqual(2, info["eligible_contract_count"])
+        leaderboard = info["shadow_contract_leaderboard"]
+        self.assertEqual("TSLA_NEAR", leaderboard[0]["symbol"])
+        self.assertIn("reviewed_nearest_expiry_otm", leaderboard[0]["policy_winner_for"])
+        policies = {policy for row in leaderboard for policy in row["policy_winner_for"]}
+        self.assertEqual({
+            "reviewed_nearest_expiry_otm", "tightest_spread", "lowest_ask",
+            "highest_open_interest", "highest_volume", "closest_otm_strike",
+            "closest_to_14_dte",
+        }, policies)
 
     def test_rejects_non_tsla_and_wide_spread(self) -> None:
         expiry = (date.today() + timedelta(days=7)).isoformat()

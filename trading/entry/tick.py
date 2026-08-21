@@ -36,6 +36,7 @@ import threading
 from pathlib import Path
 from datetime import datetime, date, timedelta
 from typing import Optional, Tuple
+from uuid import uuid4
 
 import pandas as pd
 import pytz as _pytz
@@ -74,6 +75,27 @@ from database import (
 from signal_journal import log_signal_outcome as _log_journal
 from alerts import send_alert
 from tax_engine import record_sweep
+
+
+def _confirmed_entry_price(order: dict, fallback_ask: float) -> float:
+    """Return the broker's actual entry fill before any planned quote fallback."""
+    return float(
+        order.get("confirmed_fill_price")
+        or order.get("filled_avg_price")
+        or fallback_ask
+    )
+
+
+def _entry_order_wait_seconds(*, has_open_positions: bool) -> int:
+    """Bound entry patience without starving existing-position exits.
+
+    The scanner and position manager share one per-user loop.  A long,
+    synchronous entry wait is acceptable while flat, but while another trade
+    is open it would postpone stop/trailing-exit evaluation.  Give a flat
+    account most of the next one-minute candle; otherwise return control after
+    ten seconds so the next management pass happens promptly.
+    """
+    return 10 if has_open_positions else 45
 
 # ── State / shared globals (from state.py) ────────────────────────────────
 from trading.state import (
@@ -468,7 +490,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     allowed, reason = _risk.can_trade(balance, has_open_position=False, now=_now_et())
     if collection_only:
         # Continue to route and record candidates, even if live-entry guards
-        # would have blocked an order.  No execution path is enabled below.
+        # would have blocked an order.  The authoritative intent does not exist
+        # yet; it is resolved at the later collection-only execution gate.
         allowed, reason = True, "maintenance_collection_only"
     if not allowed:
         logger.debug("Trading blocked: %s", reason)
@@ -906,6 +929,44 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         },
     }
 
+    # SPY Trend Continuation and Afternoon FVG compete for the same SPY
+    # position slot. Chronological paid-quote portfolio research selected
+    # preserving that slot for FVG from 13:45 through 15:00 ET. This is not a
+    # daily trade cap and does not affect any other ticker or strategy.
+    from trading.portfolio_policy import reviewed_portfolio_entry_policy
+    _portfolio_decision = reviewed_portfolio_entry_policy(
+        ticker=ticker,
+        strategy_id=strategy_id,
+        now_et=_now_et(),
+        settings=settings,
+    )
+    if not _portfolio_decision.allowed:
+        _opportunity_context = _US["scanner_opportunity_context"]["context"]
+        if isinstance(_opportunity_context, dict):
+            _opportunity_context["portfolio_policy"] = {
+                "status": "reserved",
+                "reason_code": _portfolio_decision.reason_code,
+                "reason_detail": _portfolio_decision.reason_detail,
+            }
+        log_event(
+            "INFO",
+            "trading_logic",
+            f"🟡 [{ticker}] {strategy_id} skipped — "
+            f"{_portfolio_decision.reason_detail}",
+        )
+        _log_journal(
+            ticker,
+            strategy_id,
+            direction,
+            _top.confidence,
+            outcome="blocked",
+            reason_code=_portfolio_decision.reason_code,
+            reason_detail=_portfolio_decision.reason_detail,
+            context=_opportunity_context,
+            tier=_signal_tier,
+        )
+        return
+
     # ── Manual-trade contract preview (display only; never an order) ─────────
     # Scanner Opportunities is also a learning/manual-review surface.  A
     # router gate used to stop a signal *before* contract selection, leaving a
@@ -959,11 +1020,25 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "illiquid_cost": _preview_info.get("illiquid_cost"),
             "illiquid_symbol": _preview_info.get("illiquid_symbol"),
             "liquidity_detail": _preview_info.get("illiquid_fail"),
+            "eligible_contract_count": _preview_info.get("eligible_contract_count"),
+            "shadow_contract_leaderboard": _preview_info.get("shadow_contract_leaderboard", []),
         }
         if _preview_contract:
+            _preview_bid = float(_preview_contract.get("bid") or 0.0)
             _preview_ask = float(_preview_contract.get("ask") or 0.0)
-            _preview_eff_entry = _risk.slippage_adjusted_entry(_preview_ask)
-            _preview_contracts = _risk.calculate_contracts(_preview_eff_entry, balance)
+            _preview_midpoint = (
+                round((_preview_bid + _preview_ask) / 2.0, 4)
+                if _preview_bid > 0 else _preview_ask
+            )
+            _preview_working, _preview_step = entry_limit_prices(
+                ask=_preview_ask,
+                midpoint=_preview_midpoint,
+                v2_paper_pilot=_v2_paid_parity,
+            )
+            _preview_max_entry = _risk.slippage_adjusted_entry(_preview_ask)
+            # Size against the hard ceiling even though the order may begin at
+            # a better price. A later reprice must not exceed approved risk.
+            _preview_contracts = _risk.calculate_contracts(_preview_max_entry, balance)
             if _signal_tier == "opportunity" and _preview_contracts > 1:
                 _preview_contracts = max(1, _preview_contracts // 2)
             # Mirror the same notional ceiling later used by the order path.
@@ -987,9 +1062,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 "volume": _preview_contract.get("volume"),
                 "open_interest": _preview_contract.get("open_interest"),
                 "selection_model": _preview_contract.get("selection_model"),
-                "planned_entry_price": round(_preview_eff_entry, 4),
+                "planned_entry_price": round(_preview_working, 4),
+                "working_limit": round(_preview_working, 4),
+                "step_limit": round(_preview_step, 4) if _preview_step is not None else None,
+                "maximum_entry_price": round(_preview_max_entry, 4),
                 "planned_contracts": int(_preview_contracts),
-                "estimated_position_cost": round(_preview_eff_entry * _preview_contracts * 100, 2),
+                "estimated_position_cost": round(_preview_max_entry * _preview_contracts * 100, 2),
             })
         _opportunity_context["contract_preview"] = _preview
         # Save the plan now—not only when a later gate produces a journal row.
@@ -1637,10 +1715,68 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                 # else: multiplier didn't actually change the integer contract
                 # count (e.g. 2c × 0.9 still floors to 2) — nothing to apply.
 
+    # ── Authoritative order intent ────────────────────────────────────────────
+    # The earlier contract preview is explanatory and may be captured before
+    # every gate has cleared.  This is the actual executable decision: exact
+    # OCC contract, final quantity, bounded entry prices, and exit plan.  The
+    # SAME intent is persisted for the UI and passed to Alpaca below.
+    _order_mid, _order_ask = entry_limit_prices(
+        ask=ask_price, midpoint=_c_mid, v2_paper_pilot=_v2_paid_parity,
+    )
+    _candidate_id = None
+    if isinstance(_opportunity_context, dict):
+        _candidate_meta = _opportunity_context.get("strategy_meta")
+        if isinstance(_candidate_meta, dict):
+            _candidate_id = _candidate_meta.get("shadow_candidate_id")
+        _intent_now = _now_et()
+        _order_intent = {
+            "intent_id": uuid4().hex,
+            "status": "ready",
+            "created_at": _intent_now.isoformat(),
+            "expires_at": (_intent_now + timedelta(minutes=2)).isoformat(),
+            "candidate_id": _candidate_id,
+            "ticker": ticker,
+            "strategy_id": _US.get("last_strategy_id", strategy_id),
+            "direction": direction,
+            "option_type": opt_type,
+            "contract_symbol": contract.get("symbol"),
+            "strike": contract.get("strike"),
+            "expiry": contract.get("expiry"),
+            "quote_source": "tradier_chain",
+            "quote_bid": round(float(_c_bid), 4),
+            "quote_ask": round(float(_c_ask), 4),
+            "working_limit": round(float(_order_mid), 4),
+            "step_limit": round(float(_order_ask), 4) if _order_ask is not None else None,
+            "maximum_entry_price": round(float(eff_entry), 4),
+            "quantity": int(n_contracts),
+            "estimated_notional": round(float(eff_entry) * int(n_contracts) * 100, 2),
+            "rr_ratio": rr_audit.get("R_R_Ratio"),
+            "exit_plan": _opportunity_context.get("exit_plan"),
+        }
+        _opportunity_context["order_intent"] = _order_intent
+        try:
+            from shadow_ledger import snapshot_candidate_plan
+            snapshot_candidate_plan(_opportunity_context)
+        except Exception:
+            logger.debug("authoritative order intent snapshot failed for %s", ticker, exc_info=True)
+    else:
+        _order_intent = {
+            "intent_id": uuid4().hex,
+            "status": "ready",
+            "candidate_id": None,
+        }
+
     # ── Signal-only mode gate ─────────────────────────────────────────────────
     # All quality checks passed. If signal_only_mode is on, broadcast the alert
     # but skip execution — user enters the trade manually in their broker.
     if collection_only:
+        _order_intent["status"] = "maintenance_observed_only"
+        _order_intent["resolved_at"] = _now_et().isoformat()
+        if isinstance(_opportunity_context, dict):
+            try:
+                snapshot_candidate_plan(_opportunity_context)
+            except Exception:
+                logger.debug("collection-only intent snapshot failed for %s", ticker, exc_info=True)
         log_event("INFO", "trading_logic",
                   f"🔬 [{ticker}] Research record only — maintenance prevents every order and exit.")
         # The scanner reached a complete, actionable plan, but maintenance
@@ -1655,6 +1791,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         return
 
     if settings.get("signal_only_mode", False):
+        _order_intent["status"] = "signal_only"
+        _order_intent["resolved_at"] = _now_et().isoformat()
+        if isinstance(_opportunity_context, dict):
+            try:
+                snapshot_candidate_plan(_opportunity_context)
+            except Exception:
+                logger.debug("signal-only intent snapshot failed for %s", ticker, exc_info=True)
         _s1_disp = round(eff_entry * 1.5, 2)
         log_event("INFO", "trading_logic",
                   f"📡 [{ticker}] MANUAL SIGNAL — {opt_type.upper()} "
@@ -1680,6 +1823,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # by ALPACA_BASE_URL in .env (paper-api.alpaca.markets vs api.alpaca.markets).
     _entry_key = (contract["symbol"], _now_et().strftime("%H:%M"))
     if _US.get("_last_order_key") == _entry_key:
+        _order_intent["status"] = "duplicate_blocked"
+        _order_intent["resolved_at"] = _now_et().isoformat()
+        if isinstance(_opportunity_context, dict):
+            try:
+                snapshot_candidate_plan(_opportunity_context)
+            except Exception:
+                logger.debug("duplicate-blocked intent snapshot failed for %s", ticker, exc_info=True)
         logger.warning(
             "Duplicate order blocked — same contract+minute as last order: %s",
             contract["symbol"],
@@ -1696,9 +1846,6 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # The V2 paid study bought at ask, so its paper cohort crosses directly at
     # ask instead.  Otherwise a favorable midpoint fill could be mislabeled as
     # confirmation of the historical ask-to-bid evidence.
-    _order_mid, _order_ask = entry_limit_prices(
-        ask=ask_price, midpoint=_c_mid, v2_paper_pilot=_v2_paid_parity,
-    )
     _spread_save = round(((_order_ask or _order_mid) - _order_mid) * n_contracts * 100, 2)
     if _v2_paid_parity:
         log_event("INFO", "order",
@@ -1709,6 +1856,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                   f"💡 [{ticker}] Limit order at mid ${_order_mid:.2f} "
                   f"(ask ${_order_ask:.2f}) — potential saving ${_spread_save:.2f} "
                   f"on {n_contracts} contract(s). Will step up to ask if not filled in 5s.")
+    _entry_wait_seconds = _entry_order_wait_seconds(
+        has_open_positions=bool(open_trades),
+    )
+    _order_intent["working_window_seconds"] = _entry_wait_seconds
     order = alpaca.place_option_order(
         symbol          = contract["symbol"],
         qty             = n_contracts,
@@ -1719,14 +1870,26 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         max_acceptable_price = eff_entry,
         allow_market_fallback = False,
         position_intent = "buy_to_open",
+        # Rest the exact analyzed contract through most of the next one-minute
+        # candle. It may step toward, but never above, the approved ceiling.
+        max_wait_seconds = _entry_wait_seconds,
         order_context   = {
             "ticker": ticker,
             "strategy_id": _US.get("last_strategy_id", strategy_id),
+            "candidate_id": _candidate_id,
+            "intent_id": _order_intent["intent_id"],
         },
     )
 
     # FIX S1: Only record trade if order actually filled
     if order is None:
+        _order_intent["status"] = "price_not_reached"
+        _order_intent["resolved_at"] = _now_et().isoformat()
+        try:
+            from shadow_ledger import snapshot_candidate_plan
+            snapshot_candidate_plan(_opportunity_context)
+        except Exception:
+            logger.debug("unfilled order intent snapshot failed for %s", ticker, exc_info=True)
         logger.error(
             "order_not_recorded",
             extra={
@@ -1739,16 +1902,33 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         )
         _log_journal(
             ticker, strategy_id, direction, _top.confidence,
-            outcome="blocked", reason_code="broker_fill_unconfirmed",
-            reason_detail="The broker did not confirm a fill, so no position was recorded.",
+            # This is a deliberate no-chase expiry, not a broker failure or a
+            # strategy gate.  Keep the lifecycle stopped because no position
+            # exists, but preserve the true execution reason for the UI and
+            # fill-quality scorecard.
+            outcome="blocked", reason_code="entry_price_not_reached",
+            reason_detail=(
+                f"The exact analyzed contract rested at the approved limit for "
+                f"{_entry_wait_seconds} seconds, "
+                "but the market never offered a fill at or below the maximum entry price."
+            ),
             context=_opportunity_context, tier=_signal_tier,
         )
         return
 
-    # Use `or ask_price` (not dict.get default) so that a None confirmed_fill_price
-    # (returned by paper_assumed_fill path in _wait_for_fill) also falls back to ask.
-    confirmed_price = order.get("confirmed_fill_price") or ask_price
+    # Prefer the broker's actual average fill. Some adapters provide the
+    # normalized confirmed field, while others return Alpaca's native
+    # `filled_avg_price`. Only fall back to the analyzed ask when neither is
+    # present, so journal P&L cannot silently use the planned quote as a fill.
+    confirmed_price = _confirmed_entry_price(order, ask_price)
     entry_utc       = _now_et()   # tz-aware ET — stored as ET ISO in DB
+    _order_intent.update({
+        "status": "filled",
+        "resolved_at": entry_utc.isoformat(),
+        "broker_order_id": str(order.get("id") or "") or None,
+        "execution_attempt_id": order.get("execution_attempt_id"),
+        "confirmed_fill_price": round(float(confirmed_price), 4),
+    })
 
     # FIX 2026-07-20 (Alpaca fills audit): broker.py's _wait_for_fill now
     # always reports the REAL filled_qty (previously a partial fill either
@@ -1830,6 +2010,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         entry_order_id   = str(order.get("id") or "") or None,
         entry_fill_time  = order.get("filled_at") or entry_utc,
     )
+    _order_intent["trade_id"] = trade_id
+    try:
+        from shadow_ledger import snapshot_candidate_plan
+        snapshot_candidate_plan(_opportunity_context)
+    except Exception:
+        logger.debug("filled order intent snapshot failed for trade %s", trade_id, exc_info=True)
     try:
         from database import link_broker_order_to_trade
         link_broker_order_to_trade(
@@ -2021,6 +2207,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "V2_ORB_PULLBACK": "Opening-Range Pullback",
             "V2_SPY_TREND_CONT": "SPY Trend Continuation",
             "V2_SPY_AFTERNOON_FVG": "SPY Afternoon Fair Value Gap",
+            "V2_FAILED_OR_BREAK_VWAP_REVERSION": "SPY Failed-Range Recovery",
             "V2_TSLA_TWO_LEG_TREND_PULLBACK": "TSLA Two-Leg Trend Pullback",
         }.get(_US.get("last_strategy_id", "UNKNOWN"), "Reviewed strategy")
         _stop_px  = round(_risk.dynamic_stop_price(confirmed_price, entry_utc), 2)

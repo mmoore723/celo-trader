@@ -24,5 +24,6 @@ REASON_CODES = {
     "zero_contracts":        "Risk budget too small to size even 1 contract",
     "spread_too_wide":       "Bid-ask spread wider than the spread gate",
     "rr_too_low":            "Reward:risk below the 1.6x minimum",
+    "entry_price_not_reached":"Approved entry price was not reached before the order expired",
     "ai_decision_veto":      "AI decision-support layer vetoed or zeroed the size",
 }

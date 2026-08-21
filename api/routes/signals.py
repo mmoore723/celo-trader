@@ -437,6 +437,7 @@ def get_scanner_opportunities(
         quote_timeline = _candidate_quote_timeline(quotes_by_candidate.get(candidate_id, []))
         entry_plan = plan_context.get("entry_plan") if isinstance(plan_context.get("entry_plan"), dict) else {}
         exit_plan = plan_context.get("exit_plan") if isinstance(plan_context.get("exit_plan"), dict) else {}
+        order_intent = plan_context.get("order_intent") if isinstance(plan_context.get("order_intent"), dict) else {}
         if not entry_plan:
             entry_plan = {"trigger": metadata.get("entry_trigger") or "Scanner setup detected"}
         stored_outcome = str(row.get("final_outcome") or "pending")
@@ -464,6 +465,7 @@ def get_scanner_opportunities(
             "entry_plan": entry_plan, "contract": contract, "contract_preview": contract_preview,
             "contract_recipe": contract_recipe, "contract_selection": contract_selection,
             "planned_quantity": plan_context.get("planned_quantity"), "exit_plan": exit_plan,
+            "order_intent": order_intent,
             "plan_status": _plan_status(contract=contract, preview=contract_preview, trade=trade, outcome=outcome_value),
             "option_quote_timeline": quote_timeline,
             "option_type": (trade or {}).get("option_type") or (
@@ -512,6 +514,7 @@ def get_scanner_opportunities(
             "contract_selection": context.get("contract_selection") if isinstance(context.get("contract_selection"), dict) else {},
             "planned_quantity": context.get("planned_quantity"),
             "exit_plan": context.get("exit_plan") if isinstance(context.get("exit_plan"), dict) else {},
+            "order_intent": context.get("order_intent") if isinstance(context.get("order_intent"), dict) else {},
             "plan_status": _plan_status(
                 contract=context.get("contract") if isinstance(context.get("contract"), dict) else {},
                 preview=_contract_preview(context),

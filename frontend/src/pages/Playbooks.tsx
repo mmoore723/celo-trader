@@ -227,6 +227,17 @@ const CURRENT_STRATEGIES: Strategy[] = [
     tags: ["paper", "TSLA", "1-minute", "VWAP"],
     tuning: [{ param: "Reference", value: "09:45 ET close" }, { param: "First leg", value: "≥ 1 ATR with VWAP + EMA 9/20 agreement" }, { param: "Pullback", value: "0.25–1.25 ATR into EMA 9; VWAP must hold" }, { param: "Entry", value: "Completed 1-minute reclaim, then next-minute option ask" }, { param: "Exit", value: "Same contract’s 90-minute bid" }],
   },
+  {
+    id: "v2_recovery", name: "SPY Failed-Range Recovery V2", emoji: "↩️",
+    setup: "Before 11:00 ET, a completed one-minute SPY candle closes at least 5% of the opening-range width outside the 9:30–9:44 range. By noon, an opposite-color candle must close back inside.",
+    entry: "The reversal must retain at least 5% of the range width to session VWAP. The following minute begins contract selection and records one exact contract plus its complete order intent.",
+    stop: "Ten percent of the opening-range width beyond the failed-break extreme.",
+    target: "The reviewed rule exits the same selected contract at its observed bid 30 minutes after entry.",
+    notes: "SPY only. A failed upside break creates a put idea; a failed downside break creates a call idea. This is not the retired generic opening-range strategy.",
+    evidence: "Passed the predeclared later-data check: 21 paid-quote trades across May–July, 61.9% winners, 3.04 profit factor, and positive results in every measured month.",
+    tags: ["paper", "SPY", "reversal", "opening range"],
+    tuning: [{ param: "Range", value: "09:30–09:44 ET one-minute bars" }, { param: "Break", value: "≥ 0.05 × range by 11:00 ET" }, { param: "Failure", value: "Opposite-color close back inside by noon" }, { param: "VWAP room", value: "≥ 0.05 × range" }, { param: "Exit", value: "Same contract’s 30-minute bid" }],
+  },
 ];
 
 export function Playbooks() {
@@ -243,6 +254,7 @@ export function Playbooks() {
       strategy.id === "v2_orb" ? "V2_ORB_PULLBACK" :
       strategy.id === "v2_trend" ? "V2_SPY_TREND_CONT" :
       strategy.id === "v2_spy_fvg" ? "V2_SPY_AFTERNOON_FVG" :
+      strategy.id === "v2_recovery" ? "V2_FAILED_OR_BREAK_VWAP_REVERSION" :
       "V2_TSLA_TWO_LEG_TREND_PULLBACK"
     )
   )), [enabledStrategyIds]);
@@ -400,7 +412,7 @@ export function Playbooks() {
           No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
         </div>
       ) : (
-        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg")} strategyCatalog={strategyCatalog?.strategies ?? []} />
+        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg" | "v2_recovery")} strategyCatalog={strategyCatalog?.strategies ?? []} />
       )}
 
       <details className="card p-4">

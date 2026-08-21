@@ -65,6 +65,7 @@ def evaluate_v2_orb_paper_exit(
         prefix = {
             "V2_SPY_TREND_CONT": "v2_spy_trend",
             "V2_SPY_AFTERNOON_FVG": "v2_spy_afternoon_fvg",
+            "V2_FAILED_OR_BREAK_VWAP_REVERSION": "v2_spy_failed_range_recovery",
             "V2_TSLA_TWO_LEG_TREND_PULLBACK": "v2_tsla_two_leg_trend_pullback",
         }.get(normalized_strategy_id, "v2_orb")
         return True, (

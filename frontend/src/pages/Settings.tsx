@@ -33,6 +33,7 @@ const DEFAULT: AppSettings = {
   strategy_orb_pullback_v2_enabled: true,
   strategy_spy_trend_cont_v2_enabled: true,
   strategy_spy_afternoon_fvg_v2_enabled: true,
+  strategy_spy_failed_range_recovery_v2_enabled: true,
   strategy_tsla_two_leg_trend_pullback_v2_enabled: true,
   opportunity_tier_enabled: false,
   signal_only_mode: false,  // true = bot alerts only, no order placement

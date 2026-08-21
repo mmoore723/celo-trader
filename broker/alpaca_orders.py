@@ -54,6 +54,7 @@ class AlpacaOrdersMixin:
         allow_market_fallback: bool = False,  # emergency exits only
         position_intent: Optional[str] = None,  # 'buy_to_open' | 'sell_to_close' (FIX 2026-07-16)
         order_context: Optional[dict] = None,
+        max_wait_seconds: Optional[int] = None,
     ) -> Optional[dict]:
         """
         Submit an options order via Alpaca v2 OPTIONS endpoint.
@@ -79,6 +80,7 @@ class AlpacaOrdersMixin:
         """
         attempt_id = uuid.uuid4().hex
         context = order_context or {}
+        intent_id = str(context.get("intent_id") or "").strip()
         flow_base = {
             "attempt_id": attempt_id,
             "contract_symbol": symbol,
@@ -139,6 +141,12 @@ class AlpacaOrdersMixin:
             "side":          side,
             "time_in_force": "day",
         }
+        # The deterministic entry pipeline creates one authoritative intent
+        # for the contract/quantity/price ceiling shown in Scanner
+        # Opportunities.  Carry its id all the way to Alpaca so a broker order
+        # can be reconciled to that exact learner-facing decision.
+        if intent_id:
+            payload["client_order_id"] = f"celo-{intent_id[:32]}"
         if position_intent:
             payload["position_intent"] = position_intent
 
@@ -187,7 +195,8 @@ class AlpacaOrdersMixin:
                                             allow_market_fallback=allow_market_fallback,
                                             position_intent=position_intent,
                                             attempt_id=attempt_id,
-                                            order_context=context)
+                                            order_context=context,
+                                            max_wait=max_wait_seconds or 0)
             if not confirmed:
                 log_event("ERROR", "order",
                           f"🔴 [{symbol}] Order did not fill — no position recorded. "
@@ -202,6 +211,9 @@ class AlpacaOrdersMixin:
                     },
                 )
                 return None
+            confirmed["execution_attempt_id"] = attempt_id
+            if intent_id:
+                confirmed["order_intent_id"] = intent_id
             return confirmed
 
         except Exception as e:
@@ -288,7 +300,7 @@ class AlpacaOrdersMixin:
     def _wait_for_fill(
         self,
         order_id: str,
-        max_wait: int = 300,
+        max_wait: Optional[int] = None,
         limit_price: Optional[float] = None,
         step_to_price: Optional[float] = None,
         side: str = "buy",
@@ -348,7 +360,13 @@ class AlpacaOrdersMixin:
         # consistent that market orders should be a last resort, not a 10-second
         # default — extending paper's wait to 20s gives the stepped limit (added
         # below) a real chance to fill before falling back to market.
-        effective_wait = 10 if is_paper else 15   # seconds before giving up
+        # ``max_wait`` existed but was previously ignored.  Entry callers can
+        # now keep the exact reviewed contract working through most of the
+        # next one-minute bar.  Bound the value so a synchronous scanner tick
+        # can never hang indefinitely.
+        requested_wait = int(max_wait or 0)
+        effective_wait = requested_wait if requested_wait > 0 else (10 if is_paper else 15)
+        effective_wait = max(5, min(effective_wait, 60))
 
         # Step-up threshold: on live, after this many seconds without a fill,
         # modify the order's limit price from mid up to the ask.

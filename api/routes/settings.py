@@ -48,6 +48,7 @@ def get_settings_endpoint() -> Settings:
         strategy_orb_pullback_v2_enabled=bool(s.get("strategy_orb_pullback_v2_enabled", True)),
         strategy_spy_trend_cont_v2_enabled=bool(s.get("strategy_spy_trend_cont_v2_enabled", True)),
         strategy_spy_afternoon_fvg_v2_enabled=bool(s.get("strategy_spy_afternoon_fvg_v2_enabled", True)),
+        strategy_spy_failed_range_recovery_v2_enabled=bool(s.get("strategy_spy_failed_range_recovery_v2_enabled", True)),
         strategy_tsla_two_leg_trend_pullback_v2_enabled=bool(s.get("strategy_tsla_two_leg_trend_pullback_v2_enabled", True)),
         opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
@@ -80,6 +81,7 @@ def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
     data["strategy_orb_pullback_v2_enabled"] = data.pop("strategy_orb_pullback_v2_enabled", False)
     data["strategy_spy_trend_cont_v2_enabled"] = data.pop("strategy_spy_trend_cont_v2_enabled", False)
     data["strategy_spy_afternoon_fvg_v2_enabled"] = data.pop("strategy_spy_afternoon_fvg_v2_enabled", False)
+    data["strategy_spy_failed_range_recovery_v2_enabled"] = data.pop("strategy_spy_failed_range_recovery_v2_enabled", True)
     data["strategy_tsla_two_leg_trend_pullback_v2_enabled"] = data.pop("strategy_tsla_two_leg_trend_pullback_v2_enabled", False)
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw

@@ -79,6 +79,21 @@ class V2OrbPaperExitTests(unittest.TestCase):
         self.assertTrue(should_exit)
         self.assertIn("v2_tsla_two_leg_trend_pullback_paid_markout_90m", reason)
 
+    def test_spy_failed_range_recovery_uses_reviewed_thirty_minute_exit(self) -> None:
+        entry = datetime(2026, 8, 3, 10, 0)
+        self.assertEqual(
+            (False, "hold"),
+            evaluate_v2_orb_paper_exit(
+                entry, entry + timedelta(minutes=29, seconds=59),
+                "V2_FAILED_OR_BREAK_VWAP_REVERSION",
+            ),
+        )
+        should_exit, reason = evaluate_v2_orb_paper_exit(
+            entry, entry + timedelta(minutes=30), "V2_FAILED_OR_BREAK_VWAP_REVERSION",
+        )
+        self.assertTrue(should_exit)
+        self.assertIn("v2_spy_failed_range_recovery_paid_markout_30m", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

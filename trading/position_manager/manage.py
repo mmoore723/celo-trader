@@ -54,6 +54,67 @@ from trading.position_manager.helpers import _reconcile_if_phantom
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
+def _resolve_latched_exit(
+    position_state: dict,
+    should_exit: bool,
+    reason: str,
+    now: datetime,
+) -> tuple[bool, str]:
+    """Make an exit decision sticky until the broker confirms the close.
+
+    A structure-based condition can disappear on the next candle.  If its
+    first limit order did not fill, recomputing from scratch previously let a
+    real exit decision turn back into ``hold``.  The position then leaked past
+    its intended exit.  Once an exit fires, keep closing for that same reason;
+    `_close_position` removes the position state only after a confirmed fill.
+    """
+    pending_reason = str(position_state.get("exit_pending_reason") or "").strip()
+    if pending_reason:
+        return True, pending_reason
+    if should_exit:
+        position_state["exit_pending_reason"] = str(reason or "exit_signal")
+        position_state["exit_pending_since"] = now.isoformat()
+        position_state["exit_attempts"] = 0
+    return should_exit, reason
+
+
+def _persist_exit_latch(trade_id: object, position_state: dict) -> None:
+    """Persist the sticky exit across process restarts without replacing state."""
+    try:
+        from config import atomic_update_json
+
+        def _update(state: dict) -> dict:
+            positions = dict(state.get("open_positions") or {})
+            snapshot = dict(positions.get(str(trade_id)) or {})
+            snapshot.update({
+                "exit_pending_reason": position_state.get("exit_pending_reason"),
+                "exit_pending_since": position_state.get("exit_pending_since"),
+                "exit_attempts": position_state.get("exit_attempts", 0),
+            })
+            positions[str(trade_id)] = snapshot
+            return {**state, "open_positions": positions}
+
+        atomic_update_json(get_bot_state_path(), _update)
+    except Exception:
+        logger.warning("exit latch persistence failed for trade %s", trade_id, exc_info=True)
+
+
+def _clear_exit_latch(position_state: dict) -> None:
+    """Clear a completed exit intent so it cannot fire again next tick."""
+    position_state.pop("exit_pending_reason", None)
+    position_state.pop("exit_pending_since", None)
+    position_state["exit_attempts"] = 0
+
+
+def _exit_latch_snapshot(position_state: dict) -> dict:
+    """Fields that every persisted position snapshot must carry forward."""
+    return {
+        "exit_pending_reason": position_state.get("exit_pending_reason"),
+        "exit_pending_since": position_state.get("exit_pending_since"),
+        "exit_attempts": position_state.get("exit_attempts", 0),
+    }
+
+
 def _manage_open_position(
     alpaca: "AlpacaClient",
     tradier: "TradierClient",
@@ -419,6 +480,9 @@ def _manage_open_position(
                 "initial_atr_stop":          ps.get("initial_atr_stop"),
                 "vwap_breached_bars":        ps.get("vwap_breached_bars", 0),
                 "trend_dead":                trend_dead,
+                # Preserve a triggered close across normal mark snapshots and
+                # process restarts until Alpaca confirms the position closed.
+                **_exit_latch_snapshot(ps),
             }
             def _update_position_state(state: dict) -> dict:
                 positions = dict(state.get("open_positions") or {})
@@ -505,8 +569,13 @@ def _manage_open_position(
                 momentum_fading  = _momentum_fading,
             )
 
+        should_exit, reason = _resolve_latched_exit(ps, should_exit, reason, now_et)
+
         if not should_exit:
             return
+
+        ps["exit_attempts"] = int(ps.get("exit_attempts") or 0) + 1
+        _persist_exit_latch(trade_id, ps)
 
         # NOTE: AI reasoning narration for this exit decision does NOT fire
         # here anymore. narrate_exit() fires ONLY after a close_trade() call
@@ -673,6 +742,11 @@ def _manage_open_position(
             from config import STAGE2_TRAIL_PCT
             ps["stage1_done"]     = True
             ps["stage1_be_price"] = round(entry_price * (1.0 + STAGE2_TRAIL_PCT), 4)
+            # Stage 1 is a partial profit-take, not an instruction to liquidate
+            # the runner.  Once that fill is confirmed, retire its sticky exit
+            # intent and let Stage 2 evaluate the remaining contracts normally.
+            _clear_exit_latch(ps)
+            _persist_exit_latch(trade["id"], ps)
 
         else:
             from trading.position_manager.close import _close_position

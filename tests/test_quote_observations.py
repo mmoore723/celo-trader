@@ -10,7 +10,8 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from database.option_quotes import (
-    capture_due_candidate_option_quotes, record_candidate_option_quote,
+    capture_due_candidate_option_quotes, record_candidate_contract_alternative,
+    record_candidate_option_quote,
     record_paper_option_quote,
 )
 from database.research_observations import (
@@ -79,6 +80,56 @@ class PaperOptionQuoteTests(unittest.TestCase):
             ["candidate-1", "candidate-2"],
             [call.kwargs["candidate_id"] for call in quote.call_args_list],
         )
+        for call in snapshot.call_args_list:
+            preview = call.args[0]["contract_preview"]
+            self.assertEqual(5.10, preview["working_limit"])
+            self.assertIsNone(preview["step_limit"])
+            self.assertEqual(5.10, preview["maximum_entry_price"])
+
+    def test_standard_preview_shows_first_limit_reprice_and_risk_ceiling_separately(self) -> None:
+        """The learner-facing price plan must mirror normal execution semantics."""
+        from trading.entry.candidate_observation import observe_candidate_contract
+
+        signal = SimpleNamespace(
+            strategy_id="STANDARD_TEST", direction="bullish",
+            confidence=.75, meta={},
+        )
+        contract = {
+            "symbol": "SPY260821C00780000", "strike": 780, "expiry": "2026-08-21",
+            "bid": 4.90, "ask": 5.10, "spread": .20, "volume": 100,
+            "open_interest": 1000,
+        }
+        risk = SimpleNamespace(
+            slippage_adjusted_entry=lambda ask: round(ask * 1.05, 4),
+            calculate_contracts=lambda _entry, _balance: 1,
+        )
+
+        def record_candidate(_ticker, observed_signal, _underlying):
+            observed_signal.meta["shadow_candidate_id"] = "candidate-standard"
+
+        with patch(
+            "trading.entry.candidate_observation.record_router_candidate",
+            side_effect=record_candidate,
+        ), patch(
+            "trading.entry.candidate_observation.select_contract",
+            return_value=(contract, {}),
+        ), patch(
+            "trading.entry.candidate_observation.snapshot_candidate_plan",
+        ) as snapshot, patch(
+            "trading.entry.candidate_observation.record_candidate_option_quote",
+        ):
+            observe_candidate_contract(
+                ticker="SPY", signal=signal, underlying_price=779.0,
+                tradier=SimpleNamespace(), balance=5000.0, risk=risk,
+                settings={"max_position_dollars": 750.0},
+            )
+
+        preview = snapshot.call_args.args[0]["contract_preview"]
+        self.assertEqual(5.00, preview["planned_entry_price"])
+        self.assertEqual(5.00, preview["working_limit"])
+        self.assertEqual(5.10, preview["step_limit"])
+        self.assertEqual(5.355, preview["maximum_entry_price"])
+        self.assertEqual(535.50, preview["estimated_position_cost"])
 
     def test_existing_trade_table_migrates_before_account_index(self) -> None:
         """Older databases lack broker_account_id; init must add it before indexing."""
@@ -164,6 +215,13 @@ class PaperOptionQuoteTests(unittest.TestCase):
                     observed_at=datetime.fromisoformat("2026-08-03T10:00:00-04:00"),
                     quote=quote, source="test",
                 ))
+                self.assertTrue(record_candidate_contract_alternative(
+                    candidate_id="candidate-1",
+                    contract={"symbol": "TSLA260807C00310000", "bid": 3.9, "ask": 4.1},
+                    observation_kind="entry",
+                    observed_at=datetime.fromisoformat("2026-08-03T10:00:00-04:00"),
+                    policies=["tightest_spread"], source="test",
+                ))
                 captured = capture_due_candidate_option_quotes(
                     ticker="TSLA",
                     observed_at=datetime.fromisoformat("2026-08-03T11:31:00-04:00"),
@@ -174,10 +232,14 @@ class PaperOptionQuoteTests(unittest.TestCase):
                 "SELECT observation_kind FROM candidate_option_quote_observations ORDER BY id"
             ).fetchall()]
             trade_count = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
+            alt_kinds = [row[0] for row in conn.execute(
+                "SELECT observation_kind FROM candidate_contract_alternatives ORDER BY id"
+            ).fetchall()]
             conn.close()
 
-        self.assertEqual(3, captured)
+        self.assertEqual(6, captured)
         self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], kinds)
+        self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], alt_kinds)
         self.assertEqual(0, trade_count)
 
     def test_trade_query_does_not_mix_broker_accounts(self) -> None:

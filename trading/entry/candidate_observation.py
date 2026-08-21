@@ -12,10 +12,11 @@ from typing import Any
 
 from config import MIN_CONTRACT_COST, MAX_CONTRACT_COST, MIN_OPEN_INTEREST
 from config.strategy_catalog import reviewed_exit_summary
-from database.option_quotes import record_candidate_option_quote
+from database.option_quotes import record_candidate_contract_alternative, record_candidate_option_quote
 from shadow_ledger import record_router_candidate, snapshot_candidate_plan
 from trading.entry.contract import select_contract, select_reviewed_v2_contract
 from trading.state import _now_et
+from trading.v2_orb_paper_execution import entry_limit_prices
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 
 logger = logging.getLogger("celo_trader.candidate_observation")
@@ -82,12 +83,21 @@ def observe_candidate_contract(
         "illiquid_cost": (info or {}).get("illiquid_cost"),
         "illiquid_symbol": (info or {}).get("illiquid_symbol"),
         "liquidity_detail": (info or {}).get("illiquid_fail"),
+        "eligible_contract_count": (info or {}).get("eligible_contract_count"),
+        "shadow_contract_leaderboard": (info or {}).get("shadow_contract_leaderboard", []),
     }
     quantity = None
     if contract:
+        bid = float(contract.get("bid") or 0)
         ask = float(contract.get("ask") or 0)
-        effective_entry = risk.slippage_adjusted_entry(ask)
-        quantity = risk.calculate_contracts(effective_entry, balance)
+        midpoint = round((bid + ask) / 2.0, 4) if bid > 0 else ask
+        working_limit, step_limit = entry_limit_prices(
+            ask=ask, midpoint=midpoint, v2_paper_pilot=reviewed,
+        )
+        maximum_entry = risk.slippage_adjusted_entry(ask)
+        # Quantity remains sized at the hard ceiling, not at the optimistic
+        # first limit. That prevents a reprice from exceeding approved risk.
+        quantity = risk.calculate_contracts(maximum_entry, balance)
         preview.update({
             "symbol": contract.get("symbol"), "strike": contract.get("strike"),
             "expiry": contract.get("expiry"), "bid": contract.get("bid"),
@@ -95,9 +105,14 @@ def observe_candidate_contract(
             "volume": contract.get("volume"),
             "open_interest": contract.get("open_interest"),
             "selection_model": contract.get("selection_model"),
-            "planned_entry_price": round(effective_entry, 4),
+            # Backward-compatible field: this is now the price the order would
+            # actually try first, rather than the risk-only slippage ceiling.
+            "planned_entry_price": round(working_limit, 4),
+            "working_limit": round(working_limit, 4),
+            "step_limit": round(step_limit, 4) if step_limit is not None else None,
+            "maximum_entry_price": round(maximum_entry, 4),
             "planned_contracts": int(quantity),
-            "estimated_position_cost": round(effective_entry * quantity * 100, 2),
+            "estimated_position_cost": round(maximum_entry * quantity * 100, 2),
         })
     recipe = {
         "option_type": "CALL" if direction.lower() in {"bullish", "long", "call"} else "PUT",
@@ -126,4 +141,10 @@ def observe_candidate_contract(
             candidate_id=candidate_id, contract_symbol=str(contract.get("symbol") or ""),
             observation_kind="entry", observed_at=_now_et(), quote=contract,
             source="tradier_observation_only_preview",
+        )
+    for alternative in preview.get("shadow_contract_leaderboard", []):
+        record_candidate_contract_alternative(
+            candidate_id=candidate_id, contract=alternative,
+            observation_kind="entry", observed_at=_now_et(),
+            policies=alternative.get("policy_winner_for", []),
         )

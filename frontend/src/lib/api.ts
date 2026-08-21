@@ -311,6 +311,8 @@ export interface ScannerOpportunityContractPreview extends ScannerOpportunityCon
   cheapest_cost?: number | null; cheapest_symbol?: string | null;
   illiquid_cost?: number | null; illiquid_symbol?: string | null; liquidity_detail?: string | null;
   planned_entry_price?: number | null; planned_contracts?: number | null;
+  working_limit?: number | null; step_limit?: number | null;
+  maximum_entry_price?: number | null;
   estimated_position_cost?: number | null;
 }
 export interface ScannerOpportunityQuoteMark {
@@ -327,6 +329,16 @@ export interface ScannerOpportunityTrade {
   entry_time?: string | null; exit_time?: string | null; exit_reason?: string | null;
   pnl?: number | null;
 }
+export interface ScannerOpportunityOrderIntent {
+  intent_id?: string; status?: string; created_at?: string; expires_at?: string;
+  candidate_id?: string | null; ticker?: string; strategy_id?: string; direction?: string;
+  option_type?: string; contract_symbol?: string; strike?: number | null; expiry?: string | null;
+  quote_bid?: number | null; quote_ask?: number | null; working_limit?: number | null;
+  step_limit?: number | null; maximum_entry_price?: number | null; quantity?: number | null;
+  estimated_notional?: number | null; rr_ratio?: number | null;
+  broker_order_id?: string | null; execution_attempt_id?: string | null;
+  confirmed_fill_price?: number | null; trade_id?: number | null;
+}
 export interface ScannerOpportunity {
   id: string; source: "candidate" | "journal_only"; observed_at: string;
   ticker: string; strategy_id: string; direction: "bullish" | "bearish" | string;
@@ -340,6 +352,7 @@ export interface ScannerOpportunity {
   contract_selection?: ScannerOpportunityContractSelection;
   planned_quantity?: number | null;
   exit_plan: { strategy_id?: string; summary?: string };
+  order_intent?: ScannerOpportunityOrderIntent;
   plan_status: "contract_selected" | "contract_preview" | "not_priced" | "observation_only" | string;
   option_quote_timeline?: ScannerOpportunityQuoteMark[];
   option_type?: "call" | "put" | string | null;
@@ -609,6 +622,7 @@ export interface AppSettings {
   strategy_orb_pullback_v2_enabled?: boolean; // research-validated opening-range pullback pilot
   strategy_spy_trend_cont_v2_enabled?: boolean; // reviewed SPY paid-quote Trend Continuation pilot
   strategy_spy_afternoon_fvg_v2_enabled?: boolean; // reviewed SPY paid-quote afternoon FVG pilot
+  strategy_spy_failed_range_recovery_v2_enabled?: boolean; // reviewed SPY failed-range recovery
   strategy_tsla_two_leg_trend_pullback_v2_enabled?: boolean; // reviewed TSLA VWAP/EMA two-leg paper rule
   opportunity_tier_enabled?: boolean; // paper-only lower-confidence research cohort
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)

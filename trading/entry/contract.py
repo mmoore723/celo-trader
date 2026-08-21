@@ -32,6 +32,50 @@ V2_ORB_PAPER_MAX_PREMIUM = 10.00
 V2_ORB_PAPER_MAX_SPREAD_PCT = 0.08
 
 
+def _reviewed_contract_shadow_leaderboard(
+    candidates: list[tuple[int, float, float, str, dict]],
+) -> list[dict]:
+    """Return policy winners for research without influencing execution.
+
+    The reviewed selector intentionally remains nearest expiry, then nearest
+    OTM strike.  This compact leaderboard preserves the alternatives that used
+    to disappear after selection, allowing later quote/fill studies to compare
+    concrete policies rather than inventing them after the fact.
+    """
+    if not candidates:
+        return []
+    policies = {
+        "reviewed_nearest_expiry_otm": lambda item: item[:4],
+        "tightest_spread": lambda item: (item[2], item[0], item[1], item[3]),
+        "lowest_ask": lambda item: (float(item[4].get("ask") or float("inf")), item[0], item[1], item[3]),
+        "highest_open_interest": lambda item: (-float(item[4].get("open_interest") or 0), item[2], item[0], item[3]),
+        "highest_volume": lambda item: (-float(item[4].get("volume") or 0), item[2], item[0], item[3]),
+        "closest_otm_strike": lambda item: (item[1], item[0], item[2], item[3]),
+        "closest_to_14_dte": lambda item: (abs(item[0] - 14), item[1], item[2], item[3]),
+    }
+    winners: dict[str, dict] = {}
+    for policy, key in policies.items():
+        dte, distance, spread_pct, symbol, contract = min(candidates, key=key)
+        row = winners.setdefault(symbol, {
+            "symbol": symbol,
+            "expiry": contract.get("expiry"),
+            "dte": int(dte),
+            "strike": float(contract.get("strike") or 0),
+            "otm_distance": round(float(distance), 4),
+            "bid": float(contract.get("bid") or 0),
+            "ask": float(contract.get("ask") or 0),
+            "spread_pct": round(float(spread_pct), 6),
+            "volume": int(float(contract.get("volume") or 0)),
+            "open_interest": int(float(contract.get("open_interest") or 0)),
+            "policy_winner_for": [],
+        })
+        row["policy_winner_for"].append(policy)
+    return sorted(
+        winners.values(),
+        key=lambda row: ("reviewed_nearest_expiry_otm" not in row["policy_winner_for"], row["symbol"]),
+    )
+
+
 def select_contract(
     tradier: TradierClient,
     ticker: str,
@@ -317,6 +361,8 @@ def select_reviewed_v2_contract(
     _, _, spread_pct, _, selected = min(candidates, key=lambda item: item[:4])
     info.update({
         "reason": "selected",
+        "eligible_contract_count": len(candidates),
+        "shadow_contract_leaderboard": _reviewed_contract_shadow_leaderboard(candidates),
         "selected_dte": (date.fromisoformat(selected["expiry"]) - today).days,
         "selected_spread_pct": round(spread_pct, 6),
     })

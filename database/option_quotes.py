@@ -9,6 +9,7 @@ paper trade or its protective exit.
 from __future__ import annotations
 
 import logging
+import json
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
 
@@ -111,6 +112,36 @@ def record_candidate_option_quote(
         return False
 
 
+def record_candidate_contract_alternative(
+    *, candidate_id: str, contract: Mapping[str, Any], observation_kind: str,
+    observed_at: datetime, policies: list[str] | None = None,
+    source: str = "reviewed_selector_shadow",
+) -> bool:
+    """Persist one non-executing contract-policy observation."""
+    allowed = {"entry", "mark_30m", "mark_60m", "mark_90m"}
+    if observation_kind not in allowed:
+        raise ValueError(f"observation_kind must be one of {sorted(allowed)}")
+    symbol = str(contract.get("symbol") or contract.get("contract_symbol") or "")
+    if not candidate_id or not symbol:
+        return False
+    bid, ask, mid = (_number(contract.get(key)) for key in ("bid", "ask", "mid"))
+    if mid is None and bid is not None and ask is not None:
+        mid = round((bid + ask) / 2, 6)
+    try:
+        with get_conn() as conn:
+            cursor = conn.execute(
+                """INSERT OR IGNORE INTO candidate_contract_alternatives
+                   (candidate_id, contract_symbol, observed_at, observation_kind,
+                    bid, ask, mid, policy_json, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (candidate_id, symbol, _to_et_isoformat(observed_at), observation_kind,
+                 bid, ask, mid, json.dumps(policies or []), source),
+            )
+        return bool(cursor.rowcount)
+    except Exception:
+        logger.warning("candidate alternative quote capture failed candidate=%s symbol=%s",
+                       candidate_id, symbol, exc_info=True)
+        return False
 def capture_due_candidate_option_quotes(
     *, ticker: str, observed_at: datetime, quote_lookup,
     broker_account_id: str | None = None,
@@ -155,6 +186,40 @@ def capture_due_candidate_option_quotes(
                         source="tradier_candidate_followup",
                     ):
                         captured += 1
+        # Measure every declared policy winner against the same horizons. The
+        # table is deliberately separate from the primary selected contract,
+        # so these rows can never be mistaken for an order or trade.
+        with get_conn() as conn:
+            alt_rows = conn.execute(
+                """SELECT DISTINCT a.candidate_id, s.observed_at, a.contract_symbol,
+                                  a.policy_json
+                   FROM candidate_contract_alternatives a
+                   JOIN shadow_candidates s ON s.candidate_id = a.candidate_id
+                   WHERE s.ticker = ? AND substr(s.observed_at, 1, 10) = ?
+                     AND a.observation_kind = 'entry'"""
+                + (" AND s.broker_account_id = ?" if broker_account_id else ""),
+                tuple([ticker.upper(), observed_at.date().isoformat()] + ([broker_account_id] if broker_account_id else [])),
+            ).fetchall()
+        for row in alt_rows:
+            started = datetime.fromisoformat(str(row["observed_at"]))
+            for kind, minutes in horizons:
+                if observed_at < started + timedelta(minutes=minutes):
+                    continue
+                with get_conn() as conn:
+                    exists = conn.execute(
+                        """SELECT 1 FROM candidate_contract_alternatives
+                           WHERE candidate_id=? AND contract_symbol=? AND observation_kind=?""",
+                        (row["candidate_id"], row["contract_symbol"], kind),
+                    ).fetchone()
+                if exists:
+                    continue
+                quote = quote_lookup(row["contract_symbol"])
+                if quote and record_candidate_contract_alternative(
+                    candidate_id=row["candidate_id"], contract={**dict(quote), "symbol": row["contract_symbol"]},
+                    observation_kind=kind, observed_at=observed_at,
+                    policies=json.loads(row["policy_json"] or "[]"), source="tradier_alternative_followup",
+                ):
+                    captured += 1
         return captured
     except Exception:
         logger.warning("candidate due quote sweep failed for %s", ticker, exc_info=True)
