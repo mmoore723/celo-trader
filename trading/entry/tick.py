@@ -1378,7 +1378,43 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                      detail="no contract met spread/open-interest filters")
         return
 
-    ask_price = contract["ask"]
+    # Refresh the exact selected OCC contract immediately before sizing.  The
+    # chain snapshot can be several seconds old by the time all strategy gates
+    # clear; using one fresh Tradier quote here keeps contract selection,
+    # affordability, quantity, the learner-facing plan, and the submitted
+    # Alpaca limit on one price reference.
+    _quote_started = time.monotonic()
+    try:
+        _fresh_quote = tradier.get_option_quote(str(contract.get("symbol") or ""))
+    except Exception:
+        _fresh_quote = None
+        logger.warning("Fresh Tradier entry quote failed for %s", contract.get("symbol"), exc_info=True)
+    _quote_latency_ms = round((time.monotonic() - _quote_started) * 1000, 1)
+    _fresh_bid = float((_fresh_quote or {}).get("bid") or 0)
+    _fresh_ask = float((_fresh_quote or {}).get("ask") or 0)
+    if _fresh_bid <= 0 or _fresh_ask < _fresh_bid:
+        log_event(
+            "INFO", "bar_eval",
+            f"🟡 [{ticker}] Fresh Tradier quote unavailable for "
+            f"{contract.get('symbol', 'selected contract')} — skipping instead "
+            f"of sizing or ordering from a stale chain price.",
+        )
+        _skip_log(
+            ticker, "fresh_entry_quote_unavailable", strategy=strategy_id,
+            confidence=_top.confidence, direction=direction, tier=_signal_tier,
+            detail=f"Tradier exact-contract quote missing after {_quote_latency_ms:.1f}ms",
+        )
+        return
+    contract.update({
+        "bid": _fresh_bid,
+        "ask": _fresh_ask,
+        "mid": (_fresh_bid + _fresh_ask) / 2,
+        "spread": _fresh_ask - _fresh_bid,
+        "quote_source": "tradier_production",
+        "quote_latency_ms": _quote_latency_ms,
+        "quote_received_at": _now_et().isoformat(),
+    })
+    ask_price = _fresh_ask
 
     # ── Slippage-adjusted entry price ─────────────────────────────────────────
     # All sizing and R:R calculations use the worst-case fill (ask + 5% slippage)
@@ -1486,6 +1522,24 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         )
         n_contracts = _max_affordable
 
+    # A newly qualified strategy/ticker pair can be piloted without forcing a
+    # live-connected user to switch the whole account back to paper. The exact
+    # pair must pass the separate live-promotion gate and receive that user's
+    # consent; its initial live rollout is capped at one contract.
+    try:
+        from config.strategy_ticker_recommendations import live_pilot_max_contracts
+        _live_pilot_cap = live_pilot_max_contracts(strategy_id, ticker, settings)
+    except Exception:
+        logger.exception("Could not evaluate live-pilot sizing for %s/%s", strategy_id, ticker)
+        _live_pilot_cap = None
+    _live_pilot = _live_pilot_cap is not None
+    if _live_pilot_cap is not None and n_contracts > _live_pilot_cap:
+        logger.info(
+            "Live-pilot sizing clamp for %s/%s: %d -> %d contract",
+            strategy_id, ticker, n_contracts, _live_pilot_cap,
+        )
+        n_contracts = _live_pilot_cap
+
     if isinstance(_opportunity_context, dict):
         _opportunity_context["planned_quantity"] = int(n_contracts)
         _opportunity_context["exit_plan"] = {
@@ -1518,6 +1572,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "s1_target": _s1_target,
             "profit":    _profit,
             "strategy":  strategy_id,
+            "live_pilot": _live_pilot,
             # "signal" = manual mode alert (bot won't execute), "auto" = bot will execute
             "mode":      "signal" if settings.get("signal_only_mode", False) else "auto",
         }
@@ -1779,13 +1834,17 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "contract_symbol": contract.get("symbol"),
             "strike": contract.get("strike"),
             "expiry": contract.get("expiry"),
-            "quote_source": "tradier_chain",
+            "quote_source": "tradier_production",
             "quote_bid": round(float(_c_bid), 4),
             "quote_ask": round(float(_c_ask), 4),
+            "quote_mid": round(float(_c_mid), 4),
+            "quote_latency_ms": _quote_latency_ms,
+            "quote_received_at": contract.get("quote_received_at"),
             "working_limit": round(float(_order_mid), 4),
             "step_limit": round(float(_order_ask), 4) if _order_ask is not None else None,
             "maximum_entry_price": round(float(eff_entry), 4),
             "quantity": int(n_contracts),
+            "live_pilot": _live_pilot,
             "estimated_notional": round(float(eff_entry) * int(n_contracts) * 100, 2),
             "rr_ratio": rr_audit.get("R_R_Ratio"),
             "exit_plan": _opportunity_context.get("exit_plan"),
@@ -1910,11 +1969,18 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # Rest the exact analyzed contract through most of the next one-minute
         # candle. It may step toward, but never above, the approved ceiling.
         max_wait_seconds = _entry_wait_seconds,
+        price_authority = "tradier",
         order_context   = {
             "ticker": ticker,
             "strategy_id": _US.get("last_strategy_id", strategy_id),
             "candidate_id": _candidate_id,
             "intent_id": _order_intent["intent_id"],
+            "quote_source": "tradier_production",
+            "quote_bid": _c_bid,
+            "quote_ask": _c_ask,
+            "quote_mid": _c_mid,
+            "quote_latency_ms": _quote_latency_ms,
+            "quote_received_at": contract.get("quote_received_at"),
         },
     )
 

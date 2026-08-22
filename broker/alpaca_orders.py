@@ -55,6 +55,7 @@ class AlpacaOrdersMixin:
         position_intent: Optional[str] = None,  # 'buy_to_open' | 'sell_to_close' (FIX 2026-07-16)
         order_context: Optional[dict] = None,
         max_wait_seconds: Optional[int] = None,
+        price_authority: str = "alpaca",
     ) -> Optional[dict]:
         """
         Submit an options order via Alpaca v2 OPTIONS endpoint.
@@ -106,34 +107,54 @@ class AlpacaOrdersMixin:
         # by this call's caller if this attempt doesn't hit the except block.
         self.last_rejection_reason = None
 
-        # Requote the exact OCC contract at Alpaca immediately before placing
-        # the order. Contract discovery uses Tradier, but Tradier's quote is
-        # not necessarily executable at Alpaca a few seconds later. Work from
-        # Alpaca's own current midpoint and natural side instead.
-        try:
-            broker_quote = self.get_latest_option_quote(symbol)
-        except Exception:
-            broker_quote = None
-        if broker_quote:
-            broker_bid = float(broker_quote.get("bp") or 0)
-            broker_ask = float(broker_quote.get("ap") or 0)
-            if broker_bid > 0 and broker_ask >= broker_bid:
-                broker_mid = round((broker_bid + broker_ask) / 2, 2)
-                if side.lower() == "buy":
-                    ceiling = float(max_acceptable_price or broker_ask)
-                    limit_price = min(broker_mid, ceiling)
-                    step_to_price = min(broker_ask, ceiling)
-                else:
-                    limit_price = broker_mid
-                    step_to_price = broker_bid
-                flow_base["limit_price"] = limit_price
-                _record_flow(
-                    **flow_base, event_type="broker_requote", status="quoted",
-                    message=(
-                        f"Alpaca option quote bid={broker_bid:.2f} "
-                        f"ask={broker_ask:.2f}; working limit={limit_price:.2f}"
-                    ),
-                )
+        normalized_price_authority = str(price_authority or "alpaca").strip().lower()
+        if normalized_price_authority == "tradier":
+            # Entry contract discovery, affordability, sizing, and the price
+            # shown to the user all use the same fresh Tradier quote.  Do not
+            # silently replace that decision with an unrelated Alpaca quote at
+            # submission time.  Alpaca remains the broker; Tradier is only the
+            # explicitly selected price authority for this bounded entry.
+            reference_bid = float(context.get("quote_bid") or 0)
+            reference_ask = float(context.get("quote_ask") or 0)
+            reference_mid = float(context.get("quote_mid") or 0)
+            reference_latency_ms = context.get("quote_latency_ms")
+            _record_flow(
+                **{**flow_base, "limit_price": reference_ask or limit_price},
+                event_type="authoritative_quote", status="quoted",
+                latency_ms=reference_latency_ms,
+                message=(
+                    f"Tradier authoritative entry quote bid={reference_bid:.2f} "
+                    f"ask={reference_ask:.2f} mid={reference_mid:.2f}; "
+                    f"working limit={float(limit_price or 0):.2f}"
+                ),
+            )
+        else:
+            # Default behavior is intentionally unchanged for exits and any
+            # caller that has not selected an external price authority.
+            try:
+                broker_quote = self.get_latest_option_quote(symbol)
+            except Exception:
+                broker_quote = None
+            if broker_quote:
+                broker_bid = float(broker_quote.get("bp") or 0)
+                broker_ask = float(broker_quote.get("ap") or 0)
+                if broker_bid > 0 and broker_ask >= broker_bid:
+                    broker_mid = round((broker_bid + broker_ask) / 2, 2)
+                    if side.lower() == "buy":
+                        ceiling = float(max_acceptable_price or broker_ask)
+                        limit_price = min(broker_mid, ceiling)
+                        step_to_price = min(broker_ask, ceiling)
+                    else:
+                        limit_price = broker_mid
+                        step_to_price = broker_bid
+                    flow_base["limit_price"] = limit_price
+                    _record_flow(
+                        **flow_base, event_type="broker_requote", status="quoted",
+                        message=(
+                            f"Alpaca option quote bid={broker_bid:.2f} "
+                            f"ask={broker_ask:.2f}; working limit={limit_price:.2f}"
+                        ),
+                    )
 
         payload: dict = {
             "symbol":        symbol,
@@ -211,6 +232,29 @@ class AlpacaOrdersMixin:
                     },
                 )
                 return None
+            confirmed_fill_price = float(
+                confirmed.get("confirmed_fill_price")
+                or confirmed.get("filled_avg_price")
+                or 0
+            )
+            _record_flow(
+                **{
+                    **flow_base,
+                    "limit_price": (
+                        float(context.get("quote_ask") or 0)
+                        if normalized_price_authority == "tradier"
+                        else limit_price
+                    ),
+                },
+                event_type="execution_summary", status="filled",
+                filled_qty=int(float(confirmed.get("filled_qty") or qty or 0)),
+                fill_price=confirmed_fill_price,
+                latency_ms=round((monotonic() - submit_started) * 1000, 1),
+                message=(
+                    f"{normalized_price_authority} reference to Alpaca fill; "
+                    f"working limit={float(limit_price or 0):.2f}"
+                ),
+            )
             confirmed["execution_attempt_id"] = attempt_id
             if intent_id:
                 confirmed["order_intent_id"] = intent_id

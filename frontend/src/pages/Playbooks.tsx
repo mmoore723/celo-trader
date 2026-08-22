@@ -180,8 +180,10 @@ const LOG_CATEGORIES: { key: string; label: string; emoji: string }[] = [
   { key: "exit",    label: "Exits",                emoji: "🏁" },
 ];
 
-// Only these current V2 paper pilots belong in the learner's Playbook.  The
-// legacy reference data above remains for historic log wording, not lessons.
+// Only current reviewed V2 strategies belong in the learner's Playbook. A
+// strategy may shadow-observe in any account mode; live order authority is a
+// separate, per-user decision after the exact version/ticker pair qualifies.
+// The legacy reference data above remains for historic log wording, not lessons.
 const CURRENT_STRATEGIES: Strategy[] = [
   {
     id: "v2_orb", name: "TSLA Opening-Range Pullback V2", emoji: "🎯",
@@ -409,7 +411,7 @@ export function Playbooks() {
       <div className="flex flex-col gap-4">
       {currentStrategies.length === 0 ? (
         <div className="card p-5 text-sm" style={{ color: "var(--ink-muted)" }}>
-          No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
+          No reviewed strategies are switched on. Turn one on in Settings → Strategy execution controls to see its lesson here.
         </div>
       ) : (
         <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg" | "v2_recovery")} strategyCatalog={strategyCatalog?.strategies ?? []} />
@@ -422,7 +424,7 @@ export function Playbooks() {
         <div className="flex flex-col gap-4 mt-4">
       {currentStrategies.length === 0 ? (
         <div className="card p-5 text-sm" style={{ color: "var(--ink-muted)" }}>
-          No paper strategies are switched on. Turn one on in Settings → Paper strategy controls to see its lesson here.
+          No reviewed strategies are switched on. Turn one on in Settings → Strategy execution controls to see its lesson here.
         </div>
       ) : (
 

@@ -624,7 +624,7 @@ export interface AppSettings {
   strategy_spy_afternoon_fvg_v2_enabled?: boolean; // reviewed SPY paid-quote afternoon FVG pilot
   strategy_spy_failed_range_recovery_v2_enabled?: boolean; // reviewed SPY failed-range recovery
   strategy_tsla_two_leg_trend_pullback_v2_enabled?: boolean; // reviewed TSLA VWAP/EMA two-leg paper rule
-  opportunity_tier_enabled?: boolean; // paper-only lower-confidence research cohort
+  opportunity_tier_enabled?: boolean; // observation-only lower-confidence research cohort; does not change account mode
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
   min_grade_filter_enabled?: boolean; // 2026-07-24: blocks entries below min_entry_grade (default off)
   min_entry_grade?: string;           // "A+" | "A" | "B" | "C" | "Watch" (default "C")
@@ -647,6 +647,18 @@ export interface ReviewedStrategyCatalogEntry {
   evidence_artifact: string;
   evidence: string;
   enabled: boolean;
+  account_mode: "paper" | "live";
+  live_eligible: boolean;
+  validation_state: "shadow_observation" | "qualified_for_live";
+  observation_requires_paper_mode: boolean;
+  live_promotion: {
+    ready: boolean;
+    stage: "shadow_observation" | "review_ready" | "live_eligible" | string;
+    passed: string[];
+    blockers: string[];
+  };
+  eligible_in_current_mode: boolean;
+  execution_enabled: boolean;
   integrity_errors: string[];
 }
 
@@ -668,10 +680,13 @@ export interface StrategyTickerRecommendation {
   evidence_artifact: string;
   metrics: Record<string, number | string | boolean | null>;
   published_at: string;
-  decision: "paper_enabled" | "live_enabled" | "observing" | "pending";
+  decision: "paper_enabled" | "live_pilot" | "observing" | "pending";
   paper_enabled: boolean;
-  live_enabled: boolean;
+  live_pilot: boolean;
   live_eligible: boolean;
+  validation_state: "shadow_observation" | "qualified_for_live";
+  rollout_stage: "observing" | "approval_needed" | "paper_enabled" | "live_pilot";
+  observation_requires_paper_mode: boolean;
   account_mode: "paper" | "live";
 }
 
@@ -847,7 +862,7 @@ export const api = {
     strategies: () => request<{strategies: ReviewedStrategyCatalogEntry[]}>("/api/settings/strategies"),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
     recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),
-    setRecommendation: (strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") =>
+    setRecommendation: (strategyId: string, ticker: string, decision: "paper_enabled" | "live_pilot" | "observing") =>
       request<{ok: boolean; recommendations: StrategyTickerRecommendation[]}>(
         `/api/settings/strategies/recommendations/${encodeURIComponent(strategyId)}/${encodeURIComponent(ticker)}`,
         { method: "POST", body: JSON.stringify({ decision }) },

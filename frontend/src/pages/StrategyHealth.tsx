@@ -28,19 +28,20 @@ const STRAT_NAMES: Record<string, string> = {
 };
 
 function ActivePilotCard({ strategies = [] }: { strategies?: ReviewedStrategyCatalogEntry[] }) {
-  const enabled = strategies.filter((strategy) => strategy.enabled && strategy.status === "paper_candidate");
+  const enabled = strategies.filter((strategy) => strategy.execution_enabled && strategy.status === "paper_candidate");
+  const accountMode = strategies[0]?.account_mode ?? "paper";
   if (enabled.length === 0) {
     return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--ink-faint)" }}>
       <h2 className="text-sm font-semibold" style={{ marginBottom: 6 }}>Effective production strategy status</h2>
       <p style={{ fontSize: 13, color: "var(--ink-muted)", margin: 0 }}>
-        No reviewed strategy is currently enabled for paper execution. Scanner research may continue, but it cannot place a trade.
+        No reviewed strategy is currently able to execute in this {accountMode} account. Scanner research and shadow qualification may continue without placing an order.
       </p>
     </div>;
   }
   return <div className="card" style={{ padding: 16, borderLeft: "3px solid var(--accent)" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
       <h2 className="text-sm font-semibold" style={{ margin: 0 }}>Effective production strategy status</h2>
-      <span className="badge badge-green">{enabled.length} ENABLED · PAPER ONLY</span>
+      <span className="badge badge-green">{enabled.length} ENABLED · {accountMode.toUpperCase()}</span>
     </div>
     <div className="mt-3 overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Reviewed strategy</th><th>Validated ticker</th><th>Execution</th><th>Exit policy</th></tr></thead><tbody>
       {enabled.map((strategy) => <tr key={strategy.strategy_id}><td><strong>{strategy.display_name}</strong><div className="text-[10px]" style={{ color: "var(--ink-faint)" }}>{strategy.strategy_id} · v{strategy.version}</div></td><td>{strategy.tickers.join(", ")}</td><td><span className="badge badge-green">ON</span></td><td>{strategy.exit_minutes == null ? "Registered policy" : `${strategy.exit_minutes}-minute same-contract exit`}</td></tr>)}
@@ -73,7 +74,7 @@ function CandidateScorecard({ data }: { data: CandidateScorecard }) {
     return <div className="card" style={{ padding: 16 }}>
       <h2 className="text-sm font-semibold" style={{ marginBottom: 6 }}>What the gates did</h2>
       <p style={{ fontSize: 13, color: "var(--ink-muted)", margin: 0 }}>
-        No new paper candidates have been recorded for this account yet. This starts collecting while the bot evaluates market-session signals.
+        No new shadow observations have been recorded for this account yet. Collection can run while the account remains connected in either paper or live mode.
       </p>
     </div>;
   }

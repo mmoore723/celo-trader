@@ -100,8 +100,10 @@ class _ExecutionQuoteBroker(AlpacaOrdersMixin):
     def __init__(self) -> None:
         self.posted: list[dict] = []
         self.wait_kwargs: dict = {}
+        self.quote_calls = 0
 
     def get_latest_option_quote(self, _symbol: str) -> dict:
+        self.quote_calls += 1
         return {"bp": 1.20, "ap": 1.30}
 
     def _post(self, _url: str, payload: dict) -> dict:
@@ -171,6 +173,33 @@ class BrokerOrderExecutionTests(unittest.TestCase):
         self.assertEqual("celo-intent-123", broker.posted[0]["client_order_id"])
         self.assertEqual("intent-123", result["order_intent_id"])
         self.assertTrue(result["execution_attempt_id"])
+
+    def test_entry_can_keep_authoritative_tradier_quote(self) -> None:
+        broker = _ExecutionQuoteBroker()
+        with patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker.place_option_order(
+                symbol="SPY260821C00780000", qty=2, side="buy",
+                order_type="limit", limit_price=1.10, step_to_price=1.15,
+                max_acceptable_price=1.20, position_intent="buy_to_open",
+                price_authority="tradier",
+                order_context={
+                    "intent_id": "intent-tradier",
+                    "quote_bid": 1.05,
+                    "quote_ask": 1.15,
+                    "quote_mid": 1.10,
+                    "quote_latency_ms": 42.5,
+                },
+            )
+
+        self.assertEqual("filled", result["status"])
+        self.assertEqual(0, broker.quote_calls)
+        self.assertEqual("1.1", broker.posted[0]["limit_price"])
+        self.assertEqual(1.15, broker.wait_kwargs["step_to_price"])
+        events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
+        self.assertIn("authoritative_quote", events)
+        self.assertIn("execution_summary", events)
 
     def test_price_step_follows_alpaca_replacement_order_id(self) -> None:
         broker = _ReplacementFillBroker()

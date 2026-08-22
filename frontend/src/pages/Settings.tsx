@@ -6,13 +6,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key } from "lucide-react";
 import { api, type AppSettings } from "../lib/api";
 
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
-    <label className="flex items-center justify-between gap-3 cursor-pointer py-2">
+    <label className={`flex items-center justify-between gap-3 py-2 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
       <span className="text-sm" style={{ color: "var(--ink)" }}>{label}</span>
       <div
         className={`toggle-track ${checked ? "on" : ""}`}
-        onClick={() => onChange(!checked)}
+        onClick={() => { if (!disabled) onChange(!checked); }}
+        role="switch"
+        aria-checked={checked}
+        aria-disabled={disabled}
       >
         <div className="toggle-thumb" />
       </div>
@@ -256,7 +259,7 @@ export function Settings() {
     queryFn: api.settings.recommendations,
   });
 
-  async function decideRecommendation(strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") {
+  async function decideRecommendation(strategyId: string, ticker: string, decision: "paper_enabled" | "live_pilot" | "observing") {
     await api.settings.setRecommendation(strategyId, ticker, decision);
     qc.invalidateQueries({ queryKey: ["strategy-recommendations"] });
   }
@@ -405,24 +408,44 @@ export function Settings() {
 
       {/* Strategies */}
       <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Paper strategy controls</h3>
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy execution controls</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          Turn a current paper strategy on or off here. These controls do not enable live orders; V2 strategies are hard-locked to paper mode in the trading engine.
+          Your account is currently in <strong style={{ color: "var(--ink)" }}>{form.paper_trading ? "paper" : "live"} mode</strong>. Observation and qualification continue in either mode. A strategy can place an order only when its switch is on and that exact reviewed version is eligible for your current mode.
         </p>
         {(strategyCatalog?.strategies ?? []).map((strategy, index) => (
           <div key={strategy.strategy_id} className={`rounded-lg px-3 ${index ? "mt-2" : ""}`} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-            <Toggle
-              label={`${strategy.display_name} · v${strategy.version}`}
-              checked={Boolean(form[strategy.setting_key])}
-              onChange={(v) => set(strategy.setting_key, v)}
-            />
+            <div className="flex items-center gap-2">
+              <div className="grow">
+                <Toggle
+                  label={`${strategy.display_name} · v${strategy.version}`}
+                  checked={Boolean(form[strategy.setting_key])}
+                  onChange={(v) => set(strategy.setting_key, v)}
+                />
+              </div>
+              <span className={`badge ${strategy.live_eligible ? "badge-green" : "badge-yellow"}`}>
+                {strategy.live_eligible ? "ELIGIBLE FOR LIVE PILOT" : "SHADOW OBSERVATION"}
+              </span>
+            </div>
             <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-              {strategy.tickers.join(", ")} · {strategy.signal_source.replaceAll("_", " ")} · {strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`} · {strategy.status.replaceAll("_", " ")}.
+              {strategy.tickers.join(", ")} · {strategy.signal_source.replaceAll("_", " ")} · {strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`} · {strategy.execution_enabled ? `can execute in this ${strategy.account_mode} account` : Boolean(form[strategy.setting_key]) ? "evaluating setups; order authority is controlled separately" : "evaluation switch is off"}.
             </p>
+            {!strategy.live_eligible && (
+              <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
+                <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>
+                  Why this strategy cannot place live orders yet
+                </summary>
+                <p className="mt-2">
+                  Shadow Observation uses live market conditions but has zero order authority. Your Alpaca account remains in live mode; no account-mode switch is required.
+                </p>
+                <ul className="mt-1 pl-5 list-disc">
+                  {strategy.live_promotion.blockers.map((reason) => <li key={reason}>{reason}</li>)}
+                </ul>
+              </details>
+            )}
           </div>
         ))}
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-          Only promoted strategies exist in the production controls. Research candidates stay outside the bot until they pass review.
+          New ticker matches observe automatically without placing orders. Enabling one is always your decision. A reduced-risk live pilot is offered inside a live account only after the exact strategy version and ticker pass live-promotion review; no switch back to paper mode is required.
         </div>
         {(strategyHistory?.changes.length ?? 0) > 0 && (
           <details className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
@@ -457,27 +480,30 @@ export function Settings() {
                 </div>
                 <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{recommendation.evidence_summary}</p>
               </div>
-              <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ color: recommendation.paper_enabled || recommendation.live_enabled ? "var(--accent)" : "var(--ink-muted)", background: "var(--surface)" }}>
-                {recommendation.paper_enabled ? "Enabled for my paper account" : recommendation.live_enabled ? "Enabled for my live account" : recommendation.decision === "pending" ? "Your decision needed" : "Observing only"}
+              <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ color: recommendation.paper_enabled || recommendation.live_pilot ? "var(--accent)" : "var(--ink-muted)", background: "var(--surface)" }}>
+                {recommendation.rollout_stage === "live_pilot" ? "Live pilot · 1 contract"
+                  : recommendation.rollout_stage === "paper_enabled" ? "Paper execution enabled"
+                  : recommendation.rollout_stage === "approval_needed" ? "Qualified · your approval needed"
+                  : "Observing · no orders"}
               </span>
             </div>
             <div className="flex gap-2 mt-3">
               {recommendation.account_mode === "paper" && <button className={`btn ${recommendation.paper_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "paper_enabled")}>
                 Enable for my paper account
               </button>}
-              {recommendation.account_mode === "live" && recommendation.live_eligible && <button className={`btn ${recommendation.live_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => {
-                if (window.confirm(`Enable ${recommendation.display_name} on ${recommendation.ticker} for real-money trading in your account?`)) decideRecommendation(recommendation.strategy_id, recommendation.ticker, "live_enabled");
+              {recommendation.account_mode === "live" && recommendation.live_eligible && <button className={`btn ${recommendation.live_pilot ? "btn-primary" : "btn-ghost"}`} onClick={() => {
+                if (window.confirm(`Start a one-contract live pilot for ${recommendation.display_name} on ${recommendation.ticker}? Real-money orders may be placed only in your account.`)) decideRecommendation(recommendation.strategy_id, recommendation.ticker, "live_pilot");
               }}>
-                Enable for my live account
+                Start my live pilot
               </button>}
               <button className={`btn ${recommendation.decision === "observing" ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "observing")}>
-                Keep observing
+                Keep observing — no orders
               </button>
             </div>
             <p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>
               {recommendation.live_eligible
-                ? `Activation applies only to your ${recommendation.account_mode} account and does not affect any other user.`
-                : "This strategy is still under paper validation. Live activation becomes available only after it passes the platform's live-promotion review."}
+                ? `Your Alpaca account stays in ${recommendation.account_mode} mode. You can approve a one-contract live pilot for only this ticker and strategy version; no other user is affected.`
+                : `Analysis continues while your Alpaca account stays in ${recommendation.account_mode} mode. It cannot submit an order until the exact strategy, ticker, and version qualifies—and only you can opt in.`}
             </p>
           </div>
         ))}
@@ -673,7 +699,7 @@ export function Settings() {
           fetch and can't be validated against the backtester.
         </p>
         <Toggle
-          label="Opportunity cohort (paper-only lower-confidence experiments)"
+          label="Opportunity cohort (observation-only lower-confidence experiments)"
           checked={form.opportunity_tier_enabled ?? false}
           onChange={(v) => set("opportunity_tier_enabled", v)}
         />

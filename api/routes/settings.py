@@ -40,8 +40,8 @@ def get_strategy_recommendations() -> dict:
 def set_strategy_recommendation_consent(strategy_id: str, ticker: str, payload: StrategyConsentPayload) -> dict:
     from config import get_settings, save_settings
     from config.strategy_ticker_recommendations import save_user_consent, public_recommendations
-    if payload.decision not in {"paper_enabled", "live_enabled", "observing"}:
-        raise HTTPException(400, "Decision must be paper_enabled, live_enabled, or observing")
+    if payload.decision not in {"paper_enabled", "live_pilot", "observing"}:
+        raise HTTPException(400, "Decision must be paper_enabled, live_pilot, or observing")
     settings = get_settings()
     try:
         consents = save_user_consent(settings, strategy_id, ticker, payload.decision)

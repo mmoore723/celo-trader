@@ -27,7 +27,7 @@ class Settings(BaseModel):
     strategy_spy_afternoon_fvg_v2_enabled: bool = True
     strategy_spy_failed_range_recovery_v2_enabled: bool = True
     strategy_tsla_two_leg_trend_pullback_v2_enabled: bool = True
-    opportunity_tier_enabled: bool = False  # paper-only lower-confidence research cohort
+    opportunity_tier_enabled: bool = False  # observation-only lower-confidence research cohort; never changes account mode
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────
     orb_stage1_gain_pct: float = 50.0   # Stage-1 profit target as % of entry

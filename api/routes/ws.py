@@ -247,7 +247,7 @@ async def websocket_live(ws: WebSocket) -> None:
             # always showed "Waiting for bot to start scanning..." even when scanning.
             if "current_ticker" in state:
                 state["ticker"] = state["current_ticker"]
-            # Give the dashboard a human-readable name for the paper-only
+            # Give the dashboard a human-readable name for the observation-only
             # scheduler state.  The trading engine keeps its internal name so
             # the data model stays aligned with live execution.
             if state.get("opportunity_scheduler"):

@@ -184,9 +184,14 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
     dashboard, QA report, and runtime all describe the same reviewed rule.
     The user-specific switch is resolved server-side from ``setting_key``.
     """
+    from config.strategy_live_promotion import review_live_promotion
+
     integrity_errors = reviewed_strategy_integrity_errors()
-    return [
-        {
+    account_mode = "paper" if bool(settings.get("paper_trading", True)) else "live"
+    rows = []
+    for strategy_id, rule in REVIEWED_STRATEGIES.items():
+        promotion = review_live_promotion(rule)
+        rows.append({
             "strategy_id": rule.strategy_id,
             "display_name": rule.display_name,
             "version": rule.version,
@@ -201,10 +206,29 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
             "evidence_artifact": rule.evidence_artifact,
             "evidence": rule.evidence,
             "enabled": bool(settings.get(rule.setting_key, False)) and rule.strategy_id not in integrity_errors,
+            # Keep the user's switch separate from whether this exact reviewed
+            # version is allowed to execute in the account's current mode.
+            # A live-mode account can continue gathering shadow evidence for a
+            # paper candidate without changing the whole account back to paper.
+            "account_mode": account_mode,
+            "live_eligible": not rule.paper_only,
+            # Qualification is independent of the connected broker mode. A
+            # live account can shadow real market conditions with zero order
+            # authority while an exact strategy version is still qualifying.
+            "validation_state": (
+                "qualified_for_live" if not rule.paper_only else "shadow_observation"
+            ),
+            "observation_requires_paper_mode": False,
+            "eligible_in_current_mode": account_mode == "paper" or not rule.paper_only,
+            "execution_enabled": (
+                bool(settings.get(rule.setting_key, False))
+                and rule.strategy_id not in integrity_errors
+                and (account_mode == "paper" or not rule.paper_only)
+            ),
             "integrity_errors": list(integrity_errors.get(rule.strategy_id, ())),
-        }
-        for strategy_id, rule in REVIEWED_STRATEGIES.items()
-    ]
+            "live_promotion": promotion.public(),
+        })
+    return rows
 
 
 def reviewed_strategy_ids() -> set[str]:
@@ -249,15 +273,29 @@ def enabled_reviewed_strategy_ids(
     cannot promote an unknown one or widen its paid-evidence ticker scope.
     """
     normalized_ticker = str(ticker or "").strip().upper()
-    if normalized_ticker:
-        from config.strategy_ticker_recommendations import is_user_authorized_ticker
+    from config.strategy_ticker_recommendations import (
+        has_user_live_pilot, is_live_pilot_pair, is_user_authorized_ticker,
+    )
+    is_paper = bool(settings.get("paper_trading", True)) if paper is None else bool(paper)
+
+    def _mode_eligible(strategy_id: str, rule: ReviewedStrategyRule) -> bool:
+        if is_paper or not rule.paper_only:
+            return True
+        # Keep rules without general live-order authority out of ordinary live
+        # execution. This does not require the account to switch to paper. The
+        # sole exception is an exact dynamic ticker which passed live review
+        # and this user explicitly enabled. Before ticker selection, retain the
+        # strategy only if this user has at least one such live pilot.
+        if normalized_ticker:
+            return is_live_pilot_pair(strategy_id, normalized_ticker, settings)
+        return has_user_live_pilot(strategy_id, settings)
     return {
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
         if strategy_id not in reviewed_strategy_integrity_errors()
         and bool(settings.get(rule.setting_key, False))
         and (not normalized_ticker or is_user_authorized_ticker(strategy_id, normalized_ticker, settings))
-        and (paper is None or paper or not rule.paper_only)
+        and _mode_eligible(strategy_id, rule)
     }
 
 
