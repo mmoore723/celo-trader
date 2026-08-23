@@ -11,6 +11,8 @@
  * mask-overlay approach.
  */
 import { useEffect, useRef, useState } from "react";
+import { LineSeries } from "lightweight-charts";
+import type { ISeriesApi, MouseEventHandler, Time } from "lightweight-charts";
 import type { Bar, Trade, ChartAnnotation } from "../../lib/api";
 import type { SimulationOverlay, ReplayTrade } from "../../lib/chart_types";
 import type { PositionLevels } from "./chartTypes";
@@ -50,6 +52,10 @@ export interface TradeChartProps {
   revealStart?: number;
   /** Refit only when this chart context changes, never on routine data polls. */
   viewportKey?: string;
+  /** Two-click manual trend-line drawing for chart study. */
+  drawingEnabled?: boolean;
+  /** Increment to remove every user-drawn trend line. */
+  clearDrawingsToken?: number;
 }
 
 export function TradeChart({
@@ -60,11 +66,15 @@ export function TradeChart({
   orHigh, orLow, positionLevels, simulationOverlay, replayTrade,
   height = 420, ticker, revealCount, revealStart, viewportKey,
   showPositionCard = true, currentOptionPrice = null,
+  drawingEnabled = false, clearDrawingsToken = 0,
 }: TradeChartProps) {
   const mainRef = useRef<HTMLDivElement>(null);
   const rsiRef = useRef<HTMLDivElement>(null);
   const macdRef = useRef<HTMLDivElement>(null);
   const overlayMgr = useRef<OverlayManager | null>(null);
+  const drawnLines = useRef<ISeriesApi<"Line">[]>([]);
+  const pendingLinePoint = useRef<{ time: Time; price: number } | null>(null);
+  const [waitingForLineEnd, setWaitingForLineEnd] = useState(false);
 
   const { theme } = useThemeStore();
   const palette = getPalette(theme === "dark");
@@ -108,6 +118,60 @@ export function TradeChart({
     showStructure, showPremiumDiscount, showKillzones, showExecutionGrade,
     orHigh, orLow, positionLevels, simulationOverlay, replayTrade,
   ]);
+
+  // Manual chart study: click once for the start and once for the end. These
+  // lines are visual notes only; they never enter the trading signal path.
+  useEffect(() => {
+    const chart = refs.current.chart;
+    const candle = refs.current.candle;
+    if (!chart || !candle || !drawingEnabled) {
+      pendingLinePoint.current = null;
+      setWaitingForLineEnd(false);
+      return;
+    }
+
+    const handleClick: MouseEventHandler<Time> = (param) => {
+      if (param.time == null || param.point == null) return;
+      const convertedPrice = candle.coordinateToPrice(param.point.y);
+      if (convertedPrice == null) return;
+      const point = { time: param.time, price: Number(convertedPrice) };
+
+      if (!pendingLinePoint.current) {
+        pendingLinePoint.current = point;
+        setWaitingForLineEnd(true);
+        return;
+      }
+
+      const first = pendingLinePoint.current;
+      pendingLinePoint.current = null;
+      setWaitingForLineEnd(false);
+      const line = chart.addSeries(LineSeries, {
+        color: palette.trail,
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      const points = [first, point].sort((a, b) => Number(a.time) - Number(b.time));
+      line.setData(points.map(({ time, price }) => ({ time, value: price })));
+      drawnLines.current.push(line);
+    };
+
+    chart.subscribeClick(handleClick);
+    return () => chart.unsubscribeClick(handleClick);
+  }, [drawingEnabled, palette.trail, refs]);
+
+  // Drawings belong only to the current ticker/timeframe context. The parent
+  // can also clear them explicitly by incrementing clearDrawingsToken.
+  useEffect(() => {
+    const chart = refs.current.chart;
+    for (const line of drawnLines.current) {
+      try { chart?.removeSeries(line); } catch { /* chart may already be rebuilding */ }
+    }
+    drawnLines.current = [];
+    pendingLinePoint.current = null;
+    setWaitingForLineEnd(false);
+  }, [clearDrawingsToken, viewportKey, refs]);
 
   const [cardHovered, setCardHovered] = useState(false);
   const pl = positionLevels;
@@ -163,6 +227,22 @@ export function TradeChart({
           </div>
         )}
 
+        {drawingEnabled && (
+          <div
+            className="absolute z-30 rounded-md px-3 py-1.5 text-[11px] font-semibold"
+            style={{
+              top: 8,
+              right: 8,
+              color: palette.trail,
+              background: theme === "dark" ? "rgba(19,23,34,0.92)" : "rgba(255,255,255,0.92)",
+              border: `1px solid ${palette.trail}`,
+              pointerEvents: "none",
+            }}
+          >
+            {waitingForLineEnd ? "Click the line’s end point" : "Click the line’s start point"}
+          </div>
+        )}
+
         {/* MTF alignment heat strip — did 1m/5m/15m/1h trend agree with this
             entry's direction? Teaching overlay only, from Trade.mtf_bias
             (see trading/mtf_features.py::compute_mtf_alignment()). Absent
@@ -185,7 +265,7 @@ export function TradeChart({
           </div>
         )}
 
-        <div ref={mainRef} className="w-full h-full" />
+        <div ref={mainRef} className="w-full h-full" style={{ cursor: drawingEnabled ? "crosshair" : undefined }} />
       </div>
 
       {showRsi && (

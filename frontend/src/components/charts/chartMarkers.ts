@@ -43,8 +43,15 @@ export function buildAndApplyMarkers(
   }
 
   if (input.showSwings) {
-    const swings = classifyStructure(detectSwings(input.bars, 3));
-    for (const sw of swings) {
+    // Longer views used to label nearly every minor pivot, hiding the candles.
+    // Use a wider pivot window as more bars enter the view, prefer actual
+    // BOS/CHoCH events, and cap the final teaching markers.
+    const lookback = input.bars.length >= 400 ? 8 : input.bars.length >= 200 ? 6 : input.bars.length >= 100 ? 5 : 3;
+    const swings = classifyStructure(detectSwings(input.bars, lookback));
+    const candidates = input.showStructure ? swings.filter((sw) => sw.structure) : swings;
+    const stride = Math.max(1, Math.ceil(candidates.length / 18));
+    for (const [index, sw] of candidates.entries()) {
+      if (index % stride !== 0 && index !== candidates.length - 1) continue;
       const isHigh = sw.kind === "SH";
       const color = sw.label === "HH" || sw.label === "HL" ? P.structureUp : P.structureDown;
       let text = sw.label as string;
@@ -55,6 +62,10 @@ export function buildAndApplyMarkers(
 
   for (const ann of input.annotations) {
     if (ann.type === "marker" && ann.price != null) {
+      // Strategy annotations can also contain structure shorthand. Respect
+      // the same Structure toggle so disabling it truly declutters the chart.
+      const isStructureAnnotation = /(?:^|[\s·:_-])(HH|HL|LH|LL|SH|SL|BOS|CHOCH)(?:$|[\s·:_-])/i.test(ann.label);
+      if (isStructureAnnotation && !input.showSwings) continue;
       const isBullish = ann.direction === "bullish";
       markers.push({ time: toEpochTime(ann.ts), position: isBullish ? "belowBar" : "aboveBar", color: ann.color, shape: ann.strategy === "veto" ? "square" : isBullish ? "arrowUp" : "arrowDown", text: ann.label, size: ann.strategy === "veto" ? 1 : 2 });
     }

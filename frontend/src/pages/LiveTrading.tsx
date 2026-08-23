@@ -130,8 +130,10 @@ export function LiveTrading() {
   const [showVwap,        setShowVwap]        = useState(true);
   const [showVwapBands,   setShowVwapBands]   = useState(true);
   const [showOR,          setShowOR]          = useState(true);
-  const [showSwings,      setShowSwings]      = useState(true);
+  const [showSwings,      setShowSwings]      = useState(false);
   const [showPositionCard,setShowPositionCard]= useState(true);
+  const [drawingEnabled,  setDrawingEnabled]  = useState(false);
+  const [clearDrawingsToken, setClearDrawingsToken] = useState(0);
   // Board is the current per-ticker view (trading/watching/blocked).
   const [mainPanelTab,    setMainPanelTab]    = useState<"board" | "log">("board");
   const [boardTicker,     setBoardTicker]     = useState("");
@@ -584,7 +586,7 @@ export function LiveTrading() {
                 ["VWAP",   showVwap,        setShowVwap],
                 ["Bands",  showVwapBands,   setShowVwapBands],
                 ["OR",     showOR,          setShowOR],
-                ["Swings", showSwings,      setShowSwings],
+                ["Structure", showSwings,   setShowSwings],
                 ["Pos",    showPositionCard,setShowPositionCard],
               ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
                 <button key={label}
@@ -593,6 +595,26 @@ export function LiveTrading() {
                   {label}
                 </button>
               ))}
+              <button
+                type="button"
+                className={`btn btn-sm ${drawingEnabled ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => setDrawingEnabled((enabled) => !enabled)}
+                aria-pressed={drawingEnabled}
+                title="Click two chart points to draw a trend line"
+              >
+                Draw line
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  setClearDrawingsToken((token) => token + 1);
+                  setDrawingEnabled(false);
+                }}
+                title="Remove all manual trend lines"
+              >
+                Clear lines
+              </button>
             </div>
             <div className="flex-1" />
             {barsLoading && <RefreshCw size={13} className="animate-spin text-ink-muted" />}
@@ -612,6 +634,8 @@ export function LiveTrading() {
             showVwapBands={showVwapBands}
             showOR={showOR}
             showSwings={showSwings}
+            drawingEnabled={drawingEnabled}
+            clearDrawingsToken={clearDrawingsToken}
             showPositionCard={showPositionCard}
             showRsi
             showMacd
