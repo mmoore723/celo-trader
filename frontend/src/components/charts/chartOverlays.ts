@@ -39,9 +39,7 @@ export class OverlayManager {
   private candle: ISeriesApi<"Candlestick">;
   private vwapLines: Record<"vwap" | "u1" | "l1" | "u2" | "l2", ISeriesApi<"Line"> | null> = { vwap: null, u1: null, l1: null, u2: null, l2: null };
   // { series, line } pairs so clearPriceLines() can call removePriceLine on
-  // whichever series a given line actually belongs to — needed now that
-  // trade-level lines (see tradeLevelAnchor below) live on a different
-  // series than the OR/annotation lines, which stay on `candle`.
+  // whichever series a given line actually belongs to.
   private priceLines: { series: ISeriesApi<"Candlestick"> | ISeriesApi<"Line">; line: IPriceLine }[] = [];
   // FIX 2026-07-31: real bug — option premium levels (position entry/stop/
   // target/trail, and replay MFE/MAE) used to be drawn with
@@ -55,6 +53,10 @@ export class OverlayManager {
   // anchor to; lightweight-charts includes price lines in a series'
   // autoscale, so seeding it with the levels' own range is enough.
   private tradeLevelAnchor: ISeriesApi<"Line"> | null = null;
+  // Stock-price reference lines stay on the stock scale but are excluded
+  // from autoscale. A stale OR or annotation can remain visible when it is
+  // relevant without crushing the candles into a narrow strip.
+  private referenceAnchor: ISeriesApi<"Line"> | null = null;
   private zoneMgr: ZoneBandManager;
   private palette: ChartPalette;
   private chart: IChartApi;
@@ -124,6 +126,21 @@ export class OverlayManager {
     return this.tradeLevelAnchor;
   }
 
+  private ensureReferenceAnchor(firstT: Time, lastT: Time, price: number): ISeriesApi<"Line"> {
+    if (!this.referenceAnchor) {
+      this.referenceAnchor = this.chart.addSeries(LineSeries, {
+        color: "transparent",
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => null,
+      }) as unknown as ISeriesApi<"Line">;
+    }
+    this.referenceAnchor.setData([{ time: firstT, value: price }, { time: lastT, value: price }]);
+    return this.referenceAnchor;
+  }
+
   apply(input: OverlayInputs) {
     const P = this.palette;
     this.clearPriceLines();
@@ -137,6 +154,7 @@ export class OverlayManager {
     }
     const firstT = toEpochTime(input.bars[0].time);
     const lastT = toEpochTime(input.bars[input.bars.length - 1].time);
+    const referenceAnchor = this.ensureReferenceAnchor(firstT, lastT, input.bars[input.bars.length - 1].close);
 
     // ── Opening range: line + shaded box ────────────────────────────────────
     // FIX 2026-07-31: the shaded OR box used to span fromTime=firstT — the
@@ -158,8 +176,8 @@ export class OverlayManager {
     );
     const orZoneFrom = (todayOrStart as number) > (firstT as number) ? todayOrStart : firstT;
 
-    if (input.orHigh != null) this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: input.orHigh, color: P.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Hi" }) });
-    if (input.orLow != null) this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: input.orLow, color: P.orLow, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Lo" }) });
+    if (input.orHigh != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: input.orHigh, color: P.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Hi" }) });
+    if (input.orLow != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: input.orLow, color: P.orLow, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Lo" }) });
     if (input.orHigh != null && input.orLow != null) {
       zoneSpecs.push({ id: "or_zone", fromTime: orZoneFrom, toTime: lastT, low: input.orLow, high: input.orHigh, color: P.orHigh + "18" });
     }
@@ -188,11 +206,10 @@ export class OverlayManager {
     // (e.g. $4.85), not stock price — drawn on `candle` they collapsed to a
     // sliver at the bottom of AMZN's $260-360 axis. Now anchored to their
     // own hidden scale (see ensureTradeLevelAnchor) so they're correctly
-    // spaced relative to each other. Zones (risk/reward shading) stay on the
-    // main pane's time axis but their price coordinates are meaningless on
-    // the stock scale too — left as-is since they're a subtle background
-    // tint, not a number a user reads directly; the lines were the real
-    // complaint.
+    // spaced relative to each other. Option-premium risk/reward shading is
+    // deliberately not drawn on the underlying chart: a $4 option has no
+    // valid coordinate on a $700 stock-price axis. The position card still
+    // presents the entry, stop, target, and live P&L.
     const pl = input.positionLevels;
     if (pl?.entry != null) {
       const entry = pl.entry;
@@ -210,8 +227,6 @@ export class OverlayManager {
         const price = pl[d.key];
         if (price != null && price > 0) this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price, color: d.color, lineWidth: 1, lineStyle: d.key === "trail" ? LineStyle.Dashed : LineStyle.Solid, title: `${d.label} $${price.toFixed(2)}` }) });
       }
-      if (pl.stop != null) zoneSpecs.push({ id: "pos_risk", fromTime: firstT, toTime: lastT, low: Math.min(entry, pl.stop), high: Math.max(entry, pl.stop), color: P.stop + "18" });
-      if (pl.target != null) zoneSpecs.push({ id: "pos_reward", fromTime: firstT, toTime: lastT, low: Math.min(entry, pl.target), high: Math.max(entry, pl.target), color: P.target + "18" });
     } else if (this.tradeLevelAnchor) {
       this.tradeLevelAnchor.setData([]);
     }
@@ -220,9 +235,9 @@ export class OverlayManager {
     if (input.simulationOverlay) {
       const s = input.simulationOverlay;
       const isCall = s.direction === "calls";
-      this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: s.entryTrigger, color: isCall ? P.up : P.down, lineWidth: 2, title: "Entry Trigger" }) });
-      this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: s.stage1Px, color: P.target, lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Stage 1" }) });
-      this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: s.stopPx, color: P.stop, lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Stop" }) });
+      this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: s.entryTrigger, color: isCall ? P.up : P.down, lineWidth: 2, title: "Entry Trigger" }) });
+      this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: s.stage1Px, color: P.target, lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Stage 1" }) });
+      this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: s.stopPx, color: P.stop, lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Stop" }) });
       zoneSpecs.push({ id: "sim_reward", fromTime: firstT, toTime: lastT, low: Math.min(s.entryTrigger, s.stage1Px), high: Math.max(s.entryTrigger, s.stage1Px), color: P.target + "18" });
       zoneSpecs.push({ id: "sim_risk", fromTime: firstT, toTime: lastT, low: Math.min(s.entryTrigger, s.stopPx), high: Math.max(s.entryTrigger, s.stopPx), color: P.stop + "18" });
     }
@@ -247,7 +262,7 @@ export class OverlayManager {
 
     // ── Bot annotations (hline / zone) ───────────────────────────────────────
     for (const ann of input.annotations) {
-      if (ann.type === "hline" && ann.price != null) this.priceLines.push({ series: this.candle, line: this.candle.createPriceLine({ price: ann.price, color: ann.color, lineWidth: 1, lineStyle: LineStyle.Dashed, title: ann.label }) });
+      if (ann.type === "hline" && ann.price != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: ann.price, color: ann.color, lineWidth: 1, lineStyle: LineStyle.Dashed, title: ann.label }) });
       else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) zoneSpecs.push({ id: `ann_${ann.id}`, fromTime: firstT, toTime: lastT, low: ann.price_low, high: ann.price_high, color: ann.color + "22" });
     }
 
@@ -270,6 +285,10 @@ export class OverlayManager {
     if (this.tradeLevelAnchor) {
       try { this.chart.removeSeries(this.tradeLevelAnchor); } catch { /* chart already disposed */ }
       this.tradeLevelAnchor = null;
+    }
+    if (this.referenceAnchor) {
+      try { this.chart.removeSeries(this.referenceAnchor); } catch { /* chart already disposed */ }
+      this.referenceAnchor = null;
     }
   }
 }

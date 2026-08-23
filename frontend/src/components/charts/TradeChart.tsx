@@ -48,6 +48,8 @@ export interface TradeChartProps {
   revealCount?: number;
   /** Left edge of the visible window (bar index) — undefined/omitted = 0 (from the start). */
   revealStart?: number;
+  /** Refit only when this chart context changes, never on routine data polls. */
+  viewportKey?: string;
 }
 
 export function TradeChart({
@@ -56,7 +58,7 @@ export function TradeChart({
   showStructure = true, showPremiumDiscount = false, showKillzones = false, showExecutionGrade = true,
   showRsi = true, showMacd = true,
   orHigh, orLow, positionLevels, simulationOverlay, replayTrade,
-  height = 420, ticker, revealCount, revealStart,
+  height = 420, ticker, revealCount, revealStart, viewportKey,
   showPositionCard = true, currentOptionPrice = null,
 }: TradeChartProps) {
   const mainRef = useRef<HTMLDivElement>(null);
@@ -67,7 +69,7 @@ export function TradeChart({
   const { theme } = useThemeStore();
   const palette = getPalette(theme === "dark");
 
-  const { refs, setBars } = useChartCore(mainRef, rsiRef, macdRef, palette, { height, showRsi, showMacd });
+  const { refs, setBars } = useChartCore(mainRef, rsiRef, macdRef, palette, { height, showRsi, showMacd, viewportKey });
 
   // Visible slice for replay — bounded on BOTH sides. `revealStart` (e.g.
   // entry-15 from a boomerang jump) keeps prior days/sessions out of view;
@@ -96,7 +98,9 @@ export function TradeChart({
     overlayMgr.current?.apply({
       bars: visibleBars, trades: visibleTrades, annotations: visibleAnnotations,
       showVwap, showSwings, showStructure, showPremiumDiscount, showKillzones, showExecutionGrade,
-      orHigh, orLow, positionLevels, simulationOverlay, replayTrade,
+      orHigh: showOR ? orHigh : undefined,
+      orLow: showOR ? orLow : undefined,
+      positionLevels, simulationOverlay, replayTrade,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

@@ -53,13 +53,17 @@ export function useChartCore(
   rsiEl: React.RefObject<HTMLDivElement | null>,
   macdEl: React.RefObject<HTMLDivElement | null>,
   palette: ChartPalette,
-  opts: { height: number; showRsi: boolean; showMacd: boolean },
+  opts: { height: number; showRsi: boolean; showMacd: boolean; viewportKey?: string },
 ) {
   const refs = useRef<ChartCoreRefs>({
     chart: null, candle: null, volume: null,
     rsiChart: null, rsiLine: null,
     macdChart: null, macdHist: null, macdLine: null, macdSignal: null,
   });
+  // Polling in a new bar must not reset the user's zoom or recalculate the
+  // viewport around every annotation. Refit only when the visible chart
+  // context (ticker/timeframe/replay window) actually changes.
+  const lastFittedViewportKey = useRef<string | null>(null);
 
   // ── Create / destroy on mount, theme change, or sub-panel toggle ─────────
   useEffect(() => {
@@ -92,6 +96,7 @@ export function useChartCore(
     refs.current.chart = chart;
     refs.current.candle = candle;
     refs.current.volume = volume;
+    lastFittedViewportKey.current = null;
 
     let rsiChart: IChartApi | null = null, rsiLine: ISeriesApi<"Line"> | null = null;
     if (opts.showRsi && rsiEl.current) {
@@ -141,6 +146,7 @@ export function useChartCore(
       rsiChart?.remove();
       macdChart?.remove();
       refs.current = { chart: null, candle: null, volume: null, rsiChart: null, rsiLine: null, macdChart: null, macdHist: null, macdLine: null, macdSignal: null };
+      lastFittedViewportKey.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [palette.background, opts.height, opts.showRsi, opts.showMacd]);
@@ -148,7 +154,16 @@ export function useChartCore(
   // ── Feed data whenever bars change ────────────────────────────────────────
   function setBars(bars: Bar[]) {
     const r = refs.current;
-    if (!r.candle || bars.length === 0) return;
+    if (!r.candle) return;
+    if (bars.length === 0) {
+      r.candle.setData([]);
+      r.volume?.setData([]);
+      r.rsiLine?.setData([]);
+      r.macdLine?.setData([]);
+      r.macdSignal?.setData([]);
+      r.macdHist?.setData([]);
+      return;
+    }
     const closes = bars.map((b) => b.close);
 
     r.candle.setData(bars.map((b) => ({ time: toEpochTime(b.time), open: b.open, high: b.high, low: b.low, close: b.close })));
@@ -166,9 +181,11 @@ export function useChartCore(
       r.macdHist.setData(bars.map((b, i) => (hist[i] != null ? { time: toEpochTime(b.time), value: hist[i]!, color: hist[i]! >= 0 ? palette.macdHistPos + "bb" : palette.macdHistNeg + "bb" } : null)).filter(Boolean) as { time: Time; value: number; color: string }[]);
     }
 
-    r.chart?.timeScale().fitContent();
-    r.rsiChart?.timeScale().fitContent();
-    r.macdChart?.timeScale().fitContent();
+    const viewportKey = opts.viewportKey ?? "default";
+    if (lastFittedViewportKey.current !== viewportKey) {
+      lastFittedViewportKey.current = viewportKey;
+      r.chart?.timeScale().fitContent();
+    }
   }
 
   return { refs, setBars };

@@ -10,6 +10,7 @@ import { BoomerangReplay, type BoomerangReplayHandle } from "../components/chart
 import { useBotStore } from "../store/bot";
 import { api, type Trade, type ChartAnnotation, type NewsArticle } from "../lib/api";
 import { dedupeLatestEpisodes, lifecycleCopy, opportunityLifecycle } from "../lib/opportunitySemantics.js";
+import { openingRangeForBars } from "../lib/chartSession.js";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
@@ -321,14 +322,13 @@ export function LiveTrading() {
     select: (rows) => rows.map((r) => ({ ts: r.ts, message: r.message })),
   });
 
-  const lastClose = chartBars[chartBars.length - 1]?.close ?? 0;
-  const orHighRaw  = or?.high ?? 0;
-  const orLowRaw   = or?.low  ?? 0;
-  const orInRange  = lastClose > 0 && orHighRaw > 0 && orLowRaw > 0
-    && Math.abs(orHighRaw - lastClose) / lastClose < 0.15
-    && Math.abs(orLowRaw  - lastClose) / lastClose < 0.15;
-  const safeOrHigh = orInRange ? orHighRaw : undefined;
-  const safeOrLow  = orInRange ? orLowRaw  : undefined;
+  // An opening range is valid only for the same trading session as the bars
+  // on screen. The old 15%-from-last-price check accepted yesterday's range,
+  // which is exactly how a $775 OR flattened today's $763 candles into a
+  // narrow band with a large blank area above them.
+  const visibleOpeningRange = openingRangeForBars(chartBars, or, showOR);
+  const safeOrHigh = visibleOpeningRange.high;
+  const safeOrLow = visibleOpeningRange.low;
 
   // FIX 2026-07-17: "no_signal" (no setup found at all) used to render as a
   // compact-but-still-visible "SKIP · no setup" row. That's the single most
@@ -605,7 +605,7 @@ export function LiveTrading() {
           <BoomerangReplay
             ref={chartReplayRef}
             mode="live"
-            resetKey={`${ticker}|${tf}`}
+            resetKey={`${ticker}|${tf}|${effectivePeriod}`}
             bars={chartBars}
             trades={tickerTrades}
             showVwap={showVwap}

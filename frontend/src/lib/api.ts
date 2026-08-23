@@ -559,6 +559,18 @@ export interface Bar {
   atr?: number;
 }
 
+export interface OpeningRange {
+  high?: number;
+  low?: number;
+  open?: number;
+  close?: number;
+  volume?: number;
+  /** Trading-session date/time represented by this range. */
+  time?: string;
+  /** Number of completed five-minute bars used to build the range. */
+  bars?: number;
+}
+
 export interface Quote {
   ticker: string;
   price: number;
@@ -852,7 +864,7 @@ export const api = {
     premarket: (tickers?: string) => request<PremarketTicker[]>(
       `/api/market/premarket${tickers ? `?tickers=${encodeURIComponent(tickers)}` : ""}`
     ),
-    or:      (ticker: string) => request<Record<string,number>>(`/api/market/opening-range/${ticker}`),
+    or:      (ticker: string) => request<OpeningRange>(`/api/market/opening-range/${ticker}`),
     chain:   (ticker: string) => request<OptionsChainRow[]>(`/api/market/chain/${ticker}`),
     news:    (symbols: string, limit = 10) => request<NewsArticle[]>(`/api/market/news?symbols=${symbols}&limit=${limit}`),
   },

@@ -64,6 +64,8 @@ export class ZoneBandManager {
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: false,
+          // Decorative bands must never stretch/compress the candle scale.
+          autoscaleInfoProvider: () => null,
         }) as unknown as ISeriesApi<"Baseline">;
         this.series.set(spec.id, series);
       }

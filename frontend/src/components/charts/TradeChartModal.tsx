@@ -54,13 +54,6 @@ export function TradeChartModal(props: Props) {
 
   // Kick off the boomerang the moment bars are ready for a replay.
   useEffect(() => {
-    // TEMP DEBUG — remove once the whole-week-instead-of-one-day bug is confirmed fixed.
-    console.log("[TradeChartModal] jump-effect fired", {
-      open, mode: props.mode, tf, barsLength: bars.length,
-      entryTime: props.mode === "replay" ? props.trade.entry_time : undefined,
-      exitTime: props.mode === "replay" ? props.trade.exit_time : undefined,
-      replayRefReady: !!replayRef.current,
-    });
     if (open && props.mode === "replay" && bars.length > 0 && props.trade.entry_time) {
       replayRef.current?.jumpToTime(props.trade.entry_time, props.trade.exit_time);
     }
@@ -101,7 +94,7 @@ export function TradeChartModal(props: Props) {
             <BoomerangReplay
               ref={replayRef}
               mode="historical"
-              resetKey={`${ticker}|${tf}`}
+              resetKey={`${ticker}|${tf}|${date}`}
               bars={bars} trades={tradesForChart} ticker={ticker}
               annotations={props.trade.annotations ?? []}
               height={chartHeight} showOR={false} showSwings showStructure
@@ -109,7 +102,7 @@ export function TradeChartModal(props: Props) {
               staticNarration={props.trade.recap}
             />
           ) : (
-            <TradeChart bars={bars} trades={tradesForChart} ticker={ticker} height={chartHeight} showOR={false} simulationOverlay={simOverlay} />
+            <TradeChart bars={bars} trades={tradesForChart} ticker={ticker} height={chartHeight} showOR={false} simulationOverlay={simOverlay} viewportKey={`${ticker}|${tf}|${date}|simulation`} />
           )}
         </div>
 
