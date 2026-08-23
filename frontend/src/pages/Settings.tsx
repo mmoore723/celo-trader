@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key } from "lucide-react";
 import { api, type AppSettings } from "../lib/api";
+import { strategyExecutionState } from "../lib/strategyExecutionState.js";
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
@@ -412,24 +413,27 @@ export function Settings() {
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           Your account is currently in <strong style={{ color: "var(--ink)" }}>{form.paper_trading ? "paper" : "live"} mode</strong>. Observation and qualification continue in either mode. A strategy can place an order only when its switch is on and that exact reviewed version is eligible for your current mode.
         </p>
-        {(strategyCatalog?.strategies ?? []).map((strategy, index) => (
+        {(strategyCatalog?.strategies ?? []).map((strategy, index) => {
+          const switchEnabled = Boolean(form[strategy.setting_key]);
+          const executionState = strategyExecutionState(strategy, switchEnabled);
+          return (
           <div key={strategy.strategy_id} className={`rounded-lg px-3 ${index ? "mt-2" : ""}`} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
             <div className="flex items-center gap-2">
               <div className="grow">
                 <Toggle
                   label={`${strategy.display_name} · v${strategy.version}`}
-                  checked={Boolean(form[strategy.setting_key])}
+                  checked={switchEnabled}
                   onChange={(v) => set(strategy.setting_key, v)}
                 />
               </div>
-              <span className={`badge ${strategy.live_eligible ? "badge-green" : "badge-yellow"}`}>
-                {strategy.live_eligible ? "ELIGIBLE FOR LIVE PILOT" : "SHADOW OBSERVATION"}
+              <span className={`badge ${executionState.tone === "green" ? "badge-green" : executionState.tone === "yellow" ? "badge-yellow" : ""}`}>
+                {executionState.badge}
               </span>
             </div>
             <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-              {strategy.tickers.join(", ")} · {strategy.signal_source.replaceAll("_", " ")} · {strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`} · {strategy.execution_enabled ? `can execute in this ${strategy.account_mode} account` : Boolean(form[strategy.setting_key]) ? "evaluating setups; order authority is controlled separately" : "evaluation switch is off"}.
+              {strategy.tickers.join(", ")} · {strategy.signal_source.replaceAll("_", " ")} · {strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`} · {executionState.detail}.
             </p>
-            {!strategy.live_eligible && (
+            {!strategy.live_eligible && strategy.account_mode === "live" && (
               <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
                 <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>
                   Why this strategy cannot place live orders yet
@@ -443,7 +447,8 @@ export function Settings() {
               </details>
             )}
           </div>
-        ))}
+          );
+        })}
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
           New ticker matches observe automatically without placing orders. Enabling one is always your decision. A reduced-risk live pilot is offered inside a live account only after the exact strategy version and ticker pass live-promotion review; no switch back to paper mode is required.
         </div>
