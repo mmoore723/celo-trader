@@ -57,6 +57,27 @@ const EVIDENCE_LABELS: Record<ReviewedStrategyCatalogEntry["evidence_grade"], { 
 };
 
 const COACH_IMAGE = "/images/coach-celo-v5.png?v=1";
+const POINTING_COACH_IMAGE = new URL("../../assets/learning/coach-celo-pointing.png", import.meta.url).href;
+
+const COACH_FOCUS: Record<LessonId, number[]> = {
+  v2_orb: [12, 43, 60, 73, 86],
+  v2_trend: [40, 54, 69, 80, 88],
+  v2_spy_fvg: [8, 58, 79, 82, 89],
+  v2_two_leg: [52, 70, 77, 83, 89],
+  v2_recovery: [22, 44, 60, 75, 88],
+};
+
+function CoachChartGuide({ courseId, stepIndex, label }: { courseId: LessonId; stepIndex: number; label: string }) {
+  const target = COACH_FOCUS[courseId][stepIndex] ?? 50;
+  return <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden rounded-xl" aria-hidden>
+    <style>{`@keyframes coach-step{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}} @keyframes coach-target{0%,100%{box-shadow:0 0 0 7px rgba(250,204,21,.13)}50%{box-shadow:0 0 0 15px rgba(250,204,21,.05)}}`}</style>
+    <div className="absolute top-[47%] h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-700" style={{ left: `${target}%`, border: "3px solid #facc15", background: "rgba(250,204,21,.2)", animation: "coach-target 1.4s ease-in-out infinite" }} />
+    <div className="absolute bottom-10 transition-[left] duration-700 ease-in-out" style={{ left: `clamp(2px, calc(${target}% + 7px), calc(100% - 150px))`, animation: "coach-step .75s ease-in-out infinite" }}>
+      <div className="mb-1 ml-2 max-w-[145px] rounded-lg px-2 py-1 text-[10px] font-bold text-white shadow-lg" style={{ background: "rgba(8,35,74,.94)" }}>Look here: {label}</div>
+      <img src={POINTING_COACH_IMAGE} alt="" className="h-[175px] w-[115px] sm:h-[225px] sm:w-[150px] object-contain object-bottom drop-shadow-2xl" />
+    </div>
+  </div>;
+}
 
 const COURSES: Course[] = [
   {
@@ -378,7 +399,7 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
           <div className="flex items-start justify-between gap-1" aria-label="Lesson steps">{course.steps.map((item, index) => <button key={item.label} onClick={() => chooseStep(index)} className="flex-1 min-w-0 flex flex-col items-center gap-1.5 group"><span className="w-7 h-7 rounded-full grid place-items-center text-xs font-bold transition-colors" style={{ background: index === stepIndex ? "#1f6fff" : "#f1f3f7", color: index === stepIndex ? "white" : "#546176", boxShadow: index === stepIndex ? "0 0 0 4px #eaf1ff" : "none" }}>{index + 1}</span><span className="text-[11px] font-medium whitespace-nowrap" style={{ color: index === stepIndex ? "#1f6fff" : "#536075" }}>{item.label}</span></button>)}</div>
         </div>
         <div className="p-5 flex flex-col gap-4">
-          <div className="min-w-0">{course.id === "v2_spy_fvg" ? <AfternoonFvgChart focus={step.chartFocus} /> : course.id === "v2_recovery" ? <FailedRangeRecoveryChart focus={step.chartFocus} /> : course.id === "v2_trend" ? <TrendContinuationChart focus={step.chartFocus} /> : course.id === "v2_two_leg" ? <TwoLegTrendChart focus={step.chartFocus} /> : <CoachChart focus={step.chartFocus} />}</div>
+          <div className="relative min-w-0">{course.id === "v2_spy_fvg" ? <AfternoonFvgChart focus={step.chartFocus} /> : course.id === "v2_recovery" ? <FailedRangeRecoveryChart focus={step.chartFocus} /> : course.id === "v2_trend" ? <TrendContinuationChart focus={step.chartFocus} /> : course.id === "v2_two_leg" ? <TwoLegTrendChart focus={step.chartFocus} /> : <CoachChart focus={step.chartFocus} />}<CoachChartGuide courseId={course.id} stepIndex={stepIndex} label={step.label} /></div>
           <div className="flex items-center justify-between gap-3"><button className="btn btn-ghost btn-sm" disabled={stepIndex === 0} onClick={() => chooseStep(stepIndex - 1)}><ChevronLeft size={15} /> Back</button><div className="flex-1 max-w-[440px] h-1 rounded-full" style={{ background: "#e5ecf8" }}><div className="h-full rounded-full" style={{ width: `${((stepIndex + 1) / course.steps.length) * 100}%`, background: "#2870f4" }} /></div><button className="btn btn-primary btn-sm" onClick={() => chooseStep(stepIndex === course.steps.length - 1 ? 0 : stepIndex + 1)}>{stepIndex === course.steps.length - 1 ? "Replay" : "Next"} <ChevronRight size={15} /></button></div>
         </div>
         {showGuardrails ? <div className="mx-5 mb-5 rounded-xl p-4" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface))", border: "1px solid var(--border)" }}><div className="flex gap-3 items-start"><img src={COACH_IMAGE} alt="Coach Celo" className="w-12 h-16 object-contain object-bottom shrink-0" /><div><p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Coach Celo explains the account guardrails</p><p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--ink-muted)" }}>These rules apply in paper and live modes. They control risk across the account.</p></div></div><div className="grid gap-2 mt-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>{GUARDRAILS.map(([title, detail]) => <div key={title} className="rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}><p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>{title}</p><p className="text-xs leading-relaxed mt-1" style={{ color: "var(--ink-muted)" }}>{detail}</p></div>)}</div></div> : <div className="mx-5 mb-5 rounded-xl p-4" style={{ background: "#fbfcff", border: "1px solid #e7edf7" }}><p className="text-base font-bold" style={{ color: "var(--ink)" }}>Try it yourself</p><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{step.question}</p><div className="grid gap-2 mt-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>{step.answers.map((choice, index) => <button key={choice} className="btn text-left justify-start" onClick={() => setAnswer(index)} style={answer === index ? { borderColor: index === step.correct ? "var(--positive)" : "var(--negative)", background: index === step.correct ? "var(--positive-bg)" : "var(--negative-bg)" } : undefined}><span className="w-6 h-6 rounded-full grid place-items-center text-xs mr-1" style={{ background: "#edf4ff", color: "#1f6fff" }}>{index + 1}</span>{choice}</button>)}</div>{answer !== null && <p className="text-xs mt-3 leading-relaxed" style={{ color: answer === step.correct ? "var(--positive)" : "var(--ink-muted)" }}>{answer === step.correct ? step.answerWhy : `Not quite. ${step.answerWhy}`}</p>}</div>}
