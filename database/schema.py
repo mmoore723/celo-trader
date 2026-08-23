@@ -387,6 +387,31 @@ _CREATE_SCANNER_CANDLE_OBSERVATIONS_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_scanner_candles_symbol_time ON scanner_candle_observations(broker_account_id, ticker, bar_time);",
 ]
 
+_CREATE_LEARNING_TABLES = """
+CREATE TABLE IF NOT EXISTS learning_examples (
+    example_id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL UNIQUE,
+    strategy_id TEXT NOT NULL, strategy_version TEXT NOT NULL, ticker TEXT NOT NULL,
+    category TEXT NOT NULL, curated_at TEXT NOT NULL, evidence_json TEXT NOT NULL,
+    published INTEGER NOT NULL DEFAULT 1, current_episode INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY(candidate_id) REFERENCES shadow_candidates(candidate_id)
+);
+CREATE TABLE IF NOT EXISTS learning_practice_sessions (
+    session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, example_id TEXT NOT NULL,
+    expected_answer TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+    answered_at TEXT, answer TEXT, correct INTEGER,
+    FOREIGN KEY(example_id) REFERENCES learning_examples(example_id)
+);
+CREATE TABLE IF NOT EXISTS learning_ranker_models (
+    model_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, episode_count INTEGER NOT NULL,
+    feature_names_json TEXT NOT NULL, weights_json TEXT NOT NULL, metrics_json TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS learning_ranker_scores (
+    candidate_id TEXT PRIMARY KEY, model_id TEXT NOT NULL, score REAL NOT NULL,
+    scored_at TEXT NOT NULL, FOREIGN KEY(candidate_id) REFERENCES shadow_candidates(candidate_id)
+);
+"""
+
 
 
 # ── Initialisation ────────────────────────────────────────────────────────────
@@ -418,6 +443,12 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
         conn.execute(_CREATE_SCANNER_CANDLE_OBSERVATIONS)
+        conn.executescript(_CREATE_LEARNING_TABLES)
+        _learning_cols = {row[1] for row in conn.execute("PRAGMA table_info(learning_examples)")}
+        if "current_episode" not in _learning_cols:
+            conn.execute("ALTER TABLE learning_examples ADD COLUMN current_episode INTEGER NOT NULL DEFAULT 1")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_examples_publish ON learning_examples(strategy_id,published)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_examples_current ON learning_examples(current_episode)")
         for _idx_sql in _CREATE_BROKER_ORDER_EVENTS_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:

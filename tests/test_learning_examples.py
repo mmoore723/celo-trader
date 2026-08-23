@@ -30,11 +30,11 @@ class LearningExampleTests(unittest.TestCase):
     def test_measured_direction_classifies_win_and_loss(self):
         self.assertEqual(
             "clean_win",
-            _example_category(self.row(direction_correct=1, outcome_observed_at="2026-08-21T10:30:00-04:00")),
+            _example_category(self.row(direction_correct=1, directional_move_pct=0.3, outcome_observed_at="2026-08-21T10:30:00-04:00")),
         )
         self.assertEqual(
             "valid_loss",
-            _example_category(self.row(direction_correct=0, outcome_observed_at="2026-08-21T10:30:00-04:00")),
+            _example_category(self.row(direction_correct=0, directional_move_pct=-0.3, outcome_observed_at="2026-08-21T10:30:00-04:00")),
         )
 
     def test_recorded_gate_reason_wins_over_unmeasured_outcome(self):
@@ -65,7 +65,7 @@ class LearningExampleTests(unittest.TestCase):
     def test_repeated_minute_detections_are_one_learning_episode(self):
         rows = [
             {**self.row(), "candidate_id": "first", "observed_at": "2026-08-21T10:00:00-04:00"},
-            {**self.row(direction_correct=1, outcome_observed_at="2026-08-21T10:30:00-04:00"), "candidate_id": "repeat", "observed_at": "2026-08-21T10:08:00-04:00"},
+            {**self.row(direction_correct=1, directional_move_pct=0.3, outcome_observed_at="2026-08-21T10:30:00-04:00"), "candidate_id": "repeat", "observed_at": "2026-08-21T10:08:00-04:00"},
             {**self.row(), "candidate_id": "new", "observed_at": "2026-08-21T10:30:00-04:00"},
         ]
         episodes = _collapse_independent_episodes(rows)
@@ -91,6 +91,14 @@ class LearningExampleTests(unittest.TestCase):
         chart_gate = self.row(gate_reason="relative_volume", gate_detail="RVOL below minimum")
         self.assertFalse(_practice_eligible(operational, "rejected_missing_condition"))
         self.assertTrue(_practice_eligible(chart_gate, "rejected_missing_condition"))
+
+    def test_later_market_move_does_not_relabel_operational_rejection(self):
+        row = self.row(gate_reason="daily_lock", gate_detail="Daily loss limit active",
+                       directional_move_pct=0.8, direction_correct=1,
+                       outcome_observed_at="2026-08-21T11:10:00-04:00")
+        category = _example_category(row)
+        self.assertEqual("rejected_missing_condition", category)
+        self.assertFalse(_practice_eligible(row, category))
 
 
 if __name__ == "__main__":

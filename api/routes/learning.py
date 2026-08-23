@@ -10,11 +10,13 @@ from collections import Counter
 from datetime import datetime, timedelta
 import json
 import logging
+import secrets
 import sqlite3
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from config.strategy_catalog import REVIEWED_STRATEGIES
 
@@ -61,9 +63,12 @@ def _example_category(row: dict) -> ExampleCategory:
         return "false_breakout_or_chop"
     if outcome == "blocked" or row.get("gate_reason"):
         return "rejected_missing_condition"
-    if measured and int(direction_correct or 0) == 1:
+    move = row.get("directional_move_pct")
+    if measured and move is not None and abs(float(move)) < 0.10:
+        return "false_breakout_or_chop"
+    if measured and move is not None and float(move) >= 0.10:
         return "clean_win"
-    if measured and int(direction_correct or 0) == 0:
+    if measured and move is not None and float(move) <= -0.10:
         return "valid_loss"
     return "ambiguous_no_trade"
 
@@ -278,13 +283,115 @@ def _chart_evidence(row: dict) -> tuple[list[dict], int] | None:
     return bars, decision_bar_index
 
 
+def _example_payload(row: dict) -> dict | None:
+    if not _eligible_recorded_row(row):
+        return None
+    category = _example_category(row)
+    evidence = _chart_evidence(row)
+    if evidence is None:
+        return None
+    bars, decision_index = evidence
+    return {
+        "example_id": str(row["candidate_id"]), "strategy_id": row["strategy_id"],
+        "strategy_version": _recorded_strategy_version(row), "ticker": row["ticker"],
+        "observed_at": row["observed_at"], "trigger_bar": row.get("trigger_bar"),
+        "direction": row.get("direction"), "confidence": row.get("confidence"), "category": category,
+        "outcome": row.get("final_outcome"), "gate_reason": row.get("gate_reason"),
+        "gate_detail": row.get("gate_detail"), "directional_move_pct": row.get("directional_move_pct"),
+        "direction_correct": row.get("direction_correct"), "outcome_observed_at": row.get("outcome_observed_at"),
+        "bars": bars, "decision_bar_index": decision_index, "coach": _coach_copy(row, category),
+        "provenance": "scanner_candle_observations + shadow_candidates",
+        "episode_size": row.get("episode_size", 1), "practice_eligible": _practice_eligible(row, category),
+        "source_revision": _source_revision(row),
+    }
+
+
+def _source_revision(row: dict) -> str:
+    fields = ("final_outcome", "gate_reason", "gate_detail", "resolved_at",
+              "directional_move_pct", "direction_correct", "outcome_observed_at", "episode_size")
+    return json.dumps([row.get(field) for field in fields], default=str, separators=(",", ":"))
+
+
+def _sync_curated_examples() -> int:
+    """Durably publish only real, chart-complete examples, capped to the declared mix."""
+    from database import get_conn
+    now = datetime.now(_ET).isoformat()
+    with get_conn() as conn:
+        existing = {row["candidate_id"]: json.loads(row["evidence_json"]) for row in conn.execute(
+            "SELECT candidate_id,evidence_json FROM learning_examples"
+        ).fetchall()}
+    selected: dict[tuple[str, str], int] = Counter()
+    payloads: list[tuple[dict, int]] = []
+    for row in _collapse_independent_episodes(_candidate_rows(limit=5000)):
+        cached = existing.get(str(row.get("candidate_id")))
+        payload = cached if cached and cached.get("source_revision") == _source_revision(row) else _example_payload(row)
+        if payload is None:
+            continue
+        key = (payload["strategy_id"], payload["category"])
+        quota_eligible = payload["category"] != "rejected_missing_condition" or payload["practice_eligible"]
+        publish = int(quota_eligible and selected[key] < CATEGORY_TARGETS[payload["category"]])
+        if publish:
+            selected[key] += 1
+        payloads.append((payload, publish))
+    with get_conn() as conn:
+        conn.execute("UPDATE learning_examples SET published=0,current_episode=0")
+        for item, publish in payloads:
+            conn.execute(
+                """INSERT INTO learning_examples
+                   (example_id,candidate_id,strategy_id,strategy_version,ticker,category,curated_at,evidence_json,published,current_episode)
+                   VALUES (?,?,?,?,?,?,?,?,?,1) ON CONFLICT(candidate_id) DO UPDATE SET
+                   category=excluded.category, curated_at=excluded.curated_at,
+                   evidence_json=excluded.evidence_json, published=excluded.published,current_episode=1""",
+                (item["example_id"], item["example_id"], item["strategy_id"], item["strategy_version"],
+                 item["ticker"], item["category"], now, json.dumps(item, default=str), publish),
+            )
+    return sum(publish for _, publish in payloads)
+
+
+def _expected_answers(example: dict) -> set[str]:
+    if example["category"] in {"rejected_missing_condition", "false_breakout_or_chop"}:
+        return {"reject"}
+    if example["category"] == "ambiguous_no_trade":
+        return {"wait", "reject"}
+    return {"call" if str(example.get("direction")).lower() == "bullish" else "put"}
+
+
+class PracticeStart(BaseModel):
+    strategy_id: str
+
+
+class PracticeAnswer(BaseModel):
+    answer: Literal["call", "put", "wait", "reject"]
+
+
+class CoachQuestion(BaseModel):
+    example_id: str
+    session_id: str
+    question: str = Field(min_length=2, max_length=500)
+
+
+def _practice_public_payload(example: dict) -> dict:
+    cutoff = int(example["decision_bar_index"]) + 1
+    return {
+        "example_id": example["example_id"], "strategy_id": example["strategy_id"],
+        "strategy_version": example["strategy_version"], "ticker": example["ticker"],
+        "observed_at": example["observed_at"], "bars": example["bars"][:cutoff],
+        "decision_bar_index": cutoff - 1,
+        "prompt": "Enter in the visible setup direction, wait for confirmation, or reject the setup.",
+    }
+
+
 @router.get("/catalog")
 def learning_catalog() -> dict:
+    from database import get_conn
     counts: dict[str, Counter] = {strategy_id: Counter() for strategy_id in REVIEWED_STRATEGIES}
-    for row in _collapse_independent_episodes(_candidate_rows(limit=5000)):
-        strategy_id = str(row.get("strategy_id") or "")
-        if strategy_id in counts and _eligible_recorded_row(row):
-            counts[strategy_id][_example_category(row)] += 1
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT strategy_id,category,COUNT(*) count FROM learning_examples WHERE published=1 GROUP BY strategy_id,category"
+        ).fetchall()
+    for row in rows:
+        if row["strategy_id"] in counts:
+            counts[row["strategy_id"]][row["category"]] = int(row["count"])
     strategies = []
     for strategy_id, rule in REVIEWED_STRATEGIES.items():
         category_counts = {key: counts[strategy_id][key] for key in CATEGORY_TARGETS}
@@ -294,7 +401,7 @@ def learning_catalog() -> dict:
             "version": rule.version,
             "tickers": sorted(rule.tickers),
             "target": sum(CATEGORY_TARGETS.values()),
-            "candidate_episodes": sum(category_counts.values()),
+            "curated_examples": sum(category_counts.values()),
             "categories": category_counts,
             "category_targets": CATEGORY_TARGETS,
         })
@@ -315,38 +422,120 @@ def learning_examples(
         raise HTTPException(status_code=404, detail="Unknown reviewed strategy")
     examples = []
     for row in _collapse_independent_episodes(_candidate_rows(strategy_id, limit=1000)):
-        if not _eligible_recorded_row(row):
+        payload = _example_payload(row)
+        if payload is None:
             continue
-        example_category = _example_category(row)
+        example_category = payload["category"]
         if category and example_category != category:
             continue
-        chart_evidence = _chart_evidence(row)
-        if chart_evidence is None:
-            continue
-        bars, decision_bar_index = chart_evidence
-        coach = _coach_copy(row, example_category)
-        examples.append({
-            "example_id": str(row["candidate_id"]),
-            "strategy_id": strategy_id,
-            "strategy_version": _recorded_strategy_version(row),
-            "ticker": row["ticker"],
-            "observed_at": row["observed_at"],
-            "trigger_bar": row.get("trigger_bar"),
-            "direction": row.get("direction"),
-            "category": example_category,
-            "outcome": row.get("final_outcome"),
-            "gate_reason": row.get("gate_reason"),
-            "gate_detail": row.get("gate_detail"),
-            "directional_move_pct": row.get("directional_move_pct"),
-            "direction_correct": row.get("direction_correct"),
-            "outcome_observed_at": row.get("outcome_observed_at"),
-            "bars": bars,
-            "decision_bar_index": decision_bar_index,
-            "coach": coach,
-            "provenance": "scanner_candle_observations + shadow_candidates",
-            "episode_size": row.get("episode_size", 1),
-            "practice_eligible": _practice_eligible(row, example_category),
-        })
+        examples.append(payload)
         if len(examples) >= limit:
             break
     return {"strategy_id": strategy_id, "examples": examples, "count": len(examples)}
+
+
+@router.post("/practice/start")
+def start_practice(body: PracticeStart) -> dict:
+    from auth.context import get_current_user_id
+    from database import get_conn
+    if body.strategy_id not in REVIEWED_STRATEGIES:
+        raise HTTPException(404, "Unknown reviewed strategy")
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT evidence_json FROM learning_examples WHERE strategy_id=? AND published=1 ORDER BY RANDOM()",
+            (body.strategy_id,),
+        ).fetchall()
+        eligible = [json.loads(row["evidence_json"]) for row in rows]
+        example = next((item for item in eligible if item.get("practice_eligible")), None)
+        if not example:
+            raise HTTPException(404, "No chart-complete practice example is available")
+        session_id = secrets.token_urlsafe(24)
+        created = datetime.now(_ET); expires = created + timedelta(minutes=30)
+        conn.execute(
+            "INSERT INTO learning_practice_sessions VALUES (?,?,?,?,?,?,?,?,?)",
+            (session_id, get_current_user_id(), example["example_id"],
+             json.dumps(sorted(_expected_answers(example))), created.isoformat(), expires.isoformat(), None, None, None),
+        )
+    return {"session_id": session_id, "expires_at": expires.isoformat(),
+            "example": _practice_public_payload(example)}
+
+
+@router.post("/practice/{session_id}/answer")
+def answer_practice(session_id: str, body: PracticeAnswer) -> dict:
+    from auth.context import get_current_user_id
+    from database import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT s.*, e.evidence_json FROM learning_practice_sessions s
+               JOIN learning_examples e ON e.example_id=s.example_id
+               WHERE s.session_id=? AND s.user_id=?""", (session_id, get_current_user_id()),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Practice session not found")
+        if row["answered_at"]:
+            raise HTTPException(409, "Practice session already answered")
+        if datetime.now(_ET) > datetime.fromisoformat(row["expires_at"]):
+            raise HTTPException(410, "Practice session expired")
+        correct = body.answer in set(json.loads(row["expected_answer"]))
+        conn.execute("UPDATE learning_practice_sessions SET answered_at=?,answer=?,correct=? WHERE session_id=?",
+                     (datetime.now(_ET).isoformat(), body.answer, int(correct), session_id))
+        example = json.loads(row["evidence_json"])
+    return {"correct": correct, "answer": body.answer, "example": example}
+
+
+@router.post("/coach/ask")
+def ask_coach(body: CoachQuestion) -> dict:
+    from auth.context import get_current_user_id
+    from database import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT e.evidence_json FROM learning_examples e
+               JOIN learning_practice_sessions s ON s.example_id=e.example_id
+               WHERE e.example_id=? AND e.published=1 AND s.session_id=?
+                 AND s.user_id=? AND s.answered_at IS NOT NULL""",
+            (body.example_id, body.session_id, get_current_user_id()),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Learning example not found")
+    example = json.loads(row["evidence_json"])
+    question = body.question.lower()
+    if any(word in question for word in ("outcome", "happen", "after", "result")):
+        answer = example["coach"]["summary"]
+    elif any(word in question for word in ("why", "reason", "reject", "wait")):
+        answer = str(example.get("gate_detail") or example.get("gate_reason") or example["coach"]["prompt"])
+    elif any(word in question for word in ("version", "strategy", "rule")):
+        answer = f"This is {example['strategy_id']} version {example['strategy_version']}. {example['coach']['prompt']}"
+    else:
+        answer = example["coach"]["prompt"]
+    return {"answer": f"{answer} [F1]", "citations": [{"id": "F1", "source": example["provenance"]}],
+            "order_authority": False, "external_data_transfer": False}
+
+
+def _ranker_examples() -> list[dict]:
+    from database import get_conn
+    with get_conn() as conn:
+        rows = conn.execute("SELECT evidence_json FROM learning_examples WHERE current_episode=1").fetchall()
+    return [item for item in (json.loads(row["evidence_json"]) for row in rows)
+            if item.get("direction_correct") in (0, 1)]
+
+
+@router.get("/ranker/status")
+def learning_ranker_status() -> dict:
+    from ai_reasoning.learning_ranker import ranker_status
+    examples = _ranker_examples()
+    return ranker_status(len(examples))
+
+
+@router.post("/ranker/train")
+def train_learning_ranker(request: Request) -> dict:
+    if not bool(getattr(request.state, "is_admin", False)):
+        raise HTTPException(403, "Administrator access required")
+    from ai_reasoning.learning_ranker import train_shadow_model
+    return train_shadow_model(_ranker_examples())
+
+
+@router.post("/curation/refresh")
+def refresh_learning_curation(request: Request) -> dict:
+    if not bool(getattr(request.state, "is_admin", False)):
+        raise HTTPException(403, "Administrator access required")
+    return {"curated_examples": _sync_curated_examples(), "order_authority": False}

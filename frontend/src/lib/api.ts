@@ -572,7 +572,7 @@ export interface LearningStrategyProgress {
   version: string;
   tickers: string[];
   target: number;
-  candidate_episodes: number;
+  curated_examples: number;
   categories: Record<LearningExampleCategory, number>;
   category_targets: Record<LearningExampleCategory, number>;
 }
@@ -611,6 +611,13 @@ export interface LearningExamplesResponse {
   examples: LearningExample[];
   count: number;
 }
+export interface LearningPracticeStart {
+  session_id: string; expires_at: string;
+  example: Pick<LearningExample, "example_id" | "strategy_id" | "strategy_version" | "ticker" | "observed_at" | "bars" | "decision_bar_index"> & { prompt: string };
+}
+export interface LearningPracticeResult { correct: boolean; answer: "call" | "put" | "wait" | "reject"; example: LearningExample }
+export interface LearningCoachAnswer { answer: string; citations: { id: string; source: string }[]; order_authority: false; external_data_transfer: false }
+export interface LearningRankerStatus { status: "collecting" | "shadow_active" | "trained_not_qualified"; usable_episodes: number; required?: number; remaining?: number; model_id?: string; order_authority: false }
 
 export interface OpeningRange {
   high?: number;
@@ -929,6 +936,10 @@ export const api = {
         + `${category ? `&category=${encodeURIComponent(category)}` : ""}`
         + `&limit=${limit}`,
       ),
+    startPractice: (strategyId: string) => request<LearningPracticeStart>("/api/learning/practice/start", { method: "POST", body: JSON.stringify({ strategy_id: strategyId }) }),
+    answerPractice: (sessionId: string, answer: "call" | "put" | "wait" | "reject") => request<LearningPracticeResult>(`/api/learning/practice/${encodeURIComponent(sessionId)}/answer`, { method: "POST", body: JSON.stringify({ answer }) }),
+    askCoach: (exampleId: string, sessionId: string, question: string) => request<LearningCoachAnswer>("/api/learning/coach/ask", { method: "POST", body: JSON.stringify({ example_id: exampleId, session_id: sessionId, question }) }),
+    rankerStatus: () => request<LearningRankerStatus>("/api/learning/ranker/status"),
   },
   settings: {
     get:  () => request<AppSettings>("/api/settings"),

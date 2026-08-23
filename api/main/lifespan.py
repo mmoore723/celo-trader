@@ -11,6 +11,31 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+_learning_stop = threading.Event()
+
+
+def _learning_curation_worker() -> None:
+    """Refresh each tenant's real-example manifest hourly, outside request paths."""
+    import logging
+    from auth.context import set_current_user
+    while not _learning_stop.is_set():
+        try:
+            from auth.users import list_users
+            from api.routes.learning import _sync_curated_examples
+            for user in list_users():
+                try:
+                    set_current_user(user["user_id"], user["username"], bool(user["is_admin"]))
+                    _sync_curated_examples()
+                except Exception as exc:
+                    logging.getLogger("celo_trader.learning").warning(
+                        "learning curation failed for user %s (non-fatal): %s", user["user_id"], exc,
+                    )
+        except Exception as exc:
+            logging.getLogger("celo_trader.learning").warning("learning curation failed (non-fatal): %s", exc)
+        finally:
+            set_current_user("system", "system", False)
+        _learning_stop.wait(3600)
+
 
 def _auto_start_bot_if_needed() -> None:
     """
@@ -118,11 +143,14 @@ def _auto_start_bot_if_needed() -> None:
 async def _lifespan(app: FastAPI):
     """Auto-resume on boot and coordinate loop shutdown on service exit."""
     _auto_start_bot_if_needed()
+    _learning_stop.clear()
+    threading.Thread(target=_learning_curation_worker, daemon=True, name="learning-curator").start()
     try:
         yield
     finally:
         import logging
         from trading.state import request_graceful_shutdown
+        _learning_stop.set()
 
         still_running = request_graceful_shutdown(timeout=15.0)
         if still_running:
