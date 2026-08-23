@@ -131,7 +131,7 @@ class ShadowObservationRouterTests(unittest.TestCase):
             returned = router.route_signals(
                 frame, "TSLA", enabled_strategies={"V2_ORB_PULLBACK"}, quiet=True,
                 prepared_today=frame, injected_signals=[injected],
-                preserve_reviewed_paid_paper_rules=True,
+                preserve_reviewed_paid_rules=True,
             )
         self.assertEqual([injected], returned)
 

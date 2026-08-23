@@ -57,7 +57,7 @@ const ORB_BEATS: CoachBeat[] = [
     shortTitle: "The exit plan",
     voice: "Before the option is selected, the trade has a clear invalidation level: the pullback low for a bullish trade, or the pullback high for a bearish trade. If price reaches that level, the original idea is wrong and the trade must exit. A normal small wiggle above a bullish pullback low is not automatically failure. The bot follows its defined exit rules rather than reacting to every tick. It also uses its risk and time rules so a trade does not become an all-day hope.",
     coach: "A planned exit protects the account. A panic exit does not.",
-    watch: ["The pullback low or high that invalidates the setup", "Whether price still holds the intended side of the range", "The current paper-pilot risk and time exit rules"],
+    watch: ["The pullback low or high that invalidates the setup", "Whether price still holds the intended side of the range", "The current account risk and time-exit rules"],
     avoid: "Do not widen a stop or add contracts because a trade is losing. A losing trade is information, not a reason to gamble.",
     chartStage: "exit",
     decision: { prompt: "Price loses the pullback low on a bullish trade. What does that tell us?", choices: ["The setup is invalid — exit by the rule", "Buy more to lower the average", "Wait forever for a rebound"], correct: 0, explanation: "Correct. The exit is not a punishment; it is proof that we protect a small account when the original idea is wrong." },

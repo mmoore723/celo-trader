@@ -52,7 +52,7 @@ class ReviewedPaidExecutionProfileTests(unittest.TestCase):
             returned = router.route_signals(
                 frame, "SPY", enabled_strategies={"V2_SPY_TREND_CONT"},
                 quiet=True, prepared_today=frame,
-                preserve_reviewed_paid_paper_rules=True,
+                preserve_reviewed_paid_rules=True,
             )
 
         self.assertEqual(["V2_SPY_TREND_CONT"], [signal.strategy_id for signal in returned])
@@ -76,7 +76,7 @@ class ReviewedPaidExecutionProfileTests(unittest.TestCase):
         ]), patch.object(router, "_gates", gates), patch.object(router, "compute_adx", return_value=0.0):
             returned = router.route_signals(
                 frame, "SPY", enabled_strategies={"V2_SPY_AFTERNOON_FVG"}, quiet=True,
-                prepared_today=frame, preserve_reviewed_paid_paper_rules=True,
+                prepared_today=frame, preserve_reviewed_paid_rules=True,
             )
 
         self.assertEqual(["V2_SPY_AFTERNOON_FVG"], [signal.strategy_id for signal in returned])
@@ -100,7 +100,7 @@ class ReviewedPaidExecutionProfileTests(unittest.TestCase):
         ]), patch.object(router, "_gates", gates), patch.object(router, "compute_adx", return_value=0.0):
             returned = router.route_signals(
                 frame, "TSLA", enabled_strategies={"V2_TSLA_TWO_LEG_TREND_PULLBACK"}, quiet=True,
-                prepared_today=frame, preserve_reviewed_paid_paper_rules=True,
+                prepared_today=frame, preserve_reviewed_paid_rules=True,
             )
 
         self.assertEqual(["V2_TSLA_TWO_LEG_TREND_PULLBACK"], [signal.strategy_id for signal in returned])

@@ -79,7 +79,7 @@ def route_signals(
     observation_only_strategies: "set[str] | None" = None,
     observation_resolver=None,
     injected_signals: "list[Signal] | None" = None,
-    preserve_reviewed_paid_paper_rules: bool = False,
+    preserve_reviewed_paid_rules: bool = False,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -191,7 +191,7 @@ def route_signals(
         _gated = [
             sid for sid, _ in evaluators
             if sid in ADX_GATED_STRATEGIES
-            and not (preserve_reviewed_paid_paper_rules and uses_reviewed_paid_execution_profile(sid))
+            and not (preserve_reviewed_paid_rules and uses_reviewed_paid_execution_profile(sid))
             and (_order_strategies is None or sid in _order_strategies)
         ]
         if _gated:
@@ -295,11 +295,11 @@ def route_signals(
             logger.warning("Strategy %s raised: %s", strategy_id, exc, exc_info=True)
 
     # A reviewed paid-data signal has its complete decision rule tested as one
-    # unit.  In paper mode only, do not substitute this legacy router's
+    # unit. In either account mode, do not substitute this legacy router's
     # independent ADX/VWAP/grade/MTF/confidence/veto opinions for that rule.
     # The entry path still enforces global halt, broker data, liquidity, budget,
-    # account sizing and the paper-only mode boundary.
-    if (preserve_reviewed_paid_paper_rules and signals
+    # account sizing, maintenance halts, and broker execution safeguards.
+    if (preserve_reviewed_paid_rules and signals
             and all(uses_reviewed_paid_execution_profile(signal.strategy_id) for signal in signals)):
         _restore_candidates(signals, candidate_ids)
         signals.sort(key=lambda signal: signal.confidence, reverse=True)

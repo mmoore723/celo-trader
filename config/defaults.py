@@ -100,26 +100,24 @@ _DEFAULTS = {
     # multi-day data) — watch it in signal_only_mode before trusting it.
     "mtf_confirmation_enabled": True,
 
-    # Server-controlled promotion list. Settings switches can never promote an
-    # unvalidated strategy; promotion requires a reviewed real-quote result.
-    # Server-reviewed scope.  A per-strategy toggle is still required before
-    # either paper rule can enter; this list only prevents a browser from
-    # promoting an unrelated strategy by sending an arbitrary ID.
+    # Server-reviewed scope. A per-strategy account toggle is still required
+    # before a reviewed rule can enter in either paper or live mode; this list
+    # only prevents a browser from enabling an unrelated strategy by sending
+    # an arbitrary ID.
     "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION", "V2_TSLA_TWO_LEG_TREND_PULLBACK"],
     "strategy_orb_pullback_v2_enabled": True,
     # Passed the separately held-back SPY option-quote data at the reviewed
-    # 30-minute same-contract exit.  Enable it for new paper settings just as
-    # the reviewed TSLA rules are enabled below; users retain the Settings
-    # switch to turn it off.
+    # 30-minute same-contract exit. Enable it for new accounts just as the
+    # reviewed TSLA rules are enabled below; users retain the Settings switch.
     "strategy_spy_trend_cont_v2_enabled": True,
     "strategy_spy_afternoon_fvg_v2_enabled": True,
     # Passed the declared selection, validation, and untouched holdout gates.
-    # Enabled by default alongside the other reviewed paper strategies.
+    # Enabled by default alongside the other reviewed strategies.
     "strategy_spy_failed_range_recovery_v2_enabled": True,
-    # Reviewed TSLA paid-quote strategy. Enabled by default for paper accounts;
-    # individual users can still turn it off from Settings.
+    # Reviewed TSLA paid-quote strategy. Enabled by default; individual users
+    # can still turn it off from Settings in either account mode.
     # Earlier 200 TSLA option-quote sessions selected this exact one-minute
-    # two-leg rule; 51 untouched later sessions also passed. Paper default ON.
+    # two-leg rule; 51 untouched later sessions also passed. Default ON.
     "strategy_tsla_two_leg_trend_pullback_v2_enabled": True,
 
     # Paper-only lower-confidence research cohort. Disabled after the 2026-08-02

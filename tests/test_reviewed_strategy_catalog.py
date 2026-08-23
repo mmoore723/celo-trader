@@ -32,21 +32,24 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
             <= set(REVIEWED_STRATEGIES)
         )
 
-    def test_enabled_registry_enforces_ticker_and_paper_scope(self) -> None:
+    def test_enabled_registry_allows_reviewed_static_scope_in_paper_and_live(self) -> None:
         settings = {rule.setting_key: True for rule in REVIEWED_STRATEGIES.values()}
         self.assertEqual(
             {"V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION"},
             enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=True),
         )
-        self.assertEqual(set(), enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=False))
+        self.assertEqual(
+            {"V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION"},
+            enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=False),
+        )
 
     def test_exact_qualified_live_pair_survives_central_enabled_filter(self) -> None:
         rule = REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"]
         settings = {rule.setting_key: True, "paper_trading": False}
         with patch.dict(REVIEWED_STRATEGIES, {rule.strategy_id: replace(rule, paper_only=True)}), \
-             patch("config.strategy_ticker_recommendations.is_live_pilot_pair", return_value=True), \
+             patch("config.strategy_ticker_recommendations.is_live_enabled_pair", return_value=True), \
              patch("config.strategy_ticker_recommendations.is_user_authorized_ticker", return_value=True), \
-             patch("config.strategy_ticker_recommendations.has_user_live_pilot", return_value=True):
+             patch("config.strategy_ticker_recommendations.has_user_live_enabled", return_value=True):
             self.assertEqual(
                 {rule.strategy_id}, enabled_reviewed_strategy_ids(settings, paper=False),
             )
@@ -126,7 +129,7 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         enabled = {item["strategy_id"] for item in catalog if item["enabled"]}
         self.assertEqual({"V2_SPY_TREND_CONT"}, enabled)
 
-    def test_public_catalog_separates_switch_from_current_mode_execution(self) -> None:
+    def test_public_catalog_allows_reviewed_strategy_in_live_when_user_enabled(self) -> None:
         rule = REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"]
         settings = {rule.setting_key: True, "paper_trading": False}
         row = next(
@@ -135,13 +138,24 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         )
         self.assertTrue(row["enabled"])
         self.assertEqual("live", row["account_mode"])
-        self.assertFalse(row["live_eligible"])
-        self.assertFalse(row["eligible_in_current_mode"])
-        self.assertFalse(row["execution_enabled"])
-        self.assertEqual("shadow_observation", row["validation_state"])
+        self.assertTrue(row["live_eligible"])
+        self.assertTrue(row["eligible_in_current_mode"])
+        self.assertTrue(row["execution_enabled"])
+        self.assertEqual("qualified_for_live", row["validation_state"])
         self.assertFalse(row["observation_requires_paper_mode"])
-        self.assertEqual("shadow_observation", row["live_promotion"]["stage"])
-        self.assertTrue(row["live_promotion"]["blockers"])
+
+    def test_every_current_reviewed_strategy_is_available_in_live(self) -> None:
+        settings = {
+            "paper_trading": False,
+            **{rule.setting_key: True for rule in REVIEWED_STRATEGIES.values()},
+        }
+        rows = public_strategy_catalog(settings)
+        self.assertEqual(set(REVIEWED_STRATEGIES), {row["strategy_id"] for row in rows})
+        for row in rows:
+            self.assertFalse(row["paper_only"], row["strategy_id"])
+            self.assertTrue(row["live_eligible"], row["strategy_id"])
+            self.assertTrue(row["eligible_in_current_mode"], row["strategy_id"])
+            self.assertTrue(row["execution_enabled"], row["strategy_id"])
 
     def test_paper_mode_switch_is_reported_as_executable(self) -> None:
         rule = REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"]

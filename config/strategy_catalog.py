@@ -54,7 +54,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         signal_source="live_retouch",
         implementation="trading.orb_retouch_execution",
         exit_minutes=90,
-        paper_only=True,
+        paper_only=False,
         status="paper_candidate",
         evidence_grade="promising_inconsistent",
         evidence_artifact="config/strategy_evidence/v2_orb_pullback-2.0.0.json",
@@ -74,7 +74,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         # The longer per-signal scan allowed overlapping SPY positions and is
         # diagnostic only, not the executable policy.
         exit_minutes=30,
-        paper_only=True,
+        paper_only=False,
         status="paper_candidate",
         evidence_grade="passed_declared_holdout",
         evidence_artifact="config/strategy_evidence/v2_spy_trend_cont-2.0.0.json",
@@ -89,7 +89,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         signal_source="bar_close",
         implementation="strategies.spy_afternoon_fvg_v2.evaluate",
         exit_minutes=30,
-        paper_only=True,
+        paper_only=False,
         status="paper_candidate",
         evidence_grade="promising_underpowered",
         evidence_artifact="config/strategy_evidence/v2_spy_afternoon_fvg-2.0.0.json",
@@ -104,7 +104,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         signal_source="bar_close",
         implementation="strategies.spy_failed_range_recovery_v2.evaluate",
         exit_minutes=30,
-        paper_only=True,
+        paper_only=False,
         status="paper_candidate",
         evidence_grade="passed_declared_holdout",
         evidence_artifact="config/strategy_evidence/v2_spy_failed_range_recovery-2.0.0.json",
@@ -119,7 +119,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         signal_source="one_minute_state",
         implementation="trading.two_leg_trend_pullback_execution",
         exit_minutes=90,
-        paper_only=True,
+        paper_only=False,
         status="paper_candidate",
         evidence_grade="promising_inconsistent",
         evidence_artifact="config/strategy_evidence/v2_tsla_two_leg_trend_pullback-2.0.0.json",
@@ -206,10 +206,9 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
             "evidence_artifact": rule.evidence_artifact,
             "evidence": rule.evidence,
             "enabled": bool(settings.get(rule.setting_key, False)) and rule.strategy_id not in integrity_errors,
-            # Keep the user's switch separate from whether this exact reviewed
-            # version is allowed to execute in the account's current mode.
-            # A live-mode account can continue gathering shadow evidence for a
-            # paper candidate without changing the whole account back to paper.
+            # Keep the user's switch separate from integrity eligibility. Once
+            # a catalog strategy has passed review, the same exact version may
+            # execute in paper or live mode when this user turns it on.
             "account_mode": account_mode,
             "live_eligible": not rule.paper_only,
             # Qualification is independent of the connected broker mode. A
@@ -274,21 +273,21 @@ def enabled_reviewed_strategy_ids(
     """
     normalized_ticker = str(ticker or "").strip().upper()
     from config.strategy_ticker_recommendations import (
-        has_user_live_pilot, is_live_pilot_pair, is_user_authorized_ticker,
+        has_user_live_enabled, is_live_enabled_pair, is_user_authorized_ticker,
     )
     is_paper = bool(settings.get("paper_trading", True)) if paper is None else bool(paper)
 
-    def _mode_eligible(strategy_id: str, rule: ReviewedStrategyRule) -> bool:
+    def _mode_eligible(strategy_id: str, rule: ReviewedStrategy) -> bool:
         if is_paper or not rule.paper_only:
             return True
         # Keep rules without general live-order authority out of ordinary live
         # execution. This does not require the account to switch to paper. The
         # sole exception is an exact dynamic ticker which passed live review
         # and this user explicitly enabled. Before ticker selection, retain the
-        # strategy only if this user has at least one such live pilot.
+        # strategy only if this user has at least one such live approval.
         if normalized_ticker:
-            return is_live_pilot_pair(strategy_id, normalized_ticker, settings)
-        return has_user_live_pilot(strategy_id, settings)
+            return is_live_enabled_pair(strategy_id, normalized_ticker, settings)
+        return has_user_live_enabled(strategy_id, settings)
     return {
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()

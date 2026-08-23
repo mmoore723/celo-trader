@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from config.strategy_ticker_recommendations import (
-    approved_dynamic_tickers, consent_for, has_user_live_pilot, is_live_pilot_pair, is_user_authorized_ticker,
-    live_pilot_max_contracts, pair_key, public_recommendations,
+    approved_dynamic_tickers, consent_for, has_user_live_enabled, is_live_enabled_pair,
+    is_user_authorized_ticker, pair_key, public_recommendations,
     publish_qualified_recommendation, publish_recommendation, save_user_consent,
 )
 
@@ -29,7 +29,7 @@ class StrategyTickerConsentTests(unittest.TestCase):
 
     def test_current_static_defaults_do_not_require_new_consent(self) -> None:
         self.assertTrue(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", {"paper_trading": True}))
-        self.assertFalse(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", {"paper_trading": False}))
+        self.assertTrue(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", {"paper_trading": False}))
 
     def test_new_pair_defaults_to_observation_and_fails_closed(self) -> None:
         self._publish()
@@ -56,7 +56,7 @@ class StrategyTickerConsentTests(unittest.TestCase):
         self._publish()
         with self.assertRaises(ValueError):
             save_user_consent(
-                {"paper_trading": False}, "V2_SPY_TREND_CONT", "QQQ", "live_pilot",
+                {"paper_trading": False}, "V2_SPY_TREND_CONT", "QQQ", "live_enabled",
             )
 
     def test_public_recommendation_explains_mode_and_live_eligibility(self) -> None:
@@ -64,20 +64,20 @@ class StrategyTickerConsentTests(unittest.TestCase):
         row = public_recommendations({"paper_trading": False})[0]
         self.assertEqual("live", row["account_mode"])
         self.assertFalse(row["live_eligible"])
-        self.assertFalse(row["live_pilot"])
+        self.assertFalse(row["live_enabled"])
         self.assertEqual("shadow_observation", row["validation_state"])
         self.assertEqual("observing", row["rollout_stage"])
         self.assertFalse(row["observation_requires_paper_mode"])
 
-    def test_legacy_live_enabled_consent_is_read_as_a_capped_pilot(self) -> None:
+    def test_legacy_live_pilot_consent_is_read_as_normal_live_enablement(self) -> None:
         self._publish()
         settings = {
             "paper_trading": False,
             "strategy_ticker_consents": {
-                pair_key("V2_SPY_TREND_CONT", "QQQ"): "live_enabled",
+                pair_key("V2_SPY_TREND_CONT", "QQQ"): "live_pilot",
             },
         }
-        self.assertEqual("live_pilot", consent_for(settings, "V2_SPY_TREND_CONT", "QQQ"))
+        self.assertEqual("live_enabled", consent_for(settings, "V2_SPY_TREND_CONT", "QQQ"))
 
     def test_exact_pair_promotion_does_not_require_global_catalog_promotion(self) -> None:
         from config.strategy_catalog import REVIEWED_STRATEGIES
@@ -88,7 +88,7 @@ class StrategyTickerConsentTests(unittest.TestCase):
              patch("config.strategy_live_promotion.review_live_promotion") as review:
             review.return_value.ready = True
             with self.assertRaises(ValueError):
-                save_user_consent({"paper_trading": False}, "V2_SPY_TREND_CONT", "QQQ", "live_pilot")
+                save_user_consent({"paper_trading": False}, "V2_SPY_TREND_CONT", "QQQ", "live_enabled")
 
             from config.strategy_ticker_recommendations import load_recommendations
             rows = load_recommendations()
@@ -97,27 +97,25 @@ class StrategyTickerConsentTests(unittest.TestCase):
             atomic_write_json(self.path, {"recommendations": rows})
             user_a = {"paper_trading": False}
             user_a["strategy_ticker_consents"] = save_user_consent(
-                user_a, "V2_SPY_TREND_CONT", "QQQ", "live_pilot",
+                user_a, "V2_SPY_TREND_CONT", "QQQ", "live_enabled",
             )
             user_b = {"paper_trading": False}
             self.assertTrue(is_user_authorized_ticker("V2_SPY_TREND_CONT", "QQQ", user_a))
-            self.assertTrue(is_live_pilot_pair("V2_SPY_TREND_CONT", "QQQ", user_a))
-            self.assertEqual(1, live_pilot_max_contracts("V2_SPY_TREND_CONT", "QQQ", user_a))
-            self.assertEqual("live_pilot", public_recommendations(user_a)[0]["rollout_stage"])
-            self.assertTrue(has_user_live_pilot("V2_SPY_TREND_CONT", user_a))
+            self.assertTrue(is_live_enabled_pair("V2_SPY_TREND_CONT", "QQQ", user_a))
+            self.assertEqual("live_enabled", public_recommendations(user_a)[0]["rollout_stage"])
+            self.assertTrue(has_user_live_enabled("V2_SPY_TREND_CONT", user_a))
             self.assertFalse(is_user_authorized_ticker("V2_SPY_TREND_CONT", "QQQ", user_b))
-            self.assertFalse(is_live_pilot_pair("V2_SPY_TREND_CONT", "QQQ", user_b))
-            self.assertFalse(has_user_live_pilot("V2_SPY_TREND_CONT", user_b))
+            self.assertFalse(is_live_enabled_pair("V2_SPY_TREND_CONT", "QQQ", user_b))
+            self.assertFalse(has_user_live_enabled("V2_SPY_TREND_CONT", user_b))
             self.assertFalse(is_user_authorized_ticker(
                 "V2_SPY_TREND_CONT", "QQQ",
                 {"paper_trading": True, "strategy_ticker_consents": user_a["strategy_ticker_consents"]},
             ))
-            self.assertFalse(is_live_pilot_pair(
+            self.assertFalse(is_live_enabled_pair(
                 "V2_SPY_TREND_CONT", "QQQ",
                 {"paper_trading": True, "strategy_ticker_consents": user_a["strategy_ticker_consents"]},
             ))
-            self.assertFalse(is_live_pilot_pair("V2_SPY_TREND_CONT", "SPY", user_a))
-            self.assertIsNone(live_pilot_max_contracts("V2_SPY_TREND_CONT", "SPY", user_a))
+            self.assertFalse(is_live_enabled_pair("V2_SPY_TREND_CONT", "SPY", user_a))
 
     def test_admin_publication_does_not_mutate_any_user_settings(self) -> None:
         user_settings = {"paper_trading": True}
@@ -137,17 +135,16 @@ class StrategyTickerConsentTests(unittest.TestCase):
         self.assertEqual(["QQQ"], approved_dynamic_tickers(user_a, {"V2_SPY_TREND_CONT"}))
         self.assertEqual([], approved_dynamic_tickers({"paper_trading": True}, {"V2_SPY_TREND_CONT"}))
 
-    def test_existing_static_scope_can_publish_consent_prompt_without_live_authority(self) -> None:
+    def test_existing_static_scope_keeps_normal_live_authority(self) -> None:
         publish_recommendation(
             "V2_SPY_TREND_CONT", "SPY",
             evidence_summary="Original reviewed pair still requires live qualification.",
         )
         settings = {"paper_trading": False}
         self.assertEqual("pending", public_recommendations(settings)[0]["decision"])
-        self.assertFalse(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", settings))
+        self.assertTrue(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", settings))
 
-    def test_qualified_static_pair_can_be_user_approved_for_one_contract_live_pilot(self) -> None:
-        from config.strategy_catalog import REVIEWED_STRATEGIES
+    def test_qualified_static_pair_can_be_user_approved_for_normal_live_execution(self) -> None:
         publish_recommendation(
             "V2_SPY_TREND_CONT", "SPY",
             evidence_summary="Exact SPY pair qualified.", qualification_verified=True,
@@ -156,11 +153,10 @@ class StrategyTickerConsentTests(unittest.TestCase):
             review.return_value.ready = True
             settings = {"paper_trading": False}
             settings["strategy_ticker_consents"] = save_user_consent(
-                settings, "V2_SPY_TREND_CONT", "SPY", "live_pilot",
+                settings, "V2_SPY_TREND_CONT", "SPY", "live_enabled",
             )
             self.assertTrue(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", settings))
-            self.assertTrue(is_live_pilot_pair("V2_SPY_TREND_CONT", "SPY", settings))
-            self.assertEqual(1, live_pilot_max_contracts("V2_SPY_TREND_CONT", "SPY", settings))
+            self.assertTrue(is_live_enabled_pair("V2_SPY_TREND_CONT", "SPY", settings))
 
     def test_automation_rejects_nonqualified_evidence(self) -> None:
         with self.assertRaises(ValueError):

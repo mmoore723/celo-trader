@@ -831,7 +831,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                               observation_only_strategies=_observation_only_strategies,
                               observation_resolver=_observation_resolver,
                               injected_signals=_injected_signals,
-                              preserve_reviewed_paid_paper_rules=paper)
+                              preserve_reviewed_paid_rules=True)
     # Main-tier setups remain immediate.  Opportunity setups are paper-only
     # candidates collected and ranked over a causal 15-minute window.
     if _opportunity_enabled:
@@ -894,7 +894,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     entry_rvol  = _top.rvol           # Entry_Volume_Multiplier for audit log
     strategy_id = _top.strategy_id
     _signal_tier = getattr(_top, "tier", "main")
-    _reviewed_paid_paper_profile = paper and uses_reviewed_paid_execution_profile(strategy_id)
+    _reviewed_paid_profile = uses_reviewed_paid_execution_profile(strategy_id)
     # The session cutoff must include the strategy's complete reviewed hold.
     # Otherwise a late signal can create an overnight position before the
     # fixed 30/90-minute exit becomes eligible.
@@ -1139,7 +1139,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # After any loss, price must move at least 0.3% from the exit level before
     # the same ticker can be re-entered.  Ensures the failed setup has resolved.
     _loss_ctx = (_US.get("ticker_loss_context") or {}).get(ticker)
-    if _loss_ctx and not _reviewed_paid_paper_profile:
+    if _loss_ctx and not _reviewed_paid_profile:
         _last_exit_price = _loss_ctx.get("exit_price", 0)
         try:
             _current_price   = float(df5["close"].iloc[-1])
@@ -1202,7 +1202,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Before entering a CALL, confirm SPY is trading ABOVE its intraday VWAP.
     # If SPY is below VWAP the broad market is in a bearish posture; bullish
     # ── SPY macro VWAP check — flip direction rather than block ──────────────
-    if not _reviewed_paid_paper_profile and ticker.upper() in ("SPY", "QQQ"):
+    if not _reviewed_paid_profile and ticker.upper() in ("SPY", "QQQ"):
         try:
             from signals import compute_vwap_bands as _cvwap_self
             _self_vwap_data = _cvwap_self(_df_today_1m)
@@ -1237,7 +1237,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
 
     # For non-SPY/QQQ tickers: use SPY as the macro VWAP proxy.
     # Exception: skip the flip when ticker IS SPY — no circular self-check.
-    if not _reviewed_paid_paper_profile and ticker.upper() not in ("SPY", "QQQ"):
+    if not _reviewed_paid_profile and ticker.upper() not in ("SPY", "QQQ"):
         _spy_df    = None
         _spy_vwap  = 0.0
         _spy_close = 0.0
@@ -1522,23 +1522,15 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         )
         n_contracts = _max_affordable
 
-    # A newly qualified strategy/ticker pair can be piloted without forcing a
-    # live-connected user to switch the whole account back to paper. The exact
-    # pair must pass the separate live-promotion gate and receive that user's
-    # consent; its initial live rollout is capped at one contract.
+    # A newly qualified dynamic strategy/ticker match still requires this
+    # user's explicit consent. Once enabled, it uses the same risk-based sizing
+    # as every other reviewed strategy—there is no separate pilot clamp.
     try:
-        from config.strategy_ticker_recommendations import live_pilot_max_contracts
-        _live_pilot_cap = live_pilot_max_contracts(strategy_id, ticker, settings)
+        from config.strategy_ticker_recommendations import is_live_enabled_pair
+        _user_approved_match = is_live_enabled_pair(strategy_id, ticker, settings)
     except Exception:
-        logger.exception("Could not evaluate live-pilot sizing for %s/%s", strategy_id, ticker)
-        _live_pilot_cap = None
-    _live_pilot = _live_pilot_cap is not None
-    if _live_pilot_cap is not None and n_contracts > _live_pilot_cap:
-        logger.info(
-            "Live-pilot sizing clamp for %s/%s: %d -> %d contract",
-            strategy_id, ticker, n_contracts, _live_pilot_cap,
-        )
-        n_contracts = _live_pilot_cap
+        logger.exception("Could not evaluate live approval for %s/%s", strategy_id, ticker)
+        _user_approved_match = False
 
     if isinstance(_opportunity_context, dict):
         _opportunity_context["planned_quantity"] = int(n_contracts)
@@ -1572,7 +1564,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "s1_target": _s1_target,
             "profit":    _profit,
             "strategy":  strategy_id,
-            "live_pilot": _live_pilot,
+            "user_approved_match": _user_approved_match,
             # "signal" = manual mode alert (bot won't execute), "auto" = bot will execute
             "mode":      "signal" if settings.get("signal_only_mode", False) else "auto",
         }
@@ -1602,7 +1594,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # mid) so a later display/settings preference cannot silently turn the
         # historical strategy into a different one. The contract selector has
         # already applied this same threshold before reaching this point.
-        _spread_max = 0.08 if _reviewed_paid_paper_profile else float(settings.get("spread_gate_pct", 8)) / 100.0
+        _spread_max = 0.08 if _reviewed_paid_profile else float(settings.get("spread_gate_pct", 8)) / 100.0
         if _spread_pct > _spread_max:   # user-configurable via Settings → Trade Parameters
             log_event("INFO", "bar_eval",
                       f"🟡 [{ticker}] Skipping — bid-ask spread is "
@@ -1622,7 +1614,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         n_contracts              = n_contracts,
         entry_volume_multiplier  = entry_rvol,
     )
-    if not rr_allowed and not _reviewed_paid_paper_profile:
+    if not rr_allowed and not _reviewed_paid_profile:
         # evaluate_rr() already emitted the Trade_Blocked_Low_RR structured log
         log_event("INFO", "bar_eval",
                   f"🟡 [{ticker}] Skipping this candle — the reward is less than 1.6× the risk "
@@ -1630,9 +1622,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _rr_val = float(rr_audit.get("rr_ratio", 0)) if isinstance(rr_audit, dict) else 0.0
         _skip_log(ticker, "rr_too_low", strategy=strategy_id, confidence=_top.confidence, rr=_rr_val, direction=direction, tier=_signal_tier)
         return
-    if not rr_allowed and _reviewed_paid_paper_profile:
+    if not rr_allowed and _reviewed_paid_profile:
         log_event("INFO", "bar_eval",
-                  f"🔬 [{ticker}] Reviewed paid-data paper rule preserves its tested entry; "
+                  f"🔬 [{ticker}] Reviewed paid-data rule preserves its tested entry; "
                   f"generic R:R diagnostic={rr_audit.get('R_R_Ratio', 'n/a')} is recorded only.")
 
     # ── Slippage-adjusted profit-target sanity check ──────────────────────────
@@ -1844,7 +1836,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "step_limit": round(float(_order_ask), 4) if _order_ask is not None else None,
             "maximum_entry_price": round(float(eff_entry), 4),
             "quantity": int(n_contracts),
-            "live_pilot": _live_pilot,
+            "user_approved_match": _user_approved_match,
             "estimated_notional": round(float(eff_entry) * int(n_contracts) * 100, 2),
             "rr_ratio": rr_audit.get("R_R_Ratio"),
             "exit_plan": _opportunity_context.get("exit_plan"),

@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key } from "lucide-react";
 import { api, type AppSettings } from "../lib/api";
-import { strategyExecutionState } from "../lib/strategyExecutionState.js";
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
@@ -260,7 +259,7 @@ export function Settings() {
     queryFn: api.settings.recommendations,
   });
 
-  async function decideRecommendation(strategyId: string, ticker: string, decision: "paper_enabled" | "live_pilot" | "observing") {
+  async function decideRecommendation(strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") {
     await api.settings.setRecommendation(strategyId, ticker, decision);
     qc.invalidateQueries({ queryKey: ["strategy-recommendations"] });
   }
@@ -411,46 +410,29 @@ export function Settings() {
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy execution controls</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          Your account is currently in <strong style={{ color: "var(--ink)" }}>{form.paper_trading ? "paper" : "live"} mode</strong>. Observation and qualification continue in either mode. A strategy can place an order only when its switch is on and that exact reviewed version is eligible for your current mode.
+          Your account is currently in <strong style={{ color: "var(--ink)" }}>{form.paper_trading ? "paper" : "live"} mode</strong>. When a reviewed strategy is on, it may submit orders to this connected account. Ticker scope, integrity, risk, liquidity, maintenance, and broker safeguards still apply.
         </p>
         {(strategyCatalog?.strategies ?? []).map((strategy, index) => {
           const switchEnabled = Boolean(form[strategy.setting_key]);
-          const executionState = strategyExecutionState(strategy, switchEnabled);
           return (
           <div key={strategy.strategy_id} className={`rounded-lg px-3 ${index ? "mt-2" : ""}`} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-            <div className="flex items-center gap-2">
-              <div className="grow">
+            <div>
+              <div>
                 <Toggle
                   label={`${strategy.display_name} · v${strategy.version}`}
                   checked={switchEnabled}
                   onChange={(v) => set(strategy.setting_key, v)}
                 />
               </div>
-              <span className={`badge ${executionState.tone === "green" ? "badge-green" : executionState.tone === "yellow" ? "badge-yellow" : ""}`}>
-                {executionState.badge}
-              </span>
             </div>
             <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-              {strategy.tickers.join(", ")} · {strategy.signal_source.replaceAll("_", " ")} · {strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`} · {executionState.detail}.
+              {strategy.tickers.join(", ")} · {strategy.signal_source.replaceAll("_", " ")} · {strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`}.
             </p>
-            {!strategy.live_eligible && strategy.account_mode === "live" && (
-              <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
-                <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>
-                  Why this strategy cannot place live orders yet
-                </summary>
-                <p className="mt-2">
-                  Shadow Observation uses live market conditions but has zero order authority. Your Alpaca account remains in live mode; no account-mode switch is required.
-                </p>
-                <ul className="mt-1 pl-5 list-disc">
-                  {strategy.live_promotion.blockers.map((reason) => <li key={reason}>{reason}</li>)}
-                </ul>
-              </details>
-            )}
           </div>
           );
         })}
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-          New ticker matches observe automatically without placing orders. Enabling one is always your decision. A reduced-risk live pilot is offered inside a live account only after the exact strategy version and ticker pass live-promotion review; no switch back to paper mode is required.
+          New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
         </div>
         {(strategyHistory?.changes.length ?? 0) > 0 && (
           <details className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
@@ -485,8 +467,8 @@ export function Settings() {
                 </div>
                 <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{recommendation.evidence_summary}</p>
               </div>
-              <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ color: recommendation.paper_enabled || recommendation.live_pilot ? "var(--accent)" : "var(--ink-muted)", background: "var(--surface)" }}>
-                {recommendation.rollout_stage === "live_pilot" ? "Live pilot · 1 contract"
+              <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ color: recommendation.paper_enabled || recommendation.live_enabled ? "var(--accent)" : "var(--ink-muted)", background: "var(--surface)" }}>
+                {recommendation.rollout_stage === "live_enabled" ? "Live execution enabled"
                   : recommendation.rollout_stage === "paper_enabled" ? "Paper execution enabled"
                   : recommendation.rollout_stage === "approval_needed" ? "Qualified · your approval needed"
                   : "Observing · no orders"}
@@ -496,10 +478,10 @@ export function Settings() {
               {recommendation.account_mode === "paper" && <button className={`btn ${recommendation.paper_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "paper_enabled")}>
                 Enable for my paper account
               </button>}
-              {recommendation.account_mode === "live" && recommendation.live_eligible && <button className={`btn ${recommendation.live_pilot ? "btn-primary" : "btn-ghost"}`} onClick={() => {
-                if (window.confirm(`Start a one-contract live pilot for ${recommendation.display_name} on ${recommendation.ticker}? Real-money orders may be placed only in your account.`)) decideRecommendation(recommendation.strategy_id, recommendation.ticker, "live_pilot");
+              {recommendation.account_mode === "live" && recommendation.live_eligible && <button className={`btn ${recommendation.live_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => {
+                if (window.confirm(`Enable ${recommendation.display_name} on ${recommendation.ticker} for your live account? Real-money orders may be placed only in your account.`)) decideRecommendation(recommendation.strategy_id, recommendation.ticker, "live_enabled");
               }}>
-                Start my live pilot
+                Enable for my live account
               </button>}
               <button className={`btn ${recommendation.decision === "observing" ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "observing")}>
                 Keep observing — no orders
@@ -507,7 +489,7 @@ export function Settings() {
             </div>
             <p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>
               {recommendation.live_eligible
-                ? `Your Alpaca account stays in ${recommendation.account_mode} mode. You can approve a one-contract live pilot for only this ticker and strategy version; no other user is affected.`
+                ? `Your Alpaca account stays in ${recommendation.account_mode} mode. You can enable this qualified ticker and strategy version for your account; no other user is affected.`
                 : `Analysis continues while your Alpaca account stays in ${recommendation.account_mode} mode. It cannot submit an order until the exact strategy, ticker, and version qualifies—and only you can opt in.`}
             </p>
           </div>

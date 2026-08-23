@@ -9,7 +9,7 @@ export function StrategyRecommendationModal() {
   });
   const pending = data?.recommendations.find((item) => item.decision === "pending");
   const decision = useMutation({
-    mutationFn: (value: "paper_enabled" | "live_pilot" | "observing") =>
+    mutationFn: (value: "paper_enabled" | "live_enabled" | "observing") =>
       api.settings.setRecommendation(pending!.strategy_id, pending!.ticker, value),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["strategy-recommendations"] }),
   });
@@ -18,7 +18,7 @@ export function StrategyRecommendationModal() {
   const stages = [
     { key: "observing", label: "Observing", detail: "No orders" },
     { key: "approval_needed", label: "Qualified", detail: "Your approval" },
-    { key: "live_pilot", label: "Live pilot", detail: "1 contract" },
+    { key: "live_enabled", label: "Enabled", detail: "Your choice" },
   ] as const;
   const activeStage = pending.live_eligible ? "approval_needed" : "observing";
   return (
@@ -31,7 +31,7 @@ export function StrategyRecommendationModal() {
         <p className="text-sm mt-3" style={{ color: "var(--ink-muted)" }}>{pending.evidence_summary}</p>
         <div className="rounded-lg p-3 mt-4 text-sm" style={{ background: "var(--surface-raised)", color: "var(--ink)" }}>
           This match is analyzing real market conditions with no order authority. Your Alpaca account stays in <b>{pending.account_mode}</b> mode throughout; you never need to switch modes, and an admin cannot activate the strategy for you.
-          {!pending.live_eligible && " A live-pilot invitation appears only after this exact strategy, ticker, and version passes qualification."}
+          {!pending.live_eligible && " An enable invitation appears only after this exact strategy, ticker, and version passes qualification."}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4" aria-label="Strategy rollout stages">
           {stages.map((stage, index) => {
@@ -57,8 +57,8 @@ export function StrategyRecommendationModal() {
           )}
           {pending.account_mode === "live" && pending.live_eligible && (
             <button className="btn btn-primary" disabled={decision.isPending} onClick={() => {
-              if (window.confirm(`Start a one-contract live pilot for ${pending.display_name} on ${pending.ticker}? Real-money orders may be placed only in your account.`)) decision.mutate("live_pilot");
-            }}>Start my live pilot</button>
+              if (window.confirm(`Enable ${pending.display_name} on ${pending.ticker} for your live account? Real-money orders may be placed only in your account.`)) decision.mutate("live_enabled");
+            }}>Enable for my live account</button>
           )}
         </div>
       </div>

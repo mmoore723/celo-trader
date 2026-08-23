@@ -8,7 +8,7 @@ from typing import Literal
 from config.atomic_files import atomic_write_json
 from config.paths import BASE_DIR
 
-ConsentDecision = Literal["paper_enabled", "live_pilot", "observing"]
+ConsentDecision = Literal["paper_enabled", "live_enabled", "observing"]
 RECOMMENDATIONS_PATH = BASE_DIR / "data" / "strategy_ticker_recommendations.json"
 CONSENT_SETTINGS_KEY = "strategy_ticker_consents"
 
@@ -63,8 +63,8 @@ def publish_qualified_recommendation(qualification: dict, *, evidence_artifact: 
 
     This is the automation boundary. The nightly worker cannot turn a user
     strategy on; it can only publish a recommendation. A live-connected
-    account may shadow-observe it without placing an order, and only that
-    account owner may later grant live order authority.
+    account may observe it without placing an order, and only that account
+    owner may later grant live order authority.
     """
     from config.strategy_catalog import REVIEWED_STRATEGIES
 
@@ -96,21 +96,23 @@ def publish_qualified_recommendation(qualification: dict, *, evidence_artifact: 
 def consent_for(settings: dict, strategy_id: object, ticker: object) -> ConsentDecision:
     consents = settings.get(CONSENT_SETTINGS_KEY, {})
     value = consents.get(pair_key(strategy_id, ticker)) if isinstance(consents, dict) else None
-    # ``live_enabled`` was the original name for a permission that was always
-    # capped at one contract. Read it as a pilot so existing user choices fail
-    # safely without continuing the misleading public terminology.
-    if value == "live_enabled":
-        return "live_pilot"
-    return value if value in {"paper_enabled", "live_pilot"} else "observing"
+    # Migrate the former pilot choice to ordinary live enablement. Research
+    # qualification and per-user consent remain required, but an approved
+    # strategy is no longer subject to an artificial one-contract rollout.
+    if value == "live_pilot":
+        return "live_enabled"
+    return value if value in {"paper_enabled", "live_enabled"} else "observing"
 
 
 def save_user_consent(settings: dict, strategy_id: object, ticker: object, decision: ConsentDecision) -> dict:
-    if decision not in {"paper_enabled", "live_pilot", "observing"}:
+    if decision == "live_pilot":  # backward-compatible API migration
+        decision = "live_enabled"
+    if decision not in {"paper_enabled", "live_enabled", "observing"}:
         raise ValueError("Invalid consent decision")
     recommendation = published_recommendation(strategy_id, ticker)
     if recommendation is None:
         raise ValueError("This strategy/ticker recommendation is not published")
-    if decision == "live_pilot":
+    if decision == "live_enabled":
         from config.strategy_catalog import REVIEWED_STRATEGIES
         from config.strategy_live_promotion import review_live_promotion
         rule = REVIEWED_STRATEGIES.get(str(strategy_id or "").strip().upper())
@@ -142,8 +144,8 @@ def public_recommendations(settings: dict) -> list[dict]:
             and review_live_promotion(rule, ticker).ready
         )
         rollout_stage = (
-            "live_pilot"
-            if decision == "live_pilot"
+            "live_enabled"
+            if decision == "live_enabled"
             else "paper_enabled"
             if decision == "paper_enabled"
             else "approval_needed"
@@ -155,7 +157,7 @@ def public_recommendations(settings: dict) -> list[dict]:
             "display_name": rule.display_name,
             "decision": decision,
             "paper_enabled": decision == "paper_enabled",
-            "live_pilot": decision == "live_pilot",
+            "live_enabled": decision == "live_enabled",
             "live_eligible": live_eligible,
             "validation_state": (
                 "qualified_for_live" if live_eligible else "shadow_observation"
@@ -178,14 +180,14 @@ def is_user_authorized_ticker(strategy_id: object, ticker: object, settings: dic
     if not rule or sid in reviewed_strategy_integrity_errors():
         return False
     if symbol in rule.tickers:
-        # Existing reviewed pairs remain available automatically in paper
-        # mode.  Live mode always requires exact per-user consent unless the
-        # catalog has eventually promoted the strategy for ordinary live use.
-        if bool(settings.get("paper_trading", True)):
-            return True
-        if not rule.paper_only:
-            return True
-        return is_live_pilot_pair(sid, symbol, settings)
+        # Existing reviewed pairs are controlled by this user's ordinary
+        # strategy switch in both paper and live mode. Consent prompts are for
+        # future ticker/strategy matches which are outside this static scope.
+        return (
+            bool(settings.get("paper_trading", True))
+            or not rule.paper_only
+            or is_live_enabled_pair(sid, symbol, settings)
+        )
     recommendation = published_recommendation(sid, symbol)
     if not recommendation or recommendation.get("strategy_version") != rule.version:
         return False
@@ -193,10 +195,10 @@ def is_user_authorized_ticker(strategy_id: object, ticker: object, settings: dic
         return consent_for(settings, sid, symbol) == "paper_enabled"
     # Dynamic live authority is narrower than static catalog authority: it is
     # granted only to this qualified pair and this consenting account.
-    return is_live_pilot_pair(sid, symbol, settings)
+    return is_live_enabled_pair(sid, symbol, settings)
 
 
-def is_live_pilot_pair(strategy_id: object, ticker: object, settings: dict) -> bool:
+def is_live_enabled_pair(strategy_id: object, ticker: object, settings: dict) -> bool:
     """Return true only for a fully reviewed, user-approved dynamic live pair."""
     from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_strategy_integrity_errors
     from config.strategy_live_promotion import review_live_promotion
@@ -215,23 +217,18 @@ def is_live_pilot_pair(strategy_id: object, ticker: object, settings: dict) -> b
         recommendation
         and recommendation.get("strategy_version") == rule.version
         and recommendation.get("qualification_verified") is True
-        and consent_for(settings, sid, symbol) == "live_pilot"
+        and consent_for(settings, sid, symbol) == "live_enabled"
     )
 
 
-def live_pilot_max_contracts(strategy_id: object, ticker: object, settings: dict) -> int | None:
-    """Enforce the first live rollout at one contract without changing account mode."""
-    return 1 if is_live_pilot_pair(strategy_id, ticker, settings) else None
-
-
-def has_user_live_pilot(strategy_id: object, settings: dict) -> bool:
+def has_user_live_enabled(strategy_id: object, settings: dict) -> bool:
     """Return true when this live account authorized at least one exact dynamic pair."""
     sid = str(strategy_id or "").strip().upper()
     if bool(settings.get("paper_trading", True)):
         return False
     return any(
         str(row.get("strategy_id", "")).strip().upper() == sid
-        and is_live_pilot_pair(sid, row.get("ticker"), settings)
+        and is_live_enabled_pair(sid, row.get("ticker"), settings)
         for row in load_recommendations()
     )
 
