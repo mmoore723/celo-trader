@@ -4,7 +4,7 @@ import { BookOpen, BrainCircuit, GraduationCap, RotateCcw, Trophy } from "lucide
 
 import { api, type LearningExample, type LearningExampleCategory, type LearningPracticeStart, type ReviewedStrategyCatalogEntry } from "../../lib/api";
 import { scoreLearningAnswer, type LearningPracticeAnswer } from "../../lib/learningSemantics.js";
-import { TradeChart } from "../charts/TradeChart";
+import { VisualLessonStage } from "./VisualLessonStage";
 import { StrategyPlaybookExperience, type LessonId } from "../playbooks/StrategyPlaybookExperience";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -33,22 +33,18 @@ function progressKey(owner: string, exampleId: string) {
 function ExampleWorkspace({ example, mode, progressOwner }: { example: LearningExample; mode: "practice" | "replay"; progressOwner: string }) {
   const decisionCount = Math.min(example.bars.length, example.decision_bar_index + 1);
   const [answer, setAnswer] = useState<PracticeAnswer | null>(null);
-  const [revealCount, setRevealCount] = useState(decisionCount);
   const [coachMode, setCoachMode] = useState<"prompt" | "facts" | "outcome">("prompt");
   const answered = answer !== null;
   const correct = answer ? scoreLearningAnswer(example.category, example.direction, answer) : false;
 
   useEffect(() => {
     setAnswer(null);
-    setRevealCount(decisionCount);
     setCoachMode("prompt");
   }, [example.example_id, decisionCount]);
 
   useEffect(() => {
     if (answered) localStorage.setItem(progressKey(progressOwner, example.example_id), correct ? "correct" : "review");
   }, [answered, correct, example.example_id, progressOwner]);
-
-  const visibleCount = mode === "practice" && !answered ? decisionCount : revealCount;
 
   return <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0, 1.7fr) minmax(270px, .8fr)" }}>
     <section className="card overflow-hidden">
@@ -59,30 +55,7 @@ function ExampleWorkspace({ example, mode, progressOwner }: { example: LearningE
         </div>
         <span className="badge badge-blue">{mode === "practice" && !answered ? "Frozen decision" : CATEGORY_LABELS[example.category]}</span>
       </div>
-      <TradeChart
-        bars={example.bars}
-        ticker={example.ticker}
-        revealCount={visibleCount}
-        viewportKey={`learning:${example.example_id}:${mode}`}
-        showStructure={false}
-        showSwings={false}
-        showRsi={false}
-        showMacd={false}
-        height={440}
-      />
-      {mode === "replay" && <div className="p-4 flex items-center gap-3">
-        <button className="btn btn-sm btn-ghost" onClick={() => setRevealCount(decisionCount)}>Reset</button>
-        <input
-          className="grow"
-          type="range"
-          min={decisionCount}
-          max={example.bars.length}
-          value={revealCount}
-          onChange={(event) => setRevealCount(Number(event.target.value))}
-          aria-label="Reveal historical candles"
-        />
-        <button className="btn btn-sm btn-primary" disabled={revealCount >= example.bars.length} onClick={() => setRevealCount((value) => Math.min(example.bars.length, value + 1))}>Next candle</button>
-      </div>}
+      <VisualLessonStage example={example} unlocked={mode === "replay" || answered} />
       {mode === "practice" && <div className="p-4" style={{ borderTop: "1px solid var(--border)" }}>
         <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>What is the disciplined decision at the frozen candle?</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
@@ -94,7 +67,7 @@ function ExampleWorkspace({ example, mode, progressOwner }: { example: LearningE
         </div>
         {answered && <div className="rounded-lg p-3 mt-3 text-sm" style={{ background: correct ? "var(--positive-bg)" : "var(--negative-bg)", color: "var(--ink)" }}>
           <strong>{correct ? "Correct." : "Review this one."}</strong> {example.coach.summary}
-          <button className="btn btn-sm btn-ghost ml-2" onClick={() => setRevealCount(example.bars.length)}>Reveal outcome</button>
+          <span className="ml-2">Use Coach Celo’s visual steps above to review the evidence.</span>
         </div>}
       </div>}
     </section>
@@ -157,7 +130,7 @@ function SecurePractice({ strategyId, progressOwner }: { strategyId: string; pro
   return <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0, 1.7fr) minmax(270px, .8fr)" }}>
     <section className="card overflow-hidden">
       <div className="px-4 py-3"><strong>{shown.ticker} · {shown.strategy_id}</strong><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Server-frozen evidence · v{shown.strategy_version}</p></div>
-      <TradeChart bars={shown.bars} ticker={shown.ticker} revealCount={shown.bars.length} viewportKey={`secure:${shown.example_id}`} showStructure={false} showSwings={false} showRsi={false} showMacd={false} height={440} />
+      <VisualLessonStage example={shown} unlocked={Boolean(result)} />
       <div className="p-4"><p className="text-sm font-semibold">{result ? result.example.coach.summary : session.example.prompt}</p>
         {!result && <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">{(["call", "put", "wait", "reject"] as PracticeAnswer[]).map((choice) => <button className="btn btn-ghost" key={choice} onClick={() => void answer(choice)}>{choice === "call" ? "Enter CALL" : choice === "put" ? "Enter PUT" : choice[0].toUpperCase()+choice.slice(1)}</button>)}</div>}
         {result && <div className="mt-3"><strong>{result.correct ? "Correct." : "Review this one."}</strong><button className="btn btn-sm btn-ghost ml-2" onClick={() => void load()}>Next secure example</button></div>}
