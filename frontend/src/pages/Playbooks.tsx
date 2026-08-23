@@ -1,15 +1,15 @@
 /**
- * Playbooks.tsx — Strategy reference cards.
- * Lightweight read-only reference; interactive replay lives in the Streamlit legacy.
+ * Learning Hub plus the strategy and operations reference material.
  */
 
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
-import { StrategyPlaybookExperience } from "../components/playbooks/StrategyPlaybookExperience";
+import { LearningHub } from "../components/learning/LearningHub";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { api } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
 
 interface Strategy {
   id: string; name: string; emoji: string; setup: string; entry: string;
@@ -243,11 +243,12 @@ const CURRENT_STRATEGIES: Strategy[] = [
 ];
 
 export function Playbooks() {
+  const { user } = useAuth();
   const [tab,           setTab]           = useState<"playbooks" | "log-guide" | "how-it-works">("playbooks");
   const [search,        setSearch]        = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [openSection,   setOpenSection]   = useState<string | null>("routine");   // first section open by default
-  const { data: strategyCatalog } = useQuery({ queryKey: ["strategy-catalog"], queryFn: api.settings.strategies });
+  const { data: strategyCatalog } = useQuery({ queryKey: ["strategy-catalog", user?.user_id], queryFn: api.settings.strategies });
   const enabledStrategyIds = useMemo(() => new Set(
     (strategyCatalog?.strategies ?? []).filter((strategy) => strategy.enabled).map((strategy) => strategy.strategy_id)
   ), [strategyCatalog]);
@@ -296,7 +297,7 @@ export function Playbooks() {
             className={`btn btn-sm ${tab === t ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setTab(t)}
           >
-            {t === "playbooks" ? "Strategy Playbook" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
+            {t === "playbooks" ? "Learning Hub" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
           </button>
         ))}
       </div>
@@ -409,13 +410,7 @@ export function Playbooks() {
 
       {tab === "playbooks" && (
       <div className="flex flex-col gap-4">
-      {currentStrategies.length === 0 ? (
-        <div className="card p-5 text-sm" style={{ color: "var(--ink-muted)" }}>
-          No reviewed strategies are switched on. Turn one on in Settings → Strategy execution controls to see its lesson here.
-        </div>
-      ) : (
-        <StrategyPlaybookExperience activeLessonIds={currentStrategies.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg" | "v2_recovery")} strategyCatalog={strategyCatalog?.strategies ?? []} />
-      )}
+      <LearningHub activeLessonIds={CURRENT_STRATEGIES.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg" | "v2_recovery")} strategyCatalog={strategyCatalog?.strategies ?? []} />
 
       <details className="card p-4">
         <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>

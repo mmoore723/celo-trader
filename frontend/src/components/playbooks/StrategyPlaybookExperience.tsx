@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import type { ReviewedStrategyCatalogEntry } from "../../lib/api";
 
-type LessonId = "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg" | "v2_recovery";
+export type LessonId = "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg" | "v2_recovery";
 type LessonStep = {
   label: string;
   title: string;

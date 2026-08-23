@@ -559,6 +559,59 @@ export interface Bar {
   atr?: number;
 }
 
+export type LearningExampleCategory =
+  | "clean_win"
+  | "valid_loss"
+  | "false_breakout_or_chop"
+  | "rejected_missing_condition"
+  | "ambiguous_no_trade";
+
+export interface LearningStrategyProgress {
+  strategy_id: string;
+  display_name: string;
+  version: string;
+  tickers: string[];
+  target: number;
+  candidate_episodes: number;
+  categories: Record<LearningExampleCategory, number>;
+  category_targets: Record<LearningExampleCategory, number>;
+}
+
+export interface LearningCatalogResponse {
+  strategies: LearningStrategyProgress[];
+  grounding: string;
+  order_authority: false;
+}
+
+export interface LearningExample {
+  example_id: string;
+  strategy_id: string;
+  strategy_version: string;
+  ticker: string;
+  observed_at: string;
+  trigger_bar?: string | null;
+  direction: string;
+  category: LearningExampleCategory;
+  outcome: string;
+  gate_reason?: string | null;
+  gate_detail?: string | null;
+  directional_move_pct?: number | null;
+  direction_correct?: number | null;
+  outcome_observed_at?: string | null;
+  bars: Bar[];
+  decision_bar_index: number;
+  coach: { summary: string; prompt: string };
+  provenance: string;
+  episode_size: number;
+  practice_eligible: boolean;
+}
+
+export interface LearningExamplesResponse {
+  strategy_id: string;
+  examples: LearningExample[];
+  count: number;
+}
+
 export interface OpeningRange {
   high?: number;
   low?: number;
@@ -867,6 +920,15 @@ export const api = {
     or:      (ticker: string) => request<OpeningRange>(`/api/market/opening-range/${ticker}`),
     chain:   (ticker: string) => request<OptionsChainRow[]>(`/api/market/chain/${ticker}`),
     news:    (symbols: string, limit = 10) => request<NewsArticle[]>(`/api/market/news?symbols=${symbols}&limit=${limit}`),
+  },
+  learning: {
+    catalog: () => request<LearningCatalogResponse>("/api/learning/catalog"),
+    examples: (strategyId: string, category?: LearningExampleCategory, limit = 20) =>
+      request<LearningExamplesResponse>(
+        `/api/learning/examples?strategy_id=${encodeURIComponent(strategyId)}`
+        + `${category ? `&category=${encodeURIComponent(category)}` : ""}`
+        + `&limit=${limit}`,
+      ),
   },
   settings: {
     get:  () => request<AppSettings>("/api/settings"),
