@@ -128,6 +128,45 @@ class AlpacaOrdersMixin:
                     f"working limit={float(limit_price or 0):.2f}"
                 ),
             )
+            # Tradier remains the decision/price authority, but Alpaca's paper
+            # simulator fills against its own option book.  When the two feeds
+            # differ slightly, an order fixed at the Tradier ask can remain
+            # non-marketable for the entire working window even though the
+            # broker's executable ask is still inside the already-approved
+            # maximum entry price.  Preserve the Tradier ask as the initial
+            # limit; only use Alpaca's ask as a bounded step price when it is
+            # no worse than that pre-approved ceiling.  This is never a market
+            # fallback and can never expand the risk decision.
+            is_paper_route = "paper" in str(self.base).lower()
+            if is_paper_route and side.lower() == "buy" and position_intent == "buy_to_open":
+                try:
+                    broker_quote = self.get_latest_option_quote(symbol)
+                except Exception:
+                    broker_quote = None
+                if broker_quote:
+                    broker_bid = float(broker_quote.get("bp") or 0)
+                    broker_ask = float(broker_quote.get("ap") or 0)
+                    ceiling = float(max_acceptable_price or reference_ask or limit_price or 0)
+                    if broker_ask > float(limit_price or 0) and broker_ask <= ceiling:
+                        step_to_price = broker_ask
+                        _record_flow(
+                            **{**flow_base, "limit_price": broker_ask},
+                            event_type="bounded_broker_reprice", status="quoted",
+                            message=(
+                                f"Alpaca paper ask={broker_ask:.2f} is inside the "
+                                f"approved ceiling={ceiling:.2f}; initial Tradier "
+                                f"limit={float(limit_price or 0):.2f} may step to it"
+                            ),
+                        )
+                    elif broker_ask > 0:
+                        _record_flow(
+                            **{**flow_base, "limit_price": limit_price},
+                            event_type="broker_reprice_rejected", status="bounded",
+                            message=(
+                                f"Alpaca paper ask={broker_ask:.2f} was not a better "
+                                f"executable price inside ceiling={ceiling:.2f}"
+                            ),
+                        )
         else:
             # Default behavior is intentionally unchanged for exits and any
             # caller that has not selected an external price authority.

@@ -194,12 +194,58 @@ class BrokerOrderExecutionTests(unittest.TestCase):
             )
 
         self.assertEqual("filled", result["status"])
-        self.assertEqual(0, broker.quote_calls)
+        self.assertEqual(1, broker.quote_calls)
         self.assertEqual("1.1", broker.posted[0]["limit_price"])
         self.assertEqual(1.15, broker.wait_kwargs["step_to_price"])
         events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
         self.assertIn("authoritative_quote", events)
         self.assertIn("execution_summary", events)
+
+    def test_paper_tradier_entry_can_step_to_broker_ask_inside_ceiling(self) -> None:
+        broker = _ExecutionQuoteBroker()
+        with patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker.place_option_order(
+                symbol="SPY260821C00780000", qty=2, side="buy",
+                order_type="limit", limit_price=1.15, step_to_price=1.15,
+                max_acceptable_price=1.35, position_intent="buy_to_open",
+                price_authority="tradier",
+                order_context={
+                    "intent_id": "intent-bounded-reprice",
+                    "quote_bid": 1.10,
+                    "quote_ask": 1.15,
+                    "quote_mid": 1.125,
+                },
+            )
+
+        self.assertEqual("filled", result["status"])
+        self.assertEqual("1.15", broker.posted[0]["limit_price"])
+        self.assertEqual(1.30, broker.wait_kwargs["step_to_price"])
+        events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
+        self.assertIn("bounded_broker_reprice", events)
+
+    def test_paper_tradier_entry_never_steps_above_approved_ceiling(self) -> None:
+        broker = _ExecutionQuoteBroker()
+        with patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            broker.place_option_order(
+                symbol="SPY260821C00780000", qty=2, side="buy",
+                order_type="limit", limit_price=1.15, step_to_price=1.15,
+                max_acceptable_price=1.20, position_intent="buy_to_open",
+                price_authority="tradier",
+                order_context={
+                    "intent_id": "intent-ceiling",
+                    "quote_bid": 1.10,
+                    "quote_ask": 1.15,
+                    "quote_mid": 1.125,
+                },
+            )
+
+        self.assertEqual(1.15, broker.wait_kwargs["step_to_price"])
+        events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
+        self.assertIn("broker_reprice_rejected", events)
 
     def test_price_step_follows_alpaca_replacement_order_id(self) -> None:
         broker = _ReplacementFillBroker()
