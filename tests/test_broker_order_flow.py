@@ -115,6 +115,37 @@ class _ExecutionQuoteBroker(AlpacaOrdersMixin):
         return {"id": "quoted-order", "status": "filled", "filled_avg_price": "1.30"}
 
 
+class _TradierCeilingFillBroker(AlpacaOrdersMixin):
+    base = "https://paper-api.alpaca.markets"
+    api_key = "test-key"
+
+    def __init__(self) -> None:
+        self.posted: list[dict] = []
+        self.patched: list[dict] = []
+
+    def get_latest_option_quote(self, _symbol: str) -> dict:
+        return {"bp": 1.28, "ap": 1.30}
+
+    def _post(self, _url: str, payload: dict) -> dict:
+        self.posted.append(payload)
+        return {"id": "initial-order", "status": "accepted"}
+
+    def _patch(self, _url: str, payload: dict) -> dict:
+        self.patched.append(payload)
+        return {"id": "ceiling-order", "status": "new"}
+
+    def _get(self, url: str) -> dict:
+        if url.endswith("ceiling-order"):
+            return {
+                "id": "ceiling-order", "status": "filled",
+                "filled_qty": "2", "filled_avg_price": "1.19",
+            }
+        return {"id": "initial-order", "status": "new", "filled_qty": "0"}
+
+    def cancel_order(self, _order_id: str) -> bool:
+        return True
+
+
 class _BoundedWorkingBroker(AlpacaOrdersMixin):
     base = "https://paper-api.alpaca.markets"
 
@@ -196,7 +227,7 @@ class BrokerOrderExecutionTests(unittest.TestCase):
         self.assertEqual("filled", result["status"])
         self.assertEqual(1, broker.quote_calls)
         self.assertEqual("1.1", broker.posted[0]["limit_price"])
-        self.assertEqual(1.15, broker.wait_kwargs["step_to_price"])
+        self.assertEqual(1.20, broker.wait_kwargs["step_to_price"])
         events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
         self.assertIn("authoritative_quote", events)
         self.assertIn("execution_summary", events)
@@ -221,7 +252,7 @@ class BrokerOrderExecutionTests(unittest.TestCase):
 
         self.assertEqual("filled", result["status"])
         self.assertEqual("1.15", broker.posted[0]["limit_price"])
-        self.assertEqual(1.30, broker.wait_kwargs["step_to_price"])
+        self.assertEqual(1.35, broker.wait_kwargs["step_to_price"])
         events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
         self.assertIn("bounded_broker_reprice", events)
 
@@ -243,9 +274,46 @@ class BrokerOrderExecutionTests(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(1.15, broker.wait_kwargs["step_to_price"])
+        self.assertEqual(1.20, broker.wait_kwargs["step_to_price"])
+        events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
+        self.assertIn("bounded_broker_reprice", events)
+
+    def test_paper_tradier_entry_at_ceiling_never_expands_risk(self) -> None:
+        broker = _ExecutionQuoteBroker()
+        with patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            broker.place_option_order(
+                symbol="SPY260821C00780000", qty=2, side="buy",
+                order_type="limit", limit_price=1.20, step_to_price=1.20,
+                max_acceptable_price=1.20, position_intent="buy_to_open",
+                price_authority="tradier",
+                order_context={"quote_bid": 1.10, "quote_ask": 1.20, "quote_mid": 1.15},
+            )
+
+        self.assertEqual(1.20, broker.wait_kwargs["step_to_price"])
         events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
         self.assertIn("broker_reprice_rejected", events)
+
+    def test_tradier_entry_replaces_to_ceiling_and_records_real_broker_fill(self) -> None:
+        broker = _TradierCeilingFillBroker()
+        with patch("config.get_settings", return_value={"paper_trading": True}), patch(
+            "broker.alpaca_orders.time.sleep"
+        ), patch("broker.alpaca_orders._record_flow"), patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker.place_option_order(
+                symbol="SPY260821C00780000", qty=2, side="buy",
+                order_type="limit", limit_price=1.15,
+                max_acceptable_price=1.20, position_intent="buy_to_open",
+                price_authority="tradier", max_wait_seconds=5,
+                order_context={"quote_bid": 1.10, "quote_ask": 1.15, "quote_mid": 1.125},
+            )
+
+        self.assertEqual("1.15", broker.posted[0]["limit_price"])
+        self.assertEqual([{"limit_price": "1.2"}], broker.patched)
+        self.assertEqual("filled", result["status"])
+        self.assertEqual(1.19, result["confirmed_fill_price"])
 
     def test_price_step_follows_alpaca_replacement_order_id(self) -> None:
         broker = _ReplacementFillBroker()

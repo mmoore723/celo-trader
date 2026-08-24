@@ -147,15 +147,25 @@ class AlpacaOrdersMixin:
                     broker_bid = float(broker_quote.get("bp") or 0)
                     broker_ask = float(broker_quote.get("ap") or 0)
                     ceiling = float(max_acceptable_price or reference_ask or limit_price or 0)
-                    if broker_ask > float(limit_price or 0) and broker_ask <= ceiling:
-                        step_to_price = broker_ask
+                    if ceiling > float(limit_price or 0):
+                        # Alpaca documents that its paper engine only fills a
+                        # buy limit once the limit is at or above *Alpaca's*
+                        # current best ask.  The ask can move during our
+                        # 45-second working window, so freezing the replacement
+                        # at one pre-submit quote can miss a later dip.  Step to
+                        # the already-approved ceiling instead: this makes the
+                        # order marketable whenever Alpaca's ask enters the
+                        # permitted range, while the limit still makes it
+                        # impossible to pay more than the strategy approved.
+                        step_to_price = ceiling
                         _record_flow(
-                            **{**flow_base, "limit_price": broker_ask},
+                            **{**flow_base, "limit_price": ceiling},
                             event_type="bounded_broker_reprice", status="quoted",
                             message=(
-                                f"Alpaca paper ask={broker_ask:.2f} is inside the "
-                                f"approved ceiling={ceiling:.2f}; initial Tradier "
-                                f"limit={float(limit_price or 0):.2f} may step to it"
+                                f"Alpaca paper ask={broker_ask:.2f}; initial Tradier "
+                                f"limit={float(limit_price or 0):.2f} may step to the "
+                                f"approved ceiling={ceiling:.2f} and wait for a "
+                                "marketable quote"
                             ),
                         )
                     elif broker_ask > 0:
