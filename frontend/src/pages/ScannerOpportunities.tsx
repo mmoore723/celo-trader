@@ -33,6 +33,9 @@ function percent(value?: number | null): string { return value == null ? "Waitin
 function integer(value?: number | null): string { return value == null ? "Not recorded" : Number(value).toLocaleString("en-US"); }
 
 function LifecycleBadge({ entry }: { entry: ScannerOpportunity }) {
+  if (entry.reason_code === "entry_price_not_reached") {
+    return <span className="badge badge-yellow">ORDER SENT · NO FILL</span>;
+  }
   const lifecycle = opportunityLifecycle(entry);
   const tone = lifecycle === "entered" ? "badge-green"
     : lifecycle === "stopped" ? "badge-red"
@@ -204,6 +207,7 @@ function ManualPlanCard({ entry }: { entry: ScannerOpportunity }) {
     ? "Time/structure exit"
     : money(Number(underlyingTarget));
   const decisionTitle = entry.outcome === "entered" ? "ENTERED"
+    : entry.reason_code === "entry_price_not_reached" ? "ORDER SUBMITTED — NOT FILLED"
     : entry.outcome === "blocked" ? "STOPPED"
       : entry.outcome === "observed_only" ? "RESEARCH ONLY" : "WAITING";
   const decisionExplanation = entry.reason_detail
@@ -317,21 +321,27 @@ export function ScannerOpportunities() {
   return <div className="page-container space-y-4">
     <header>
       <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>Scanner audit trail</p>
-      <h1 className="text-xl font-semibold mt-1" style={{ color: "var(--ink)" }}>Scanner Opportunities</h1>
-      <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>A day-by-day record of independent setups: what was developing, what reached contract checks, what stopped, and what actually entered.</p>
+      <h1 className="text-xl font-semibold mt-1" style={{ color: "var(--ink)" }}>Trade Setup Audit</h1>
+      <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Actual trade-eligible setups are kept separate from research patterns that were never allowed to place an order.</p>
     </header>
     <div className="flex gap-2">
       <button className={`btn ${view === "setups" ? "btn-primary" : "btn-ghost"}`} onClick={() => { setView("setups"); if (outcome === "observed_only") setOutcome("all"); }}>
-        Trade Setups
+        Trade-Eligible &amp; Routed
       </button>
       <button className={`btn ${view === "research" ? "btn-primary" : "btn-ghost"}`} onClick={() => { setView("research"); setOutcome("all"); }}>
-        Research Observations
+        Research-Only
       </button>
     </div>
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-      {[["INDEPENDENT SETUPS", data?.summary.setups ?? 0, "var(--ink)"], ["DEVELOPING", data?.summary.watching ?? 0, "var(--warning)"], ["CONTRACT CHECK", (data?.summary.pricing ?? 0) + (data?.summary.ready ?? 0), "var(--accent)"], ["ENTERED", data?.summary.entered ?? 0, "var(--positive)"], ["STOPPED", data?.summary.stopped ?? 0, "var(--negative)"], ["RESEARCH", data?.summary.research ?? 0, "var(--ink-muted)" ]].map(([label, value, color]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold mt-1" style={{ color: String(color) }}>{String(value)}</p></div>)}
+    <div className="card p-4" style={{ borderLeft: `5px solid ${view === "research" ? "var(--accent)" : "var(--positive)"}` }}>
+      <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{view === "research" ? "These were not possible trades" : "These setups reached the operational trading path"}</p>
+      <p className="mt-1 text-xs leading-5" style={{ color: "var(--ink-muted)" }}>{view === "research"
+        ? "Research-only patterns help validate strategies on other tickers. They cannot submit an order and should not be counted as missed entries."
+        : "Entered means broker-confirmed. Order sent · no fill means a real limit order was submitted but the market never traded within the approved price ceiling. Other stopped setups show the rule that prevented submission."}</p>
     </div>
-    <p className="text-xs" style={{ color: "var(--ink-faint)" }}>{data?.summary.raw_detections ?? 0} raw scanner checks were collapsed into {data?.summary.setups ?? 0} independent setup episodes.</p>
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      {[["TRADE-ELIGIBLE", data?.summary.actionable ?? 0, "var(--ink)"], ["DEVELOPING", data?.summary.watching ?? 0, "var(--warning)"], ["CONTRACT CHECK", (data?.summary.pricing ?? 0) + (data?.summary.ready ?? 0), "var(--accent)"], ["ENTERED", data?.summary.entered ?? 0, "var(--positive)"], ["STOPPED / UNFILLED", data?.summary.stopped ?? 0, "var(--negative)"], ["RESEARCH-ONLY", data?.summary.research ?? 0, "var(--ink-muted)" ]].map(([label, value, color]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold mt-1" style={{ color: String(color) }}>{String(value)}</p></div>)}
+    </div>
+    <p className="text-xs" style={{ color: "var(--ink-faint)" }}>{data?.summary.raw_detections ?? 0} raw scanner checks became {data?.summary.setups ?? 0} independent episodes: {data?.summary.actionable ?? 0} trade-eligible and {data?.summary.research ?? 0} research-only.</p>
     <div className="card p-3 flex flex-wrap items-end gap-3">
       <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Trading day<input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="input mt-1 block" /></label>
       <label className="text-xs font-medium" style={{ color: "var(--ink-muted)" }}>Outcome<select value={outcome} onChange={(event) => setOutcome(event.target.value)} className="input mt-1 block"><option value="all">All outcomes</option><option value="entered">Entered</option><option value="blocked">Blocked</option><option value="observed_only">Research only</option><option value="pending">Unresolved</option></select></label>
