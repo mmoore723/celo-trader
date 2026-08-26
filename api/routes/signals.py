@@ -310,6 +310,7 @@ def get_scanner_opportunities(
     ticker: str | None = None,
     strategy: str | None = None,
     outcome: str | None = Query(None, description="pending | blocked | observed_only | entered"),
+    feed: str | None = None,
     limit: int = Query(500, ge=1, le=1000),
 ) -> dict:
     """A day-by-day audit of every scanner candidate the router evaluated.
@@ -352,13 +353,18 @@ def get_scanner_opportunities(
     where = " AND ".join(clauses)
     try:
         with get_conn() as conn:
+            # A feed filter is applied after lifecycle reconciliation below.
+            # Fetch the full bounded day first so a small client limit cannot
+            # accidentally select four research rows and then display no
+            # operational setups at all.
+            query_limit = 1000 if feed else limit
             candidate_rows = conn.execute(
                 "SELECT sc.*, t.ticker AS trade_ticker, t.contract_symbol, t.option_type, "
                 "t.strike, t.expiry, t.contracts, t.entry_price, t.exit_price, t.stop_price, t.target_price, "
                 "t.status AS trade_status, t.entry_time, t.exit_time, t.exit_reason, t.realized_pnl "
                 "FROM shadow_candidates sc LEFT JOIN trades t ON t.id = sc.linked_trade_id "
                 f"WHERE {where} ORDER BY sc.observed_at DESC LIMIT ?",
-                tuple(params + [limit]),
+                tuple(params + [query_limit]),
             ).fetchall()
             quote_rows = conn.execute(
                 "SELECT cq.* FROM candidate_option_quote_observations cq "
@@ -538,6 +544,12 @@ def get_scanner_opportunities(
     entries.sort(key=lambda entry: str(entry.get("observed_at") or ""), reverse=True)
     if outcome:
         entries = [entry for entry in entries if entry.get("outcome") == outcome]
+    if feed == "operational":
+        entries = [entry for entry in entries if entry.get("lifecycle") != "research"]
+    elif feed == "research":
+        entries = [entry for entry in entries if entry.get("lifecycle") == "research"]
+    elif feed is not None:
+        raise HTTPException(status_code=422, detail="feed must be operational or research")
     entries = entries[:limit]
 
     # Summary cards count independent episodes, not raw one-minute rows. Use

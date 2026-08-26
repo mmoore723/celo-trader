@@ -18,6 +18,30 @@ from database.schema import _init_db_at
 
 
 class ScannerOpportunitiesAccountScopeTests(unittest.TestCase):
+    def test_operational_feed_filters_before_applying_small_limit(self) -> None:
+        """Newer research rows must not make the live setup preview appear empty."""
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paper.db"
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            columns = "candidate_id, observed_at, ticker, strategy_id, direction, confidence, tier, broker_account_id, final_outcome"
+            conn.execute(f"INSERT INTO shadow_candidates ({columns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         ("operational", "2026-08-13T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", .8, "main", "paper:new", "blocked"))
+            conn.execute(f"INSERT INTO shadow_candidates ({columns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         ("research", "2026-08-13T10:01:00-04:00", "QQQ", "V2_SPY_TREND_CONT", "bullish", .8, "opportunity", "paper:new", "observed_only"))
+            conn.commit()
+
+            @contextmanager
+            def test_conn():
+                yield conn
+
+            with patch("database.get_conn", test_conn), patch("config.get_settings", return_value={"active_broker_account_id": "paper:new"}):
+                response = get_scanner_opportunities(date="2026-08-13", ticker=None, strategy=None, outcome=None, feed="operational", limit=1)
+            conn.close()
+
+        self.assertEqual(["operational"], [entry["id"] for entry in response["entries"]])
+
     def test_interleaved_ticker_checks_stay_in_the_same_setup_episode(self) -> None:
         entries = [
             {"id": "spy-1", "observed_at": "2026-08-14T10:00:00-04:00", "ticker": "SPY", "strategy_id": "V2_SPY_TREND_CONT", "direction": "long", "outcome": "pending", "plan_status": "not_priced"},

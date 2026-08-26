@@ -234,7 +234,7 @@ export function LiveTrading() {
   // it disappears on refresh and never contained the full contract/exit plan.
   const { data: scannerOpportunityData } = useQuery({
     queryKey: ["scanner-opportunities-preview"],
-    queryFn: () => api.signals.opportunities({ limit: 4 }),
+    queryFn: () => api.signals.opportunities({ feed: "operational", limit: 4 }),
     refetchInterval: 15_000,
     retry: false,
   });

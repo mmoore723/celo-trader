@@ -3,8 +3,7 @@
  */
 import {
   Activity, BarChart2, BookOpen, Settings, ScanSearch,
-  FlaskConical, Newspaper, Power, StopCircle, Skull, CalendarDays, ShieldCheck, LogOut,
-  Stethoscope, BrainCircuit,
+  Newspaper, Power, StopCircle, Skull, CalendarDays, ShieldCheck, LogOut,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -26,10 +25,7 @@ const NAV: NavItem[] = [
   { label: "Live Trading",  to: "/trading",     icon: <Activity size={16} /> },
   { label: "Performance",   to: "/performance", icon: <BarChart2 size={16} /> },
   { label: "Trade Journal", to: "/journal",     icon: <BookOpen size={16} /> },
-  { label: "Trade Setup Audit", to: "/opportunities", icon: <ScanSearch size={16} /> },
-  { label: "Simulation Lab", to: "/backtest",    icon: <FlaskConical size={16} /> },
-  { label: "Strategy Operations", to: "/strategy-health", icon: <Stethoscope size={16} /> },
-  { label: "AI Decision Audit", to: "/ai-reasoning", icon: <BrainCircuit size={16} /> },
+  { label: "Today's Decisions", to: "/opportunities", icon: <ScanSearch size={16} /> },
   { label: "Learning Hub", to: "/playbooks",   icon: <Newspaper size={16} /> },
   { label: "Settings",      to: "/settings",    icon: <Settings size={16} /> },
   { label: "Admin",         to: "/admin",       icon: <ShieldCheck size={16} />, adminOnly: true },
@@ -50,7 +46,7 @@ export function Sidebar() {
   );
   const { data: opportunityData } = useQuery({
     queryKey: ["sidebar-trade-setups"],
-    queryFn: () => api.signals.opportunities({ limit: 50 }),
+    queryFn: () => api.signals.opportunities({ feed: "operational", limit: 50 }),
     refetchInterval: 15_000,
     retry: false,
   });

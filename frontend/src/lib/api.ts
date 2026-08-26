@@ -1025,12 +1025,13 @@ export const api = {
         `/api/signals/journal/trend?reason=${encodeURIComponent(reason)}&days=${days}`
       ),
     reasons: () => request<{ reasons: Record<string, string> }>("/api/signals/journal/reasons"),
-    opportunities: (opts?: { date?: string; ticker?: string; strategy?: string; outcome?: string; limit?: number }) => {
+    opportunities: (opts?: { date?: string; ticker?: string; strategy?: string; outcome?: string; feed?: "operational" | "research"; limit?: number }) => {
       const params = new URLSearchParams();
       if (opts?.date)     params.set("date", opts.date);
       if (opts?.ticker)   params.set("ticker", opts.ticker);
       if (opts?.strategy) params.set("strategy", opts.strategy);
       if (opts?.outcome)  params.set("outcome", opts.outcome);
+      if (opts?.feed)     params.set("feed", opts.feed);
       if (opts?.limit)    params.set("limit", String(opts.limit));
       const qs = params.toString();
       return request<ScannerOpportunitiesResponse>(`/api/signals/opportunities${qs ? `?${qs}` : ""}`);
