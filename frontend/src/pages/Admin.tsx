@@ -45,12 +45,13 @@ export function Admin() {
   const [collectionOnly, setCollectionOnly] = useState(false);
   const [maintWorking, setMaintWorking] = useState(false);
   const [maintResult,  setMaintResult]  = useState<{ ok: boolean; msg: string } | null>(null);
+  const [showEmergency, setShowEmergency] = useState(false);
 
   // Load current maintenance status on mount
   useEffect(() => {
     fetch("/api/admin/maintenance/status", { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) { setMaintActive(d.active); setMaintMessage(d.message || ""); setCollectionOnly(!!d.collection_only); } })
+      .then(d => { if (d) { setMaintActive(d.active); setMaintMessage(d.message || ""); setCollectionOnly(!!d.collection_only); if (d.active) setShowEmergency(true); } })
       .catch(() => {});
   }, []);
 
@@ -216,9 +217,7 @@ export function Admin() {
     <div className="p-4 flex flex-col gap-4" style={{ maxWidth: 600, width: "100%" }}>
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold" style={{ color: "var(--ink)" }}>
-          Admin
-        </h2>
+        <div><h2 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>Admin</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>System status and account access</p></div>
         <button className="btn btn-ghost" onClick={loadUsers}>
           <RefreshCw size={13} />
         </button>
@@ -272,6 +271,11 @@ export function Admin() {
           </span>
         </div>
 
+        {!maintActive && <button className="btn btn-ghost text-xs" onClick={() => setShowEmergency(value => !value)}>
+          {showEmergency ? "Hide controls" : "Manage maintenance"}
+        </button>}
+
+        {(showEmergency || maintActive) && <>
         <p className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
           {maintActive
             ? (collectionOnly
@@ -368,6 +372,7 @@ export function Admin() {
             {maintResult.msg}
           </p>
         )}
+        </>}
       </div>
 
       {/* Users list — card-per-user on mobile, table on larger screens */}
@@ -478,12 +483,10 @@ export function Admin() {
         )}
       </div>
 
-      {/* Create user */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
-          Create User
-        </h3>
-        <div className="flex flex-col gap-3">
+      {/* Infrequent account actions stay collapsed until needed. */}
+      <details className="card p-4">
+        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>Add a user</summary>
+        <div className="flex flex-col gap-3 mt-3">
           {/* Stack inputs vertically on mobile */}
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
@@ -519,13 +522,12 @@ export function Admin() {
             {creating ? "Creating…" : "Create User"}
           </button>
         </div>
-      </div>
+      </details>
 
       {/* Invite link */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>
-          Invite Link
-        </h3>
+      <details className="card p-4">
+        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>Create an invite link</summary>
+        <div className="mt-3">
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           Send this link to someone so they can create their own account and connect their
           own Alpaca/Tradier API keys. The link expires after the chosen period.
@@ -561,7 +563,8 @@ export function Admin() {
             </button>
           </div>
         )}
-      </div>
+        </div>
+      </details>
     </div>
   );
 }
