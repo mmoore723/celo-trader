@@ -224,37 +224,26 @@ export function Admin() {
         </button>
       </div>
 
-      {/* The model is intentionally invisible to trading until it has enough
-          complete, independent outcomes and passes chronological validation. */}
-      <section className="card p-4" aria-labelledby="ml-readiness-title">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex gap-2">
-            <BrainCircuit size={17} style={{ color: "var(--accent)", marginTop: 1 }} />
-            <div>
-              <h3 id="ml-readiness-title" className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Machine Learning Readiness</h3>
-              <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Tracks complete, independent setup outcomes—not the total number of trades or scanner checks.</p>
-            </div>
-          </div>
-          <span className="badge badge-blue">NO TRADING AUTHORITY</span>
-        </div>
-        {rankerError ? <p className="text-xs mt-4" style={{ color: "var(--negative)" }}>Could not load ML readiness.</p> : ranker ? (() => {
+      <section className="card px-3 py-2" aria-label="Machine learning readiness">
+        {rankerError ? <p className="text-xs" style={{ color: "var(--negative)" }}>ML readiness unavailable</p> : ranker ? (() => {
           const required = ranker.required ?? 1000;
           const usable = ranker.usable_episodes;
           const remaining = ranker.remaining ?? Math.max(0, required - usable);
           const pct = required > 0 ? Math.min(100, usable / required * 100) : 0;
           return <>
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Usable now</p><p className="text-xl font-semibold" style={{ color: "var(--ink)" }}>{usable}</p></div>
-              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Required</p><p className="text-xl font-semibold" style={{ color: "var(--ink)" }}>{required.toLocaleString()}</p></div>
-              <div><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Still needed</p><p className="text-xl font-semibold" style={{ color: "var(--warning)" }}>{remaining.toLocaleString()}</p></div>
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <BrainCircuit size={15} style={{ color: "var(--accent)" }} />
+              <strong style={{ color: "var(--ink)" }}>ML Ranker</strong>
+              <span className="badge badge-yellow">COLLECTING</span>
+              <span style={{ color: "var(--ink-muted)" }}><strong style={{ color: "var(--ink)" }}>{usable}/{required.toLocaleString()}</strong> usable episodes</span>
+              <span className="ml-auto" style={{ color: "var(--ink-faint)" }}>No trading authority</span>
             </div>
-            <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: "var(--surface-raised)" }} role="progressbar" aria-valuenow={usable} aria-valuemin={0} aria-valuemax={required} aria-label="Usable ML episodes">
+            <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: "var(--surface-raised)" }} role="progressbar" aria-valuenow={usable} aria-valuemin={0} aria-valuemax={required} aria-label="Usable ML episodes">
               <div className="h-full rounded-full" style={{ width: `${pct}%`, minWidth: usable > 0 ? 4 : 0, background: "var(--accent)" }} />
             </div>
-            <p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>{pct.toFixed(1)}% ready. The model remains off and cannot approve, reject, size, or place trades.</p>
-            <p className="text-xs mt-3 pt-3 border-t" style={{ color: "var(--ink-faint)", borderColor: "var(--border)" }}>Current safety threshold: {required.toLocaleString()} usable episodes. Changing it to 500 requires a separate reviewed code change; this card reports the enforced value.</p>
+            <details className="mt-1"><summary className="text-[10px] cursor-pointer" style={{ color: "var(--ink-faint)" }}>{remaining.toLocaleString()} still needed · What counts?</summary><p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>Only complete, independent setup outcomes count—not total trades or repeated scanner checks. The model remains off and cannot approve, reject, size, or place trades.</p></details>
           </>;
-        })() : <p className="text-xs mt-4" style={{ color: "var(--ink-muted)" }}>Loading readiness…</p>}
+        })() : <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading ML readiness…</p>}
       </section>
 
       {/* ── Emergency Controls ──────────────────────────────────────────── */}
