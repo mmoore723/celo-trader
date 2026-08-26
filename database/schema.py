@@ -387,6 +387,25 @@ _CREATE_SCANNER_CANDLE_OBSERVATIONS_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_scanner_candles_symbol_time ON scanner_candle_observations(broker_account_id, ticker, bar_time);",
 ]
 
+# Intraminute underlying quotes are required to replay live-retouch strategies.
+# These observations are evidence only and are never consumed by order routing.
+_CREATE_UNDERLYING_QUOTE_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS underlying_quote_observations (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_account_id TEXT    NOT NULL DEFAULT '',
+    ticker            TEXT    NOT NULL,
+    observed_at       TEXT    NOT NULL,
+    bid               REAL    NOT NULL,
+    ask               REAL    NOT NULL,
+    mid               REAL    NOT NULL,
+    source            TEXT    NOT NULL DEFAULT 'alpaca',
+    UNIQUE(broker_account_id, ticker, observed_at)
+);
+"""
+_CREATE_UNDERLYING_QUOTE_OBSERVATIONS_IDX = [
+    "CREATE INDEX IF NOT EXISTS idx_underlying_quotes_symbol_time ON underlying_quote_observations(broker_account_id,ticker,observed_at);",
+]
+
 _CREATE_LEARNING_TABLES = """
 CREATE TABLE IF NOT EXISTS learning_examples (
     example_id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL UNIQUE,
@@ -443,6 +462,7 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
         conn.execute(_CREATE_SCANNER_CANDLE_OBSERVATIONS)
+        conn.execute(_CREATE_UNDERLYING_QUOTE_OBSERVATIONS)
         conn.executescript(_CREATE_LEARNING_TABLES)
         _learning_cols = {row[1] for row in conn.execute("PRAGMA table_info(learning_examples)")}
         if "current_episode" not in _learning_cols:
@@ -462,6 +482,8 @@ def _init_db_at(db_path: Path) -> None:
         for _idx_sql in _CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_SCANNER_CANDLE_OBSERVATIONS_IDX:
+            conn.execute(_idx_sql)
+        for _idx_sql in _CREATE_UNDERLYING_QUOTE_OBSERVATIONS_IDX:
             conn.execute(_idx_sql)
         # ── Migrations ────────────────────────────────────────────────────────
         _cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}

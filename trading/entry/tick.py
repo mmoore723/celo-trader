@@ -770,6 +770,15 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     if "V2_ORB_PULLBACK" in (_enabled | _observation_only_strategies):
         try:
             _live_underlying_quote = alpaca.get_latest_quote(ticker)
+            try:
+                from database import record_underlying_quote
+                record_underlying_quote(
+                    ticker, _live_underlying_quote,
+                    broker_account_id=settings.get("active_broker_account_id") or None,
+                    observed_at=_now_et(),
+                )
+            except Exception:
+                logger.debug("underlying quote evidence capture failed for %s", ticker, exc_info=True)
             _quote_price = None
             if _live_underlying_quote:
                 _ask, _bid = float(_live_underlying_quote.get("ap", 0) or 0), float(_live_underlying_quote.get("bp", 0) or 0)

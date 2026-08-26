@@ -33,7 +33,11 @@ from research.engine.exit_rules import (
 )
 from research.engine.noise_momentum import boundaries_by_timestamp, noise_momentum_signals
 from research.engine.providers.alpaca import export_alpaca_csv
-from research.engine.providers.databento import filter_databento_cbbo_file, normalize_databento_cbbo_files
+from research.engine.providers.databento import (
+    convert_databento_dbn_file,
+    filter_databento_cbbo_file,
+    normalize_databento_cbbo_files,
+)
 from research.engine.orb_retouch import one_minute_first_retouch_signals
 from research.jobs.run_paid_databento_job import archive_filenames, batch_file_date, build_strategy, day_bars, day_bars_with_prior_close, extract_archive_file, manifest_filenames, summarize
 from research.jobs.tune_paid_orb_holds import select_training_winner, segmented_summary
@@ -783,6 +787,7 @@ class ResearchV2Tests(unittest.TestCase):
 
     def test_paid_batch_helpers_only_accept_daily_cbbo_files(self) -> None:
         self.assertEqual(date(2026, 7, 8), batch_file_date("opra-pillar-20260708.cbbo-1m.csv.zst"))
+        self.assertEqual(date(2026, 7, 9), batch_file_date("opra-pillar-20260709.cbbo-1m.dbn.zst"))
         self.assertIsNone(batch_file_date("manifest.json"))
         bars = (_bar(0, 100, 101, 99, 100),)
         dataset = type("Dataset", (), {"bars": bars})()
@@ -797,6 +802,22 @@ class ResearchV2Tests(unittest.TestCase):
                               {"filename": "opra-pillar-20260708.cbbo-1m.csv.zst"}]}
         self.assertEqual(("opra-pillar-20260708.cbbo-1m.csv.zst",), manifest_filenames(manifest))
 
+    @patch("databento.DBNStore.from_file")
+    def test_databento_dbn_decoder_applies_embedded_symbol_mappings(self, from_file) -> None:
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "paid.dbn.zst"
+            destination = Path(directory) / "decoded.csv.zst"
+            source.write_bytes(b"paid delivery")
+            self.assertEqual(destination, convert_databento_dbn_file(source, destination))
+            from_file.assert_called_once_with(source)
+            from_file.return_value.to_csv.assert_called_once_with(
+                destination,
+                pretty_px=True,
+                pretty_ts=True,
+                map_symbols=True,
+                compression="zstd",
+            )
+
     def test_paid_archive_lists_only_daily_cbbo_files(self) -> None:
         import zipfile
         with TemporaryDirectory() as directory:
@@ -804,7 +825,14 @@ class ResearchV2Tests(unittest.TestCase):
             with zipfile.ZipFile(archive, "w") as handle:
                 handle.writestr("metadata.json", "{}")
                 handle.writestr("opra-pillar-20260708.cbbo-1m.csv.zst", "quotes")
-            self.assertEqual(("opra-pillar-20260708.cbbo-1m.csv.zst",), archive_filenames(archive))
+                handle.writestr("opra-pillar-20260709.cbbo-1m.dbn.zst", "native quotes")
+            self.assertEqual(
+                (
+                    "opra-pillar-20260708.cbbo-1m.csv.zst",
+                    "opra-pillar-20260709.cbbo-1m.dbn.zst",
+                ),
+                archive_filenames(archive),
+            )
 
     def test_paid_batch_folder_lists_and_stages_only_daily_cbbo_files(self) -> None:
         with TemporaryDirectory() as directory:
@@ -1236,6 +1264,113 @@ class ResearchV2Tests(unittest.TestCase):
             )
 
         self.assertEqual((), results["nearest_expiry"])
+
+    def test_contract_selection_low_cost_policies_require_their_fill_band(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index)
+                        for index in range(10)]
+        ]
+        signal = _OneLong().evaluate(bars[:2])
+        assert signal is not None
+        chain_start = bars[2].timestamp
+        decision_time = chain_start + timedelta(minutes=1)
+        fill_time = decision_time + timedelta(seconds=5)
+        exit_time = fill_time + timedelta(minutes=30)
+        cheap = "TSLA  260109C00105000"
+        expensive = "TSLA  260109C00103000"
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{chain_start.isoformat()},{cheap},1.40,1.50\n"
+                f"{chain_start.isoformat()},{expensive},4.80,5.00\n"
+                f"{fill_time.isoformat()},{cheap},1.50,1.60\n"
+                f"{fill_time.isoformat()},{expensive},4.90,5.10\n"
+                f"{exit_time.isoformat()},{cheap},1.70,1.80\n"
+                f"{exit_time.isoformat()},{expensive},5.30,5.50\n",
+                encoding="utf-8",
+            )
+            results = run_databento_cbbo_contract_selection_comparison(
+                bars, [source], [signal], "TSLA", hold_minutes=30,
+                policies=("nearest_expiry", "target_100_200", "target_150_250"),
+            )
+
+        self.assertEqual(expensive, results["nearest_expiry"][0].contract_symbol)
+        self.assertEqual(cheap, results["target_100_200"][0].contract_symbol)
+        self.assertEqual(cheap, results["target_150_250"][0].contract_symbol)
+
+    def test_contract_selection_affordable_first_prefers_band_without_losing_fallback(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index)
+                        for index in range(10)]
+        ]
+        signal = _OneLong().evaluate(bars[:2])
+        assert signal is not None
+        chain_start = bars[2].timestamp
+        fill_time = chain_start + timedelta(minutes=1, seconds=5)
+        exit_time = fill_time + timedelta(minutes=30)
+        preferred = "TSLA  260116C00105000"
+        fallback = "TSLA  260109C00103000"
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text(
+                "ts_recv,symbol,bid_px_00,ask_px_00\n"
+                f"{chain_start.isoformat()},{preferred},1.90,2.00\n"
+                f"{chain_start.isoformat()},{fallback},4.80,5.00\n"
+                f"{fill_time.isoformat()},{preferred},1.95,2.05\n"
+                f"{fill_time.isoformat()},{fallback},4.90,5.10\n"
+                f"{exit_time.isoformat()},{preferred},2.10,2.20\n"
+                f"{exit_time.isoformat()},{fallback},5.30,5.50\n",
+                encoding="utf-8",
+            )
+            preferred_result = run_databento_cbbo_contract_selection_comparison(
+                bars, [source], [signal], "TSLA", hold_minutes=30,
+                policies=("affordable_first",),
+            )
+            fallback_result = run_databento_cbbo_contract_selection_comparison(
+                bars, [source], [signal], "TSLA", hold_minutes=30,
+                policies=("affordable_first",), min_premium=3.00,
+            )
+
+        self.assertEqual(preferred, preferred_result["affordable_first"][0].contract_symbol)
+        self.assertEqual(fallback, fallback_result["affordable_first"][0].contract_symbol)
+
+    def test_contract_selection_declared_premium_tiers_are_disjoint(self) -> None:
+        bars = [
+            Bar(bar.timestamp.replace(tzinfo=UTC), bar.open, bar.high, bar.low, bar.close, bar.volume)
+            for bar in [_bar(index * 5, 100 + index, 101 + index, 99 + index, 100 + index)
+                        for index in range(10)]
+        ]
+        signal = _OneLong().evaluate(bars[:2])
+        assert signal is not None
+        chain_start = bars[2].timestamp
+        fill_time = chain_start + timedelta(minutes=1, seconds=5)
+        exit_time = fill_time + timedelta(minutes=30)
+        symbols = (
+            ("TSLA  260109C00105000", 1.90, 2.00),
+            ("TSLA  260109C00104000", 3.90, 4.00),
+            ("TSLA  260109C00103000", 5.90, 6.00),
+        )
+        lines = ["ts_recv,symbol,bid_px_00,ask_px_00"]
+        for symbol, bid, ask in symbols:
+            lines.extend((
+                f"{chain_start.isoformat()},{symbol},{bid},{ask}",
+                f"{fill_time.isoformat()},{symbol},{bid},{ask}",
+                f"{exit_time.isoformat()},{symbol},{bid},{ask}",
+            ))
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "opra.csv"
+            source.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            results = run_databento_cbbo_contract_selection_comparison(
+                bars, [source], [signal], "TSLA", hold_minutes=30,
+                policies=("target_150_cap", "target_250_500", "target_500_cap"),
+            )
+
+        self.assertEqual(symbols[2][0], results["target_150_cap"][0].contract_symbol)
+        self.assertEqual(symbols[1][0], results["target_250_500"][0].contract_symbol)
+        self.assertEqual(symbols[2][0], results["target_500_cap"][0].contract_symbol)
 
     def test_contract_selection_comparison_rejects_unknown_policy_before_scan(self) -> None:
         bars = [

@@ -34,7 +34,7 @@ class TickerQualificationTests(unittest.TestCase):
     def test_rejects_negative_training_and_holdout(self):
         result = qualify_pair("V2_SPY_TREND_CONT", "QQQ", observations(positive=False))
         self.assertEqual(result["decision"], "rejected")
-        self.assertIn("holdout_profit_factor", result["reasons"])
+        self.assertIn("holdout_profit_factor_below_target", result["reasons"])
 
     def test_old_or_unversioned_rows_cannot_qualify_current_code(self):
         result = qualify_pair("V2_SPY_TREND_CONT", "QQQ", observations(version="1.0.0"))
@@ -51,6 +51,30 @@ class TickerQualificationTests(unittest.TestCase):
         normalized, exclusions = normalize_completed_observations(rows)
         self.assertEqual(len(normalized), 39)
         self.assertEqual(exclusions["missing_exit_bid"], 1)
+
+    def test_sparse_ticker_is_monitored_after_enough_market_exposure(self):
+        result = qualify_pair(
+            "V2_SPY_TREND_CONT", "QQQ", observations()[:12],
+            exposure={"observed_sessions": 60, "source": "scanner_candle_observations"},
+        )
+        self.assertEqual(result["decision"], "promising_monitor")
+        self.assertEqual(result["ticker_behavior"]["setups_per_20_observed_sessions"], 4.0)
+
+    def test_sparse_ticker_waits_for_market_exposure(self):
+        result = qualify_pair(
+            "V2_SPY_TREND_CONT", "QQQ", observations()[:6],
+            exposure={"observed_sessions": 8, "source": "scanner_candle_observations"},
+        )
+        self.assertEqual(result["decision"], "insufficient_evidence")
+        self.assertEqual(result["evidence_state"], "insufficient_market_exposure")
+
+    def test_declared_holdout_boundary_does_not_move(self):
+        result = qualify_pair(
+            "V2_SPY_TREND_CONT", "QQQ", observations(),
+            declared_holdout_start="2026-01-16",
+        )
+        self.assertEqual("2026-01-16", result["holdout_start"])
+        self.assertEqual("frozen_declared", result["holdout_boundary"])
 
 
 if __name__ == "__main__":

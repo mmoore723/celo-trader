@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 from config.atomic_files import atomic_write_json
 from config.paths import BASE_DIR
 from config.strategy_catalog import REVIEWED_STRATEGIES
 from config.strategy_ticker_recommendations import publish_qualified_recommendation
+from strategy_health.ticker_exposure import load_ticker_exposure
 from strategy_health.ticker_qualification import load_completed_observations, qualify_pair
 
 REPORT_PATH = BASE_DIR / "data" / "strategy_ticker_qualification_latest.json"
@@ -20,7 +22,19 @@ def _account_database_paths() -> list[Path]:
 
 def run_ticker_qualification() -> dict:
     """Evaluate every observed reviewed pair without changing user consent."""
-    raw = load_completed_observations(_account_database_paths())
+    paths = _account_database_paths()
+    raw = load_completed_observations(paths)
+    exposure = load_ticker_exposure(paths)
+    prior: dict[tuple[str, str, str], str] = {}
+    if REPORT_PATH.exists():
+        try:
+            old = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
+            for result in old.get("results", []):
+                key = (result.get("strategy_id"), result.get("ticker"), result.get("strategy_version"))
+                if result.get("holdout_start"):
+                    prior[key] = result["holdout_start"]
+        except (OSError, json.JSONDecodeError, TypeError):
+            prior = {}
     pairs = sorted({
         (str(row.get("strategy_id") or "").upper(), str(row.get("ticker") or "").upper())
         for row in raw if row.get("strategy_id") and row.get("ticker")
@@ -29,12 +43,16 @@ def run_ticker_qualification() -> dict:
     for strategy_id, ticker in pairs:
         if strategy_id not in REVIEWED_STRATEGIES:
             continue
-        result = qualify_pair(strategy_id, ticker, raw)
+        version = REVIEWED_STRATEGIES[strategy_id].version
+        result = qualify_pair(
+            strategy_id, ticker, raw, exposure=exposure.get(ticker),
+            declared_holdout_start=prior.get((strategy_id, ticker, version)),
+        )
         results.append(result)
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "database_count": len(_account_database_paths()),
+        "database_count": len(paths),
         "raw_completed_rows": len(raw),
         "results": results,
     }

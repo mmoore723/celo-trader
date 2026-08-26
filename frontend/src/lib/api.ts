@@ -74,6 +74,32 @@ export interface CandidateScorecard {
   total_candidates: number; measured_candidates: number; next_outcome_at: string | null;
   strategies: CandidateScorecardRow[];
 }
+export interface DailyEvidenceScorecard {
+  date: string; mode: "paper" | "live"; account_scoped: boolean;
+  session_result: { grade: string; label: string; net_pnl: number; basis: string };
+  trading: {
+    closed_trades: number; wins: number; losses: number; win_rate_pct: number | null;
+    profit_factor: number | "infinite" | null; avg_win: number | null;
+    avg_loss: number | null; largest_loss: number | null;
+  };
+  decisions: {
+    candidates: number; entered: number; blocked: number; measured: number;
+    directional_accuracy_pct: number | null;
+    missed_executable_moves: Record<string, { measured: number; profitable: number; avg_executable_return_pct: number | null }>;
+  };
+  execution: {
+    entry_attempts: number; entry_filled: number; entry_fill_rate_pct: number | null;
+    exit_attempts: number; exit_filled: number; exit_fill_rate_pct: number | null;
+    attempts_with_issues: number;
+  };
+  replay: {
+    passed: boolean; chronological: boolean; coverage_pct: number;
+    checks: { name: string; expected: number; proven: number; coverage_pct: number }[];
+    issues: string[];
+  };
+  observations: string[];
+  launch_readiness: { status: string; note: string };
+}
 export interface PaperResearchScorecard {
   study_id: string; observations: number; closed: number; unavailable: number;
   quote_measured: number; option_win_rate_pct: number | null;
@@ -987,6 +1013,9 @@ export const api = {
     weeklyHistory: (limit = 12) => request<{audits: StrategyHealthHistoryRow[]}>(`/api/strategy-health/weekly/history?limit=${limit}`),
     weeklyRun:     () => request<WeeklyReview & {ok: boolean}>("/api/strategy-health/weekly/run", { method: "POST" }),
     scorecard: (days = 30) => request<StrategyScorecard>(`/api/strategy-health/scorecard?days=${days}`),
+    dailyScorecard: (mode="paper", date?: string) => request<DailyEvidenceScorecard>(
+      `/api/strategy-health/daily-scorecard?mode=${mode}${date ? `&date=${date}` : ""}`
+    ),
     candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
     qqqOpeningResearch: () => request<PaperResearchScorecard>("/api/strategy-health/paper-research/qqq-opening"),
     paidTslaV2Orb: () => request<PaidResearchEvidence>("/api/strategy-health/research/paid-tsla-v2-orb"),

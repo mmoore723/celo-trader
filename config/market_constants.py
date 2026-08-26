@@ -14,9 +14,9 @@ LIQUID_TICKERS = ["SPY", "QQQ"]
 LARGE_CAP_TICKERS = LIQUID_TICKERS
 
 # ── Hard-locked scanner universe (refactor 2026-06-16) ───────────────────────
-# Only scan these 5 tickers. All have the tightest bid/ask spreads, deepest
-# options chains on Tradier's free tier, and the highest intraday volume.
-TICKER_UNIVERSE = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA"]
+# Scanner evidence universe. Inclusion means "observe and learn," not "order."
+# Strategy/ticker execution remains separately locked by the reviewed catalog.
+TICKER_UNIVERSE = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA", "AMZN"]
 
 # ── Tiered time-box constants ────────────────────────────────────────────────
 # Flat/losing trades are killed at EARLY_TIMEBOX_MIN to stop theta decay.

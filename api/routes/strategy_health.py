@@ -24,6 +24,24 @@ def get_scorecard(days: int = 30) -> dict:
     return build_scorecard(days)
 
 
+@router.get("/daily-scorecard")
+def get_daily_scorecard(mode: str = "paper", date: str | None = None) -> dict:
+    """Account-scoped session result, execution audit, and golden replay."""
+    from config import get_settings
+    from database import _conn_for_mode, _now_et
+    from strategy_health.daily_scorecard import build_daily_scorecard
+    from strategy_health.event_tape import build_event_tape
+
+    trading_date = date or _now_et().date().isoformat()
+    account_id = get_settings().get("active_broker_account_id") or None
+    try:
+        with _conn_for_mode(mode) as conn:
+            tape = build_event_tape(conn, trading_date, mode, account_id)
+        return build_daily_scorecard(tape)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/candidate-scorecard")
 def get_candidate_scorecard(days: int = 30) -> dict:
     """Evidence-only view of every raw paper candidate and its final gate."""

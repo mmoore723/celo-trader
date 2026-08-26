@@ -12,6 +12,8 @@ import { GLOSSARY } from "../lib/glossary";
 import { TradeChartModal as ChartModal } from "../components/charts/TradeChartModal";
 import type { SimulationOverlay } from "../lib/chart_types";
 import { preferredDailyBriefTicker } from "../lib/dailyBriefSelection.js";
+import { DailyEvidencePanel } from "../components/DailyEvidencePanel";
+import type { DailyEvidenceScorecard } from "../lib/api";
 
 function fmt(n: number) {
   return `${n >= 0 ? "+" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -75,25 +77,29 @@ function dayGrade(pnl: number) {
 }
 
 // ── Post-Market Report ─────────────────────────────────────────────────────────
-function PostMarketReport({ trades }: { trades: Trade[] }) {
+function PostMarketReport({ trades, scorecard }: { trades: Trade[]; scorecard?: DailyEvidenceScorecard }) {
   const closed   = trades.filter(t => t.status === "closed");
   const wins     = closed.filter(t => (t.pnl ?? 0) > 0);
   const losses   = closed.filter(t => (t.pnl ?? 0) <= 0);
   const totalPnl = closed.reduce((s, t) => s + (t.pnl ?? 0), 0);
   const winRate  = closed.length ? Math.round((wins.length / closed.length) * 100) : 0;
   const pnlColor = totalPnl >= 0 ? "var(--positive)" : "var(--negative)";
-  const grade    = dayGrade(totalPnl);
+  const fallbackGrade = dayGrade(totalPnl);
+  const grade = scorecard?.session_result
+    ? { letter: scorecard.session_result.grade, emoji: totalPnl >= 0 ? "✅" : "🔴", msg: scorecard.session_result.label }
+    : fallbackGrade;
   const avgWin   = wins.length   ? wins.reduce((s, t) => s + (t.pnl ?? 0), 0) / wins.length   : 0;
   const avgLoss  = losses.length ? losses.reduce((s, t) => s + (t.pnl ?? 0), 0) / losses.length : 0;
 
   if (closed.length === 0) {
     return (
-      <div className="card p-8 text-center flex flex-col items-center gap-2">
-        <p className="text-3xl">📋</p>
-        <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>No completed trades yet today.</p>
-        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          This report will fill in once the bot closes its first position.
-        </p>
+      <div className="flex flex-col gap-4">
+        <DailyEvidencePanel data={scorecard} />
+        <div className="card p-8 text-center flex flex-col items-center gap-2">
+          <p className="text-3xl">📋</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>No completed trades yet today.</p>
+          <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Candidates and order attempts still appear in the evidence review above.</p>
+        </div>
       </div>
     );
   }
@@ -110,8 +116,8 @@ function PostMarketReport({ trades }: { trades: Trade[] }) {
         }`
       : "";
   const outcomeNote = totalPnl >= 0
-    ? "Finishing green means the bot did its job today. Keep it running."
-    : "Finishing red is part of trading — even the best bots have down days. The important thing is the bot stayed disciplined and didn't blow up the account.";
+    ? "A green session is encouraging, but one day does not establish launch readiness."
+    : "A red session needs evidence-based review: entry context, fills, and exit timing are separated above.";
 
   return (
     <div className="flex flex-col gap-4">
@@ -132,8 +138,13 @@ function PostMarketReport({ trades }: { trades: Trade[] }) {
             {closed.length} trade{closed.length !== 1 ? "s" : ""} · {wins.length}W / {losses.length}L · {winRate}% win rate · Net{" "}
             <strong style={{ color: pnlColor }}>{fmt(totalPnl)}</strong>
           </p>
+          <p className="text-[10px] mt-1" style={{ color: "var(--ink-faint)" }}>
+            {scorecard?.session_result.basis ?? "This letter is based on realized P&L only."}
+          </p>
         </div>
       </div>
+
+      <DailyEvidencePanel data={scorecard} />
 
       {/* Plain-English summary */}
       <div className="card p-4">
@@ -210,10 +221,10 @@ function PostMarketReport({ trades }: { trades: Trade[] }) {
         </h3>
         <p className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
           {wins.length > losses.length
-            ? `Winning more than losing — that's the most important stat in trading. As long as the average win ($${Math.abs(avgWin).toFixed(2)}) stays bigger than the average loss ($${Math.abs(avgLoss).toFixed(2)}), keep running the bot consistently.`
+            ? `The bot won more trades than it lost today. That only becomes meaningful when gross wins remain larger than gross losses after costs across many independent sessions.`
             : losses.length > wins.length
-            ? `More losses than wins today. What matters is whether wins ($${Math.abs(avgWin).toFixed(2)} avg) are bigger than losses ($${Math.abs(avgLoss).toFixed(2)} avg). Check the Performance tab for the full picture.`
-            : `Even split today. Small improvements to entry timing or stop placement could push this into consistent profitability. Check Performance for patterns over time.`
+            ? `More losses than wins today. Compare profit factor, exact missed setups, entry fills, and replay coverage before deciding what needs to change.`
+            : `The win/loss count was even. Profit factor and after-cost expectancy tell us more than the count alone.`
           }
         </p>
       </div>
@@ -382,6 +393,12 @@ export function DailyBrief() {
   const { data: tradesResp } = useQuery({
     queryKey: ["trades-today"],
     queryFn:  () => api.trades.list("paper", "all"),
+    refetchInterval: 30_000,
+  });
+
+  const { data: dailyScorecard } = useQuery({
+    queryKey: ["daily-evidence-scorecard", "paper"],
+    queryFn: () => api.strategyHealth.dailyScorecard("paper"),
     refetchInterval: 30_000,
   });
 
@@ -689,7 +706,7 @@ export function DailyBrief() {
       {/* ── Post-Market Tab ── */}
       {briefTab === "postmarket" && (
         <>
-          <PostMarketReport trades={todayTrades} />
+          <PostMarketReport trades={todayTrades} scorecard={dailyScorecard} />
 
           {todayTrades.length > 0 && (
             <div className="card flex flex-col">
