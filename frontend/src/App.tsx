@@ -37,7 +37,6 @@ const Settings = lazy(() => import("./pages/Settings").then((module) => ({ defau
 const Backtest = lazy(() => import("./pages/Backtest").then((module) => ({ default: module.Backtest })));
 const Playbooks = lazy(() => import("./pages/Playbooks").then((module) => ({ default: module.Playbooks })));
 const DailyBrief = lazy(() => import("./pages/DailyBrief").then((module) => ({ default: module.DailyBrief })));
-const StrategyHealth = lazy(() => import("./pages/StrategyHealth").then((module) => ({ default: module.StrategyHealth })));
 const AiReasoning = lazy(() => import("./pages/AiReasoning").then((module) => ({ default: module.AiReasoning })));
 const Admin = lazy(() => import("./pages/Admin").then((module) => ({ default: module.Admin })));
 
@@ -115,7 +114,6 @@ function AppShell() {
           <Route path="/journal"     element={<Journal />} />
           <Route path="/opportunities" element={<ScannerOpportunities />} />
           <Route path="/backtest"    element={<Backtest />} />
-          <Route path="/strategy-health" element={<StrategyHealth />} />
           <Route path="/ai-reasoning" element={<AiReasoning />} />
           <Route path="/playbooks"   element={<Playbooks />} />
           <Route path="/settings"    element={<Settings />} />

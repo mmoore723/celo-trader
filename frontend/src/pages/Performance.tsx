@@ -166,6 +166,16 @@ export function Performance() {
     refetchInterval: 60_000,
     retry: false,
   });
+  // The nightly evidence review remains a backend process. Performance only
+  // consumes its one non-duplicative result: whether each strategy has enough
+  // recent closed trades for a human review. P&L and win-rate stay sourced
+  // from the performance endpoints above.
+  const { data: evidence } = useQuery({
+    queryKey: ["strategy-evidence", mode, 30],
+    queryFn: () => api.strategyHealth.scorecard(30),
+    refetchInterval: 60_000,
+    retry: false,
+  });
 
   // Actual Alpaca daily P&L — truth from portfolio/history, not bot assumed fills.
   // Silently falls back to bot DB data if unavailable (circuit open, key missing, etc.)
@@ -260,12 +270,19 @@ export function Performance() {
   const displayPnl = alpacaTotalPnl ?? (perf?.total_pnl ?? 0);
 
   const byStrategy = analytics?.by_strategy ?? [];
+  const evidenceByStrategy = new Map((evidence?.strategies ?? []).map((row) => [row.strategy_id, row]));
   const byTicker   = analytics?.by_ticker   ?? [];
   const byHour     = analytics?.by_hour     ?? [];
   const now        = new Date();
 
   return (
     <div className="p-4 flex flex-col gap-4">
+
+      <header>
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>Results and evidence</p>
+        <h1 className="text-xl font-semibold mt-1" style={{ color: "var(--ink)" }}>Performance</h1>
+        <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Actual trade results, where gains and losses came from, and whether each strategy has enough recent evidence to review responsibly.</p>
+      </header>
 
       {/* ── Mode toggle ───────────────────────────────────────────────────── */}
       <div className="flex gap-2">
@@ -426,7 +443,7 @@ export function Performance() {
       {byStrategy.length > 0 && (
         <div className="card p-4">
           <Hdr title="Strategy Performance"
-               sub="Profit Factor = gross wins ÷ gross losses. PF > 2 is strong." />
+               sub="Results and 30-day evidence status in one place. Review-ready means enough trades to inspect—not proof of future profitability." />
           <div className="overflow-x-auto">
             <table className="data-table" style={{ fontSize: 12 }}>
               <thead>
@@ -438,6 +455,7 @@ export function Performance() {
                   <th className="text-right">Avg Win</th>
                   <th className="text-right">Avg Loss</th>
                   <th className="text-right">Total P&L</th>
+                  <th>Evidence</th>
                   <th style={{ width: 80 }}>P&L Share</th>
                 </tr>
               </thead>
@@ -447,6 +465,9 @@ export function Performance() {
                     ? Math.min(100, (s.total_pnl / stratTotalPnl) * 100)
                     : 0;
                   const pf = s.profit_factor ?? 0;
+                  const strategyEvidence = evidenceByStrategy.get(s.strategy_id);
+                  const evidenceTrades = strategyEvidence?.closed_trades ?? 0;
+                  const reviewReady = strategyEvidence?.sample_status === "review_ready";
                   return (
                     <tr key={s.strategy_id}>
                       <td style={{ fontWeight: 600 }}>{s.strategy_id}</td>
@@ -468,6 +489,14 @@ export function Performance() {
                       <td className="num text-right" style={{ fontWeight:600,
                           color: s.total_pnl>=0 ? posColor : negColor }}>
                         {s.total_pnl>=0?"+":""}${s.total_pnl.toFixed(2)}
+                      </td>
+                      <td>
+                        <span className={`badge ${reviewReady ? "badge-green" : "badge-yellow"}`}>
+                          {reviewReady ? "READY TO REVIEW" : "COLLECTING"}
+                        </span>
+                        <div style={{ marginTop: 3, fontSize: 10, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>
+                          {evidenceTrades}/{evidence?.minimum_review_trades ?? 20} recent closed trades
+                        </div>
                       </td>
                       <td style={{ paddingLeft: 8 }}>
                         {sharePct > 0 && (
