@@ -83,6 +83,9 @@ def get_settings_endpoint() -> Settings:
     except (TypeError, ValueError):
         _risk_auto, _risk_pct = True, get_risk_tier(STARTING_CAPITAL) * 100
     return Settings(
+        broker_provider=str(s.get("broker_provider") or "alpaca"),
+        paper_trading=bool(s.get("paper_trading", True)),
+        display_timezone=str(s.get("display_timezone") or "America/New_York"),
         risk_pct=round(_risk_pct, 2),
         risk_auto=_risk_auto,
         growth_mode=bool(s.get("growth_mode", False)),
@@ -121,6 +124,61 @@ def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
     from config import get_settings, save_settings
     current = get_settings()
     data = payload.model_dump()
+    target_provider = str(data.get("broker_provider") or "alpaca").lower()
+    if target_provider not in {"alpaca", "tradier"}:
+        raise HTTPException(400, "Broker provider must be Alpaca or Tradier")
+    data["broker_provider"] = target_provider
+    current_provider = str(current.get("broker_provider") or "alpaca").lower()
+    current_paper = bool(current.get("paper_trading", True))
+    target_paper = bool(data.get("paper_trading", current_paper))
+    broker_route_changed = (
+        target_provider != current_provider or target_paper != current_paper
+    )
+    if broker_route_changed:
+        from trading.state import _get_lock
+        if _get_lock(request.state.user_id).locked():
+            raise HTTPException(409, "Stop the bot before changing broker or paper/live mode")
+    if broker_route_changed:
+        if target_provider == "tradier":
+            from broker import get_tradier_broker
+            broker = get_tradier_broker(paper=target_paper)[0]
+            readiness = broker.readiness()
+            if not readiness["ready"]:
+                failures = "; ".join(
+                    f"{name}: {item['detail']}"
+                    for name, item in readiness["checks"].items()
+                    if not item["passed"]
+                )
+                raise HTTPException(
+                    409,
+                    "Tradier cannot be activated until every read-only readiness check passes. "
+                    + failures,
+                )
+        else:
+            from broker import AlpacaClient
+            broker = AlpacaClient(paper=target_paper)
+        try:
+            account = broker.get_account()
+        except Exception as exc:
+            raise HTTPException(
+                409,
+                f"{target_provider.title()} account could not be verified for the selected mode",
+            ) from exc
+        if float(account.get("equity") or 0) <= 0:
+            raise HTTPException(409, f"{target_provider.title()} returned no positive account equity")
+        from broker.account_identity import resolve_account_identity
+        from config import get_api_keys
+        keys = get_api_keys()
+        identity_key = keys.get(
+            (
+                "tradier_api_key" if target_paper else "tradier_market_api_key"
+            ) if target_provider == "tradier" else "alpaca_api_key",
+            "",
+        )
+        data["active_broker_account_id"] = resolve_account_identity(
+            identity_key, target_paper, account, provider=target_provider,
+        )
+        data["last_known_balance"] = float(account.get("equity") or 0)
     # Strategy promotion is evidence-controlled, not a settings-page action.
     # Keep the server's reviewed list even if a browser sends this field.
     data.pop("validated_strategy_ids", None)
@@ -200,7 +258,9 @@ class CredentialsPayload(BaseModel):
     alpaca_api_key:     Optional[str] = None
     alpaca_secret_key:  Optional[str] = None
     tradier_api_key:    Optional[str] = None
+    tradier_market_api_key: Optional[str] = None
     tradier_account_id: Optional[str] = None
+    tradier_live_account_id: Optional[str] = None
 
 
 @router.get("/credentials")
@@ -217,9 +277,13 @@ def get_credentials() -> dict:
         "alpaca_api_key":     mask(keys.get("alpaca_api_key", "")),
         "alpaca_secret_key":  mask(keys.get("alpaca_secret_key", "")),
         "tradier_api_key":    mask(keys.get("tradier_api_key", "")),
+        "tradier_market_api_key": mask(keys.get("tradier_market_api_key", "")),
         "tradier_account_id": keys.get("tradier_account_id", ""),   # not secret
+        "tradier_live_account_id": keys.get("tradier_live_account_id", ""),
         "has_alpaca":         bool(keys.get("alpaca_api_key")),
         "has_tradier":        bool(keys.get("tradier_api_key")),
+        "has_tradier_market": bool(keys.get("tradier_market_api_key")),
+        "has_tradier_live_account": bool(keys.get("tradier_live_account_id")),
     }
 
 
@@ -260,15 +324,28 @@ def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
         current["alpaca_secret_key"] = payload.alpaca_secret_key.strip()
     if payload.tradier_api_key is not None:
         current["tradier_api_key"] = payload.tradier_api_key.strip()
+    if payload.tradier_market_api_key is not None:
+        current["tradier_market_api_key"] = payload.tradier_market_api_key.strip()
     if payload.tradier_account_id is not None:
         current["tradier_account_id"] = payload.tradier_account_id.strip()
+    if payload.tradier_live_account_id is not None:
+        current["tradier_live_account_id"] = payload.tradier_live_account_id.strip()
     if bool(current.get("alpaca_api_key")) != bool(current.get("alpaca_secret_key")):
         raise HTTPException(400, "Alpaca API key and secret key must be saved together")
     if bool(current.get("tradier_api_key")) != bool(current.get("tradier_account_id")):
         raise HTTPException(400, "Tradier API key and account ID must be saved together")
     alpaca_changed = payload.alpaca_api_key is not None or payload.alpaca_secret_key is not None
+    tradier_changed = (
+        payload.tradier_api_key is not None
+        or payload.tradier_market_api_key is not None
+        or payload.tradier_account_id is not None
+        or payload.tradier_live_account_id is not None
+    )
     save_api_keys(current)
-    if not alpaca_changed:
+    from broker import configured_broker_provider
+    provider = configured_broker_provider()
+    active_broker_changed = alpaca_changed if provider == "alpaca" else tradier_changed
+    if not active_broker_changed:
         return {"ok": True, "message": "API keys saved securely"}
 
     # A key can point at a completely different Alpaca account.  Local paper
@@ -280,13 +357,23 @@ def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
     paper = bool(settings.get("paper_trading", True))
     account: dict | None = None
     try:
-        from broker import AlpacaClient
-        account = AlpacaClient().get_account()
+        if provider == "tradier":
+            from broker import get_tradier_broker
+            account = get_tradier_broker()[0].get_account()
+        else:
+            from broker import AlpacaClient
+            account = AlpacaClient().get_account()
     except Exception:
         # A bad/new key should still isolate old local results. The fallback is
         # a one-way hash of the key id, never the secret or raw key.
         pass
-    identity = resolve_account_identity(current.get("alpaca_api_key", ""), paper, account)
+    identity_key = (
+        current.get("tradier_api_key" if paper else "tradier_market_api_key", "")
+        if provider == "tradier" else current.get("alpaca_api_key", "")
+    )
+    identity = resolve_account_identity(
+        identity_key, paper, account, provider=provider,
+    )
     previous_identity = str(settings.get("active_broker_account_id") or "")
     changed_account = identity != previous_identity
     if changed_account:
@@ -317,8 +404,18 @@ def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
     return {
         "ok": True,
         "message": (
-            "Alpaca account changed. Historical results are now scoped to the new account. "
+            f"{provider.title()} account changed. Historical results are now scoped to the new account. "
             "Stop and start the bot before trading so it reconnects with the new key."
-            if changed_account else "Alpaca keys saved securely. Stop and start the bot before trading so it reconnects."
+            if changed_account else f"{provider.title()} keys saved securely. Stop and start the bot before trading so it reconnects."
         ),
     }
+
+
+@router.get("/broker-readiness")
+def broker_readiness(paper: Optional[bool] = None) -> dict:
+    """Run read-only cutover checks; this endpoint can never submit an order."""
+    from broker import configured_broker_provider, get_tradier_broker
+    provider = configured_broker_provider()
+    result = get_tradier_broker(paper=paper)[0].readiness()
+    result["selected_provider"] = provider
+    return result

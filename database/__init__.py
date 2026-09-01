@@ -35,7 +35,7 @@ from database.connection import get_conn, _conn_for_mode
 from database.trades import insert_trade, save_mtf_bias, close_trade, audit_trade_lineage
 from database.option_quotes import (
     record_paper_option_quote, record_candidate_option_quote,
-    capture_due_candidate_option_quotes,
+    promote_candidate_entry_quote, capture_due_candidate_option_quotes,
 )
 from database.research_observations import (
     start_paper_research_observation, close_due_paper_research_observations,
@@ -60,7 +60,8 @@ __all__ = [
     "init_db", "backfill_daily_summaries", "_init_db_at",
     "get_conn", "_conn_for_mode",
     "insert_trade", "save_mtf_bias", "close_trade", "audit_trade_lineage", "record_paper_option_quote",
-    "record_candidate_option_quote", "capture_due_candidate_option_quotes",
+    "record_candidate_option_quote", "promote_candidate_entry_quote",
+    "capture_due_candidate_option_quotes",
     "start_paper_research_observation", "close_due_paper_research_observations", "get_paper_research_scorecard",
     "record_scanner_candles", "record_underlying_quote",
     "get_open_trades", "get_open_trade", "get_all_trades",

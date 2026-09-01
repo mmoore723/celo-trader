@@ -12,6 +12,7 @@ from typing import Optional
 from datetime import date
 
 from config import MIN_OPEN_INTEREST, MAX_BID_ASK_SPREAD
+from broker.tradier_market import _quote_age_seconds
 
 logger = logging.getLogger("celo_trader.broker")
 
@@ -114,6 +115,11 @@ class TradierChainMixin:
                 "mid":    round((bid + ask) / 2, 4),
                 "spread": round(ask - bid, 4),
                 "last":   float(quotes.get("last", 0) or 0),
+                "quote_age_seconds": _quote_age_seconds(quotes),
+                "bid_date": quotes.get("bid_date"),
+                "ask_date": quotes.get("ask_date"),
+                "trade_date": quotes.get("trade_date"),
+                "quote_source": "tradier",
             }
         except Exception as e:
             logger.error("get_option_quote(%s) failed: %s", option_symbol, e)

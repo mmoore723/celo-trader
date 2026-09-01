@@ -31,6 +31,7 @@ PRODUCTION_PATHS=(
   broker
   config
   database
+  docs/adr/0004-atomic-tradier-broker-cutover.md
   frontend
   logger_config
   regime_manager

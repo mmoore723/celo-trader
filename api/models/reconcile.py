@@ -46,6 +46,7 @@ class ReconcileRow(BaseModel):
 
 class ReconcileResponse(BaseModel):
     date: str
+    broker_provider: str = "alpaca"
     alpaca_equity: Optional[float]          # current Alpaca account equity
     day_start_balance: Optional[float]      # captured at bot start
     bot_session_pnl: float                  # sum of DB realized_pnl for the date

@@ -112,6 +112,74 @@ def record_candidate_option_quote(
         return False
 
 
+def promote_candidate_entry_quote(
+    *, candidate_id: str, contract_symbol: str, observed_at: datetime,
+    quote: Mapping[str, Any] | None, source: str,
+) -> bool:
+    """Make the final executable contract the candidate's primary entry quote.
+
+    A candidate can be priced before every entry gate clears.  The final
+    selector is allowed to choose a different contract after that preview.  In
+    that case, preserve the preview in the alternatives table and replace the
+    single primary ``entry`` row with the exact contract carried by the order
+    intent.  This function is observational and must never place or alter an
+    order.
+    """
+    if not candidate_id or not contract_symbol:
+        return False
+    quote = quote or {}
+    bid, ask, mid = (_number(quote.get(key)) for key in ("bid", "ask", "mid"))
+    if mid is None and bid is not None and ask is not None:
+        mid = round((bid + ask) / 2, 6)
+    observed_iso = _to_et_isoformat(observed_at)
+    try:
+        with get_conn() as conn:
+            prior = conn.execute(
+                """SELECT contract_symbol, observed_at, bid, ask, mid, source
+                   FROM candidate_option_quote_observations
+                   WHERE candidate_id = ? AND observation_kind = 'entry'""",
+                (candidate_id,),
+            ).fetchone()
+            if prior is not None and str(prior[0]) != contract_symbol:
+                conn.execute(
+                    """INSERT OR IGNORE INTO candidate_contract_alternatives
+                       (candidate_id, contract_symbol, observed_at,
+                        observation_kind, bid, ask, mid, policy_json, source)
+                       VALUES (?, ?, ?, 'entry', ?, ?, ?, ?, ?)""",
+                    (
+                        candidate_id, str(prior[0]), str(prior[1]), prior[2],
+                        prior[3], prior[4],
+                        json.dumps(["preview_superseded_by_order_intent"]),
+                        str(prior[5] or "tradier_contract_preview"),
+                    ),
+                )
+            conn.execute(
+                """INSERT INTO candidate_option_quote_observations
+                   (candidate_id, observed_at, observation_kind, contract_symbol,
+                    bid, ask, mid, last, source)
+                   VALUES (?, ?, 'entry', ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(candidate_id, observation_kind) DO UPDATE SET
+                       observed_at = excluded.observed_at,
+                       contract_symbol = excluded.contract_symbol,
+                       bid = excluded.bid,
+                       ask = excluded.ask,
+                       mid = excluded.mid,
+                       last = excluded.last,
+                       source = excluded.source""",
+                (
+                    candidate_id, observed_iso, contract_symbol, bid, ask, mid,
+                    _number(quote.get("last")), source,
+                ),
+            )
+        return True
+    except Exception:
+        logger.warning(
+            "authoritative candidate quote promotion failed candidate=%s symbol=%s",
+            candidate_id, contract_symbol, exc_info=True,
+        )
+        return False
+
+
 def record_candidate_contract_alternative(
     *, candidate_id: str, contract: Mapping[str, Any], observation_kind: str,
     observed_at: datetime, policies: list[str] | None = None,

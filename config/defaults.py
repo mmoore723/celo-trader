@@ -140,6 +140,10 @@ _DEFAULTS = {
     "max_bid_ask_spread":      0.10,   # $0.10 max spread — realistic for liquid options
 
     # System
+    # Alpaca remains the deployed provider until the Tradier readiness gate
+    # confirms account balance, positions, orders, clock, and fresh market data.
+    # Switching this value changes entries AND exits together in broker.factory.
+    "broker_provider":      "alpaca",
     "email_alerts_enabled": False,
     "paper_trading":        ALPACA_PAPER,
     "alpaca_data_plan":     "free",   # "free" = IEX regular session; "premium" = SIP + pre-market

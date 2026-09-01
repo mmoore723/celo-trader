@@ -60,12 +60,15 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     # Resolve stop event for this user
     _stop = _get_stop_event(user_id)
 
+    _settings = get_settings()
+    _is_paper = bool(_settings.get("paper_trading", True))
+    _broker_provider = str(_settings.get("broker_provider") or "alpaca").lower()
     credentials = get_api_keys(user_id)
+    from broker import required_broker_credentials
     if not all(
         str(credentials.get(key) or "").strip()
-        for key in (
-            "alpaca_api_key", "alpaca_secret_key",
-            "tradier_api_key", "tradier_account_id",
+        for key, _label in required_broker_credentials(
+            credentials, provider=_broker_provider, paper=_is_paper,
         )
     ):
         _US.update({
@@ -84,8 +87,6 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     alpaca, tradier = get_clients()
 
     # Determine mode from settings (written by start_bot() before the loop starts).
-    _settings   = get_settings()
-    _is_paper   = _settings.get("paper_trading", True)
     _trade_mode = "paper" if _is_paper else "live"
     # Accounts saved before broker-account attribution existed have no stored
     # identity yet. Resolve it once at startup so their legacy local history
@@ -96,8 +97,14 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
             from config import get_api_keys, save_settings
             from broker.account_identity import resolve_account_identity
             account = alpaca.get_account()
+            identity_key = get_api_keys().get(
+                (
+                    "tradier_api_key" if _is_paper else "tradier_market_api_key"
+                ) if _broker_provider == "tradier" else "alpaca_api_key",
+                "",
+            )
             identity = resolve_account_identity(
-                get_api_keys().get("alpaca_api_key", ""), _is_paper, account,
+                identity_key, _is_paper, account, provider=_broker_provider,
             )
             save_settings({"active_broker_account_id": identity})
             _settings["active_broker_account_id"] = identity
@@ -111,7 +118,7 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
         acct    = alpaca.get_account()
         balance = float(acct.get("equity", 0)) if acct else 0
         if balance <= 0:
-            raise RuntimeError("Alpaca returned no positive account equity")
+            raise RuntimeError(f"{_broker_provider.title()} returned no positive account equity")
         else:
             from config import save_settings as _save_start
             _save_start({"last_known_balance": round(balance, 2)})

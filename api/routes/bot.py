@@ -62,11 +62,13 @@ def get_status(request: Request) -> BotStatus:
     state    = _read_bot_state(user_id)
     settings = get_settings()
     credentials = get_api_keys(user_id)
+    from broker import required_broker_credentials
     broker_connected = all(
         str(credentials.get(key) or "").strip()
-        for key in (
-            "alpaca_api_key", "alpaca_secret_key",
-            "tradier_api_key", "tradier_account_id",
+        for key, _label in required_broker_credentials(
+            credentials,
+            provider=str(settings.get("broker_provider") or "alpaca"),
+            paper=bool(settings.get("paper_trading", True)),
         )
     )
     _state   = get_user_state(user_id)
@@ -174,14 +176,14 @@ def start_bot(request: Request) -> BotActionResponse:
     mode     = "paper" if settings.get("paper_trading", True) else "live"
 
     credentials = get_api_keys(user_id)
+    from broker import (
+        configured_broker_provider, get_tradier_broker,
+        required_broker_credentials,
+    )
+    provider = configured_broker_provider()
     missing_credentials = [
         label
-        for key, label in (
-            ("alpaca_api_key", "Alpaca API key"),
-            ("alpaca_secret_key", "Alpaca secret key"),
-            ("tradier_api_key", "Tradier API key"),
-            ("tradier_account_id", "Tradier account ID"),
-        )
+        for key, label in required_broker_credentials(credentials, provider=provider, paper=(mode == "paper"))
         if not str(credentials.get(key) or "").strip()
     ]
     if missing_credentials:
@@ -193,6 +195,19 @@ def start_bot(request: Request) -> BotActionResponse:
                 + " in Settings before starting the bot."
             ),
         )
+
+    if provider == "tradier":
+        readiness = get_tradier_broker()[0].readiness()
+        if not readiness["ready"]:
+            failures = [
+                f"{name}: {item['detail']}"
+                for name, item in readiness["checks"].items()
+                if not item["passed"]
+            ]
+            return BotActionResponse(
+                ok=False,
+                message="Tradier is not ready for both entries and exits. " + "; ".join(failures),
+            )
 
     # A full maintenance halt blocks loops. Collection-only maintenance may
     # run the scanner/recorder, while the entry path independently guarantees

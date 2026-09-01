@@ -17,6 +17,45 @@ from trading.controls.helpers import _default_user_id, _refresh_session_pnl
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
+def _flatten_with_confirmed_fills(broker, market, *, reason: str) -> bool:
+    """Close tracked trades first so every local close uses a confirmed fill."""
+    from database import get_open_trades
+    from trading.position_manager.close import _close_position
+
+    for trade in list(get_open_trades()):
+        try:
+            quote = market.get_option_quote(trade["contract_symbol"])
+        except Exception:
+            quote = None
+        bid = float((quote or {}).get("bid") or 0)
+        trigger = float((quote or {}).get("mid") or bid or trade.get("entry_price") or 0)
+        _close_position(
+            broker, trade, trigger, reason,
+            bid_price=bid if bid > 0 else None,
+        )
+
+    # A tracked row must remain open unless its exit order produced a confirmed
+    # fill (or the broker explicitly proved the position never existed).
+    if get_open_trades():
+        return False
+
+    # Flatten any broker position that predates/escaped the local journal, then
+    # verify that the account is actually flat. These cannot be assigned a
+    # fabricated local exit price because no matching local trade exists.
+    remaining = [
+        row for row in (broker.get_positions() or [])
+        if int(float(row.get("qty") or row.get("quantity") or 0)) != 0
+    ]
+    if remaining and broker.close_all_positions() is False:
+        return False
+    if remaining:
+        remaining = [
+            row for row in (broker.get_positions() or [])
+            if int(float(row.get("qty") or row.get("quantity") or 0)) != 0
+        ]
+    return not remaining
+
+
 def panic_close_all(user_id: str | None = None) -> None:
     """
     Emergency flatten — closes all broker positions and marks all open DB
@@ -28,26 +67,15 @@ def panic_close_all(user_id: str | None = None) -> None:
     then displayed the "halted" status on admin's dashboard instead of theirs.
     """
     from broker import get_clients
-    from database import get_open_trades, close_trade
     from database import log_event
 
     uid = user_id or _default_user_id()
     _US = get_user_state(uid)
 
-    alpaca, _ = get_clients()
-    if alpaca.close_all_positions() is False:
-        raise RuntimeError("Broker did not confirm the emergency close-all request")
-    trades = get_open_trades()
-    for trade in trades:
-        try:
-            quote = __import__("broker").TradierClient().get_option_quote(trade["contract_symbol"])
-            exit_px = quote["mid"] if quote else trade["entry_price"]
-        except Exception:
-            exit_px = trade["entry_price"]
-        close_trade(
-            trade["id"], exit_price=exit_px,
-            exit_time=_now_et(), exit_reason="panic",
-            exit_order_id="alpaca:close_all", exit_fill_time=_now_et(),
+    broker, market = get_clients()
+    if not _flatten_with_confirmed_fills(broker, market, reason="panic"):
+        raise RuntimeError(
+            "Broker did not confirm every emergency exit; unresolved trades remain open"
         )
     _US["status"]      = "halted"
     _US["open_trades"] = []
@@ -66,37 +94,28 @@ def _panic_close_all_positions(
     Internal variant called by the kill-lock handler in loop.py.
     Closes all broker positions and marks any open DB trade(s) as force-closed.
     """
-    from database import log_event, get_open_trades, close_trade
+    from database import log_event
 
     uid = user_id or _default_user_id()
     _US = get_user_state(uid)
 
+    flattened = False
     try:
-        if alpaca.close_all_positions() is False:
-            raise RuntimeError("Broker did not confirm the kill-lock close-all request")
+        flattened = _flatten_with_confirmed_fills(
+            alpaca, tradier, reason="kill_lock_force_close",
+        )
     except Exception as ex:
         logger.error("kill_lock_close_all failed: %s", ex)
-    trades = get_open_trades()
-    for trade in trades:
-        try:
-            quote   = tradier.get_option_quote(trade["contract_symbol"])
-            exit_px = quote["mid"] if quote else trade["entry_price"]
-        except Exception:
-            exit_px = trade["entry_price"]
-        close_trade(
-            trade["id"],
-            exit_price  = exit_px,
-            exit_time   = _now_et(),
-            exit_reason = "kill_lock_force_close",
-            exit_order_id = "alpaca:close_all",
-            exit_fill_time = _now_et(),
-        )
     _US["status"]      = "kill_locked"
-    _US["open_trade"]  = None
-    _US["open_trades"] = []
-    _US["positions"]   = {}
+    if flattened:
+        _US["open_trade"]  = None
+        _US["open_trades"] = []
+        _US["positions"]   = {}
     # Recompute and flush session_pnl — kill-lock bypasses _close_position
     _refresh_session_pnl(uid)
-    log_event("CRITICAL", "trading_logic",
-              "🔴 Daily loss limit hit — all positions closed. "
-              "Trading is frozen for 24 hours to protect your account.")
+    log_event(
+        "CRITICAL", "trading_logic",
+        "🔴 Daily loss limit hit — all positions closed. Trading is frozen for 24 hours to protect your account."
+        if flattened else
+        "🔴 Daily loss limit hit, but one or more broker exits are unconfirmed. Trading is frozen; manual review is required.",
+    )

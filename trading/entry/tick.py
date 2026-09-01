@@ -97,6 +97,17 @@ def _entry_order_wait_seconds(*, has_open_positions: bool) -> int:
     """
     return 10 if has_open_positions else 45
 
+
+def _entry_quote_is_fresh(quote: dict | None, maximum_age_seconds: float = 120.0) -> bool:
+    """Fail closed when an executable quote has no broker timestamp or is delayed."""
+    if not quote:
+        return False
+    try:
+        age = quote.get("quote_age_seconds")
+        return age is not None and 0 <= float(age) <= float(maximum_age_seconds)
+    except (TypeError, ValueError):
+        return False
+
 # ── State / shared globals (from state.py) ────────────────────────────────
 from trading.state import (
     get_user_state, get_user_risk, get_user_trade_log, set_user_trade_log,
@@ -1401,6 +1412,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     _quote_latency_ms = round((time.monotonic() - _quote_started) * 1000, 1)
     _fresh_bid = float((_fresh_quote or {}).get("bid") or 0)
     _fresh_ask = float((_fresh_quote or {}).get("ask") or 0)
+    _fresh_age = (_fresh_quote or {}).get("quote_age_seconds")
     if _fresh_bid <= 0 or _fresh_ask < _fresh_bid:
         log_event(
             "INFO", "bar_eval",
@@ -1414,6 +1426,23 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             detail=f"Tradier exact-contract quote missing after {_quote_latency_ms:.1f}ms",
         )
         return
+    if not _entry_quote_is_fresh(_fresh_quote):
+        _age_detail = (
+            f"{float(_fresh_age):.1f}s old" if _fresh_age is not None
+            else "missing a broker timestamp"
+        )
+        log_event(
+            "WARNING", "bar_eval",
+            f"🟡 [{ticker}] Tradier quote for {contract.get('symbol')} is "
+            f"{_age_detail}. Entry blocked because delayed prices cannot be used "
+            "for an executable order.",
+        )
+        _skip_log(
+            ticker, "stale_entry_quote", strategy=strategy_id,
+            confidence=_top.confidence, direction=direction, tier=_signal_tier,
+            detail=f"Tradier exact-contract quote was {_age_detail}",
+        )
+        return
     contract.update({
         "bid": _fresh_bid,
         "ask": _fresh_ask,
@@ -1421,6 +1450,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         "spread": _fresh_ask - _fresh_bid,
         "quote_source": "tradier_production",
         "quote_latency_ms": _quote_latency_ms,
+        "quote_age_seconds": float(_fresh_age),
         "quote_received_at": _now_et().isoformat(),
     })
     ask_price = _fresh_ask
@@ -1851,6 +1881,18 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "exit_plan": _opportunity_context.get("exit_plan"),
         }
         _opportunity_context["order_intent"] = _order_intent
+        try:
+            from database.option_quotes import promote_candidate_entry_quote
+            if _candidate_id:
+                promote_candidate_entry_quote(
+                    candidate_id=str(_candidate_id),
+                    contract_symbol=str(contract.get("symbol") or ""),
+                    observed_at=_intent_now,
+                    quote=contract,
+                    source="tradier_authoritative_order_intent",
+                )
+        except Exception:
+            logger.debug("authoritative candidate quote promotion failed for %s", ticker, exc_info=True)
         try:
             from shadow_ledger import snapshot_candidate_plan
             snapshot_candidate_plan(_opportunity_context)

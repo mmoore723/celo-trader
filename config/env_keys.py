@@ -17,8 +17,10 @@ ALPACA_BASE_URL   = (
 )
 
 TRADIER_API_KEY    = os.getenv("TRADIER_API_KEY", "")
+TRADIER_MARKET_API_KEY = os.getenv("TRADIER_MARKET_API_KEY", "")
 TRADIER_BASE_URL   = os.getenv("TRADIER_BASE_URL", "https://api.tradier.com/v1")
 TRADIER_ACCOUNT_ID = os.getenv("TRADIER_ACCOUNT_ID", "")
+TRADIER_LIVE_ACCOUNT_ID = os.getenv("TRADIER_LIVE_ACCOUNT_ID", "")
 POLYGON_API_KEY    = os.getenv("POLYGON_API_KEY", "")
 
 # Optional — used by strategy_health/ai_narrator.py (nightly audit summary)

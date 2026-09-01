@@ -9,6 +9,9 @@ from pydantic import BaseModel
 
 
 class Settings(BaseModel):
+    broker_provider: str = "alpaca"
+    paper_trading: bool = True
+    display_timezone: str = "America/New_York"
     risk_pct: float
     # True means the balance-based risk ladder is active.  `risk_pct` then
     # reports the currently effective tier rather than creating an override.

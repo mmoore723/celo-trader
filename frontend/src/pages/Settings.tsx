@@ -3,7 +3,7 @@
  */
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, Eye, EyeOff, Key } from "lucide-react";
+import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
 import { api, type AppSettings } from "../lib/api";
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
@@ -24,6 +24,7 @@ function Toggle({ checked, onChange, label, disabled = false }: { checked: boole
 }
 
 const DEFAULT: AppSettings = {
+  broker_provider: "alpaca",
   paper_trading: true,
   risk_pct: 5.0,
   risk_auto: true,
@@ -201,9 +202,11 @@ function AlpacaCredentialsPanel() {
 }
 
 function TradierCredentialsPanel() {
-  const [show, setShow] = useState(false);
+  const [show, setShow] = useState({ sandbox: false, live: false });
   const { creds, setField, status, loaded, save } =
-    useCredentialSave<"tradier_api_key" | "tradier_account_id">(["tradier_api_key", "tradier_account_id"]);
+    useCredentialSave<"tradier_api_key" | "tradier_market_api_key" | "tradier_account_id" | "tradier_live_account_id">([
+      "tradier_api_key", "tradier_market_api_key", "tradier_account_id", "tradier_live_account_id",
+    ]);
 
   if (!loaded) return <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading…</p>;
 
@@ -214,15 +217,23 @@ function TradierCredentialsPanel() {
         <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Tradier</h3>
       </div>
       <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-        Used for options quotes and chains. Saving here never touches your Alpaca keys.
+        Paper uses the sandbox token for simulated orders and the live token for current prices.
+        Live trading uses the live token and live account. Saving here never touches Alpaca.
       </p>
-      <CredentialField label="Tradier API Key" name="tradier_key"
+      <CredentialField label="Sandbox token (paper orders)" name="tradier_key"
         value={creds.tradier_api_key} onChange={v => setField("tradier_api_key", v)}
-        show={show} onToggle={() => setShow(s => !s)}
-        hint="Bearer token from Tradier dashboard" />
-      <CredentialField label="Tradier Account ID" name="tradier_account_id"
+        show={show.sandbox} onToggle={() => setShow(s => ({ ...s, sandbox: !s.sandbox }))}
+        hint="Sandbox bearer token" />
+      <CredentialField label="Sandbox account ID" name="tradier_account_id"
         value={creds.tradier_account_id} onChange={v => setField("tradier_account_id", v)}
-        show={true} onToggle={() => {}} hint="Account number (digits only)" />
+        show={true} onToggle={() => {}} hint="Sandbox account number" />
+      <CredentialField label="Live token (real-time prices and future live orders)" name="tradier_market_key"
+        value={creds.tradier_market_api_key} onChange={v => setField("tradier_market_api_key", v)}
+        show={show.live} onToggle={() => setShow(s => ({ ...s, live: !s.live }))}
+        hint="Production bearer token" />
+      <CredentialField label="Live account ID (required only for live orders)" name="tradier_live_account_id"
+        value={creds.tradier_live_account_id} onChange={v => setField("tradier_live_account_id", v)}
+        show={true} onToggle={() => {}} hint="Live account number" />
       {status && (
         <p className="text-xs font-medium" style={{ color: status.ok ? "var(--accent)" : "#f87171" }}>{status.msg}</p>
       )}
@@ -237,6 +248,7 @@ export function Settings() {
   const [form,      setForm]      = useState<AppSettings>(DEFAULT);
   const [savedForm, setSavedForm] = useState<AppSettings>(DEFAULT); // last committed state
   const [saved,     setSaved]     = useState(false);
+  const [saveError, setSaveError] = useState("");
   // Raw watchlist text — only parsed into form.watchlist on blur so commas
   // don't disappear while the user is still typing
   const [watchlistRaw, setWatchlistRaw] = useState(DEFAULT.watchlist.join(", "));
@@ -257,6 +269,12 @@ export function Settings() {
   const { data: strategyRecommendations } = useQuery({
     queryKey: ["strategy-recommendations"],
     queryFn: api.settings.recommendations,
+  });
+  const { data: brokerReadiness, refetch: refreshBrokerReadiness, isFetching: checkingBroker } = useQuery({
+    queryKey: ["broker-readiness", form.paper_trading ?? true],
+    queryFn: () => api.settings.brokerReadiness(form.paper_trading ?? true),
+    refetchOnWindowFocus: false,
+    enabled: (form.broker_provider ?? "alpaca") === "tradier",
   });
 
   async function decideRecommendation(strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") {
@@ -286,13 +304,20 @@ export function Settings() {
   }
 
   async function save() {
-    await api.settings.save(form);
-    setSavedForm(form);   // move the anchor forward so discard stays correct
-    qc.invalidateQueries({ queryKey: ["settings"] });
-    qc.invalidateQueries({ queryKey: ["strategy-catalog"] });
-    qc.invalidateQueries({ queryKey: ["strategy-setting-history"] });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setSaveError("");
+    try {
+      const committed = await api.settings.save(form);
+      setForm(committed);
+      setSavedForm(committed);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["strategy-catalog"] });
+      qc.invalidateQueries({ queryKey: ["strategy-setting-history"] });
+      qc.invalidateQueries({ queryKey: ["broker-readiness"] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (error: any) {
+      setSaveError(error?.message || "Settings could not be saved.");
+    }
   }
 
   return (
@@ -315,9 +340,44 @@ export function Settings() {
             </button>
           ))}
         </div>
+        <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+          <label className="text-sm font-medium" style={{ color: "var(--ink)" }}>Broker for entries and exits</label>
+          <div className="flex gap-2 mt-2">
+            {(["alpaca", "tradier"] as const).map((provider) => (
+              <button
+                key={provider}
+                onClick={() => set("broker_provider", provider)}
+                className={`btn flex-1 justify-center ${(form.broker_provider ?? "alpaca") === provider ? "btn-primary" : "btn-ghost"}`}
+              >
+                {provider === "alpaca" ? "Alpaca" : "Tradier only"}
+              </button>
+            ))}
+          </div>
+          {(form.broker_provider ?? "alpaca") === "tradier" && (
+            <div className="mt-3 rounded-lg p-3 text-xs" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+              <div className="flex items-center gap-2 font-semibold" style={{ color: brokerReadiness?.ready ? "var(--positive)" : "var(--warning)" }}>
+                {brokerReadiness?.ready ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
+                {brokerReadiness?.ready ? "Tradier is ready" : "Tradier is not ready yet"}
+              </div>
+              <p className="mt-1" style={{ color: "var(--ink-muted)" }}>
+                The server will not activate Tradier until account, order, position, clock, and fresh-price checks all pass.
+              </p>
+              {brokerReadiness && !brokerReadiness.ready && (
+                <ul className="mt-2 pl-4 list-disc" style={{ color: "var(--ink-muted)" }}>
+                  {Object.entries(brokerReadiness.checks).filter(([, check]) => !check.passed).map(([name, check]) => (
+                    <li key={name}>{name.replaceAll("_", " ")}: {check.detail}</li>
+                  ))}
+                </ul>
+              )}
+              <button className="btn btn-ghost btn-sm mt-2" onClick={() => refreshBrokerReadiness()} disabled={checkingBroker}>
+                {checkingBroker ? "Checking…" : "Check again"}
+              </button>
+            </div>
+          )}
+        </div>
         {(form as any).paper_trading === false && (
           <p className="text-xs mt-2" style={{ color: "#f87171" }}>
-            ⚠️ Live mode places real orders with real money. Ensure your Alpaca live API keys are configured.
+            ⚠️ Live mode places real orders with real money. Ensure your selected broker's live credentials are configured.
           </p>
         )}
 
@@ -745,6 +805,7 @@ export function Settings() {
           {saved ? "Saved!" : "Save Settings"}
         </button>
       </div>
+      {saveError && <p className="text-xs" style={{ color: "#f87171" }}>{saveError}</p>}
     </div>
   );
 }

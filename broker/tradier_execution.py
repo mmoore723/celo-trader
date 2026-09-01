@@ -63,6 +63,7 @@ class TradierExecutionMixin:
         if not isinstance(balances, dict):
             raise RuntimeError("Tradier returned no usable account balances")
         return {
+            "id": str(self.account_id),
             "equity": float(balances.get("total_equity") or 0),
             "buying_power": float(
                 balances.get("stock_buying_power")
@@ -104,12 +105,18 @@ class TradierExecutionMixin:
     # ── Order reads and mutations ──────────────────────────────────────────
 
     def get_order(self, order_id: str) -> dict:
-        payload = self._get(f"/accounts/{self.account_id}/orders/{order_id}")
+        payload = self._get(
+            f"/accounts/{self.account_id}/orders/{order_id}",
+            {"includeTags": "true"},
+        )
         order = payload.get("order") if isinstance(payload, dict) else None
         return order if isinstance(order, dict) else {}
 
     def get_orders(self) -> list[dict]:
-        payload = self._get(f"/accounts/{self.account_id}/orders")
+        payload = self._get(
+            f"/accounts/{self.account_id}/orders",
+            {"limit": 1000, "includeTags": "true"},
+        )
         orders = payload.get("orders") if isinstance(payload, dict) else None
         return _items(orders.get("order") if isinstance(orders, dict) else None)
 
@@ -523,4 +530,3 @@ class TradierExecutionMixin:
             "🔴 Emergency Tradier close did not confirm every position. Manual review required.",
         )
         return False
-

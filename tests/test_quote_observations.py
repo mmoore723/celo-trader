@@ -4,6 +4,7 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import json
 import sqlite3
 import unittest
 from unittest.mock import patch
@@ -11,7 +12,7 @@ from types import SimpleNamespace
 
 from database.option_quotes import (
     capture_due_candidate_option_quotes, record_candidate_contract_alternative,
-    record_candidate_option_quote,
+    promote_candidate_entry_quote, record_candidate_option_quote,
     record_paper_option_quote,
 )
 from database.research_observations import (
@@ -241,6 +242,65 @@ class PaperOptionQuoteTests(unittest.TestCase):
         self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], kinds)
         self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], alt_kinds)
         self.assertEqual(0, trade_count)
+
+    def test_final_order_contract_replaces_preview_and_preserves_preview_as_alternative(self) -> None:
+        """The primary candidate quote must match the exact executable intent."""
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paper.db"
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """INSERT INTO shadow_candidates
+                   (candidate_id, observed_at, ticker, strategy_id, direction,
+                    confidence, tier, broker_account_id)
+                   VALUES ('candidate-final', '2026-08-03T10:00:00-04:00', 'TSLA',
+                           'TEST', 'bullish', .8, 'main', 'acct')"""
+            )
+            conn.commit()
+            with patch("database.option_quotes.get_conn", return_value=conn):
+                self.assertTrue(record_candidate_option_quote(
+                    candidate_id="candidate-final",
+                    contract_symbol="TSLA260807C00350000",
+                    observation_kind="entry",
+                    observed_at=datetime.fromisoformat("2026-08-03T10:00:00-04:00"),
+                    quote={"bid": 4.90, "ask": 5.10}, source="preview",
+                ))
+                self.assertTrue(promote_candidate_entry_quote(
+                    candidate_id="candidate-final",
+                    contract_symbol="TSLA260807C00352500",
+                    observed_at=datetime.fromisoformat("2026-08-03T10:01:00-04:00"),
+                    quote={"bid": 4.40, "ask": 4.60}, source="order_intent",
+                ))
+                # Refreshing the same final intent updates in place and does
+                # not create another superseded-preview row.
+                self.assertTrue(promote_candidate_entry_quote(
+                    candidate_id="candidate-final",
+                    contract_symbol="TSLA260807C00352500",
+                    observed_at=datetime.fromisoformat("2026-08-03T10:01:01-04:00"),
+                    quote={"bid": 4.45, "ask": 4.55}, source="order_intent",
+                ))
+
+            primary = conn.execute(
+                """SELECT contract_symbol, bid, ask, source
+                   FROM candidate_option_quote_observations
+                   WHERE candidate_id='candidate-final' AND observation_kind='entry'"""
+            ).fetchone()
+            alternatives = conn.execute(
+                """SELECT contract_symbol, policy_json
+                   FROM candidate_contract_alternatives
+                   WHERE candidate_id='candidate-final' AND observation_kind='entry'"""
+            ).fetchall()
+            conn.close()
+
+        self.assertEqual(
+            ("TSLA260807C00352500", 4.45, 4.55, "order_intent"), tuple(primary),
+        )
+        self.assertEqual(1, len(alternatives))
+        self.assertEqual("TSLA260807C00350000", alternatives[0][0])
+        self.assertEqual(
+            ["preview_superseded_by_order_intent"], json.loads(alternatives[0][1]),
+        )
 
     def test_trade_query_does_not_mix_broker_accounts(self) -> None:
         """A newly connected broker account must not inherit local P&L history."""

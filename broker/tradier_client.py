@@ -16,11 +16,13 @@ etc.) is unaffected.
 from broker.tradier_core import TradierCoreMixin
 from broker.tradier_chain import TradierChainMixin
 from broker.tradier_execution import TradierExecutionMixin
+from broker.tradier_market import TradierMarketMixin
 from broker.tradier_orders import TradierOrdersMixin
 
 
 class TradierClient(
     TradierCoreMixin,
+    TradierMarketMixin,
     TradierChainMixin,
     TradierExecutionMixin,
     TradierOrdersMixin,

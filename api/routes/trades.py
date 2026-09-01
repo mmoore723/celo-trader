@@ -451,7 +451,7 @@ def reconcile_trades(
 ) -> ReconcileResponse:
     from database import get_all_trades
     from config import get_api_keys, get_settings as _get_settings
-    from broker import get_clients
+    from broker import configured_broker_provider, get_clients
     from broker.account_identity import resolve_account_identity
 
     # ── 1. Resolve date ───────────────────────────────────────────────────────
@@ -463,17 +463,40 @@ def reconcile_trades(
     # ── 2. Fetch Alpaca orders for the date ───────────────────────────────────
     alpaca_orders: list[dict] = []
     try:
+        provider = configured_broker_provider()
         alpaca, _ = get_clients()
-        alpaca_orders = alpaca._get(
-            f"{alpaca.base}/v2/orders",
-            params={
-                "status": "all",
-                "after":  date_start,
-                "until":  date_end,
-                "limit":  500,
-                "direction": "asc",
-            },
-        )
+        if provider == "tradier":
+            raw_orders = alpaca.get_orders()
+            for order in raw_orders:
+                side = str(order.get("side") or "").lower()
+                filled_at = (
+                    order.get("transaction_date") or order.get("create_date")
+                    or order.get("filled_at") or order.get("submitted_at")
+                )
+                if filled_at and not str(filled_at).startswith(date):
+                    continue
+                alpaca_orders.append({
+                    "id": str(order.get("id") or ""),
+                    "symbol": str(order.get("option_symbol") or order.get("symbol") or ""),
+                    "side": "buy" if side.startswith("buy") else "sell",
+                    "qty": order.get("quantity") or order.get("qty") or 0,
+                    "filled_qty": order.get("exec_quantity") or order.get("filled_qty") or 0,
+                    "filled_avg_price": order.get("avg_fill_price") or order.get("filled_avg_price"),
+                    "status": order.get("status") or "",
+                    "submitted_at": order.get("create_date") or order.get("submitted_at"),
+                    "filled_at": filled_at,
+                })
+        else:
+            alpaca_orders = alpaca._get(
+                f"{alpaca.base}/v2/orders",
+                params={
+                    "status": "all",
+                    "after":  date_start,
+                    "until":  date_end,
+                    "limit":  500,
+                    "direction": "asc",
+                },
+            )
         alpaca_orders = alpaca_orders or []
     except Exception as exc:
         raise HTTPException(
@@ -493,7 +516,12 @@ def reconcile_trades(
     active_identity = str(cfg.get("active_broker_account_id") or "")
     keys = get_api_keys()
     actual_identity = resolve_account_identity(
-        keys.get("alpaca_api_key", ""), paper, acct,
+        keys.get(
+            ("tradier_api_key" if paper else "tradier_market_api_key")
+            if provider == "tradier" else "alpaca_api_key",
+            "",
+        ),
+        paper, acct, provider=provider,
     )
     if active_identity and actual_identity != active_identity:
         raise HTTPException(
@@ -685,6 +713,7 @@ def reconcile_trades(
 
     return ReconcileResponse(
         date                  = date,
+        broker_provider       = provider,
         alpaca_equity         = alpaca_equity,
         day_start_balance     = day_start_balance,
         bot_session_pnl       = bot_session_pnl,
@@ -714,6 +743,13 @@ def get_alpaca_daily_pnl():
     _log = logging.getLogger("celo_trader.api")
 
     try:
+        from broker import configured_broker_provider
+        if configured_broker_provider() != "alpaca":
+            # Tradier does not expose the same portfolio-history series in the
+            # paper environment. Returning no broker series intentionally makes
+            # Performance use the confirmed-fill local ledger instead of
+            # leaking a disconnected Alpaca account into Tradier results.
+            return []
         from broker import AlpacaClient
         client = AlpacaClient()
         # portfolio/history: period=3M, daily bars, exclude extended hours

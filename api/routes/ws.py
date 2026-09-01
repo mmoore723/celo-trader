@@ -221,15 +221,18 @@ async def websocket_live(ws: WebSocket) -> None:
             # old $5,000 research-capital fallback.
             from config import get_api_keys, get_settings
             credentials = get_api_keys(user_id)
+            broker_settings = get_settings(user_id)
+            from broker import required_broker_credentials
             broker_connected = all(
                 str(credentials.get(key) or "").strip()
-                for key in (
-                    "alpaca_api_key", "alpaca_secret_key",
-                    "tradier_api_key", "tradier_account_id",
+                for key, _label in required_broker_credentials(
+                    credentials,
+                    provider=str(broker_settings.get("broker_provider") or "alpaca"),
+                    paper=bool(broker_settings.get("paper_trading", True)),
                 )
             )
             state["broker_connected"] = broker_connected
-            state["mode"] = "paper" if get_settings(user_id).get("paper_trading", True) else "live"
+            state["mode"] = "paper" if broker_settings.get("paper_trading", True) else "live"
             if not broker_connected:
                 state.update({
                     "running": False,

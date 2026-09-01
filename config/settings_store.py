@@ -16,7 +16,10 @@ from config.paths import (
     SYSTEM_MAINTENANCE_PATH,
 )
 from config.defaults import _DEFAULTS
-from config.env_keys import ALPACA_API_KEY, ALPACA_SECRET_KEY, TRADIER_API_KEY, TRADIER_ACCOUNT_ID
+from config.env_keys import (
+    ALPACA_API_KEY, ALPACA_SECRET_KEY, TRADIER_API_KEY,
+    TRADIER_MARKET_API_KEY, TRADIER_ACCOUNT_ID, TRADIER_LIVE_ACCOUNT_ID,
+)
 from config.logging_settings import LOG_LEVEL, LOG_FORMAT
 
 # Migration-only safety list. These names are removed from the public model,
@@ -154,13 +157,16 @@ def get_api_keys(user_id: str | None = None) -> dict:
     if uid != "admin":
         return {
             "alpaca_api_key": "", "alpaca_secret_key": "",
-            "tradier_api_key": "", "tradier_account_id": "",
+            "tradier_api_key": "", "tradier_market_api_key": "",
+            "tradier_account_id": "", "tradier_live_account_id": "",
         }
     return {
         "alpaca_api_key":     ALPACA_API_KEY,
         "alpaca_secret_key":  ALPACA_SECRET_KEY,
         "tradier_api_key":    TRADIER_API_KEY,
+        "tradier_market_api_key": TRADIER_MARKET_API_KEY,
         "tradier_account_id": TRADIER_ACCOUNT_ID,
+        "tradier_live_account_id": TRADIER_LIVE_ACCOUNT_ID,
     }
 
 

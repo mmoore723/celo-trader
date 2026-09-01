@@ -36,6 +36,7 @@ class TradierExecutionTests(unittest.TestCase):
         self.assertEqual(
             client.get_account(),
             {
+                "id": "VA000001",
                 "equity": 1234.5,
                 "buying_power": 777.0,
                 "cash": 900.25,

@@ -90,11 +90,15 @@ def _auto_start_bot_if_needed() -> None:
                 if state.get("auto_start_disabled", False):
                     continue
                 credentials = get_api_keys(uid)
+                from config import get_settings
+                from broker import required_broker_credentials
+                user_settings = get_settings(uid)
                 if not all(
                     str(credentials.get(key) or "").strip()
-                    for key in (
-                        "alpaca_api_key", "alpaca_secret_key",
-                        "tradier_api_key", "tradier_account_id",
+                    for key, _label in required_broker_credentials(
+                        credentials,
+                        provider=str(user_settings.get("broker_provider") or "alpaca"),
+                        paper=bool(user_settings.get("paper_trading", True)),
                     )
                 ):
                     # A stale RUNNING flag must not create a fake $5,000

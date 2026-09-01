@@ -26,13 +26,13 @@ logger = logging.getLogger("celo_trader.broker")
 
 class AlpacaCoreMixin:
 
-    def __init__(self):
+    def __init__(self, *, paper: bool | None = None):
         # Read live/paper mode + API keys from user-scoped settings so switching
         # the UI toggle or saving new credentials takes effect on the next bot
         from config import get_settings as _gs, ALPACA_PAPER as _env_paper, get_api_keys as _gak
         _s     = _gs()
         _keys  = _gak()   # decrypts user-specific credentials, falls back to .env
-        _paper = _s.get("paper_trading", _env_paper)
+        _paper = _s.get("paper_trading", _env_paper) if paper is None else bool(paper)
         self.base = (
             "https://paper-api.alpaca.markets"
             if _paper else

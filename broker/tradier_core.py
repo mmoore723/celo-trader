@@ -21,13 +21,19 @@ logger = logging.getLogger("celo_trader.broker")
 
 class TradierCoreMixin:
 
-    def __init__(self):
+    def __init__(
+        self, *, api_key: str | None = None, account_id: str | None = None,
+        base_url: str | None = None,
+    ):
         from config import get_api_keys as _gak
         _keys = _gak()
-        _key  = _keys.get("tradier_api_key", TRADIER_API_KEY)
+        _key = api_key if api_key is not None else _keys.get("tradier_api_key", TRADIER_API_KEY)
         self.api_key = _key
-        self.account_id = _keys.get("tradier_account_id", "")
-        self.base    = TRADIER_BASE_URL
+        self.account_id = (
+            account_id if account_id is not None
+            else _keys.get("tradier_account_id", "")
+        )
+        self.base = str(base_url or TRADIER_BASE_URL).rstrip("/")
         self.headers = {
             "Authorization": f"Bearer {_key}",
             "Accept":        "application/json",

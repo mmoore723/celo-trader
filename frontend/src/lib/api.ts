@@ -563,6 +563,7 @@ export interface ReconcileRow {
 
 export interface ReconcileResponse {
   date: string;
+  broker_provider: "alpaca" | "tradier";
   alpaca_equity: number | null;
   day_start_balance: number | null;
   bot_session_pnl: number;
@@ -701,6 +702,7 @@ export interface PremarketTicker {
 }
 
 export interface AppSettings {
+  broker_provider?: "alpaca" | "tradier";
   paper_trading?: boolean;   // true = paper (default), false = live; only toggled via Settings
   risk_pct: number;
   risk_auto?: boolean;       // true = use the balance-based tier, not a manual override
@@ -731,6 +733,14 @@ export interface AppSettings {
   min_entry_grade?: string;           // "A+" | "A" | "B" | "C" | "Watch" (default "C")
   max_position_dollars_pct?: number;  // 2026-07-24: real per-contract affordability cap
                                        // (balance × this%), was hardcoded 15% with no UI.
+}
+
+export interface BrokerReadiness {
+  provider: string;
+  selected_provider?: string;
+  paper: boolean;
+  ready: boolean;
+  checks: Record<string, { passed: boolean; detail: string }>;
 }
 
 export interface ReviewedStrategyCatalogEntry {
@@ -973,6 +983,7 @@ export const api = {
   settings: {
     get:  () => request<AppSettings>("/api/settings"),
     save: (s: AppSettings) => request<AppSettings>("/api/settings", { method: "POST", body: JSON.stringify(s) }),
+    brokerReadiness: (paper = true) => request<BrokerReadiness>(`/api/settings/broker-readiness?paper=${paper}`),
     strategies: () => request<{strategies: ReviewedStrategyCatalogEntry[]}>("/api/settings/strategies"),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
     recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),

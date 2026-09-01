@@ -30,13 +30,21 @@ Fixes applied (audit round 1, from the original flat broker.py):
 
 from broker.alpaca_client import AlpacaClient
 from broker.tradier_client import TradierClient
-from broker.factory import get_clients
+from broker.factory import (
+    configured_broker_provider, get_clients, get_tradier_broker,
+    required_broker_credentials,
+)
+from broker.tradier_broker import TradierBrokerClient
 from broker.common import is_phantom_position_rejection, _cb_is_open, _AlpacaCircuitOpenError
 
 __all__ = [
     "AlpacaClient",
     "TradierClient",
+    "TradierBrokerClient",
     "get_clients",
+    "get_tradier_broker",
+    "configured_broker_provider",
+    "required_broker_credentials",
     "is_phantom_position_rejection",
     "_cb_is_open",
     "_AlpacaCircuitOpenError",

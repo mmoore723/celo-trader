@@ -334,6 +334,7 @@ function ReconcileTab() {
 
   const equityGap = data?.equity_gap ?? null;
   const bigGap    = equityGap != null && Math.abs(equityGap) > 10;
+  const brokerLabel = data?.broker_provider === "tradier" ? "Tradier" : "Alpaca";
 
   return (
     <div className="flex flex-col gap-4">
@@ -367,7 +368,7 @@ function ReconcileTab() {
               <div className="flex items-center gap-2" style={{ color: gapColor }}>
                 <AlertTriangle size={16} />
                 <span className="text-sm font-semibold">
-                  Equity gap detected — bot P&L and Alpaca account differ by {fmt$(equityGap)}
+                  Equity gap detected — bot P&L and {brokerLabel} account differ by {fmt$(equityGap)}
                 </span>
               </div>
             )}
@@ -385,7 +386,7 @@ function ReconcileTab() {
                 </span>
               </div>
               <div className="flex flex-col items-end">
-                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Alpaca Equity</span>
+                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{brokerLabel} Equity</span>
                 <span className="font-semibold">
                   {data.alpaca_equity != null ? `$${data.alpaca_equity.toFixed(2)}` : "—"}
                 </span>
@@ -398,7 +399,7 @@ function ReconcileTab() {
                 </span>
               </div>
               <div className="flex flex-col items-end">
-                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Alpaca P&L</span>
+                <span style={{ fontSize: 10, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{brokerLabel} P&L</span>
                 <span className="font-semibold"
                       style={{ color: (data.alpaca_session_pnl ?? 0) >= 0 ? posColor : negColor }}>
                   {fmt$(data.alpaca_session_pnl)}
@@ -430,9 +431,9 @@ function ReconcileTab() {
                     <th>Bot Entry</th>
                     <th>Bot Exit</th>
                     <th>Bot P&L</th>
-                    <th>Alpaca Entry</th>
-                    <th>Alpaca Exit</th>
-                    <th>Alpaca P&L</th>
+                    <th>{brokerLabel} Entry</th>
+                    <th>{brokerLabel} Exit</th>
+                    <th>{brokerLabel} P&L</th>
                     <th>Gap</th>
                   </tr>
                 </thead>
@@ -501,7 +502,7 @@ function ReconcileTab() {
           {data.unmatched_alpaca_orders.length > 0 && (
             <div className="card overflow-hidden">
               <div style={{ padding: "8px 16px 6px", borderBottom: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--warning)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Unmatched Alpaca fills ({data.unmatched_alpaca_orders.length})
+                Unmatched {brokerLabel} fills ({data.unmatched_alpaca_orders.length})
               </div>
               <div style={{ overflowX: "auto" }}>
                 <table className="data-table" style={{ fontSize: 12 }}>
