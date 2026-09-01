@@ -182,8 +182,9 @@ def _close_position(
             _pf_direction = "bullish" if (trade.get("option_type") or "call").lower() == "call" else "bearish"
             _pf_elapsed_min = 0.0
             try:
-                _pf_entry_dt = trade["entry_time"] if isinstance(trade["entry_time"], datetime) else datetime.fromisoformat(str(trade["entry_time"]))
-                _pf_elapsed_min = (_now_et().replace(tzinfo=None) - _pf_entry_dt.replace(tzinfo=None)).total_seconds() / 60
+                from database.helpers import _to_et_datetime
+                _pf_entry_dt = _to_et_datetime(trade["entry_time"])
+                _pf_elapsed_min = (_now_et() - _pf_entry_dt).total_seconds() / 60
             except Exception:
                 pass
             narrate_exit(
@@ -239,11 +240,11 @@ def _close_position(
     _reason_txt = next((v for k, v in _REASON_MAP.items() if reason and k in reason), reason or "exit signal")
     _dur_secs   = 0
     try:
-        from datetime import datetime as _dt
+        from database.helpers import _to_et_datetime
         _et_str = trade.get("entry_time", "")
         if _et_str:
-            _entry_dt = _dt.fromisoformat(str(_et_str).replace("Z", "+00:00"))
-            _dur_secs = int((_now_et().replace(tzinfo=None) - _entry_dt.replace(tzinfo=None)).total_seconds())
+            _entry_dt = _to_et_datetime(_et_str)
+            _dur_secs = int((_now_et() - _entry_dt).total_seconds())
     except Exception:
         _dur_secs = 0
     _dur_txt = (

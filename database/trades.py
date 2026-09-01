@@ -99,7 +99,7 @@ def insert_trade(
             1 if paper else 0, strategy_id, stop_price, target_price, annotations_json,
             tier if tier in ("main", "opportunity") else "main", broker_account_id,
             candidate_id, parent_trade_id, entry_order_id,
-            _to_et_isoformat(entry_fill_time) if isinstance(entry_fill_time, datetime) else entry_fill_time,
+            _to_et_isoformat(entry_fill_time) if entry_fill_time is not None else None,
         ))
         trade_id = cur.lastrowid
     logger.info(
@@ -201,7 +201,7 @@ def close_trade(
             (actual_exit, _to_et_isoformat(exit_time), exit_reason,
              realized_pnl, peak_price, mae_price, recap, merged_annotations,
              exit_order_id,
-             _to_et_isoformat(exit_fill_time) if isinstance(exit_fill_time, datetime) else exit_fill_time,
+             _to_et_isoformat(exit_fill_time) if exit_fill_time is not None else None,
              trade_id),
         )
 

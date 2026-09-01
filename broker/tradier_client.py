@@ -15,8 +15,14 @@ etc.) is unaffected.
 
 from broker.tradier_core import TradierCoreMixin
 from broker.tradier_chain import TradierChainMixin
+from broker.tradier_execution import TradierExecutionMixin
 from broker.tradier_orders import TradierOrdersMixin
 
 
-class TradierClient(TradierCoreMixin, TradierChainMixin, TradierOrdersMixin):
+class TradierClient(
+    TradierCoreMixin,
+    TradierChainMixin,
+    TradierExecutionMixin,
+    TradierOrdersMixin,
+):
     """Tradier REST API — options chain data, single-contract quotes, order routing."""

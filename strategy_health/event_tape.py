@@ -74,7 +74,8 @@ def build_event_tape(conn, trading_date: str, mode: str, account_id: str | None)
 
     orders = _fetch(conn, """
         SELECT id, event_time, attempt_id, order_id, event_type, status,
-               contract_symbol, ticker, strategy_id, side, position_intent,
+               contract_symbol, ticker, strategy_id, candidate_id, intent_id,
+               side, position_intent,
                requested_qty, filled_qty, order_type, limit_price, fill_price,
                latency_ms, message, is_issue, linked_trade_id AS trade_id
         FROM broker_order_events WHERE paper = ? AND broker_account_id = ?
@@ -93,6 +94,19 @@ def build_event_tape(conn, trading_date: str, mode: str, account_id: str | None)
     """, (account_id, day))
     for row in candidate_quotes:
         events.append(_event("candidate_quote", str(row["id"]), row["observed_at"], row))
+
+    alternative_quotes = _fetch(conn, """
+        SELECT q.id, q.candidate_id, q.observed_at, q.observation_kind,
+               q.contract_symbol, q.bid, q.ask, q.mid, q.policy_json, q.source,
+               c.ticker, c.strategy_id
+        FROM candidate_contract_alternatives q
+        JOIN shadow_candidates c ON c.candidate_id = q.candidate_id
+        WHERE c.broker_account_id = ? AND substr(c.observed_at, 1, 10) = ?
+    """, (account_id, day))
+    for row in alternative_quotes:
+        events.append(_event(
+            "candidate_contract_quote", str(row["id"]), row["observed_at"], row,
+        ))
 
     trade_quotes = _fetch(conn, """
         SELECT q.id, q.trade_id, q.observed_at, q.observation_kind,

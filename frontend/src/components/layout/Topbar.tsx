@@ -5,6 +5,7 @@ import { Wifi, WifiOff, TrendingUp, TrendingDown, Menu, Moon } from "lucide-reac
 import { useBotStore } from "../../store/bot";
 import { useUIStore } from "../../store/ui";
 import { ThemeToggle } from "./ThemeToggle";
+import { formatSignedCurrency } from "../../lib/money.js";
 
 /** Returns true if the US stock market is currently open (ET 9:30–16:00, Mon–Fri). */
 function isMarketOpen(): boolean {
@@ -127,14 +128,13 @@ export function Topbar() {
           </span>
         </div>
         <div className="flex flex-col leading-none">
-          <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Session P&L</span>
+          <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Account Change</span>
           <span
             className="num text-sm font-semibold flex items-center gap-1"
             style={{ color: pnl >= 0 ? "var(--positive)" : "var(--negative)" }}
           >
             {pnl >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-            {pnl >= 0 ? "+" : ""}
-            {fmt(pnl)}
+            {formatSignedCurrency(pnl)}
           </span>
         </div>
         {/* Watching ticker — desktop only */}

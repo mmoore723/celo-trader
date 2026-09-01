@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS broker_order_events (
     contract_symbol   TEXT,
     ticker            TEXT,
     strategy_id       TEXT,
+    candidate_id      TEXT,
+    intent_id         TEXT,
     side              TEXT,
     position_intent   TEXT,
     requested_qty     INTEGER,
@@ -120,6 +122,8 @@ _CREATE_BROKER_ORDER_EVENTS_IDX = [
     "CREATE INDEX IF NOT EXISTS idx_broker_order_events_order ON broker_order_events(order_id);",
     "CREATE INDEX IF NOT EXISTS idx_broker_order_events_account ON broker_order_events(broker_account_id, event_time DESC);",
     "CREATE INDEX IF NOT EXISTS idx_broker_order_events_trade ON broker_order_events(linked_trade_id);",
+    "CREATE INDEX IF NOT EXISTS idx_broker_order_events_candidate ON broker_order_events(candidate_id, id);",
+    "CREATE INDEX IF NOT EXISTS idx_broker_order_events_intent ON broker_order_events(intent_id, id);",
 ]
 
 _CREATE_STRATEGY_AUDITS = """
@@ -469,6 +473,16 @@ def _init_db_at(db_path: Path) -> None:
             conn.execute("ALTER TABLE learning_examples ADD COLUMN current_episode INTEGER NOT NULL DEFAULT 1")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_examples_publish ON learning_examples(strategy_id,published)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_examples_current ON learning_examples(current_episode)")
+        _broker_event_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(broker_order_events)")
+        }
+        for _column in ("candidate_id", "intent_id"):
+            if _column not in _broker_event_cols:
+                conn.execute(f"ALTER TABLE broker_order_events ADD COLUMN {_column} TEXT")
+                logger.info(
+                    "Migration: added %s to broker_order_events in %s",
+                    _column, db_path.name,
+                )
         for _idx_sql in _CREATE_BROKER_ORDER_EVENTS_IDX:
             conn.execute(_idx_sql)
         for _idx_sql in _CREATE_OPTION_QUOTE_OBSERVATIONS_IDX:

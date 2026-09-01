@@ -14,6 +14,7 @@ import type { SimulationOverlay } from "../lib/chart_types";
 import { preferredDailyBriefTicker } from "../lib/dailyBriefSelection.js";
 import { DailyEvidencePanel } from "../components/DailyEvidencePanel";
 import type { DailyEvidenceScorecard } from "../lib/api";
+import { isTradingDayFinal, newYorkDateKey } from "../lib/marketSession.js";
 
 function fmt(n: number) {
   return `${n >= 0 ? "+" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -21,6 +22,7 @@ function fmt(n: number) {
 
 function today() {
   return new Date().toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 }
@@ -77,7 +79,11 @@ function dayGrade(pnl: number) {
 }
 
 // ── Post-Market Report ─────────────────────────────────────────────────────────
-function PostMarketReport({ trades, scorecard }: { trades: Trade[]; scorecard?: DailyEvidenceScorecard }) {
+function PostMarketReport({ trades, scorecard, finalized }: {
+  trades: Trade[];
+  scorecard?: DailyEvidenceScorecard;
+  finalized: boolean;
+}) {
   const closed   = trades.filter(t => t.status === "closed");
   const wins     = closed.filter(t => (t.pnl ?? 0) > 0);
   const losses   = closed.filter(t => (t.pnl ?? 0) <= 0);
@@ -131,7 +137,7 @@ function PostMarketReport({ trades, scorecard }: { trades: Trade[]; scorecard?: 
         </div>
         <div className="flex-1">
           <p className="text-base font-bold" style={{ color: "var(--ink)" }}>
-            {grade.emoji} Today's Grade: <span style={{ color: pnlColor }}>{grade.letter}</span>
+            {grade.emoji} {finalized ? "Today's Final Grade" : "Today's Grade So Far"}: <span style={{ color: pnlColor }}>{grade.letter}</span>
           </p>
           <p className="text-sm mt-0.5" style={{ color: "var(--ink-muted)" }}>{grade.msg}</p>
           <p className="text-xs mt-1" style={{ color: "var(--ink-faint)" }}>
@@ -141,6 +147,11 @@ function PostMarketReport({ trades, scorecard }: { trades: Trade[]; scorecard?: 
           <p className="text-[10px] mt-1" style={{ color: "var(--ink-faint)" }}>
             {scorecard?.session_result.basis ?? "This letter is based on realized P&L only."}
           </p>
+          {!finalized && (
+            <p className="text-[10px] mt-1 font-semibold" style={{ color: "#d97706" }}>
+              Live snapshot — this grade is provisional until the market closes at 4:00 p.m. ET.
+            </p>
+          )}
         </div>
       </div>
 
@@ -440,7 +451,7 @@ export function DailyBrief() {
 
   const [selected, setSelected]   = useState<string>("");
   const [briefTab, setBriefTab]   = useState<"premarket" | "postmarket">(
-    new Date().getHours() >= 16 ? "postmarket" : "premarket"
+    isTradingDayFinal() ? "postmarket" : "premarket"
   );
   const [simTicker, setSimTicker] = useState<string | null>(null);
 
@@ -483,14 +494,18 @@ export function DailyBrief() {
 
   // Today's trades
   const _now = new Date();
+  const sessionFinal = isTradingDayFinal(_now);
+  const tradingDate = newYorkDateKey(_now);
   const todayTrades: Trade[] = (tradesResp?.trades ?? []).filter(
-    (t) => t.entry_time && new Date(t.entry_time).toDateString() === _now.toDateString()
+    (t) => t.entry_time && newYorkDateKey(t.entry_time) === tradingDate
   );
   const wins     = todayTrades.filter((t) => (t.pnl ?? 0) > 0).length;
   const losses   = todayTrades.filter((t) => (t.pnl ?? 0) < 0).length;
   const totalPnl = todayTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
   const winRate  = todayTrades.length ? Math.round((wins / todayTrades.length) * 100) : 0;
   const pnlColor = totalPnl >= 0 ? "var(--positive)" : "var(--negative)";
+  const accountChange = status?.session_pnl ?? 0;
+  const accountBotGap = accountChange - totalPnl;
 
   const signalEvents = logs.filter((l) =>
     l.event === "Trade_Signal"  ||
@@ -518,9 +533,9 @@ export function DailyBrief() {
       {/* Stat cards */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Session P&L",     value: fmt(status?.session_pnl ?? 0),                  color: (status?.session_pnl ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" },
+          { label: "Account Change",  value: fmt(accountChange),                            color: accountChange >= 0 ? "var(--positive)" : "var(--negative)" },
+          { label: "Bot Closed P&L",  value: fmt(totalPnl),                                 color: pnlColor },
           { label: "Today's Trades",  value: String(todayTrades.length),                       color: "var(--ink)" },
-          { label: "Win Rate",        value: `${winRate}%`,                                    color: winRate >= 50 ? "var(--positive)" : winRate > 0 ? "var(--negative)" : "var(--ink-muted)" },
           { label: "Account Balance", value: `$${(status?.account_balance ?? 0).toFixed(2)}`, color: "var(--ink)" },
         ].map((s) => (
           <div key={s.label} className="card px-4 py-3 flex flex-col gap-0.5">
@@ -529,6 +544,14 @@ export function DailyBrief() {
           </div>
         ))}
       </div>
+
+      {Math.abs(accountBotGap) > 1 && (
+        <div role="status" className="rounded-md px-3 py-2 text-xs" style={{ background: "var(--muted)", color: "var(--ink-muted)" }}>
+          <strong style={{ color: "var(--ink)" }}>Why these totals differ:</strong>{" "}
+          Account Change is total broker equity versus the day open; Bot Closed P&L includes only completed bot trades recorded today.
+          {" "}Current difference: <strong>{fmt(accountBotGap)}</strong>.
+        </div>
+      )}
 
       {/* Tab switcher */}
       <div className="flex gap-2">
@@ -542,7 +565,7 @@ export function DailyBrief() {
           className={`btn btn-sm ${briefTab === "postmarket" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setBriefTab("postmarket")}
         >
-          📊 Post-Market
+          {sessionFinal ? "📊 Post-Market" : "📊 Live Review"}
         </button>
       </div>
 
@@ -706,7 +729,7 @@ export function DailyBrief() {
       {/* ── Post-Market Tab ── */}
       {briefTab === "postmarket" && (
         <>
-          <PostMarketReport trades={todayTrades} scorecard={dailyScorecard} />
+          <PostMarketReport trades={todayTrades} scorecard={dailyScorecard} finalized={sessionFinal} />
 
           {todayTrades.length > 0 && (
             <div className="card flex flex-col">

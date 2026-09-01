@@ -177,6 +177,36 @@ class LoopLifecycleTests(unittest.TestCase):
 
 
 class DurableTradeLineageTests(unittest.TestCase):
+    def test_broker_utc_fill_times_are_stored_as_eastern_wall_time(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trades_paper.db"
+            _init_db_at(path)
+            conn = sqlite3.connect(path)
+            conn.row_factory = sqlite3.Row
+            entry = datetime.fromisoformat("2026-08-14T10:01:00-04:00")
+            with patch("database.trades.get_conn", return_value=conn):
+                trade_id = insert_trade(
+                    "SPY", "SPY260821C00650000", "call", 650, "2026-08-21",
+                    1, 1.25, entry, "test", entry_fill_time="2026-08-14T14:01:02Z",
+                )
+                with patch("database.trades._upsert_daily_summary"), patch(
+                    "config.get_settings", return_value={"last_known_balance": 5000.0},
+                ), patch("config.save_settings"), patch(
+                    "database.option_quotes.record_paper_option_quote", return_value=True,
+                ):
+                    close_trade(
+                        trade_id, 1.30, entry, "test", confirmed_fill_price=1.30,
+                        exit_fill_time="2026-08-14T14:31:03Z",
+                    )
+            row = conn.execute(
+                "SELECT entry_fill_time, exit_fill_time FROM trades WHERE id = ?",
+                (trade_id,),
+            ).fetchone()
+            conn.close()
+
+        self.assertEqual("2026-08-14T10:01:02", row["entry_fill_time"])
+        self.assertEqual("2026-08-14T10:31:03", row["exit_fill_time"])
+
     def test_entry_patience_does_not_starve_open_position_exits(self) -> None:
         self.assertEqual(45, _entry_order_wait_seconds(has_open_positions=False))
         self.assertEqual(10, _entry_order_wait_seconds(has_open_positions=True))

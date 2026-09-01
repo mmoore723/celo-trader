@@ -5,6 +5,22 @@ import unittest
 
 
 class MarketSessionTimezoneTests(unittest.TestCase):
+    def test_alpaca_daily_bar_uses_new_york_trading_date(self) -> None:
+        from datetime import datetime, timezone
+        from api.routes.trades import _alpaca_portfolio_timestamp_to_trading_date
+
+        midnight_utc = int(datetime(2026, 8, 29, tzinfo=timezone.utc).timestamp())
+        noon_utc = int(datetime(2026, 8, 29, 12, tzinfo=timezone.utc).timestamp())
+
+        self.assertEqual(
+            "2026-08-28",
+            _alpaca_portfolio_timestamp_to_trading_date(midnight_utc),
+        )
+        self.assertEqual(
+            "2026-08-29",
+            _alpaca_portfolio_timestamp_to_trading_date(noon_utc),
+        )
+
     def test_reconcile_uses_new_york_day_boundaries_across_dst(self) -> None:
         from api.routes.trades import _reconcile_day_bounds
 

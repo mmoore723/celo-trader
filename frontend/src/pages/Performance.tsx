@@ -24,6 +24,7 @@ import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
+import { formatSignedCurrency } from "../lib/money.js";
 
 // ── Exit reason categorisation (frontend only) ────────────────────────────────
 type ExitGroup = "target" | "timecap" | "signal" | "stop" | "cutoff" | "other";
@@ -350,7 +351,7 @@ export function Performance() {
             fontSize: 20, fontWeight: 700, fontVariantNumeric: "tabular-nums",
             color: displayPnl >= 0 ? posColor : negColor,
           }}>
-            {displayPnl >= 0 ? "+" : ""}${Math.abs(displayPnl).toFixed(2)}
+            {formatSignedCurrency(displayPnl)}
           </span>
           <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>
             {usingAlpaca ? "actual fills" : "bot estimates"}

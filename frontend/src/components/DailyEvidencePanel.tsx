@@ -22,7 +22,7 @@ export function DailyEvidencePanel({ data }: { data?: DailyEvidenceScorecard }) 
     { label: "Entry fills", value: valueOrDash(data.execution.entry_fill_rate_pct, "%"), note: `${data.execution.entry_filled}/${data.execution.entry_attempts} attempts` },
     { label: "Replay coverage", value: `${data.replay.coverage_pct}%`, note: data.replay.passed ? "evidence linked" : "links need review", color: replayColor },
   ];
-  const missed = data.decisions.missed_executable_moves["60m"];
+  const missed = data.decisions.missed_executable_moves["planned_hold"];
   return (
     <div className="card p-4 flex flex-col gap-3">
       <div>
@@ -42,8 +42,11 @@ export function DailyEvidencePanel({ data }: { data?: DailyEvidenceScorecard }) 
       </div>
       {missed?.measured > 0 && (
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          Unentered setups with exact option quotes at 60 minutes: <strong>{missed.profitable}/{missed.measured}</strong> profitable
-          {missed.avg_executable_return_pct !== null ? `, averaging ${missed.avg_executable_return_pct}% after buying at ask and marking at bid.` : "."}
+          Missed-order quote replay: <strong>{missed.profitable}/{missed.measured}</strong> positive at each strategy's planned hold
+          {missed.estimated_pnl_dollars !== null && missed.estimated_pnl_dollars !== undefined
+            ? `, estimated ${missed.estimated_pnl_dollars >= 0 ? "+" : "-"}$${Math.abs(missed.estimated_pnl_dollars).toFixed(2)} before fees.`
+            : "."}{" "}
+          Recorded ask-to-bid quotes only; these are not guaranteed fills or profit.
         </p>
       )}
       <ul className="text-xs pl-4 list-disc" style={{ color: "var(--ink-muted)" }}>

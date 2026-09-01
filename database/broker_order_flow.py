@@ -30,12 +30,15 @@ def record_broker_order_event(
     *,
     attempt_id: str,
     event_type: str,
+    broker: str = "alpaca",
     order_id: str | None = None,
     parent_order_id: str | None = None,
     status: str | None = None,
     contract_symbol: str | None = None,
     ticker: str | None = None,
     strategy_id: str | None = None,
+    candidate_id: str | None = None,
+    intent_id: str | None = None,
     side: str | None = None,
     position_intent: str | None = None,
     requested_qty: int | None = None,
@@ -59,21 +62,27 @@ def record_broker_order_event(
     if broker_account_id is None:
         broker_account_id = settings.get("active_broker_account_id") or None
     event_time = _to_et_isoformat(datetime.now(_ET))
+    normalized_broker = str(broker or "alpaca").strip().lower()
+    if normalized_broker not in {"alpaca", "tradier"}:
+        raise ValueError("broker must be alpaca or tradier")
     with get_conn() as conn:
         cur = conn.execute(
             """
             INSERT INTO broker_order_events (
                 event_time, attempt_id, broker, broker_account_id, paper,
                 order_id, parent_order_id, event_type, status,
-                contract_symbol, ticker, strategy_id, side, position_intent,
+                contract_symbol, ticker, strategy_id, candidate_id, intent_id,
+                side, position_intent,
                 requested_qty, filled_qty, order_type, limit_price, fill_price,
                 latency_ms, message, is_issue, linked_trade_id
-            ) VALUES (?, ?, 'alpaca', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                event_time, attempt_id, broker_account_id, int(bool(paper)),
+                event_time, attempt_id, normalized_broker,
+                broker_account_id, int(bool(paper)),
                 order_id, parent_order_id, event_type, status,
-                contract_symbol, ticker, strategy_id, side, position_intent,
+                contract_symbol, ticker, strategy_id, candidate_id, intent_id,
+                side, position_intent,
                 requested_qty, filled_qty, order_type, limit_price, fill_price,
                 latency_ms, message, int(bool(is_issue)), linked_trade_id,
             ),
@@ -87,13 +96,13 @@ def link_broker_order_to_trade(
     *,
     link_kind: str,
 ) -> None:
-    """Link every event for an Alpaca order to the DB trade it produced."""
+    """Link every event for a broker order to the DB trade it produced."""
     if not order_id:
         return
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT attempt_id, contract_symbol, ticker, strategy_id, side,
-                      position_intent, requested_qty
+            """SELECT attempt_id, contract_symbol, ticker, strategy_id,
+                      candidate_id, intent_id, side, position_intent, requested_qty
                FROM broker_order_events WHERE order_id = ?
                ORDER BY id DESC LIMIT 1""",
             (order_id,),
@@ -109,12 +118,12 @@ def link_broker_order_to_trade(
             INSERT INTO broker_order_events (
                 event_time, attempt_id, broker, broker_account_id, paper,
                 order_id, event_type, status, contract_symbol, ticker,
-                strategy_id, side, position_intent, requested_qty,
+                strategy_id, candidate_id, intent_id, side, position_intent, requested_qty,
                 message, is_issue, linked_trade_id
             )
             SELECT ?, attempt_id, broker, broker_account_id, paper,
                    ?, 'linked_to_trade', 'linked', contract_symbol, ticker,
-                   strategy_id, side, position_intent, requested_qty,
+                   strategy_id, candidate_id, intent_id, side, position_intent, requested_qty,
                    ?, 0, ?
             FROM broker_order_events WHERE attempt_id = ? ORDER BY id DESC LIMIT 1
             """,
@@ -181,6 +190,7 @@ def get_broker_order_flow(
             bool(last["is_issue"])
             and last_type not in {"status_poll_error", "price_step_failed", "orphan_cancelled"}
         )
+        broker = str(last.get("broker") or first.get("broker") or "broker")
         attempts.append({
             "attempt_id": attempt_id,
             "started_at": first["event_time"],
@@ -189,6 +199,8 @@ def get_broker_order_flow(
             "contract_symbol": last["contract_symbol"] or first["contract_symbol"],
             "ticker": last["ticker"] or first["ticker"],
             "strategy_id": last["strategy_id"] or first["strategy_id"],
+            "candidate_id": last["candidate_id"] or first["candidate_id"],
+            "intent_id": last["intent_id"] or first["intent_id"],
             "side": last["side"] or first["side"],
             "position_intent": last["position_intent"] or first["position_intent"],
             "requested_qty": first["requested_qty"],
@@ -200,7 +212,7 @@ def get_broker_order_flow(
             "had_issue": bool(issue_events),
             "active_issue": active_issue,
             "issue_message": (
-                "Alpaca fill has not been linked to a bot trade" if unlinked_fill else
+                f"{broker.title()} fill has not been linked to a bot trade" if unlinked_fill else
                 "Order lifecycle has not advanced for more than 60 seconds" if stale else
                 (issue_events[-1]["message"] if issue_events else None)
             ),

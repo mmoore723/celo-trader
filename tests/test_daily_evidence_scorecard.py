@@ -4,7 +4,8 @@ import sqlite3
 import unittest
 
 from database.schema import (
-    _CREATE_BROKER_ORDER_EVENTS, _CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS,
+    _CREATE_BROKER_ORDER_EVENTS, _CREATE_CANDIDATE_CONTRACT_ALTERNATIVES,
+    _CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS,
     _CREATE_OPTION_QUOTE_OBSERVATIONS, _CREATE_SHADOW_CANDIDATES,
     _CREATE_SCANNER_CANDLE_OBSERVATIONS, _CREATE_SIGNAL_JOURNAL, _CREATE_TRADES,
     _CREATE_UNDERLYING_QUOTE_OBSERVATIONS,
@@ -21,6 +22,7 @@ class DailyEvidenceScorecardTests(unittest.TestCase):
         for ddl in (_CREATE_TRADES, _CREATE_BROKER_ORDER_EVENTS, _CREATE_SIGNAL_JOURNAL,
                     _CREATE_OPTION_QUOTE_OBSERVATIONS, _CREATE_SHADOW_CANDIDATES,
                     _CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS,
+                    _CREATE_CANDIDATE_CONTRACT_ALTERNATIVES,
                     _CREATE_SCANNER_CANDLE_OBSERVATIONS,
                     _CREATE_UNDERLYING_QUOTE_OBSERVATIONS):
             self.conn.execute(ddl)
@@ -95,6 +97,50 @@ class DailyEvidenceScorecardTests(unittest.TestCase):
         tape = build_event_tape(self.conn, "2026-08-26", "paper", None)
         self.assertFalse(tape["account_scoped"])
         self.assertEqual([], tape["events"])
+
+    def test_unfilled_order_uses_exact_contract_and_strategy_hold(self) -> None:
+        import json
+
+        candidate_id = "missed-spy"
+        contract = "SPY260904C00650000"
+        strategy = "V2_SPY_TREND_CONT"
+        self.conn.execute("""
+            INSERT INTO shadow_candidates
+              (candidate_id,observed_at,ticker,strategy_id,direction,confidence,
+               broker_account_id,final_outcome)
+            VALUES (?, '2026-08-26T11:40:00-04:00', 'SPY', ?, 'bullish', .8,
+                    'mine', 'blocked')
+        """, (candidate_id, strategy))
+        context = {"order_intent": {
+            "candidate_id": candidate_id, "contract_symbol": contract,
+            "strategy_id": strategy, "quantity": 2, "status": "price_not_reached",
+        }}
+        self.conn.execute("""
+            INSERT INTO signal_journal
+              (ts,ticker,strategy_id,direction,confidence,outcome,reason_code,
+               context_json,broker_account_id)
+            VALUES ('2026-08-26T11:40:45-04:00','SPY',?,'bullish',.8,'blocked',
+                    'entry_price_not_reached',?,'mine')
+        """, (strategy, json.dumps(context)))
+        for kind, bid, ask, observed in (
+            ("entry", 3.67, 3.68, "2026-08-26T11:40:00-04:00"),
+            ("mark_30m", 4.14, 4.15, "2026-08-26T12:10:00-04:00"),
+        ):
+            self.conn.execute("""
+                INSERT INTO candidate_contract_alternatives
+                  (candidate_id,contract_symbol,observed_at,observation_kind,
+                   bid,ask,mid,source)
+                VALUES (?,?,?,?,?,?,?,'test')
+            """, (candidate_id, contract, observed, kind, bid, ask, (bid + ask) / 2))
+
+        result = build_daily_scorecard(build_event_tape(
+            self.conn, "2026-08-26", "paper", "mine",
+        ))
+        planned = result["decisions"]["missed_executable_moves"]["planned_hold"]
+
+        self.assertEqual(1, planned["measured"])
+        self.assertEqual(1, planned["profitable"])
+        self.assertEqual(92.0, planned["estimated_pnl_dollars"])
 
 
 if __name__ == "__main__":

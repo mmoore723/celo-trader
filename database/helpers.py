@@ -31,7 +31,17 @@ def _now_et() -> datetime:
 
 
 
-def _to_et_isoformat(dt: datetime) -> str:
+def _to_et_datetime(value: datetime | str) -> datetime:
+    """Return one timezone-aware Eastern datetime from broker or local input."""
+    dt = value
+    if isinstance(value, str):
+        dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        return _ET.localize(dt)
+    return dt.astimezone(_ET)
+
+
+def _to_et_isoformat(dt: datetime | str) -> str:
     """
     Normalise any datetime to a tz-naive US/Eastern ISO string.
 
@@ -48,11 +58,7 @@ def _to_et_isoformat(dt: datetime) -> str:
       UTC-shift marker positions away from their candle — the most common symptom
       is markers appearing 4 hours to the left of the bar they belong to.
     """
-    if dt.tzinfo is None:
-        # Localize as ET (acknowledges DST). The naive value is already wall-clock ET.
-        dt = _ET.localize(dt)
-    else:
-        dt = dt.astimezone(_ET)
+    dt = _to_et_datetime(dt)
     # Return without tzinfo so the string matches tz-naive chart timestamps
     return dt.replace(tzinfo=None).isoformat()
 
@@ -77,5 +83,4 @@ def _merge_annotations_json(existing: Optional[str], new: Optional[str]) -> Opti
         except Exception:
             logger.warning("Skipping malformed annotations_json blob during merge", exc_info=True)
     return _json.dumps(list(items.values())) if items else None
-
 

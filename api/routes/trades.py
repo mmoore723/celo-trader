@@ -41,6 +41,24 @@ def _reconcile_day_bounds(value: str) -> tuple[str, str, str]:
     )
 
 
+def _alpaca_portfolio_timestamp_to_trading_date(timestamp: int | str) -> str:
+    """Map an Alpaca portfolio-history timestamp to its New York trading date.
+
+    Alpaca's daily portfolio bars are timestamped in UTC.  Around midnight UTC
+    that instant still belongs to the prior New York session, so formatting the
+    UTC date directly shifts the Performance calendar forward by one day.
+    """
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    return (
+        datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
+        .astimezone(ZoneInfo("America/New_York"))
+        .date()
+        .isoformat()
+    )
+
+
 def _parse_annotations(raw: object) -> list[dict] | None:
     """
     Parse the trades.annotations_json column into a list of dicts for the
@@ -558,13 +576,9 @@ def reconcile_trades(
     def _parse_ts(ts: str | None) -> datetime | None:
         if not ts:
             return None
-        for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ"):
-            try:
-                return datetime.strptime(ts[:26], fmt[:len(ts)])
-            except Exception:
-                pass
         try:
-            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            from database.helpers import _to_et_datetime
+            return _to_et_datetime(ts)
         except Exception:
             return None
 
@@ -719,8 +733,9 @@ def get_alpaca_daily_pnl():
         for ts, pnl in zip(timestamps, profit_loss):
             if pnl is None:
                 continue
-            # Alpaca returns timestamps in UTC epoch seconds
-            date_str = datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
+            # Convert the UTC instant to the New York trading date.  Taking
+            # the UTC calendar prefix shifted daily results one day forward.
+            date_str = _alpaca_portfolio_timestamp_to_trading_date(ts)
             result.append({"date": date_str, "pnl": round(float(pnl), 2)})
 
         return result

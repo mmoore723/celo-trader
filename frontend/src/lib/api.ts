@@ -85,7 +85,10 @@ export interface DailyEvidenceScorecard {
   decisions: {
     candidates: number; entered: number; blocked: number; measured: number;
     directional_accuracy_pct: number | null;
-    missed_executable_moves: Record<string, { measured: number; profitable: number; avg_executable_return_pct: number | null }>;
+    missed_executable_moves: Record<string, {
+      measured: number; profitable: number; avg_executable_return_pct: number | null;
+      estimated_pnl_dollars?: number | null; contracts?: number; basis?: string;
+    }>;
   };
   execution: {
     entry_attempts: number; entry_filled: number; entry_fill_rate_pct: number | null;
