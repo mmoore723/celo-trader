@@ -450,3 +450,22 @@ Do not rerun a rejected idea unchanged. Reopen one only if at least one of these
 - **Strategy separation:** SPY Trend was +$366 / PF **12.4375** on the Tradier reference but -$167 / PF **0.5187** on Alpaca paper fills, with a $533 adverse cross-feed gap. Failed-Range remained negative even on Tradier (-$546 / PF **0.1278**), as did Afternoon FVG (-$106 / PF **0.6768**). TSLA Two-Leg was +$230 / PF **1.8214** on Tradier across only four matched trades.
 - **Decision:** mixed Tradier pricing and Alpaca paper execution is not valid launch-parity evidence. The already-built Tradier-only broker boundary is the evidence-supported correction once its readiness checks pass. The Settings page now labels Alpaca mode as a cross-broker paper test. A broker switch fixes measurement consistency, not strategy quality: the matched Tradier-reference portfolio was still below PF 1.0.
 - **Evidence:** `research/reports/tradier_alpaca_candidate_fill_reconciliation_2026-09-01.json`.
+
+### AMZN option-pressure confirmation — rejected (2026-09-02)
+
+- **Exact rule:** require three consecutive option-chain minutes with directional pressure at least 0.35, at least four quotes per call/put side, and an underlying close aligned with causal session VWAP and EMA(9); select the nearest eligible 7–21 DTE contract no more than 1.5% out of the money with spread no wider than 8%; enter at the next-minute real ask and exit the same contract at its real bid after 30 minutes.
+- **Training:** 4 fills, 50.00% wins, average -7.9862%, median -7.8806%, PF **0.3471**, total -31.9450 return points.
+- **Holdout:** 2 fills, 0% wins, average/median -9.8150%, PF **0**, total -19.6299 return points.
+- **Decision:** **REJECTED.** Native AMZN DBN option data was decoded locally with symbol mappings, and the unchanged option-pressure hypothesis lost in both chronological periods. Do not activate or threshold-tune this version against these six trades.
+- **Evidence:** `research/reports/paid_amzn_option_pressure_confirmation_v1.json`.
+
+### SPY Failed-Range Recovery short fixed exits — rejected (2026-09-02)
+
+- **Question:** the recent six-trade production diagnostic showed early gains at five and ten minutes. Does a predeclared 5/10/15-minute clock beat the existing 30-minute exit across the paid historical archive?
+- **Method:** reused the exact 21 baseline signals, contracts, entry timestamps, and real entry asks; scanned each relevant OPRA day once for the first real same-contract bid at 5, 10, 15, and 30 minutes; subtracted $0.70 round-trip per contract. The repriced 30-minute control reproduced all 21 original exit timestamps and bids exactly.
+- **May:** 5m: 3 trades, +$0.90, PF 1.0234; 10m: 5, -$45.50, PF 0.3481; 15m: 5, +$38.50, PF 2.0377; 30m control: 5, +$142.50, PF **2.6493**.
+- **June:** 5m: 7 trades, -$53.90, PF 0.5575; 10m: 6, -$27.20, PF 0.6766; 15m: 7, +$84.10, PF 2.1505; 30m control: 7, +$127.10, PF **1.6050**.
+- **July:** 5m: 8 trades, -$46.60, PF 0.5965; 10m: 8, -$106.60, PF 0.3010; 15m: 8, -$24.60, PF 0.7614; 30m control: 9, +$426.70, PF **4.6439**.
+- **Decision:** **REJECT ALL SHORTER CLOCKS; RETAIN FIXED 30m.** The production six-trade result was not representative. Five and ten minutes lost in June and July; 15 minutes cleared PF 1.5 in May/June but made less than the control and failed July. No production exit change is authorized.
+- **Automation improvement:** `research/jobs/reprice_paid_markouts_fixed_holds.py` reuses frozen paid entries and scans all exit clocks in one pass, preventing repeated strategy/contract-selection work for future exit-only audits.
+- **Evidence:** `research/reports/paid_spy_failed_range_recovery_repriced_holds_v1.json` and `research/reports/paid_spy_failed_range_recovery_fixed_holds_assessment_v1.json`.
