@@ -53,6 +53,7 @@ class SessionEquityTests(unittest.TestCase):
             "alpaca_api_key": "paper-key",
             "alpaca_secret_key": "paper-secret",
             "tradier_api_key": "market-key",
+            "tradier_market_api_key": "live-market-key",
             "tradier_account_id": "paper-account",
         }
         state = {

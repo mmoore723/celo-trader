@@ -110,6 +110,7 @@ class LoopLifecycleTests(unittest.TestCase):
                     "alpaca_api_key": "alpaca-key",
                     "alpaca_secret_key": "alpaca-secret",
                     "tradier_api_key": "tradier-key",
+                    "tradier_market_api_key": "tradier-live-market-key",
                     "tradier_account_id": "tradier-account",
                 },
             ), patch("config.get_bot_state_path", return_value=state_path), patch.object(
@@ -160,7 +161,8 @@ class LoopLifecycleTests(unittest.TestCase):
                 "config.get_api_keys",
                 return_value={
                     "alpaca_api_key": "", "alpaca_secret_key": "",
-                    "tradier_api_key": "", "tradier_account_id": "",
+                    "tradier_api_key": "", "tradier_market_api_key": "",
+                    "tradier_account_id": "", "tradier_live_account_id": "",
                 },
             ), patch("config.get_bot_state_path", return_value=state_path), patch.object(
                 lifespan.threading, "Thread", ImmediateThread,
