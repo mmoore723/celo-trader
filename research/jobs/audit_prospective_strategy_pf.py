@@ -20,6 +20,7 @@ from statistics import mean, median
 from typing import Any, Iterable
 
 from config.strategy_catalog import REVIEWED_STRATEGIES
+from research.jobs.evaluate_reviewed_strategy_selector import simulate_policy
 
 
 PF_TARGET = 1.50
@@ -27,6 +28,8 @@ MIN_EPISODES = 30
 MIN_TRADING_DAYS = 10
 DEFAULT_FEE_PER_CONTRACT_PER_SIDE = .12
 DEFAULT_SLIPPAGE_PRICE_PER_SIDE = .01
+DEFAULT_MONTHLY_SUBSCRIPTION = 10.0
+DEFAULT_STARTING_CAPITAL = 5_000.0
 
 
 def _moment(value: object) -> datetime:
@@ -61,6 +64,108 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _pf_number(value: object) -> float:
     return float("inf") if value == "inf" else float(value or 0)
+
+
+def _account_replay(
+    rows: list[dict[str, Any]], *,
+    fee_per_contract_per_side: float,
+    slippage_price_per_side: float,
+    starting_capital: float = DEFAULT_STARTING_CAPITAL,
+    monthly_subscription: float = DEFAULT_MONTHLY_SUBSCRIPTION,
+) -> dict[str, Any]:
+    """Route measured episodes through the actual portfolio constraints.
+
+    Per-strategy episodes are independently valid but can still overlap with a
+    different strategy on the same ticker.  This replay removes that remaining
+    source of PF inflation and applies the production growth-sizing ladder.
+    """
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        entry_time = _moment(row["observed_at"])
+        rule = REVIEWED_STRATEGIES[str(row["strategy_id"])]
+        candidates.append({
+            **row,
+            "entry_time": entry_time.isoformat(),
+            "signal_time": entry_time.isoformat(),
+            "exit_time": (
+                entry_time + timedelta(minutes=int(row["registered_exit_minutes"]))
+            ).isoformat(),
+            "return_pct": float(row["net_return_pct"]),
+            "evidence_grade": rule.evidence_grade,
+        })
+    simulation = simulate_policy(
+        candidates,
+        policy="all_affordable",
+        starting_capital=starting_capital,
+        allocation_fraction=.15,
+        max_positions=3,
+        per_contract_fee_per_side=fee_per_contract_per_side,
+        slippage_price_per_side=slippage_price_per_side,
+        monthly_subscription=monthly_subscription,
+        sizing_model="production_growth_v1",
+    )
+    accepted = simulation.pop("accepted")
+    skipped = simulation.pop("skipped")
+    pnls = [float(row["pnl"]) for row in accepted]
+    returns = [
+        100 * float(row["pnl"]) / float(row["premium_cost"])
+        for row in accepted if float(row.get("premium_cost") or 0) > 0
+    ]
+    gains = sum(value for value in pnls if value > 0)
+    losses = -sum(value for value in pnls if value < 0)
+    fixed_costs = float(simulation["cost_model"]["subscription_costs"])
+    factor_denominator = losses + fixed_costs
+    factor: float | str | None = (
+        round(gains / factor_denominator, 4)
+        if factor_denominator > 0 else
+        "inf" if gains > 0 else None
+    )
+    trading_days = len({str(row["entry_time"])[:10] for row in accepted})
+    gates = {
+        "at_least_30_account_trades": len(accepted) >= MIN_EPISODES,
+        "at_least_10_trading_days": trading_days >= MIN_TRADING_DAYS,
+        "positive_average": bool(returns) and mean(returns) > 0,
+        "positive_median": bool(returns) and median(returns) > 0,
+        "pf_at_least_1_50_after_subscription": _pf_number(factor) >= PF_TARGET,
+        # A quote that existed is executable evidence, but it is not proof of
+        # the broker fill price or latency. Tradier paper/live orders must
+        # supply this final parity evidence.
+        "same_broker_order_fill_parity": False,
+    }
+    return {
+        "evidence_class": "tradier_executable_quote_replay_not_order_fills",
+        "starting_capital": starting_capital,
+        "ending_cash": simulation["ending_cash"],
+        "account_return_pct": simulation["account_return_pct"],
+        "account_trades": len(accepted),
+        "trading_days": trading_days,
+        "wins": sum(value > 0 for value in pnls),
+        "win_rate_pct": round(100 * sum(value > 0 for value in pnls) / len(pnls), 2) if pnls else None,
+        "net_pnl_after_all_costs": round(sum(pnls) - fixed_costs, 2),
+        "average_net_return_pct": round(mean(returns), 4) if returns else None,
+        "median_net_return_pct": round(median(returns), 4) if returns else None,
+        "profit_factor_after_all_costs": factor,
+        "cash_cost_basis_max_drawdown_pct": simulation["cost_basis_max_drawdown_pct"],
+        "cost_model": simulation["cost_model"],
+        "accepted_by_strategy": dict(Counter(str(row["strategy_id"]) for row in accepted)),
+        "skip_counts": simulation["skip_counts"],
+        "skipped_decisions": [
+            {
+                "candidate_id": row.get("candidate_id"),
+                "observed_at": row.get("observed_at"),
+                "ticker": row.get("ticker"),
+                "strategy_id": row.get("strategy_id"),
+                "skip_reason": row.get("skip_reason"),
+            }
+            for row in skipped
+        ],
+        "gates": gates,
+        "research_target_met": all(
+            value for key, value in gates.items()
+            if key != "same_broker_order_fill_parity"
+        ),
+        "launch_ready": all(gates.values()),
+    }
 
 
 def _setup_groups(candidates: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
@@ -222,6 +327,11 @@ def analyze(
         }
 
     all_strategy_rows_diagnostic = _summary(measured)
+    account_level_replay = _account_replay(
+        measured,
+        fee_per_contract_per_side=fee_per_contract_per_side,
+        slippage_price_per_side=slippage_price_per_side,
+    )
     return {
         "purpose": "Prospective, independent-episode strategy PF from real scanner option quotes; research only.",
         "database": str(db_path),
@@ -249,11 +359,18 @@ def analyze(
         "measured_episodes": len(measured),
         "unmeasured_episode_reasons": dict(unmeasured),
         "all_strategy_rows_diagnostic_not_account_pf": all_strategy_rows_diagnostic,
+        "account_level_replay": account_level_replay,
         "by_strategy": by_strategy,
         "decision": {
             "strategies_passing": [key for key, value in by_strategy.items() if value["passed"]],
+            "account_research_target_met": account_level_replay["research_target_met"],
+            "account_launch_ready": account_level_replay["launch_ready"],
             "runtime_changed": False,
-            "reason": "Only strategies passing every prospective sample, time-span, center, and PF gate may be considered for a separately reviewed promotion.",
+            "reason": (
+                "The account-level Tradier quote replay clears the research PF gate, but quote availability does not prove same-broker order fills. Tradier paper/live fill parity remains required for launch."
+                if account_level_replay["research_target_met"] else
+                "The account-level Tradier quote replay does not yet clear every sample, time-span, center, and PF research gate."
+            ),
         },
     }
 

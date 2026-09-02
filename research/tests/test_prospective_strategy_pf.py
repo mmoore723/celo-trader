@@ -60,6 +60,11 @@ class ProspectiveStrategyPfTests(unittest.TestCase):
             self.assertEqual(10.0, details[0]["net_return_pct"])
             self.assertEqual(10.0, details[0]["net_pnl_one_contract"])
             self.assertTrue(details[0]["episode_had_entered_trade"])
+            account = report["account_level_replay"]
+            self.assertEqual(2, account["account_trades"])
+            self.assertEqual(0, account["skip_counts"].get("ticker_position_open", 0))
+            self.assertFalse(account["gates"]["same_broker_order_fill_parity"])
+            self.assertFalse(account["launch_ready"])
 
     def test_missing_first_followup_does_not_select_later_repeat(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -91,6 +96,42 @@ class ProspectiveStrategyPfTests(unittest.TestCase):
             report = analyze(path)
             self.assertEqual(0, report["measured_episodes"])
             self.assertEqual(1, report["unmeasured_episode_reasons"]["missing_mark_30m"])
+            self.assertEqual(0, report["account_level_replay"]["account_trades"])
+
+    def test_account_replay_removes_cross_strategy_same_ticker_overlap(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "portfolio.db"
+            conn = sqlite3.connect(path)
+            conn.executescript("""
+                CREATE TABLE shadow_candidates (
+                    candidate_id TEXT PRIMARY KEY, observed_at TEXT, ticker TEXT,
+                    strategy_id TEXT, direction TEXT, trigger_bar TEXT, final_outcome TEXT,
+                    linked_trade_id INTEGER
+                );
+                CREATE TABLE candidate_option_quote_observations (
+                    candidate_id TEXT, observed_at TEXT, observation_kind TEXT,
+                    contract_symbol TEXT, bid REAL, ask REAL, source TEXT
+                );
+            """)
+            candidates = [
+                ("trend", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "observed_only", None),
+                ("failed", "2026-08-01T10:10:00-04:00", "SPY", "V2_FAILED_OR_BREAK_VWAP_REVERSION", "bullish", "2026-08-01 10:09:00", "observed_only", None),
+            ]
+            conn.executemany("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?)", candidates)
+            conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?,?,?)", [
+                ("trend", candidates[0][1], "entry", "SPY-C", .99, 1.0, "tradier_preview"),
+                ("trend", "2026-08-01T10:30:00-04:00", "mark_30m", "SPY-C", 1.1, 1.11, "tradier_followup"),
+                ("failed", candidates[1][1], "entry", "SPY-F", .99, 1.0, "tradier_preview"),
+                ("failed", "2026-08-01T10:40:00-04:00", "mark_30m", "SPY-F", 2.0, 2.01, "tradier_followup"),
+            ])
+            conn.commit()
+            conn.close()
+
+            report = analyze(path, fee_per_contract_per_side=0, slippage_price_per_side=0)
+            account = report["account_level_replay"]
+            self.assertEqual(1, account["account_trades"])
+            self.assertEqual(1, account["skip_counts"]["ticker_position_open"])
+            self.assertEqual("failed", account["skipped_decisions"][0]["candidate_id"])
 
 
 if __name__ == "__main__":
