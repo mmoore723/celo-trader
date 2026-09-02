@@ -46,9 +46,28 @@ def required_broker_credentials(
     return [
         ("alpaca_api_key", "Alpaca API key"),
         ("alpaca_secret_key", "Alpaca secret key"),
-        ("tradier_api_key", "Tradier API key"),
-        ("tradier_account_id", "Tradier account ID"),
+        ("tradier_market_api_key", "Tradier live market-data token"),
     ]
+
+
+def get_tradier_market_client() -> TradierClient:
+    """Return the real-time Tradier pricing client when a live token exists.
+
+    Alpaca can remain the temporary paper execution broker, but contract
+    selection and order ceilings must not inherit Tradier sandbox's mandatory
+    delayed quotes.  Falling back to the legacy configured client keeps the
+    existing explicit stale-quote failure when no production token is saved.
+    """
+    from config import get_api_keys
+    keys = get_api_keys()
+    market_key = str(keys.get("tradier_market_api_key") or "")
+    if not market_key:
+        return TradierClient()
+    return TradierClient(
+        api_key=market_key,
+        account_id=str(keys.get("tradier_live_account_id") or ""),
+        base_url=TRADIER_LIVE_BASE,
+    )
 
 
 def get_tradier_broker(*, paper: bool | None = None) -> tuple[TradierBrokerClient, TradierClient]:
@@ -67,14 +86,14 @@ def get_tradier_broker(*, paper: bool | None = None) -> tuple[TradierBrokerClien
         account_id=execution_account_id,
         base_url=TRADIER_SANDBOX_BASE if paper else TRADIER_LIVE_BASE,
     )
-    market_key = (
-        str(keys.get("tradier_market_api_key") or "") if paper
-        else execution_key
-    )
-    market = TradierClient(
-        api_key=market_key or execution.api_key,
-        account_id=str(keys.get("tradier_live_account_id") or execution_account_id),
-        base_url=TRADIER_LIVE_BASE if (not paper or market_key) else execution.base,
+    market = (
+        get_tradier_market_client()
+        if paper else
+        TradierClient(
+            api_key=execution_key,
+            account_id=execution_account_id,
+            base_url=TRADIER_LIVE_BASE,
+        )
     )
     return TradierBrokerClient(execution, market, paper=paper), market
 
@@ -82,4 +101,4 @@ def get_tradier_broker(*, paper: bool | None = None) -> tuple[TradierBrokerClien
 def get_clients() -> tuple[object, TradierClient]:
     if configured_broker_provider() == "tradier":
         return get_tradier_broker()
-    return AlpacaClient(), TradierClient()
+    return AlpacaClient(), get_tradier_market_client()

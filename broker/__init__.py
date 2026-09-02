@@ -32,6 +32,7 @@ from broker.alpaca_client import AlpacaClient
 from broker.tradier_client import TradierClient
 from broker.factory import (
     configured_broker_provider, get_clients, get_tradier_broker,
+    get_tradier_market_client,
     required_broker_credentials,
 )
 from broker.tradier_broker import TradierBrokerClient
@@ -43,6 +44,7 @@ __all__ = [
     "TradierBrokerClient",
     "get_clients",
     "get_tradier_broker",
+    "get_tradier_market_client",
     "configured_broker_provider",
     "required_broker_credentials",
     "is_phantom_position_rejection",

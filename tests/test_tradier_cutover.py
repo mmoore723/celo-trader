@@ -120,6 +120,35 @@ class TradierCutoverTests(unittest.TestCase):
         self.assertEqual("live-account", live_broker.execution.account_id)
         self.assertIs(live_broker.market, live_market)
 
+    def test_alpaca_paper_execution_uses_saved_live_tradier_market_token(self):
+        from broker.factory import get_clients
+        keys = {
+            "alpaca_api_key": "alpaca-key",
+            "alpaca_secret_key": "alpaca-secret",
+            "tradier_api_key": "sandbox-token",
+            "tradier_account_id": "sandbox-account",
+            "tradier_market_api_key": "live-token",
+            "tradier_live_account_id": "live-account",
+        }
+        with patch("config.get_settings", return_value={
+            "broker_provider": "alpaca", "paper_trading": True,
+        }), patch("config.get_api_keys", return_value=keys):
+            execution, market = get_clients()
+        self.assertEqual("https://paper-api.alpaca.markets", execution.base)
+        self.assertEqual("live-token", market.api_key)
+        self.assertEqual("https://api.tradier.com/v1", market.base)
+
+    def test_alpaca_mode_requires_live_tradier_market_token_not_sandbox_account(self):
+        from broker.factory import required_broker_credentials
+        required = dict(required_broker_credentials(
+            {}, provider="alpaca", paper=True,
+        ))
+        self.assertIn("alpaca_api_key", required)
+        self.assertIn("alpaca_secret_key", required)
+        self.assertIn("tradier_market_api_key", required)
+        self.assertNotIn("tradier_api_key", required)
+        self.assertNotIn("tradier_account_id", required)
+
 
 class ExecutionSafetyTests(unittest.TestCase):
     def test_entry_quote_requires_a_recent_broker_timestamp(self):

@@ -19,7 +19,9 @@ EMPTY_KEYS = {
     "alpaca_api_key": "",
     "alpaca_secret_key": "",
     "tradier_api_key": "",
+    "tradier_market_api_key": "",
     "tradier_account_id": "",
+    "tradier_live_account_id": "",
 }
 
 
@@ -38,8 +40,7 @@ class BrokerConnectionStatusTests(unittest.TestCase):
             **EMPTY_KEYS,
             "alpaca_api_key": "paper-key",
             "alpaca_secret_key": "paper-secret",
-            "tradier_api_key": "market-data-key",
-            "tradier_account_id": "paper-account",
+            "tradier_market_api_key": "live-market-data-key",
         }
         state = {
             "running": True,
