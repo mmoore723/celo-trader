@@ -17,6 +17,7 @@ from pathlib import Path
 import random
 from statistics import median
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from research.jobs.evaluate_reviewed_strategy_selector import (
     LAUNCH_PROFIT_FACTOR,
@@ -35,6 +36,7 @@ GRID = {
     "underpowered": (.05, .10, .15),
     "inconsistent": (.05, .10, .15),
 }
+MARKET_TIMEZONE = ZoneInfo("America/New_York")
 
 
 def _moment(value: object) -> datetime:
@@ -54,7 +56,14 @@ def apply_current_portfolio_policy(rows: list[dict[str, Any]]) -> list[dict[str,
     kept: list[dict[str, Any]] = []
     for row in rows:
         moment = _moment(row["entry_time"])
-        clock = moment.timetz().replace(tzinfo=None)
+        # Paid option fills are timestamped in UTC while the production
+        # policy is explicitly defined in Eastern market time.  Comparing the
+        # raw UTC clock silently reserved the wrong hours in portfolio replays.
+        # Naive legacy fixtures already represent Eastern time.
+        market_moment = (
+            moment.astimezone(MARKET_TIMEZONE) if moment.tzinfo is not None else moment
+        )
+        clock = market_moment.time().replace(tzinfo=None)
         if (
             row.get("ticker") == "SPY"
             and row.get("strategy_id") == "V2_SPY_TREND_CONT"

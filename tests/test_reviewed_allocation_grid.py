@@ -42,13 +42,28 @@ def _rows(start: datetime, count: int, return_pct: float) -> list[dict[str, obje
 
 class ReviewedAllocationGridTests(unittest.TestCase):
     def test_current_policy_only_removes_spy_trend_in_reserved_window(self) -> None:
-        moment = datetime(2026, 6, 1, 14, 0, tzinfo=timezone.utc)
-        rows = _rows(moment, 1, 5)
+        # 18:00 UTC is 14:00 EDT and must be reserved. The signal fixture adds
+        # one minute before entry, so start it at 17:59 UTC.
+        rows = _rows(datetime(2026, 6, 1, 17, 59, tzinfo=timezone.utc), 1, 5)
         rows[0]["strategy_id"] = "V2_SPY_TREND_CONT"
         rows[0]["ticker"] = "SPY"
         self.assertEqual(apply_current_portfolio_policy(rows), [])
         rows[0]["strategy_id"] = "V2_SPY_AFTERNOON_FVG"
         self.assertEqual(len(apply_current_portfolio_policy(rows)), 1)
+
+    def test_current_policy_does_not_mistake_utc_morning_for_et_afternoon(self) -> None:
+        # 14:00 UTC is 10:00 EDT, outside the reserved afternoon window.
+        rows = _rows(datetime(2026, 6, 1, 13, 59, tzinfo=timezone.utc), 1, 5)
+        rows[0]["strategy_id"] = "V2_SPY_TREND_CONT"
+        rows[0]["ticker"] = "SPY"
+        self.assertEqual(len(apply_current_portfolio_policy(rows)), 1)
+
+    def test_current_policy_converts_standard_time_too(self) -> None:
+        # 19:00 UTC is 14:00 EST in January.
+        rows = _rows(datetime(2026, 1, 5, 18, 59, tzinfo=timezone.utc), 1, 5)
+        rows[0]["strategy_id"] = "V2_SPY_TREND_CONT"
+        rows[0]["ticker"] = "SPY"
+        self.assertEqual(apply_current_portfolio_policy(rows), [])
 
     def test_holdout_returns_cannot_change_selected_allocations(self) -> None:
         eligibility = _rows(datetime(2026, 3, 1, 10, tzinfo=timezone.utc), 50, 5)
