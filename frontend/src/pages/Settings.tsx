@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
 import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib/api";
+import { strategyPerformanceForId, strategyPerformanceState } from "../lib/strategyPerformance.js";
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
@@ -267,6 +268,14 @@ export function Settings() {
     queryKey: ["strategy-catalog"],
     queryFn: api.settings.strategies,
   });
+  // Actual performance belongs to the last saved broker/mode, not an unsaved
+  // form choice the user may still discard.
+  const actualAccountMode = (data?.paper_trading ?? form.paper_trading) ? "paper" : "live";
+  const actualBrokerProvider = data?.broker_provider ?? form.broker_provider ?? "alpaca";
+  const { data: actualStrategyAnalytics } = useQuery({
+    queryKey: ["strategy-performance-for-settings", actualBrokerProvider, actualAccountMode],
+    queryFn: () => api.trades.analytics(actualAccountMode),
+  });
   const { data: strategyHistory } = useQuery({
     queryKey: ["strategy-setting-history"],
     queryFn: () => api.settings.strategyHistory(12),
@@ -308,6 +317,16 @@ export function Settings() {
     const evidenceLabel = strategy.evidence_grade.replaceAll("_", " ");
     const reliableTarget = strategy.backtest?.meets_target && strategy.evidence_grade === "passed_declared_holdout";
     const targetLabel = strategy.backtest?.meets_target ? "numeric target met" : "below target";
+    const actual = strategyPerformanceForId(actualStrategyAnalytics?.by_strategy, strategy.strategy_id);
+    const actualState = strategyPerformanceState(actual, target, 30);
+    const actualEvidenceLabel = !actualState.hasResult
+      ? "no actual trades yet"
+      : actualState.enoughEvidence
+        ? (actualState.meetsTarget ? "30-trade target passed" : "below target")
+        : "sample still collecting";
+    const actualPnl = actual
+      ? `${actual.total_pnl >= 0 ? "+" : "-"}$${Math.abs(actual.total_pnl).toFixed(2)}`
+      : null;
     return (
       <div key={strategy.strategy_id} className={`rounded-lg px-3 ${index ? "mt-2" : ""}`} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
         <Toggle
@@ -327,6 +346,16 @@ export function Settings() {
         <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
           {strategy.backtest?.comparison || strategy.evidence} · {evidenceLabel}.
         </p>
+        {!strategy.observation_only && (
+          <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
+            <strong style={{ color: actualState.meetsTarget ? "var(--positive)" : actualState.hasResult ? "var(--warning)" : "var(--ink-muted)" }}>
+              Current {actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} {actualAccountMode} PF {actualState.pfLabel}
+            </strong>
+            {` · ${actualState.trades} actual trade${actualState.trades === 1 ? "" : "s"}`}
+            {actualPnl ? ` · ${actualPnl}` : ""}
+            {` · ${actualEvidenceLabel}`}
+          </p>
+        )}
         <p className="text-xs pb-3" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--ink-muted)" }}>
           {strategy.observation_only
             ? "Research observer only — records real-time hypothetical candidates and quotes; cannot place paper or live orders."
