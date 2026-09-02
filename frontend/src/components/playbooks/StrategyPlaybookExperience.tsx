@@ -54,6 +54,12 @@ const EVIDENCE_LABELS: Record<ReviewedStrategyCatalogEntry["evidence_grade"], { 
     color: "#9a5b00",
     background: "#fff6df",
   },
+  failed_profit_factor: {
+    label: "Research only · below target",
+    detail: "The paid-quote profit factor did not reach the current 1.50 target, so this rule cannot place orders.",
+    color: "#a33a3a",
+    background: "#fff0f0",
+  },
 };
 
 const COACH_IMAGE = "/images/coach-celo-v5.png?v=1";

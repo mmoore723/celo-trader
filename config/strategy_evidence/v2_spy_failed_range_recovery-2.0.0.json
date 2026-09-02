@@ -27,6 +27,7 @@
   "validation": {"measured_signals": 7, "win_rate_pct": 57.14, "average_return_pct": 2.4255, "median_return_pct": 5.0325, "profit_factor": 1.4589},
   "holdout": {"measured_signals": 9, "win_rate_pct": 66.67, "average_return_pct": 12.1989, "median_return_pct": 15.9574, "profit_factor": 5.9671},
   "all": {"measured_signals": 21, "win_rate_pct": 61.9, "average_return_pct": 7.165, "median_return_pct": 7.9254, "profit_factor": 3.0364},
+  "display_metrics": {"profit_factor": 3.04, "trades": 21, "scope": "SPY · 30-minute hold · all paid quotes", "comparison": "Selection PF 2.60 · validation PF 1.46 · holdout PF 5.97", "target_profit_factor": 1.5, "meets_target": true, "note": "Passed the declared chronological gate; prospective account validation is still required."},
   "decision": "The predeclared selection, June validation, and untouched July holdout gates passed; register as an opt-in paper candidate.",
   "source_reports": ["research/reports/paid_spy_failed_range_recovery_v1.json"]
 }

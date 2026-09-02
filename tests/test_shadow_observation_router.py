@@ -161,6 +161,26 @@ class ShadowObservationRouterTests(unittest.TestCase):
         self.assertEqual(["V2_ORB_PULLBACK"], resolved)
         self.assertEqual([], returned)
 
+    def test_catalog_observer_cannot_be_forced_into_order_set(self) -> None:
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        strategy_id = "CTX_ORB_NR7_OR_INSIDE"
+        observed: list[str] = []
+        resolved: list[str] = []
+        with patch.object(router, "ACTIVE_STRATEGIES", [
+            (strategy_id, lambda _frame, ticker: _signal(strategy_id)),
+        ]), patch.object(router, "compute_adx", return_value=30.0), \
+             patch.object(router, "_authorized_for_order", return_value=True), \
+             patch("shadow_ledger.resolve_due_directional_outcomes", return_value=None):
+            returned = router.route_signals(
+                frame, "TSLA", enabled_strategies={strategy_id}, quiet=True,
+                prepared_today=frame,
+                candidate_observer=lambda _ticker, signal, _price: observed.append(signal.strategy_id),
+                observation_resolver=lambda signal: resolved.append(signal.strategy_id),
+            )
+        self.assertEqual([strategy_id], observed)
+        self.assertEqual([strategy_id], resolved)
+        self.assertEqual([], returned)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "strategy_id": "CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG",
+  "strategy_version": "0.1.0",
+  "status": "paper_candidate",
+  "evidence_grade": "failed_profit_factor",
+  "ticker_scope": ["AMZN", "QQQ", "SPY", "TSLA"],
+  "implementation": "strategies.context_strategy_observers",
+  "implementation_sha256_at_review": "08718c6d33283a6a251e98d4be56025ac311a871c7f3c8e2145a40cfccc3f535",
+  "market_data": {"source": "paid Databento OPRA CBBO-1m archives", "execution_model": "actual option ask strictly after signal; same-contract actual bid at structural exit; fee and $10 monthly-plan stress", "contract_policy": "$150-$250 ask proxy; historical CBBO archive has no Greeks"},
+  "display_metrics": {"profit_factor": 0.95, "trades": 52, "scope": "TSLA · $150-$250 contracts", "comparison": "SPY PF 0.53 · AMZN PF 1.04 · QQQ PF 0.46 (3 fills)", "target_profit_factor": 1.5, "meets_target": false, "note": "The largest tested cohort failed the PF target."},
+  "decision": "Collect prospective evidence only; the paid historical cohort failed the 1.50 PF target.",
+  "source_reports": ["research/reports/paid_tsla_context_strategy_matrix_v2.json", "research/reports/paid_spy_context_strategy_matrix_v2.json", "research/reports/paid_amzn_context_strategy_matrix_v2.json", "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json"]
+}

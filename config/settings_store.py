@@ -68,8 +68,8 @@ def get_settings(user_id: str | None = None) -> dict:
     # sample/holdout requirement cannot remain runnable through an old saved
     # settings file.
     try:
-        from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_strategy_ids
-        settings["validated_strategy_ids"] = sorted(reviewed_strategy_ids())
+        from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_execution_strategy_ids
+        settings["validated_strategy_ids"] = sorted(reviewed_execution_strategy_ids())
         approved_setting_keys = {rule.setting_key for rule in REVIEWED_STRATEGIES.values()}
         for key in _RETIRED_STRATEGY_SETTING_KEYS - approved_setting_keys:
             settings.pop(key, None)

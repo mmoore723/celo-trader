@@ -99,6 +99,11 @@ def get_settings_endpoint() -> Settings:
         strategy_spy_afternoon_fvg_v2_enabled=bool(s.get("strategy_spy_afternoon_fvg_v2_enabled", True)),
         strategy_spy_failed_range_recovery_v2_enabled=bool(s.get("strategy_spy_failed_range_recovery_v2_enabled", True)),
         strategy_tsla_two_leg_trend_pullback_v2_enabled=bool(s.get("strategy_tsla_two_leg_trend_pullback_v2_enabled", True)),
+        observe_ctx_orb_nr7_inside_enabled=bool(s.get("observe_ctx_orb_nr7_inside_enabled", True)),
+        observe_ctx_orb_atr10_enabled=bool(s.get("observe_ctx_orb_atr10_enabled", True)),
+        observe_ctx_vwap_ker_enabled=bool(s.get("observe_ctx_vwap_ker_enabled", True)),
+        observe_ctx_vwap_displacement_enabled=bool(s.get("observe_ctx_vwap_displacement_enabled", True)),
+        observe_ctx_squeeze_macd_enabled=bool(s.get("observe_ctx_squeeze_macd_enabled", True)),
         opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
@@ -182,11 +187,12 @@ def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
     # Strategy promotion is evidence-controlled, not a settings-page action.
     # Keep the server's reviewed list even if a browser sends this field.
     data.pop("validated_strategy_ids", None)
-    data["strategy_orb_pullback_v2_enabled"] = data.pop("strategy_orb_pullback_v2_enabled", False)
-    data["strategy_spy_trend_cont_v2_enabled"] = data.pop("strategy_spy_trend_cont_v2_enabled", False)
-    data["strategy_spy_afternoon_fvg_v2_enabled"] = data.pop("strategy_spy_afternoon_fvg_v2_enabled", False)
-    data["strategy_spy_failed_range_recovery_v2_enabled"] = data.pop("strategy_spy_failed_range_recovery_v2_enabled", True)
-    data["strategy_tsla_two_leg_trend_pullback_v2_enabled"] = data.pop("strategy_tsla_two_leg_trend_pullback_v2_enabled", False)
+    from config.strategy_catalog import REVIEWED_STRATEGIES
+    for rule in REVIEWED_STRATEGIES.values():
+        # Pydantic defines the complete allowlist.  Resolving catalog switches
+        # generically prevents a newly reviewed control from being silently
+        # dropped by an older hard-coded POST map.
+        data[rule.setting_key] = bool(data.pop(rule.setting_key, False))
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw
     # the user's setting and always fell through to the bootstrap 5% auto-tier.
@@ -202,7 +208,6 @@ def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
             data["risk_per_trade"] = round(float(_rp_ui) / 100.0, 4)  # 10.0 → 0.10
         except (TypeError, ValueError):
             pass
-    from config.strategy_catalog import REVIEWED_STRATEGIES
     strategy_changes = [
         (
             rule.strategy_id,

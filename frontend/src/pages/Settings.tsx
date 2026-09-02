@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
-import { api, type AppSettings } from "../lib/api";
+import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib/api";
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
@@ -39,6 +39,11 @@ const DEFAULT: AppSettings = {
   strategy_spy_afternoon_fvg_v2_enabled: true,
   strategy_spy_failed_range_recovery_v2_enabled: true,
   strategy_tsla_two_leg_trend_pullback_v2_enabled: true,
+  observe_ctx_orb_nr7_inside_enabled: true,
+  observe_ctx_orb_atr10_enabled: true,
+  observe_ctx_vwap_ker_enabled: true,
+  observe_ctx_vwap_displacement_enabled: true,
+  observe_ctx_squeeze_macd_enabled: true,
   opportunity_tier_enabled: false,
   signal_only_mode: false,  // true = bot alerts only, no order placement
   display_timezone: "America/New_York",
@@ -295,6 +300,47 @@ export function Settings() {
     setSaved(false);
   }
 
+  function strategyControl(strategy: ReviewedStrategyCatalogEntry, index: number) {
+    const switchEnabled = Boolean(form[strategy.setting_key]);
+    const pf = strategy.backtest?.profit_factor;
+    const pfLabel = typeof pf === "number" ? pf.toFixed(2) : (pf || "not recorded");
+    const target = strategy.backtest?.target_profit_factor ?? 1.5;
+    const evidenceLabel = strategy.evidence_grade.replaceAll("_", " ");
+    const reliableTarget = strategy.backtest?.meets_target && strategy.evidence_grade === "passed_declared_holdout";
+    const targetLabel = strategy.backtest?.meets_target ? "numeric target met" : "below target";
+    return (
+      <div key={strategy.strategy_id} className={`rounded-lg px-3 ${index ? "mt-2" : ""}`} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+        <Toggle
+          label={`${strategy.display_name} · v${strategy.version}`}
+          checked={switchEnabled}
+          onChange={(v) => set(strategy.setting_key, v)}
+          disabled={strategy.integrity_errors.length > 0}
+        />
+        <p className="text-xs pb-1 -mt-1" style={{ color: "var(--ink-muted)" }}>
+          <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>
+            Backtest PF {pfLabel}
+          </strong>
+          {strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} option fills` : ""}
+          {strategy.backtest?.scope ? ` · ${strategy.backtest.scope}` : ""}
+          {` · target ${target.toFixed(1)} (${targetLabel})`}
+        </p>
+        <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
+          {strategy.backtest?.comparison || strategy.evidence} · {evidenceLabel}.
+        </p>
+        <p className="text-xs pb-3" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--ink-muted)" }}>
+          {strategy.observation_only
+            ? "Research observer only — records real-time hypothetical candidates and quotes; cannot place paper or live orders."
+            : `${strategy.tickers.join(", ")} · ${strategy.signal_source.replaceAll("_", " ")} · ${strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`}.`}
+        </p>
+        {strategy.integrity_errors.length > 0 && (
+          <p className="text-xs pb-3" style={{ color: "#f87171" }}>
+            Disabled because its code no longer matches the reviewed evidence.
+          </p>
+        )}
+      </div>
+    );
+  }
+
   // True when the form has been changed since the last save/load
   const hasChanges = JSON.stringify(form) !== JSON.stringify(savedForm);
 
@@ -472,25 +518,7 @@ export function Settings() {
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           Your account is currently in <strong style={{ color: "var(--ink)" }}>{form.paper_trading ? "paper" : "live"} mode</strong>. When a reviewed strategy is on, it may submit orders to this connected account. Ticker scope, integrity, risk, liquidity, maintenance, and broker safeguards still apply.
         </p>
-        {(strategyCatalog?.strategies ?? []).map((strategy, index) => {
-          const switchEnabled = Boolean(form[strategy.setting_key]);
-          return (
-          <div key={strategy.strategy_id} className={`rounded-lg px-3 ${index ? "mt-2" : ""}`} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-            <div>
-              <div>
-                <Toggle
-                  label={`${strategy.display_name} · v${strategy.version}`}
-                  checked={switchEnabled}
-                  onChange={(v) => set(strategy.setting_key, v)}
-                />
-              </div>
-            </div>
-            <p className="text-xs pb-3 -mt-1" style={{ color: "var(--ink-muted)" }}>
-              {strategy.tickers.join(", ")} · {strategy.signal_source.replaceAll("_", " ")} · {strategy.exit_minutes == null ? "registered exit policy" : `${strategy.exit_minutes}-minute same-contract exit`}.
-            </p>
-          </div>
-          );
-        })}
+        {(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
           New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
         </div>
@@ -506,6 +534,14 @@ export function Settings() {
             </div>
           </details>
         )}
+      </div>
+
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy research observers</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          These switches only collect prospective evidence. They stay unable to place an order in both paper and live mode until the exact entry, exit, sample, and chronological PF gates pass.
+        </p>
+        {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}
       </div>
 
       {/* Automatically qualified ticker/strategy matches */}

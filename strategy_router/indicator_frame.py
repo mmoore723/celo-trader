@@ -81,4 +81,19 @@ def _build_indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
     else:
         today["session_gap_pct"] = 0.0   # no prior-day data (e.g. synthetic/short backtest window)
 
+    # A small group of explicitly observation-only strategies needs completed
+    # prior sessions for NR7/ATR10 and completed one-hour context.  Evaluators
+    # still receive the compact current-session frame, so attach a read-only
+    # OHLCV tape rather than adding hidden database/network calls to strategy
+    # code.  Tuples keep DataFrame attrs deterministic and cheap to copy.
+    _context_columns = [name for name in ("time", "open", "high", "low", "close", "volume") if name in df.columns]
+    if len(_context_columns) == 6:
+        today.attrs["multi_session_bars"] = tuple(
+            tuple(row)
+            for row in df[_context_columns]
+            .sort_values("time")
+            .drop_duplicates("time")
+            .itertuples(index=False, name=None)
+        )
+
     return today

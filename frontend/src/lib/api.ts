@@ -727,6 +727,11 @@ export interface AppSettings {
   strategy_spy_afternoon_fvg_v2_enabled?: boolean; // reviewed SPY paid-quote afternoon FVG strategy
   strategy_spy_failed_range_recovery_v2_enabled?: boolean; // reviewed SPY failed-range recovery
   strategy_tsla_two_leg_trend_pullback_v2_enabled?: boolean; // reviewed TSLA VWAP/EMA two-leg strategy
+  observe_ctx_orb_nr7_inside_enabled?: boolean;
+  observe_ctx_orb_atr10_enabled?: boolean;
+  observe_ctx_vwap_ker_enabled?: boolean;
+  observe_ctx_vwap_displacement_enabled?: boolean;
+  observe_ctx_squeeze_macd_enabled?: boolean;
   opportunity_tier_enabled?: boolean; // observation-only lower-confidence research cohort; does not change account mode
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
   min_grade_filter_enabled?: boolean; // 2026-07-24: blocks entries below min_entry_grade (default off)
@@ -754,9 +759,20 @@ export interface ReviewedStrategyCatalogEntry {
   exit_minutes: number | null;
   paper_only: boolean;
   status: "paper_candidate" | "retired";
-  evidence_grade: "passed_declared_holdout" | "promising_underpowered" | "promising_inconsistent";
+  evidence_grade: "passed_declared_holdout" | "promising_underpowered" | "promising_inconsistent" | "failed_profit_factor";
   evidence_artifact: string;
   evidence: string;
+  backtest: {
+    profit_factor?: number | string;
+    trades?: number;
+    scope?: string;
+    comparison?: string;
+    target_profit_factor?: number;
+    meets_target?: boolean;
+    note?: string;
+  };
+  control_kind: "execution" | "observation";
+  observation_only: boolean;
   enabled: boolean;
   account_mode: "paper" | "live";
   live_eligible: boolean;
@@ -770,6 +786,7 @@ export interface ReviewedStrategyCatalogEntry {
   };
   eligible_in_current_mode: boolean;
   execution_enabled: boolean;
+  observation_enabled: boolean;
   integrity_errors: string[];
 }
 

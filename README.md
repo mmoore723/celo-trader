@@ -4,14 +4,20 @@ Automated options research and paper-trading platform.
 
 ## Production strategy catalog
 
-`config/strategy_catalog.py` is the single production allowlist. Only these reviewed strategy IDs may be configured, routed, traded, scored, or taught in the UI:
+`config/strategy_catalog.py` is the single production allowlist. Execution controls may reach an order only within their reviewed ticker scope. Research observers may be configured and recorded, but the router prevents them from reaching contract selection or paper/live orders.
 
-| Strategy ID | Ticker | Reviewed exit |
-|---|---|---|
-| `V2_ORB_PULLBACK` | TSLA | 90 minutes |
-| `V2_SPY_TREND_CONT` | SPY | 30 minutes |
-| `V2_SPY_AFTERNOON_FVG` | SPY | 30 minutes |
-| `V2_TSLA_TWO_LEG_TREND_PULLBACK` | TSLA | 90 minutes |
+| Strategy ID | Ticker | Control | Reviewed exit |
+|---|---|---|---|
+| `V2_ORB_PULLBACK` | TSLA | Execution | 90 minutes |
+| `V2_SPY_TREND_CONT` | SPY | Execution | 30 minutes |
+| `V2_SPY_AFTERNOON_FVG` | SPY | Execution | 30 minutes |
+| `V2_FAILED_OR_BREAK_VWAP_REVERSION` | SPY | Execution | 30 minutes |
+| `V2_TSLA_TWO_LEG_TREND_PULLBACK` | TSLA | Execution | 90 minutes |
+| `CTX_ORB_NR7_OR_INSIDE` | SPY, QQQ, TSLA, AMZN | Observation | Research exit plan only |
+| `CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG` | SPY, QQQ, TSLA, AMZN | Observation | Research exit plan only |
+| `CTX_VWAP_PULLBACK_KER10_LONG` | SPY, QQQ, TSLA, AMZN | Observation | Research exit plan only |
+| `CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG` | TSLA, AMZN | Observation | Research exit plan only |
+| `CTX_1H_SQUEEZE_MACD_LONG` | QQQ | Observation | Research exit plan only |
 
 Retired strategy implementations do not remain in production as hidden or disabled code. Existing closed database rows are preserved as historical financial records, but an unknown strategy ID is presented as retired history and cannot enter the router.
 

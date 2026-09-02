@@ -1,5 +1,6 @@
 import unittest
 
+from config.strategy_catalog import REVIEWED_STRATEGIES
 from strategy_health.strategy_replay import replay_strategies
 
 
@@ -15,7 +16,7 @@ def bar_event(ticker="AMZN"):
 class StrategyGoldenReplayTests(unittest.TestCase):
     def test_every_reviewed_strategy_is_checked_on_every_observed_ticker(self):
         result = replay_strategies([bar_event()])
-        self.assertEqual(5, len(result["strategy_ticker_checks"]))
+        self.assertEqual(len(REVIEWED_STRATEGIES), len(result["strategy_ticker_checks"]))
         self.assertEqual(["AMZN"], result["tickers_replayed"])
         orb = next(row for row in result["strategy_ticker_checks"]
                    if row["strategy_id"] == "V2_ORB_PULLBACK")

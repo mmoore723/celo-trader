@@ -16,6 +16,7 @@
   "selected_policy": {"hold_minutes": 30, "holdout_start": "2026-07-01", "selection_rule": "highest earlier-period median; ties use average, sample size, then shorter hold"},
   "training": {"measured_signals": 90, "average_return_pct": 0.8646, "median_return_pct": 1.1972, "win_rate_pct": 60.0},
   "holdout": {"measured_signals": 66, "average_return_pct": 0.5581, "median_return_pct": 0.4919, "win_rate_pct": 53.03},
+  "display_metrics": {"profit_factor": 1.22, "trades": 156, "scope": "SPY · 30-minute hold · all paid quotes", "comparison": "Train PF 1.25 · holdout PF 1.17", "target_profit_factor": 1.5, "meets_target": false, "note": "Chronological holdout passed its declared return gate, but PF remains below the current 1.50 launch target."},
   "decision": "Predeclared train/holdout gate passed for the 30-minute one-position policy; retain as paper candidate pending prospective account-level validation.",
   "source_reports": ["research/reports/paid_spy_trend_continuation_one_position_holds.json"]
 }

@@ -120,6 +120,15 @@ _DEFAULTS = {
     # two-leg rule; 51 untouched later sessions also passed. Default ON.
     "strategy_tsla_two_leg_trend_pullback_v2_enabled": True,
 
+    # Exact context-strategy suggestions are prospective research observers.
+    # ON means collect real candidates and option quotes; these flags have no
+    # route to paper or live orders.  The catalog enforces that invariant.
+    "observe_ctx_orb_nr7_inside_enabled": True,
+    "observe_ctx_orb_atr10_enabled": True,
+    "observe_ctx_vwap_ker_enabled": True,
+    "observe_ctx_vwap_displacement_enabled": True,
+    "observe_ctx_squeeze_macd_enabled": True,
+
     # Paper-only lower-confidence research cohort. Disabled after the 2026-08-02
     # locked-holdout panel increased activity while worsening aggregate results.
     # Candidates remain journaled as `opportunity` for separate evidence.

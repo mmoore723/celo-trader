@@ -14,12 +14,14 @@ Research candidates live only under ``research/`` until promotion.
 
 from config.strategy_catalog import strategy_ids_for_source
 from strategies import spy_trend_continuation_v2, spy_afternoon_fvg_v2, spy_failed_range_recovery_v2
+from strategies.context_strategy_observers import ACTIVE_OBSERVERS
 
 # ── Active evaluator table (single source of truth) ───────────────────────────
 ACTIVE_STRATEGIES = [
     ("V2_SPY_TREND_CONT", spy_trend_continuation_v2.evaluate),
     ("V2_SPY_AFTERNOON_FVG", spy_afternoon_fvg_v2.evaluate),
     ("V2_FAILED_OR_BREAK_VWAP_REVERSION", spy_failed_range_recovery_v2.evaluate),
+    *ACTIVE_OBSERVERS,
 ]
 
 _implemented_ids = {strategy_id for strategy_id, _evaluate in ACTIVE_STRATEGIES}

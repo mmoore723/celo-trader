@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "strategy_id": "CTX_1H_SQUEEZE_MACD_LONG",
+  "strategy_version": "0.1.0",
+  "status": "paper_candidate",
+  "evidence_grade": "failed_profit_factor",
+  "ticker_scope": ["QQQ"],
+  "implementation": "strategies.context_strategy_observers",
+  "implementation_sha256_at_review": "08718c6d33283a6a251e98d4be56025ac311a871c7f3c8e2145a40cfccc3f535",
+  "market_data": {"source": "paid Databento OPRA CBBO-1m archives", "execution_model": "actual option ask strictly after signal; same-contract actual bid at 150% target, 20-SMA invalidation, or end-of-day cap", "contract_policy": "3-5 DTE and $150-$1000 ask; historical CBBO archive has no Greeks"},
+  "display_metrics": {"profit_factor": "no fills", "trades": 0, "scope": "QQQ · purchased July-August archive", "comparison": "Only one underlying signal and no executable option fill", "target_profit_factor": 1.5, "meets_target": false, "note": "There is not enough executable evidence to estimate PF."},
+  "decision": "Collect prospective evidence only; no historical QQQ option cohort exists yet.",
+  "source_reports": ["research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json"]
+}

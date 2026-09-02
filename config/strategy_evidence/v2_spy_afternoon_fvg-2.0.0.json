@@ -17,6 +17,7 @@
   "training": {"measured_signals": 14, "average_return_pct": 4.6443, "median_return_pct": 4.6351, "win_rate_pct": 78.57, "profit_factor": 3.2072},
   "holdout": {"measured_signals": 9, "average_return_pct": 3.6124, "median_return_pct": 2.584, "win_rate_pct": 66.67, "profit_factor": 10.1865},
   "monthly_stability": {"decision": "stable_across_months", "months": ["2026-05", "2026-06", "2026-07"], "trades": 23, "average_return_pct": 4.2405, "median_return_pct": 3.5599, "profit_factor": 3.9558},
+  "display_metrics": {"profit_factor": 3.96, "trades": 23, "scope": "SPY · 30-minute hold · May-July", "comparison": "Train PF 3.21 (14 fills) · holdout PF 10.19 (9 fills)", "target_profit_factor": 1.5, "meets_target": true, "note": "PF passed, but the predeclared training sample missed its 15-fill minimum by one."},
   "decision": "Promising monthly evidence, but the original predeclared split had 14 training signals versus a 15-signal minimum. Retain as paper candidate rather than call it fully passed.",
   "source_reports": ["research/reports/paid_spy_afternoon_fvg_v2_tune_fast.json", "research/reports/paid_spy_afternoon_fvg_v2_monthly.json"]
 }

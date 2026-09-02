@@ -17,6 +17,7 @@
   "training": {"measured_signals": 108, "average_return_pct": 3.1853, "median_return_pct": 2.036, "win_rate_pct": 54.63, "profit_factor": 1.4822},
   "holdout": {"measured_signals": 19, "average_return_pct": 3.9999, "median_return_pct": 0.5025, "win_rate_pct": 52.63, "profit_factor": 1.5129},
   "monthly_stability": {"decision": "insufficient_or_inconsistent", "trades": 127, "average_return_pct": 3.3072, "median_return_pct": 2.0101, "profit_factor": 1.4875, "losing_or_nonpositive_months": ["2025-11", "2025-12", "2026-02", "2026-03", "2026-04", "2026-06"]},
+  "display_metrics": {"profit_factor": 1.49, "trades": 127, "scope": "TSLA · 90-minute hold · all paid quotes", "comparison": "Train PF 1.48 · holdout PF 1.51", "target_profit_factor": 1.5, "meets_target": false, "note": "Very close to target, but inconsistent months keep it below the launch gate."},
   "decision": "Aggregate train/holdout gate passed, but month-level behavior was inconsistent. Retain as paper candidate pending prospective validation.",
   "source_reports": ["research/reports/paid_tsla_two_leg_tuning_v1.json", "research/reports/paid_tsla_two_leg_monthly_stability_90m.json"]
 }

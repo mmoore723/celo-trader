@@ -125,6 +125,20 @@ def route_signals(
     # earned promotion, so avoid even building indicators or emitting signals.
     _order_strategies = set(enabled_strategies or ()) if enabled_strategies is not None else None
     _observation_only = set(observation_only_strategies or ())
+    # Catalog-owned research observers are incapable of execution even if a
+    # caller accidentally supplies their IDs as enabled order strategies (or
+    # asks for the router's full universe with ``None``).  Move them onto the
+    # read-only side of the pipeline before any evaluator runs.
+    from config.strategy_catalog import REVIEWED_STRATEGIES
+    _catalog_observers = {
+        strategy_id for strategy_id, rule in REVIEWED_STRATEGIES.items()
+        if rule.observation_only
+    }
+    if _order_strategies is None:
+        _observation_only |= _catalog_observers
+    else:
+        _observation_only |= _order_strategies & _catalog_observers
+        _order_strategies -= _catalog_observers
     if _order_strategies is not None:
         _observation_only -= _order_strategies
     if _order_strategies is not None and not _order_strategies and not _observation_only:

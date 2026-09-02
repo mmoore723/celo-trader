@@ -280,7 +280,11 @@ def select_reviewed_v2_contract(
     }
     try:
         from config.strategy_catalog import REVIEWED_STRATEGIES
-        reviewed_tickers = set().union(*(rule.tickers for rule in REVIEWED_STRATEGIES.values()))
+        reviewed_tickers = set().union(*(
+            rule.tickers
+            for rule in REVIEWED_STRATEGIES.values()
+            if not rule.observation_only
+        ))
     except Exception:
         reviewed_tickers = {"TSLA"}
     if ticker not in reviewed_tickers:

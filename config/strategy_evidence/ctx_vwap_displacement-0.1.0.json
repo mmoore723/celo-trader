@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "strategy_id": "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
+  "strategy_version": "0.1.0",
+  "status": "paper_candidate",
+  "evidence_grade": "promising_underpowered",
+  "ticker_scope": ["AMZN", "TSLA"],
+  "implementation": "strategies.context_strategy_observers",
+  "implementation_sha256_at_review": "08718c6d33283a6a251e98d4be56025ac311a871c7f3c8e2145a40cfccc3f535",
+  "market_data": {"source": "paid Databento OPRA CBBO-1m archives", "execution_model": "actual option ask strictly after signal; same-contract actual bid at structural VWAP/HOD exit; fee and $10 monthly-plan stress", "contract_policy": "$150-$250 ask proxy; historical CBBO archive has no Greeks"},
+  "display_metrics": {"profit_factor": 6.73, "trades": 5, "scope": "TSLA · $150-$250 contracts", "comparison": "3 selection fills · 1 validation fill · 1 later fill; the later fill lost", "target_profit_factor": 1.5, "meets_target": true, "note": "PF is not trustworthy yet because only five fills exist and later evidence is negative."},
+  "decision": "Collect prospective evidence only; the sample is far too small for order authority.",
+  "source_reports": ["research/reports/paid_tsla_context_vwap_signal_v2.json", "research/reports/paid_amzn_context_vwap_signal_v2.json"]
+}

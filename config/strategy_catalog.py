@@ -22,6 +22,7 @@ EvidenceGrade = Literal[
     "passed_declared_holdout",
     "promising_underpowered",
     "promising_inconsistent",
+    "failed_profit_factor",
 ]
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,10 @@ class ReviewedStrategy:
     evidence_grade: EvidenceGrade
     evidence_artifact: str
     evidence: str
+    # Research observers are evaluated by the live scanner and written to the
+    # evidence ledger, but can never be returned to an order-facing path.  The
+    # Settings switch controls evidence collection, not execution.
+    observation_only: bool = False
 
 
 REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
@@ -125,7 +130,103 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         evidence_artifact="config/strategy_evidence/v2_tsla_two_leg_trend_pullback-2.0.0.json",
         evidence="TSLA paid-quote VWAP/EMA two-leg study: positive train/holdout aggregate but inconsistent by month; paper candidate only",
     ),
+    "CTX_ORB_NR7_OR_INSIDE": ReviewedStrategy(
+        strategy_id="CTX_ORB_NR7_OR_INSIDE",
+        display_name="Context-Filtered ORB (NR7 / Inside Day)",
+        version="0.1.0",
+        tickers=frozenset({"SPY", "QQQ", "TSLA", "AMZN"}),
+        setting_key="observe_ctx_orb_nr7_inside_enabled",
+        signal_source="bar_close",
+        implementation="strategies.context_strategy_observers",
+        exit_minutes=None,
+        paper_only=True,
+        status="paper_candidate",
+        evidence_grade="promising_inconsistent",
+        evidence_artifact="config/strategy_evidence/ctx_orb_nr7_inside-0.1.0.json",
+        evidence="Paid-quote replay found PF 1.70 for the TSLA $150-$250 slice, but the broader result and chronological stability did not pass.",
+        observation_only=True,
+    ),
+    "CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG": ReviewedStrategy(
+        strategy_id="CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG",
+        display_name="Context-Filtered ORB (ATR10)",
+        version="0.1.0",
+        tickers=frozenset({"SPY", "QQQ", "TSLA", "AMZN"}),
+        setting_key="observe_ctx_orb_atr10_enabled",
+        signal_source="bar_close",
+        implementation="strategies.context_strategy_observers",
+        exit_minutes=None,
+        paper_only=True,
+        status="paper_candidate",
+        evidence_grade="failed_profit_factor",
+        evidence_artifact="config/strategy_evidence/ctx_orb_atr10-0.1.0.json",
+        evidence="The largest TSLA $150-$250 cohort produced PF 0.95, below the 1.50 target.",
+        observation_only=True,
+    ),
+    "CTX_VWAP_PULLBACK_KER10_LONG": ReviewedStrategy(
+        strategy_id="CTX_VWAP_PULLBACK_KER10_LONG",
+        display_name="VWAP Pullback (1-Hour KER)",
+        version="0.1.0",
+        tickers=frozenset({"SPY", "QQQ", "TSLA", "AMZN"}),
+        setting_key="observe_ctx_vwap_ker_enabled",
+        signal_source="bar_close",
+        implementation="strategies.context_strategy_observers",
+        exit_minutes=None,
+        paper_only=True,
+        status="paper_candidate",
+        evidence_grade="failed_profit_factor",
+        evidence_artifact="config/strategy_evidence/ctx_vwap_ker-0.1.0.json",
+        evidence="The largest corrected paid-quote cohort produced PF 0.51 on TSLA, below the 1.50 target.",
+        observation_only=True,
+    ),
+    "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": ReviewedStrategy(
+        strategy_id="CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
+        display_name="VWAP Pullback (10:30 Displacement)",
+        version="0.1.0",
+        tickers=frozenset({"TSLA", "AMZN"}),
+        setting_key="observe_ctx_vwap_displacement_enabled",
+        signal_source="bar_close",
+        implementation="strategies.context_strategy_observers",
+        exit_minutes=None,
+        paper_only=True,
+        status="paper_candidate",
+        evidence_grade="promising_underpowered",
+        evidence_artifact="config/strategy_evidence/ctx_vwap_displacement-0.1.0.json",
+        evidence="TSLA showed PF 6.73 in the $150-$250 slice, but only five fills existed and the single later-period fill lost.",
+        observation_only=True,
+    ),
+    "CTX_1H_SQUEEZE_MACD_LONG": ReviewedStrategy(
+        strategy_id="CTX_1H_SQUEEZE_MACD_LONG",
+        display_name="1-Hour Bollinger / Keltner Squeeze",
+        version="0.1.0",
+        tickers=frozenset({"QQQ"}),
+        setting_key="observe_ctx_squeeze_macd_enabled",
+        signal_source="bar_close",
+        implementation="strategies.context_strategy_observers",
+        exit_minutes=None,
+        paper_only=True,
+        status="paper_candidate",
+        evidence_grade="failed_profit_factor",
+        evidence_artifact="config/strategy_evidence/ctx_squeeze_macd-0.1.0.json",
+        evidence="QQQ produced no executable option fills for the exact squeeze rule in the purchased archive.",
+        observation_only=True,
+    ),
 }
+
+
+def _backtest_display(rule: ReviewedStrategy) -> dict:
+    """Return compact, pre-reviewed metrics for the Settings control.
+
+    The UI never infers a PF from arbitrary report shapes.  The evidence
+    artifact records the exact cohort selected for display, including sample
+    size and scope, so a tiny winning slice cannot masquerade as a universal
+    strategy result.
+    """
+    try:
+        evidence = json.loads((_PROJECT_ROOT / rule.evidence_artifact).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    display = evidence.get("display_metrics")
+    return dict(display) if isinstance(display, dict) else {}
 
 
 def _implementation_path(implementation: str) -> Path:
@@ -205,24 +306,38 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
             "evidence_grade": rule.evidence_grade,
             "evidence_artifact": rule.evidence_artifact,
             "evidence": rule.evidence,
+            "backtest": _backtest_display(rule),
+            "control_kind": "observation" if rule.observation_only else "execution",
+            "observation_only": rule.observation_only,
             "enabled": bool(settings.get(rule.setting_key, False)) and rule.strategy_id not in integrity_errors,
             # Keep the user's switch separate from integrity eligibility. Once
             # a catalog strategy has passed review, the same exact version may
             # execute in paper or live mode when this user turns it on.
             "account_mode": account_mode,
-            "live_eligible": not rule.paper_only,
+            "live_eligible": not rule.paper_only and not rule.observation_only,
             # Qualification is independent of the connected broker mode. A
             # live account can shadow real market conditions with zero order
             # authority while an exact strategy version is still qualifying.
             "validation_state": (
-                "qualified_for_live" if not rule.paper_only else "shadow_observation"
+                "qualified_for_live"
+                if not rule.paper_only and not rule.observation_only
+                else "shadow_observation"
             ),
             "observation_requires_paper_mode": False,
-            "eligible_in_current_mode": account_mode == "paper" or not rule.paper_only,
+            "eligible_in_current_mode": (
+                not rule.observation_only
+                and (account_mode == "paper" or not rule.paper_only)
+            ),
             "execution_enabled": (
                 bool(settings.get(rule.setting_key, False))
                 and rule.strategy_id not in integrity_errors
+                and not rule.observation_only
                 and (account_mode == "paper" or not rule.paper_only)
+            ),
+            "observation_enabled": (
+                bool(settings.get(rule.setting_key, False))
+                and rule.strategy_id not in integrity_errors
+                and rule.observation_only
             ),
             "integrity_errors": list(integrity_errors.get(rule.strategy_id, ())),
             "live_promotion": promotion.public(),
@@ -233,6 +348,29 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
 def reviewed_strategy_ids() -> set[str]:
     """Return exact evidence-matched IDs; browser settings cannot invent one."""
     return set(REVIEWED_STRATEGIES) - set(reviewed_strategy_integrity_errors())
+
+
+def reviewed_execution_strategy_ids() -> set[str]:
+    """Return integrity-matched strategies which are allowed to reach orders."""
+    return {
+        strategy_id for strategy_id in reviewed_strategy_ids()
+        if not REVIEWED_STRATEGIES[strategy_id].observation_only
+    }
+
+
+def enabled_observation_strategy_ids(
+    settings: dict, *, ticker: object | None = None,
+) -> set[str]:
+    """Return user-enabled, fail-closed research observers for one ticker."""
+    normalized_ticker = str(ticker or "").strip().upper()
+    return {
+        strategy_id
+        for strategy_id, rule in REVIEWED_STRATEGIES.items()
+        if rule.observation_only
+        and strategy_id not in reviewed_strategy_integrity_errors()
+        and bool(settings.get(rule.setting_key, False))
+        and (not normalized_ticker or normalized_ticker in rule.tickers)
+    }
 
 
 def is_allowed_ticker(strategy_id: object, ticker: object) -> bool:
@@ -292,6 +430,7 @@ def enabled_reviewed_strategy_ids(
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
         if strategy_id not in reviewed_strategy_integrity_errors()
+        and not rule.observation_only
         and bool(settings.get(rule.setting_key, False))
         and (not normalized_ticker or is_user_authorized_ticker(strategy_id, normalized_ticker, settings))
         and _mode_eligible(strategy_id, rule)

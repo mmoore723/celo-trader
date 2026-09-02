@@ -546,10 +546,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # The scanner stays broad.  Reviewed strategy/ticker pairs are appended
     # only when their own mode-eligible switch is enabled, so a quieter validated
     # symbol is not silently skipped by a momentum ranking.
-    from config.strategy_catalog import enabled_reviewed_strategy_ids
+    from config.strategy_catalog import (
+        enabled_observation_strategy_ids, enabled_reviewed_strategy_ids,
+    )
     _enabled_reviewed_pilots = enabled_reviewed_strategy_ids(
         settings, paper=bool(settings.get("paper_trading", True)),
     )
+    _enabled_research_observers = enabled_observation_strategy_ids(settings)
     if not watchlist:
         # Watchlist empty: run an on-demand scan (missed pre-market, or first boot)
         try:
@@ -564,9 +567,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         logger.info("on_demand_scan_done", extra={
             "event": "on_demand_scan_done", "watchlist": watchlist,
         })
-    if _enabled_reviewed_pilots:
+    if _enabled_reviewed_pilots or _enabled_research_observers:
         _with_reviewed = include_reviewed_tickers_when_v2_pilots_enabled(
-            watchlist, enabled_strategy_ids=_enabled_reviewed_pilots,
+            watchlist,
+            enabled_strategy_ids=(
+                _enabled_reviewed_pilots | _enabled_research_observers
+            ),
         )
         # Static catalog scope remains the default. A newly qualified ticker
         # joins this user's cycle only after that user explicitly enables the
@@ -721,7 +727,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Any flag absent from settings defaults to True (all on by default).
     _strat_cfg = get_settings()
     from config.strategy_catalog import (
-        reviewed_strategy_ids, enabled_reviewed_strategy_ids,
+        enabled_observation_strategy_ids, enabled_reviewed_strategy_ids,
+        reviewed_execution_strategy_ids,
     )
     _enabled = enabled_reviewed_strategy_ids(
         _strat_cfg, ticker=ticker, paper=paper,
@@ -753,8 +760,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             )
         except Exception:
             logger.debug("candidate option follow-up sweep failed for %s", ticker, exc_info=True)
+        _observation_only_strategies = enabled_observation_strategy_ids(
+            settings, ticker=ticker,
+        )
         if bool(settings.get("shadow_observe_all_strategies", True)):
-            _observation_only_strategies = reviewed_strategy_ids() - _enabled
+            _observation_only_strategies |= (
+                reviewed_execution_strategy_ids() - _enabled
+            )
+        if _observation_only_strategies:
             _observation_resolver = mark_candidate_observed_only
         # Price every raw candidate, not only the one which wins same-tick
         # ranking.  This is a read-only preview: it creates no order or trade,

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "strategy_id": "CTX_VWAP_PULLBACK_KER10_LONG",
+  "strategy_version": "0.1.0",
+  "status": "paper_candidate",
+  "evidence_grade": "failed_profit_factor",
+  "ticker_scope": ["AMZN", "QQQ", "SPY", "TSLA"],
+  "implementation": "strategies.context_strategy_observers",
+  "implementation_sha256_at_review": "08718c6d33283a6a251e98d4be56025ac311a871c7f3c8e2145a40cfccc3f535",
+  "market_data": {"source": "paid Databento OPRA CBBO-1m archives", "execution_model": "actual option ask strictly after signal; same-contract actual bid at structural VWAP/HOD exit; fee and $10 monthly-plan stress", "contract_policy": "nearest weekly proxy for the largest corrected TSLA cohort; historical CBBO archive has no Greeks"},
+  "display_metrics": {"profit_factor": 0.51, "trades": 37, "scope": "TSLA · nearest-weekly proxy", "comparison": "AMZN PF 1.05 (16 fills) · SPY PF 0.48 (10 fills) · QQQ PF 0.81 (3 fills)", "target_profit_factor": 1.5, "meets_target": false, "note": "Corrected trigger replay failed the PF target."},
+  "decision": "Collect prospective evidence only; the corrected paid replay rejected this filter.",
+  "source_reports": ["research/reports/paid_tsla_context_vwap_signal_v2.json", "research/reports/paid_amzn_context_vwap_signal_v2.json", "research/reports/paid_spy_context_vwap_signal_v2.json", "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json"]
+}

@@ -43,18 +43,27 @@ def _frames(events: list[dict]) -> dict[str, pd.DataFrame]:
 
 
 def _bar_signals(strategy_id: str, ticker: str, frame: pd.DataFrame, scope: str) -> set[tuple]:
+    from strategy_router.evaluators import ACTIVE_STRATEGIES
+    from strategy_router.indicator_frame import _build_indicator_frame
     from trading.cross_ticker_shadow import evaluate_bar_strategy
-    if strategy_id == "V2_SPY_TREND_CONT":
-        from strategies.spy_trend_continuation_v2 import evaluate
-    elif strategy_id == "V2_SPY_AFTERNOON_FVG":
-        from strategies.spy_afternoon_fvg_v2 import evaluate
-    else:
-        from strategies.spy_failed_range_recovery_v2 import evaluate
+    evaluate = dict(ACTIVE_STRATEGIES)[strategy_id]
+    rule = REVIEWED_STRATEGIES[strategy_id]
     found = set()
     for end in range(1, len(frame) + 1):
-        signal = evaluate_bar_strategy(
-            strategy_id, evaluate, frame.iloc[:end], ticker=ticker, account_scope=scope,
-        )
+        visible = frame.iloc[:end]
+        if rule.observation_only:
+            # Observers require the same attached prior-session tape as live.
+            # A tape without that history fails closed rather than inventing
+            # NR7/ATR/KER/squeeze context during replay.
+            prepared = _build_indicator_frame(visible)
+            now = pd.Timestamp(visible.iloc[-1]["time"]) + timedelta(minutes=1)
+            signal = evaluate(
+                prepared, ticker=ticker, execution_scope=scope, now=now,
+            )
+        else:
+            signal = evaluate_bar_strategy(
+                strategy_id, evaluate, visible, ticker=ticker, account_scope=scope,
+            )
         if signal:
             found.add(_key(strategy_id, ticker, signal.direction, signal.trigger_bar))
     return {item for item in found if item is not None}
@@ -91,6 +100,7 @@ def _cleanup_scope(scope: str) -> None:
     from strategies import spy_afternoon_fvg_v2 as fvg
     from strategies import spy_failed_range_recovery_v2 as failed
     from strategies import spy_trend_continuation_v2 as trend
+    from strategies import context_strategy_observers as context
     owns = lambda key: scope in str(key[0])
     trend._emitted_trigger_by_session = {
         key: value for key, value in trend._emitted_trigger_by_session.items() if not owns(key)
@@ -104,6 +114,7 @@ def _cleanup_scope(scope: str) -> None:
     failed._emitted_trigger_by_session = {
         key: value for key, value in failed._emitted_trigger_by_session.items() if not owns(key)
     }
+    context._emitted = {key for key in context._emitted if not owns(key)}
 
 
 def replay_strategies(events: list[dict]) -> dict:

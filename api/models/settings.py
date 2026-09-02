@@ -30,6 +30,13 @@ class Settings(BaseModel):
     strategy_spy_afternoon_fvg_v2_enabled: bool = True
     strategy_spy_failed_range_recovery_v2_enabled: bool = True
     strategy_tsla_two_leg_trend_pullback_v2_enabled: bool = True
+    # These switches collect prospective evidence only. They cannot authorize
+    # an order in paper or live mode.
+    observe_ctx_orb_nr7_inside_enabled: bool = True
+    observe_ctx_orb_atr10_enabled: bool = True
+    observe_ctx_vwap_ker_enabled: bool = True
+    observe_ctx_vwap_displacement_enabled: bool = True
+    observe_ctx_squeeze_macd_enabled: bool = True
     opportunity_tier_enabled: bool = False  # observation-only lower-confidence research cohort; never changes account mode
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────

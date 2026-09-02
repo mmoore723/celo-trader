@@ -17,6 +17,7 @@
   "training": {"trades": 35, "average_return_pct": -0.4329, "median_return_pct": -3.4247, "win_rate_pct": 40.0, "profit_factor": 0.9576},
   "holdout": {"trades": 26, "average_return_pct": 6.777, "median_return_pct": 3.5387, "win_rate_pct": 57.69, "profit_factor": 1.7984},
   "monthly_stability": {"decision": "insufficient_or_inconsistent", "trades": 34, "average_return_pct": 6.9005, "median_return_pct": 10.4794, "profit_factor": 2.1593, "losing_months": ["2025-09", "2026-03", "2026-05"]},
+  "display_metrics": {"profit_factor": 2.16, "trades": 34, "scope": "TSLA · 90-minute hold · later monthly panel", "comparison": "Train PF 0.96 · holdout PF 1.80", "target_profit_factor": 1.5, "meets_target": true, "note": "Later PF passed, but training and month-level stability failed; this is not a stable launch result."},
   "decision": "Retain as paper candidate only. Later-period results were positive, but training and month-level stability did not establish a durable profit claim.",
   "source_reports": ["research/reports/paid_tsla_one_minute_orb_retouch_90m_holdout.json", "research/reports/paid_tsla_orb_monthly_stability_90m.json"]
 }
