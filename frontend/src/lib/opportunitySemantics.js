@@ -26,6 +26,40 @@ export function lifecycleCopy(entry) {
   return copies[lifecycle] ?? copies.watching;
 }
 
+export function opportunityDecisionTitle(entry) {
+  if (entry?.outcome === "entered") return "Trade entered";
+  if (entry?.reason_code === "entry_price_not_reached") return "Order sent · not filled";
+  if (entry?.reason_code === "stale_entry_quote") return "Skipped: option price was delayed";
+  const lifecycle = opportunityLifecycle(entry);
+  return {
+    stopped: "Skipped by a safety rule",
+    ready: "Ready for entry",
+    pricing: "Checking option price",
+    watching: "Setup developing",
+  }[lifecycle] || "Setup reviewed";
+}
+
+export function opportunityReason(entry) {
+  const known = {
+    entry_price_not_reached: "The order was sent, but the option never traded inside the bot's approved price range.",
+    spy_afternoon_fvg_slot_reserved: "The bot saved this time slot for the higher-priority afternoon strategy.",
+    daily_trade_limit_reached: "The account had already reached its trade limit for the day.",
+    max_open_positions: "The account already had the maximum number of open positions.",
+    cooldown_active: "The bot was waiting through its required cooldown after an earlier setup.",
+  };
+  if (entry?.reason_code === "stale_entry_quote") {
+    const match = String(entry?.reason_detail || "").match(/was\s+([\d.]+)s\s+old/i);
+    const observedAge = match ? `${match[1]} seconds old` : "missing a current timestamp";
+    return `The exact Tradier option price was ${observedAge}. The bot requires a quote no more than 120 seconds old, so no order was sent. This usually means the delayed sandbox price feed is being used.`;
+  }
+  return (
+    (entry?.reason_code && known[entry.reason_code])
+    || entry?.reason_detail
+    || entry?.entry_plan?.trigger
+    || lifecycleCopy(entry).detail
+  );
+}
+
 export function dedupeLatestEpisodes(entries, limit = 3) {
   const seen = new Set();
   const result = [];
