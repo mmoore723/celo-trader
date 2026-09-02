@@ -7,15 +7,16 @@
  */
 import { useState } from "react";
 import { Eye, EyeOff, X, CheckCircle2, ChevronRight } from "lucide-react";
+import { buildCredentialStepPayload } from "../lib/credentialPayload";
 
 interface Props {
   onClose: () => void;
 }
 
 interface Creds {
-  alpaca_key:    string;
-  alpaca_secret: string;
-  tradier_token: string;
+  alpaca_api_key: string;
+  alpaca_secret_key: string;
+  tradier_market_api_key: string;
 }
 
 function Field({
@@ -61,8 +62,9 @@ const STEPS = ["Alpaca", "Tradier", "Done"] as const;
 export function ApiSetupModal({ onClose }: Props) {
   const [step, setStep]   = useState(0);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [creds, setCreds] = useState<Creds>({
-    alpaca_key: "", alpaca_secret: "", tradier_token: "",
+    alpaca_api_key: "", alpaca_secret_key: "", tradier_market_api_key: "",
   });
 
   function set<K extends keyof Creds>(k: K, v: string) {
@@ -71,16 +73,24 @@ export function ApiSetupModal({ onClose }: Props) {
 
   async function saveAndNext() {
     setSaving(true);
+    setError("");
     try {
-      await fetch("/api/settings/credentials", {
+      const response = await fetch("/api/settings/credentials", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(creds),
+        body: JSON.stringify(buildCredentialStepPayload(step, creds)),
       });
-    } catch { /* non-fatal — user can retry in Settings */ }
-    setSaving(false);
-    setStep((s) => s + 1);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.detail || result.message || "Credentials could not be saved");
+      }
+      setStep((s) => s + 1);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Credentials could not be saved");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -157,14 +167,14 @@ export function ApiSetupModal({ onClose }: Props) {
               </div>
               <Field
                 label="API key ID"
-                value={creds.alpaca_key}
-                onChange={(v) => set("alpaca_key", v)}
+                value={creds.alpaca_api_key}
+                onChange={(v) => set("alpaca_api_key", v)}
                 placeholder="PKXXXXXXXXXXXXXXXXXXXXXXXX"
               />
               <Field
                 label="Secret key"
-                value={creds.alpaca_secret}
-                onChange={(v) => set("alpaca_secret", v)}
+                value={creds.alpaca_secret_key}
+                onChange={(v) => set("alpaca_secret_key", v)}
                 placeholder="••••••••••••••••••••••••••••••••"
                 secret
               />
@@ -177,17 +187,17 @@ export function ApiSetupModal({ onClose }: Props) {
           {step === 1 && (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <p style={{ fontSize: 13, color: "var(--ink-muted)", margin: 0 }}>
-                Tradier is used for real-time options quotes and chains. You can add this later if you don't have a Tradier account.
+                Tradier is used for real-time options quotes and chains while Alpaca remains the paper-order broker.
               </p>
               <Field
-                label="Tradier access token"
-                value={creds.tradier_token}
-                onChange={(v) => set("tradier_token", v)}
+                label="Tradier production token (real-time prices)"
+                value={creds.tradier_market_api_key}
+                onChange={(v) => set("tradier_market_api_key", v)}
                 placeholder="Bearer XXXXXXXXXXXXXXXXXXXXXXXX"
                 secret
               />
               <p style={{ fontSize: 11, color: "var(--ink-faint)", margin: 0 }}>
-                Find your token at <strong>tradier.com → API Access</strong>.
+                Find it at <strong>tradier.com → API Access</strong>. Do not use the sandbox token here; sandbox prices are delayed.
               </p>
             </div>
           )}
@@ -208,6 +218,11 @@ export function ApiSetupModal({ onClose }: Props) {
           padding: "0 1.25rem 1.25rem",
           display: "flex", gap: 8, justifyContent: "flex-end",
         }}>
+          {error && (
+            <p style={{ fontSize: 11, color: "#f87171", margin: "0 auto 0 0", alignSelf: "center" }}>
+              {error}
+            </p>
+          )}
           {step < 2 && (
             <button
               className="btn btn-ghost"
