@@ -30,7 +30,7 @@ export interface BotStatus {
   ticker: string | null;
   broker_connected: boolean;
   account_balance: number;
-  day_start_balance: number;   // Alpaca equity captured at bot startup — never derived
+  day_start_balance: number;   // Broker prior-close equity, or first persisted daily balance
   session_pnl: number;
   options_buying_power: number;
   last_update: string | null;

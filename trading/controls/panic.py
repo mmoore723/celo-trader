@@ -32,6 +32,7 @@ def _flatten_with_confirmed_fills(broker, market, *, reason: str) -> bool:
         _close_position(
             broker, trade, trigger, reason,
             bid_price=bid if bid > 0 else None,
+            reference_quote=quote,
         )
 
     # A tracked row must remain open unless its exit order produced a confirmed

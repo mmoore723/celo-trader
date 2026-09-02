@@ -182,6 +182,21 @@ class AlpacaOrdersMixin:
         else:
             # Default behavior is intentionally unchanged for exits and any
             # caller that has not selected an external price authority.
+            external_source = str(context.get("quote_source") or "").strip()
+            external_bid = float(context.get("quote_bid") or 0)
+            external_ask = float(context.get("quote_ask") or 0)
+            external_mid = float(context.get("quote_mid") or 0)
+            if external_source and (external_bid > 0 or external_ask > 0):
+                natural_reference = external_ask if side.lower() == "buy" else external_bid
+                _record_flow(
+                    **{**flow_base, "limit_price": natural_reference or limit_price},
+                    event_type="external_reference_quote", status="quoted",
+                    message=(
+                        f"{external_source} bid={external_bid:.2f} "
+                        f"ask={external_ask:.2f} mid={external_mid:.2f}; "
+                        "observation only before Alpaca broker requote"
+                    ),
+                )
             try:
                 broker_quote = self.get_latest_option_quote(symbol)
             except Exception:

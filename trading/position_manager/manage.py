@@ -596,7 +596,8 @@ def _manage_open_position(
                 from trading.position_manager.close import _close_position
                 _close_position(alpaca, trade, current_price,
                                 f"{reason.split(' ')[0]}_full_exit_single_contract",
-                                bid_price=bid_price, mtf_notes=_mtf_notes)
+                                bid_price=bid_price, mtf_notes=_mtf_notes,
+                                reference_quote=quote)
                 return
 
             from config import get_settings
@@ -759,7 +760,8 @@ def _manage_open_position(
                 v2_paper_pilot=_is_v2_orb,
             )
             _close_position(alpaca, trade, _exit_limit, reason,
-                             bid_price=_exit_step, mtf_notes=_mtf_notes)
+                             bid_price=_exit_step, mtf_notes=_mtf_notes,
+                             reference_quote=quote)
 
     except Exception as e:
         from database import log_event

@@ -84,6 +84,72 @@ def _read_state(user_id: str) -> dict:
     return {}
 
 
+def _normalize_status_state(state: dict, user_id: str) -> dict:
+    """Apply the authenticated HTTP status semantics to WebSocket state.
+
+    The socket previously forwarded ``bot_state.json`` verbatim. A missing
+    day-start field therefore replaced the correct HTTP snapshot in Zustand,
+    making Day Open equal Current Equity and Account Change appear as zero.
+    """
+    from config import get_api_keys, get_settings
+    from broker import required_broker_credentials
+    from trading.state import get_user_state
+
+    credentials = get_api_keys(user_id)
+    settings = get_settings(user_id)
+    provider = str(settings.get("broker_provider") or "alpaca")
+    paper = bool(settings.get("paper_trading", True))
+    credential_ready = all(
+        str(credentials.get(key) or "").strip()
+        for key, _label in required_broker_credentials(
+            credentials, provider=provider, paper=paper,
+        )
+    )
+    memory_state = get_user_state(user_id)
+    active_account = str(settings.get("active_broker_account_id") or "")
+    state_account = str(
+        state.get("broker_account_id")
+        or memory_state.get("broker_account_id")
+        or ""
+    )
+    account_matches = not active_account or active_account == state_account
+    broker_connected = credential_ready and account_matches
+    state["broker_connected"] = broker_connected
+    state["mode"] = "paper" if paper else "live"
+
+    if not broker_connected:
+        state.update({
+            "running": False,
+            "account_balance": 0.0,
+            "day_start_balance": 0.0,
+            "session_pnl": 0.0,
+            "options_buying_power": 0.0,
+            "network_ok": False,
+        })
+        state.pop("current_ticker", None)
+        state.pop("ticker", None)
+        return state
+
+    account_balance = float(
+        state.get("account_balance")
+        or memory_state.get("account_balance")
+        or settings.get("last_known_balance", 0)
+    )
+    today_key = f"day_start_{datetime.now(_ET).date().isoformat()}"
+    day_start_balance = float(
+        state.get("day_start_balance")
+        or memory_state.get("day_start_balance")
+        or settings.get(today_key)
+        or account_balance
+    )
+    state.update({
+        "account_balance": account_balance,
+        "day_start_balance": day_start_balance,
+        "session_pnl": round(account_balance - day_start_balance, 2),
+    })
+    return state
+
+
 def _ts_to_et(entry: dict) -> str:
     """
     Extract a display timestamp (HH:MM AM/PM ET) from a log entry.
@@ -219,31 +285,7 @@ async def websocket_live(ws: WebSocket) -> None:
             # the same credential-aware semantics as /api/bot/status so a
             # stale bot_state.json cannot overwrite "Not connected" with the
             # old $5,000 research-capital fallback.
-            from config import get_api_keys, get_settings
-            credentials = get_api_keys(user_id)
-            broker_settings = get_settings(user_id)
-            from broker import required_broker_credentials
-            broker_connected = all(
-                str(credentials.get(key) or "").strip()
-                for key, _label in required_broker_credentials(
-                    credentials,
-                    provider=str(broker_settings.get("broker_provider") or "alpaca"),
-                    paper=bool(broker_settings.get("paper_trading", True)),
-                )
-            )
-            state["broker_connected"] = broker_connected
-            state["mode"] = "paper" if broker_settings.get("paper_trading", True) else "live"
-            if not broker_connected:
-                state.update({
-                    "running": False,
-                    "account_balance": 0.0,
-                    "day_start_balance": 0.0,
-                    "session_pnl": 0.0,
-                    "options_buying_power": 0.0,
-                    "network_ok": False,
-                })
-                state.pop("current_ticker", None)
-                state.pop("ticker", None)
+            state = _normalize_status_state(state, user_id)
             # Remap current_ticker → ticker so BotStatus.ticker populates Bot Focus.
             # bot_state.json writes "current_ticker"; the TypeScript BotStatus interface
             # and LiveTrading.tsx both read status.ticker — without this remap Bot Focus

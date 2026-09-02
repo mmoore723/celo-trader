@@ -163,6 +163,10 @@ class AlpacaCoreMixin:
         data = self._get(f"{self.base}/v2/account")
         return {
             "equity":       float(data.get("equity", 0)),
+            # Alpaca's prior-session closing equity is the authoritative day
+            # open. Keep it so intraday restarts cannot redefine the start of
+            # the trading day after gains or losses have already occurred.
+            "last_equity":  float(data.get("last_equity") or 0),
             "buying_power": float(data.get("buying_power", 0)),
             "cash":         float(data.get("cash", 0)),
             # FIX 2026-06-15: this key was missing entirely, so every caller's

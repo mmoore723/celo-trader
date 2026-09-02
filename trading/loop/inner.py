@@ -137,19 +137,24 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
 
     _US["account_balance"] = balance
 
-    # Day-start balance: persist per calendar date so mid-session bot restarts
-    # don't overwrite the true opening value with the current (already-traded) balance.
+    # Day-start balance: prefer the broker's official prior-session close so
+    # an intraday restart can never redefine today's open after trades have
+    # already occurred. Tradier does not expose that field, so it retains the
+    # first balance persisted for the calendar date.
     from config import save_settings as _save_dsb
+    from trading.session_equity import resolve_day_start_balance
     _today_key = f"day_start_{_now_et().date().isoformat()}"
     _saved_dsb = get_settings().get(_today_key)
-    if _saved_dsb:
-        # Bot restarted mid-session — use the balance saved at first start today
-        day_start_balance = float(_saved_dsb)
-    else:
-        # First start of the day — lock in today's opening Alpaca equity
-        day_start_balance = balance
+    day_start_balance, _day_start_source = resolve_day_start_balance(
+        acct, current_equity=balance, persisted_balance=_saved_dsb,
+    )
+    if round(float(_saved_dsb or 0), 2) != day_start_balance:
         _save_dsb({_today_key: round(day_start_balance, 2)})
     _US["day_start_balance"] = day_start_balance
+    logger.info(
+        "day_open_resolved date=%s balance=%.2f source=%s",
+        _now_et().date().isoformat(), day_start_balance, _day_start_source,
+    )
 
     try:
         _US["session_pnl"] = sum(
@@ -404,12 +409,26 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                 _bal_tick  = float(_acct_tick.get("equity", 0)) if _acct_tick else 0
                 if _bal_tick > 0:
                     _US["account_balance"] = _bal_tick
-                    _dsb = _US.get("day_start_balance") or _bal_tick
+                    _today_key_tick = f"day_start_{_now_et().date().isoformat()}"
+                    _saved_dsb_tick = get_settings().get(_today_key_tick)
+                    _dsb, _dsb_source = resolve_day_start_balance(
+                        _acct_tick,
+                        current_equity=_bal_tick,
+                        persisted_balance=_saved_dsb_tick,
+                    )
+                    _US["day_start_balance"] = _dsb
                     _spnl = round(_bal_tick - _dsb, 2)
                     _US["session_pnl"] = _spnl
                     # Persist so the WebSocket + bot_state.json stay in sync
                     from config import save_settings as _save_bal
-                    _save_bal({"last_known_balance": round(_bal_tick, 2)})
+                    _balance_update = {"last_known_balance": round(_bal_tick, 2)}
+                    if round(float(_saved_dsb_tick or 0), 2) != _dsb:
+                        _balance_update[_today_key_tick] = round(_dsb, 2)
+                        logger.info(
+                            "day_open_resolved date=%s balance=%.2f source=%s",
+                            _now_et().date().isoformat(), _dsb, _dsb_source,
+                        )
+                    _save_bal(_balance_update)
             except Exception as _bal_err:
                 logger.debug("Balance refresh failed (non-fatal): %s", _bal_err)
 

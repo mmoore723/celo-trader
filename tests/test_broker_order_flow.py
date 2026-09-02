@@ -165,6 +165,27 @@ class _BoundedWorkingBroker(AlpacaOrdersMixin):
 
 
 class BrokerOrderExecutionTests(unittest.TestCase):
+    def test_exit_records_tradier_reference_without_changing_alpaca_execution(self) -> None:
+        broker = _ExecutionQuoteBroker()
+        with patch("broker.alpaca_orders._record_flow") as record_flow, patch(
+            "broker.alpaca_orders.log_event"
+        ):
+            result = broker.place_option_order(
+                "SPY260908P00760000", 2, "sell",
+                order_type="limit", limit_price=1.25,
+                position_intent="sell_to_close",
+                order_context={
+                    "quote_source": "tradier_exit_quote",
+                    "quote_bid": 1.22, "quote_ask": 1.24, "quote_mid": 1.23,
+                },
+            )
+
+        self.assertEqual("filled", result["status"])
+        self.assertEqual("1.25", broker.posted[0]["limit_price"])
+        event_types = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
+        self.assertIn("external_reference_quote", event_types)
+        self.assertIn("broker_requote", event_types)
+
     def test_entry_honors_custom_bounded_working_window(self) -> None:
         broker = _BoundedWorkingBroker()
         with patch("config.get_settings", return_value={"paper_trading": True}), patch(

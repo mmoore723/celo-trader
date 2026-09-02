@@ -15,7 +15,7 @@ class BotStatus(BaseModel):
     ticker: Optional[str]
     broker_connected: bool = False   # True only when this user has a complete broker/quote credential set
     account_balance: float
-    day_start_balance: float         # Alpaca equity captured once at bot startup — never derived
+    day_start_balance: float         # Broker prior-close equity, or first persisted daily balance
     session_pnl: float
     options_buying_power: float
     last_update: Optional[str]

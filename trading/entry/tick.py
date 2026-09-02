@@ -413,7 +413,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                     _cx  = _cq.get("mid", _ct.get("entry_price", 0)) if _cq else _ct.get("entry_price", 0)
                     _cbid = float(_cq.get("bid") or _cx) if _cq else None
                     _close_position(alpaca, _ct, _cx, "session_hard_cutoff_355pm",
-                                    bid_price=_cbid)
+                                    bid_price=_cbid, reference_quote=_cq)
                     log_event("WARNING", "trading_logic",
                               f"🔴 [{_ct.get('ticker')}] 3:55 PM hard cutoff — "
                               f"force-closing position to avoid after-hours exposure.")

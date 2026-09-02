@@ -37,4 +37,7 @@ def manual_close_position() -> None:
             exit_price = trade["entry_price"]
             logger.warning("Manual close [trade %s]: could not fetch live price — using entry price", trade["id"])
 
-        _close_position(alpaca, trade, exit_price, reason="manual")
+        _close_position(
+            alpaca, trade, exit_price, reason="manual",
+            reference_quote=quote,
+        )

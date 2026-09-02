@@ -31,6 +31,7 @@ def _close_position(
     reason: str,
     bid_price: Optional[float] = None,
     mtf_notes: Optional[list] = None,
+    reference_quote: Optional[dict] = None,
 ) -> None:
     _US        = get_user_state()
     _risk      = get_user_risk()
@@ -78,6 +79,13 @@ def _close_position(
             "ticker": trade.get("ticker"),
             "strategy_id": trade.get("strategy_id"),
             "trade_id": trade.get("id"),
+            # Observation only: Alpaca remains the execution authority until
+            # the atomic Tradier cutover. Preserve the Tradier natural-side
+            # quote so paper-fill distortion can be measured exactly.
+            "quote_source": (reference_quote or {}).get("quote_source") or "tradier_exit_quote",
+            "quote_bid": (reference_quote or {}).get("bid"),
+            "quote_ask": (reference_quote or {}).get("ask"),
+            "quote_mid": (reference_quote or {}).get("mid"),
         },
     )
 
@@ -103,8 +111,11 @@ def _close_position(
                 contract_symbol=trade["contract_symbol"],
                 observation_kind="exit",
                 observed_at=_now_et(),
-                quote={"bid": bid_price, "mid": exit_price},
-                source="exit_order",
+                quote=reference_quote or {"bid": bid_price, "mid": exit_price},
+                source=(
+                    "tradier_pre_submit_exit_quote"
+                    if reference_quote else "exit_order"
+                ),
                 fill_price=fill_price,
             )
         except Exception:
