@@ -25,6 +25,48 @@ def _profit_factor(pnls: list[float]) -> float | str | None:
     return round(gains / losses, 2)
 
 
+def _quote_to_fill(attempts: dict[str, list[dict]]) -> dict:
+    """Compare confirmed fills with the saved natural-side decision quote."""
+    pairs: list[dict] = []
+    for attempt_id, rows in attempts.items():
+        ordered = sorted(rows, key=lambda row: (row.get("event_time") or "", row.get("id") or 0))
+        quote = next(
+            (row for row in reversed(ordered) if row.get("event_type") == "authoritative_quote"),
+            None,
+        )
+        fill = next(
+            (row for row in reversed(ordered) if row.get("event_type") == "execution_summary" and row.get("fill_price") is not None),
+            None,
+        )
+        if quote is None or fill is None or quote.get("limit_price") is None:
+            continue
+        side = str(fill.get("side") or quote.get("side") or "").lower()
+        quantity = int(fill.get("filled_qty") or 0)
+        if quantity < 1 or side not in {"buy", "sell"}:
+            continue
+        reference = float(quote["limit_price"])
+        fill_price = float(fill["fill_price"])
+        per_contract = fill_price - reference if side == "buy" else reference - fill_price
+        pairs.append({
+            "attempt_id": attempt_id,
+            "broker": str(fill.get("broker") or quote.get("broker") or "unknown"),
+            "side": side,
+            "filled_qty": quantity,
+            "reference_price": reference,
+            "fill_price": fill_price,
+            "signed_adverse_dollars": per_contract * quantity * 100,
+        })
+    total = sum(row["signed_adverse_dollars"] for row in pairs)
+    contracts = sum(row["filled_qty"] for row in pairs)
+    return {
+        "paired_fills": len(pairs),
+        "paired_contracts": contracts,
+        "signed_adverse_slippage_dollars": round(total, 2) if pairs else None,
+        "average_signed_slippage_per_contract": round(total / contracts, 2) if contracts else None,
+        "interpretation": "Positive is worse than the saved Tradier natural-side quote; negative is price improvement.",
+    }
+
+
 def _missed_moves(events: list[dict]) -> dict:
     candidates = {e["candidate_id"]: e["payload"] for e in events if e["kind"] == "candidate"}
     quotes: dict[str, dict[str, dict]] = defaultdict(dict)
@@ -145,6 +187,7 @@ def build_daily_scorecard(tape: dict) -> dict:
     exit_attempts = [rows for rows in attempts.values() if any(row.get("position_intent") == "sell_to_close" for row in rows)]
     filled = lambda rows: any(row.get("event_type") in {"filled", "partial_filled"} for row in rows)
     issues = sum(any(bool(row.get("is_issue")) for row in rows) for rows in attempts.values())
+    quote_to_fill = _quote_to_fill(attempts)
     replay = replay_event_tape(events)
     missed_moves = _missed_moves(events)
     missed_moves["planned_hold"] = _exact_missed_order_markout(events)
@@ -152,6 +195,14 @@ def build_daily_scorecard(tape: dict) -> dict:
     if losses and abs(sum(losses)) > sum(gains): observations.append("Losses outweighed wins; review entry context and exit timing.")
     if entry_attempts and not all(filled(rows) for rows in entry_attempts): observations.append("At least one entry order did not fill.")
     if issues: observations.append(f"Broker lifecycle recorded issues on {issues} order attempt(s).")
+    if (
+        quote_to_fill["signed_adverse_slippage_dollars"] is not None
+        and quote_to_fill["signed_adverse_slippage_dollars"] > 0
+    ):
+        observations.append(
+            f"Confirmed fills cost ${quote_to_fill['signed_adverse_slippage_dollars']:.2f} "
+            "more than the saved Tradier natural-side quotes."
+        )
     if replay["coverage_pct"] < 100: observations.append("Some decisions or fills are missing linked replay evidence.")
     strategy_replay = replay["strategy_replay"]
     if strategy_replay["strategy_ticker_checks"] and not strategy_replay["complete"]:
@@ -184,7 +235,8 @@ def build_daily_scorecard(tape: dict) -> dict:
                       "entry_fill_rate_pct": round(sum(filled(rows) for rows in entry_attempts) / len(entry_attempts) * 100, 1) if entry_attempts else None,
                       "exit_attempts": len(exit_attempts), "exit_filled": sum(filled(rows) for rows in exit_attempts),
                       "exit_fill_rate_pct": round(sum(filled(rows) for rows in exit_attempts) / len(exit_attempts) * 100, 1) if exit_attempts else None,
-                      "attempts_with_issues": issues},
+                      "attempts_with_issues": issues,
+                      "quote_to_fill": quote_to_fill},
         "replay": replay, "observations": observations,
         "launch_readiness": {"status": "not_determined_by_one_day", "note": "Launch readiness requires after-cost results across multiple independent sessions and a chronological holdout."},
     }

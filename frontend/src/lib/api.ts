@@ -94,6 +94,13 @@ export interface DailyEvidenceScorecard {
     entry_attempts: number; entry_filled: number; entry_fill_rate_pct: number | null;
     exit_attempts: number; exit_filled: number; exit_fill_rate_pct: number | null;
     attempts_with_issues: number;
+    quote_to_fill: {
+      paired_fills: number;
+      paired_contracts: number;
+      signed_adverse_slippage_dollars: number | null;
+      average_signed_slippage_per_contract: number | null;
+      interpretation: string;
+    };
   };
   replay: {
     passed: boolean; chronological: boolean; coverage_pct: number;

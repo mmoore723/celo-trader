@@ -73,13 +73,19 @@ class DailyEvidenceScorecardTests(unittest.TestCase):
             VALUES ('2026-08-26T10:00:00-04:00','SPY','TEST','bullish',.8,'entered',1,'mine')
         """)
         for attempt, trade_id in (("a1", 1), ("a2", 2)):
-            self.conn.execute("""
+            self.conn.executemany("""
                 INSERT INTO broker_order_events
-                  (event_time,attempt_id,broker_account_id,paper,event_type,ticker,
-                   strategy_id,position_intent,filled_qty,linked_trade_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, ("2026-08-26T10:00:01-04:00", attempt, "mine", 1, "filled",
-                  "SPY", "TEST", "buy_to_open", 1, trade_id))
+                  (event_time,attempt_id,broker,broker_account_id,paper,event_type,ticker,
+                   strategy_id,side,position_intent,filled_qty,limit_price,fill_price,linked_trade_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, [
+                ("2026-08-26T10:00:00-04:00", attempt, "tradier", "mine", 1,
+                 "authoritative_quote", "SPY", "TEST", "buy", "buy_to_open", 1, 1.00, None, trade_id),
+                ("2026-08-26T10:00:01-04:00", attempt, "tradier", "mine", 1,
+                 "filled", "SPY", "TEST", "buy", "buy_to_open", 1, 1.00, 1.01, trade_id),
+                ("2026-08-26T10:00:01-04:00", attempt, "tradier", "mine", 1,
+                 "execution_summary", "SPY", "TEST", "buy", "buy_to_open", 1, 1.00, 1.01, trade_id),
+            ])
 
         result = build_daily_scorecard(build_event_tape(
             self.conn, "2026-08-26", "paper", "mine",
@@ -89,6 +95,8 @@ class DailyEvidenceScorecardTests(unittest.TestCase):
         self.assertEqual("B", result["session_result"]["grade"])
         self.assertEqual(2.0, result["trading"]["profit_factor"])
         self.assertEqual(100.0, result["execution"]["entry_fill_rate_pct"])
+        self.assertEqual(2, result["execution"]["quote_to_fill"]["paired_fills"])
+        self.assertEqual(2.0, result["execution"]["quote_to_fill"]["signed_adverse_slippage_dollars"])
         self.assertEqual(100.0, result["decisions"]["directional_accuracy_pct"])
         self.assertTrue(result["replay"]["passed"])
 

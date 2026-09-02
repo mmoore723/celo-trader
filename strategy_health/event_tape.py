@@ -73,7 +73,7 @@ def build_event_tape(conn, trading_date: str, mode: str, account_id: str | None)
         events.append(_event("signal", str(row["id"]), row["ts"], row))
 
     orders = _fetch(conn, """
-        SELECT id, event_time, attempt_id, order_id, event_type, status,
+        SELECT id, event_time, attempt_id, broker, order_id, event_type, status,
                contract_symbol, ticker, strategy_id, candidate_id, intent_id,
                side, position_intent,
                requested_qty, filled_qty, order_type, limit_price, fill_price,

@@ -23,6 +23,14 @@ export function DailyEvidencePanel({ data }: { data?: DailyEvidenceScorecard }) 
     { label: "Replay coverage", value: `${data.replay.coverage_pct}%`, note: data.replay.passed ? "evidence linked" : "links need review", color: replayColor },
   ];
   const missed = data.decisions.missed_executable_moves["planned_hold"];
+  const fillLeakage = data.execution.quote_to_fill;
+  const fillLeakageDollars = fillLeakage?.signed_adverse_slippage_dollars;
+  const fillLeakageAmount = fillLeakageDollars === null || fillLeakageDollars === undefined
+    ? null
+    : `${fillLeakageDollars > 0 ? "+" : fillLeakageDollars < 0 ? "-" : ""}$${Math.abs(fillLeakageDollars).toFixed(2)}`;
+  const fillLeakageComparison = fillLeakageDollars === null || fillLeakageDollars === undefined
+    ? ""
+    : fillLeakageDollars > 0 ? "worse than" : fillLeakageDollars < 0 ? "better than" : "matching";
   return (
     <div className="card p-4 flex flex-col gap-3">
       <div>
@@ -47,6 +55,14 @@ export function DailyEvidencePanel({ data }: { data?: DailyEvidenceScorecard }) 
             ? `, estimated ${missed.estimated_pnl_dollars >= 0 ? "+" : "-"}$${Math.abs(missed.estimated_pnl_dollars).toFixed(2)} before fees.`
             : "."}{" "}
           Recorded ask-to-bid quotes only; these are not guaranteed fills or profit.
+        </p>
+      )}
+      {fillLeakage?.paired_fills > 0 && fillLeakageAmount !== null && (
+        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+          Broker fill leakage: <strong style={{ color: fillLeakageDollars !== undefined && fillLeakageDollars !== null && fillLeakageDollars > 0 ? "var(--warning)" : "var(--positive)" }}>
+            {fillLeakageAmount}
+          </strong>{" "}
+          {fillLeakageComparison} the saved Tradier quote across {fillLeakage.paired_fills} confirmed fill{fillLeakage.paired_fills === 1 ? "" : "s"}.
         </p>
       )}
       <ul className="text-xs pl-4 list-disc" style={{ color: "var(--ink-muted)" }}>
