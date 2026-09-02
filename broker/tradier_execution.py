@@ -223,6 +223,24 @@ class TradierExecutionMixin:
             "linked_trade_id": context.get("trade_id"),
             "paper": "sandbox" in str(getattr(self, "base", "")).lower(),
         }
+        reference_bid = float(context.get("quote_bid") or 0)
+        reference_ask = float(context.get("quote_ask") or 0)
+        reference_mid = float(context.get("quote_mid") or 0)
+        natural_reference = (
+            reference_ask if normalized_side.startswith("buy") else reference_bid
+        )
+        if reference_bid > 0 or reference_ask > 0:
+            _record_flow(
+                **{**flow_base, "limit_price": natural_reference or limit_price},
+                event_type="authoritative_quote",
+                status="quoted",
+                latency_ms=context.get("quote_latency_ms"),
+                message=(
+                    f"Tradier authoritative quote bid={reference_bid:.2f} "
+                    f"ask={reference_ask:.2f} mid={reference_mid:.2f}; "
+                    f"working limit={float(limit_price or 0):.2f}"
+                ),
+            )
         if not getattr(self, "api_key", "") or not getattr(self, "account_id", ""):
             self.last_rejection_reason = "Tradier credentials are incomplete"
             _record_flow(
@@ -322,6 +340,27 @@ class TradierExecutionMixin:
         )
         if confirmed is None:
             return None
+        confirmed_fill_price = float(
+            confirmed.get("confirmed_fill_price")
+            or confirmed.get("filled_avg_price")
+            or 0
+        )
+        _record_flow(
+            **{
+                **flow_base,
+                "limit_price": natural_reference or limit_price,
+            },
+            event_type="execution_summary",
+            order_id=order_id,
+            status="filled",
+            filled_qty=int(float(confirmed.get("filled_qty") or qty or 0)),
+            fill_price=confirmed_fill_price,
+            latency_ms=round((monotonic() - submit_started) * 1000, 1),
+            message=(
+                "Tradier decision quote to Tradier confirmed fill; "
+                f"working limit={float(limit_price or 0):.2f}"
+            ),
+        )
         confirmed["execution_attempt_id"] = attempt_id
         if intent_id:
             confirmed["order_intent_id"] = intent_id

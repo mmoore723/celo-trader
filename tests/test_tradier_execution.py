@@ -90,7 +90,11 @@ class TradierExecutionTests(unittest.TestCase):
             order_type="limit",
             limit_price=2.05,
             position_intent="buy_to_open",
-            order_context={"ticker": "SPY", "intent_id": "intent-123"},
+            order_context={
+                "ticker": "SPY", "intent_id": "intent-123",
+                "quote_bid": 2.00, "quote_ask": 2.10, "quote_mid": 2.05,
+                "quote_latency_ms": 42.0,
+            },
         )
 
         self.assertEqual(result["confirmed_fill_price"], 2.05)
@@ -100,6 +104,14 @@ class TradierExecutionTests(unittest.TestCase):
         self.assertEqual(payload["side"], "buy_to_open")
         self.assertEqual(payload["price"], "2.05")
         self.assertTrue(payload["tag"].startswith("celo-intent-123"))
+        events = [call.kwargs for call in _record.call_args_list]
+        quote = next(event for event in events if event["event_type"] == "authoritative_quote")
+        summary = next(event for event in events if event["event_type"] == "execution_summary")
+        self.assertEqual(2.10, quote["limit_price"])
+        self.assertEqual(42.0, quote["latency_ms"])
+        self.assertEqual(2.10, summary["limit_price"])
+        self.assertEqual(2.05, summary["fill_price"])
+        self.assertEqual(1, summary["filled_qty"])
 
     @patch("broker.tradier_execution._record_flow")
     @patch("broker.tradier_execution.monotonic", side_effect=[0.0, 1.0, 2.0])
