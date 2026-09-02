@@ -499,3 +499,19 @@ Do not rerun a rejected idea unchanged. Reopen one only if at least one of these
 - **Later data:** the unfiltered 29-trade baseline had PF **1.1886**. The 0.65% gate fell to PF **0.6004**, the 0.75% gate to **1.0331**, the $4-premium combination to **0.8097**, and the near-money combination to **0.6385**.
 - **Decision:** **RETAIN UNFILTERED REVIEWED CONTRACTS.** A tighter displayed spread, higher option premium, or nearer strike did not predict better later results. Do not narrow selection using these tested envelopes.
 - **Evidence:** `research/reports/spy_trend_quote_quality_v1.json`.
+
+### SPY Afternoon Reversal V2 — archived candidate rejected (2026-09-02)
+
+- **Broad capacity-limited replay:** 25 trades produced PF **1.5193**, average +2.0364%, median +2.5926%, and 56.00% wins. That pooled result did not survive uncertainty and stability checks: its bootstrap 95% mean-return interval was -2.9415% to +6.8689%, May had only three trades, and July's median was negative. Removing the best trade reduced PF to **1.2246**.
+- **Selected long/early-afternoon context:** the attractive later PF **8.7789** came from only six trades. Its six-trade training segment was PF **1.4836**, and the monthly replay lost in May (two trades, PF **0.4305**) before improving in June and July. The fixed monthly gate therefore failed.
+- **Exit and candle-confirmation checks:** none of the tested 30/60/90-minute holds met the minimum training sample; the best structural exit reached PF 1.8602 earlier but only PF 1.3790 on eight later trades; the one- and five-minute price-action screens selected no holdout challenger.
+- **Decision:** **REJECT FOR EXECUTION.** Do not activate this strategy or publish its small-sample PF in Settings. Preserve it as archived research and revisit only with a materially larger, freshly collected chronological sample.
+- **Evidence:** `research/reports/paid_spy_afternoon_reversal_contexts_v1.json`, `research/reports/paid_spy_afternoon_reversal_monthly_stability.json`, `research/reports/paid_spy_afternoon_reversal_robustness.json`, `research/reports/paid_spy_afternoon_reversal_one_position_holds.json`, and `research/reports/paid_spy_afternoon_reversal_exits.json`.
+
+### TSLA Noise Momentum V2 — archived candidate rejected for the $5,000 account (2026-09-02)
+
+- **Broad robustness replay:** 94 capacity-limited trades produced PF **1.4006**, average +3.8451%, median +3.6178%, but the bootstrap 95% mean-return interval was -2.4836% to +10.3140% and removing the best trade reduced PF to **1.2607**. Multiple months lost, including November, December, March, April, and May.
+- **Full monthly evidence:** all 146 measured observations were PF **0.9331**, average -0.7471%, and median -1.5713%. The apparent later improvement is not stable across the full archive.
+- **Small-account replay:** at $5,000 and the frozen 15% allocation, only 23 trades were affordable; 120 were skipped as unaffordable. Training PF was **1.0398**, and the account gate failed. None of the nine $4,000/$5,000/$10,000 sizing sensitivities passed; the $5,000 20% case ended at $4,033 with a 46.99% cost-basis drawdown.
+- **Decision:** **REJECT FOR EXECUTION.** Do not add this candidate to the current bot or use its 20-trade later PF 2.4761 as the Settings figure; that fragment does not represent the full-history or small-account result.
+- **Evidence:** `research/reports/paid_tsla_noise_momentum_final_screen.json`, `research/reports/paid_tsla_noise_momentum_robustness.json`, `research/reports/paid_tsla_noise_momentum_monthly_stability.json`, and `research/reports/paid_tsla_noise_momentum_account_original_holdout_v1.json`.
