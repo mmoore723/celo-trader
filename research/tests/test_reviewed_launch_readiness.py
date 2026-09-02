@@ -103,13 +103,13 @@ class ReviewedLaunchReadinessTests(unittest.TestCase):
         self.assertEqual(4, bootstrap["accepted"][0]["quantity"])
         self.assertEqual("bootstrap", bootstrap["accepted"][0]["sizing_detail"]["tier"])
 
-    def test_launch_report_uses_two_slots_and_live_sizing(self) -> None:
+    def test_launch_report_records_account_slots_and_live_sizing(self) -> None:
         report = build_report(
             rows(datetime(2026, 3, 1, 10, tzinfo=timezone.utc), 95, 2),
             validation_start=date(2026, 4, 1),
             holdout_start=date(2026, 5, 1),
         )
-        self.assertEqual(2, report["cost_assumptions"]["maximum_concurrent_positions"])
+        self.assertEqual(3, report["cost_assumptions"]["maximum_concurrent_positions"])
         self.assertEqual(
             "production_growth_v1",
             report["full_history_growth_diagnostic"]["current_all"]["sizing_model"],

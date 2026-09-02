@@ -423,7 +423,7 @@ def summarize_trades(
 
 def build_report(
     candidates: list[dict[str, Any]], *, holdout_start: date, starting_capital: float = 5_000.0,
-    allocation_fraction: float = .15, max_positions: int = 2, minimum_history: int = 10,
+    allocation_fraction: float = .15, max_positions: int = 3, minimum_history: int = 10,
     trailing_window: int = 20,
     per_contract_fee_per_side: float = .12,
     slippage_price_per_side: float = .01,
@@ -553,7 +553,7 @@ def main() -> None:
     parser.add_argument("--holdout-start", type=date.fromisoformat, default=date(2026, 7, 1))
     parser.add_argument("--starting-capital", type=float, default=5_000.0)
     parser.add_argument("--allocation-fraction", type=float, default=.15)
-    parser.add_argument("--max-positions", type=int, default=2)
+    parser.add_argument("--max-positions", type=int, default=3)
     parser.add_argument("--minimum-history", type=int, default=10)
     parser.add_argument("--trailing-window", type=int, default=20)
     parser.add_argument("--per-contract-fee-per-side", type=float, default=.12)

@@ -103,7 +103,7 @@ def _pf_number(value: object) -> float:
 
 def _run(
     rows: list[dict[str, Any]], *, strategy_ids: frozenset[str],
-    starting_capital: float, slippage: float,
+    starting_capital: float, slippage: float, max_positions: int,
 ) -> dict[str, Any]:
     candidates = [row for row in rows if row["strategy_id"] in strategy_ids]
     simulation = simulate_policy(
@@ -111,7 +111,7 @@ def _run(
         policy="all_affordable",
         starting_capital=starting_capital,
         allocation_fraction=.15,
-        max_positions=2,
+        max_positions=max_positions,
         per_contract_fee_per_side=DEFAULT_FEE_PER_CONTRACT_PER_SIDE,
         slippage_price_per_side=slippage,
         monthly_subscription=DEFAULT_MONTHLY_SUBSCRIPTION,
@@ -133,6 +133,7 @@ def _run(
 def build_report(
     rows: list[dict[str, Any]], *, validation_start: date,
     holdout_start: date, starting_capital: float = 5_000.0,
+    max_positions: int = 3,
 ) -> dict[str, Any]:
     routed = apply_current_portfolio_policy(rows)
     periods = {
@@ -149,6 +150,7 @@ def build_report(
                     strategy_ids=strategy_ids,
                     starting_capital=starting_capital,
                     slippage=slippage,
+                    max_positions=max_positions,
                 )
                 for period_name, period_rows in periods.items()
             }
@@ -185,6 +187,7 @@ def build_report(
             strategy_ids=strategy_ids,
             starting_capital=starting_capital,
             slippage=STRESS_CASES[base_case],
+            max_positions=max_positions,
         )
         for policy_name, strategy_ids in POLICIES.items()
     }
@@ -216,7 +219,7 @@ def build_report(
             "tradier_pro_monthly_subscription": DEFAULT_MONTHLY_SUBSCRIPTION,
             "slippage_price_per_side_by_case": STRESS_CASES,
             "position_sizing": "Current production growth-mode ladder: 5%/3%/2%/1% risk tiers, 20% stop-risk denominator, 5% adverse sizing ceiling, tiered notional caps, whole contracts, and the sub-$5k two-contract floor when affordable.",
-            "maximum_concurrent_positions": 2,
+            "maximum_concurrent_positions": max_positions,
         },
         "period_candidate_counts": {name: len(value) for name, value in periods.items()},
         "results": results,
@@ -246,6 +249,7 @@ def main() -> None:
     parser.add_argument("--validation-start", type=date.fromisoformat, default=date(2026, 6, 1))
     parser.add_argument("--holdout-start", type=date.fromisoformat, default=date(2026, 7, 1))
     parser.add_argument("--starting-capital", type=float, default=5_000.0)
+    parser.add_argument("--max-positions", type=int, default=3)
     args = parser.parse_args()
     paths = {
         "V2_ORB_PULLBACK": args.orb,
@@ -259,6 +263,7 @@ def main() -> None:
         validation_start=args.validation_start,
         holdout_start=args.holdout_start,
         starting_capital=args.starting_capital,
+        max_positions=args.max_positions,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
