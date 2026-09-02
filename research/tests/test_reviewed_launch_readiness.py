@@ -55,6 +55,27 @@ def rows(start: datetime, count: int, return_pct: float) -> list[dict]:
     return output
 
 
+def strategy_rows(
+    strategy_id: str, ticker: str, start: datetime, returns: list[float],
+) -> list[dict]:
+    output = []
+    for index, return_pct in enumerate(returns):
+        signal = start + timedelta(days=index)
+        entry = signal + timedelta(minutes=1)
+        output.append({
+            "strategy_id": strategy_id,
+            "ticker": ticker,
+            "evidence_grade": "passed_declared_holdout",
+            "signal_time": signal.isoformat(),
+            "entry_time": entry.isoformat(),
+            "exit_time": (entry + timedelta(minutes=30)).isoformat(),
+            "entry_ask": 1.0,
+            "exit_bid": 1.0 + return_pct / 100,
+            "return_pct": return_pct,
+        })
+    return output
+
+
 class ReviewedLaunchReadinessTests(unittest.TestCase):
     def test_trailing_quality_requires_the_1_5_launch_target(self) -> None:
         history = [
@@ -143,6 +164,29 @@ class ReviewedLaunchReadinessTests(unittest.TestCase):
         self.assertGreater(summary["cost_model"]["subscription_costs"], 0)
         self.assertLess(summary["ending_cash"], report["target_capital"])
         self.assertIn("Do not represent", report["decision"]["reason"])
+
+    def test_exhaustive_subset_selection_is_frozen_before_later_periods(self) -> None:
+        primary = "V2_SPY_FAILED_RANGE_RECOVERY"
+        alternative = "V2_ORB_PULLBACK"
+        payload = (
+            strategy_rows(primary, "SPY", datetime(2026, 1, 1, 10, tzinfo=timezone.utc), [30, 30, 30, -10, -10] * 7)
+            + strategy_rows(alternative, "TSLA", datetime(2026, 1, 1, 11, tzinfo=timezone.utc), [10, 10, 10, 10, -10] * 7)
+            + strategy_rows(primary, "SPY", datetime(2026, 3, 1, 10, tzinfo=timezone.utc), [-10] * 35)
+            + strategy_rows(alternative, "TSLA", datetime(2026, 3, 1, 11, tzinfo=timezone.utc), [20, 20, 20, 20, -10] * 7)
+            + strategy_rows(primary, "SPY", datetime(2026, 5, 1, 10, tzinfo=timezone.utc), [-10] * 35)
+            + strategy_rows(alternative, "TSLA", datetime(2026, 5, 1, 11, tzinfo=timezone.utc), [20, 20, 20, 20, -10] * 7)
+        )
+        report = build_report(
+            payload,
+            validation_start=date(2026, 3, 1),
+            holdout_start=date(2026, 5, 1),
+        )
+        screen = report["exhaustive_subset_screen"]
+        self.assertEqual(31, screen["candidate_count"])
+        self.assertEqual([primary], screen["selected"]["strategy_ids"])
+        self.assertTrue(screen["selected"]["eligibility_passed"])
+        self.assertFalse(screen["selected"]["gates"]["validation"]["net_profitable"])
+        self.assertFalse(screen["passed_all_periods"])
 
 
 if __name__ == "__main__":

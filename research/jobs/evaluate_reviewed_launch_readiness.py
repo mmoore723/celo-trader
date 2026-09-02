@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import date, datetime
+from itertools import combinations
 import json
 import math
 from pathlib import Path
@@ -50,6 +51,16 @@ STRESS_CASES: dict[str, float] = {
     "one_cent_each_side": 0.01,
     "three_cents_each_side": 0.03,
 }
+
+
+def _strategy_subsets() -> tuple[frozenset[str], ...]:
+    """Return every non-empty reviewed-strategy subset in stable order."""
+    strategy_ids = tuple(sorted(STRATEGY_SPECS))
+    return tuple(
+        frozenset(values)
+        for size in range(1, len(strategy_ids) + 1)
+        for values in combinations(strategy_ids, size)
+    )
 
 
 def _factor(pnls: list[float], fixed_costs: float) -> float | str | None:
@@ -99,6 +110,22 @@ def _pf_number(value: object) -> float:
     if value == "inf":
         return math.inf
     return float(value or 0)
+
+
+def _launch_period_gates(summary: dict[str, Any]) -> dict[str, bool]:
+    return {
+        "at_least_30_trades": summary["trades"] >= 30,
+        "net_profitable": summary["net_pnl_after_all_costs"] > 0,
+        "positive_median_trade": float(summary["median_net_trade_return_pct"] or 0) > 0,
+        "pf_at_least_1_50": (
+            _pf_number(summary["profit_factor_after_all_costs"])
+            >= LAUNCH_PROFIT_FACTOR
+        ),
+    }
+
+
+def _passes_launch_period(summary: dict[str, Any]) -> bool:
+    return all(_launch_period_gates(summary).values())
 
 
 def _run(
@@ -162,15 +189,7 @@ def build_report(
     for policy_name, policy_results in results.items():
         chronological = policy_results[base_case]
         period_gates = {
-            period_name: {
-                "at_least_30_trades": summary["trades"] >= 30,
-                "net_profitable": summary["net_pnl_after_all_costs"] > 0,
-                "positive_median_trade": float(summary["median_net_trade_return_pct"] or 0) > 0,
-                "pf_at_least_1_50": (
-                    _pf_number(summary["profit_factor_after_all_costs"])
-                    >= LAUNCH_PROFIT_FACTOR
-                ),
-            }
+            period_name: _launch_period_gates(summary)
             for period_name, summary in chronological.items()
         }
         launch_gates[policy_name] = {
@@ -180,6 +199,66 @@ def build_report(
                 all(gates.values()) for gates in period_gates.values()
             ),
         }
+
+    # Evaluate all 31 combinations in one pass, but freeze selection using the
+    # eligibility period alone.  Validation and holdout may confirm or reject
+    # that frozen choice; they can never choose a different subset.  This
+    # replaces repeated hand-run leave-one-out studies without turning the
+    # final period into a tuning set.
+    subset_candidates: list[dict[str, Any]] = []
+    for strategy_ids in _strategy_subsets():
+        summaries = {
+            period_name: _run(
+                period_rows,
+                strategy_ids=strategy_ids,
+                starting_capital=starting_capital,
+                slippage=STRESS_CASES[base_case],
+                max_positions=max_positions,
+            )
+            for period_name, period_rows in periods.items()
+        }
+        eligibility = summaries["eligibility"]
+        subset_candidates.append({
+            "strategy_ids": sorted(strategy_ids),
+            "eligibility_passed": _passes_launch_period(eligibility),
+            "summaries": summaries,
+            "gates": {
+                period_name: _launch_period_gates(summary)
+                for period_name, summary in summaries.items()
+            },
+        })
+    selectable = [row for row in subset_candidates if row["eligibility_passed"]]
+    selected_subset = max(
+        selectable,
+        key=lambda row: (
+            _pf_number(row["summaries"]["eligibility"]["profit_factor_after_all_costs"]),
+            row["summaries"]["eligibility"]["net_pnl_after_all_costs"],
+            row["summaries"]["eligibility"]["trades"],
+            -len(row["strategy_ids"]),
+        ),
+        default=None,
+    )
+    subset_passed = bool(
+        selected_subset
+        and all(
+            all(gates.values())
+            for gates in selected_subset["gates"].values()
+        )
+    )
+    exhaustive_subset_screen = {
+        "candidate_count": len(subset_candidates),
+        "selection_basis": (
+            "All non-empty subsets are scored together; choose only among subsets that clear "
+            "the 30-trade, net-profit, positive-median, and PF >= 1.50 gates in the eligibility "
+            "period. Rank by eligibility PF, then P&L, trades, and fewer strategies. Validation "
+            "and holdout may reject but cannot select or replace the frozen subset."
+        ),
+        "stress_case": base_case,
+        "candidates": subset_candidates,
+        "selected": selected_subset,
+        "passed_all_periods": subset_passed,
+        "runtime_changed": False,
+    }
 
     full_growth = {
         policy_name: _run(
@@ -195,6 +274,7 @@ def build_report(
         policy for policy, gates in launch_gates.items()
         if gates["passed_all_periods"]
     ]
+    any_policy_passed = bool(passing or subset_passed)
     return {
         "purpose": "Truthful launch-readiness audit for PF >= 1.50 and growth from $5,000 toward $100,000.",
         "complete": True,
@@ -224,15 +304,17 @@ def build_report(
         "period_candidate_counts": {name: len(value) for name, value in periods.items()},
         "results": results,
         "launch_gates": launch_gates,
+        "exhaustive_subset_screen": exhaustive_subset_screen,
         "full_history_growth_diagnostic": full_growth,
         "decision": {
-            "passed": bool(passing),
+            "passed": any_policy_passed,
             "passing_policies": passing,
+            "selected_subset_passed": subset_passed,
             "runtime_changed": False,
             "reason": (
-                "At least one simple policy cleared PF, sample, median, and net-profit gates in every chronological period. It still requires new prospective confirmation because these evidence grades were learned from the same archive."
-                if passing else
-                "No simple policy cleared the net PF 1.50, sample, median, and profitability gates in every chronological period. Do not represent the bot as launch-ready or project the observed path to $100,000."
+                "At least one frozen policy cleared PF, sample, median, and net-profit gates in every chronological period. It still requires new prospective confirmation because the eligibility period selected it from this archive."
+                if any_policy_passed else
+                "No named policy or eligibility-selected strategy subset cleared the net PF 1.50, sample, median, and profitability gates in every chronological period. Do not represent the bot as launch-ready or project the observed path to $100,000."
             ),
         },
     }
