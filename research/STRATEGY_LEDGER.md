@@ -482,3 +482,20 @@ Do not rerun a rejected idea unchanged. Reopen one only if at least one of these
 - **Independent Tradier observation check:** only two real-time late SPY Trend episodes were available, on two days. Both won, for +$25.52 one-contract net P&L and an all-win PF. This cohort is far below the fixed ten-episode/ten-day confirmation minimum and currently disagrees with blocking late trades.
 - **Decision:** **PROSPECTIVE COLLECTION ONLY.** The rule improved or preserved P&L, PF, and drawdown in all three historical archive periods and removed 27 candidate rows, but it is not independently confirmed. Do not change the live router; the assessor now requires the separate Tradier cohort to reach at least ten episodes across ten days and show negative P&L, average, median, and PF below 1 before the veto is even eligible for runtime review.
 - **Evidence:** `research/reports/paid_spy_trend_close_session_gate_v1.json`.
+
+### SPY Trend with QQQ cross-index confirmation — rejected (2026-09-02)
+
+- **Frozen rule:** keep every existing SPY Trend Continuation signal, contract, entry ask, 30-minute same-contract bid exit, and one-position constraint; enter only when QQQ's causal trailing 15-minute return, session-VWAP side, and five-minute EMA(9) slope all agree with the SPY direction. The rule and thresholds were fixed before the July holdout was inspected.
+- **May selection:** baseline 32 trades, -1.1499% average, -0.3431% median, PF **0.7082**; QQQ-confirmed 21 trades, -1.3029% average, +0.3306% median, PF **0.7047**. The filter did not repair the losing selection period.
+- **June validation:** baseline 58 trades, +1.9761% average, PF **1.6313**; confirmed 44 trades, +2.4307% average, PF **1.7996**. This isolated month improved, but could not qualify a rule that failed selection.
+- **July holdout:** baseline 66 trades, +0.5581% average, PF **1.1687**; confirmed 39 trades, +0.5537% average, PF **1.1774**. Confirmation reduced drawdown but retained only 59.09% of trades and did not create a PF 1.5 edge.
+- **Decision:** **REJECT UNCHANGED.** QQQ context is useful descriptive evidence, not a production veto. Do not add this filter or represent QQQ agreement as proof of a better SPY entry.
+- **Evidence:** `research/reports/spy_trend_qqq_confirmation_v1.json`.
+
+### SPY Trend contract quote-quality gates — rejected (2026-09-02)
+
+- **Frozen candidates:** keep the SPY signal, nearest-expiry contract, entry ask, 30-minute bid exit, and capped sizing unchanged; test only entry-time quote fields: spread no wider than 0.65%, spread no wider than 0.75%, 0.65% plus at least a $4 ask, or 0.65% plus no more than 0.15% out of the money. Selection required at least 20 trades, 80% coverage, positive mean/median, PF at least 1.20, and at least 10% lower drawdown than baseline.
+- **Selection:** the 28-trade baseline had PF **3.0500** and $91 drawdown. None of the four quote gates reduced drawdown enough while retaining the required coverage, so no gate was selected before later data.
+- **Later data:** the unfiltered 29-trade baseline had PF **1.1886**. The 0.65% gate fell to PF **0.6004**, the 0.75% gate to **1.0331**, the $4-premium combination to **0.8097**, and the near-money combination to **0.6385**.
+- **Decision:** **RETAIN UNFILTERED REVIEWED CONTRACTS.** A tighter displayed spread, higher option premium, or nearer strike did not predict better later results. Do not narrow selection using these tested envelopes.
+- **Evidence:** `research/reports/spy_trend_quote_quality_v1.json`.
