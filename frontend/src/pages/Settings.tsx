@@ -399,6 +399,16 @@ export function Settings() {
               </button>
             ))}
           </div>
+          {(form.broker_provider ?? "alpaca") === "alpaca" && (
+            <div className="mt-3 rounded-lg p-3 text-xs" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+              <div className="flex items-center gap-2 font-semibold" style={{ color: "var(--warning)" }}>
+                <AlertTriangle size={14} /> Cross-broker paper test
+              </div>
+              <p className="mt-1" style={{ color: "var(--ink-muted)" }}>
+                Option selection uses Tradier prices while orders fill in Alpaca. We measure the difference, but these results are not apples-to-apples with Tradier execution and cannot qualify the bot for live money.
+              </p>
+            </div>
+          )}
           {(form.broker_provider ?? "alpaca") === "tradier" && (
             <div className="mt-3 rounded-lg p-3 text-xs" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
               <div className="flex items-center gap-2 font-semibold" style={{ color: brokerReadiness?.ready ? "var(--positive)" : "var(--warning)" }}>
