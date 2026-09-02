@@ -12,6 +12,7 @@ import argparse
 from datetime import date, datetime, time
 import json
 from pathlib import Path
+from statistics import median
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -68,10 +69,59 @@ def _pf(summary: dict[str, Any]) -> float:
     return float("inf") if value == "inf" else float(value or 0)
 
 
+def summarize_prospective_gate(report: dict[str, Any]) -> dict[str, Any]:
+    """Measure the independently collected cohort that the veto would skip."""
+    strategy = report.get("by_strategy", {}).get(SPY_TREND_ID, {})
+    details = strategy.get("episodes_detail", []) if isinstance(strategy, dict) else []
+    late = [
+        row for row in details
+        if isinstance(row, dict) and _market_clock(row.get("observed_at")) >= CUTOFF_ET
+    ]
+    pnls = [float(row.get("net_pnl_one_contract") or 0) for row in late]
+    returns = [float(row.get("net_return_pct") or 0) for row in late]
+    gains = sum(value for value in pnls if value > 0)
+    losses = -sum(value for value in pnls if value < 0)
+    profit_factor: float | str | None
+    if losses > 0:
+        profit_factor = round(gains / losses, 4)
+    elif gains > 0:
+        profit_factor = "inf"
+    else:
+        profit_factor = None
+    days = len({datetime.fromisoformat(str(row["observed_at"])).date() for row in late})
+    gates = {
+        "at_least_10_independent_episodes": len(late) >= 10,
+        "at_least_10_trading_days": days >= 10,
+        "skipped_cohort_loses_money": sum(pnls) < 0,
+        "skipped_cohort_average_and_median_negative": (
+            bool(returns)
+            and sum(returns) / len(returns) < 0
+            and median(returns) < 0
+        ),
+        "skipped_cohort_profit_factor_below_one": (
+            isinstance(profit_factor, (int, float)) and profit_factor < 1
+        ),
+    }
+    return {
+        "source": report.get("database"),
+        "measurement": "Independent Tradier candidate episodes collected outside the paid historical archive.",
+        "late_episodes": len(late),
+        "trading_days": days,
+        "wins": sum(value > 0 for value in pnls),
+        "net_pnl_one_contract": round(sum(pnls), 2),
+        "average_net_return_pct": round(sum(returns) / len(returns), 4) if returns else None,
+        "median_net_return_pct": round(median(returns), 4) if returns else None,
+        "profit_factor_after_costs": profit_factor,
+        "gates": gates,
+        "confirmed": all(gates.values()),
+    }
+
+
 def build_report(
     rows: list[dict[str, Any]], *, validation_start: date,
     holdout_start: date, starting_capital: float = 5_000.0,
     max_positions: int = 3,
+    prospective_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     current = apply_current_portfolio_policy(rows)
     candidate = apply_close_session_gate(current)
@@ -123,6 +173,11 @@ def build_report(
     consistent = removed >= 20 and all(
         all(period_gates.values()) for period_gates in gates.values()
     )
+    prospective = (
+        summarize_prospective_gate(prospective_report)
+        if prospective_report is not None else None
+    )
+    externally_confirmed = bool(prospective and prospective["confirmed"])
     return {
         "purpose": "Test whether stopping new SPY Trend entries after 3:00 PM improves the reviewed portfolio.",
         "complete": True,
@@ -133,13 +188,23 @@ def build_report(
         "cost_model": "Exact paid ask/bid plus $0.12 per contract per side, $0.01 adverse slippage each side, and $10 monthly subscription.",
         "results": results,
         "gates": gates,
+        "prospective_validation": prospective,
         "decision": {
             "historically_consistent": consistent,
+            "externally_confirmed": externally_confirmed,
             "candidate_rows_removed": removed,
-            "status": "prospective_candidate" if consistent else "reject",
+            "status": (
+                "eligible_for_runtime_review"
+                if consistent and externally_confirmed else
+                "prospective_collecting"
+                if consistent else
+                "reject"
+            ),
             "runtime_changed": False,
             "reason": (
-                "The rule improved or preserved P&L, PF, and drawdown in every archive period, but the final period was already inspected while discovering it. Collect new prospective outcomes before enabling it."
+                "The rule improved or preserved P&L, PF, and drawdown in every archive period and the independent Tradier cohort confirmed that the vetoed episodes lose. It is eligible for explicit runtime review, not automatic activation."
+                if consistent and externally_confirmed else
+                "The archive result is consistent, but the independent Tradier cohort has not met the sample and loss gates. Keep collecting; do not enable the veto."
                 if consistent else
                 "The rule did not improve or preserve P&L, PF, and drawdown in every archive period with at least 20 removed candidates."
             ),
@@ -155,6 +220,7 @@ def main() -> None:
     parser.add_argument("--spy-fvg", type=Path, required=True)
     parser.add_argument("--tsla-two-leg", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--prospective-pf-report", type=Path)
     parser.add_argument("--validation-start", type=date.fromisoformat, default=date(2026, 6, 1))
     parser.add_argument("--holdout-start", type=date.fromisoformat, default=date(2026, 7, 1))
     parser.add_argument("--starting-capital", type=float, default=5_000.0)
@@ -172,6 +238,10 @@ def main() -> None:
         holdout_start=args.holdout_start,
         starting_capital=args.starting_capital,
         max_positions=args.max_positions,
+        prospective_report=(
+            json.loads(args.prospective_pf_report.read_text(encoding="utf-8"))
+            if args.prospective_pf_report else None
+        ),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

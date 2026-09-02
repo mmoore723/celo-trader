@@ -4,6 +4,7 @@ import unittest
 
 from research.jobs.assess_spy_trend_close_session_gate import (
     apply_close_session_gate,
+    summarize_prospective_gate,
 )
 
 
@@ -36,6 +37,31 @@ class SpyTrendCloseSessionGateTests(unittest.TestCase):
             _row("2026-01-05T20:00:00+00:00"),
         ]
         self.assertEqual([rows[0]], apply_close_session_gate(rows))
+
+    def test_prospective_gate_requires_sample_and_actual_losses(self) -> None:
+        report = {
+            "database": "snapshot.db",
+            "by_strategy": {
+                "V2_SPY_TREND_CONT": {
+                    "episodes_detail": [
+                        {
+                            "observed_at": "2026-08-18T15:05:00-04:00",
+                            "net_pnl_one_contract": 10,
+                            "net_return_pct": 2,
+                        },
+                        {
+                            "observed_at": "2026-08-19T14:55:00-04:00",
+                            "net_pnl_one_contract": -100,
+                            "net_return_pct": -20,
+                        },
+                    ],
+                },
+            },
+        }
+        summary = summarize_prospective_gate(report)
+        self.assertEqual(1, summary["late_episodes"])
+        self.assertEqual(10, summary["net_pnl_one_contract"])
+        self.assertFalse(summary["confirmed"])
 
 
 if __name__ == "__main__":
