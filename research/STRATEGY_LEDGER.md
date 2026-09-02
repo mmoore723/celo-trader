@@ -469,3 +469,13 @@ Do not rerun a rejected idea unchanged. Reopen one only if at least one of these
 - **Decision:** **REJECT ALL SHORTER CLOCKS; RETAIN FIXED 30m.** The production six-trade result was not representative. Five and ten minutes lost in June and July; 15 minutes cleared PF 1.5 in May/June but made less than the control and failed July. No production exit change is authorized.
 - **Automation improvement:** `research/jobs/reprice_paid_markouts_fixed_holds.py` reuses frozen paid entries and scans all exit clocks in one pass, preventing repeated strategy/contract-selection work for future exit-only audits.
 - **Evidence:** `research/reports/paid_spy_failed_range_recovery_repriced_holds_v1.json` and `research/reports/paid_spy_failed_range_recovery_fixed_holds_assessment_v1.json`.
+
+### SPY Trend entries after 3:00 PM — prospective veto candidate (2026-09-02)
+
+- **Question:** after the existing 1:45–3:00 PM SPY slot reservation ends, should the bot resume opening new SPY Trend Continuation positions during the final hour?
+- **Method:** kept all five reviewed strategies, the corrected Eastern-time portfolio router, exact paid option asks and same-contract bids, the production growth-sizing ladder, one position per ticker, three-position account cap, $0.12 per contract per side, $0.01 adverse option-price slippage per side, and the $10 monthly Tradier plan. The only candidate change removed new SPY Trend entries at or after 3:00 PM ET.
+- **Earlier eligibility:** current 171 trades, +$2,258.48, PF **1.1954**, 28.7520% drawdown; candidate 167 trades, +$2,298.16, PF **1.2012**, unchanged drawdown.
+- **June validation:** current 68 trades, +$1,503.08, PF **1.6028**, 17.7893% drawdown; candidate 58 trades, +$1,579.24, PF **1.6761**, 16.6840% drawdown.
+- **July+ archive:** current 79 trades, +$2,135.64, PF **1.9955**, 6.8039% drawdown; candidate 69 trades, +$2,541.52, PF **2.4719**, 5.9052% drawdown.
+- **Decision:** **PROSPECTIVE CANDIDATE ONLY.** The rule improved or preserved P&L, PF, and drawdown in all three archive periods and removed 27 candidate rows. However, the July+ outcomes had already been inspected when the hypothesis was formed, so they are not a clean holdout. Do not change the live router yet; record the veto alongside future qualifying setups and promote only on fresh evidence.
+- **Evidence:** `research/reports/paid_spy_trend_close_session_gate_v1.json`.
