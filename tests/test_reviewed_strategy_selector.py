@@ -71,6 +71,20 @@ class ReviewedStrategySelectorTests(unittest.TestCase):
         self.assertEqual("STRONG", result["accepted"][0]["strategy_id"])
         self.assertEqual("ticker_position_open", result["skipped"][0]["skip_reason"])
 
+    def test_quality_history_uses_net_execution_return(self):
+        # A gross +1% move is a net loser after one cent of adverse execution
+        # on both sides of a $1 contract. Ten completed examples must pause it.
+        history = [candidate("A", "SPY", minute, return_pct=1) for minute in range(10)]
+        decision = candidate("A", "SPY", 20, return_pct=10)
+        result = simulate_policy(
+            history + [decision], policy="causal_trailing_quality",
+            minimum_history=10, trailing_window=20,
+            slippage_price_per_side=.01,
+        )
+        rejected = next(row for row in result["skipped"] if row["entry_time"] == decision["entry_time"])
+        self.assertEqual("trailing_quality", rejected["skip_reason"])
+        self.assertLess(rejected["quality_at_decision"]["median_return_pct"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
