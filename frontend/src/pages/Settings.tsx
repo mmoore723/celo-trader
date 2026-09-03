@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
 import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib/api";
 import { strategyPerformanceForId, strategyPerformanceState } from "../lib/strategyPerformance.js";
+import { loadCredentialDisplay, maskCredentialForDisplay } from "../lib/credentialDisplay.js";
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
@@ -72,11 +73,11 @@ const TIMEZONES = [
 
 // ── Credentials panel ──────────────────────────────────────────────────────
 function CredentialField({
-  label, name, value, onChange, show, onToggle, hint
+  label, name, value, onChange, show, onToggle, hint, savedMask
 }: {
   label: string; name: string; value: string;
   onChange: (v: string) => void; show: boolean;
-  onToggle: () => void; hint?: string;
+  onToggle: () => void; hint?: string; savedMask?: string;
 }) {
   return (
     <div className="flex flex-col gap-1">
@@ -86,7 +87,7 @@ function CredentialField({
           type={show ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={hint || "Enter key…"}
+          placeholder={savedMask ? `Saved (${savedMask}) — enter a new value to replace` : (hint || "Enter key…")}
           className="input w-full pr-10 font-mono text-sm"
           autoComplete="off"
           name={name}
@@ -114,12 +115,13 @@ function CredentialField({
 // touching one broker's fields should never be able to affect the other's.
 // Fix: two fully independent panels below, each with its own load, its own
 // "touched" tracking, and its own Save button that only ever sends ITS OWN
-// two fields — an Alpaca save cannot include a Tradier field or vice versa,
+// fields — an Alpaca save cannot include a Tradier field or vice versa,
 // not just "won't accidentally," structurally can't.
 
-function useCredentialSave<K extends string>(fields: K[]) {
+function useCredentialSave<K extends string>(fields: K[], secretFields: K[] = []) {
   const [creds, setCreds]     = useState<Record<K, string>>(() => Object.fromEntries(fields.map(f => [f, ""])) as Record<K, string>);
   const [touched, setTouched] = useState<Partial<Record<K, boolean>>>({});
+  const [savedMasks, setSavedMasks] = useState<Partial<Record<K, string>>>({});
   const [status, setStatus]   = useState<{ ok?: boolean; msg?: string } | null>(null);
   const [loaded, setLoaded]   = useState(false);
 
@@ -129,11 +131,9 @@ function useCredentialSave<K extends string>(fields: K[]) {
         const r = await fetch("/api/settings/credentials", { credentials: "include" });
         if (r.ok) {
           const d = await r.json();
-          setCreds(c => {
-            const next = { ...c };
-            for (const f of fields) next[f] = d[f] || "";
-            return next;
-          });
+          const loadedDisplay = loadCredentialDisplay(fields, secretFields, d);
+          setCreds(loadedDisplay.values);
+          setSavedMasks(loadedDisplay.savedMasks);
         }
       } catch { /* ignore */ }
       setLoaded(true);
@@ -148,7 +148,8 @@ function useCredentialSave<K extends string>(fields: K[]) {
   async function save(label: string) {
     setStatus(null);
     const payload: Partial<Record<K, string>> = {};
-    for (const key of fields) if (touched[key]) payload[key] = creds[key];
+    const changedKeys = fields.filter(key => touched[key]);
+    for (const key of changedKeys) payload[key] = creds[key];
     if (Object.keys(payload).length === 0) {
       setStatus({ ok: true, msg: "Nothing changed." });
       setTimeout(() => setStatus(null), 3000);
@@ -163,6 +164,24 @@ function useCredentialSave<K extends string>(fields: K[]) {
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Save failed");
       setStatus({ ok: true, msg: d.message || `${label} saved.` });
+      setCreds(current => {
+        const next = { ...current };
+        for (const key of changedKeys) {
+          if (secretFields.includes(key)) next[key] = "";
+        }
+        return next;
+      });
+      setSavedMasks(current => {
+        const next = { ...current };
+        for (const key of changedKeys) {
+          if (secretFields.includes(key)) {
+            const mask = maskCredentialForDisplay(creds[key]);
+            if (mask) next[key] = mask;
+            else delete next[key];
+          }
+        }
+        return next;
+      });
       setTouched({});
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Save failed" });
@@ -170,13 +189,16 @@ function useCredentialSave<K extends string>(fields: K[]) {
     setTimeout(() => setStatus(null), 3000);
   }
 
-  return { creds, setField, status, loaded, save };
+  return { creds, savedMasks, setField, status, loaded, save };
 }
 
 function AlpacaCredentialsPanel() {
   const [show, setShow] = useState({ key: false, secret: false });
-  const { creds, setField, status, loaded, save } =
-    useCredentialSave<"alpaca_api_key" | "alpaca_secret_key">(["alpaca_api_key", "alpaca_secret_key"]);
+  const { creds, savedMasks, setField, status, loaded, save } =
+    useCredentialSave<"alpaca_api_key" | "alpaca_secret_key">(
+      ["alpaca_api_key", "alpaca_secret_key"],
+      ["alpaca_api_key", "alpaca_secret_key"],
+    );
 
   if (!loaded) return <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading…</p>;
 
@@ -193,10 +215,12 @@ function AlpacaCredentialsPanel() {
       <CredentialField label="Alpaca API Key" name="alpaca_key"
         value={creds.alpaca_api_key} onChange={v => setField("alpaca_api_key", v)}
         show={show.key} onToggle={() => setShow(s => ({ ...s, key: !s.key }))}
+        savedMask={savedMasks.alpaca_api_key}
         hint="PK…" />
       <CredentialField label="Alpaca Secret Key" name="alpaca_secret"
         value={creds.alpaca_secret_key} onChange={v => setField("alpaca_secret_key", v)}
-        show={show.secret} onToggle={() => setShow(s => ({ ...s, secret: !s.secret }))} />
+        show={show.secret} onToggle={() => setShow(s => ({ ...s, secret: !s.secret }))}
+        savedMask={savedMasks.alpaca_secret_key} />
       {status && (
         <p className="text-xs font-medium" style={{ color: status.ok ? "var(--accent)" : "#f87171" }}>{status.msg}</p>
       )}
@@ -209,10 +233,11 @@ function AlpacaCredentialsPanel() {
 
 function TradierCredentialsPanel() {
   const [show, setShow] = useState({ sandbox: false, live: false });
-  const { creds, setField, status, loaded, save } =
-    useCredentialSave<"tradier_api_key" | "tradier_market_api_key" | "tradier_account_id" | "tradier_live_account_id">([
-      "tradier_api_key", "tradier_market_api_key", "tradier_account_id", "tradier_live_account_id",
-    ]);
+  const { creds, savedMasks, setField, status, loaded, save } =
+    useCredentialSave<"tradier_api_key" | "tradier_market_api_key" | "tradier_account_id" | "tradier_live_account_id">(
+      ["tradier_api_key", "tradier_market_api_key", "tradier_account_id", "tradier_live_account_id"],
+      ["tradier_api_key", "tradier_market_api_key"],
+    );
 
   if (!loaded) return <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading…</p>;
 
@@ -223,8 +248,9 @@ function TradierCredentialsPanel() {
         <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Tradier</h3>
       </div>
       <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-        Paper uses the sandbox token for simulated orders and the live token for current prices.
-        Live trading uses the live token and live account. Saving here never touches Alpaca.
+        With Alpaca selected, Celo uses the production token for current Tradier prices and does
+        not use the Tradier sandbox. The sandbox credentials are needed only if you later select
+        Tradier as the paper-order broker. Saving here never touches Alpaca.
       </p>
       <div
         className="text-xs rounded-lg px-3 py-2"
@@ -240,16 +266,18 @@ function TradierCredentialsPanel() {
         When Broker is Alpaca and Mode is Paper, the live token supplies prices only; orders stay
         in the Alpaca paper account.
       </div>
-      <CredentialField label="Sandbox token (paper orders)" name="tradier_key"
+      <CredentialField label="Sandbox token (only for Tradier Paper orders)" name="tradier_key"
         value={creds.tradier_api_key} onChange={v => setField("tradier_api_key", v)}
         show={show.sandbox} onToggle={() => setShow(s => ({ ...s, sandbox: !s.sandbox }))}
+        savedMask={savedMasks.tradier_api_key}
         hint="Sandbox bearer token" />
-      <CredentialField label="Sandbox account ID" name="tradier_account_id"
+      <CredentialField label="Sandbox account ID (only for Tradier Paper)" name="tradier_account_id"
         value={creds.tradier_account_id} onChange={v => setField("tradier_account_id", v)}
         show={true} onToggle={() => {}} hint="Sandbox account number" />
       <CredentialField label="Live token (real-time prices and future live orders)" name="tradier_market_key"
         value={creds.tradier_market_api_key} onChange={v => setField("tradier_market_api_key", v)}
         show={show.live} onToggle={() => setShow(s => ({ ...s, live: !s.live }))}
+        savedMask={savedMasks.tradier_market_api_key}
         hint="Production bearer token" />
       <CredentialField label="Live account ID (required only for live orders)" name="tradier_live_account_id"
         value={creds.tradier_live_account_id} onChange={v => setField("tradier_live_account_id", v)}

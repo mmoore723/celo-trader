@@ -268,6 +268,36 @@ class CredentialsPayload(BaseModel):
     tradier_live_account_id: Optional[str] = None
 
 
+_SECRET_CREDENTIAL_FIELDS = (
+    "alpaca_api_key",
+    "alpaca_secret_key",
+    "tradier_api_key",
+    "tradier_market_api_key",
+)
+
+
+def _looks_like_masked_credential(value: str) -> bool:
+    """Return True for a display-only secret returned by GET /credentials."""
+    text = str(value or "").strip()
+    return (
+        text.lower() == "set"
+        or "…" in text
+        or "•" in text
+        or "***" in text
+    )
+
+
+def _reject_masked_credentials(payload: CredentialsPayload) -> None:
+    """Never allow a browser placeholder to replace an encrypted secret."""
+    for field in _SECRET_CREDENTIAL_FIELDS:
+        value = getattr(payload, field)
+        if value is not None and _looks_like_masked_credential(value):
+            raise HTTPException(
+                400,
+                f"{field} contains a masked display value. Enter the complete new credential or leave the field unchanged.",
+            )
+
+
 @router.get("/credentials")
 def get_credentials() -> dict:
     """
@@ -320,6 +350,11 @@ def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
             409,
             "Stop the bot before changing broker credentials so one session cannot span two accounts.",
         )
+
+    # Defense in depth for older/cached frontends and password-manager
+    # autofill. The current UI never submits a stored mask, but the API must
+    # independently guarantee that display-only text cannot become a secret.
+    _reject_masked_credentials(payload)
 
     from config import get_api_keys, save_api_keys
     current = get_api_keys()

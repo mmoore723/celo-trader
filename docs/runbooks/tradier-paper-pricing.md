@@ -45,6 +45,18 @@ In **Settings → API Credentials → Tradier**:
 Never paste tokens into chat, logs, tickets, or source control. Celo stores
 them encrypted and returns only masked values to the browser.
 
+### Masked values in Settings
+
+Settings never retrieves a complete stored secret. A value such as
+`abcd…wxyz` means the credential is saved; it is not the token stored on the
+server. Secret inputs load empty and show that mask only as placeholder text.
+Entering a value replaces that one credential. Leaving it empty and saving a
+different field preserves the original encrypted value.
+
+The API also rejects `…`, bullet, asterisk, and `set` placeholders before any
+credential write. This protects credentials when an older cached frontend or
+password manager submits display-only text.
+
 ## Healthy verification
 
 Before allowing paper entries, verify all of the following:
