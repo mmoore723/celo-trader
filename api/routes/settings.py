@@ -474,3 +474,17 @@ def broker_readiness(paper: Optional[bool] = None) -> dict:
     result = get_tradier_broker(paper=paper)[0].readiness()
     result["selected_provider"] = provider
     return result
+
+
+@router.get("/connection-health")
+def connection_health(request: Request) -> dict:
+    """Return a fresh, read-only broker/API audit without exposing tokens."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "Authenticated user context is missing")
+    from config import get_api_keys, get_settings
+    from broker.connection_health import get_connection_health
+    return get_connection_health(
+        get_settings(user_id=str(user_id)),
+        get_api_keys(user_id=str(user_id)),
+    )

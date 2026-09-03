@@ -48,6 +48,23 @@ export interface BotStatus {
   };
 }
 
+export interface BrokerConnectionRow {
+  id: string;
+  label: string;
+  purpose: string;
+  status: "connected" | "error" | "missing" | "not_used";
+  detail: string;
+  required: boolean;
+}
+
+export interface BrokerConnectionHealth {
+  ready: boolean;
+  selected_broker: "alpaca" | "tradier";
+  mode: "paper" | "live";
+  checked_at: string;
+  connections: BrokerConnectionRow[];
+}
+
 export interface StrategyScorecardRow {
   strategy_id: string; closed_trades: number; wins: number; pnl: number;
   blocked_signals: number; entered_signals: number; block_reasons: Record<string, number>;
@@ -1008,6 +1025,7 @@ export const api = {
     get:  () => request<AppSettings>("/api/settings"),
     save: (s: AppSettings) => request<AppSettings>("/api/settings", { method: "POST", body: JSON.stringify(s) }),
     brokerReadiness: (paper = true) => request<BrokerReadiness>(`/api/settings/broker-readiness?paper=${paper}`),
+    connectionHealth: () => request<BrokerConnectionHealth>("/api/settings/connection-health"),
     strategies: () => request<{strategies: ReviewedStrategyCatalogEntry[]}>("/api/settings/strategies"),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
     recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),
