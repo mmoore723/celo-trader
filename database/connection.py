@@ -46,7 +46,7 @@ def get_conn():
 
 
 @contextmanager
-def _conn_for_mode(mode: str):
+def _conn_for_mode(mode: str, user_id: str | None = None):
     """
     Yield a read connection to the DB file for the requested mode —
     regardless of which mode the bot is currently running in.
@@ -62,7 +62,7 @@ def _conn_for_mode(mode: str):
     Directory is derived from get_db_path().parent so it works whether the
     DB lives at the project root (single-user) or user_data/{id}/ (multi-user).
     """
-    _db_dir  = get_db_path().parent
+    _db_dir  = get_db_path(user_id=user_id).parent
     _path    = _db_dir / f"trades_{mode}.db"
     # Auto-init schema if this DB file is new or was never migrated.
     # _init_db_at uses CREATE TABLE IF NOT EXISTS so it's safe to call every time.
@@ -79,5 +79,4 @@ def _conn_for_mode(mode: str):
         raise
     finally:
         conn.close()
-
 

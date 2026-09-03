@@ -14,7 +14,10 @@ from database.connection import get_conn, _conn_for_mode
 logger = logging.getLogger("celo_trader.database")
 
 
-def _effective_account_id(broker_account_id: str | None) -> str | None:
+def _effective_account_id(
+    broker_account_id: str | None,
+    user_id: str | None = None,
+) -> str | None:
     """Use the active account unless a caller deliberately supplies one.
 
     Legacy rows have no account identity. Once an account has been connected,
@@ -26,7 +29,7 @@ def _effective_account_id(broker_account_id: str | None) -> str | None:
         return broker_account_id or None
     try:
         from config import get_settings
-        return get_settings().get("active_broker_account_id") or None
+        return get_settings(user_id=user_id).get("active_broker_account_id") or None
     except Exception:
         return None
 
@@ -88,7 +91,7 @@ def get_open_trade(broker_account_id: str | None = None) -> Optional[dict]:
 
 def get_all_trades(
     limit: int = 500, mode: str = "paper", status_filter: str = "all",
-    broker_account_id: str | None = None,
+    broker_account_id: str | None = None, user_id: str | None = None,
 ) -> list[dict]:
     """
     Return trades for the journal page.
@@ -100,8 +103,10 @@ def get_all_trades(
     limit         — max rows returned.
     broker_account_id — when supplied, return only rows written for that
                          Alpaca account/mode identity.
+    user_id           — when supplied, resolve the database for that user even
+                         when the caller is outside its request ContextVar.
     """
-    broker_account_id = _effective_account_id(broker_account_id)
+    broker_account_id = _effective_account_id(broker_account_id, user_id=user_id)
     clauses: list[str] = []
     params: list[object] = []
     if status_filter in {"open", "closed"}:
@@ -116,7 +121,7 @@ def get_all_trades(
     params.append(limit)
 
     try:
-        with _conn_for_mode(mode) as conn:
+        with _conn_for_mode(mode, user_id=user_id) as conn:
             rows = conn.execute(sql, tuple(params)).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:

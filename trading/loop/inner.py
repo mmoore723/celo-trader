@@ -41,7 +41,7 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     from database import init_db, log_event, get_all_trades, get_open_trades
     from risk import RiskManager, DailyLossLimitReached
     from alerts import send_alert
-    from scanner import run_scan, is_scan_window
+    from scanner import get_watchlist, run_scan, is_scan_window
     from trading.entry import _tick
     from trading.diagnostics import _check_ghost_positions
     from trading.controls import _panic_close_all_positions

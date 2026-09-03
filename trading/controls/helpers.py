@@ -48,9 +48,17 @@ def _refresh_session_pnl(user_id: str | None = None) -> float:
 
     from database import get_all_trades
     try:
+        mode = str(_US.get("mode") or "paper").lower()
+        if mode not in {"paper", "live"}:
+            mode = "paper"
         pnl = sum(
             (t.get("realized_pnl") or 0)
-            for t in get_all_trades(limit=200, user_id=uid)
+            for t in get_all_trades(
+                limit=200,
+                mode=mode,
+                broker_account_id=_US.get("broker_account_id"),
+                user_id=uid,
+            )
             if (t.get("exit_time") or "")[:10] == _now_et().date().isoformat()
         )
         _US["session_pnl"] = pnl
