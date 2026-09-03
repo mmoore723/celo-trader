@@ -72,7 +72,11 @@ def get_connection_health(
             try:
                 if alpaca_client is None:
                     from broker import AlpacaClient
-                    alpaca_client = AlpacaClient(paper=paper)
+                    alpaca_client = AlpacaClient(
+                        paper=paper,
+                        api_key=alpaca_key,
+                        secret_key=alpaca_secret,
+                    )
                 account = alpaca_client.get_account()
                 if not isinstance(account, dict) or float(account.get("equity") or 0) <= 0:
                     raise RuntimeError("account returned no positive equity")

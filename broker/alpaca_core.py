@@ -26,7 +26,13 @@ logger = logging.getLogger("celo_trader.broker")
 
 class AlpacaCoreMixin:
 
-    def __init__(self, *, paper: bool | None = None):
+    def __init__(
+        self,
+        *,
+        paper: bool | None = None,
+        api_key: str | None = None,
+        secret_key: str | None = None,
+    ):
         # Read live/paper mode + API keys from user-scoped settings so switching
         # the UI toggle or saving new credentials takes effect on the next bot
         from config import get_settings as _gs, ALPACA_PAPER as _env_paper, get_api_keys as _gak
@@ -39,8 +45,14 @@ class AlpacaCoreMixin:
             "https://api.alpaca.markets"
         )
         self.data    = "https://data.alpaca.markets"
-        _api_key    = _keys.get("alpaca_api_key",    ALPACA_API_KEY)
-        _secret_key = _keys.get("alpaca_secret_key", ALPACA_SECRET_KEY)
+        _api_key = (
+            api_key if api_key is not None
+            else _keys.get("alpaca_api_key", ALPACA_API_KEY)
+        )
+        _secret_key = (
+            secret_key if secret_key is not None
+            else _keys.get("alpaca_secret_key", ALPACA_SECRET_KEY)
+        )
         self.api_key = _api_key
         self.secret_key = _secret_key
         self.headers = {

@@ -1,6 +1,8 @@
 import json
 import unittest
+from unittest.mock import patch
 
+from broker.alpaca_client import AlpacaClient
 from broker.connection_health import get_connection_health
 
 
@@ -25,6 +27,31 @@ KEYS = {
 
 
 class BrokerConnectionHealthTests(unittest.TestCase):
+    @patch("broker.alpaca_core.AlpacaCoreMixin.get_account")
+    def test_real_checker_builds_alpaca_client_from_supplied_credentials(self, account):
+        account.return_value = {"equity": 3958.52}
+        observed = {}
+
+        def market_check(token):
+            observed["token"] = token
+            return {"ok": True}
+
+        with patch.object(AlpacaClient, "__init__", autospec=True, return_value=None) as init:
+            result = get_connection_health(
+                {"broker_provider": "alpaca", "paper_trading": True},
+                KEYS,
+                market_validator=market_check,
+            )
+
+        init.assert_called_once_with(
+            unittest.mock.ANY,
+            paper=True,
+            api_key=KEYS["alpaca_api_key"],
+            secret_key=KEYS["alpaca_secret_key"],
+        )
+        self.assertEqual(KEYS["tradier_market_api_key"], observed["token"])
+        self.assertTrue(result["ready"])
+
     def test_alpaca_paper_shows_production_prices_and_unused_sandbox(self):
         result = get_connection_health(
             {"broker_provider": "alpaca", "paper_trading": True},
