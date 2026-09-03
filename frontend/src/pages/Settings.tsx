@@ -226,6 +226,20 @@ function TradierCredentialsPanel() {
         Paper uses the sandbox token for simulated orders and the live token for current prices.
         Live trading uses the live token and live account. Saving here never touches Alpaca.
       </p>
+      <div
+        className="text-xs rounded-lg px-3 py-2"
+        style={{
+          color: "var(--ink-muted)",
+          background: "rgba(245, 158, 11, 0.08)",
+          border: "1px solid rgba(245, 158, 11, 0.22)",
+        }}
+      >
+        <strong style={{ color: "var(--ink)" }}>Why two Tradier tokens?</strong>{" "}
+        Tradier intentionally delays sandbox market prices by about 15 minutes. Celo will not
+        use a delayed quote to simulate a current fill because that would distort paper results.
+        When Broker is Alpaca and Mode is Paper, the live token supplies prices only; orders stay
+        in the Alpaca paper account.
+      </div>
       <CredentialField label="Sandbox token (paper orders)" name="tradier_key"
         value={creds.tradier_api_key} onChange={v => setField("tradier_api_key", v)}
         show={show.sandbox} onToggle={() => setShow(s => ({ ...s, sandbox: !s.sandbox }))}

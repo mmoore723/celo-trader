@@ -13,6 +13,7 @@ from scanner.constants import ANCHOR_TICKERS, TICKER_BLACKLIST, _ETF_SET, _ATR_M
 from scanner.helpers import _et_now, _compute_atr
 from scanner.state_io import _read_daily_universe, _write_state
 from scanner.premarket import daily_premarket_scan
+from scanner.universe import complete_daily_collection_universe
 
 logger = logging.getLogger("celo_trader.scanner")
 
@@ -86,7 +87,12 @@ def run_scan(alpaca, max_tickers: int = 10) -> list[str]:
     except Exception:
         _pins2 = []
 
-    current_universe = list(dict.fromkeys(_pins2 + daily["universe"]))
+    # ``scan_details`` is part of the Daily Brief contract. Include it even
+    # when this process is reading an older daily file whose capped ``universe``
+    # omitted displayed dynamic candidates.
+    current_universe = complete_daily_collection_universe(
+        daily, user_pins=_pins2,
+    )
 
     scores: dict[str, float] = {}
     for ticker in current_universe:
@@ -115,5 +121,4 @@ def run_scan(alpaca, max_tickers: int = 10) -> list[str]:
                "top_scores": {t: scores.get(t, 0) for t in watchlist[:5]}},
     )
     return watchlist
-
 

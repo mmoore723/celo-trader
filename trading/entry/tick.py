@@ -700,6 +700,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             ticker, _df_today_1m,
             broker_account_id=settings.get("active_broker_account_id") or None,
         )
+        _US.setdefault("_batch_archived_tickers", set()).add(ticker)
     except Exception:
         logger.debug("scanner candle archive failed for %s", ticker, exc_info=True)
     try:

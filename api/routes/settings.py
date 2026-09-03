@@ -323,6 +323,7 @@ def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
 
     from config import get_api_keys, save_api_keys
     current = get_api_keys()
+    verified_tradier_market = False
     if payload.alpaca_api_key is not None:
         current["alpaca_api_key"] = payload.alpaca_api_key.strip()
     if payload.alpaca_secret_key is not None:
@@ -330,7 +331,15 @@ def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
     if payload.tradier_api_key is not None:
         current["tradier_api_key"] = payload.tradier_api_key.strip()
     if payload.tradier_market_api_key is not None:
-        current["tradier_market_api_key"] = payload.tradier_market_api_key.strip()
+        candidate_market_token = payload.tradier_market_api_key.strip()
+        if candidate_market_token:
+            from broker.credential_validation import validate_tradier_market_token
+            validation = validate_tradier_market_token(candidate_market_token)
+            if not validation["ok"]:
+                status = 400 if validation["code"] in {"missing", "unauthorized"} else 503
+                raise HTTPException(status, validation["detail"])
+            verified_tradier_market = True
+        current["tradier_market_api_key"] = candidate_market_token
     if payload.tradier_account_id is not None:
         current["tradier_account_id"] = payload.tradier_account_id.strip()
     if payload.tradier_live_account_id is not None:
@@ -351,7 +360,13 @@ def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
     provider = configured_broker_provider()
     active_broker_changed = alpaca_changed if provider == "alpaca" else tradier_changed
     if not active_broker_changed:
-        return {"ok": True, "message": "API keys saved securely"}
+        return {
+            "ok": True,
+            "message": (
+                "Tradier real-time pricing verified and API keys saved securely"
+                if verified_tradier_market else "API keys saved securely"
+            ),
+        }
 
     # A key can point at a completely different Alpaca account.  Local paper
     # history is not broker-owned, so it must be explicitly scoped rather than

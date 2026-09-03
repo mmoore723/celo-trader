@@ -27,6 +27,7 @@ from scanner.constants import (
 )
 from scanner.helpers import _compute_atr, _et_now
 from scanner.state_io import _read_daily_universe, _write_daily_universe, _write_state
+from scanner.universe import build_collection_universe
 
 logger = logging.getLogger("celo_trader.scanner")
 
@@ -42,7 +43,7 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
     4. Filter: avg_daily_vol > 2 M, ATR(14) > $1.
     5. Compute RVOL vs time-normalized expected volume.
     6. Score: RVOL × gap_pct × atr_factor × liquidity_bonus.
-    7. Return top max_tickers, always padding with ANCHOR_TICKERS if < 2 found.
+    7. Return user pins + anchors + the top max_tickers dynamic candidates.
     8. Write results to daily_universe.json + scanner_state.json.
 
     If called before 9:30 ET (pre-market), skips the scan and returns ANCHOR_TICKERS
@@ -257,32 +258,25 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
 
     # ── Sort and trim ─────────────────────────────────────────────────────────
     scored.sort(key=lambda x: x["score"], reverse=True)
-    top = [s["ticker"] for s in scored[:max_tickers]]
+    dynamic_top = [s["ticker"] for s in scored[:max_tickers]]
 
     logger.info(
         "daily_premarket_scan: %d survived all filters → top%d: %s",
-        len(scored), max_tickers, top,
+        len(scored), max_tickers, dynamic_top,
     )
 
-    # Always prepend SPY/QQQ — primary instruments evaluated every day regardless of gap
-    for anchor in reversed(ANCHOR_TICKERS):
-        if anchor not in top:
-            top.insert(0, anchor)
-            logger.info("daily_premarket_scan: prepended anchor %s", anchor)
-
-    # ── Pin user watchlist tickers — always include, front of list ────────────
-    # These bypass the gap/RVOL filter. They are prepended so the bot evaluates
-    # them every tick regardless of whether the dynamic scan picked them today.
-    if _user_pins:
-        pinned_new = [t for t in _user_pins if t not in top]
-        top = _user_pins + [t for t in top if t not in _user_pins]
-        # Respect max_tickers cap: trim from the tail (lowest-scoring dynamic names)
-        top = top[:max(max_tickers, len(_user_pins))]
-        if pinned_new:
-            logger.info(
-                "daily_premarket_scan: pinned %d user watchlist ticker(s) into result: %s",
-                len(pinned_new), pinned_new,
-            )
+    # The Daily Brief exposes the top-N dynamic rows in ``scan_details``. Pins
+    # and anchors used to displace most of those rows from ``top``, so the UI
+    # could show a candidate whose one-minute candles and strategy outcomes
+    # were never collected. Keep all three groups in the runtime universe.
+    top = build_collection_universe(
+        user_pins=_user_pins,
+        dynamic_tickers=dynamic_top,
+    )
+    logger.info(
+        "daily_premarket_scan: collection universe has %d ticker(s): %s",
+        len(top), top,
+    )
 
     # ── Persist results ───────────────────────────────────────────────────────
     _write_daily_universe(today_str, top, scored[:max_tickers])

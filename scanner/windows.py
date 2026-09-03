@@ -18,6 +18,7 @@ from scanner.constants import (
 )
 from scanner.helpers import _et_now, _hm_in_range
 from scanner.state_io import _read_daily_universe
+from scanner.universe import complete_daily_collection_universe
 
 logger = logging.getLogger("celo_trader.scanner")
 
@@ -39,7 +40,7 @@ def get_watchlist() -> list[str]:
     try:
         daily = _read_daily_universe()
         if daily.get("date") == today_str and daily.get("universe"):
-            return list(daily["universe"])
+            return complete_daily_collection_universe(daily)
     except Exception as ex:
         logger.debug("get_watchlist: daily_universe.json read error: %s", ex)
 
@@ -75,7 +76,7 @@ def get_today_universe() -> list[str]:
     try:
         daily = _read_daily_universe()
         if daily.get("date") == today_str and daily.get("universe"):
-            return list(daily["universe"])
+            return complete_daily_collection_universe(daily)
     except Exception:
         pass
     return list(TICKER_UNIVERSE)
@@ -94,5 +95,4 @@ def is_scan_window() -> bool:
         _hm_in_range(et.hour, et.minute, PREMARKET_START_HM, PREMARKET_END_HM)
         or _hm_in_range(et.hour, et.minute, SESSION_START_HM, SESSION_END_HM)
     )
-
 

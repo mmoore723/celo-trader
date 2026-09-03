@@ -70,7 +70,7 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
       "Filter 5 — RVOL: relative volume (today's shares so far vs. historical same-time average) must be ≥ 2× for stocks, ≥ 1.5× for ETFs. Elevated volume means institutions are involved — the move is more likely real.",
       "Scoring: survivors are ranked by RVOL × gap size × ATR factor × liquidity bonus. ETFs get a 1.15× liquidity bonus because their options chains are deeper and spreads tighter.",
       "Affordability check: the scanner also estimates whether options on a ticker would actually fit your risk budget. If the estimated stop-loss on 1 contract (option premium × 30%) exceeds your risk budget, the ticker is heavily de-ranked — it would just be skipped every tick anyway.",
-      "The top 10 survivors become today's watchlist. SPY and QQQ are always added as anchors. Your pinned Settings tickers are prepended to the front so they're always evaluated.",
+      "The top 10 dynamic survivors join SPY, QQQ, and every ticker pinned in Settings. Pins and anchors never displace a ranked candidate. This same complete list powers the Daily Brief and the research collector, so anything shown as a potential ticker receives one-minute candle coverage.",
     ],
   },
   {
@@ -78,7 +78,7 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
     emoji: "⏱️",
     title: "How the Bot Evaluates Tickers",
     body: [
-      "Every minute the bot evaluates ALL watchlist tickers in one pass — this is the 'batch tick' approach. Old design evaluated one ticker every 10 seconds, which meant a 10-ticker watchlist took ~100 seconds to cycle through and some bars were missed entirely.",
+      "Every minute the bot evaluates the complete collection universe in one pass: Settings pins, SPY/QQQ anchors, and every dynamic ticker displayed in the Daily Brief. This is the 'batch tick' approach. Old design evaluated one ticker every 10 seconds, so some bars were missed entirely.",
       "For each ticker in the pass, the bot: (1) fetches today's 1-minute bars from Alpaca, (2) augments with 15 days of 5-minute historical bars for accurate RVOL calculation, (3) runs all enabled strategies, (4) checks all entry gates, (5) selects a contract and places an order if everything passes.",
       "After processing all tickers, the bot sleeps to the next 60-second bar boundary. This ensures every evaluation sees a fresh closed bar rather than re-checking the same partial bar twice.",
       "The Bot Thinking log on the Live Trading page shows one entry per bar per ticker — you can see exactly what the bot considered and why it decided not to trade.",

@@ -207,7 +207,10 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                     for t in (_get_s_wl().get("watchlist") or [])
                     if t.strip()
                 ]
-                _restored_wl = list(dict.fromkeys(_pins_r + _du["universe"]))
+                # get_watchlist() repairs older daily files by including every
+                # ticker exposed through Daily Brief scan_details as well as
+                # the persisted universe. Pins stay first for UI consistency.
+                _restored_wl = list(dict.fromkeys(_pins_r + get_watchlist()))
                 _US["scan_watchlist"]    = _restored_wl
                 _US["scanner_ran_today"] = True
                 _US["current_ticker"]    = _restored_wl[0]
@@ -436,14 +439,35 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
             # Old design: one ticker per 10-second tick.  With 10 tickers the
             # cycle took ~100 s, so each ticker was only seen every 1.5 bars.
             _wl_batch = _US.get("scan_watchlist") or ["SPY", "QQQ"]
+            _US["_batch_archived_tickers"] = set()
             # Independent, non-ordering study. It fetches QQQ only during its
             # two declared windows and is deliberately outside `_tick` so it
             # cannot become a router signal or create a broker order.
             _maybe_observe_qqq(alpaca, tradier)
-            for _bi in range(len(_wl_batch)):
-                if _stop.is_set():
-                    break
-                _tick(alpaca, tradier)
+            try:
+                for _bi in range(len(_wl_batch)):
+                    if _stop.is_set():
+                        break
+                    _tick(alpaca, tradier)
+            finally:
+                # Run this after entry/position work so collection can never
+                # delay an urgent exit. Usually every ticker was archived by
+                # _tick already; only names skipped by an execution gate need
+                # a separate read-only fetch here.
+                if not _stop.is_set():
+                    _archived = _US.get("_batch_archived_tickers") or set()
+                    _missing = [
+                        ticker for ticker in _wl_batch
+                        if str(ticker).strip().upper() not in _archived
+                    ]
+                    if _missing:
+                        from trading.research_collection import collect_watchlist_session_bars
+                        _archived |= collect_watchlist_session_bars(
+                            alpaca,
+                            _missing,
+                            broker_account_id=_US.get("broker_account_id"),
+                        )
+                _US.pop("_batch_archived_tickers", None)
 
         except DailyLossLimitReached as e:
             _US["status"] = "kill_locked"
