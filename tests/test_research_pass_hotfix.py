@@ -1,0 +1,103 @@
+from contextlib import ExitStack
+from datetime import datetime
+from types import SimpleNamespace
+import unittest
+from unittest.mock import Mock, patch
+
+import pandas as pd
+
+from strategies.base import Signal
+from trading.loop.research_pass import market_readers, observe_ticker, run_research_pass
+from trading.diagnostics.strategy_scan import scan_message, log_strategy_scan
+from tests.test_scan_timing_hotfix import settings
+
+
+class ResearchPassTests(unittest.TestCase):
+    def test_market_readers_have_no_order_or_account_mutation_capability(self):
+        readers = market_readers(Mock(), Mock())
+        for reader in readers:
+            for forbidden in ("place_option_order", "cancel_order", "_post", "_delete", "get_account"):
+                self.assertFalse(hasattr(reader, forbidden))
+
+    def test_all_watchlist_names_archive_when_entry_strategies_are_disabled(self):
+        market = Mock()
+        market.is_market_open.return_value = True
+        market.get_session_bars.return_value = ([{
+            "t": "2026-09-04T14:24:00Z", "o": 100, "h": 101,
+            "l": 99, "c": 100.5, "v": 1000,
+        }], False, True)
+        names = ["SPY", "TSLA", "QQQ", "AMZN", "NVDA", "AAPL", "AMD", "META", "NFLX"]
+        with patch("trading.loop.research_pass.record_scanner_candles") as archive, patch(
+            "trading.loop.research_pass.maybe_observe",
+        ):
+            run_research_pass((market, Mock()), {
+                "settings": {"shadow_ledger_enabled": False}, "tickers": names,
+                "balance": 4000, "risk": Mock(),
+            }, {}, lambda: False)
+        self.assertEqual(names, [c.args[0] for c in archive.call_args_list])
+
+    def test_quote_failure_does_not_erase_archived_candles_or_stop_other_names(self):
+        with patch("trading.loop.research_pass.observe_ticker", side_effect=[RuntimeError("timeout"), None]) as observer, patch(
+            "trading.loop.research_pass.maybe_observe",
+        ):
+            run_research_pass((Mock(), Mock()), {
+                "settings": {}, "tickers": ["SPY", "TSLA"], "balance": 4000, "risk": Mock(),
+            }, {}, lambda: False)
+        self.assertEqual(2, observer.call_count)
+
+    def test_only_research_ids_go_to_observation_router(self):
+        market = Mock()
+        market.get_session_bars.return_value = ([{
+            "t": "2026-09-04T14:24:00Z", "o": 100, "h": 101,
+            "l": 99, "c": 100.5, "v": 1000,
+        }], False, True)
+        market.get_bars.return_value = ([], False)
+        with ExitStack() as stack:
+            for name in ("record_scanner_candles", "capture_due_candidate_option_quotes"):
+                stack.enter_context(patch(f"trading.loop.research_pass.{name}"))
+            stack.enter_context(patch("trading.loop.research_pass.evaluate_injected_setups", return_value=([], {}, None)))
+            route = stack.enter_context(patch("trading.loop.research_pass.route_signals", return_value=[]))
+            observe_ticker(market, Mock(), "TSLA", settings(), {}, Mock(), 4000, lambda: False)
+        args = route.call_args.kwargs
+        self.assertEqual(set(), args["enabled_strategies"])
+        self.assertNotIn("V2_TSLA_TWO_LEG_TREND_PULLBACK", args["observation_only_strategies"])
+        self.assertIn("V2_SPY_TREND_CONT", args["observation_only_strategies"])
+        self.assertTrue(args["observation_scope"].startswith("research_worker:"))
+
+    def test_authorized_ticker_research_uses_separate_dedupe_scope(self):
+        from importlib import import_module
+        route = import_module("strategy_router.route")
+        evaluator = Mock(return_value=None)
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        with patch.object(route, "ACTIVE_STRATEGIES", [("V2_SPY_TREND_CONT", evaluator)]), patch.object(
+            route, "_authorized_for_order", return_value=True,
+        ), patch.object(route, "compute_adx", return_value=30):
+            result = route.route_signals(
+                frame, "SPY", enabled_strategies=set(), quiet=True, prepared_today=frame,
+                observation_only_strategies={"V2_SPY_TREND_CONT"}, observation_scope="research:user:a",
+            )
+        self.assertEqual([], result)
+        self.assertEqual("research:user:a", evaluator.call_args.kwargs["execution_scope"])
+
+    def test_misleading_execution_messages_are_not_used_for_research(self):
+        signal = SimpleNamespace(strategy_id="V2_ORB_PULLBACK")
+        self.assertIn("Research only", scan_message("AMZN", set(), {}, [signal]))
+        message = scan_message("TSLA", {signal.strategy_id},
+                               {signal.strategy_id: "outside_validated_direction"}, [])
+        self.assertIn("calls only", message)
+        self.assertNotIn("evaluating PUT", message)
+        self.assertNotIn("ALL 3", message)
+
+    def test_actual_signal_is_not_described_as_a_fill(self):
+        signal = SimpleNamespace(strategy_id="V2_ORB_PULLBACK")
+        message = scan_message("TSLA", {signal.strategy_id}, {}, [signal])
+        self.assertIn("Setup found", message)
+        self.assertIn("no fill confirmed", message)
+
+    def test_narration_is_once_per_minute_unless_result_changes(self):
+        state = {}
+        now = datetime(2026, 9, 4, 10, 25)
+        with patch("trading.diagnostics.strategy_scan.log_event") as log:
+            for _ in range(6):
+                log_strategy_scan(state, "TSLA", {"V2_ORB_PULLBACK"}, {}, [], now)
+        self.assertEqual(1, log.call_count)

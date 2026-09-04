@@ -43,8 +43,12 @@ def get_settings(user_id: str | None = None) -> dict:
       2. user_settings.json                 (legacy single-user file)
       3. _DEFAULTS                          (hardcoded defaults)
     """
-    settings = _DEFAULTS.copy()
     uid      = user_id or _get_user_id()
+    from config.research_snapshot import current_snapshot
+    snapshot = current_snapshot(uid)
+    if snapshot is not None:
+        return snapshot
+    settings = _DEFAULTS.copy()
 
     # Load per-user settings if the file exists
     _user_settings = get_user_data_dir(uid, create=False) / "settings.json"
@@ -81,6 +85,9 @@ def get_settings(user_id: str | None = None) -> dict:
 
 def save_settings(updates: dict, user_id: str | None = None) -> None:
     uid     = user_id or _get_user_id()
+    from config.research_snapshot import current_snapshot
+    if current_snapshot(uid) is not None:
+        raise RuntimeError("Read-only research cannot change account settings")
     _path   = get_user_data_dir(uid) / "settings.json"
     current = get_settings(user_id=uid)
     current.update(updates)

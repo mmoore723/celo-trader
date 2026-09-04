@@ -74,8 +74,12 @@ def run_trading_loop(user_id: str, poll_interval: int = 10) -> None:
         _stop.clear()
         _run_trading_loop_inner(user_id=user_id, poll_interval=poll_interval)
     finally:
-        unregister_loop_thread(user_id, _thread)
-        _lock.release()
+        from trading.loop.research_worker import stop_research
+        try:
+            stop_research(user_id)
+        finally:
+            unregister_loop_thread(user_id, _thread)
+            _lock.release()
 
 
 def stop_loop(user_id: str) -> None:

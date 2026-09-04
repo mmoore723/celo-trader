@@ -80,6 +80,7 @@ def route_signals(
     observation_resolver=None,
     injected_signals: "list[Signal] | None" = None,
     preserve_reviewed_paid_rules: bool = False,
+    observation_scope: str | None = None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -265,8 +266,12 @@ def route_signals(
                 from trading.cross_ticker_shadow import evaluate_bar_strategy
                 sig = evaluate_bar_strategy(
                     strategy_id, fn, today, ticker=ticker,
-                    account_scope=get_current_user_id(),
+                    account_scope=observation_scope or get_current_user_id(),
                 )
+            elif strategy_id in _observation_only and observation_scope:
+                # Research on an authorized ticker must not consume execution
+                # dedupe state (including when its switch changes mid-pass).
+                sig = fn(today, ticker=ticker, execution_scope=observation_scope)
             else:
                 sig = fn(today, ticker=ticker)
             if sig is not None:

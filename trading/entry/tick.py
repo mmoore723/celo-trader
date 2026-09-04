@@ -142,7 +142,8 @@ logger = logging.getLogger("celo_trader.trading_logic")
 
 # ── Per-tick evaluation ───────────────────────────────────────────────────────
 
-def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
+def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
+          scan_ticker: str | None = None, execution_only: bool = False) -> None:
     # FIX: _risk used to be a `global _risk` module attribute in this file,
     # set once by loop.py (`_em._risk = RiskManager(...)`) — shared by every
     # user's thread. Two users' bots running at once would size/risk-gate
@@ -467,6 +468,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # order placement.  Keep one source of truth for the whole tick so paper
     # evidence collection cannot crash before candidates are recorded.
     paper = bool(settings.get("paper_trading", True))
+    if scan_ticker == "":
+        _US["status"] = "in_trade" if open_trades else "standby"
+        return  # Management-only pass when no strategy/ticker can enter.
     try:
         _max_positions = max(1, min(5, int(settings.get(
             "max_concurrent_positions", MAX_CONCURRENT_POSITIONS))))
@@ -599,7 +603,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _clear_opportunity_window(_US)
     _due_ticker = _opportunity_due_ticker(_US, _now_et()) if _opportunity_enabled else None
     idx = _US.get("scan_idx", 0) % len(watchlist)
-    if _due_ticker:
+    if scan_ticker is not None:
+        ticker = scan_ticker
+    elif _due_ticker:
         ticker = _due_ticker
         logger.info("opportunity_window_due ticker=%s", ticker)
     else:
@@ -694,6 +700,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # only).  Requesting 7800 1Min bars would either 403 or silently return
     # 5Min history bars (free-tier friendly) prepended for RVOL context only.
     _df_today_1m = df5.copy()   # save today's 1Min bars before augment
+    if execution_only:
+        from trading.loop.scan_schedule import record_scan_timing
+        record_scan_timing(_US, ticker, _df_today_1m, _now_et())
     # Persist every scanner-evaluated ticker's canonical one-minute history.
     # This is reusable prospective research data; it cannot place an order.
     try:
@@ -756,17 +765,19 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         # it has no route into order placement or position management.
         try:
             from database.option_quotes import capture_due_candidate_option_quotes
-            capture_due_candidate_option_quotes(
-                ticker=ticker, observed_at=_now_et(),
-                quote_lookup=tradier.get_option_quote,
-                broker_account_id=settings.get("active_broker_account_id") or None,
-            )
+            if not execution_only:
+                capture_due_candidate_option_quotes(
+                    ticker=ticker, observed_at=_now_et(),
+                    quote_lookup=tradier.get_option_quote,
+                    broker_account_id=settings.get("active_broker_account_id") or None,
+                )
         except Exception:
             logger.debug("candidate option follow-up sweep failed for %s", ticker, exc_info=True)
-        _observation_only_strategies = enabled_observation_strategy_ids(
-            settings, ticker=ticker,
-        )
-        if bool(settings.get("shadow_observe_all_strategies", True)):
+        if not execution_only:
+            _observation_only_strategies = enabled_observation_strategy_ids(
+                settings, ticker=ticker,
+            )
+        if not execution_only and bool(settings.get("shadow_observe_all_strategies", True)):
             _observation_only_strategies |= (
                 reviewed_execution_strategy_ids() - _enabled
             )
@@ -788,78 +799,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # The router receives approved strategies for potential entry plus a
     # separate observation-only set in either account mode. Observed-only signals cannot make
     # it back out of the router, so they cannot reach contract selection.
-    # The new V2 ORB is not a later-candle-close entry.  A completed one-minute
-    # breakout arms it; the first live quote that revisits the broken 09:45
-    # boundary injects the signal here.  It still travels through *all* normal
-    # router gates and paper-order safeguards below.
-    _live_underlying_quote = None
-    _injected_signals = []
-    if "V2_ORB_PULLBACK" in (_enabled | _observation_only_strategies):
-        try:
-            _live_underlying_quote = alpaca.get_latest_quote(ticker)
-            try:
-                from database import record_underlying_quote
-                record_underlying_quote(
-                    ticker, _live_underlying_quote,
-                    broker_account_id=settings.get("active_broker_account_id") or None,
-                    observed_at=_now_et(),
-                )
-            except Exception:
-                logger.debug("underlying quote evidence capture failed for %s", ticker, exc_info=True)
-            _quote_price = None
-            if _live_underlying_quote:
-                _ask, _bid = float(_live_underlying_quote.get("ap", 0) or 0), float(_live_underlying_quote.get("bp", 0) or 0)
-                if _ask > 0 and _bid > 0:
-                    _quote_price = (_ask + _bid) / 2.0
-            _orb_states = _US.setdefault("v2_orb_retouch", {})
-            _orb_state = _orb_states.setdefault(ticker.upper(), {})
-            if "V2_ORB_PULLBACK" in _observation_only_strategies and ticker.upper() != "TSLA":
-                from trading.cross_ticker_shadow import update_orb
-                _orb_signal, _orb_status = update_orb(
-                    _orb_state, _df_today_1m, ticker=ticker,
-                    quote_price=_quote_price, now=_now_et(),
-                )
-            else:
-                _orb_signal, _orb_status = update_one_minute_orb_retouch(
-                    _orb_state, _df_today_1m, ticker=ticker,
-                    quote_price=_quote_price, now=_now_et(),
-                )
-            _US["v2_orb_retouch_status"] = _orb_status
-            if _orb_signal is not None:
-                _injected_signals.append(_orb_signal)
-                log_event("INFO", "bar_eval",
-                          f"🔵 [{ticker}] V2 ORB first retouch reached at ${_quote_price:.2f}; "
-                          "sending the paper setup through normal risk gates.")
-        except Exception as _orb_retouch_ex:
-            logger.warning("V2 ORB retouch evaluator failed (non-fatal): %s", _orb_retouch_ex)
-
-    # The reviewed TSLA two-leg continuation uses no uncompleted bar and no
-    # generic router threshold.  It retains the exact paid-study sequence,
-    # then enters the ordinary router, contract, sizing, and paper safeguards.
-    if "V2_TSLA_TWO_LEG_TREND_PULLBACK" in (_enabled | _observation_only_strategies):
-        try:
-            _two_leg_states = _US.setdefault("v2_tsla_two_leg_trend_pullback", {})
-            _two_leg_state = _two_leg_states.setdefault(ticker.upper(), {})
-            if ("V2_TSLA_TWO_LEG_TREND_PULLBACK" in _observation_only_strategies
-                    and ticker.upper() != "TSLA"):
-                from trading.cross_ticker_shadow import update_two_leg
-                _two_leg_signal, _two_leg_status = update_two_leg(
-                    _two_leg_state, _df_today_1m, ticker=ticker, now=_now_et(),
-                )
-            else:
-                _two_leg_signal, _two_leg_status = update_two_leg_trend_pullback(
-                    _two_leg_state, _df_today_1m, ticker=ticker, now=_now_et(),
-                )
-            _US["v2_tsla_two_leg_trend_pullback_status"] = _two_leg_status
-            if _two_leg_signal is not None:
-                _injected_signals.append(_two_leg_signal)
-                log_event(
-                    "INFO", "bar_eval",
-                    f"🔵 [{ticker}] TSLA two-leg VWAP/EMA pullback reclaimed; "
-                    "sending the reviewed paper setup through account safeguards.",
-                )
-        except Exception as _two_leg_ex:
-            logger.warning("TSLA two-leg pullback evaluator failed closed (non-fatal): %s", _two_leg_ex)
+    from trading.entry.injected_setups import evaluate_injected_setups
+    _injected_signals, _setup_statuses, _live_underlying_quote = evaluate_injected_setups(
+        _US, _df_today_1m, ticker, _enabled, _observation_only_strategies, alpaca, settings,
+    )
 
     _signals = route_signals(df5, ticker, enabled_strategies=_enabled,
                               alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
@@ -868,6 +811,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
                               observation_resolver=_observation_resolver,
                               injected_signals=_injected_signals,
                               preserve_reviewed_paid_rules=True)
+    from trading.diagnostics.strategy_scan import log_strategy_scan
+    log_strategy_scan(_US, ticker, _enabled, _setup_statuses, _signals, _now_et())
     # Main-tier setups remain immediate.  Opportunity setups are paper-only
     # candidates collected and ranked over a causal 15-minute window.
     if _opportunity_enabled:

@@ -45,7 +45,6 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     from trading.entry import _tick
     from trading.diagnostics import _check_ghost_positions
     from trading.controls import _panic_close_all_positions
-    from trading.observers.qqq_opening_downmove import maybe_observe as _maybe_observe_qqq
 
     # This user's own state dict — see trading/state.py::get_user_state.
     # FIX: this function used to ALSO mirror every write into the global
@@ -438,39 +437,23 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
             except Exception as _bal_err:
                 logger.debug("Balance refresh failed (non-fatal): %s", _bal_err)
 
-            # ── Batch-evaluate ALL watchlist tickers once per bar ────────────
-            # Old design: one ticker per 10-second tick.  With 10 tickers the
-            # cycle took ~100 s, so each ticker was only seen every 1.5 bars.
-            _wl_batch = _US.get("scan_watchlist") or ["SPY", "QQQ"]
-            _US["_batch_archived_tickers"] = set()
-            # Independent, non-ordering study. It fetches QQQ only during its
-            # two declared windows and is deliberately outside `_tick` so it
-            # cannot become a router signal or create a broker order.
-            _maybe_observe_qqq(alpaca, tradier)
-            try:
-                for _bi in range(len(_wl_batch)):
-                    if _stop.is_set():
-                        break
-                    _tick(alpaca, tradier)
-            finally:
-                # Run this after entry/position work so collection can never
-                # delay an urgent exit. Usually every ticker was archived by
-                # _tick already; only names skipped by an execution gate need
-                # a separate read-only fetch here.
-                if not _stop.is_set():
-                    _archived = _US.get("_batch_archived_tickers") or set()
-                    _missing = [
-                        ticker for ticker in _wl_batch
-                        if str(ticker).strip().upper() not in _archived
-                    ]
-                    if _missing:
-                        from trading.research_collection import collect_watchlist_session_bars
-                        _archived |= collect_watchlist_session_bars(
-                            alpaca,
-                            _missing,
-                            broker_account_id=_US.get("broker_account_id"),
-                        )
-                _US.pop("_batch_archived_tickers", None)
+            # Trading stays single-writer. Research has separate readers/state
+            # and no order capabilities; its duration never sets our cadence.
+            from trading.loop.scan_schedule import scan_universe, run_execution_batch
+            from trading.loop.research_worker import submit_research
+            from trading.state import get_user_risk
+            _scan_settings = get_settings()
+            _wl_batch = scan_universe(_US.get("scan_watchlist") or ["SPY", "QQQ"], _scan_settings)
+            _US["scan_watchlist"] = _wl_batch
+            _research_minute = _now_et().strftime("%Y-%m-%dT%H:%M")
+            if _US.get("research_submitted_minute") != _research_minute:
+                _submitted = submit_research(user_id, _stop, {
+                    "tickers": _wl_batch, "settings": _scan_settings,
+                    "balance": _US.get("account_balance", 0), "risk": get_user_risk(),
+                })
+                if _submitted:
+                    _US["research_submitted_minute"] = _research_minute
+            run_execution_batch(_wl_batch, _scan_settings, _stop, _tick, alpaca, tradier)
 
         except DailyLossLimitReached as e:
             _US["status"] = "kill_locked"
@@ -507,10 +490,8 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                 pass
             _stop.wait(timeout=30)
 
-        # ── Sleep until the next 60-second bar boundary ───────────────────────
-        # Inside the trading window: sleep to the start of the next 1-minute
-        # candle so every tick sees fresh bars.  Floor at 5 s so a slow pass
-        # "Trading loop stopped" log with no error message.
+        # Short boundary-aligned retries handle a forming/late minute without
+        # depending on the length of the independent research pass.
         try:
             _now_et_sl = _now_et()
             _hm        = _now_et_sl.hour * 60 + _now_et_sl.minute
@@ -522,10 +503,8 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                 for s, e in _windows
             )
             if _in_window:
-                # Sleep to next minute boundary (new bar = new data)
-                _secs_into = _now_et_sl.second + _now_et_sl.microsecond / 1_000_000
-                _secs_wait = max(5.0, 60.0 - _secs_into)
-                _stop.wait(timeout=_secs_wait)
+                from trading.loop.scan_schedule import seconds_until_scan
+                _stop.wait(timeout=seconds_until_scan(_now_et_sl))
             else:
                 _stop.wait(timeout=60)
         except Exception as _sleep_err:
