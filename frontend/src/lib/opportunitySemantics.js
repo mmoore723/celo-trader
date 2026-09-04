@@ -30,6 +30,7 @@ export function opportunityDecisionTitle(entry) {
   if (entry?.outcome === "entered") return "Trade entered";
   if (entry?.reason_code === "entry_price_not_reached") return "Order sent · not filled";
   if (entry?.reason_code === "stale_entry_quote") return "Skipped: option price was delayed";
+  if (entry?.reason_code === "spy_trend_level_too_close") return "Skipped: next price wall was too close";
   const lifecycle = opportunityLifecycle(entry);
   return {
     stopped: "Skipped by a safety rule",

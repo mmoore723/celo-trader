@@ -47,3 +47,13 @@ test("stale quote decisions explain the exact two-minute price rule", () => {
   assert.match(opportunityReason(entry), /no order was sent/);
   assert.match(opportunityReason(entry), /sandbox price feed/);
 });
+
+test("SPY trend context blocks name the nearby price wall", () => {
+  const entry = {
+    outcome: "blocked",
+    reason_code: "spy_trend_level_too_close",
+    reason_detail: "The next resistance level was only 0.32 ATR away.",
+  };
+  assert.equal(opportunityDecisionTitle(entry), "Skipped: next price wall was too close");
+  assert.match(opportunityReason(entry), /0\.32 ATR/);
+});

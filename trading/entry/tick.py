@@ -947,6 +947,43 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         },
     }
 
+    # The SPY Trend candidate was already recorded above.  Keep collecting it
+    # for research, but only authorize an order when the chronological
+    # after-cost study found enough room before the next opposing price level.
+    from trading.portfolio_policy import reviewed_strategy_entry_policy
+    _strategy_decision = reviewed_strategy_entry_policy(
+        ticker=ticker,
+        strategy_id=strategy_id,
+        direction=direction,
+        signal_meta=_top.meta,
+    )
+    if not _strategy_decision.allowed:
+        _opportunity_context = _US["scanner_opportunity_context"]["context"]
+        if isinstance(_opportunity_context, dict):
+            _opportunity_context["strategy_policy"] = {
+                "status": "blocked",
+                "reason_code": _strategy_decision.reason_code,
+                "reason_detail": _strategy_decision.reason_detail,
+            }
+        log_event(
+            "INFO",
+            "trading_logic",
+            f"🟡 [{ticker}] {strategy_id} skipped — "
+            f"{_strategy_decision.reason_detail}",
+        )
+        _log_journal(
+            ticker,
+            strategy_id,
+            direction,
+            _top.confidence,
+            outcome="blocked",
+            reason_code=_strategy_decision.reason_code,
+            reason_detail=_strategy_decision.reason_detail,
+            context=_opportunity_context,
+            tier=_signal_tier,
+        )
+        return
+
     # SPY Trend Continuation and Afternoon FVG compete for the same SPY
     # position slot. Chronological paid-quote portfolio research selected
     # preserving that slot for FVG from 13:45 through 15:00 ET. This is not a
