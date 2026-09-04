@@ -1,6 +1,6 @@
 # Uncertain order recovery
 
-Status: implemented for the existing Alpaca paper/live adapter. Deployment verification is recorded below after release. This does not select another broker, enable live trading, or promote strategies.
+Status: deployed on 2026-09-03 at 10:36 PM ET for the existing Alpaca adapter. Production remains in paper mode. This does not select another broker, enable live trading, or promote strategies.
 
 ## What changes
 
@@ -37,6 +37,17 @@ Broker unavailability, invalid/missing execution prices, conflicting quantities,
 4. If the broker cannot confirm terminal status or supplies conflicting evidence, leave the record intact and investigate the broker account. Do not fabricate a fill, mark the account flat, or submit another order to clear the alert.
 
 ## Verification and rollback
+
+### Verified release — 2026-09-03
+
+- Application commit: `fa9503d705841b0d25c33dafcd847958e896a719`; previous release: `68515499de324e40a83e9c13e6fe3448c22e9d4b`.
+- Local backend suite: **596 passed**, including **22 new recovery tests**. Final focused safety rerun: **35 passed**. Focused production-server suite before restart: **75 passed**.
+- Active paper database backed up consistently before deployment to `/opt/celo_trader/user_data/admin/release_backups/pre-fa9503d-20260904.sqlite` (file mode `0600`). No credentials were copied into the backup.
+- At 10:41 PM ET, the deployed service and public health endpoint were healthy. Authenticated **Alpaca Paper** and **Tradier Production** checks both returned connected; Tradier Sandbox remained unused.
+- Broker remained Alpaca, paper mode and bot running state were preserved, and settings/credential fingerprints matched the pre-deployment values. Broker positions, open orders, and pending recovery records were all zero. No post-restart ERROR/CRITICAL system events were found in the latest 300 records.
+- No test orders were submitted, no existing historical trades were rewritten, and no frontend or unrelated research changes were deployed. A market-session execution trial remains outstanding.
+
+### Repeatable checks
 
 Offline test suites: `tests.test_execution_recovery`, `tests.test_execution_recovery_faults`, and `tests.test_execution_recovery_integration`. These use temporary databases and mock broker endpoints; they do not place orders. Full backend suite: `python -W ignore::ResourceWarning -m unittest discover -s tests -q`.
 
