@@ -75,6 +75,9 @@ def _close_position(
         step_to_price   = bid_price,
         allow_market_fallback = _urgent_exit,
         position_intent = "sell_to_close",
+        # The strategy has already selected bid or midpoint-then-bid from
+        # this exact Tradier contract. Do not overwrite it with another feed.
+        price_authority = "tradier" if reference_quote else "alpaca",
         order_context   = {
             "ticker": trade.get("ticker"),
             "strategy_id": trade.get("strategy_id"),
@@ -84,13 +87,15 @@ def _close_position(
             "exit_annotations": _snapshot_exit_annotations(trade.get("ticker", "")),
             "peak_price": _US["positions"].get(trade["id"], {}).get("peak_price"),
             "mae_price": _US["positions"].get(trade["id"], {}).get("min_price"),
-            # Observation only: Alpaca remains the execution authority until
-            # the atomic Tradier cutover. Preserve the Tradier natural-side
-            # quote so paper-fill distortion can be measured exactly.
+            # Price source and execution broker are separate. The real fill
+            # still comes only from Alpaca's confirmed order response.
             "quote_source": (reference_quote or {}).get("quote_source") or "tradier_exit_quote",
             "quote_bid": (reference_quote or {}).get("bid"),
             "quote_ask": (reference_quote or {}).get("ask"),
             "quote_mid": (reference_quote or {}).get("mid"),
+            "quote_received_at": (reference_quote or {}).get("quote_received_at"),
+            "quote_bid_time_ms": (reference_quote or {}).get("bid_date"),
+            "quote_ask_time_ms": (reference_quote or {}).get("ask_date"),
         },
     )
 

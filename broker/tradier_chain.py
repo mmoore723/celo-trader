@@ -9,7 +9,7 @@ into TradierClient in broker/tradier_client.py.
 
 import logging
 from typing import Optional
-from datetime import date
+from datetime import date, datetime, timezone
 
 from config import MIN_OPEN_INTEREST, MAX_BID_ASK_SPREAD
 from broker.tradier_market import _quote_age_seconds
@@ -101,6 +101,7 @@ class TradierChainMixin:
                 "symbols": option_symbol,
                 "greeks":  "false",
             })
+            received_at = datetime.now(timezone.utc).isoformat()
             quotes = resp.get("quotes", {}).get("quote", {})
             if isinstance(quotes, list):
                 quotes = quotes[0] if quotes else {}
@@ -120,6 +121,7 @@ class TradierChainMixin:
                 "ask_date": quotes.get("ask_date"),
                 "trade_date": quotes.get("trade_date"),
                 "quote_source": "tradier",
+                "quote_received_at": received_at,
             }
         except Exception as e:
             logger.error("get_option_quote(%s) failed: %s", option_symbol, e)

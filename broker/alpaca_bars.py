@@ -417,21 +417,20 @@ class AlpacaBarsMixin:
             return None
 
     def get_latest_option_quote(self, symbol: str) -> Optional[dict]:
-        """Return Alpaca's latest bid/ask for one OCC option contract.
+        """Return explicitly requested OPRA quotes, never modified indicative data.
 
-        Contract selection currently uses Tradier, while the order is routed
-        to Alpaca.  Requoting the exact contract at the execution broker keeps
-        a stale/cross-provider ask from becoming an unfillable limit order.
-        Alpaca's endpoint returns a mapping under ``quotes`` even for one
-        requested symbol.
+        Without an entitlement this returns None; it does not subscribe to a
+        paid feed. Orders can retain their supplied Tradier price reference.
         """
         url = f"{self.data}/v1beta1/options/quotes/latest"
         try:
-            payload = self._get(url, params={"symbols": symbol}) or {}
+            payload = self._get(url, params={"symbols": symbol, "feed": "opra"}) or {}
             quotes = payload.get("quotes") or {}
-            return quotes.get(symbol) or quotes.get(symbol.upper())
+            quote = quotes.get(symbol) or quotes.get(symbol.upper())
+            return {**quote, "feed": "opra", "symbol": symbol.upper()} if quote else None
         except Exception as e:
-            logger.error("get_latest_option_quote(%s) failed: %s", symbol, e)
+            logger.warning("OPRA option quote unavailable for %s (%s); no indicative fallback",
+                           symbol, type(e).__name__)
             return None
 
     def get_snapshots(self, symbols: list[str]) -> dict[str, dict]:

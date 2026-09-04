@@ -1,5 +1,6 @@
 """Recovery isolation and integration with existing position-management callers."""
 import unittest
+import json
 from unittest.mock import Mock, patch
 
 from tests import test_execution_recovery as fixtures
@@ -48,6 +49,33 @@ class RecoveryIntegrationTests(unittest.TestCase):
              patch("database.close_trade", side_effect=AssertionError("Duplicate close")):
             _close_position(self.client, trade, 1.50, "test_exit")
         self.assertEqual(2, len(self.rows()))
+        self.assertEqual(2, next(t for t in self.rows() if t["status"] == "open")["contracts"])
+        self.assertAlmostEqual(-10, sum(t["realized_pnl"] or 0 for t in self.rows()))
+
+    def test_close_preserves_tradier_bid_and_durable_quote_timestamps(self):
+        from trading.position_manager.close import _close_position
+        self.enter()
+        trade = self.rows()[0]
+        self.next_status, self.next_qty, self.next_price = "canceled", "1", "1.50"
+        self.client.get_latest_option_quote.reset_mock()
+        self.client.get_latest_option_quote.return_value = {"bp": 2.0, "ap": 2.5}
+        state = {"positions": {}, "account_balance": 4000}
+        reference = {"bid": 1.48, "ask": 1.50, "mid": 1.49, "quote_source": "tradier",
+                     "bid_date": 1788541339000, "ask_date": 1788541339001,
+                     "quote_received_at": "2026-09-04T17:02:20+00:00"}
+        with patch("trading.position_manager.close.get_user_state", return_value=state), \
+             patch("database.log_event"), patch("database.record_paper_option_quote"), \
+             patch("database.link_broker_order_to_trade"), patch("ai_reasoning.narrator.narrate_exit"), \
+             patch("database.insert_trade", side_effect=AssertionError("Duplicate insert")), \
+             patch("database.close_trade", side_effect=AssertionError("Duplicate close")):
+            _close_position(self.client, trade, 1.48, "test_exit", reference_quote=reference)
+        self.client.get_latest_option_quote.assert_not_called()
+        self.assertEqual("1.48", self.submissions[-1]["limit_price"])
+        records = [json.loads(row["body"]) for row in self.rows("execution_recovery")]
+        context = next(row["context"] for row in records if row["side"] == "sell")
+        self.assertEqual(reference["bid_date"], context["quote_bid_time_ms"])
+        self.assertEqual(reference["ask_date"], context["quote_ask_time_ms"])
+        self.assertEqual(reference["quote_received_at"], context["quote_received_at"])
         self.assertEqual(2, next(t for t in self.rows() if t["status"] == "open")["contracts"])
         self.assertAlmostEqual(-10, sum(t["realized_pnl"] or 0 for t in self.rows()))
 

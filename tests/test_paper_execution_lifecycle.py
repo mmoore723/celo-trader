@@ -1,6 +1,6 @@
 """Offline broker-response replays; never submit orders to a real account."""
 from contextlib import ExitStack
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import sqlite3
 import tempfile
 import unittest
@@ -131,7 +131,10 @@ class PaperExecutionLifecycleTests(unittest.TestCase):
         self.assertEqual("partially_filled", summary["status"])
         self.assertEqual(1, summary["filled_qty"])
         broker._post.return_value = {"id": "exit-1", "status": "new"}
-        broker.get_latest_option_quote.return_value = {"bp": 1.73, "ap": 1.77}
+        broker.get_latest_option_quote.return_value = {
+            "bp": 1.73, "ap": 1.77, "feed": "opra", "symbol": contract["symbol"],
+            "t": datetime.now(timezone.utc).isoformat(),
+        }
         exit_fill = broker.place_option_order(
             contract["symbol"], entry["filled_qty"], "sell", limit_price=1.80,
             position_intent="sell_to_close",

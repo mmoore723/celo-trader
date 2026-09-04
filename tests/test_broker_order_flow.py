@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -104,7 +104,8 @@ class _ExecutionQuoteBroker(AlpacaOrdersMixin):
 
     def get_latest_option_quote(self, _symbol: str) -> dict:
         self.quote_calls += 1
-        return {"bp": 1.20, "ap": 1.30}
+        return {"bp": 1.20, "ap": 1.30, "feed": "opra", "symbol": _symbol,
+                "t": datetime.now(timezone.utc).isoformat()}
 
     def _post(self, _url: str, payload: dict) -> dict:
         self.posted.append(payload)
@@ -165,7 +166,7 @@ class _BoundedWorkingBroker(AlpacaOrdersMixin):
 
 
 class BrokerOrderExecutionTests(unittest.TestCase):
-    def test_exit_records_tradier_reference_without_changing_alpaca_execution(self) -> None:
+    def test_non_authoritative_exit_can_use_verified_opra_quote(self) -> None:
         broker = _ExecutionQuoteBroker()
         with patch("broker.alpaca_orders._record_flow") as record_flow, patch(
             "broker.alpaca_orders.log_event"
@@ -246,7 +247,7 @@ class BrokerOrderExecutionTests(unittest.TestCase):
             )
 
         self.assertEqual("filled", result["status"])
-        self.assertEqual(1, broker.quote_calls)
+        self.assertEqual(0, broker.quote_calls)
         self.assertEqual("1.1", broker.posted[0]["limit_price"])
         self.assertEqual(1.20, broker.wait_kwargs["step_to_price"])
         events = [call.kwargs.get("event_type") for call in record_flow.call_args_list]
