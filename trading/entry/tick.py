@@ -300,6 +300,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # about (see _check_ghost_positions docstring for the 2026-06-15 incident
     # that motivated this). Stored in _US so the market-closed branch
     _US["ghost_position_alert"] = _check_ghost_positions(alpaca)
+    from trading.recovery_state import restore_entries
+    restore_entries(_US, get_settings().get("active_broker_account_id"), _now_et().date().isoformat())
 
     # ── Write shared state file so dashboard reads live bot state ─────────────
     from config import get_risk_tier as _grt, DAILY_LOSS_HARD_CAP_PCT as _DLHCP_FALLBACK, get_settings as _gs
@@ -2013,6 +2015,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         has_open_positions=bool(open_trades),
     )
     _order_intent["working_window_seconds"] = _entry_wait_seconds
+    try:
+        from trading.annotations import snapshot_annotations
+        _durable_annotations = snapshot_annotations(ticker)
+    except Exception:
+        _durable_annotations = None
     order = alpaca.place_option_order(
         symbol          = contract["symbol"],
         qty             = n_contracts,
@@ -2038,11 +2045,36 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
             "quote_mid": _c_mid,
             "quote_latency_ms": _quote_latency_ms,
             "quote_received_at": contract.get("quote_received_at"),
+            "stop_factor": 1.0 - _risk.dynamic_stop_pct(_now_et(), _now_et()),
+            "target_factor": 1.0 + _risk.ORB_STAGE1_GAIN,
+            "direction": direction,
+            "confidence": float(_top.confidence),
+            "entry_record": {
+                "ticker": ticker, "contract_symbol": contract["symbol"],
+                "option_type": opt_type, "strike": contract["strike"],
+                "expiry": contract.get("expiry", ""), "paper": int(paper),
+                "strategy_id": _US.get("last_strategy_id", strategy_id),
+                "tier": _signal_tier, "candidate_id": _candidate_id,
+                "broker_account_id": settings.get("active_broker_account_id") or None,
+                "entry_reason": f"ORB {direction} | R:R={rr_audit['R_R_Ratio']}",
+                "annotations_json": _durable_annotations,
+            },
         },
     )
 
     # FIX S1: Only record trade if order actually filled
     if order is None:
+        if getattr(alpaca, "last_order_outcome", None) in {
+            "recovery_pending", "reconciled_retry_next_tick", "intent_already_processed",
+        }:
+            _order_intent["status"] = "recovery_pending"
+            _log_journal(
+                ticker, strategy_id, direction, _top.confidence,
+                outcome="blocked", reason_code="broker_fill_unconfirmed",
+                reason_detail="Checking the original broker order and journal before another order; not a missed-price verdict.",
+                context=_opportunity_context, tier=_signal_tier,
+            )
+            return
         _order_intent["status"] = "price_not_reached"
         _order_intent["resolved_at"] = _now_et().isoformat()
         try:
@@ -2096,7 +2128,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
     # Record the position at the size that ACTUALLY filled, not the size we
     # asked for — otherwise the DB shows more contracts open than Alpaca
     # really holds, which throws off risk sizing and P&L on this trade.
-    _filled_qty = int(order.get("filled_qty") or n_contracts)
+    _filled_qty = int(order.get("filled_qty", n_contracts))
     if _filled_qty != n_contracts:
         log_event(
             "WARNING", "order",
@@ -2149,7 +2181,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient) -> None:
         _candidate_meta = _opportunity_context.get("strategy_meta")
         if isinstance(_candidate_meta, dict):
             _candidate_id = _candidate_meta.get("shadow_candidate_id")
-    trade_id = insert_trade(
+    trade_id = order.get("accounted_trade_id") or insert_trade(
         ticker          = ticker,
         contract_symbol = contract["symbol"],
         option_type     = opt_type,

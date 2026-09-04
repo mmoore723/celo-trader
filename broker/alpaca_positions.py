@@ -38,11 +38,10 @@ class AlpacaPositionsMixin:
             return False
 
     def get_positions(self) -> list[dict]:
-        try:
-            result = self._get(f"{self.base}/v2/positions")
-            return result if isinstance(result, list) else []
-        except Exception:
-            return []
+        result = self._get(f"{self.base}/v2/positions")
+        if not isinstance(result, list):
+            raise ValueError("Broker positions snapshot is unavailable")
+        return result
 
     # ── Single-position close (NEW 2026-06-15 — Trade Journal close button) ──
     # close_all_positions() above liquidates EVERYTHING (panic button). This
@@ -75,19 +74,20 @@ class AlpacaPositionsMixin:
     def get_open_orders(self, symbol: Optional[str] = None) -> list[dict]:
         """
         Return all currently-open (resting) orders, optionally filtered to a
-        single OCC option symbol. Returns [] on any error — callers should
-        treat that as "unknown" rather than "definitely none", but an empty
-        list is also the correct/expected steady-state result.
+        single OCC option symbol. An unavailable snapshot raises; [] means
+        the broker actually confirmed no working orders.
         """
         try:
             params = {"status": "open"}
             if symbol:
                 params["symbols"] = symbol
             result = self._get(f"{self.base}/v2/orders", params=params)
-            return result if isinstance(result, list) else []
+            if not isinstance(result, list):
+                raise ValueError("Broker open-orders snapshot is unavailable")
+            return result
         except Exception as e:
             logger.warning("get_open_orders failed: %s", e)
-            return []
+            raise
 
     def cancel_order(self, order_id: str) -> bool:
         """

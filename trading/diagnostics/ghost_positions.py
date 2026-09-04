@@ -89,13 +89,18 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
     _account_id = get_settings().get("active_broker_account_id") or None
 
     try:
+        from broker.recovery import reconcile_orders
+        pending_symbols = reconcile_orders(alpaca)
         positions = alpaca.get_positions()
-    except Exception:
-        return None
+    except Exception as exc:
+        logger.warning("position_recovery_snapshot_unavailable: %s", exc)
+        return {"detected_at": _now_et().isoformat(), "positions": [], "issues": [{
+            "kind": "recovery_unavailable", "message": "Broker reconciliation unavailable; no positions were inferred or changed.",
+        }]}
 
     db_open    = get_open_trades(broker_account_id=_account_id)
     db_symbols = {t.get("contract_symbol") for t in db_open}
-    ghosts     = [p for p in positions if p.get("symbol") not in db_symbols]
+    ghosts     = [p for p in positions if p.get("symbol") not in db_symbols | pending_symbols]
     try:
         open_orders: list[dict] | None = alpaca.get_open_orders()
     except Exception as exc:
@@ -104,10 +109,14 @@ def _check_ghost_positions(alpaca: "AlpacaClient") -> Optional[dict]:
     # Do not infer broker-flat while the working-order snapshot is unavailable.
     # An in-flight entry/exit could otherwise become a false reconciliation alarm.
     phantom_issues = (
-        _find_db_only_positions(db_open, positions, open_orders, now=_now_et())
+        _find_db_only_positions(db_open, positions,
+                               open_orders + [{"symbol": s} for s in pending_symbols], now=_now_et())
         if open_orders is not None
         else []
     )
+    phantom_issues.extend({"kind": "order_recovery_pending", "symbol": symbol,
+                          "message": f"{symbol}: checking unresolved broker order; confirmed fills remain tracked."}
+                         for symbol in pending_symbols)
     current_phantoms = {str(issue["symbol"]) for issue in phantom_issues}
     previous_phantoms = _phantom_alert_logged.get(_uid, set())
     for issue in phantom_issues:

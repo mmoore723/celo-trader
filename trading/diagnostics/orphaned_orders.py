@@ -28,6 +28,13 @@ def _sweep_orphaned_orders(alpaca: "AlpacaClient", open_trades: list) -> None:
         return
 
     tracked_symbols = {t.get("contract_symbol") for t in open_trades}
+    if getattr(type(alpaca), "durable_order_recovery", False):
+        try:
+            from broker.recovery import scope
+            tracked_symbols.update(row["symbol"] for row in scope(alpaca).pending())
+        except Exception:
+            logger.warning("orphan sweep skipped: recovery ownership unavailable", exc_info=True)
+            return
     for o in open_orders:
         _sym = o.get("symbol")
         if _sym in tracked_symbols:
@@ -36,10 +43,9 @@ def _sweep_orphaned_orders(alpaca: "AlpacaClient", open_trades: list) -> None:
         if alpaca.cancel_order(_oid):
             log_event(
                 "WARNING", "reconciliation",
-                f"🟡 Cancelled an orphaned resting order for {_sym} "
+                f"🟡 Requested cancellation of an orphaned resting order for {_sym} "
                 f"(order ID: {_oid[:8]}…) that wasn't tied to any open "
-                f"position the bot is tracking — it could have filled "
-                f"unsupervised as a ghost position."
+                f"position the bot is tracking. Awaiting broker confirmation."
             )
             logger.warning(
                 "orphan_order_swept",

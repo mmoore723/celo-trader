@@ -133,7 +133,9 @@ class AlpacaCoreMixin:
                 r.raise_for_status()
                 return r.json()
         try:
-            return _retry(call)
+            # POST may have succeeded even when its response was lost. The
+            # durable client ID is queried by recovery; never blindly resubmit.
+            return call() if url.endswith("/v2/orders") else _retry(call)
         except Exception as e:
             log_event("ERROR", "broker.alpaca",
                       f"🔴 [Alpaca] Connection failed — could not reach the broker. "

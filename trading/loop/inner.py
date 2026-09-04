@@ -321,6 +321,9 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
             if _maintenance.get("maintenance_mode", False):
                 log_event("INFO", "trading_logic", "🔬 Maintenance collection-only mode — scanning without sending orders.")
 
+            from broker.recovery import reconcile_orders
+            _pending_execution = reconcile_orders(alpaca)
+
             # ── After-hours deep sleep: 5:00 PM – 8:00 AM ET ─────────────────
             # No scan, no tick, no API calls. Wakes at 8:00 AM on the next
             # weekday. Sleeps in 5-minute chunks so Stop Bot still responds.
@@ -355,7 +358,7 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                 # user's Stop button wouldn't wake their thread during
                 # after-hours sleep, and admin's Stop would wrongly wake
                 # everyone else's.
-                _stop.wait(timeout=min(300, _secs_until_wake))
+                _stop.wait(timeout=min(10 if _pending_execution else 300, _secs_until_wake))
                 continue   # skip scan + _tick entirely
 
             # Waking up from after-hours — log once.

@@ -99,6 +99,8 @@ def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
                 "ticker": trade.get("ticker"),
                 "strategy_id": trade.get("strategy_id"),
                 "trade_id": trade.get("id"),
+                "expected_contracts": trade["contracts"],
+                "exit_reason": "manual_journal",
             },
         )
         broker_ok = fill is not None
@@ -151,7 +153,7 @@ def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
 
     # ── Mark the DB row closed ────────────────────────────────────────────────
     try:
-        pnl = close_trade(
+        pnl = fill["accounted_pnl"] if fill.get("accounted_trade_id") else close_trade(
             trade_id             = trade["id"],
             exit_price           = exit_price,
             exit_time            = _now_et(),
@@ -168,6 +170,14 @@ def close_trade_by_id(trade_id: int, user_id: str | None = None) -> dict:
             "message": (f"Sell order placed, but DB update failed for trade #{trade_id}. "
                         f"Check the journal manually."),
             "pnl": None,
+        }
+    if fill.get("accounted_trade_id") and int(fill["filled_qty"]) < trade["contracts"]:
+        _refresh_session_pnl(uid)
+        return {
+            "ok": False,
+            "message": (f"Sold {fill['filled_qty']} of {trade['contracts']} contracts. "
+                        "The remaining position is still open; any unresolved order is being checked."),
+            "pnl": pnl,
         }
     try:
         from database import link_broker_order_to_trade

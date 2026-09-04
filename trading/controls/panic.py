@@ -22,7 +22,12 @@ def _flatten_with_confirmed_fills(broker, market, *, reason: str) -> bool:
     from database import get_open_trades
     from trading.position_manager.close import _close_position
 
+    from broker.recovery import reconcile_orders
+    pending_symbols = reconcile_orders(broker)
+
     for trade in list(get_open_trades()):
+        if trade["contract_symbol"] in pending_symbols:
+            continue  # Other confirmed positions can still be closed safely.
         try:
             quote = market.get_option_quote(trade["contract_symbol"])
         except Exception:
@@ -37,7 +42,7 @@ def _flatten_with_confirmed_fills(broker, market, *, reason: str) -> bool:
 
     # A tracked row must remain open unless its exit order produced a confirmed
     # fill (or the broker explicitly proved the position never existed).
-    if get_open_trades():
+    if get_open_trades() or pending_symbols:
         return False
 
     # Flatten any broker position that predates/escaped the local journal, then

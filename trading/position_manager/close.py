@@ -79,6 +79,11 @@ def _close_position(
             "ticker": trade.get("ticker"),
             "strategy_id": trade.get("strategy_id"),
             "trade_id": trade.get("id"),
+            "expected_contracts": trade["contracts"],
+            "exit_reason": reason,
+            "exit_annotations": _snapshot_exit_annotations(trade.get("ticker", "")),
+            "peak_price": _US["positions"].get(trade["id"], {}).get("peak_price"),
+            "mae_price": _US["positions"].get(trade["id"], {}).get("min_price"),
             # Observation only: Alpaca remains the execution authority until
             # the atomic Tradier cutover. Preserve the Tradier natural-side
             # quote so paper-fill distortion can be measured exactly.
@@ -93,8 +98,8 @@ def _close_position(
         if _reconcile_if_phantom(alpaca, trade):
             return
         log_event("WARNING", "trading_logic",
-                  f"⚠️ [{trade['contract_symbol']}] Exit order did not fill — "
-                  f"trade stays open, will retry next tick.")
+                  f"⚠️ [{trade['contract_symbol']}] Exit not fully confirmed — "
+                  f"checking the original order and actual remaining quantity next tick.")
         return
 
     fill_price = float(fill.get("confirmed_fill_price") or
@@ -125,7 +130,7 @@ def _close_position(
     # fill for an exit order. Mirror the stage-1 partial-exit pattern: record
     # only what actually closed, shrink the parent row, leave it OPEN so the
     # next tick re-evaluates the true remainder.
-    _closed_qty = int(fill.get("filled_qty") or trade["contracts"])
+    _closed_qty = int(fill.get("filled_qty", trade["contracts"]))
     if _closed_qty < 1:
         log_event(
             "WARNING", "trading_logic",
@@ -148,7 +153,7 @@ def _close_position(
         )
         from database import insert_trade, get_conn
         _trade_ps_partial = _US["positions"].get(trade["id"], {})
-        partial_id = insert_trade(
+        partial_id = fill.get("accounted_trade_id") or insert_trade(
             ticker          = trade["ticker"],
             contract_symbol = trade["contract_symbol"],
             option_type     = trade["option_type"],
@@ -167,19 +172,20 @@ def _close_position(
             entry_order_id   = trade.get("entry_order_id"),
             entry_fill_time  = trade.get("entry_fill_time"),
         )
-        close_trade(
-            trade_id             = partial_id,
-            exit_price           = exit_price,
-            exit_time            = _now_et(),
-            exit_reason          = reason,
-            confirmed_fill_price = fill_price,
-            peak_price           = _trade_ps_partial.get("peak_price"),
-            mae_price            = _trade_ps_partial.get("min_price"),
-            paper                = paper,
-            annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
-            exit_order_id        = str(fill.get("id") or "") or None,
-            exit_fill_time       = fill.get("filled_at") or _now_et(),
-        )
+        if not fill.get("accounted_trade_id"):
+            close_trade(
+                trade_id             = partial_id,
+                exit_price           = exit_price,
+                exit_time            = _now_et(),
+                exit_reason          = reason,
+                confirmed_fill_price = fill_price,
+                peak_price           = _trade_ps_partial.get("peak_price"),
+                mae_price            = _trade_ps_partial.get("min_price"),
+                paper                = paper,
+                annotations_json     = _snapshot_exit_annotations(trade.get("ticker", "")),
+                exit_order_id        = str(fill.get("id") or "") or None,
+                exit_fill_time       = fill.get("filled_at") or _now_et(),
+            )
         try:
             from database import link_broker_order_to_trade
             link_broker_order_to_trade(
@@ -215,11 +221,12 @@ def _close_position(
         except Exception as _ai_ex:
             logger.debug("ai_reasoning narrate_exit dispatch failed (non-fatal): %s", _ai_ex)
 
-        with get_conn() as _conn:
-            _conn.execute(
-                "UPDATE trades SET contracts = ? WHERE id = ?",
-                (_remaining_qty, trade["id"]),
-            )
+        if not fill.get("accounted_trade_id"):
+            with get_conn() as _conn:
+                _conn.execute(
+                    "UPDATE trades SET contracts = ? WHERE id = ?",
+                    (_remaining_qty, trade["id"]),
+                )
         return
 
     _trade_ps = _US["positions"].get(trade["id"], {})
@@ -271,7 +278,7 @@ def _close_position(
         f"Exit: {_reason_txt}{_mfe_txt}{_mae_txt}."
     )
 
-    pnl = close_trade(
+    pnl = fill["accounted_pnl"] if fill.get("accounted_trade_id") else close_trade(
         trade_id             = trade["id"],
         exit_price           = exit_price,
         exit_time            = _now_et(),

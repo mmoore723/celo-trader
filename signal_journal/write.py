@@ -62,6 +62,17 @@ def log_signal_outcome(
         meta = context.get("strategy_meta") if isinstance(context, dict) else None
         candidate_id = meta.get("shadow_candidate_id") if isinstance(meta, dict) else None
         with get_conn() as conn:
+            if outcome == "entered":
+                recovered = conn.execute("""SELECT id FROM signal_journal
+                    WHERE trade_id=? AND outcome='entered' AND reason_code='broker_confirmed'
+                    AND broker_account_id=? LIMIT 1""", (trade_id, broker_account_id)).fetchone()
+                if recovered:
+                    conn.execute("""UPDATE signal_journal SET reason_code=?, reason_detail=?,
+                        context_json=? WHERE id=?""", (
+                        reason_code, reason_detail,
+                        json.dumps(context, default=str, sort_keys=True) if context else None, recovered["id"],
+                    ))
+                    return int(recovered["id"])
             cursor = conn.execute(
                 """INSERT INTO signal_journal
                    (ts, ticker, strategy_id, direction, confidence,

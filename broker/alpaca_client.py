@@ -22,3 +22,4 @@ from broker.alpaca_positions import AlpacaPositionsMixin
 
 class AlpacaClient(AlpacaCoreMixin, AlpacaBarsMixin, AlpacaOrdersMixin, AlpacaPositionsMixin):
     """Alpaca REST API v2 — equity bars, account data, paper/live options orders."""
+    durable_order_recovery = True

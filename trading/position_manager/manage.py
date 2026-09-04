@@ -205,6 +205,8 @@ def _manage_open_position(
 
         ps["current_option_price"]      = current_price
         ps["current_option_price_time"] = _now_et().strftime("%H:%M:%S")
+        from trading.recovery_state import restore_stage1
+        restore_stage1(trade, ps)
 
         entry_time_iso = ps.get("entry_time") or trade.get("entry_time")
         try:
@@ -614,6 +616,7 @@ def _manage_open_position(
                         "entry_price":    round(entry_price, 4),
                     },
                 )
+            from trading.position_manager.helpers import _snapshot_exit_annotations
             fill = alpaca.place_option_order(
                 symbol          = trade["contract_symbol"],
                 qty             = half_contracts,
@@ -627,6 +630,11 @@ def _manage_open_position(
                     "ticker": trade.get("ticker"),
                     "strategy_id": trade.get("strategy_id"),
                     "trade_id": trade.get("id"),
+                    "expected_contracts": trade["contracts"],
+                    "exit_reason": f"{reason.split(' ')[0]}_profit_take",
+                    "exit_annotations": _snapshot_exit_annotations(trade.get("ticker", "")),
+                    "peak_price": ps.get("peak_price"),
+                    "mae_price": ps.get("min_price"),
                 },
             )
 
@@ -642,7 +650,7 @@ def _manage_open_position(
 
             fill_price = float(fill.get("confirmed_fill_price") or fill.get("filled_avg_price") or current_price)
 
-            _sold_qty = int(fill.get("filled_qty") or half_contracts)
+            _sold_qty = int(fill.get("filled_qty", half_contracts))
             if _sold_qty > half_contracts:
                 _sold_qty = half_contracts
             if _sold_qty != half_contracts:
@@ -667,7 +675,7 @@ def _manage_open_position(
 
             from database import insert_trade, close_trade, get_conn
             from trading.position_manager.helpers import _snapshot_exit_annotations
-            partial_id = insert_trade(
+            partial_id = fill.get("accounted_trade_id") or insert_trade(
                 ticker          = trade["ticker"],
                 contract_symbol = trade["contract_symbol"],
                 option_type     = trade["option_type"],
@@ -686,7 +694,7 @@ def _manage_open_position(
                 entry_order_id   = trade.get("entry_order_id"),
                 entry_fill_time  = trade.get("entry_fill_time"),
             )
-            partial_pnl = close_trade(
+            partial_pnl = fill["accounted_pnl"] if fill.get("accounted_trade_id") else close_trade(
                 trade_id             = partial_id,
                 exit_price           = fill_price,
                 exit_time            = _now_et().replace(tzinfo=None),
@@ -705,11 +713,12 @@ def _manage_open_position(
             except Exception:
                 logger.warning("stage-1 order-flow link failed for trade %s", partial_id, exc_info=True)
 
-            with get_conn() as _conn:
-                _conn.execute(
-                    "UPDATE trades SET contracts = ? WHERE id = ?",
-                    (trade["contracts"] - _sold_qty, trade["id"]),
-                )
+            if not fill.get("accounted_trade_id"):
+                with get_conn() as _conn:
+                    _conn.execute(
+                        "UPDATE trades SET contracts = ? WHERE id = ?",
+                        (trade["contracts"] - _sold_qty, trade["id"]),
+                    )
 
             log_event(
                 "INFO", "trading_logic",

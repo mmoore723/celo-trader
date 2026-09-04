@@ -19,6 +19,7 @@ calls self._wait_for_fill directly and the two form one order lifecycle.
 """
 
 import logging
+import math
 import time
 import uuid
 from time import monotonic
@@ -26,6 +27,7 @@ from typing import Optional
 
 from database import log_event, record_broker_order_event
 from broker.common import _extract_partial_fill
+from broker.recovery import recoverable
 
 logger = logging.getLogger("celo_trader.broker")
 
@@ -42,6 +44,7 @@ class AlpacaOrdersMixin:
 
     # ── Options orders (FIX C1: correct Alpaca v2 options format) ────────────
 
+    @recoverable
     def place_option_order(
         self,
         symbol: str,            # OCC option symbol e.g. AMC240119C00005000
@@ -79,8 +82,8 @@ class AlpacaOrdersMixin:
         Alpaca options docs (valid single-leg payload examples):
         https://docs.alpaca.markets/docs/options-orders
         """
-        attempt_id = uuid.uuid4().hex
         context = order_context or {}
+        attempt_id = context.get("execution_attempt_id") or uuid.uuid4().hex
         intent_id = str(context.get("intent_id") or "").strip()
         flow_base = {
             "attempt_id": attempt_id,
@@ -272,7 +275,7 @@ class AlpacaOrdersMixin:
             # Use module "order" (not "broker.alpaca") so this shows in THINKING tab.
             log_event("INFO", "order",
                       f"📤 [{symbol}] Order sent — {side.upper()} {qty}× {symbol} "
-                      f"@ ${limit_price:.2f} limit (ID: {order_id[:8]}…). Waiting for fill…")
+                      f"@ ${float(limit_price or 0):.2f} {payload['type']} (ID: {order_id[:8]}…). Waiting for fill…")
 
             # FIX S1: Poll for fill confirmation — don't record trade on pending.
             # Pass limit_price so paper fallback can use it for confirmed_fill_price.
@@ -286,8 +289,8 @@ class AlpacaOrdersMixin:
                                             max_wait=max_wait_seconds or 0)
             if not confirmed:
                 log_event("ERROR", "order",
-                          f"🔴 [{symbol}] Order did not fill — no position recorded. "
-                          f"Will look for the next setup.")
+                          f"🟡 [{symbol}] Fill wait ended. Checking broker-confirmed fills "
+                          f"and any unresolved remainder before another order.")
                 logger.error(
                     "order_fill_timeout",
                     extra={
@@ -357,14 +360,19 @@ class AlpacaOrdersMixin:
             # need to distinguish "Alpaca truly has no matching position" (not
             # a transient/retry-worthy rejection) can check this afterward via
             # is_phantom_position_rejection(alpaca.last_rejection_reason).
-            self.last_rejection_reason = _reason
+            _recovery = getattr(self, "record", None)
+            _uncertain = isinstance(_recovery, dict) and any(
+                not request.get("rejected") for request in _recovery.get("requests", [])
+            )
+            self.last_rejection_reason = None if _uncertain else _reason
             _record_flow(
-                **flow_base, event_type="submission_error",
-                status="rejected", message=str(_reason), is_issue=True,
+                **flow_base, event_type="submission_unconfirmed" if _uncertain else "submission_error",
+                status="unknown" if _uncertain else "rejected", message=str(_reason), is_issue=True,
                 latency_ms=round((monotonic() - submit_started) * 1000, 1),
             )
             log_event("ERROR", "order",
-                      f"🔴 [{symbol}] Order rejected — {_reason}. No position opened.")
+                      f"🟡 [{symbol}] Order response uncertain — checking the saved order ID before any retry."
+                      if _uncertain else f"🔴 [{symbol}] Order rejected — {_reason}. No position opened.")
             logger.error(
                 "order_execution_failed",
                 extra={
@@ -452,14 +460,7 @@ class AlpacaOrdersMixin:
             "linked_trade_id": context.get("trade_id"),
         }
         if not order_id or order_id == "paper_simulated":
-            _record_flow(
-                **flow_base, event_type="filled", status="filled",
-                filled_qty=qty or 0, fill_price=limit_price or 0,
-                message="Simulated order filled",
-            )
-            return {"id": order_id, "status": "filled",
-                    "confirmed_fill_price": limit_price or 0,
-                    "filled_qty": qty or 0, "partial_fill": False}
+            return None
 
         # Detect paper vs live from current settings (not frozen URL) so a mode
         # switch between bot restarts is reflected immediately.
@@ -486,8 +487,7 @@ class AlpacaOrdersMixin:
         _stepped_up = False
         _last_status = None
 
-        terminal_states = {"filled", "expired", "canceled", "cancelled",
-                           "rejected", "stopped", "suspended", "done_for_day"}
+        terminal_states = {"filled", "expired", "canceled", "cancelled", "rejected"}
         for i in range(effective_wait):
             # Step toward the supplied executable price; a fill is not guaranteed.
             _is_buy  = side.lower() == "buy"
@@ -568,7 +568,11 @@ class AlpacaOrdersMixin:
                     _last_status = status
                 logger.debug("Order %s status: %s", order_id, status)
                 if status == "filled":
-                    filled_price = float(order.get("filled_avg_price") or limit_price or 0)
+                    filled_price = float(order.get("filled_avg_price") or 0)
+                    actual_qty = float(order.get("filled_qty") or 0)
+                    if not (math.isfinite(filled_price) and filled_price > 0
+                            and math.isfinite(actual_qty) and actual_qty > 0 and actual_qty.is_integer()):
+                        raise ValueError("Broker fill is missing a valid execution price or quantity")
                     # Log mid-price improvement vs worst-case (ask for buys, bid for sells).
                     if side.lower() == "buy":
                         _saved_per_contract = (step_to_price or filled_price) - filled_price
@@ -591,7 +595,7 @@ class AlpacaOrdersMixin:
                     # if Alpaca's response omits it — "filled" should mean the
                     # full requested qty, but callers should read this field
                     # rather than assume it.
-                    order["filled_qty"] = int(float(order.get("filled_qty") or qty or 0))
+                    order["filled_qty"] = int(actual_qty)
                     order["partial_fill"] = False
                     _record_flow(
                         **flow_base, event_type="filled", status="filled",
@@ -606,7 +610,12 @@ class AlpacaOrdersMixin:
                     # day-end. Previously this branch returned None regardless,
                     # which meant a REAL partial position at the broker was
                     # completely invisible to the bot. Surface it instead.
-                    _partial = _extract_partial_fill(order, limit_price)
+                    if float(order.get("filled_qty") or 0) > 0 and not (
+                        math.isfinite(float(order.get("filled_avg_price") or 0))
+                        and float(order.get("filled_avg_price") or 0) > 0
+                    ):
+                        return None  # Recovery retains the fill until its real price arrives.
+                    _partial = _extract_partial_fill(order, None)
                     if _partial:
                         log_event(
                             "WARNING", "order",
@@ -731,6 +740,10 @@ class AlpacaOrdersMixin:
                 )
                 return None
 
+            if _orig_filled_qty > 0 and not (
+                _orig_filled_price and math.isfinite(_orig_filled_price) and _orig_filled_price > 0
+            ):
+                return None
             if _orig_filled_qty > 0:
                 log_event(
                     "WARNING", "order",
@@ -865,11 +878,13 @@ class AlpacaOrdersMixin:
                             mkt_status = self._get(f"{self.base}/v2/orders/{mkt_order_id}")
                             if mkt_status.get("status") == "filled":
                                 _mkt_filled_qty = int(float(
-                                    mkt_status.get("filled_qty") or _remaining_qty or 0
+                                    mkt_status.get("filled_qty") or 0
                                 ))
                                 _mkt_price = float(
-                                    mkt_status.get("filled_avg_price") or limit_price or 0
+                                    mkt_status.get("filled_avg_price") or 0
                                 )
+                                if _mkt_filled_qty <= 0 or not math.isfinite(_mkt_price) or _mkt_price <= 0:
+                                    raise ValueError("Market fill missing confirmed quantity/price")
                                 # Weighted-average price across the original
                                 # partial fill (if any) + this market fill, so
                                 # confirmed_fill_price reflects the REAL blended
@@ -1044,8 +1059,10 @@ class AlpacaOrdersMixin:
 
             if _final_status == "filled":
                 _filled_price = float(
-                    _final.get("filled_avg_price") or limit_price or 0
+                    _final.get("filled_avg_price") or 0
                 )
+                if not math.isfinite(_filled_price) or _filled_price <= 0 or float(_final.get("filled_qty") or 0) <= 0:
+                    return None
                 _final["confirmed_fill_price"] = _filled_price
                 _final["filled_qty"] = int(float(_final.get("filled_qty") or qty or 0))
                 _final["partial_fill"] = False
@@ -1056,7 +1073,11 @@ class AlpacaOrdersMixin:
                 )
                 return _final
 
-            _partial = _extract_partial_fill(_final, limit_price)
+            if float(_final.get("filled_qty") or 0) > 0 and not (
+                math.isfinite(float(_final.get("filled_avg_price") or 0)) and float(_final.get("filled_avg_price") or 0) > 0
+            ):
+                return None
+            _partial = _extract_partial_fill(_final, None)
             if _partial:
                 log_event(
                     "WARNING", "order",

@@ -1,0 +1,99 @@
+"""Recovery isolation and integration with existing position-management callers."""
+import unittest
+from unittest.mock import Mock, patch
+
+from tests import test_execution_recovery as fixtures
+from broker.recovery import reconcile_orders
+from database.schema import _init_db_at
+
+
+class RecoveryIntegrationTests(unittest.TestCase):
+    setUp = fixtures.RecoveryTests.setUp
+    make_client = fixtures.RecoveryTests.make_client
+    get = fixtures.RecoveryTests.get
+    post = fixtures.RecoveryTests.post
+    context = fixtures.RecoveryTests.context
+    enter = fixtures.RecoveryTests.enter
+    rows = fixtures.RecoveryTests.rows
+
+    def test_other_user_database_and_other_account_cannot_recover_our_order(self):
+        self.next_status, self.next_qty = "pending_cancel", "1"
+        self.enter()
+        original = self.rows()
+        other_path = self.path.parent / "other-user" / "trades_paper.db"
+        other_path.parent.mkdir()
+        _init_db_at(other_path)
+        client = self.make_client()
+        with patch("config.get_db_path", return_value=other_path):
+            self.assertEqual(set(), reconcile_orders(client))
+        client._get.assert_called_once()
+        self.assertEqual(original, self.rows())
+        self.settings["active_broker_account_id"] = "alpaca:paper:account-b"
+        client = self.make_client()
+        client._get = Mock(return_value={"id": "account-b"})
+        self.assertEqual(set(), reconcile_orders(client))
+        client._get.assert_called_once()
+        self.assertEqual(original, self.rows())
+
+    def test_position_close_caller_does_not_split_or_book_fill_twice(self):
+        from trading.position_manager.close import _close_position
+        self.enter()
+        trade = self.rows()[0]
+        self.next_status, self.next_qty, self.next_price = "canceled", "1", "1.50"
+        state = {"positions": {}, "account_balance": 4000}
+        with patch("trading.position_manager.close.get_user_state", return_value=state), \
+             patch("database.log_event"), patch("database.record_paper_option_quote"), \
+             patch("database.link_broker_order_to_trade"), patch("ai_reasoning.narrator.narrate_exit"), \
+             patch("database.insert_trade", side_effect=AssertionError("Duplicate insert")), \
+             patch("database.close_trade", side_effect=AssertionError("Duplicate close")):
+            _close_position(self.client, trade, 1.50, "test_exit")
+        self.assertEqual(2, len(self.rows()))
+        self.assertEqual(2, next(t for t in self.rows() if t["status"] == "open")["contracts"])
+        self.assertAlmostEqual(-10, sum(t["realized_pnl"] or 0 for t in self.rows()))
+
+    def test_stage1_restores_from_real_partial_exit_and_preserves_other_exit_latch(self):
+        from database.execution_recovery import connect
+        from trading.recovery_state import restore_stage1
+        entry = self.enter()
+        self.next_status, self.next_qty, self.next_price = "canceled", "1", "1.70"
+        self.client.place_option_order(fixtures.SYMBOL, 1, "sell", limit_price=1.70,
+            position_intent="sell_to_close", order_context={"trade_id": entry["accounted_trade_id"],
+                "expected_contracts": 3, "exit_reason": "stage1_profit_take"})
+        trade = next(t for t in self.rows() if t["status"] == "open")
+        with patch("trading.recovery_state.get_conn", side_effect=lambda: connect(self.path)):
+            ps = {"exit_pending_reason": "stage1_profit_take"}
+            restore_stage1(trade, ps)
+            self.assertTrue(ps["stage1_done"])
+            self.assertNotIn("exit_pending_reason", ps)
+            ps = {"exit_pending_reason": "structural_stop"}
+            restore_stage1(trade, ps)
+            self.assertEqual("structural_stop", ps["exit_pending_reason"])
+
+    def test_network_post_timeout_is_one_request_not_transport_retry(self):
+        from broker.alpaca_core import AlpacaCoreMixin
+        from requests.exceptions import Timeout
+        client = AlpacaCoreMixin.__new__(AlpacaCoreMixin)
+        client.headers = {}
+        with patch("broker.alpaca_core.requests.post", side_effect=Timeout("offline")) as post, \
+             patch("broker.alpaca_core.log_event"):
+            with self.assertRaises(Timeout):
+                client._post("https://paper-api.alpaca.markets/v2/orders", {"client_order_id": "test"})
+        self.assertEqual(1, post.call_count)
+
+    def test_partial_exit_database_failure_keeps_parent_and_pnl_unchanged(self):
+        self.enter()
+        trade = self.rows()[0]
+        self.next_status, self.next_qty, self.next_price = "canceled", "1", "1.50"
+        with patch("database.execution_fills.save", side_effect=RuntimeError("disk full")):
+            self.assertIsNone(self.client.place_option_order(fixtures.SYMBOL, 1, "sell", limit_price=1.50,
+                position_intent="sell_to_close", order_context={"trade_id": trade["id"],
+                    "expected_contracts": 3, "exit_reason": "test_exit"}))
+        self.assertEqual([trade], self.rows())
+        self.assertEqual([], self.rows("daily_summary"))
+        reconcile_orders(self.make_client())
+        self.assertEqual(2, next(t for t in self.rows() if t["status"] == "open")["contracts"])
+        self.assertAlmostEqual(-10, self.rows("daily_summary")[0]["total_pnl"])
+
+
+if __name__ == "__main__":
+    unittest.main()
