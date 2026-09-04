@@ -1,8 +1,9 @@
 """Regression tests for the V2 paid-study-aligned paper contract selector."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 import unittest
+from unittest.mock import patch
 
 from trading.entry.contract import select_v2_orb_paper_contract
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
@@ -21,6 +22,16 @@ class _FakeTradier:
 
 
 class V2OrbPaperContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # The UTC server is already on September 4; options DTE still uses
+        # September 3 in New York. Pin both fixture expiries and the selector
+        # to the same market clock instead of the machine's local date.
+        now = datetime.fromisoformat("2026-09-03T20:05:00-04:00")
+        self.market_date = now.date()
+        clock = patch("trading.entry.contract._now_et", return_value=now)
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def test_only_active_v2_pilots_use_the_paid_contract_profile(self) -> None:
         self.assertTrue(uses_v2_orb_execution_profile("V2_ORB_PULLBACK"))
         self.assertTrue(uses_v2_orb_execution_profile("V2_SPY_TREND_CONT"))
@@ -31,8 +42,8 @@ class V2OrbPaperContractTests(unittest.TestCase):
         self.assertFalse(uses_v2_orb_execution_profile(None))
 
     def test_selects_nearest_expiry_then_nearest_otm_contract(self) -> None:
-        near = (date.today() + timedelta(days=7)).isoformat()
-        later = (date.today() + timedelta(days=14)).isoformat()
+        near = (self.market_date + timedelta(days=7)).isoformat()
+        later = (self.market_date + timedelta(days=14)).isoformat()
         broker = _FakeTradier({
             later: [{"symbol": "TSLA_LATER", "strike": 250, "bid": 2.80, "ask": 3.00}],
             near: [
@@ -58,7 +69,7 @@ class V2OrbPaperContractTests(unittest.TestCase):
         }, policies)
 
     def test_rejects_non_tsla_and_wide_spread(self) -> None:
-        expiry = (date.today() + timedelta(days=7)).isoformat()
+        expiry = (self.market_date + timedelta(days=7)).isoformat()
         broker = _FakeTradier({expiry: [{"symbol": "TSLA_WIDE", "strike": 251, "bid": 2.00, "ask": 3.00}]})
         contract, info = select_v2_orb_paper_contract(broker, "QQQ", "bullish", 250, 500)
         self.assertIsNone(contract)
@@ -68,7 +79,7 @@ class V2OrbPaperContractTests(unittest.TestCase):
         self.assertEqual("illiquid", info["reason"])
 
     def test_spy_uses_the_same_reviewed_quote_rules_with_its_own_audit_label(self) -> None:
-        expiry = (date.today() + timedelta(days=7)).isoformat()
+        expiry = (self.market_date + timedelta(days=7)).isoformat()
         broker = _FakeTradier({expiry: [{"symbol": "SPY_NEAR", "strike": 501, "bid": 2.90, "ask": 3.00}]})
         contract, info = select_v2_orb_paper_contract(broker, "SPY", "bullish", 500, 500)
         self.assertEqual("selected", info["reason"])
