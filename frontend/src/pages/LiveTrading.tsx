@@ -157,6 +157,10 @@ export function LiveTrading() {
     }
   });
   const chartReplayRef  = useRef<BoomerangReplayHandle>(null);
+  // Once opened, keep the stock chart mounted while the option view is shown.
+  // Recreating lightweight-charts on every switch can leave a queued resize
+  // callback touching an already-disposed canvas.
+  const stockChartWasOpened = useRef(false);
 
   function toggleChart() {
     setChartExpanded((expanded) => {
@@ -574,7 +578,10 @@ export function LiveTrading() {
           {chartExpanded && <div id="live-market-chart">
           {optionChart.selected && <div className="flex flex-wrap items-center gap-2 p-3 border-b" style={{ borderColor: "var(--border)" }}>
             {(["option", "stock"] as const).map(view => <button key={view} type="button" aria-pressed={optionChart.view === view}
-              className={`btn btn-sm ${optionChart.view === view ? "btn-primary" : "btn-ghost"}`} onClick={() => optionChart.setView(view)}>
+              className={`btn btn-sm ${optionChart.view === view ? "btn-primary" : "btn-ghost"}`} onClick={() => {
+                if (view === "stock") stockChartWasOpened.current = true;
+                optionChart.setView(view);
+              }}>
               {view === "option" ? "Option price" : "Stock price"}</button>)}
             {optionChart.available.length > 1 && <select aria-label="Chart position" className="select max-w-full"
               value={`${optionChart.selected.mode}:${optionChart.selected.id}`} onChange={e => {
@@ -584,7 +591,10 @@ export function LiveTrading() {
                 {t.strike} {t.option_type} · {t.expiry} · {t.exit_time ? "Closed" : "Open"}
               </option>)}</select>}
           </div>}
-          {optionChart.view === "option" && optionChart.selected ? <OptionPositionChart key={`${optionChart.selected.mode}:${optionChart.selected.id}`} trade={optionChart.selected} /> : <>
+          {optionChart.selected && <div hidden={optionChart.view !== "option"}>
+            <OptionPositionChart key={`${optionChart.selected.mode}:${optionChart.selected.id}`} trade={optionChart.selected} />
+          </div>}
+          {(optionChart.view === "stock" || stockChartWasOpened.current) && <div hidden={optionChart.view !== "stock"}>
           <div
             className="flex items-center gap-3 px-3 py-2 border-b text-sm flex-wrap"
             style={{ borderColor: "var(--border)" }}
@@ -685,7 +695,7 @@ export function LiveTrading() {
             annotations={annotations}
             narrationEvents={narrationEvents}
           />
-          </>}
+          </div>}
           </div>}
         </div>
 

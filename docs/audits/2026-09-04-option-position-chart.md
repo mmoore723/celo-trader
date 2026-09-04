@@ -4,6 +4,8 @@ Selecting an open position's ticker opens its exact option chart automatically.
 Option price / Stock price switches preserve the stock setup chart. A position
 picker distinguishes multiple contracts on a ticker; polling does not override
 a manual stock choice. Calls and puts are both bought options here.
+After first use, the stock chart stays mounted while hidden so switching views
+cannot race a queued canvas resize against chart disposal.
 
 The chart uses recorded Tradier bid/ask observations, not synthesized candles.
 Actual entry/exit fills are separate markers. Missing observations stay missing;
