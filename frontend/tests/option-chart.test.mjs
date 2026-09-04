@@ -1,6 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { optionMetrics, quoteSegments } from "../src/lib/optionChart.ts";
+import { readFile } from "node:fs/promises";
+import ts from "typescript";
+
+const sourceUrl = new URL("../src/lib/optionChart.ts", import.meta.url);
+const source = await readFile(sourceUrl, "utf8");
+const compiled = ts.transpileModule(source, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  fileName: sourceUrl.pathname,
+});
+const moduleUrl = `data:text/javascript;base64,${Buffer.from(compiled.outputText).toString("base64")}`;
+const { optionMetrics, quoteSegments } = await import(moduleUrl);
 
 const base = { option_type: "put", contracts: 2, entry_price: 4, stop_price: 3, target_price: 6,
   closed: false, quotes: [{ time: 100, bid: 4.1, ask: 4.3 }] };
