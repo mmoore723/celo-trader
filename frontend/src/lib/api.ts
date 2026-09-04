@@ -2,6 +2,7 @@
  * lib/api.ts — Typed API client for all FastAPI endpoints.
  */
 
+import type { OptionChartData } from "./optionChart";
 const BASE = import.meta.env.VITE_API_URL ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -179,6 +180,9 @@ export interface PaidTrendResearchProgress {
 
 export interface Trade {
   id: number;
+  contract_symbol?: string;
+  strike?: number;
+  expiry?: string;
   ticker: string;
   direction: string;
   option_type?: string;
@@ -995,6 +999,8 @@ export const api = {
     annotations:   (ticker: string) => request<ChartAnnotation[]>(`/api/bot/annotations/${ticker}`),
   },
   trades: {
+    optionChart: (id: number, mode: "paper" | "live") =>
+      request<OptionChartData>(`/api/trades/${id}/option-chart?mode=${mode}`),
     list:          (mode="paper", status="all") => request<TradeListResponse>(`/api/trades?mode=${mode}&status=${status}`),
     open:          () => request<Trade[]>("/api/trades/open"),
     performance:   (mode="paper") => request<PerformanceStats>(`/api/trades/performance?mode=${mode}`),

@@ -11,7 +11,10 @@ import { useBotStore } from "../store/bot";
 import { api, type Trade, type ChartAnnotation, type NewsArticle } from "../lib/api";
 import { dedupeLatestEpisodes, lifecycleCopy, opportunityLifecycle } from "../lib/opportunitySemantics.js";
 import { openingRangeForBars } from "../lib/chartSession.js";
+import { newYorkDateKey } from "../lib/marketSession.js";
 import { ConnectionStatus } from "../components/ConnectionStatus";
+import { OptionPositionChart } from "../components/charts/OptionPositionChart";
+import { useOptionChartSelection } from "../components/charts/useOptionChartSelection";
 import { connectionHealthView } from "../lib/connectionHealthView.js";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
@@ -164,6 +167,7 @@ export function LiveTrading() {
   }
 
   const { status, logs } = useBotStore();
+  const tradeMode = status?.mode === "live" ? "live" : "paper";
   const {
     data: connectionHealth,
     isFetching: checkingConnections,
@@ -219,21 +223,20 @@ export function LiveTrading() {
   }, [bars, effectivePeriod]);
 
   const { data: openTrades = [] } = useQuery({
-    queryKey: ["open-trades"],
+    queryKey: ["open-trades", tradeMode],
     queryFn: api.trades.open,
     refetchInterval: 5_000,
   });
 
   const { data: todayTradesRaw = [] } = useQuery({
-    queryKey: ["today-trades"],
-    queryFn: () => api.trades.list("paper", "all"),
+    queryKey: ["today-trades", tradeMode],
+    queryFn: () => api.trades.list(tradeMode, "all"),
     refetchInterval: 10_000,
     select: (res: any) => {
-      // Use local-date comparison — ET tz-naive timestamps don't match toISOString() (UTC)
-      // after ~8 PM ET when UTC has already rolled to the next day.
-      const now = new Date();
+      const today = newYorkDateKey();
       return (res?.trades ?? []).filter((t: Trade) =>
-        t.entry_time != null && new Date(t.entry_time).toDateString() === now.toDateString()
+        t.entry_time != null && (/Z$|[+-]\d{2}:\d{2}$/.test(t.entry_time)
+          ? newYorkDateKey(t.entry_time) : t.entry_time.slice(0, 10)) === today
       );
     },
   });
@@ -319,6 +322,7 @@ export function LiveTrading() {
   }, [scanner, openTrades]);
 
   const tickerTrades      = (todayTradesRaw as Trade[]).filter((t: Trade) => t.ticker === ticker);
+  const optionChart = useOptionChartSelection(ticker, [...openTrades, ...tickerTrades], setTicker, setChartExpanded);
   const openTickerTrade   = tickerTrades.find((t: Trade) => !t.exit_time);
   const positionLevels    = openTickerTrade ? {
     entry:     openTickerTrade.entry_price  ?? undefined,
@@ -545,10 +549,10 @@ export function LiveTrading() {
           >
             <div className="min-w-0">
               <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                {ticker} market chart
+                {ticker} {optionChart.view === "option" ? "option" : "stock"} chart
               </div>
               <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                Optional visual detail. Trade-ready information appears in Today&apos;s Trade Setups.
+                {optionChart.view === "option" ? "The price of your exact option contract." : "Stock price and market setup."}
               </div>
             </div>
             <div className="flex-1" />
@@ -568,6 +572,19 @@ export function LiveTrading() {
             </button>
           </div>
           {chartExpanded && <div id="live-market-chart">
+          {optionChart.selected && <div className="flex flex-wrap items-center gap-2 p-3 border-b" style={{ borderColor: "var(--border)" }}>
+            {(["option", "stock"] as const).map(view => <button key={view} type="button" aria-pressed={optionChart.view === view}
+              className={`btn btn-sm ${optionChart.view === view ? "btn-primary" : "btn-ghost"}`} onClick={() => optionChart.setView(view)}>
+              {view === "option" ? "Option price" : "Stock price"}</button>)}
+            {optionChart.available.length > 1 && <select aria-label="Chart position" className="select max-w-full"
+              value={`${optionChart.selected.mode}:${optionChart.selected.id}`} onChange={e => {
+                const trade = optionChart.available.find(t => `${t.mode}:${t.id}` === e.target.value);
+                if (trade) optionChart.selectOption(trade);
+              }}>{optionChart.available.map(t => <option key={`${t.mode}:${t.id}`} value={`${t.mode}:${t.id}`}>
+                {t.strike} {t.option_type} · {t.expiry} · {t.exit_time ? "Closed" : "Open"}
+              </option>)}</select>}
+          </div>}
+          {optionChart.view === "option" && optionChart.selected ? <OptionPositionChart key={`${optionChart.selected.mode}:${optionChart.selected.id}`} trade={optionChart.selected} /> : <>
           <div
             className="flex items-center gap-3 px-3 py-2 border-b text-sm flex-wrap"
             style={{ borderColor: "var(--border)" }}
@@ -668,6 +685,7 @@ export function LiveTrading() {
             annotations={annotations}
             narrationEvents={narrationEvents}
           />
+          </>}
           </div>}
         </div>
 
@@ -801,11 +819,9 @@ export function LiveTrading() {
                         style={{ cursor: "pointer" }}
                         title="Click to view bot thinking log for this trade"
                         onClick={() => setTradeDrawerId(id => id === t.id ? null : t.id)}>
-                        <td className="font-semibold"
-                          style={{ color: "var(--accent)" }}
-                          onClick={(e) => { e.stopPropagation(); setTicker(t.ticker); }}
-                          title={`View ${t.ticker} chart`}>
-                          {t.ticker}
+                        <td className="font-semibold" style={{ color: "var(--accent)" }}>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); optionChart.selectOption(t); }}
+                            aria-label={`View ${t.ticker} option chart`} title={`View ${t.ticker} option chart`}>{t.ticker}</button>
                         </td>
                         <td>
                           <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>

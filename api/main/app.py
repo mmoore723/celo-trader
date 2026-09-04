@@ -60,7 +60,7 @@ async def healthz() -> dict:
 # ── Register API routes ───────────────────────────────────────────────────────
 # Auth is enforced via Depends(require_auth) on each protected router.
 # /api/auth/* routes have no dependency — they are always public.
-from api.routes import bot, market, trades, settings, ws, backtest, admin, strategy_health, ai_reasoning, learning, signals, tickers
+from api.routes import bot, market, trades, settings, ws, backtest, admin, strategy_health, ai_reasoning, learning, signals, tickers, option_chart
 import api.routes.auth as auth_routes
 
 _auth = [Depends(require_auth)]
@@ -69,6 +69,7 @@ app.include_router(auth_routes.router)                              # public
 app.include_router(bot.router,      dependencies=_auth)
 app.include_router(market.router,   dependencies=_auth)
 app.include_router(trades.router,   dependencies=_auth)
+app.include_router(option_chart.router, dependencies=_auth)
 app.include_router(settings.router, dependencies=_auth)
 app.include_router(admin.router,    dependencies=_auth)             # admin — auth required
 app.include_router(ws.router)                                       # WebSocket — no cookie auth
