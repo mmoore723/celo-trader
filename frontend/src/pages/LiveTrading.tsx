@@ -11,6 +11,8 @@ import { useBotStore } from "../store/bot";
 import { api, type Trade, type ChartAnnotation, type NewsArticle } from "../lib/api";
 import { dedupeLatestEpisodes, lifecycleCopy, opportunityLifecycle } from "../lib/opportunitySemantics.js";
 import { openingRangeForBars } from "../lib/chartSession.js";
+import { ConnectionStatus } from "../components/ConnectionStatus";
+import { connectionHealthView } from "../lib/connectionHealthView.js";
 
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
@@ -165,13 +167,15 @@ export function LiveTrading() {
   const {
     data: connectionHealth,
     isFetching: checkingConnections,
+    isError: connectionCheckFailed,
     refetch: refreshConnections,
   } = useQuery({
     queryKey: ["broker-connection-health"],
     queryFn: api.settings.connectionHealth,
     enabled: mainPanelTab === "log" && logTab === "network",
     staleTime: 60_000,
-    refetchOnWindowFocus: false,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
     retry: false,
   });
   // "Watch this setup" — jump the chart's scrub position to just before a
@@ -1007,7 +1011,7 @@ export function LiveTrading() {
             const thinkingLogs = displayLogs.filter((e) =>
               !isNetworkLog(e) && e.event !== "SIGNAL_ENTERED" && e.event !== "SIGNAL_BLOCKED"
             );
-            const netHasError  = networkLogs.some((e) => (e.level ?? "").toUpperCase() === "ERROR");
+            const netHasError = connectionHealthView(connectionHealth, { failed: connectionCheckFailed }).hasIssue;
             const activeLogs   = logTab === "network" ? networkLogs : thinkingLogs;
             return (
               <>
@@ -1028,7 +1032,7 @@ export function LiveTrading() {
                           }}>
                           {tab === "thinking" ? "Thinking" : "Network"}
                           {isNetwork && netHasError && (
-                            <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse align-middle" />
+                            <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-red-500 align-middle" />
                           )}
                         </button>
                       );
@@ -1040,56 +1044,8 @@ export function LiveTrading() {
                 </div>
 
                 {logTab === "network" && (
-                  <div className="p-2 border-b flex flex-col gap-1.5" style={{ borderColor: "var(--border)" }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--ink-muted)" }}>
-                        Connection status · {connectionHealth?.mode ?? "checking"}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => void refreshConnections()}
-                        disabled={checkingConnections}
-                      >
-                        {checkingConnections ? "Checking…" : "Check now"}
-                      </button>
-                    </div>
-                    {connectionHealth?.connections.map((connection) => {
-                      const healthy = connection.status === "connected";
-                      const inactive = connection.status === "not_used";
-                      const color = healthy
-                        ? "var(--positive)"
-                        : inactive
-                          ? "var(--ink-muted)"
-                          : "var(--negative)";
-                      const label = healthy
-                        ? "Connected"
-                        : inactive
-                          ? "Not used"
-                          : connection.status === "missing"
-                            ? "Missing"
-                            : "Failed";
-                      return (
-                        <div key={connection.id} className="flex items-start gap-2 text-xs">
-                          <span aria-hidden="true" style={{ color, lineHeight: 1.4 }}>●</span>
-                          <div className="min-w-0">
-                            <span className="font-semibold" style={{ color: "var(--ink)" }}>{connection.label}</span>
-                            <span style={{ color }}> · {label}</span>
-                            <span style={{ color: "var(--ink-muted)" }}> · {connection.purpose}</span>
-                            <p className="text-[10px]" style={{ color: "var(--ink-faint)", margin: 0 }}>{connection.detail}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {!connectionHealth && !checkingConnections && (
-                      <p className="text-xs" style={{ color: "var(--negative)", margin: 0 }}>
-                        Connection status could not be loaded.
-                      </p>
-                    )}
-                    <p className="text-[10px]" style={{ color: "var(--ink-faint)", margin: 0 }}>
-                      Tokens are verified securely on the server. Secret values never appear in this log.
-                    </p>
-                  </div>
+                  <ConnectionStatus health={connectionHealth} checking={checkingConnections}
+                    failed={connectionCheckFailed} onRefresh={() => void refreshConnections()} />
                 )}
 
                 {/* Ticker filter — the structured summary/chips/journal rows
@@ -1098,6 +1054,11 @@ export function LiveTrading() {
                     with repeated "no setup" filler collapsed so it's actually
                     readable instead of a wall of near-identical lines. */}
                 <div className="p-2 border-b" style={{ borderColor: "var(--border)" }}>
+                  {logTab === "network" && (
+                    <p className="text-[10px] mb-1.5" style={{ color: "var(--ink-muted)" }}>
+                      Event history · Earlier errors stay here, even after a connection recovers.
+                    </p>
+                  )}
                   <input placeholder="Filter by ticker" value={logRawTicker}
                     onChange={(e) => setLogRawTicker(e.target.value.toUpperCase())}
                     className="text-xs px-2 py-1.5 rounded w-full"

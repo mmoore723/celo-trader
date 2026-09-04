@@ -303,6 +303,7 @@ class AlpacaOrdersMixin:
                 or confirmed.get("filled_avg_price")
                 or 0
             )
+            confirmed_qty = int(float(confirmed.get("filled_qty") or qty or 0))
             _record_flow(
                 **{
                     **flow_base,
@@ -312,8 +313,9 @@ class AlpacaOrdersMixin:
                         else limit_price
                     ),
                 },
-                event_type="execution_summary", status="filled",
-                filled_qty=int(float(confirmed.get("filled_qty") or qty or 0)),
+                event_type="execution_summary",
+                status="partially_filled" if confirmed_qty < qty else "filled",
+                filled_qty=confirmed_qty,
                 fill_price=confirmed_fill_price,
                 latency_ms=round((monotonic() - submit_started) * 1000, 1),
                 message=(
@@ -425,15 +427,13 @@ class AlpacaOrdersMixin:
         Poll order status until filled or rejected.
         Returns the order dict with confirmed_fill_price set, or None.
 
-        SMART FILL LOGIC (mid-price with spread-crossing step):
-        - BUY  orders: initial limit at mid; live steps UP to ask after 5s
-          (crosses the spread to guarantee entry).
-        - SELL orders: initial limit at mid; live steps DOWN to bid after 5s
-          (crosses the spread to guarantee exit — avoids holding a stuck position).
-        - Paper account: poll 10 seconds; cancel the pending limit and place a
-          market order to get the REAL fill price (avoids paper_assumed_fill at
-          the limit price while Alpaca's paper simulator fills at a worse price).
-        - Live account: cancel if still unfilled after 30 seconds (prevents ghosts).
+        BOUNDED FILL LOGIC:
+        - Paper and live limits can step toward the supplied price after 2s.
+          A marketable limit improves execution chances; it cannot guarantee a fill.
+        - Wait 10s paper / 15s live by default, or a bounded caller override.
+        - Confirm cancellation and preserve actual partial fills on timeout.
+        - Paper market fallback requires explicit emergency-exit permission;
+          buy-to-open entries never chase an unfilled limit at market.
         """
         context = order_context or {}
         attempt_id = attempt_id or uuid.uuid4().hex
@@ -489,9 +489,7 @@ class AlpacaOrdersMixin:
         terminal_states = {"filled", "expired", "canceled", "cancelled",
                            "rejected", "stopped", "suspended", "done_for_day"}
         for i in range(effective_wait):
-            # ── Live spread-crossing step after 5 seconds ─────────────────────
-            # BUY:  step UP   mid → ask  (cross the ask to guarantee entry)
-            # SELL: step DOWN mid → bid  (cross the bid to guarantee exit)
+            # Step toward the supplied executable price; a fill is not guaranteed.
             _is_buy  = side.lower() == "buy"
             _step_ok = (
                 step_to_price is not None
@@ -647,19 +645,18 @@ class AlpacaOrdersMixin:
             time.sleep(1)
 
         if is_paper:
-            # Limit order (mid, stepped to ask/bid at 5s) still didn't fill
-            # after effective_wait — cancel it and place a market order so we
-            # record the REAL fill price from Alpaca's paper simulator.
+            # Cancel the working remainder and verify its final broker status.
+            # Only the explicit emergency-exit branch below may submit a market order.
             log_event("INFO", "order",
                       f"📝 Paper limit order pending after {effective_wait}s — "
-                      f"cancelling and re-submitting as market to get real fill price.")
+                      f"requesting cancellation and checking for fills.")
             cancelled = False
             try:
                 cancelled = self.cancel_order(order_id)
                 _record_flow(
                     **flow_base, event_type="cancel_requested",
                     status="requested" if cancelled else "cancel_unconfirmed",
-                    message="Paper limit order cancellation requested before market fallback",
+                    message="Paper limit order cancellation requested; checking final fill status",
                     is_issue=not bool(cancelled),
                 )
             except Exception as _ce:
@@ -738,8 +735,8 @@ class AlpacaOrdersMixin:
                 log_event(
                     "WARNING", "order",
                     f"🟡 [{symbol}] {_orig_filled_qty} contract(s) already filled "
-                    f"@ ${_orig_filled_price or 0:.2f} before cancel — only ordering "
-                    f"the remainder at market, not the full original qty."
+                    f"@ ${_orig_filled_price or 0:.2f} before cancel — preserving "
+                    f"the actual filled quantity."
                 )
                 logger.warning(
                     "paper_partial_before_cancel: order=%s filled_qty=%s requested=%s",

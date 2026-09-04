@@ -6,12 +6,13 @@ Celo can keep simulated order execution in Alpaca while using Tradier's
 production endpoint as the authoritative source for current option chains and
 exact-contract bid/ask prices.
 
-This does **not** place an order in the funded Tradier account while all three
+This does **not** place an order in the funded Tradier account while both
 of these settings remain true:
 
 - Broker: `Alpaca`
 - Mode: `Paper`
-- Signal-only mode: optional; it does not change price routing
+
+Signal-only mode is optional; it does not change price routing.
 
 The Tradier production token is used only by the market-data client in this
 configuration. Alpaca's paper endpoint remains the order destination.
@@ -35,12 +36,15 @@ and contaminate strategy profit-factor and slippage analysis.
 
 In **Settings → API Credentials → Tradier**:
 
-- Sandbox token: authenticates Tradier simulated orders only when Tradier is
-  selected as the paper broker.
-- Sandbox account ID: identifies the Tradier paper account.
-- Live token: supplies current Tradier market prices; it is also reserved for a
-  future explicitly approved switch to Tradier live execution.
-- Live account ID: required only for live Tradier orders.
+- With Alpaca selected, only the Production token field is needed here.
+  It supplies current Tradier market prices; orders stay with Alpaca.
+- Sandbox token and account ID fields appear only when the saved broker is
+  Tradier and the saved mode is Paper. They authenticate simulated orders,
+  not the production market-data feed.
+- Live account ID appears only when the saved broker is Tradier Live.
+
+Hiding unused fields does not remove their saved credentials. Saving a token
+does not switch the broker or change Paper to Live.
 
 Never paste tokens into chat, logs, tickets, or source control. Celo stores
 them encrypted and returns only masked values to the browser.
@@ -64,11 +68,24 @@ Before allowing paper entries, verify all of the following:
 1. The selected broker is Alpaca and mode is Paper.
 2. The Tradier production token authenticates against
    `https://api.tradier.com/v1`.
-3. A current SPY quote has positive bid and ask values.
-4. The quote includes a broker timestamp no more than 120 seconds old while
+3. The selected option contract's exact quote has positive bid and ask values.
+4. That option quote includes a broker timestamp no more than 120 seconds old while
    the market is open.
 5. The next qualified setup records an `authoritative_quote` event before any
    broker `submit_attempt`.
+
+The Network tab separates **Current connections** from **Event history**.
+Current connections refresh every minute while that tab is open and show the
+check time in Eastern time. A failed refresh, missing timestamp, or check older
+than two minutes must not display a cached green connection as current. Old
+errors remain in the event history; they do not by themselves mean the token
+is still failing. Unused broker rows are hidden, not removed from server checks.
+
+The connection endpoint is an authentication/reachability check, not proof of
+an executable option quote or an order fill. Its production-token validator
+currently probes a stock quote. The entry pipeline separately checks the exact
+option quote and its age. A green connection after hours does not make a closing
+quote fresh enough for a new entry.
 
 Expected failure meanings:
 
@@ -87,3 +104,6 @@ Expected failure meanings:
 If live Tradier pricing becomes unavailable, leave the stale/missing-quote
 safeguard enabled. The safe rollback is no new entries while collection and
 diagnostics continue. Never restore trading by accepting delayed quotes.
+
+See [September 3 audit](../audits/2026-09-03-paper-entry-followup.md) for the
+post-token-repair evidence, offline regression coverage, and remaining checks.

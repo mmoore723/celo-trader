@@ -1,0 +1,2 @@
+function e(e,{failed:t=!1,now:n=Date.now()}={}){let r=Date.parse(e?.checked_at??``),i=!Number.isFinite(r)||n-r>12e4||r>n+5e3,a=!!e&&!t&&!i,o=(e?.connections??[]).filter(e=>e.required||e.status!==`not_used`);return{verified:a,hasIssue:a&&(!e.ready||o.some(e=>e.required&&e.status!==`connected`)),checkedAt:Number.isFinite(r)?new Date(r).toISOString():null,connections:o}}function t(e,t){return e===`tradier`&&t===!0}export{t as n,e as t};
+//# sourceMappingURL=connectionHealthView-B6hZrVGz.js.map

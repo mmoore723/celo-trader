@@ -7,6 +7,7 @@ import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react
 import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib/api";
 import { strategyPerformanceForId, strategyPerformanceState } from "../lib/strategyPerformance.js";
 import { loadCredentialDisplay, maskCredentialForDisplay } from "../lib/credentialDisplay.js";
+import { needsTradierSandbox } from "../lib/connectionHealthView.js";
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
@@ -231,8 +232,9 @@ function AlpacaCredentialsPanel() {
   );
 }
 
-function TradierCredentialsPanel() {
+function TradierCredentialsPanel({ provider, paper }: { provider: string; paper: boolean }) {
   const [show, setShow] = useState({ sandbox: false, live: false });
+  const showSandbox = needsTradierSandbox(provider, paper);
   const { creds, savedMasks, setField, status, loaded, save } =
     useCredentialSave<"tradier_api_key" | "tradier_market_api_key" | "tradier_account_id" | "tradier_live_account_id">(
       ["tradier_api_key", "tradier_market_api_key", "tradier_account_id", "tradier_live_account_id"],
@@ -248,24 +250,14 @@ function TradierCredentialsPanel() {
         <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Tradier</h3>
       </div>
       <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-        With Alpaca selected, Celo uses the production token for current Tradier prices and does
-        not use the Tradier sandbox. The sandbox credentials are needed only if you later select
-        Tradier as the paper-order broker. Saving here never touches Alpaca.
+        {provider === "alpaca"
+          ? `Tradier supplies current prices. Orders stay with Alpaca ${paper ? "Paper" : "Live"}.`
+          : paper
+            ? "Production supplies current prices; Sandbox handles Tradier paper orders."
+            : "Production supplies current prices and handles Tradier live orders."}
+        {" "}Saving a token does not change your broker or trading mode.
       </p>
-      <div
-        className="text-xs rounded-lg px-3 py-2"
-        style={{
-          color: "var(--ink-muted)",
-          background: "rgba(245, 158, 11, 0.08)",
-          border: "1px solid rgba(245, 158, 11, 0.22)",
-        }}
-      >
-        <strong style={{ color: "var(--ink)" }}>Why two Tradier tokens?</strong>{" "}
-        Tradier intentionally delays sandbox market prices by about 15 minutes. Celo will not
-        use a delayed quote to simulate a current fill because that would distort paper results.
-        When Broker is Alpaca and Mode is Paper, the live token supplies prices only; orders stay
-        in the Alpaca paper account.
-      </div>
+      {showSandbox && <>
       <CredentialField label="Sandbox token (only for Tradier Paper orders)" name="tradier_key"
         value={creds.tradier_api_key} onChange={v => setField("tradier_api_key", v)}
         show={show.sandbox} onToggle={() => setShow(s => ({ ...s, sandbox: !s.sandbox }))}
@@ -274,14 +266,15 @@ function TradierCredentialsPanel() {
       <CredentialField label="Sandbox account ID (only for Tradier Paper)" name="tradier_account_id"
         value={creds.tradier_account_id} onChange={v => setField("tradier_account_id", v)}
         show={true} onToggle={() => {}} hint="Sandbox account number" />
-      <CredentialField label="Live token (real-time prices and future live orders)" name="tradier_market_key"
+      </>}
+      <CredentialField label="Production token (current prices)" name="tradier_market_key"
         value={creds.tradier_market_api_key} onChange={v => setField("tradier_market_api_key", v)}
         show={show.live} onToggle={() => setShow(s => ({ ...s, live: !s.live }))}
         savedMask={savedMasks.tradier_market_api_key}
         hint="Production bearer token" />
-      <CredentialField label="Live account ID (required only for live orders)" name="tradier_live_account_id"
+      {provider === "tradier" && !paper && <CredentialField label="Live account ID" name="tradier_live_account_id"
         value={creds.tradier_live_account_id} onChange={v => setField("tradier_live_account_id", v)}
-        show={true} onToggle={() => {}} hint="Live account number" />
+        show={true} onToggle={() => {}} hint="Live account number" />}
       {status && (
         <p className="text-xs font-medium" style={{ color: status.ok ? "var(--accent)" : "#f87171" }}>{status.msg}</p>
       )}
@@ -898,7 +891,7 @@ export function Settings() {
         API Credentials — each saves independently
       </p>
       <AlpacaCredentialsPanel />
-      <TradierCredentialsPanel />
+      <TradierCredentialsPanel provider={actualBrokerProvider} paper={actualAccountMode === "paper"} />
       <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
         Keys are encrypted at rest (AES-128 / Fernet). Never stored in plain text.
       </p>
