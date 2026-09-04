@@ -27,9 +27,9 @@ class StrategyTickerConsentTests(unittest.TestCase):
     def _publish(self) -> None:
         publish_recommendation("V2_SPY_TREND_CONT", "QQQ", evidence_summary="Chronological quote validation passed.")
 
-    def test_current_static_defaults_do_not_require_new_consent(self) -> None:
+    def test_failed_static_strategy_remains_available_only_in_paper(self) -> None:
         self.assertTrue(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", {"paper_trading": True}))
-        self.assertTrue(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", {"paper_trading": False}))
+        self.assertFalse(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", {"paper_trading": False}))
 
     def test_new_pair_defaults_to_observation_and_fails_closed(self) -> None:
         self._publish()
@@ -135,14 +135,14 @@ class StrategyTickerConsentTests(unittest.TestCase):
         self.assertEqual(["QQQ"], approved_dynamic_tickers(user_a, {"V2_SPY_TREND_CONT"}))
         self.assertEqual([], approved_dynamic_tickers({"paper_trading": True}, {"V2_SPY_TREND_CONT"}))
 
-    def test_existing_static_scope_keeps_normal_live_authority(self) -> None:
+    def test_failed_static_scope_does_not_keep_live_authority(self) -> None:
         publish_recommendation(
             "V2_SPY_TREND_CONT", "SPY",
             evidence_summary="Original reviewed pair still requires live qualification.",
         )
         settings = {"paper_trading": False}
         self.assertEqual("pending", public_recommendations(settings)[0]["decision"])
-        self.assertTrue(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", settings))
+        self.assertFalse(is_user_authorized_ticker("V2_SPY_TREND_CONT", "SPY", settings))
 
     def test_qualified_static_pair_can_be_user_approved_for_normal_live_execution(self) -> None:
         publish_recommendation(

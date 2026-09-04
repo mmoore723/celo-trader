@@ -73,17 +73,16 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         setting_key="strategy_spy_trend_cont_v2_enabled",
         signal_source="bar_close",
         implementation="strategies.spy_trend_continuation_v2.evaluate",
-        # The actual bot permits one SPY position at a time.  Under that same
-        # account constraint, the 30-minute fixed hold was selected on earlier
-        # paid data and passed the untouched later period (66 later trades).
-        # The longer per-signal scan allowed overlapping SPY positions and is
-        # diagnostic only, not the executable policy.
+        # Thirty minutes remains the tested exit while this strategy collects
+        # paper evidence. A later parity audit found that the original report
+        # included repeat breakouts and reserved-slot entries which production
+        # cannot emit; the exact 72-trade policy replay failed the PF gate.
         exit_minutes=30,
-        paper_only=False,
+        paper_only=True,
         status="paper_candidate",
-        evidence_grade="passed_declared_holdout",
+        evidence_grade="failed_profit_factor",
         evidence_artifact="config/strategy_evidence/v2_spy_trend_cont-2.0.0.json",
-        evidence="SPY paid-quote Trend Continuation 30-minute one-position fixed-hold study",
+        evidence="Exact deployed SPY Trend policy replay: PF 0.98 across 72 paid-quote outcomes; paper-only while it is repaired",
     ),
     "V2_SPY_AFTERNOON_FVG": ReviewedStrategy(
         strategy_id="V2_SPY_AFTERNOON_FVG",
@@ -266,6 +265,15 @@ def reviewed_strategy_integrity_errors() -> dict[str, tuple[str, ...]]:
         for field, expected in expected_fields.items():
             if evidence.get(field) != expected:
                 errors.append(f"{field}_mismatch")
+        display_metrics = evidence.get("display_metrics")
+        if (
+            rule.evidence_grade == "passed_declared_holdout"
+            and (
+                not isinstance(display_metrics, dict)
+                or display_metrics.get("meets_target") is not True
+            )
+        ):
+            errors.append("declared_pass_does_not_meet_target")
         try:
             actual_hash = hashlib.sha256(implementation_path.read_bytes()).hexdigest()
         except OSError:
@@ -273,6 +281,23 @@ def reviewed_strategy_integrity_errors() -> dict[str, tuple[str, ...]]:
         else:
             if actual_hash != evidence.get("implementation_sha256_at_review"):
                 errors.append("implementation_hash_mismatch")
+        policy_sources = evidence.get("runtime_policy_sources", [])
+        if not isinstance(policy_sources, list):
+            errors.append("runtime_policy_sources_invalid")
+        else:
+            for source in policy_sources:
+                if not isinstance(source, dict) or not source.get("path") or not source.get("sha256"):
+                    errors.append("runtime_policy_source_invalid")
+                    continue
+                try:
+                    policy_path = (_PROJECT_ROOT / str(source["path"])).resolve()
+                    policy_path.relative_to(_PROJECT_ROOT.resolve())
+                    policy_hash = hashlib.sha256(policy_path.read_bytes()).hexdigest()
+                except (OSError, ValueError):
+                    errors.append("runtime_policy_source_missing")
+                else:
+                    if policy_hash != source["sha256"]:
+                        errors.append("runtime_policy_source_hash_mismatch")
         if errors:
             failures[strategy_id] = tuple(errors)
     return failures

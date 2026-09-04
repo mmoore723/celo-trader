@@ -34,14 +34,14 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
             <= set(REVIEWED_STRATEGIES)
         )
 
-    def test_enabled_registry_allows_reviewed_static_scope_in_paper_and_live(self) -> None:
+    def test_enabled_registry_respects_paper_only_evidence_status(self) -> None:
         settings = {rule.setting_key: True for rule in REVIEWED_STRATEGIES.values()}
         self.assertEqual(
             {"V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION"},
             enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=True),
         )
         self.assertEqual(
-            {"V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION"},
+            {"V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION"},
             enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=False),
         )
 
@@ -81,6 +81,20 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
     def test_spy_trend_exit_matches_its_one_position_paid_data_selection(self) -> None:
         self.assertEqual(30, REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"].exit_minutes)
 
+    def test_spy_trend_evidence_describes_the_exact_deployed_policy(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        rule = REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"]
+        evidence = json.loads((root / rule.evidence_artifact).read_text())
+        replay = evidence["source_report_reconciliation"]
+        self.assertFalse(replay["all_reported_markouts_reachable_by_production"])
+        self.assertEqual(70, replay["reported_markouts_not_emittable_by_production"])
+        self.assertEqual(72, replay["exact_deployed_policy_markouts"])
+        self.assertEqual(72, evidence["display_metrics"]["trades"])
+        self.assertAlmostEqual(0.98, evidence["display_metrics"]["profit_factor"])
+        self.assertFalse(evidence["display_metrics"]["meets_target"])
+        self.assertEqual("failed_profit_factor", rule.evidence_grade)
+        self.assertTrue(rule.paper_only)
+
     def test_spy_afternoon_fvg_uses_reviewed_30_minute_exit(self) -> None:
         self.assertEqual(30, REVIEWED_STRATEGIES["V2_SPY_AFTERNOON_FVG"].exit_minutes)
 
@@ -105,6 +119,8 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
             self.assertTrue(evidence["implementation_sha256_at_review"])
             self.assertTrue(evidence["source_reports"])
             self.assertTrue(evidence["decision"])
+            if strategy.evidence_grade == "passed_declared_holdout":
+                self.assertTrue(evidence["display_metrics"]["meets_target"])
 
     def test_reviewed_implementation_hashes_match_evidence(self) -> None:
         self.assertEqual({}, reviewed_strategy_integrity_errors())
@@ -131,7 +147,7 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         enabled = {item["strategy_id"] for item in catalog if item["enabled"]}
         self.assertEqual({"V2_SPY_TREND_CONT"}, enabled)
 
-    def test_public_catalog_allows_reviewed_strategy_in_live_when_user_enabled(self) -> None:
+    def test_public_catalog_keeps_failed_trend_out_of_live_execution(self) -> None:
         rule = REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"]
         settings = {rule.setting_key: True, "paper_trading": False}
         row = next(
@@ -140,13 +156,13 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         )
         self.assertTrue(row["enabled"])
         self.assertEqual("live", row["account_mode"])
-        self.assertTrue(row["live_eligible"])
-        self.assertTrue(row["eligible_in_current_mode"])
-        self.assertTrue(row["execution_enabled"])
-        self.assertEqual("qualified_for_live", row["validation_state"])
+        self.assertFalse(row["live_eligible"])
+        self.assertFalse(row["eligible_in_current_mode"])
+        self.assertFalse(row["execution_enabled"])
+        self.assertEqual("shadow_observation", row["validation_state"])
         self.assertFalse(row["observation_requires_paper_mode"])
 
-    def test_every_execution_strategy_is_available_in_live_and_observers_are_not(self) -> None:
+    def test_live_catalog_respects_each_execution_strategy_evidence_status(self) -> None:
         settings = {
             "paper_trading": False,
             **{rule.setting_key: True for rule in REVIEWED_STRATEGIES.values()},
@@ -160,10 +176,10 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
                 self.assertFalse(row["execution_enabled"], row["strategy_id"])
                 self.assertTrue(row["observation_enabled"], row["strategy_id"])
             else:
-                self.assertFalse(row["paper_only"], row["strategy_id"])
-                self.assertTrue(row["live_eligible"], row["strategy_id"])
-                self.assertTrue(row["eligible_in_current_mode"], row["strategy_id"])
-                self.assertTrue(row["execution_enabled"], row["strategy_id"])
+                expected_live = not REVIEWED_STRATEGIES[row["strategy_id"]].paper_only
+                self.assertEqual(expected_live, row["live_eligible"], row["strategy_id"])
+                self.assertEqual(expected_live, row["eligible_in_current_mode"], row["strategy_id"])
+                self.assertEqual(expected_live, row["execution_enabled"], row["strategy_id"])
 
     def test_paper_mode_switch_is_reported_as_executable(self) -> None:
         rule = REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"]
