@@ -49,11 +49,11 @@ class OptionChartTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def quote(self, stamp="2026-09-04T10:05:00", bid=4.1, ask=4.2, source="tradier_quote", symbol="TEST_OPTION"):
+    def quote(self, stamp="2026-09-04T10:05:00", bid=4.1, ask=4.2, source="tradier_quote", symbol="TEST_OPTION", kind="mark"):
         with connect(self.db) as conn:
             conn.execute("""INSERT INTO option_quote_observations
                 (trade_id,observed_at,observed_minute,observation_kind,contract_symbol,bid,ask,source)
-                VALUES (1,?,?,'mark',?,?,?,?)""", (stamp, stamp[:16], symbol, bid, ask, source))
+                VALUES (1,?,?,?, ?,?,?,?)""", (stamp, stamp[:16], kind, symbol, bid, ask, source))
 
     def read(self, **kwargs):
         return read_option_chart(self.db, trade_id=1, account_id="alice-account", paper=True, now=NOW, **kwargs)
@@ -99,11 +99,12 @@ class OptionChartTests(unittest.TestCase):
 
     def test_closed_trade_fill_not_fabricated_from_last_quote(self):
         self.quote()
+        self.quote(stamp="2026-09-04T10:29:00", source="tradier_pre_submit_exit_quote", kind="exit")
         self.quote(stamp="2026-09-04T10:30:01")
         with connect(self.db) as conn:
             conn.execute("UPDATE trades SET exit_time='2026-09-04T10:30:00',exit_price=4.3,realized_pnl=60,status='closed'")
         data = self.read()
-        self.assertEqual(len(data["quotes"]), 1)
+        self.assertEqual(len(data["quotes"]), 2)
         self.assertEqual(data["exit_price"], 4.3)
         self.assertEqual(data["realized_pnl"], 60)
 

@@ -59,7 +59,7 @@ def read_option_chart(path: Path, *, trade_id: int, account_id: str,
             stamp, bid, ask = _time(quote["observed_at"]), _number(quote["bid"]), _number(quote["ask"])
             if (start is None or stamp is None or stamp < start or stamp > min(end or now_s, now_s)
                     or bid is None or ask is None or bid < 0 or ask <= 0 or ask < bid
-                    or quote["source"] not in {"tradier_quote", "tradier_chain", "tradier_exit_quote"}):
+                    or quote["source"] not in {"tradier_quote", "tradier_chain", "tradier_pre_submit_exit_quote"}):
                 continue
             points.setdefault(stamp, {"time": stamp, "bid": bid, "ask": ask})
         return {
