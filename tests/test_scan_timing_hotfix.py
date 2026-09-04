@@ -94,3 +94,10 @@ class ScanTimingTests(unittest.TestCase):
             record_scan_timing(state, "TSLA", frame, datetime(2026, 9, 4, 10, 27))
         self.assertTrue(any("skipped_bars=1" in line for line in logs.output))
         self.assertTrue(any("stale_seconds=60.0" in line for line in logs.output))
+
+    def test_new_trading_day_does_not_count_overnight_minutes_as_missed(self):
+        state = {"execution_scan_coverage": {"TSLA": "2026-09-03T15:54:00"}}
+        frame = pd.DataFrame({"time": pd.to_datetime(["2026-09-04 09:45"])})
+        with self.assertLogs("celo_trader.trading_logic", level="INFO") as logs:
+            record_scan_timing(state, "TSLA", frame, datetime(2026, 9, 4, 9, 46))
+        self.assertIn("skipped_bars=0", logs.output[0])

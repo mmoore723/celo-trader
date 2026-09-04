@@ -53,6 +53,8 @@ def record_scan_timing(state, ticker, frame, now):
     latest = closed.max()
     cache = state.setdefault("execution_scan_coverage", {})
     previous = cache.get(ticker)
+    if previous and pd.Timestamp(previous).date() != latest.date():
+        previous = None  # Overnight/weekend closure is not a missed scan.
     stale_seconds = max(0.0, (cutoff - latest).total_seconds() - 60.0)
     skipped = max(0, int((latest - pd.Timestamp(previous)).total_seconds() / 60) - 1) if previous else 0
     if previous != latest.isoformat() or stale_seconds:
