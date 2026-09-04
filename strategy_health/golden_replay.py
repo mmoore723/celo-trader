@@ -14,7 +14,7 @@ def _coverage(name: str, expected: int, proven: int) -> dict:
 
 def replay_event_tape(events: list[dict]) -> dict:
     """Prove links between decisions, broker fills, and recorded positions."""
-    trades = {e["trade_id"] for e in events if e["kind"].startswith("trade_")}
+    trades = {e["trade_id"] for e in events if e["kind"] in {"trade_entry", "trade_exit"}}
     entered_signals = [e for e in events if e["kind"] == "signal" and e["payload"].get("outcome") == "entered"]
     entered_candidates = [e for e in events if e["kind"] == "candidate" and e["payload"].get("final_outcome") == "entered"]
     fills = [e for e in events if e["kind"] == "order" and e["payload"].get("event_type") in {"filled", "partial_filled"}]

@@ -18,7 +18,7 @@ def _fetch(conn, sql: str, params: tuple[Any, ...]) -> list[dict]:
 
 
 def _event(kind: str, event_id: str, timestamp: str, row: dict) -> dict:
-    trade_id = row.get("id") if kind.startswith("trade_") else row.get("trade_id")
+    trade_id = row.get("id") if kind in {"trade_entry", "trade_exit"} else row.get("trade_id")
     return {
         "event_id": f"{kind}:{event_id}", "timestamp": timestamp,
         "kind": kind, "ticker": row.get("ticker"),
