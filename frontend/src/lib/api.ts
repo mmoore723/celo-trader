@@ -772,6 +772,15 @@ export interface BrokerReadiness {
   checks: Record<string, { passed: boolean; detail: string }>;
 }
 
+export interface TestedStrategyInventory {
+  strategies: {strategy_id: string; display_name: string; tickers: string[]; reports: string[]; report_count: number}[];
+  reports_scanned: number;
+  other_studies: string[];
+  report_details: Record<string, {title: string; purpose: string; decision: string; status: string}>;
+  generated_at: string;
+  unavailable?: boolean;
+}
+
 export interface ReviewedStrategyCatalogEntry {
   strategy_id: string;
   display_name: string;
@@ -1027,6 +1036,7 @@ export const api = {
     brokerReadiness: (paper = true) => request<BrokerReadiness>(`/api/settings/broker-readiness?paper=${paper}`),
     connectionHealth: () => request<BrokerConnectionHealth>("/api/settings/connection-health"),
     strategies: () => request<{strategies: ReviewedStrategyCatalogEntry[]}>("/api/settings/strategies"),
+    testedStrategies: () => request<TestedStrategyInventory>("/api/settings/strategies/tested"),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
     recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),
     setRecommendation: (strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") =>

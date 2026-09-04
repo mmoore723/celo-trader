@@ -1,0 +1,3560 @@
+{
+  "generated_at": "2026-09-04T11:23:28.877592+00:00",
+  "reports_scanned": 338,
+  "unreadable_reports": [],
+  "report_details": {
+    "research/reports/alpaca_qqq_vs_spy_relative_continuation_2024_2026_v1.json": {
+      "title": "Alpaca QQQ Vs SPY Relative Continuation 2024 2026 V1",
+      "purpose": "Frozen SPY-adjusted intraday residual-continuation screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/alpaca_qqq_vs_spy_relative_snapback_2024_2026_v1.json": {
+      "title": "Alpaca QQQ Vs SPY Relative Snapback 2024 2026 V1",
+      "purpose": "Frozen SPY-adjusted intraday residual-reversal screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/alpaca_spy_afternoon_compression_2024_2026_v1.json": {
+      "title": "Alpaca SPY Afternoon Compression 2024 2026 V1",
+      "purpose": "Long-history SPY afternoon compression breakout screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/alpaca_spy_first_last_half_hour_2024_2026_v1.json": {
+      "title": "Alpaca SPY First Last Half Hour 2024 2026 V1",
+      "purpose": "SPY first-to-last-half-hour momentum three-period screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/alpaca_spy_long_history_rth_baseline_v1.json": {
+      "title": "Alpaca SPY Long History Rth Baseline V1",
+      "purpose": "Baseline screen only; no paid option quotes, tuning, or trading action.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/alpaca_spy_time_of_day_periodicity_2024_2026_v1.json": {
+      "title": "Alpaca SPY Time Of Day Periodicity 2024 2026 V1",
+      "purpose": "Frozen same-half-hour next-session continuation screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/alpaca_spy_time_of_day_periodicity_2024_2026_v2.json": {
+      "title": "Alpaca SPY Time Of Day Periodicity 2024 2026 V2",
+      "purpose": "Frozen same-half-hour next-session continuation screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/camarilla_level_rejection_v1.json": {
+      "title": "Camarilla Level Rejection V1",
+      "purpose": "Frozen causal underlying screen; not an option-profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/cmf_trend_pullback_v1.json": {
+      "title": "CMF Trend Pullback V1",
+      "purpose": "Frozen causal underlying screen; not an option-profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/context_strategy_matrix_qqq_through_2026_08_24_v1.json": {
+      "title": "Context Strategy Matrix QQQ Through 2026 08 24 V1",
+      "purpose": "Frozen single-pass underlying screen of the context-filtered ORB, VWAP, and squeeze suggestions.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/context_strategy_matrix_underlying_v1.json": {
+      "title": "Context Strategy Matrix Underlying V1",
+      "purpose": "Frozen single-pass underlying screen of the context-filtered ORB, VWAP, and squeeze suggestions.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/context_strategy_matrix_underlying_v2.json": {
+      "title": "Context Strategy Matrix Underlying V2",
+      "purpose": "Frozen single-pass underlying screen of the context-filtered ORB, VWAP, and squeeze suggestions.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/cross_sectional_opening_strength_pullback_v1.json": {
+      "title": "Cross Sectional Opening Strength Pullback V1",
+      "purpose": "Frozen causal underlying screen; not an options profitability claim.",
+      "decision": "reject_before_option_replay",
+      "status": "saved_study"
+    },
+    "research/reports/donchian_adx_breakout_v1_underlying.json": {
+      "title": "Donchian ADX Breakout V1 Underlying",
+      "purpose": "Frozen cross-ticker underlying rejection screen; not an options profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/failed_initial_balance_breakout_qqq.json": {
+      "title": "Failed Initial Balance Breakout QQQ",
+      "purpose": "Frozen cross-ticker screen of a failed first-hour breakout reversal.",
+      "decision": "reject_for_this_ticker",
+      "status": "saved_study"
+    },
+    "research/reports/failed_initial_balance_breakout_spy.json": {
+      "title": "Failed Initial Balance Breakout SPY",
+      "purpose": "Frozen cross-ticker screen of a failed first-hour breakout reversal.",
+      "decision": "reject_for_this_ticker",
+      "status": "saved_study"
+    },
+    "research/reports/failed_initial_balance_breakout_tsla.json": {
+      "title": "Failed Initial Balance Breakout TSLA",
+      "purpose": "Frozen cross-ticker screen of a failed first-hour breakout reversal.",
+      "decision": "reject_for_this_ticker",
+      "status": "saved_study"
+    },
+    "research/reports/failed_range_recovery_qqq_transfer.json": {
+      "title": "Failed Range Recovery QQQ Transfer",
+      "purpose": "Unchanged cross-ticker transfer screen of passed SPY Failed-Range Recovery V2.",
+      "decision": "reject_for_this_ticker",
+      "status": "saved_study"
+    },
+    "research/reports/failed_range_recovery_tsla_transfer.json": {
+      "title": "Failed Range Recovery TSLA Transfer",
+      "purpose": "Unchanged cross-ticker transfer screen of passed SPY Failed-Range Recovery V2.",
+      "decision": "reject_for_this_ticker",
+      "status": "saved_study"
+    },
+    "research/reports/ichimoku_cloud_continuation_v1.json": {
+      "title": "Ichimoku Cloud Continuation V1",
+      "purpose": "Frozen causal underlying screen across every eligible recorded ticker; not an option-profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/impulse_anchored_vwap_pullback_v1_underlying.json": {
+      "title": "Impulse Anchored VWAP Pullback V1 Underlying",
+      "purpose": "Frozen underlying rejection screen; not an options profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/impulse_anchored_vwap_pullback_v2_walk_forward.json": {
+      "title": "Impulse Anchored VWAP Pullback V2 Walk Forward",
+      "purpose": "Walk-forward risk-rule selection; 2026 is evaluated once after selection.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/impulse_flag_context_diagnosis.json": {
+      "title": "Impulse Flag Context Diagnosis",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/impulse_flag_continuation_cross_ticker.json": {
+      "title": "Impulse Flag Continuation Cross Ticker",
+      "purpose": "Frozen all-day bull/bear flag continuation screen; underlying only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/initial_balance_midpoint_rotation_v1_underlying.json": {
+      "title": "Initial Balance Midpoint Rotation V1 Underlying",
+      "purpose": "Frozen cross-ticker underlying rejection screen; not an options profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/opening_close_continuation_v1_underlying.json": {
+      "title": "Opening Close Continuation V1 Underlying",
+      "purpose": "Pre-final tuning of a morning-momentum-to-close underlying hypothesis; no options or trading authorization.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/outside_value_acceptance_v1_underlying.json": {
+      "title": "Outside Value Acceptance V1 Underlying",
+      "purpose": "Frozen causal underlying screen; not an options-profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_amzn_context_strategy_matrix_v1.json": {
+      "title": "Paid AMZN Context Strategy Matrix V1",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_amzn_context_strategy_matrix_v2.json": {
+      "title": "Paid AMZN Context Strategy Matrix V2",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_amzn_context_strategy_matrix_v3.json": {
+      "title": "Paid AMZN Context Strategy Matrix V3",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_amzn_context_vwap_signal_v2.json": {
+      "title": "Paid AMZN Context VWAP Signal V2",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_amzn_contract_selection_matrix_v1.json": {
+      "title": "Paid AMZN Contract Selection Matrix V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_amzn_contract_selection_matrix_v2.json": {
+      "title": "Paid AMZN Contract Selection Matrix V2",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_amzn_option_pressure_confirmation_v1.json": {
+      "title": "Paid AMZN Option Pressure Confirmation V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json": {
+      "title": "Paid QQQ Context Strategy Matrix Through 2026 08 24 V1",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_qqq_context_strategy_matrix_v1.json": {
+      "title": "Paid QQQ Context Strategy Matrix V1",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_qqq_context_strategy_matrix_v2.json": {
+      "title": "Paid QQQ Context Strategy Matrix V2",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_qqq_context_vwap_signal_v2.json": {
+      "title": "Paid QQQ Context VWAP Signal V2",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_qqq_contract_selection_matrix_v1.json": {
+      "title": "Paid QQQ Contract Selection Matrix V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_qqq_contract_selection_matrix_v2.json": {
+      "title": "Paid QQQ Contract Selection Matrix V2",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_allocation_grid_pf150_v2.json": {
+      "title": "Paid Reviewed Allocation Grid Pf150 V2",
+      "purpose": "Causal strategy-group allocation selection for the five current reviewed paid-option strategies.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_allocation_grid_v1.json": {
+      "title": "Paid Reviewed Allocation Grid V1",
+      "purpose": "Causal strategy-group allocation selection for the five current reviewed paid-option strategies.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_launch_readiness_v1.json": {
+      "title": "Paid Reviewed Launch Readiness V1",
+      "purpose": "Truthful launch-readiness audit for PF >= 1.50 and growth from $5,000 toward $100,000.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_launch_readiness_v2.json": {
+      "title": "Paid Reviewed Launch Readiness V2",
+      "purpose": "Truthful launch-readiness audit for PF >= 1.50 and growth from $5,000 toward $100,000.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_launch_readiness_v3.json": {
+      "title": "Paid Reviewed Launch Readiness V3",
+      "purpose": "Truthful launch-readiness audit for PF >= 1.50 and growth from $5,000 toward $100,000.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_launch_readiness_v4.json": {
+      "title": "Paid Reviewed Launch Readiness V4",
+      "purpose": "Truthful launch-readiness audit for PF >= 1.50 and growth from $5,000 toward $100,000.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_launch_readiness_v5.json": {
+      "title": "Paid Reviewed Launch Readiness V5",
+      "purpose": "Truthful launch-readiness audit for PF >= 1.50 and growth from $5,000 toward $100,000.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_setup_ranker_v1.json": {
+      "title": "Paid Reviewed Setup Ranker V1",
+      "purpose": "Causal entry-time setup ranker across reviewed paid-option candidates; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_strategy_selector_pf150_v3.json": {
+      "title": "Paid Reviewed Strategy Selector Pf150 V3",
+      "purpose": "Causal combined selector for all five reviewed paid-option strategy candidates; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_strategy_selector_pf150_v4.json": {
+      "title": "Paid Reviewed Strategy Selector Pf150 V4",
+      "purpose": "Causal combined selector for all five reviewed paid-option strategy candidates; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_strategy_selector_pf150_v5.json": {
+      "title": "Paid Reviewed Strategy Selector Pf150 V5",
+      "purpose": "Causal combined selector for all five reviewed paid-option strategy candidates; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_strategy_selector_pf150_v6.json": {
+      "title": "Paid Reviewed Strategy Selector Pf150 V6",
+      "purpose": "Causal combined selector for all five reviewed paid-option strategy candidates; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_strategy_selector_v1.json": {
+      "title": "Paid Reviewed Strategy Selector V1",
+      "purpose": "Causal combined selector for all four reviewed paid-option strategy candidates; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_strategy_selector_v1_stability.json": {
+      "title": "Paid Reviewed Strategy Selector V1 Stability",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_reviewed_strategy_selector_v2.json": {
+      "title": "Paid Reviewed Strategy Selector V2",
+      "purpose": "Causal combined selector for all five reviewed paid-option strategy candidates; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_signal_thesis_coordination_v1.json": {
+      "title": "Paid Signal Thesis Coordination V1",
+      "purpose": "Causal test of cross-strategy thesis coordination, confirmation, and re-entry suppression.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_compression_breakout_30m.json": {
+      "title": "Paid SPY Afternoon Compression Breakout 30M",
+      "purpose": "Fixed SPY afternoon compression-to-expansion entry screen using locally paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_compression_confirmations.json": {
+      "title": "Paid SPY Afternoon Compression Confirmations",
+      "purpose": "Paid SPY hold/retest confirmation study for the frozen afternoon-compression range; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_compression_context.json": {
+      "title": "Paid SPY Afternoon Compression Context",
+      "purpose": "Causal RSI/MACD context test for the frozen wider-baseline SPY afternoon-compression entry.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_compression_eligibility.json": {
+      "title": "Paid SPY Afternoon Compression Eligibility",
+      "purpose": "Explain missing executable contracts without weakening eligibility rules.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_afternoon_compression_eligibility_pricing.json": {
+      "title": "Paid SPY Afternoon Compression Eligibility Pricing",
+      "purpose": "Explain missing executable contracts without weakening eligibility rules.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_afternoon_compression_eligibility_pricing_v2.json": {
+      "title": "Paid SPY Afternoon Compression Eligibility Pricing V2",
+      "purpose": "Explain missing executable contracts without weakening eligibility rules.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_compression_eligibility_summary.json": {
+      "title": "Paid SPY Afternoon Compression Eligibility Summary",
+      "purpose": "Test whether missing exact exits are recoverable from nearby recorded bids without inventing fills.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_compression_eligibility_timing.json": {
+      "title": "Paid SPY Afternoon Compression Eligibility Timing",
+      "purpose": "Explain missing executable contracts without weakening eligibility rules.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_afternoon_compression_exits.json": {
+      "title": "Paid SPY Afternoon Compression Exits",
+      "purpose": "Causal exit comparison for the frozen wider-baseline SPY afternoon-compression entry; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_compression_tuning.json": {
+      "title": "Paid SPY Afternoon Compression Tuning",
+      "purpose": "Older/later tuning of fixed SPY afternoon compression definitions using saved paid quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_compression_walk_forward.json": {
+      "title": "Paid SPY Afternoon Compression Walk Forward",
+      "purpose": "Reproducible chronological robustness analysis of fixed SPY afternoon-compression definitions.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_fvg_contract_profiles_v1.json": {
+      "title": "Paid SPY Afternoon FVG Contract Profiles V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_fvg_v2_monthly.json": {
+      "title": "Paid SPY Afternoon FVG V2 Monthly",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_fvg_v2_robustness.json": {
+      "title": "Paid SPY Afternoon FVG V2 Robustness",
+      "purpose": "Fixed robustness audit of an existing paid-quote candidate.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_fvg_v2_tune.json": {
+      "title": "Paid SPY Afternoon FVG V2 Tune",
+      "purpose": "Exact live SPY Afternoon FVG V2 tuning on local paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_afternoon_fvg_v2_tune_exact.json": {
+      "title": "Paid SPY Afternoon FVG V2 Tune Exact",
+      "purpose": "Exact live SPY Afternoon FVG V2 tuning on local paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_afternoon_fvg_v2_tune_fast.json": {
+      "title": "Paid SPY Afternoon FVG V2 Tune Fast",
+      "purpose": "Exact live SPY Afternoon FVG V2 tuning on local paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_capacity_price_action_1m_v1.json": {
+      "title": "Paid SPY Afternoon Reversal Capacity Price Action 1M V1",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_capacity_price_action_5m_v1.json": {
+      "title": "Paid SPY Afternoon Reversal Capacity Price Action 5M V1",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_contexts_v1.json": {
+      "title": "Paid SPY Afternoon Reversal Contexts V1",
+      "purpose": "Predeclared SPY Afternoon Reversal context selection from existing actual option ask-to-bid markouts; no data re-download.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_exits.json": {
+      "title": "Paid SPY Afternoon Reversal Exits",
+      "purpose": "Causal exit comparison for the frozen SPY afternoon-reversal entry; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_momentum.json": {
+      "title": "Paid SPY Afternoon Reversal Momentum",
+      "purpose": "Predeclared RSI/MACD confirmation comparison using paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_monthly_stability.json": {
+      "title": "Paid SPY Afternoon Reversal Monthly Stability",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_one_position_holds.json": {
+      "title": "Paid SPY Afternoon Reversal One Position Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_price_action_1m_v1.json": {
+      "title": "Paid SPY Afternoon Reversal Price Action 1M V1",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_price_action_5m_v1.json": {
+      "title": "Paid SPY Afternoon Reversal Price Action 5M V1",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_reversal_robustness.json": {
+      "title": "Paid SPY Afternoon Reversal Robustness",
+      "purpose": "Fixed robustness audit of an existing paid-quote candidate.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_afternoon_slot_reservation_v1.json": {
+      "title": "Paid SPY Afternoon Slot Reservation V1",
+      "purpose": "Prevent lower-expectancy late SPY Trend entries from crowding out reviewed Afternoon FVG setups.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_bollinger_w_bottom_holds.json": {
+      "title": "Paid SPY Bollinger W Bottom Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_bos_mss_baseline_underlying.json": {
+      "title": "Paid SPY BOS MSS Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_breakout_pullback_continuation_holds.json": {
+      "title": "Paid SPY Breakout Pullback Continuation Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_breakout_pullback_continuation_raw_60m.json": {
+      "title": "Paid SPY Breakout Pullback Continuation Raw 60M",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_breakout_pullback_continuation_regime_v1.json": {
+      "title": "Paid SPY Breakout Pullback Continuation Regime V1",
+      "purpose": "Read-only, no-lookahead trend-versus-range context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_breakout_pullback_continuation_volatility_v1.json": {
+      "title": "Paid SPY Breakout Pullback Continuation Volatility V1",
+      "purpose": "Exploratory causal-volatility stability test for SPY breakout-pullback continuation using existing paid ask-to-bid marks.",
+      "decision": "",
+      "status": "invalid_or_superseded"
+    },
+    "research/reports/paid_spy_breakout_pullback_continuation_volatility_v2.json": {
+      "title": "Paid SPY Breakout Pullback Continuation Volatility V2",
+      "purpose": "Exploratory causal-volatility stability test for SPY breakout-pullback continuation using existing paid ask-to-bid marks.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_channel_bounce_baseline_underlying.json": {
+      "title": "Paid SPY Channel Bounce Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_closing_drive_contexts.json": {
+      "title": "Paid SPY Closing Drive Contexts",
+      "purpose": "Causal SPY closing-drive continuation context screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_context_strategy_matrix_v1.json": {
+      "title": "Paid SPY Context Strategy Matrix V1",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_context_strategy_matrix_v2.json": {
+      "title": "Paid SPY Context Strategy Matrix V2",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_context_vwap_signal_v2.json": {
+      "title": "Paid SPY Context VWAP Signal V2",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_ema_pullback_15m_holds.json": {
+      "title": "Paid SPY EMA Pullback 15M Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_failed_opening_range_reversion.json": {
+      "title": "Paid SPY Failed Opening Range Reversion",
+      "purpose": "SPY first failed-opening-range-break reversion entry test; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_failed_range_contract_profiles_v1.json": {
+      "title": "Paid SPY Failed Range Contract Profiles V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_failed_range_dynamic_exits_v1.json": {
+      "title": "Paid SPY Failed Range Dynamic Exits V1",
+      "purpose": "Predeclared strategy exit comparison using paid executable quotes; research-only, never a broker command.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_failed_range_recovery_exits_three_period_v2.json": {
+      "title": "Paid SPY Failed Range Recovery Exits Three Period V2",
+      "purpose": "Causal three-period SPY Failed-Range Recovery dynamic-exit decision.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_failed_range_recovery_exits_v2.json": {
+      "title": "Paid SPY Failed Range Recovery Exits V2",
+      "purpose": "Predeclared strategy exit comparison using paid executable quotes; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_failed_range_recovery_fixed_holds_5_10_15_30_v1.json": {
+      "title": "Paid SPY Failed Range Recovery Fixed Holds 5 10 15 30 V1",
+      "purpose": "Predeclared strategy hold-time study; research-only, never a broker command.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_failed_range_recovery_fixed_holds_assessment_v1.json": {
+      "title": "Paid SPY Failed Range Recovery Fixed Holds Assessment V1",
+      "purpose": "Causal three-period SPY Failed-Range Recovery fixed-hold decision.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_failed_range_recovery_fixed_holds_filtered_v1.json": {
+      "title": "Paid SPY Failed Range Recovery Fixed Holds Filtered V1",
+      "purpose": "Predeclared strategy hold-time study; research-only, never a broker command.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_failed_range_recovery_repriced_holds_v1.json": {
+      "title": "Paid SPY Failed Range Recovery Repriced Holds V1",
+      "purpose": "Exit-only fixed-hold repricing of frozen paid-option entries; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_failed_range_recovery_v1.json": {
+      "title": "Paid SPY Failed Range Recovery V1",
+      "purpose": "Broader failed-opening-range recovery using paid SPY quotes; research only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_first_last_half_hour_screen.json": {
+      "title": "Paid SPY First Last Half Hour Screen",
+      "purpose": "SPY first-to-last-half-hour momentum three-period screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_contexts_v1.json": {
+      "title": "Paid SPY FVG Contexts V1",
+      "purpose": "Predeclared SPY Fair Value Gap context assessment from existing actual option ask-to-bid markouts; no data re-download.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_contexts_v2_capacity.json": {
+      "title": "Paid SPY FVG Contexts V2 Capacity",
+      "purpose": "Predeclared SPY Fair Value Gap context assessment from existing actual option ask-to-bid markouts; no data re-download.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_contexts_v2_capacity_30m.json": {
+      "title": "Paid SPY FVG Contexts V2 Capacity 30M",
+      "purpose": "Predeclared SPY Fair Value Gap context assessment from existing actual option ask-to-bid markouts; no data re-download.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_contexts_v2_capacity_60m.json": {
+      "title": "Paid SPY FVG Contexts V2 Capacity 60M",
+      "purpose": "Predeclared SPY Fair Value Gap context assessment from existing actual option ask-to-bid markouts; no data re-download.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_contexts_v2_capacity_90m.json": {
+      "title": "Paid SPY FVG Contexts V2 Capacity 90M",
+      "purpose": "Predeclared SPY Fair Value Gap context assessment from existing actual option ask-to-bid markouts; no data re-download.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_holds.json": {
+      "title": "Paid SPY FVG Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_monthly_stability_30m.json": {
+      "title": "Paid SPY FVG Monthly Stability 30M",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_multitimeframe_v1.json": {
+      "title": "Paid SPY FVG Multitimeframe V1",
+      "purpose": "Causal completed 15m/60m/240m trend-context assessment on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_price_action_context_v1.json": {
+      "title": "Paid SPY FVG Price Action Context V1",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_fvg_price_action_context_v2.json": {
+      "title": "Paid SPY FVG Price Action Context V2",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_gap_and_go_baseline_underlying.json": {
+      "title": "Paid SPY Gap And Go Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_gap_fill_rth_v1.json": {
+      "title": "Paid SPY Gap Fill Rth V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_gap_prior_close_reclaim_30m.json": {
+      "title": "Paid SPY Gap Prior Close Reclaim 30M",
+      "purpose": "Material overnight gap rejection and prior-close reclaim with VWAP/EMA confirmation.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_gap_reclaim_holds.json": {
+      "title": "Paid SPY Gap Reclaim Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_gap_zscore_opening_reversion_30m.json": {
+      "title": "Paid SPY Gap Zscore Opening Reversion 30M",
+      "purpose": "SPY gap-zscore opening reversion selection using locally paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_initial_balance_retest_v1_screen.json": {
+      "title": "Paid SPY Initial Balance Retest V1 Screen",
+      "purpose": "Frozen causal first-hour initial-balance breakout/retest screen; no tuning or option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_inverse_fvg_baseline_underlying.json": {
+      "title": "Paid SPY Inverse FVG Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_liquidity_sweep_baseline_underlying.json": {
+      "title": "Paid SPY Liquidity Sweep Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_live_mid_brk_baseline_underlying.json": {
+      "title": "Paid SPY Live Mid Brk Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_live_mid_brk_tune_v1.json": {
+      "title": "Paid SPY Live Mid Brk Tune V1",
+      "purpose": "Bounded entry-context tune for the production-style SPY MID_BRK rule; research only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_midday_breakdown_90m.json": {
+      "title": "Paid SPY Midday Breakdown 90M",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_midday_breakdown_holds.json": {
+      "title": "Paid SPY Midday Breakdown Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_narrow_orb_breakout_60m.json": {
+      "title": "Paid SPY Narrow ORB Breakout 60M",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_narrow_orb_early_short_holds.json": {
+      "title": "Paid SPY Narrow ORB Early Short Holds",
+      "purpose": "Predeclared TSLA strategy hold-time study; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_noise_failure_exit_robustness.json": {
+      "title": "Paid SPY Noise Failure Exit Robustness",
+      "purpose": "Repair missing May warm-up and validate the three predeclared SPY noise-momentum exits.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_noise_failure_exits.json": {
+      "title": "Paid SPY Noise Failure Exits",
+      "purpose": "Predeclared SPY noise-momentum loss-control comparison using locally paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_noise_failure_monthly_capacity.json": {
+      "title": "Paid SPY Noise Failure Monthly Capacity",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_noise_failure_robustness.json": {
+      "title": "Paid SPY Noise Failure Robustness",
+      "purpose": "Single-rule robustness validation of SPY adaptive-noise momentum using real paid option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_noise_fixed_holds.json": {
+      "title": "Paid SPY Noise Fixed Holds",
+      "purpose": "Fixed-hold loss-control test for SPY adaptive noise momentum using local paid quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_noise_momentum.json": {
+      "title": "Paid SPY Noise Momentum",
+      "purpose": "Predeclared SPY 14-session noise-boundary momentum test with locally paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_noise_preclose_monthly_capacity.json": {
+      "title": "Paid SPY Noise Preclose Monthly Capacity",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_nr7_inside_day_breakout_three_period.json": {
+      "title": "Paid SPY NR7 Inside Day Breakout Three Period",
+      "purpose": "Fixed-rule SPY NR7 cross-ticker screen",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_one_minute_orb_call_exits.json": {
+      "title": "Paid SPY One Minute ORB Call Exits",
+      "purpose": "Exit-only comparison for fixed TSLA calls-before-10:30 one-minute ORB retouches; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_one_minute_orb_retouch_60m.json": {
+      "title": "Paid SPY One Minute ORB Retouch 60M",
+      "purpose": "Conservative completed-one-minute confirmation proxy of the deployed ORB breakout-to-first-retest entry using paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_one_minute_orb_retouch_exit_comparison_60m.json": {
+      "title": "Paid SPY One Minute ORB Retouch Exit Comparison 60M",
+      "purpose": "Exit-only comparison for fixed one-minute ORB retouches; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_opening_drive_consolidation_30m.json": {
+      "title": "Paid SPY Opening Drive Consolidation 30M",
+      "purpose": "Fixed opening-drive consolidation screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_opening_drive_vwap_exploration.json": {
+      "title": "Paid SPY Opening Drive VWAP Exploration",
+      "purpose": "SPY opening-drive VWAP-pullback train-only selection; underlying bars only.",
+      "decision": "Only if both selected training and untouched later results pass does this earn real option quote validation.",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_opening_gap_vwap_fade_levels.json": {
+      "title": "Paid SPY Opening Gap VWAP Fade Levels",
+      "purpose": "Material opening-gap exhaustion reversal toward session VWAP.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_option_expected_move_breakout_v1.json": {
+      "title": "Paid SPY Option Expected Move Breakout V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_option_premium_resilience_v1.json": {
+      "title": "Paid SPY Option Premium Resilience V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_option_premium_resilience_v2.json": {
+      "title": "Paid SPY Option Premium Resilience V2",
+      "purpose": "",
+      "decision": "no_selection_candidate",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_option_pressure_confirmation_v1.json": {
+      "title": "Paid SPY Option Pressure Confirmation V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_option_relative_repricing_v1.json": {
+      "title": "Paid SPY Option Relative Repricing V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_option_straddle_expansion_breakout_v1.json": {
+      "title": "Paid SPY Option Straddle Expansion Breakout V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_orb_rsi_macd_short_60m.json": {
+      "title": "Paid SPY ORB RSI MACD Short 60M",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_prior_day_breakout_retest_30m.json": {
+      "title": "Paid SPY Prior Day Breakout Retest 30M",
+      "purpose": "Prior-day level breakout, separate retest, VWAP/EMA-aligned continuation screen.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_prior_day_level_reclaim_30m.json": {
+      "title": "Paid SPY Prior Day Level Reclaim 30M",
+      "purpose": "Prior-day high/low sweep, candle-confirmed reclaim, and VWAP-room screen.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_range_sweep_contexts_30m.json": {
+      "title": "Paid SPY Range Sweep Contexts 30M",
+      "purpose": "Predeclared SPY range-sweep direction-context assessment from existing actual option ask-to-bid markouts; no rescan or download.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_range_sweep_long_diagnostic.json": {
+      "title": "Paid SPY Range Sweep Long Diagnostic",
+      "purpose": "Descriptive, causal feature audit of the existing paid SPY long range-sweep markouts; no threshold search or approval.",
+      "decision": "diagnostic_only_insufficient_sample_for_new_gate",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_range_sweep_long_exits.json": {
+      "title": "Paid SPY Range Sweep Long Exits",
+      "purpose": "SPY long range-sweep/reclaim exit diagnostic using local paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_range_sweep_long_exits_monthly.json": {
+      "title": "Paid SPY Range Sweep Long Exits Monthly",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_range_sweep_momentum_contexts_30m.json": {
+      "title": "Paid SPY Range Sweep Momentum Contexts 30M",
+      "purpose": "Predeclared SPY range-sweep RSI/MACD confirmation assessment from existing actual option ask-to-bid markouts; no option rescan or download.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_range_sweep_reclaim_30m.json": {
+      "title": "Paid SPY Range Sweep Reclaim 30M",
+      "purpose": "SPY quiet-range sweep-and-reclaim selection using locally paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_range_sweep_robustness.json": {
+      "title": "Paid SPY Range Sweep Robustness",
+      "purpose": "Fixed robustness audit of an existing paid-quote candidate.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_relative_volume_expansion_underlying_v1.json": {
+      "title": "Paid SPY Relative Volume Expansion Underlying V1",
+      "purpose": "One fixed relative-volume expansion baseline; no tuning or option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_reviewed_portfolio_v1.json": {
+      "title": "Paid SPY Reviewed Portfolio V1",
+      "purpose": "Check whether reviewed SPY Afternoon FVG adds realizable value beside reviewed SPY Trend Continuation.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_rsi_macd_vwap_momentum_three_period.json": {
+      "title": "Paid SPY RSI MACD VWAP Momentum Three Period",
+      "purpose": "Fixed-logic SPY cross-ticker test",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_rth_hypothesis_screen.json": {
+      "title": "Paid SPY Rth Hypothesis Screen",
+      "purpose": "Baseline screen only; no paid option quotes, tuning, or trading action.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_rvol_expansion_baseline.json": {
+      "title": "Paid SPY Rvol Expansion Baseline",
+      "purpose": "One fixed relative-volume expansion baseline; no tuning or option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_supertrend_baseline_underlying.json": {
+      "title": "Paid SPY Supertrend Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_time_of_day_periodicity.json": {
+      "title": "Paid SPY Time Of Day Periodicity",
+      "purpose": "Frozen same-half-hour next-session continuation screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_affordable_first_v1.json": {
+      "title": "Paid SPY Trend Affordable First V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_close_session_gate_v1.json": {
+      "title": "Paid SPY Trend Close Session Gate V1",
+      "purpose": "Test whether stopping new SPY Trend entries after 3:00 PM improves the reviewed portfolio.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_continuation_30m_regime_assessment.json": {
+      "title": "Paid SPY Trend Continuation 30M Regime Assessment",
+      "purpose": "Read-only, no-lookahead trend-versus-range context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_continuation_holds.json": {
+      "title": "Paid SPY Trend Continuation Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_continuation_one_position_holds.json": {
+      "title": "Paid SPY Trend Continuation One Position Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_contract_price_bands_v1.json": {
+      "title": "Paid SPY Trend Contract Price Bands V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_contract_selection_v1.invalid-fill-affordability.json": {
+      "title": "Paid SPY Trend Contract Selection V1.Invalid-Fill-Affordability",
+      "purpose": "",
+      "decision": "",
+      "status": "invalid_or_superseded"
+    },
+    "research/reports/paid_spy_trend_contract_selection_v1.invalid-lookahead.json": {
+      "title": "Paid SPY Trend Contract Selection V1.Invalid-Lookahead",
+      "purpose": "",
+      "decision": "",
+      "status": "invalid_or_superseded"
+    },
+    "research/reports/paid_spy_trend_contract_selection_v1.invalid-mixed-checkpoint.json": {
+      "title": "Paid SPY Trend Contract Selection V1.Invalid-Mixed-Checkpoint",
+      "purpose": "",
+      "decision": "",
+      "status": "invalid_or_superseded"
+    },
+    "research/reports/paid_spy_trend_contract_selection_v1.json": {
+      "title": "Paid SPY Trend Contract Selection V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_dynamic_exits_three_period.json": {
+      "title": "Paid SPY Trend Dynamic Exits Three Period",
+      "purpose": "Causal three-period SPY Trend Continuation dynamic-exit decision.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_dynamic_exits_v1.json": {
+      "title": "Paid SPY Trend Dynamic Exits V1",
+      "purpose": "Predeclared strategy exit comparison using paid executable quotes; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_entry_limits_v1.json": {
+      "title": "Paid SPY Trend Entry Limits V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_indicator_filter_value.json": {
+      "title": "Paid SPY Trend Indicator Filter Value",
+      "purpose": "Locked early/later assessment of RSI/MACD as an entry gate on an existing strategy.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_monthly_stability_30m.json": {
+      "title": "Paid SPY Trend Monthly Stability 30M",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_multitimeframe_v1.json": {
+      "title": "Paid SPY Trend Multitimeframe V1",
+      "purpose": "Causal completed 15m/60m/240m trend-context assessment on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_price_action_context_v1.json": {
+      "title": "Paid SPY Trend Price Action Context V1",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_price_action_context_v2.json": {
+      "title": "Paid SPY Trend Price Action Context V2",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_price_action_three_period_v1.json": {
+      "title": "Paid SPY Trend Price Action Three Period V1",
+      "purpose": "Read-only three-period validation of declared candle, EMA, VWAP and price-structure filters.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_qqq_confirmation_v1.json": {
+      "title": "Paid SPY Trend QQQ Confirmation V1",
+      "purpose": "Frozen causal cross-index confirmation study using exact saved paid SPY option outcomes.",
+      "decision": "reject_unchanged",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_quote_quality_v1.json": {
+      "title": "Paid SPY Trend Quote Quality V1",
+      "purpose": "",
+      "decision": "retain_unfiltered_reviewed_entries",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_regime_context.json": {
+      "title": "Paid SPY Trend Regime Context",
+      "purpose": "Read-only, no-lookahead trend-versus-range context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_rsi_macd_30m.invalid_duplicate_breakouts.json": {
+      "title": "Paid SPY Trend RSI MACD 30M.Invalid Duplicate Breakouts",
+      "purpose": "Predeclared RSI/MACD confirmation comparison using paid TSLA option quotes; research-only.",
+      "decision": "",
+      "status": "invalid_or_superseded"
+    },
+    "research/reports/paid_spy_trend_rsi_macd_30m.invalid_one_minute_cadence.json": {
+      "title": "Paid SPY Trend RSI MACD 30M.Invalid One Minute Cadence",
+      "purpose": "Predeclared RSI/MACD confirmation comparison using paid option quotes; research-only.",
+      "decision": "",
+      "status": "invalid_or_superseded"
+    },
+    "research/reports/paid_spy_trend_rsi_macd_30m.json": {
+      "title": "Paid SPY Trend RSI MACD 30M",
+      "purpose": "Predeclared RSI/MACD confirmation comparison using paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_setup_ranker_v1.json": {
+      "title": "Paid SPY Trend Setup Ranker V1",
+      "purpose": "Causal within-strategy setup ranker using executable paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_trend_three_period_contexts_30m.json": {
+      "title": "Paid SPY Trend Three Period Contexts 30M",
+      "purpose": "Read-only three-period, causal time/direction context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_turtle_soup_holds.json": {
+      "title": "Paid SPY Turtle Soup Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_two_leg_trend_pullback_dynamic_exits_v1.json": {
+      "title": "Paid SPY Two Leg Trend Pullback Dynamic Exits V1",
+      "purpose": "Predeclared strategy exit comparison using paid executable quotes; research-only, never a broker command.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_spy_two_leg_trend_pullback_dynamic_exits_v2.json": {
+      "title": "Paid SPY Two Leg Trend Pullback Dynamic Exits V2",
+      "purpose": "Predeclared strategy exit comparison using paid executable quotes; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_two_leg_trend_pullback_late_60m_discovery_v1.json": {
+      "title": "Paid SPY Two Leg Trend Pullback Late 60M Discovery V1",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_two_leg_trend_pullback_late_dynamic_exits_v1.json": {
+      "title": "Paid SPY Two Leg Trend Pullback Late Dynamic Exits V1",
+      "purpose": "Predeclared strategy exit comparison using paid executable quotes; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_two_leg_trend_pullback_transfer_60m_v1.json": {
+      "title": "Paid SPY Two Leg Trend Pullback Transfer 60M V1",
+      "purpose": "Predeclared TSLA two-leg trend pullback entry screen using locally paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_vwap_contexts.json": {
+      "title": "Paid SPY VWAP Contexts",
+      "purpose": "Three-period, causal SPY VWAP context selection using already-paid option ask-to-bid markouts; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_vwap_contexts_macd_12_26_9_aligned.json": {
+      "title": "Paid SPY VWAP Contexts MACD 12 26 9 Aligned",
+      "purpose": "Three-period, causal SPY VWAP context selection using already-paid option ask-to-bid markouts; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_vwap_contexts_rsi_14_aligned.json": {
+      "title": "Paid SPY VWAP Contexts RSI 14 Aligned",
+      "purpose": "Three-period, causal SPY VWAP context selection using already-paid option ask-to-bid markouts; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_vwap_contexts_rsi_and_macd_aligned.json": {
+      "title": "Paid SPY VWAP Contexts RSI And MACD Aligned",
+      "purpose": "Three-period, causal SPY VWAP context selection using already-paid option ask-to-bid markouts; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_vwap_failed_move_reversion.json": {
+      "title": "Paid SPY VWAP Failed Move Reversion",
+      "purpose": "Selective SPY quiet-market VWAP failed-move reversion using locally paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_vwap_mean_reversion.json": {
+      "title": "Paid SPY VWAP Mean Reversion",
+      "purpose": "SPY VWAP mean-reversion entry selection from locally paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_spy_vwap_momentum_filters.json": {
+      "title": "Paid SPY VWAP Momentum Filters",
+      "purpose": "Predeclared SPY VWAP-pullback RSI/MACD confirmation comparison using locally paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_afternoon_compression_cross_ticker.json": {
+      "title": "Paid TSLA Afternoon Compression Cross Ticker",
+      "purpose": "Cross-ticker repeatability screen of frozen afternoon compression breakout; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_afternoon_fvg_repeatability.json": {
+      "title": "Paid TSLA Afternoon FVG Repeatability",
+      "purpose": "Fixed afternoon FVG execution study on local paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_afternoon_fvg_transfer_v1.json": {
+      "title": "Paid TSLA Afternoon FVG Transfer V1",
+      "purpose": "Fixed afternoon FVG execution study on local paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_tsla_afternoon_reversal_90m.json": {
+      "title": "Paid TSLA Afternoon Reversal 90M",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_afternoon_reversal_90m_holdout.json": {
+      "title": "Paid TSLA Afternoon Reversal 90M Holdout",
+      "purpose": "Read-only final-exam check for one fixed, paid option quote-to-quote strategy.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_bollinger_keltner_squeeze_holds.json": {
+      "title": "Paid TSLA Bollinger Keltner Squeeze Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_bollinger_structures_three_period.json": {
+      "title": "Paid TSLA Bollinger Structures Three Period",
+      "purpose": "Three-period underlying screen before any real-option quote scan.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_bollinger_structures_three_period_v2.json": {
+      "title": "Paid TSLA Bollinger Structures Three Period V2",
+      "purpose": "Three-period underlying screen before any real-option quote scan.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_context_strategy_matrix_v1.json": {
+      "title": "Paid TSLA Context Strategy Matrix V1",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_context_strategy_matrix_v2.json": {
+      "title": "Paid TSLA Context Strategy Matrix V2",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_context_vwap_signal_v2.json": {
+      "title": "Paid TSLA Context VWAP Signal V2",
+      "purpose": "Test the exact frozen context filters and declared exits without modifying production.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_ema_pullback_15m_holds.json": {
+      "title": "Paid TSLA EMA Pullback 15M Holds",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_ema_risk_depth_three_period.json": {
+      "title": "Paid TSLA EMA Risk Depth Three Period",
+      "purpose": "Train-only EMA-pullback depth selection with middle and untouched-later validation; underlying screen only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_failed_opening_range_reversion.json": {
+      "title": "Paid TSLA Failed Opening Range Reversion",
+      "purpose": "First failed-opening-range-break reversion entry test using locally paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_gap_and_go_baseline_underlying.json": {
+      "title": "Paid TSLA Gap And Go Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_gap_reclaim_holds_revalidated.json": {
+      "title": "Paid TSLA Gap Reclaim Holds Revalidated",
+      "purpose": "Predeclared fixed-hold test for one distinct SPY intraday strategy using local paid OPRA quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_gap_response_90m.json": {
+      "title": "Paid TSLA Gap Response 90M",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_gap_response_90m_v2.json": {
+      "title": "Paid TSLA Gap Response 90M V2",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_gap_response_90m_v2_context.json": {
+      "title": "Paid TSLA Gap Response 90M V2 Context",
+      "purpose": "Predeclared paid-markout direction/time selection using earlier data only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_impulse_anchored_vwap_120m.json": {
+      "title": "Paid TSLA Impulse Anchored VWAP 120M",
+      "purpose": "Option-level confirmation of the frozen TSLA impulse anchored-VWAP pullback.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_impulse_anchored_vwap_false_resumption_filters.json": {
+      "title": "Paid TSLA Impulse Anchored VWAP False Resumption Filters",
+      "purpose": "Causal false-resumption filter study using exact paid-option outcomes.",
+      "decision": "filter_failed_holdout",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_impulse_anchored_vwap_structural_exits.json": {
+      "title": "Paid TSLA Impulse Anchored VWAP Structural Exits",
+      "purpose": "Fidelity replay of the frozen TSLA impulse anchored-VWAP entry and selected exits.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_initial_balance_retest_v1_screen.json": {
+      "title": "Paid TSLA Initial Balance Retest V1 Screen",
+      "purpose": "Frozen causal first-hour initial-balance breakout/retest screen; no tuning or option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_live_mid_brk_baseline_underlying.json": {
+      "title": "Paid TSLA Live Mid Brk Baseline Underlying",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_market_relative_continuation.json": {
+      "title": "Paid TSLA Market Relative Continuation",
+      "purpose": "Frozen SPY-adjusted intraday residual-continuation screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_market_relative_snapback.json": {
+      "title": "Paid TSLA Market Relative Snapback",
+      "purpose": "Frozen SPY-adjusted intraday residual-reversal screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_market_relative_snapback_tuning.json": {
+      "title": "Paid TSLA Market Relative Snapback Tuning",
+      "purpose": "Constrained train/validate/later tuning of market-relative snapback; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_morning_close_continuation_v1.json": {
+      "title": "Paid TSLA Morning Close Continuation V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_long_monthly_stability.json": {
+      "title": "Paid TSLA Noise Long Monthly Stability",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_account_original_holdout_v1.json": {
+      "title": "Paid TSLA Noise Momentum Account Original Holdout V1",
+      "purpose": "Account-level affordability, overlap, and drawdown screen for the frozen TSLA noise-momentum candidate.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_account_v1.json": {
+      "title": "Paid TSLA Noise Momentum Account V1",
+      "purpose": "Account-level affordability, overlap, and drawdown screen for the frozen TSLA noise-momentum candidate.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_final_screen.json": {
+      "title": "Paid TSLA Noise Momentum Final Screen",
+      "purpose": "Read-only final screen for the fixed TSLA noise-boundary momentum study using already-paid option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_monthly_stability.json": {
+      "title": "Paid TSLA Noise Momentum Monthly Stability",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_regime_assessment.json": {
+      "title": "Paid TSLA Noise Momentum Regime Assessment",
+      "purpose": "Read-only, no-lookahead trend-versus-range context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_regime_context.json": {
+      "title": "Paid TSLA Noise Momentum Regime Context",
+      "purpose": "Read-only, no-lookahead trend-versus-range context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_repeatability.json": {
+      "title": "Paid TSLA Noise Momentum Repeatability",
+      "purpose": "Fixed TSLA repeatability check for the predeclared 14-session noise-boundary momentum rule using saved paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_robustness.json": {
+      "title": "Paid TSLA Noise Momentum Robustness",
+      "purpose": "Fixed robustness audit of an existing paid-quote candidate.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_noise_momentum_time_direction_context.json": {
+      "title": "Paid TSLA Noise Momentum Time Direction Context",
+      "purpose": "Predeclared paid-markout direction/time selection using earlier data only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_nr7_inside_day_breakout_three_period.json": {
+      "title": "Paid TSLA NR7 Inside Day Breakout Three Period",
+      "purpose": "Three-period NR7 expansion screen",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_one_minute_orb_call_exits.json": {
+      "title": "Paid TSLA One Minute ORB Call Exits",
+      "purpose": "Exit-only comparison for fixed TSLA calls-before-10:30 one-minute ORB retouches; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_one_minute_orb_call_exits_fair.json": {
+      "title": "Paid TSLA One Minute ORB Call Exits Fair",
+      "purpose": "Fair final comparison of predeclared TSLA one-minute ORB call exits. Each exit is evaluated only on signals with executable fills under every compared exit.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_one_minute_orb_retouch_90m.json": {
+      "title": "Paid TSLA One Minute ORB Retouch 90M",
+      "purpose": "Conservative one-minute proxy of the deployed ORB breakout-to-first-retest entry using paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_one_minute_orb_retouch_90m_context.json": {
+      "title": "Paid TSLA One Minute ORB Retouch 90M Context",
+      "purpose": "Predeclared paid-markout direction/time selection using earlier data only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_one_minute_orb_retouch_90m_holdout.json": {
+      "title": "Paid TSLA One Minute ORB Retouch 90M Holdout",
+      "purpose": "Read-only final-exam check for one fixed, paid option quote-to-quote strategy.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_expected_move_breakout_v1.json": {
+      "title": "Paid TSLA Option Expected Move Breakout V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_liquidity_lead_v1.json": {
+      "title": "Paid TSLA Option Liquidity Lead V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_premium_resilience_v1.json": {
+      "title": "Paid TSLA Option Premium Resilience V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_premium_resilience_v2.json": {
+      "title": "Paid TSLA Option Premium Resilience V2",
+      "purpose": "",
+      "decision": "no_selection_candidate",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_pressure_confirmation_v1.json": {
+      "title": "Paid TSLA Option Pressure Confirmation V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_relative_repricing_v1.json": {
+      "title": "Paid TSLA Option Relative Repricing V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_skew_anomaly_v2.json": {
+      "title": "Paid TSLA Option Skew Anomaly V2",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_skew_rotation_v1.json": {
+      "title": "Paid TSLA Option Skew Rotation V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_option_straddle_expansion_breakout_v1.json": {
+      "title": "Paid TSLA Option Straddle Expansion Breakout V1",
+      "purpose": "",
+      "decision": "rejected",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_affordable_750.json": {
+      "title": "Paid TSLA ORB Affordable 750",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_tsla_orb_entry_rules.json": {
+      "title": "Paid TSLA ORB Entry Rules",
+      "purpose": "Predeclared V2 TSLA ORB pullback entry-parameter comparison; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_entry_walkforward.json": {
+      "title": "Paid TSLA ORB Entry Walkforward",
+      "purpose": "Expanding-window walk-forward validation of predeclared V2 ORB entry settings using saved paid TSLA option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_exit_rules.json": {
+      "title": "Paid TSLA ORB Exit Rules",
+      "purpose": "Predeclared V2 TSLA ORB pullback VWAP/EMA exit comparison; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_full.json": {
+      "title": "Paid TSLA ORB Full",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_hold_tuning.json": {
+      "title": "Paid TSLA ORB Hold Tuning",
+      "purpose": "Predeclared V2 TSLA ORB pullback hold-time study; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_indicator_filter_value.json": {
+      "title": "Paid TSLA ORB Indicator Filter Value",
+      "purpose": "Locked early/later assessment of RSI/MACD as an entry gate on an existing strategy.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_long_regime_context_v1.json": {
+      "title": "Paid TSLA ORB Long Regime Context V1",
+      "purpose": "Read-only, no-lookahead trend-versus-range context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_monthly_stability_90m.json": {
+      "title": "Paid TSLA ORB Monthly Stability 90M",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_multitimeframe_v1.json": {
+      "title": "Paid TSLA ORB Multitimeframe V1",
+      "purpose": "Causal completed 15m/60m/240m trend-context assessment on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_price_action_context_v1.json": {
+      "title": "Paid TSLA ORB Price Action Context V1",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_price_action_context_v2.json": {
+      "title": "Paid TSLA ORB Price Action Context V2",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_price_action_three_period_v1.json": {
+      "title": "Paid TSLA ORB Price Action Three Period V1",
+      "purpose": "Read-only three-period validation of declared candle, EMA, VWAP and price-structure filters.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_pullback.json": {
+      "title": "Paid TSLA ORB Pullback",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_retouch_90m_regime_assessment.json": {
+      "title": "Paid TSLA ORB Retouch 90M Regime Assessment",
+      "purpose": "Read-only, no-lookahead trend-versus-range context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_retouch_contexts_v1.json": {
+      "title": "Paid TSLA ORB Retouch Contexts V1",
+      "purpose": "Predeclared TSLA ORB decisive-break/prompt-retest context study from saved actual option ask-to-bid outcomes; no rescan, download, or trading action.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_orb_retouch_contexts_v1_monthly.json": {
+      "title": "Paid TSLA ORB Retouch Contexts V1 Monthly",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_portfolio_smoke.json": {
+      "title": "Paid TSLA Portfolio Smoke",
+      "purpose": "Paid TSLA combined-strategy slot-allocation comparison; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_pressure_dynamic_exits_v1.json": {
+      "title": "Paid TSLA Pressure Dynamic Exits V1",
+      "purpose": "",
+      "decision": "retain_fixed_30m_and_reject_dynamic_exits",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_range_sweep_transfer.json": {
+      "title": "Paid TSLA Range Sweep Transfer",
+      "purpose": "Out-of-symbol portability test of the frozen SPY long range-sweep rule on paid TSLA executable quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_range_sweep_transfer_diagnostic.json": {
+      "title": "Paid TSLA Range Sweep Transfer Diagnostic",
+      "purpose": "Descriptive transfer postmortem; no threshold search, context selection, or approval.",
+      "decision": "diagnostic_only_do_not_create_a_filter_from_this_report",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_range_sweep_transfer_robustness.json": {
+      "title": "Paid TSLA Range Sweep Transfer Robustness",
+      "purpose": "Fixed robustness audit of an existing paid-quote candidate.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_rsi_macd_vwap_momentum_three_period.json": {
+      "title": "Paid TSLA RSI MACD VWAP Momentum Three Period",
+      "purpose": "Three-period underlying screen before real-option quote validation.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_rsi_macd_vwap_momentum_tuning.json": {
+      "title": "Paid TSLA RSI MACD VWAP Momentum Tuning",
+      "purpose": "Bounded oldest-period-only tuning; later periods remain exams.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_rvol_expansion_baseline.json": {
+      "title": "Paid TSLA Rvol Expansion Baseline",
+      "purpose": "One fixed relative-volume expansion baseline; no tuning or option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_time_of_day_periodicity.json": {
+      "title": "Paid TSLA Time Of Day Periodicity",
+      "purpose": "Frozen same-half-hour next-session continuation screen; underlying only.",
+      "decision": "reject",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_trend_contexts.json": {
+      "title": "Paid TSLA Trend Contexts",
+      "purpose": "Predeclared TSLA V2 Trend Continuation context test using already-paid option quotes; research-only.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_tsla_trend_contexts_v2.json": {
+      "title": "Paid TSLA Trend Contexts V2",
+      "purpose": "Predeclared TSLA V2 Trend Continuation context test using already-paid option quotes; research-only.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_tsla_trend_contexts_v3.json": {
+      "title": "Paid TSLA Trend Contexts V3",
+      "purpose": "Predeclared TSLA V2 Trend Continuation context test using already-paid option quotes; research-only.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_tsla_trend_contexts_v4.json": {
+      "title": "Paid TSLA Trend Contexts V4",
+      "purpose": "Predeclared TSLA V2 Trend Continuation context test using already-paid option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_trend_contexts_v4_regime_assessment.json": {
+      "title": "Paid TSLA Trend Contexts V4 Regime Assessment",
+      "purpose": "Read-only, no-lookahead trend-versus-range context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_trend_contexts_v5_5m.json": {
+      "title": "Paid TSLA Trend Contexts V5 5M",
+      "purpose": "Predeclared TSLA V2 Trend Continuation context test using already-paid option quotes; research-only.",
+      "decision": "",
+      "status": "incomplete"
+    },
+    "research/reports/paid_tsla_trend_continuation.json": {
+      "title": "Paid TSLA Trend Continuation",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_trend_dynamic_exits.json": {
+      "title": "Paid TSLA Trend Dynamic Exits",
+      "purpose": "Predeclared strategy exit comparison using paid executable quotes; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_trend_exit_holds.json": {
+      "title": "Paid TSLA Trend Exit Holds",
+      "purpose": "Predeclared TSLA strategy hold-time study; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_trend_exit_robustness.json": {
+      "title": "Paid TSLA Trend Exit Robustness",
+      "purpose": "Read-only robustness audit of completed actual option bid/ask research.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_trend_three_period_contexts.json": {
+      "title": "Paid TSLA Trend Three Period Contexts",
+      "purpose": "Read-only three-period, causal time/direction context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_trend_three_period_direction_time.json": {
+      "title": "Paid TSLA Trend Three Period Direction Time",
+      "purpose": "Read-only three-period, causal time/direction context assessment using saved paid option ask-to-bid outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_contract_profiles_v1.json": {
+      "title": "Paid TSLA Two Leg Contract Profiles V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_monthly_stability_90m.json": {
+      "title": "Paid TSLA Two Leg Monthly Stability 90M",
+      "purpose": "Read-only month-by-month stability check for an already fixed paid quote strategy context.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_multitimeframe_v1.json": {
+      "title": "Paid TSLA Two Leg Multitimeframe V1",
+      "purpose": "Causal completed 15m/60m/240m trend-context assessment on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_option_pressure_v1.json": {
+      "title": "Paid TSLA Two Leg Option Pressure V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_price_action_context_v1.json": {
+      "title": "Paid TSLA Two Leg Price Action Context V1",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_price_action_context_v2.json": {
+      "title": "Paid TSLA Two Leg Price Action Context V2",
+      "purpose": "Causal candle, prior-level, EMA and VWAP context challenger on saved paid option outcomes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_time_direction_context.json": {
+      "title": "Paid TSLA Two Leg Time Direction Context",
+      "purpose": "Predeclared paid-markout direction/time selection using earlier data only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_trend_pullback_60m.json": {
+      "title": "Paid TSLA Two Leg Trend Pullback 60M",
+      "purpose": "Predeclared TSLA two-leg trend pullback entry screen using locally paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_two_leg_tuning_v1.json": {
+      "title": "Paid TSLA Two Leg Tuning V1",
+      "purpose": "Predeclared TSLA two-leg pullback configuration study using local paid executable option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_v2_orb_rsi_macd_90m.json": {
+      "title": "Paid TSLA V2 ORB RSI MACD 90M",
+      "purpose": "Predeclared RSI/MACD confirmation comparison using paid TSLA option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_v2_orb_rsi_macd_90m_sound.json": {
+      "title": "Paid TSLA V2 ORB RSI MACD 90M Sound",
+      "purpose": "Predeclared RSI/MACD confirmation comparison using paid TSLA option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_v2_orb_rsi_macd_90m_warmup.json": {
+      "title": "Paid TSLA V2 ORB RSI MACD 90M Warmup",
+      "purpose": "Predeclared RSI/MACD confirmation comparison using paid TSLA option quotes; research-only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/paid_tsla_vwap_pullback.json": {
+      "title": "Paid TSLA VWAP Pullback",
+      "purpose": "Paid TSLA option quote-to-quote ORB screen; research-only, never a broker command.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/prior_day_momentum_pullback_v1.json": {
+      "title": "Prior Day Momentum Pullback V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/prior_day_volume_profile_rejection_v1_underlying.json": {
+      "title": "Prior Day Volume Profile Rejection V1 Underlying",
+      "purpose": "Frozen prior-day volume-profile underlying screen; not an options profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/production_31_trade_entry_exit_audit_2026-09-01.json": {
+      "title": "Production 31 Trade Entry Exit Audit 2026-09-01",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/prospective_strategy_pf_2026-09-01.json": {
+      "title": "Prospective Strategy Pf 2026-09-01",
+      "purpose": "Prospective, independent-episode strategy PF from real scanner option quotes; research only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/prospective_strategy_pf_nonoverlap_2026-09-01.json": {
+      "title": "Prospective Strategy Pf Nonoverlap 2026-09-01",
+      "purpose": "Prospective, independent-episode strategy PF from real scanner option quotes; research only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/qqq_afternoon_fvg_transfer_v1.json": {
+      "title": "QQQ Afternoon FVG Transfer V1",
+      "purpose": "Unchanged cross-ticker transfer of SPY Afternoon FVG V2.",
+      "decision": "reject_for_this_ticker",
+      "status": "saved_study"
+    },
+    "research/reports/qqq_orb_retouch_transfer_v1.json": {
+      "title": "QQQ ORB Retouch Transfer V1",
+      "purpose": "Unchanged cross-ticker transfer of the reviewed one-minute ORB first-retouch rule.",
+      "decision": "reject_for_this_ticker",
+      "status": "saved_study"
+    },
+    "research/reports/qqq_rvol_expansion_baseline.json": {
+      "title": "QQQ Rvol Expansion Baseline",
+      "purpose": "One fixed relative-volume expansion baseline; no tuning or option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/qqq_trend_continuation_transfer_v1.json": {
+      "title": "QQQ Trend Continuation Transfer V1",
+      "purpose": "Unchanged cross-ticker transfer of SPY Trend Continuation V2.",
+      "decision": "reject_for_this_ticker",
+      "status": "saved_study"
+    },
+    "research/reports/relative_divergence_reversion_v1_underlying.json": {
+      "title": "Relative Divergence Reversion V1 Underlying",
+      "purpose": "Frozen cross-asset underlying rejection screen; not an options profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/rsi_divergence_reversal_cross_ticker.json": {
+      "title": "RSI Divergence Reversal Cross Ticker",
+      "purpose": "Frozen price/RSI divergence plus EMA-9 turn confirmation; underlying screen only.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/session_double_reversal_v1_underlying.json": {
+      "title": "Session Double Reversal V1 Underlying",
+      "purpose": "Frozen underlying rejection screen; not an options profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/spy_noise_area_momentum_exact_v1.json": {
+      "title": "SPY Noise Area Momentum Exact V1",
+      "purpose": "Exact underlying-price gate before spending compute on owned historical SPY option quotes.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/spy_trend_qqq_confirmation_v1.json": {
+      "title": "SPY Trend QQQ Confirmation V1",
+      "purpose": "Frozen causal cross-index confirmation study using exact saved paid SPY option outcomes.",
+      "decision": "reject_unchanged",
+      "status": "saved_study"
+    },
+    "research/reports/spy_trend_quote_quality_v1.json": {
+      "title": "SPY Trend Quote Quality V1",
+      "purpose": "",
+      "decision": "retain_unfiltered_reviewed_entries",
+      "status": "saved_study"
+    },
+    "research/reports/stochastic_trend_pullback_v1.json": {
+      "title": "Stochastic Trend Pullback V1",
+      "purpose": "Frozen causal underlying screen; not an option-profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/suggested_strategy_changes_1_to_4.json": {
+      "title": "Suggested Strategy Changes 1 To 4",
+      "purpose": "Exact A/B tests of suggestions 1-4 using frozen paid ask-to-bid option evidence",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/tradier_alpaca_candidate_fill_reconciliation_2026-09-01.json": {
+      "title": "Tradier Alpaca Candidate Fill Reconciliation 2026-09-01",
+      "purpose": "Exact-contract Tradier candidate quote versus linked Alpaca paper-fill parity audit.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/tsla_baseline_hypotheses_refresh.json": {
+      "title": "TSLA Baseline Hypotheses Refresh",
+      "purpose": "Baseline screen only; no paid option quotes, tuning, or trading action.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/tsla_distinct_families_screen.json": {
+      "title": "TSLA Distinct Families Screen",
+      "purpose": "Baseline screen of distinct TSLA intraday pattern families; no option quotes, tuning, or trading action.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "research/reports/vwap_deviation_band_pullback_v1_underlying.json": {
+      "title": "VWAP Deviation Band Pullback V1 Underlying",
+      "purpose": "Frozen underlying rejection screen; not an options profitability claim.",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "reports/ai_gate_episode_calibration_2026-08-13.json": {
+      "title": "Ai Gate Episode Calibration 2026-08-13",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "reports/broker_execution_audit_ec2_snapshot.json": {
+      "title": "Broker Execution Audit Ec2 Snapshot",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "reports/paid_spy_contract_selection_v1.json": {
+      "title": "Paid SPY Contract Selection V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    },
+    "reports/paid_spy_entry_limits_v1.json": {
+      "title": "Paid SPY Entry Limits V1",
+      "purpose": "",
+      "decision": "",
+      "status": "saved_study"
+    }
+  },
+  "other_studies": [
+    "research/reports/alpaca_qqq_vs_spy_relative_continuation_2024_2026_v1.json",
+    "research/reports/alpaca_qqq_vs_spy_relative_snapback_2024_2026_v1.json",
+    "research/reports/alpaca_spy_afternoon_compression_2024_2026_v1.json",
+    "research/reports/alpaca_spy_first_last_half_hour_2024_2026_v1.json",
+    "research/reports/alpaca_spy_time_of_day_periodicity_2024_2026_v1.json",
+    "research/reports/alpaca_spy_time_of_day_periodicity_2024_2026_v2.json",
+    "research/reports/opening_close_continuation_v1_underlying.json",
+    "research/reports/paid_amzn_contract_selection_matrix_v1.json",
+    "research/reports/paid_amzn_contract_selection_matrix_v2.json",
+    "research/reports/paid_qqq_contract_selection_matrix_v1.json",
+    "research/reports/paid_qqq_contract_selection_matrix_v2.json",
+    "research/reports/paid_reviewed_strategy_selector_v1_stability.json",
+    "research/reports/paid_spy_afternoon_compression_confirmations.json",
+    "research/reports/paid_spy_afternoon_compression_context.json",
+    "research/reports/paid_spy_afternoon_compression_eligibility.json",
+    "research/reports/paid_spy_afternoon_compression_eligibility_pricing.json",
+    "research/reports/paid_spy_afternoon_compression_eligibility_pricing_v2.json",
+    "research/reports/paid_spy_afternoon_compression_eligibility_summary.json",
+    "research/reports/paid_spy_afternoon_compression_eligibility_timing.json",
+    "research/reports/paid_spy_afternoon_compression_walk_forward.json",
+    "research/reports/paid_spy_afternoon_reversal_capacity_price_action_1m_v1.json",
+    "research/reports/paid_spy_afternoon_reversal_capacity_price_action_5m_v1.json",
+    "research/reports/paid_spy_afternoon_reversal_price_action_1m_v1.json",
+    "research/reports/paid_spy_afternoon_reversal_price_action_5m_v1.json",
+    "research/reports/paid_spy_bos_mss_baseline_underlying.json",
+    "research/reports/paid_spy_channel_bounce_baseline_underlying.json",
+    "research/reports/paid_spy_closing_drive_contexts.json",
+    "research/reports/paid_spy_failed_range_recovery_exits_three_period_v2.json",
+    "research/reports/paid_spy_failed_range_recovery_fixed_holds_assessment_v1.json",
+    "research/reports/paid_spy_failed_range_recovery_repriced_holds_v1.json",
+    "research/reports/paid_spy_first_last_half_hour_screen.json",
+    "research/reports/paid_spy_fvg_price_action_context_v1.json",
+    "research/reports/paid_spy_fvg_price_action_context_v2.json",
+    "research/reports/paid_spy_gap_and_go_baseline_underlying.json",
+    "research/reports/paid_spy_gap_prior_close_reclaim_30m.json",
+    "research/reports/paid_spy_inverse_fvg_baseline_underlying.json",
+    "research/reports/paid_spy_liquidity_sweep_baseline_underlying.json",
+    "research/reports/paid_spy_live_mid_brk_baseline_underlying.json",
+    "research/reports/paid_spy_live_mid_brk_tune_v1.json",
+    "research/reports/paid_spy_nr7_inside_day_breakout_three_period.json",
+    "research/reports/paid_spy_opening_drive_consolidation_30m.json",
+    "research/reports/paid_spy_opening_drive_vwap_exploration.json",
+    "research/reports/paid_spy_opening_gap_vwap_fade_levels.json",
+    "research/reports/paid_spy_prior_day_breakout_retest_30m.json",
+    "research/reports/paid_spy_prior_day_level_reclaim_30m.json",
+    "research/reports/paid_spy_range_sweep_long_diagnostic.json",
+    "research/reports/paid_spy_rsi_macd_vwap_momentum_three_period.json",
+    "research/reports/paid_spy_supertrend_baseline_underlying.json",
+    "research/reports/paid_spy_time_of_day_periodicity.json",
+    "research/reports/paid_spy_trend_dynamic_exits_three_period.json",
+    "research/reports/paid_spy_trend_entry_limits_v1.json",
+    "research/reports/paid_spy_trend_price_action_context_v1.json",
+    "research/reports/paid_spy_trend_price_action_context_v2.json",
+    "research/reports/paid_spy_trend_price_action_three_period_v1.json",
+    "research/reports/paid_tsla_ema_risk_depth_three_period.json",
+    "research/reports/paid_tsla_gap_and_go_baseline_underlying.json",
+    "research/reports/paid_tsla_live_mid_brk_baseline_underlying.json",
+    "research/reports/paid_tsla_market_relative_continuation.json",
+    "research/reports/paid_tsla_market_relative_snapback.json",
+    "research/reports/paid_tsla_market_relative_snapback_tuning.json",
+    "research/reports/paid_tsla_one_minute_orb_retouch_90m.json",
+    "research/reports/paid_tsla_one_minute_orb_retouch_90m_context.json",
+    "research/reports/paid_tsla_one_minute_orb_retouch_90m_holdout.json",
+    "research/reports/paid_tsla_orb_long_regime_context_v1.json",
+    "research/reports/paid_tsla_orb_multitimeframe_v1.json",
+    "research/reports/paid_tsla_orb_price_action_context_v1.json",
+    "research/reports/paid_tsla_orb_price_action_context_v2.json",
+    "research/reports/paid_tsla_orb_price_action_three_period_v1.json",
+    "research/reports/paid_tsla_orb_retouch_90m_regime_assessment.json",
+    "research/reports/paid_tsla_orb_retouch_contexts_v1.json",
+    "research/reports/paid_tsla_orb_retouch_contexts_v1_monthly.json",
+    "research/reports/paid_tsla_portfolio_smoke.json",
+    "research/reports/paid_tsla_range_sweep_transfer_diagnostic.json",
+    "research/reports/paid_tsla_rsi_macd_vwap_momentum_tuning.json",
+    "research/reports/paid_tsla_time_of_day_periodicity.json",
+    "research/reports/paid_tsla_two_leg_price_action_context_v1.json",
+    "research/reports/paid_tsla_two_leg_price_action_context_v2.json",
+    "research/reports/spy_noise_area_momentum_exact_v1.json",
+    "research/reports/suggested_strategy_changes_1_to_4.json",
+    "reports/paid_spy_entry_limits_v1.json"
+  ],
+  "strategies": [
+    {
+      "strategy_id": "AFTERNOON_FVG",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_afternoon_fvg_contract_profiles_v1.json"
+      ],
+      "display_name": "Afternoon FVG",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "AFTERNOON_REVERSAL",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_afternoon_reversal_contexts_v1.json",
+        "research/reports/paid_spy_afternoon_reversal_momentum.json",
+        "research/reports/paid_spy_afternoon_reversal_monthly_stability.json",
+        "research/reports/paid_spy_afternoon_reversal_one_position_holds.json",
+        "research/reports/paid_spy_afternoon_reversal_robustness.json",
+        "research/reports/paid_tsla_afternoon_reversal_90m.json",
+        "research/reports/paid_tsla_afternoon_reversal_90m_holdout.json"
+      ],
+      "display_name": "Afternoon Reversal",
+      "report_count": 7
+    },
+    {
+      "strategy_id": "BOLLINGER_KELTNER_SQUEEZE",
+      "tickers": [],
+      "reports": [
+        "research/reports/paid_tsla_bollinger_structures_three_period.json"
+      ],
+      "display_name": "Bollinger Keltner Squeeze",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "BOLLINGER_KELTNER_SQUEEZE_RTH",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_bollinger_keltner_squeeze_holds.json"
+      ],
+      "display_name": "Bollinger Keltner Squeeze Rth",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "BOLLINGER_W_BOTTOM",
+      "tickers": [],
+      "reports": [
+        "research/reports/paid_tsla_bollinger_structures_three_period.json",
+        "research/reports/paid_tsla_bollinger_structures_three_period_v2.json"
+      ],
+      "display_name": "Bollinger W Bottom",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "BOLLINGER_W_BOTTOM_RTH",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_bollinger_w_bottom_holds.json"
+      ],
+      "display_name": "Bollinger W Bottom Rth",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "BOS_MSS_BASELINE",
+      "tickers": [],
+      "reports": [
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "BOS MSS Baseline",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "BREAKOUT_PULLBACK_CONTINUATION",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_breakout_pullback_continuation_holds.json",
+        "research/reports/paid_spy_breakout_pullback_continuation_raw_60m.json",
+        "research/reports/paid_spy_breakout_pullback_continuation_regime_v1.json",
+        "research/reports/paid_spy_breakout_pullback_continuation_volatility_v1.json",
+        "research/reports/paid_spy_breakout_pullback_continuation_volatility_v2.json"
+      ],
+      "display_name": "Breakout Pullback Continuation",
+      "report_count": 5
+    },
+    {
+      "strategy_id": "CAMARILLA_LEVEL_REJECTION_V1",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/camarilla_level_rejection_v1.json"
+      ],
+      "display_name": "Camarilla Level Rejection V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "CHAN_BREAK_BASELINE",
+      "tickers": [],
+      "reports": [
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "Chan Break Baseline",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "CMF_TREND_PULLBACK_V1",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/cmf_trend_pullback_v1.json"
+      ],
+      "display_name": "CMF Trend Pullback V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "CONFIRMED_OPENING_RANGE_BREAKOUT",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_orb_full.json"
+      ],
+      "display_name": "Confirmed Opening Range Breakout",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "CROSS_SECTIONAL_OPENING_STRENGTH_PULLBACK_V1",
+      "tickers": [],
+      "reports": [
+        "research/reports/cross_sectional_opening_strength_pullback_v1.json"
+      ],
+      "display_name": "Cross Sectional Opening Strength Pullback V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "CTX_1H_SQUEEZE_MACD_LONG",
+      "tickers": [
+        "AMZN",
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/context_strategy_matrix_qqq_through_2026_08_24_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v1.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v3.json",
+        "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v2.json",
+        "research/reports/paid_spy_context_strategy_matrix_v1.json",
+        "research/reports/paid_spy_context_strategy_matrix_v2.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v1.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v2.json"
+      ],
+      "display_name": "Ctx 1H Squeeze MACD Long",
+      "report_count": 13
+    },
+    {
+      "strategy_id": "CTX_ORB_NR7_OR_INSIDE",
+      "tickers": [
+        "AMZN",
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/context_strategy_matrix_qqq_through_2026_08_24_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v1.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v3.json",
+        "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v2.json",
+        "research/reports/paid_spy_context_strategy_matrix_v1.json",
+        "research/reports/paid_spy_context_strategy_matrix_v2.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v1.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v2.json"
+      ],
+      "display_name": "Ctx ORB NR7 Or Inside",
+      "report_count": 13
+    },
+    {
+      "strategy_id": "CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG",
+      "tickers": [
+        "AMZN",
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/context_strategy_matrix_qqq_through_2026_08_24_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v1.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v3.json",
+        "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v2.json",
+        "research/reports/paid_spy_context_strategy_matrix_v1.json",
+        "research/reports/paid_spy_context_strategy_matrix_v2.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v1.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v2.json"
+      ],
+      "display_name": "Ctx ORB Prior Range Lt Atr10 Long",
+      "report_count": 13
+    },
+    {
+      "strategy_id": "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
+      "tickers": [
+        "AMZN",
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/context_strategy_matrix_qqq_through_2026_08_24_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v1.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v3.json",
+        "research/reports/paid_amzn_context_vwap_signal_v2.json",
+        "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v2.json",
+        "research/reports/paid_qqq_context_vwap_signal_v2.json",
+        "research/reports/paid_spy_context_strategy_matrix_v1.json",
+        "research/reports/paid_spy_context_strategy_matrix_v2.json",
+        "research/reports/paid_spy_context_vwap_signal_v2.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v1.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v2.json",
+        "research/reports/paid_tsla_context_vwap_signal_v2.json"
+      ],
+      "display_name": "Ctx VWAP Pullback 1030 Displacement Long",
+      "report_count": 17
+    },
+    {
+      "strategy_id": "CTX_VWAP_PULLBACK_KER10_LONG",
+      "tickers": [
+        "AMZN",
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/context_strategy_matrix_qqq_through_2026_08_24_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v1.json",
+        "research/reports/context_strategy_matrix_underlying_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v1.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v2.json",
+        "research/reports/paid_amzn_context_strategy_matrix_v3.json",
+        "research/reports/paid_amzn_context_vwap_signal_v2.json",
+        "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v1.json",
+        "research/reports/paid_qqq_context_strategy_matrix_v2.json",
+        "research/reports/paid_qqq_context_vwap_signal_v2.json",
+        "research/reports/paid_spy_context_strategy_matrix_v1.json",
+        "research/reports/paid_spy_context_strategy_matrix_v2.json",
+        "research/reports/paid_spy_context_vwap_signal_v2.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v1.json",
+        "research/reports/paid_tsla_context_strategy_matrix_v2.json",
+        "research/reports/paid_tsla_context_vwap_signal_v2.json"
+      ],
+      "display_name": "Ctx VWAP Pullback Ker10 Long",
+      "report_count": 17
+    },
+    {
+      "strategy_id": "DONCHIAN_ADX_BREAKOUT_V1",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/donchian_adx_breakout_v1_underlying.json"
+      ],
+      "display_name": "Donchian ADX Breakout V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "EMA_PULLBACK_RTH",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_ema_pullback_15m_holds.json",
+        "research/reports/paid_tsla_ema_pullback_15m_holds.json"
+      ],
+      "display_name": "EMA Pullback Rth",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "FAILED_RANGE_RECOVERY",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_failed_range_contract_profiles_v1.json"
+      ],
+      "display_name": "Failed Range Recovery",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "FAIR_VALUE_GAP_RTH",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_fvg_contexts_v1.json",
+        "research/reports/paid_spy_fvg_contexts_v2_capacity.json",
+        "research/reports/paid_spy_fvg_contexts_v2_capacity_30m.json",
+        "research/reports/paid_spy_fvg_contexts_v2_capacity_60m.json",
+        "research/reports/paid_spy_fvg_contexts_v2_capacity_90m.json",
+        "research/reports/paid_spy_fvg_holds.json",
+        "research/reports/paid_spy_fvg_monthly_stability_30m.json"
+      ],
+      "display_name": "Fair Value Gap Rth",
+      "report_count": 7
+    },
+    {
+      "strategy_id": "GAP_FILL_RTH",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_gap_reclaim_holds.json",
+        "research/reports/paid_tsla_gap_reclaim_holds_revalidated.json",
+        "research/reports/paid_tsla_gap_response_90m.json",
+        "research/reports/paid_tsla_gap_response_90m_v2.json",
+        "research/reports/paid_tsla_gap_response_90m_v2_context.json"
+      ],
+      "display_name": "Gap Fill Rth",
+      "report_count": 5
+    },
+    {
+      "strategy_id": "ICHIMOKU_CLOUD_CONTINUATION_V1",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/ichimoku_cloud_continuation_v1.json"
+      ],
+      "display_name": "Ichimoku Cloud Continuation V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "IFVG_BASELINE",
+      "tickers": [],
+      "reports": [
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "Ifvg Baseline",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "INITIAL_BALANCE_MIDPOINT_ROTATION_V1",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/initial_balance_midpoint_rotation_v1_underlying.json"
+      ],
+      "display_name": "Initial Balance Midpoint Rotation V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "LIQ_SWEEP_BASELINE",
+      "tickers": [],
+      "reports": [
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "Liq Sweep Baseline",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "MIDDAY_BREAKDOWN",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_midday_breakdown_90m.json",
+        "research/reports/paid_spy_midday_breakdown_holds.json"
+      ],
+      "display_name": "Midday Breakdown",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "NR7_INSIDE_DAY_BREAKOUT",
+      "tickers": [],
+      "reports": [
+        "research/reports/paid_tsla_nr7_inside_day_breakout_three_period.json"
+      ],
+      "display_name": "NR7 Inside Day Breakout",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "OPTION_EXPECTED_MOVE_BREAKOUT_V1",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_option_expected_move_breakout_v1.json",
+        "research/reports/paid_tsla_option_expected_move_breakout_v1.json"
+      ],
+      "display_name": "Option Expected Move Breakout V1",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "OPTION_LIQUIDITY_LEAD_V1",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_option_liquidity_lead_v1.json"
+      ],
+      "display_name": "Option Liquidity Lead V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "OPTION_PREMIUM_RESILIENCE_V1",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_option_premium_resilience_v1.json",
+        "research/reports/paid_tsla_option_premium_resilience_v1.json"
+      ],
+      "display_name": "Option Premium Resilience V1",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "OPTION_PREMIUM_RESILIENCE_V2",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_option_premium_resilience_v2.json",
+        "research/reports/paid_tsla_option_premium_resilience_v2.json"
+      ],
+      "display_name": "Option Premium Resilience V2",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "OPTION_PRESSURE_CONFIRMATION_V1",
+      "tickers": [
+        "AMZN",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_amzn_option_pressure_confirmation_v1.json",
+        "research/reports/paid_spy_option_pressure_confirmation_v1.json",
+        "research/reports/paid_tsla_option_pressure_confirmation_v1.json",
+        "research/reports/paid_tsla_pressure_dynamic_exits_v1.json"
+      ],
+      "display_name": "Option Pressure Confirmation V1",
+      "report_count": 4
+    },
+    {
+      "strategy_id": "OPTION_RELATIVE_REPRICING_V1",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_option_relative_repricing_v1.json",
+        "research/reports/paid_tsla_option_relative_repricing_v1.json"
+      ],
+      "display_name": "Option Relative Repricing V1",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "OPTION_RELATIVE_SKEW_ANOMALY_V2",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_option_skew_anomaly_v2.json"
+      ],
+      "display_name": "Option Relative Skew Anomaly V2",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "OPTION_SKEW_ROTATION_V1",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_option_skew_rotation_v1.json"
+      ],
+      "display_name": "Option Skew Rotation V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "OPTION_STRADDLE_EXPANSION_BREAKOUT_V1",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_option_straddle_expansion_breakout_v1.json",
+        "research/reports/paid_tsla_option_straddle_expansion_breakout_v1.json"
+      ],
+      "display_name": "Option Straddle Expansion Breakout V1",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "ORB_PULLBACK",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_orb_exit_rules.json",
+        "research/reports/paid_tsla_orb_hold_tuning.json",
+        "research/reports/paid_tsla_orb_pullback.json"
+      ],
+      "display_name": "ORB Pullback",
+      "report_count": 3
+    },
+    {
+      "strategy_id": "RELATIVE_DIVERGENCE_REVERSION_V1",
+      "tickers": [],
+      "reports": [
+        "research/reports/relative_divergence_reversion_v1_underlying.json"
+      ],
+      "display_name": "Relative Divergence Reversion V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "RSI_MACD_VWAP_MOMENTUM",
+      "tickers": [],
+      "reports": [
+        "research/reports/paid_tsla_rsi_macd_vwap_momentum_three_period.json"
+      ],
+      "display_name": "RSI MACD VWAP Momentum",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "RVOL_EXPANSION",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_relative_volume_expansion_underlying_v1.json",
+        "research/reports/paid_spy_rvol_expansion_baseline.json",
+        "research/reports/paid_tsla_rvol_expansion_baseline.json",
+        "research/reports/qqq_rvol_expansion_baseline.json"
+      ],
+      "display_name": "Rvol Expansion",
+      "report_count": 4
+    },
+    {
+      "strategy_id": "SPY_FAILED_RANGE_RECOVERY",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_failed_range_dynamic_exits_v1.json",
+        "research/reports/paid_spy_failed_range_recovery_exits_v2.json",
+        "research/reports/paid_spy_failed_range_recovery_fixed_holds_5_10_15_30_v1.json",
+        "research/reports/paid_spy_failed_range_recovery_fixed_holds_filtered_v1.json"
+      ],
+      "display_name": "SPY Failed Range Recovery",
+      "report_count": 4
+    },
+    {
+      "strategy_id": "SPY_NARROW_ORB_BREAKOUT",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_narrow_orb_breakout_60m.json"
+      ],
+      "display_name": "SPY Narrow ORB Breakout",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "SPY_NARROW_ORB_EARLY_SHORT",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_narrow_orb_early_short_holds.json"
+      ],
+      "display_name": "SPY Narrow ORB Early Short",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "SPY_ORB_RSI_MACD_SHORT",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_orb_rsi_macd_short_60m.json"
+      ],
+      "display_name": "SPY ORB RSI MACD Short",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "SPY_TWO_LEG_TREND_PULLBACK_LATE",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_two_leg_trend_pullback_late_60m_discovery_v1.json",
+        "research/reports/paid_spy_two_leg_trend_pullback_late_dynamic_exits_v1.json"
+      ],
+      "display_name": "SPY Two Leg Trend Pullback Late",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "STANDARD_SQUEEZE_MOMENTUM_RELEASE",
+      "tickers": [],
+      "reports": [
+        "research/reports/paid_tsla_bollinger_structures_three_period_v2.json"
+      ],
+      "display_name": "Standard Squeeze Momentum Release",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "STOCHASTIC_TREND_PULLBACK_V1",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/stochastic_trend_pullback_v1.json"
+      ],
+      "display_name": "Stochastic Trend Pullback V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "STRICT_BOLLINGER_KELTNER_RANGE_BREAK",
+      "tickers": [],
+      "reports": [
+        "research/reports/paid_tsla_bollinger_structures_three_period_v2.json"
+      ],
+      "display_name": "Strict Bollinger Keltner Range Break",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "TREND_CONTINUATION",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_trend_affordable_first_v1.json",
+        "research/reports/paid_spy_trend_continuation_30m_regime_assessment.json",
+        "research/reports/paid_spy_trend_continuation_holds.json",
+        "research/reports/paid_spy_trend_continuation_one_position_holds.json",
+        "research/reports/paid_spy_trend_contract_price_bands_v1.json",
+        "research/reports/paid_spy_trend_contract_selection_v1.invalid-fill-affordability.json",
+        "research/reports/paid_spy_trend_contract_selection_v1.invalid-lookahead.json",
+        "research/reports/paid_spy_trend_contract_selection_v1.invalid-mixed-checkpoint.json",
+        "research/reports/paid_spy_trend_contract_selection_v1.json",
+        "research/reports/paid_spy_trend_dynamic_exits_v1.json",
+        "research/reports/paid_spy_trend_indicator_filter_value.json",
+        "research/reports/paid_spy_trend_monthly_stability_30m.json",
+        "research/reports/paid_spy_trend_multitimeframe_v1.json",
+        "research/reports/paid_spy_trend_quote_quality_v1.json",
+        "research/reports/paid_spy_trend_regime_context.json",
+        "research/reports/paid_spy_trend_rsi_macd_30m.invalid_duplicate_breakouts.json",
+        "research/reports/paid_spy_trend_rsi_macd_30m.invalid_one_minute_cadence.json",
+        "research/reports/paid_spy_trend_rsi_macd_30m.json",
+        "research/reports/paid_spy_trend_three_period_contexts_30m.json",
+        "research/reports/paid_tsla_trend_continuation.json",
+        "research/reports/paid_tsla_trend_dynamic_exits.json",
+        "research/reports/paid_tsla_trend_exit_holds.json",
+        "research/reports/paid_tsla_trend_exit_robustness.json",
+        "research/reports/spy_trend_quote_quality_v1.json",
+        "reports/paid_spy_contract_selection_v1.json"
+      ],
+      "display_name": "Trend Continuation",
+      "report_count": 25
+    },
+    {
+      "strategy_id": "TSLA_MORNING_DECLINE_TO_CLOSE_PUT_V1",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_morning_close_continuation_v1.json"
+      ],
+      "display_name": "TSLA Morning Decline To Close Put V1",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "TURTLE_SOUP_RTH",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_turtle_soup_holds.json"
+      ],
+      "display_name": "Turtle Soup Rth",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "TV_SUPERTREND_REVERSAL_V4",
+      "tickers": [],
+      "reports": [
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "Tv Supertrend Reversal V4",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "TWO_LEG_TREND_PULLBACK",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_two_leg_trend_pullback_dynamic_exits_v1.json",
+        "research/reports/paid_spy_two_leg_trend_pullback_dynamic_exits_v2.json",
+        "research/reports/paid_tsla_two_leg_contract_profiles_v1.json"
+      ],
+      "display_name": "Two Leg Trend Pullback",
+      "report_count": 3
+    },
+    {
+      "strategy_id": "V2_AFTERNOON_COMPRESSION_BREAKOUT",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_afternoon_compression_breakout_30m.json",
+        "research/reports/paid_spy_afternoon_compression_exits.json",
+        "research/reports/paid_spy_afternoon_compression_tuning.json",
+        "research/reports/paid_tsla_afternoon_compression_cross_ticker.json"
+      ],
+      "display_name": "V2 Afternoon Compression Breakout",
+      "report_count": 4
+    },
+    {
+      "strategy_id": "V2_AFTERNOON_FVG_TRANSFER",
+      "tickers": [
+        "QQQ"
+      ],
+      "reports": [
+        "research/reports/qqq_afternoon_fvg_transfer_v1.json"
+      ],
+      "display_name": "V2 Afternoon FVG Transfer",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_AFTERNOON_REVERSAL",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/alpaca_spy_long_history_rth_baseline_v1.json",
+        "research/reports/paid_spy_afternoon_reversal_exits.json",
+        "research/reports/paid_spy_rth_hypothesis_screen.json",
+        "research/reports/tsla_baseline_hypotheses_refresh.json"
+      ],
+      "display_name": "V2 Afternoon Reversal",
+      "report_count": 4
+    },
+    {
+      "strategy_id": "V2_EMA_PULLBACK_RTH",
+      "tickers": [],
+      "reports": [
+        "research/reports/alpaca_spy_long_history_rth_baseline_v1.json",
+        "research/reports/paid_spy_rth_hypothesis_screen.json",
+        "research/reports/tsla_baseline_hypotheses_refresh.json"
+      ],
+      "display_name": "V2 EMA Pullback Rth",
+      "report_count": 3
+    },
+    {
+      "strategy_id": "V2_FAILED_INITIAL_BALANCE_BREAKOUT",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/failed_initial_balance_breakout_qqq.json",
+        "research/reports/failed_initial_balance_breakout_spy.json",
+        "research/reports/failed_initial_balance_breakout_tsla.json"
+      ],
+      "display_name": "V2 Failed Initial Balance Breakout",
+      "report_count": 3
+    },
+    {
+      "strategy_id": "V2_FAILED_OR_BREAK_VWAP_REVERSION",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/failed_range_recovery_qqq_transfer.json",
+        "research/reports/failed_range_recovery_tsla_transfer.json",
+        "research/reports/paid_spy_failed_opening_range_reversion.json",
+        "research/reports/paid_spy_failed_range_recovery_v1.json",
+        "research/reports/paid_tsla_failed_opening_range_reversion.json",
+        "research/reports/production_31_trade_entry_exit_audit_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_nonoverlap_2026-09-01.json",
+        "research/reports/tradier_alpaca_candidate_fill_reconciliation_2026-09-01.json"
+      ],
+      "display_name": "V2 Failed Or Break VWAP Reversion",
+      "report_count": 9
+    },
+    {
+      "strategy_id": "V2_FAIR_VALUE_GAP",
+      "tickers": [],
+      "reports": [
+        "research/reports/alpaca_spy_long_history_rth_baseline_v1.json",
+        "research/reports/paid_spy_rth_hypothesis_screen.json",
+        "research/reports/tsla_baseline_hypotheses_refresh.json"
+      ],
+      "display_name": "V2 Fair Value Gap",
+      "report_count": 3
+    },
+    {
+      "strategy_id": "V2_GAP_FILL_RTH",
+      "tickers": [],
+      "reports": [
+        "research/reports/alpaca_spy_long_history_rth_baseline_v1.json",
+        "research/reports/paid_spy_gap_fill_rth_v1.json",
+        "research/reports/paid_spy_rth_hypothesis_screen.json",
+        "research/reports/tsla_baseline_hypotheses_refresh.json"
+      ],
+      "display_name": "V2 Gap Fill Rth",
+      "report_count": 4
+    },
+    {
+      "strategy_id": "V2_GAP_ZSCORE_OPENING_REVERSION",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_gap_zscore_opening_reversion_30m.json"
+      ],
+      "display_name": "V2 Gap Zscore Opening Reversion",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_IMPULSE_ANCHORED_VWAP_PULLBACK",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/impulse_anchored_vwap_pullback_v1_underlying.json",
+        "research/reports/impulse_anchored_vwap_pullback_v2_walk_forward.json",
+        "research/reports/paid_tsla_impulse_anchored_vwap_120m.json",
+        "research/reports/paid_tsla_impulse_anchored_vwap_false_resumption_filters.json",
+        "research/reports/paid_tsla_impulse_anchored_vwap_structural_exits.json"
+      ],
+      "display_name": "V2 Impulse Anchored VWAP Pullback",
+      "report_count": 5
+    },
+    {
+      "strategy_id": "V2_IMPULSE_FLAG_CONTINUATION",
+      "tickers": [],
+      "reports": [
+        "research/reports/impulse_flag_continuation_cross_ticker.json"
+      ],
+      "display_name": "V2 Impulse Flag Continuation",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_IMPULSE_FLAG_CONTINUATION_CONTEXT_DIAGNOSIS",
+      "tickers": [],
+      "reports": [
+        "research/reports/impulse_flag_context_diagnosis.json"
+      ],
+      "display_name": "V2 Impulse Flag Continuation Context Diagnosis",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_INITIAL_BALANCE_RETEST",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_initial_balance_retest_v1_screen.json",
+        "research/reports/paid_tsla_initial_balance_retest_v1_screen.json"
+      ],
+      "display_name": "V2 Initial Balance Retest",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "V2_NOISE_MOMENTUM_REPEATABILITY",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_noise_long_monthly_stability.json",
+        "research/reports/paid_tsla_noise_momentum_final_screen.json",
+        "research/reports/paid_tsla_noise_momentum_monthly_stability.json",
+        "research/reports/paid_tsla_noise_momentum_regime_assessment.json",
+        "research/reports/paid_tsla_noise_momentum_regime_context.json",
+        "research/reports/paid_tsla_noise_momentum_repeatability.json",
+        "research/reports/paid_tsla_noise_momentum_robustness.json",
+        "research/reports/paid_tsla_noise_momentum_time_direction_context.json"
+      ],
+      "display_name": "V2 Noise Momentum Repeatability",
+      "report_count": 8
+    },
+    {
+      "strategy_id": "V2_ORB_CONFIRMED_BREAKOUT",
+      "tickers": [],
+      "reports": [
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "V2 ORB Confirmed Breakout",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_ORB_PULLBACK",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/alpaca_spy_long_history_rth_baseline_v1.json",
+        "research/reports/paid_reviewed_allocation_grid_pf150_v2.json",
+        "research/reports/paid_reviewed_allocation_grid_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v2.json",
+        "research/reports/paid_reviewed_launch_readiness_v3.json",
+        "research/reports/paid_reviewed_launch_readiness_v4.json",
+        "research/reports/paid_reviewed_launch_readiness_v5.json",
+        "research/reports/paid_reviewed_setup_ranker_v1.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v3.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v4.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v5.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v6.json",
+        "research/reports/paid_reviewed_strategy_selector_v1.json",
+        "research/reports/paid_reviewed_strategy_selector_v2.json",
+        "research/reports/paid_signal_thesis_coordination_v1.json",
+        "research/reports/paid_spy_rth_hypothesis_screen.json",
+        "research/reports/paid_spy_trend_close_session_gate_v1.json",
+        "research/reports/paid_tsla_orb_affordable_750.json",
+        "research/reports/paid_tsla_orb_entry_rules.json",
+        "research/reports/paid_tsla_orb_entry_walkforward.json",
+        "research/reports/paid_tsla_orb_indicator_filter_value.json",
+        "research/reports/paid_tsla_orb_monthly_stability_90m.json",
+        "research/reports/paid_tsla_v2_orb_rsi_macd_90m.json",
+        "research/reports/paid_tsla_v2_orb_rsi_macd_90m_sound.json",
+        "research/reports/paid_tsla_v2_orb_rsi_macd_90m_warmup.json",
+        "research/reports/production_31_trade_entry_exit_audit_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_nonoverlap_2026-09-01.json",
+        "research/reports/tradier_alpaca_candidate_fill_reconciliation_2026-09-01.json",
+        "research/reports/tsla_baseline_hypotheses_refresh.json",
+        "reports/ai_gate_episode_calibration_2026-08-13.json"
+      ],
+      "display_name": "V2 ORB Pullback",
+      "report_count": 32
+    },
+    {
+      "strategy_id": "V2_ORB_PULLBACK_1M_RETOUCH_CALLS_BEFORE_1030",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_one_minute_orb_call_exits.json",
+        "research/reports/paid_tsla_one_minute_orb_call_exits.json",
+        "research/reports/paid_tsla_one_minute_orb_call_exits_fair.json"
+      ],
+      "display_name": "V2 ORB Pullback 1M Retouch Calls Before 1030",
+      "report_count": 3
+    },
+    {
+      "strategy_id": "V2_ORB_PULLBACK_1M_RETOUCH_EXIT_COMPARISON",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_one_minute_orb_retouch_exit_comparison_60m.json"
+      ],
+      "display_name": "V2 ORB Pullback 1M Retouch Exit Comparison",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_ORB_PULLBACK_1M_RETOUCH_PROXY",
+      "tickers": [
+        "QQQ",
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_one_minute_orb_retouch_60m.json",
+        "research/reports/qqq_orb_retouch_transfer_v1.json"
+      ],
+      "display_name": "V2 ORB Pullback 1M Retouch Proxy",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "V2_OUTSIDE_VALUE_ACCEPTANCE",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/outside_value_acceptance_v1_underlying.json"
+      ],
+      "display_name": "V2 Outside Value Acceptance",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_PRIOR_DAY_MOMENTUM_PULLBACK",
+      "tickers": [],
+      "reports": [
+        "research/reports/prior_day_momentum_pullback_v1.json"
+      ],
+      "display_name": "V2 Prior Day Momentum Pullback",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_PRIOR_DAY_VOLUME_PROFILE_REJECTION",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/prior_day_volume_profile_rejection_v1_underlying.json"
+      ],
+      "display_name": "V2 Prior Day Volume Profile Rejection",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_RANGE_SWEEP_RECLAIM",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_range_sweep_contexts_30m.json",
+        "research/reports/paid_spy_range_sweep_long_exits.json",
+        "research/reports/paid_spy_range_sweep_long_exits_monthly.json",
+        "research/reports/paid_spy_range_sweep_momentum_contexts_30m.json",
+        "research/reports/paid_spy_range_sweep_reclaim_30m.json",
+        "research/reports/paid_spy_range_sweep_robustness.json",
+        "research/reports/paid_tsla_range_sweep_transfer.json",
+        "research/reports/paid_tsla_range_sweep_transfer_robustness.json"
+      ],
+      "display_name": "V2 Range Sweep Reclaim",
+      "report_count": 8
+    },
+    {
+      "strategy_id": "V2_RSI_DIVERGENCE_REVERSAL",
+      "tickers": [],
+      "reports": [
+        "research/reports/rsi_divergence_reversal_cross_ticker.json"
+      ],
+      "display_name": "V2 RSI Divergence Reversal",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_SESSION_DOUBLE_REVERSAL",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/session_double_reversal_v1_underlying.json"
+      ],
+      "display_name": "V2 Session Double Reversal",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_SPY_AFTERNOON_FVG",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_reviewed_allocation_grid_pf150_v2.json",
+        "research/reports/paid_reviewed_allocation_grid_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v2.json",
+        "research/reports/paid_reviewed_launch_readiness_v3.json",
+        "research/reports/paid_reviewed_launch_readiness_v4.json",
+        "research/reports/paid_reviewed_launch_readiness_v5.json",
+        "research/reports/paid_reviewed_setup_ranker_v1.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v3.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v4.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v5.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v6.json",
+        "research/reports/paid_reviewed_strategy_selector_v1.json",
+        "research/reports/paid_reviewed_strategy_selector_v2.json",
+        "research/reports/paid_signal_thesis_coordination_v1.json",
+        "research/reports/paid_spy_afternoon_fvg_v2_monthly.json",
+        "research/reports/paid_spy_afternoon_fvg_v2_robustness.json",
+        "research/reports/paid_spy_afternoon_fvg_v2_tune.json",
+        "research/reports/paid_spy_afternoon_fvg_v2_tune_exact.json",
+        "research/reports/paid_spy_afternoon_fvg_v2_tune_fast.json",
+        "research/reports/paid_spy_afternoon_slot_reservation_v1.json",
+        "research/reports/paid_spy_fvg_multitimeframe_v1.json",
+        "research/reports/paid_spy_reviewed_portfolio_v1.json",
+        "research/reports/paid_spy_trend_close_session_gate_v1.json",
+        "research/reports/production_31_trade_entry_exit_audit_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_nonoverlap_2026-09-01.json",
+        "research/reports/tradier_alpaca_candidate_fill_reconciliation_2026-09-01.json",
+        "reports/broker_execution_audit_ec2_snapshot.json"
+      ],
+      "display_name": "V2 SPY Afternoon FVG",
+      "report_count": 29
+    },
+    {
+      "strategy_id": "V2_SPY_FAILED_RANGE_RECOVERY",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_reviewed_allocation_grid_pf150_v2.json",
+        "research/reports/paid_reviewed_allocation_grid_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v2.json",
+        "research/reports/paid_reviewed_launch_readiness_v3.json",
+        "research/reports/paid_reviewed_launch_readiness_v4.json",
+        "research/reports/paid_reviewed_launch_readiness_v5.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v3.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v4.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v5.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v6.json",
+        "research/reports/paid_reviewed_strategy_selector_v2.json",
+        "research/reports/paid_signal_thesis_coordination_v1.json",
+        "research/reports/paid_spy_trend_close_session_gate_v1.json"
+      ],
+      "display_name": "V2 SPY Failed Range Recovery",
+      "report_count": 14
+    },
+    {
+      "strategy_id": "V2_SPY_NOISE_MOMENTUM",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_noise_failure_exit_robustness.json",
+        "research/reports/paid_spy_noise_failure_exits.json",
+        "research/reports/paid_spy_noise_failure_monthly_capacity.json",
+        "research/reports/paid_spy_noise_failure_robustness.json",
+        "research/reports/paid_spy_noise_fixed_holds.json",
+        "research/reports/paid_spy_noise_momentum.json",
+        "research/reports/paid_spy_noise_preclose_monthly_capacity.json"
+      ],
+      "display_name": "V2 SPY Noise Momentum",
+      "report_count": 7
+    },
+    {
+      "strategy_id": "V2_SPY_TREND_CONT",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_reviewed_allocation_grid_pf150_v2.json",
+        "research/reports/paid_reviewed_allocation_grid_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v2.json",
+        "research/reports/paid_reviewed_launch_readiness_v3.json",
+        "research/reports/paid_reviewed_launch_readiness_v4.json",
+        "research/reports/paid_reviewed_launch_readiness_v5.json",
+        "research/reports/paid_reviewed_setup_ranker_v1.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v3.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v4.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v5.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v6.json",
+        "research/reports/paid_reviewed_strategy_selector_v1.json",
+        "research/reports/paid_reviewed_strategy_selector_v2.json",
+        "research/reports/paid_signal_thesis_coordination_v1.json",
+        "research/reports/paid_spy_afternoon_slot_reservation_v1.json",
+        "research/reports/paid_spy_reviewed_portfolio_v1.json",
+        "research/reports/paid_spy_trend_close_session_gate_v1.json",
+        "research/reports/paid_spy_trend_setup_ranker_v1.json",
+        "research/reports/production_31_trade_entry_exit_audit_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_nonoverlap_2026-09-01.json",
+        "research/reports/tradier_alpaca_candidate_fill_reconciliation_2026-09-01.json",
+        "reports/broker_execution_audit_ec2_snapshot.json"
+      ],
+      "display_name": "V2 SPY Trend Cont",
+      "report_count": 24
+    },
+    {
+      "strategy_id": "V2_SPY_TREND_CONT_WITH_QQQ_CONFIRMATION_V1",
+      "tickers": [],
+      "reports": [
+        "research/reports/paid_spy_trend_qqq_confirmation_v1.json",
+        "research/reports/spy_trend_qqq_confirmation_v1.json"
+      ],
+      "display_name": "V2 SPY Trend Cont With QQQ Confirmation V1",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "V2_SQUEEZE_MOMENTUM_RTH",
+      "tickers": [],
+      "reports": [
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "V2 Squeeze Momentum Rth",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_TREND_CONT",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_trend_contexts.json",
+        "research/reports/paid_tsla_trend_contexts_v2.json",
+        "research/reports/paid_tsla_trend_contexts_v3.json",
+        "research/reports/paid_tsla_trend_contexts_v4.json",
+        "research/reports/paid_tsla_trend_contexts_v4_regime_assessment.json",
+        "research/reports/paid_tsla_trend_contexts_v5_5m.json",
+        "research/reports/paid_tsla_trend_three_period_contexts.json",
+        "research/reports/paid_tsla_trend_three_period_direction_time.json",
+        "reports/ai_gate_episode_calibration_2026-08-13.json"
+      ],
+      "display_name": "V2 Trend Cont",
+      "report_count": 9
+    },
+    {
+      "strategy_id": "V2_TREND_CONT_TRANSFER",
+      "tickers": [
+        "QQQ"
+      ],
+      "reports": [
+        "research/reports/qqq_trend_continuation_transfer_v1.json"
+      ],
+      "display_name": "V2 Trend Cont Transfer",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_TSLA_AFTERNOON_FVG_REPEATABILITY",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_afternoon_fvg_repeatability.json"
+      ],
+      "display_name": "V2 TSLA Afternoon FVG Repeatability",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_TSLA_AFTERNOON_FVG_TRANSFER",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_afternoon_fvg_transfer_v1.json"
+      ],
+      "display_name": "V2 TSLA Afternoon FVG Transfer",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_TSLA_NOISE_MOMENTUM",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_noise_momentum_account_original_holdout_v1.json",
+        "research/reports/paid_tsla_noise_momentum_account_v1.json"
+      ],
+      "display_name": "V2 TSLA Noise Momentum",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "V2_TSLA_TWO_LEG_TREND_PULLBACK",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_reviewed_allocation_grid_pf150_v2.json",
+        "research/reports/paid_reviewed_allocation_grid_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v1.json",
+        "research/reports/paid_reviewed_launch_readiness_v2.json",
+        "research/reports/paid_reviewed_launch_readiness_v3.json",
+        "research/reports/paid_reviewed_launch_readiness_v4.json",
+        "research/reports/paid_reviewed_launch_readiness_v5.json",
+        "research/reports/paid_reviewed_setup_ranker_v1.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v3.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v4.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v5.json",
+        "research/reports/paid_reviewed_strategy_selector_pf150_v6.json",
+        "research/reports/paid_reviewed_strategy_selector_v1.json",
+        "research/reports/paid_reviewed_strategy_selector_v2.json",
+        "research/reports/paid_signal_thesis_coordination_v1.json",
+        "research/reports/paid_spy_trend_close_session_gate_v1.json",
+        "research/reports/production_31_trade_entry_exit_audit_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_2026-09-01.json",
+        "research/reports/prospective_strategy_pf_nonoverlap_2026-09-01.json",
+        "research/reports/tradier_alpaca_candidate_fill_reconciliation_2026-09-01.json",
+        "reports/broker_execution_audit_ec2_snapshot.json"
+      ],
+      "display_name": "V2 TSLA Two Leg Trend Pullback",
+      "report_count": 21
+    },
+    {
+      "strategy_id": "V2_TURTLE_SOUP_RTH",
+      "tickers": [],
+      "reports": [
+        "research/reports/alpaca_spy_long_history_rth_baseline_v1.json",
+        "research/reports/paid_spy_rth_hypothesis_screen.json",
+        "research/reports/tsla_baseline_hypotheses_refresh.json"
+      ],
+      "display_name": "V2 Turtle Soup Rth",
+      "report_count": 3
+    },
+    {
+      "strategy_id": "V2_TWO_LEG_TREND_PULLBACK",
+      "tickers": [
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_spy_two_leg_trend_pullback_transfer_60m_v1.json",
+        "research/reports/paid_tsla_two_leg_monthly_stability_90m.json",
+        "research/reports/paid_tsla_two_leg_multitimeframe_v1.json",
+        "research/reports/paid_tsla_two_leg_option_pressure_v1.json",
+        "research/reports/paid_tsla_two_leg_time_direction_context.json",
+        "research/reports/paid_tsla_two_leg_trend_pullback_60m.json",
+        "research/reports/paid_tsla_two_leg_tuning_v1.json"
+      ],
+      "display_name": "V2 Two Leg Trend Pullback",
+      "report_count": 7
+    },
+    {
+      "strategy_id": "V2_VWAP_DEVIATION_BAND_PULLBACK",
+      "tickers": [
+        "QQQ",
+        "SPY",
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/vwap_deviation_band_pullback_v1_underlying.json"
+      ],
+      "display_name": "V2 VWAP Deviation Band Pullback",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_VWAP_FAILED_MOVE_REVERSION",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_vwap_failed_move_reversion.json",
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "V2 VWAP Failed Move Reversion",
+      "report_count": 2
+    },
+    {
+      "strategy_id": "V2_VWAP_MEAN_REVERSION",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_vwap_mean_reversion.json"
+      ],
+      "display_name": "V2 VWAP Mean Reversion",
+      "report_count": 1
+    },
+    {
+      "strategy_id": "V2_VWAP_PULLBACK",
+      "tickers": [
+        "SPY"
+      ],
+      "reports": [
+        "research/reports/paid_spy_vwap_contexts.json",
+        "research/reports/paid_spy_vwap_contexts_macd_12_26_9_aligned.json",
+        "research/reports/paid_spy_vwap_contexts_rsi_14_aligned.json",
+        "research/reports/paid_spy_vwap_contexts_rsi_and_macd_aligned.json",
+        "research/reports/paid_spy_vwap_momentum_filters.json",
+        "research/reports/tsla_distinct_families_screen.json"
+      ],
+      "display_name": "V2 VWAP Pullback",
+      "report_count": 6
+    },
+    {
+      "strategy_id": "V2_VWAP_REVERSION_RTH",
+      "tickers": [],
+      "reports": [
+        "research/reports/alpaca_spy_long_history_rth_baseline_v1.json",
+        "research/reports/paid_spy_rth_hypothesis_screen.json",
+        "research/reports/tsla_baseline_hypotheses_refresh.json"
+      ],
+      "display_name": "V2 VWAP Reversion Rth",
+      "report_count": 3
+    },
+    {
+      "strategy_id": "VWAP_PULLBACK",
+      "tickers": [
+        "TSLA"
+      ],
+      "reports": [
+        "research/reports/paid_tsla_vwap_pullback.json"
+      ],
+      "display_name": "VWAP Pullback",
+      "report_count": 1
+    }
+  ]
+}

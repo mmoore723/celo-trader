@@ -19,6 +19,12 @@ def get_strategy_catalog_endpoint() -> dict:
     return {"strategies": public_strategy_catalog(get_settings())}
 
 
+@router.get("/strategies/tested")
+def get_tested_strategy_inventory() -> dict:
+    from config.strategy_inventory import tested_strategy_inventory
+    return tested_strategy_inventory()
+
+
 @router.get("/strategies/history")
 def get_strategy_setting_history(limit: int = 50) -> dict:
     from database import get_strategy_setting_changes

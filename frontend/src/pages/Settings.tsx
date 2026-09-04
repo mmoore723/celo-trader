@@ -2,26 +2,30 @@
  * Settings.tsx — Bot configuration form + API credentials.
  */
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
 import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib/api";
 import { strategyPerformanceForId, strategyPerformanceState } from "../lib/strategyPerformance.js";
 import { loadCredentialDisplay, maskCredentialForDisplay } from "../lib/credentialDisplay.js";
 import { needsTradierSandbox } from "../lib/connectionHealthView.js";
+import { TestedStrategies } from "../components/settings/TestedStrategies";
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
     <label className={`flex items-center justify-between gap-3 py-2 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
       <span className="text-sm" style={{ color: "var(--ink)" }}>{label}</span>
-      <div
+      <button type="button"
         className={`toggle-track ${checked ? "on" : ""}`}
         onClick={() => { if (!disabled) onChange(!checked); }}
         role="switch"
         aria-checked={checked}
         aria-disabled={disabled}
+        disabled={disabled}
+        aria-label={label}
       >
         <div className="toggle-thumb" />
-      </div>
+      </button>
     </label>
   );
 }
@@ -286,6 +290,11 @@ function TradierCredentialsPanel({ provider, paper }: { provider: string; paper:
 }
 
 export function Settings() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") === "strategies" ? "strategies" : "general";
+  function setActiveTab(tab: "general" | "strategies") {
+    setSearchParams(previous => { const next = new URLSearchParams(previous); next.set("tab", tab); return next; }, { replace: true });
+  }
   const [form,      setForm]      = useState<AppSettings>(DEFAULT);
   const [savedForm, setSavedForm] = useState<AppSettings>(DEFAULT); // last committed state
   const [saved,     setSaved]     = useState(false);
@@ -432,6 +441,21 @@ export function Settings() {
 
   return (
     <div className="p-4 max-w-2xl flex flex-col gap-4">
+      <div role="tablist" aria-label="Settings sections" className="flex gap-2">
+        {(["general", "strategies"] as const).map(tab => <button key={tab} role="tab"
+          id={`settings-tab-${tab}`} aria-selected={activeTab === tab} aria-controls={`settings-panel-${tab}`}
+          tabIndex={activeTab === tab ? 0 : -1}
+          onKeyDown={event => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === "Home" ? "general" : event.key === "End" ? "strategies" : activeTab === "general" ? "strategies" : "general";
+            setActiveTab(next);
+            document.getElementById(`settings-tab-${next}`)?.focus();
+          }}
+          className={`btn ${activeTab === tab ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategies"}</button>)}
+      </div>
+      <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "flex flex-col gap-4" : "hidden"}>
       {/* Trading Mode */}
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Trading mode</h3>
@@ -584,86 +608,6 @@ export function Settings() {
             onChange={(v) => set("flip_trading_enabled", v)}
           />
         </div>
-      </div>
-
-      {/* Strategies */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy execution controls</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          Your account is currently in <strong style={{ color: "var(--ink)" }}>{form.paper_trading ? "paper" : "live"} mode</strong>. When a reviewed strategy is on, it may submit orders to this connected account. Ticker scope, integrity, risk, liquidity, maintenance, and broker safeguards still apply.
-        </p>
-        {(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}
-        <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-          New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
-        </div>
-        {(strategyHistory?.changes.length ?? 0) > 0 && (
-          <details className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-            <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>Recent strategy switch history</summary>
-            <div className="mt-2 flex flex-col gap-1">
-              {strategyHistory!.changes.map((change, index) => (
-                <div key={`${change.changed_at}-${change.strategy_id}-${index}`}>
-                  {new Date(change.changed_at).toLocaleString()} · {change.strategy_id} · {change.previous_enabled ? "ON" : "OFF"} → {change.new_enabled ? "ON" : "OFF"}
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
-      </div>
-
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy research observers</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          These switches only collect prospective evidence. They stay unable to place an order in both paper and live mode until the exact entry, exit, sample, and chronological PF gates pass.
-        </p>
-        {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}
-      </div>
-
-      {/* Automatically qualified ticker/strategy matches */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>New strategy matches</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          The research engine may recommend an existing strategy for a new ticker. New matches only observe by default. Nobody—including an admin—can switch one on for your account.
-        </p>
-        {(strategyRecommendations?.recommendations.length ?? 0) === 0 ? (
-          <div className="rounded-lg p-3 text-xs" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)", border: "1px solid var(--border)" }}>
-            No new matches need your decision. Your current strategy choices remain exactly as set above.
-          </div>
-        ) : strategyRecommendations!.recommendations.map((recommendation) => (
-          <div key={`${recommendation.strategy_id}:${recommendation.ticker}`} className="rounded-lg p-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                  {recommendation.ticker} · {recommendation.display_name}
-                </div>
-                <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{recommendation.evidence_summary}</p>
-              </div>
-              <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ color: recommendation.paper_enabled || recommendation.live_enabled ? "var(--accent)" : "var(--ink-muted)", background: "var(--surface)" }}>
-                {recommendation.rollout_stage === "live_enabled" ? "Live execution enabled"
-                  : recommendation.rollout_stage === "paper_enabled" ? "Paper execution enabled"
-                  : recommendation.rollout_stage === "approval_needed" ? "Qualified · your approval needed"
-                  : "Observing · no orders"}
-              </span>
-            </div>
-            <div className="flex gap-2 mt-3">
-              {recommendation.account_mode === "paper" && <button className={`btn ${recommendation.paper_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "paper_enabled")}>
-                Enable for my paper account
-              </button>}
-              {recommendation.account_mode === "live" && recommendation.live_eligible && <button className={`btn ${recommendation.live_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => {
-                if (window.confirm(`Enable ${recommendation.display_name} on ${recommendation.ticker} for your live account? Real-money orders may be placed only in your account.`)) decideRecommendation(recommendation.strategy_id, recommendation.ticker, "live_enabled");
-              }}>
-                Enable for my live account
-              </button>}
-              <button className={`btn ${recommendation.decision === "observing" ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "observing")}>
-                Keep observing — no orders
-              </button>
-            </div>
-            <p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>
-              {recommendation.live_eligible
-                ? `Your Alpaca account stays in ${recommendation.account_mode} mode. You can enable this qualified ticker and strategy version for your account; no other user is affected.`
-                : `Analysis continues while your Alpaca account stays in ${recommendation.account_mode} mode. It cannot submit an order until the exact strategy, ticker, and version qualifies—and only you can opt in.`}
-            </p>
-          </div>
-        ))}
       </div>
 
       {/* Display */}
@@ -895,6 +839,91 @@ export function Settings() {
       <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
         Keys are encrypted at rest (AES-128 / Fernet). Never stored in plain text.
       </p>
+
+      </div>
+      <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
+      {/* Strategies */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy execution controls</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          Your account is currently in <strong style={{ color: "var(--ink)" }}>{actualAccountMode} mode</strong>. When a reviewed strategy is on, it may submit orders to this connected account. Ticker scope, integrity, risk, liquidity, maintenance, and broker safeguards still apply.
+        </p>
+        {(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}
+        <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+          New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
+        </div>
+        {(strategyHistory?.changes.length ?? 0) > 0 && (
+          <details className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+            <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>Recent strategy switch history</summary>
+            <div className="mt-2 flex flex-col gap-1">
+              {strategyHistory!.changes.map((change, index) => (
+                <div key={`${change.changed_at}-${change.strategy_id}-${index}`}>
+                  {new Date(change.changed_at).toLocaleString()} · {change.strategy_id} · {change.previous_enabled ? "ON" : "OFF"} → {change.new_enabled ? "ON" : "OFF"}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Research-only strategies</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          These switches collect evidence, not orders. Research and trading permission are separate.
+        </p>
+        {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}
+      </div>
+
+      {/* Automatically qualified ticker/strategy matches */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>New strategy matches</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          Qualified strategy/ticker matches appear here for your approval. Only you can add a match to your account. Research continues after you add it.
+        </p>
+        {(strategyRecommendations?.recommendations.length ?? 0) === 0 ? (
+          <div className="rounded-lg p-3 text-xs" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)", border: "1px solid var(--border)" }}>
+            No qualified matches are awaiting approval. Your existing strategy choices are unchanged.
+          </div>
+        ) : strategyRecommendations!.recommendations.map((recommendation) => (
+          <div key={`${recommendation.strategy_id}:${recommendation.ticker}`} className="rounded-lg p-3 mt-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                  {recommendation.ticker} · {recommendation.display_name}
+                </div>
+                <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{recommendation.evidence_summary}</p>
+              </div>
+              <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ color: recommendation.paper_enabled || recommendation.live_enabled ? "var(--accent)" : "var(--ink-muted)", background: "var(--surface)" }}>
+                {recommendation.rollout_stage === "live_enabled" ? "Live execution enabled"
+                  : recommendation.rollout_stage === "paper_enabled" ? "Paper execution enabled"
+                  : recommendation.rollout_stage === "approval_needed" ? "Qualified · your approval needed"
+                  : "Observing · no orders"}
+              </span>
+            </div>
+            <div className="flex gap-2 mt-3">
+              {recommendation.account_mode === "paper" && <button className={`btn ${recommendation.paper_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "paper_enabled")}>
+                Enable for my paper account
+              </button>}
+              {recommendation.account_mode === "live" && recommendation.live_eligible && <button className={`btn ${recommendation.live_enabled ? "btn-primary" : "btn-ghost"}`} onClick={() => {
+                if (window.confirm(`Enable ${recommendation.display_name} on ${recommendation.ticker} for your live account? Real-money orders may be placed only in your account.`)) decideRecommendation(recommendation.strategy_id, recommendation.ticker, "live_enabled");
+              }}>
+                Enable for my live account
+              </button>}
+              <button className={`btn ${recommendation.decision === "observing" ? "btn-primary" : "btn-ghost"}`} onClick={() => decideRecommendation(recommendation.strategy_id, recommendation.ticker, "observing")}>
+                Keep observing — no orders
+              </button>
+            </div>
+            <p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>
+              {recommendation.live_eligible
+                ? `Your Alpaca account stays in ${recommendation.account_mode} mode. You can enable this qualified ticker and strategy version for your account; no other user is affected.`
+                : `Analysis continues while your Alpaca account stays in ${recommendation.account_mode} mode. It cannot submit an order until the exact strategy, ticker, and version qualifies—and only you can opt in.`}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <TestedStrategies currentIds={(strategyCatalog?.strategies ?? []).map(strategy => strategy.strategy_id)} />
+      </div>
 
       {/* Save / Discard */}
       <div className="flex gap-2">
