@@ -26,7 +26,7 @@ def get_scorecard(days: int = 30) -> dict:
 
 @router.get("/daily-scorecard")
 def get_daily_scorecard(mode: str = "paper", date: str | None = None) -> dict:
-    """Account-scoped session result, execution audit, and golden replay."""
+    """Fast account-scoped session result and lifecycle evidence audit."""
     from config import get_settings
     from database import _conn_for_mode, _now_et
     from strategy_health.daily_scorecard import build_daily_scorecard
@@ -37,7 +37,10 @@ def get_daily_scorecard(mode: str = "paper", date: str | None = None) -> dict:
     try:
         with _conn_for_mode(mode) as conn:
             tape = build_event_tape(conn, trading_date, mode, account_id)
-        return build_daily_scorecard(tape)
+        return build_daily_scorecard(
+            tape,
+            include_strategy_replay=False,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

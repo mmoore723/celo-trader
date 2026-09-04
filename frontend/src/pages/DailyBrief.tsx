@@ -79,9 +79,11 @@ function dayGrade(pnl: number) {
 }
 
 // ── Post-Market Report ─────────────────────────────────────────────────────────
-function PostMarketReport({ trades, scorecard, finalized }: {
+function PostMarketReport({ trades, scorecard, scorecardLoading, scorecardFailed, finalized }: {
   trades: Trade[];
   scorecard?: DailyEvidenceScorecard;
+  scorecardLoading: boolean;
+  scorecardFailed: boolean;
   finalized: boolean;
 }) {
   const closed   = trades.filter(t => t.status === "closed");
@@ -100,7 +102,7 @@ function PostMarketReport({ trades, scorecard, finalized }: {
   if (closed.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <DailyEvidencePanel data={scorecard} />
+        <DailyEvidencePanel data={scorecard} loading={scorecardLoading} failed={scorecardFailed} />
         <div className="card p-8 text-center flex flex-col items-center gap-2">
           <p className="text-3xl">📋</p>
           <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>No completed trades yet today.</p>
@@ -155,7 +157,7 @@ function PostMarketReport({ trades, scorecard, finalized }: {
         </div>
       </div>
 
-      <DailyEvidencePanel data={scorecard} />
+      <DailyEvidencePanel data={scorecard} loading={scorecardLoading} failed={scorecardFailed} />
 
       {/* Plain-English summary */}
       <div className="card p-4">
@@ -407,7 +409,11 @@ export function DailyBrief() {
     refetchInterval: 30_000,
   });
 
-  const { data: dailyScorecard } = useQuery({
+  const {
+    data: dailyScorecard,
+    isLoading: dailyScorecardLoading,
+    isError: dailyScorecardFailed,
+  } = useQuery({
     queryKey: ["daily-evidence-scorecard", "paper"],
     queryFn: () => api.strategyHealth.dailyScorecard("paper"),
     refetchInterval: 30_000,
@@ -729,7 +735,13 @@ export function DailyBrief() {
       {/* ── Post-Market Tab ── */}
       {briefTab === "postmarket" && (
         <>
-          <PostMarketReport trades={todayTrades} scorecard={dailyScorecard} finalized={sessionFinal} />
+          <PostMarketReport
+            trades={todayTrades}
+            scorecard={dailyScorecard}
+            scorecardLoading={dailyScorecardLoading}
+            scorecardFailed={dailyScorecardFailed}
+            finalized={sessionFinal}
+          />
 
           {todayTrades.length > 0 && (
             <div className="card flex flex-col">

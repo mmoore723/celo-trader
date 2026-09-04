@@ -12,8 +12,15 @@ def _coverage(name: str, expected: int, proven: int) -> dict:
     }
 
 
-def replay_event_tape(events: list[dict]) -> dict:
-    """Prove links between decisions, broker fills, and recorded positions."""
+def replay_event_tape(events: list[dict], *, include_strategy_replay: bool = True) -> dict:
+    """Prove links between decisions, broker fills, and recorded positions.
+
+    ``replay_strategies`` deliberately re-evaluates every reviewed strategy on
+    every recorded ticker and bar.  Keep that deep audit available by default
+    for explicit golden-replay jobs, but let latency-sensitive callers skip it
+    instead of accidentally repeating a full-session research run on every UI
+    refresh.
+    """
     trades = {e["trade_id"] for e in events if e["kind"] in {"trade_entry", "trade_exit"}}
     entered_signals = [e for e in events if e["kind"] == "signal" and e["payload"].get("outcome") == "entered"]
     entered_candidates = [e for e in events if e["kind"] == "candidate" and e["payload"].get("final_outcome") == "entered"]
@@ -37,7 +44,14 @@ def replay_event_tape(events: list[dict]) -> dict:
     chronological = all(events[i]["timestamp"] <= events[i + 1]["timestamp"] for i in range(len(events) - 1))
     if not chronological:
         issues.append("event tape is not chronological")
-    strategy_replay = replay_strategies(events)
+    strategy_replay = replay_strategies(events) if include_strategy_replay else {
+        "status": "deferred",
+        "complete": False,
+        "passed": False,
+        "tickers_replayed": [],
+        "strategy_ticker_checks": [],
+        "malformed_recorded_candidates": 0,
+    }
     return {
         "passed": not issues, "chronological": chronological,
         "coverage_pct": round(proven / expected * 100, 1) if expected else 100.0,

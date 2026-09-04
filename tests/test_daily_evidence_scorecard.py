@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import unittest
+from unittest.mock import patch
 
 from database.schema import (
     _CREATE_BROKER_ORDER_EVENTS, _CREATE_CANDIDATE_CONTRACT_ALTERNATIVES,
@@ -120,6 +121,19 @@ class DailyEvidenceScorecardTests(unittest.TestCase):
         tape = build_event_tape(self.conn, "2026-08-26", "paper", None)
         self.assertFalse(tape["account_scoped"])
         self.assertEqual([], tape["events"])
+
+    def test_live_scorecard_defers_expensive_strategy_replay(self) -> None:
+        self._trade("mine", 1, 25)
+
+        with patch(
+            "strategy_health.golden_replay.replay_strategies",
+            side_effect=AssertionError("deep replay must not run on a live refresh"),
+        ):
+            result = build_daily_scorecard(build_event_tape(
+                self.conn, "2026-08-26", "paper", "mine",
+            ))
+
+        self.assertEqual("deferred", result["replay"]["strategy_replay"]["status"])
 
     def test_unfilled_order_uses_exact_contract_and_strategy_hold(self) -> None:
         import json

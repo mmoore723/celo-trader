@@ -170,7 +170,14 @@ def _exact_missed_order_markout(events: list[dict]) -> dict:
     }
 
 
-def build_daily_scorecard(tape: dict) -> dict:
+def build_daily_scorecard(tape: dict, *, include_strategy_replay: bool = False) -> dict:
+    """Build the live daily scorecard from recorded account evidence.
+
+    The live page defaults to lifecycle/link replay only.  Full causal
+    strategy replay remains available to explicit audits through
+    ``include_strategy_replay`` because it can take minutes once a session has
+    accumulated thousands of bars.
+    """
     events = tape["events"]
     exits = [e["payload"] for e in events if e["kind"] == "trade_exit"]
     pnls = [float(row.get("realized_pnl") or 0) for row in exits]
@@ -193,7 +200,10 @@ def build_daily_scorecard(tape: dict) -> dict:
         exits,
         [e["payload"] for e in events if e["kind"] == "trade_quote"],
     )
-    replay = replay_event_tape(events)
+    replay = replay_event_tape(
+        events,
+        include_strategy_replay=include_strategy_replay,
+    )
     missed_moves = _missed_moves(events)
     missed_moves["planned_hold"] = _exact_missed_order_markout(events)
     observations = []

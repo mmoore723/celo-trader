@@ -4,8 +4,26 @@ function valueOrDash(value: number | string | null, suffix = "") {
   return value === null ? "—" : `${value}${suffix}`;
 }
 
-export function DailyEvidencePanel({ data }: { data?: DailyEvidenceScorecard }) {
-  if (!data?.account_scoped) {
+export function DailyEvidencePanel({ data, loading = false, failed = false }: {
+  data?: DailyEvidenceScorecard;
+  loading?: boolean;
+  failed?: boolean;
+}) {
+  if (!data && (loading || !failed)) {
+    return (
+      <div className="card p-4 text-xs" style={{ color: "var(--ink-muted)" }}>
+        Loading today&apos;s evidence…
+      </div>
+    );
+  }
+  if (!data) {
+    return (
+      <div className="card p-4 text-xs" style={{ color: "var(--negative)" }}>
+        Today&apos;s evidence could not load. The page will retry automatically.
+      </div>
+    );
+  }
+  if (!data.account_scoped) {
     return (
       <div className="card p-4 text-xs" style={{ color: "var(--ink-muted)" }}>
         Connect the active brokerage account to build an account-isolated daily review.
