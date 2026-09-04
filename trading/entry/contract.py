@@ -247,6 +247,7 @@ def select_reviewed_v2_contract(
     current_price: float,
     max_spend: float,
     for_display: bool = False,
+    approved_dynamic_match: bool = False,
 ) -> Tuple[Optional[dict], dict]:
     """Select the locked paid-quote contract profile for a reviewed ticker.
 
@@ -287,7 +288,7 @@ def select_reviewed_v2_contract(
         ))
     except Exception:
         reviewed_tickers = {"TSLA"}
-    if ticker not in reviewed_tickers:
+    if ticker not in reviewed_tickers and not for_display and not approved_dynamic_match:
         info["reason"] = "unsupported_v2_ticker"
         return None, info
     if direction not in {"bullish", "bearish"} or current_price <= 0 or max_spend <= 0:

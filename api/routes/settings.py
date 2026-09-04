@@ -21,8 +21,9 @@ def get_strategy_catalog_endpoint() -> dict:
 
 @router.get("/strategies/tested")
 def get_tested_strategy_inventory() -> dict:
+    from config import get_settings
     from config.strategy_inventory import tested_strategy_inventory
-    return tested_strategy_inventory()
+    return tested_strategy_inventory(get_settings())
 
 
 @router.get("/strategies/history")
@@ -110,6 +111,7 @@ def get_settings_endpoint() -> Settings:
         observe_ctx_vwap_ker_enabled=bool(s.get("observe_ctx_vwap_ker_enabled", True)),
         observe_ctx_vwap_displacement_enabled=bool(s.get("observe_ctx_vwap_displacement_enabled", True)),
         observe_ctx_squeeze_macd_enabled=bool(s.get("observe_ctx_squeeze_macd_enabled", True)),
+        research_strategy_ids=list(s.get("research_strategy_ids", [])),
         opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
@@ -199,6 +201,12 @@ def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
         # generically prevents a newly reviewed control from being silently
         # dropped by an older hard-coded POST map.
         data[rule.setting_key] = bool(data.pop(rule.setting_key, False))
+    from trading.tested_strategy_research import TESTED_RESEARCH_STRATEGIES
+    data["research_strategy_ids"] = sorted({
+        str(value).strip().upper()
+        for value in data.get("research_strategy_ids", [])
+        if str(value).strip().upper() in TESTED_RESEARCH_STRATEGIES
+    })
     # Convert risk_pct (UI %, e.g. 10.0) → risk_per_trade (decimal, e.g. 0.10).
     # get_risk_tier() reads risk_per_trade; without this conversion it never saw
     # the user's setting and always fell through to the bootstrap 5% auto-tier.

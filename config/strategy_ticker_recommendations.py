@@ -31,6 +31,20 @@ def published_recommendation(strategy_id: object, ticker: object) -> dict | None
     return next((row for row in load_recommendations() if pair_key(row.get("strategy_id"), row.get("ticker")) == wanted and row.get("status") == "published"), None)
 
 
+def _is_current_qualified_recommendation(strategy_id: object, ticker: object) -> bool:
+    """Fail closed unless forward evidence matches the current catalog version."""
+    from config.strategy_catalog import REVIEWED_STRATEGIES
+
+    sid = str(strategy_id or "").strip().upper()
+    rule = REVIEWED_STRATEGIES.get(sid)
+    recommendation = published_recommendation(sid, ticker)
+    return bool(
+        rule and recommendation
+        and recommendation.get("strategy_version") == rule.version
+        and recommendation.get("qualification_verified") is True
+    )
+
+
 def publish_recommendation(strategy_id: str, ticker: str, *, evidence_summary: str, evidence_artifact: str = "", metrics: dict | None = None, qualification_verified: bool = False) -> dict:
     from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_strategy_integrity_errors
     sid, symbol = strategy_id.strip().upper(), ticker.strip().upper()
@@ -112,6 +126,8 @@ def save_user_consent(settings: dict, strategy_id: object, ticker: object, decis
     recommendation = published_recommendation(strategy_id, ticker)
     if recommendation is None:
         raise ValueError("This strategy/ticker recommendation is not published")
+    if decision in {"paper_enabled", "live_enabled"} and not _is_current_qualified_recommendation(strategy_id, ticker):
+        raise ValueError("This strategy/ticker match has not passed forward qualification")
     if decision == "live_enabled":
         from config.strategy_catalog import REVIEWED_STRATEGIES
         from config.strategy_live_promotion import review_live_promotion
@@ -149,7 +165,7 @@ def public_recommendations(settings: dict) -> list[dict]:
             else "paper_enabled"
             if decision == "paper_enabled"
             else "approval_needed"
-            if live_eligible
+            if bool(row.get("qualification_verified"))
             else "observing"
         )
         result.append({
@@ -170,6 +186,28 @@ def public_recommendations(settings: dict) -> list[dict]:
             "account_mode": "paper" if bool(settings.get("paper_trading", True)) else "live",
         })
     return result
+
+
+def is_paper_enabled_pair(strategy_id: object, ticker: object, settings: dict) -> bool:
+    """Allow a research rule into paper only after evidence and user consent."""
+    if not bool(settings.get("paper_trading", True)):
+        return False
+    return bool(
+        _is_current_qualified_recommendation(strategy_id, ticker)
+        and consent_for(settings, strategy_id, ticker) == "paper_enabled"
+    )
+
+
+def has_user_paper_enabled(strategy_id: object, settings: dict) -> bool:
+    """Return whether this paper account approved any qualified ticker pair."""
+    sid = str(strategy_id or "").strip().upper()
+    if not bool(settings.get("paper_trading", True)):
+        return False
+    return any(
+        str(row.get("strategy_id", "")).strip().upper() == sid
+        and is_paper_enabled_pair(sid, row.get("ticker"), settings)
+        for row in load_recommendations()
+    )
 
 
 def is_user_authorized_ticker(strategy_id: object, ticker: object, settings: dict) -> bool:

@@ -37,6 +37,9 @@ class Settings(BaseModel):
     observe_ctx_vwap_ker_enabled: bool = True
     observe_ctx_vwap_displacement_enabled: bool = True
     observe_ctx_squeeze_macd_enabled: bool = True
+    # Exact, reconstructed historical strategies that are allowed to collect
+    # evidence across the scanner universe. They never authorize orders.
+    research_strategy_ids: list[str] = []
     opportunity_tier_enabled: bool = False  # observation-only lower-confidence research cohort; never changes account mode
     signal_only_mode: bool = False  # True = bot alerts but never places orders
     # ── Trade parameters (user-tunable without touching code) ─────────────────

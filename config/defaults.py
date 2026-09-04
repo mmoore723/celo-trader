@@ -140,6 +140,15 @@ _DEFAULTS = {
     # when it is not approved to place an order.  These candidates are marked
     # observed_only and can never reach contract selection or execution.
     "shadow_observe_all_strategies": True,
+    # Reconstructed, deterministic research-engine strategies. These run on
+    # every ticker collected by the research worker and have no order path.
+    "research_strategy_ids": [
+        "V2_AFTERNOON_REVERSAL", "V2_EMA_PULLBACK_RTH", "V2_FAIR_VALUE_GAP",
+        "V2_GAP_FILL_RTH", "V2_MIDDAY_BREAKDOWN",
+        "V2_OPENING_MOMENTUM_RTH_EXPLORATORY", "V2_ORB_CONFIRMED_BREAKOUT",
+        "V2_SPY_ORB_RSI_MACD_SHORT", "V2_TREND_CONT", "V2_TURTLE_SOUP_RTH",
+        "V2_VWAP_PULLBACK", "V2_VWAP_REVERSION_RTH", "TV_SUPERTREND_REVERSAL_V4",
+    ],
 
     # Filters
     "volume_filter_enabled":   True,

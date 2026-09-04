@@ -18,6 +18,9 @@ from trading.entry.candidate_observation import observe_candidate_contract
 from trading.entry.injected_setups import evaluate_injected_setups
 from trading.observers.qqq_opening_downmove import maybe_observe
 from trading.state import _now_et
+from trading.tested_strategy_research import (
+    enabled_tested_research_ids, evaluate_tested_research,
+)
 
 logger = logging.getLogger("celo_trader.research")
 
@@ -45,9 +48,11 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
         return
     enabled = enabled_reviewed_strategy_ids(settings, ticker=ticker)
     observed = enabled_observation_strategy_ids(settings, ticker=ticker)
-    if settings.get("shadow_observe_all_strategies", True):
-        observed |= reviewed_execution_strategy_ids() - enabled
-    if observed:
+    # Every reviewed execution rule keeps researching the rest of the scanner
+    # universe. Trading scope and research scope must never be the same list.
+    observed |= reviewed_execution_strategy_ids() - enabled
+    tested_ids = enabled_tested_research_ids(settings)
+    if observed or tested_ids:
         frame = current
         history, error = alpaca.get_bars(ticker, "5Min", limit=1500)
         if stopped():
@@ -73,22 +78,33 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
                 )
 
         # Never call _tick or return these signals to the trading loop.
+        observation_scope = (
+            f"research_worker:{get_current_user_id()}:{account}:"
+            f"{settings.get('paper_trading', True)}"
+        )
         returned = route_signals(
             frame, ticker, enabled_strategies=set(), quiet=True,
             candidate_observer=record, observation_only_strategies=observed,
             observation_resolver=mark_candidate_observed_only,
             injected_signals=injected, preserve_reviewed_paid_rules=True,
-            observation_scope=f"research_worker:{get_current_user_id()}:{account}:{settings.get('paper_trading', True)}",
+            observation_scope=observation_scope,
         )
         if returned:
             raise RuntimeError("Observation router unexpectedly returned executable signals")
+        for signal in evaluate_tested_research(
+            frame, ticker, tested_ids, scope=observation_scope, now=_now_et(),
+        ):
+            record(ticker, signal, float(current["close"].iloc[-1]))
+            mark_candidate_observed_only(signal)
     if not stopped():
         capture_due_candidate_option_quotes(
             ticker=ticker, observed_at=_now_et(), quote_lookup=tradier.get_option_quote,
             broker_account_id=account,
         )
-    logger.info("research_scan ticker=%s archived_bars=%d observer_count=%d",
-                ticker, len(current), len(observed))
+    logger.info(
+        "research_scan ticker=%s archived_bars=%d observer_count=%d tested_count=%d",
+        ticker, len(current), len(observed), len(tested_ids),
+    )
 
 
 def run_research_pass(readers, snapshot, state, stopped):

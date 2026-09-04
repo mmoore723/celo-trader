@@ -57,6 +57,13 @@ class StrategyInventoryTests(unittest.TestCase):
         self.assertEqual(payload["reports_scanned"], len(represented))
         self.assertEqual([], payload["unreadable_reports"])
 
+    def test_runnable_research_is_separate_from_saved_reports(self):
+        payload = tested_strategy_inventory({"research_strategy_ids": ["V2_TREND_CONT"]})
+        runtime = {row["strategy_id"]: row for row in payload["runtime_research"]}
+        self.assertTrue(runtime["V2_TREND_CONT"]["enabled"])
+        self.assertFalse(runtime["V2_VWAP_PULLBACK"]["enabled"])
+        self.assertEqual("all_collected_tickers", runtime["V2_TREND_CONT"]["research_scope"])
+
 
 class StrategyInventoryEndpointTests(unittest.TestCase):
     def test_real_auth_dependency_protects_read_only_inventory(self):

@@ -28,7 +28,7 @@ class ScanTimingTests(unittest.TestCase):
         self.addCleanup(set_current_user, previous, previous, False)
 
     def test_only_enabled_tickers_are_in_order_lane(self):
-        self.assertEqual(["SPY", "TSLA"], execution_tickers(
+        self.assertEqual(["AMZN", "SPY", "TSLA"], execution_tickers(
             ["AMZN", "SPY", "QQQ", "TSLA", "META"], settings()))
 
     def test_disabled_strategies_still_get_management_only_pass(self):

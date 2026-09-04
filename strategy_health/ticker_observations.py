@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-from config.strategy_catalog import REVIEWED_STRATEGIES
+from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_research_exit_minutes
 
 
 def load_completed_observations(db_paths: Iterable[Path]) -> list[dict]:
@@ -32,7 +32,10 @@ def load_completed_observations(db_paths: Iterable[Path]) -> list[dict]:
                        WHERE x.observation_kind IN ('mark_30m','mark_60m','mark_90m')"""
             for source in conn.execute(query):
                 rule = REVIEWED_STRATEGIES.get(str(source["strategy_id"]).upper())
-                expected = f"mark_{rule.exit_minutes}m" if rule and rule.exit_minutes else None
+                expected = (
+                    f"mark_{reviewed_research_exit_minutes(rule.strategy_id)}m"
+                    if rule else None
+                )
                 if source["exit_kind"] != expected:
                     continue
                 try:

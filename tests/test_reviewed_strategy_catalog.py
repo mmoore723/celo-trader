@@ -12,7 +12,8 @@ from config.strategy_catalog import (
     enabled_observation_strategy_ids,
     ensure_reviewed_ticker_coverage, is_allowed_ticker, public_strategy_catalog,
     reviewed_execution_strategy_ids, reviewed_strategy_ids,
-    reviewed_strategy_integrity_errors, strategy_ids_for_source,
+    reviewed_research_exit_minutes, reviewed_strategy_integrity_errors,
+    strategy_ids_for_source,
 )
 
 
@@ -100,6 +101,28 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
 
     def test_spy_failed_range_recovery_uses_reviewed_30_minute_exit(self) -> None:
         self.assertEqual(30, REVIEWED_STRATEGIES["V2_FAILED_OR_BREAK_VWAP_REVERSION"].exit_minutes)
+
+    def test_displacement_is_paper_tradable_only_on_its_reviewed_tickers(self) -> None:
+        strategy_id = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
+        rule = REVIEWED_STRATEGIES[strategy_id]
+        settings = {rule.setting_key: True}
+        self.assertFalse(rule.observation_only)
+        self.assertTrue(rule.paper_only)
+        self.assertEqual(90, rule.exit_minutes)
+        self.assertIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="TSLA", paper=True))
+        self.assertIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="AMZN", paper=True))
+        self.assertNotIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=True))
+        self.assertNotIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="TSLA", paper=False))
+
+    def test_research_only_rules_have_a_fixed_forward_mark(self) -> None:
+        self.assertEqual(90, reviewed_research_exit_minutes("CTX_ORB_NR7_OR_INSIDE"))
+        self.assertEqual(30, reviewed_research_exit_minutes("V2_SPY_AFTERNOON_FVG"))
+
+    def test_observation_scope_is_all_collected_tickers_not_trading_scope(self) -> None:
+        rule = REVIEWED_STRATEGIES["CTX_ORB_NR7_OR_INSIDE"]
+        settings = {rule.setting_key: True}
+        self.assertIn(rule.strategy_id, enabled_observation_strategy_ids(settings, ticker="AAPL"))
+        self.assertFalse(is_allowed_ticker(rule.strategy_id, "AAPL"))
 
     def test_registry_is_versioned_and_references_real_evidence(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -236,7 +259,7 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         self.assertEqual(1.70, row["backtest"]["profit_factor"])
         self.assertEqual(32, row["backtest"]["trades"])
         self.assertIn("TSLA", row["backtest"]["scope"])
-        self.assertIn("early-period PF 1.09", row["backtest"]["comparison"])
+        self.assertIn("older test dates PF 1.09", row["backtest"]["comparison"])
 
     def test_observer_switch_is_isolated_per_user(self) -> None:
         from config import settings_store

@@ -47,6 +47,10 @@ class ReviewedStrategy:
     # evidence ledger, but can never be returned to an order-facing path.  The
     # Settings switch controls evidence collection, not execution.
     observation_only: bool = False
+    # Prospective research needs one fixed, executable same-contract mark even
+    # when the eventual trading exit is still being designed.  This horizon
+    # never grants order authority and is kept separate from ``exit_minutes``.
+    research_exit_minutes: int | None = None
 
 
 REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
@@ -185,13 +189,17 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         setting_key="observe_ctx_vwap_displacement_enabled",
         signal_source="bar_close",
         implementation="strategies.context_strategy_observers",
-        exit_minutes=None,
+        # The historical five-fill result used a structural VWAP/HOD exit.
+        # Paper execution deliberately uses a fixed same-contract mark while
+        # enough prospective evidence is collected for that exit to be
+        # implemented and reviewed independently.
+        exit_minutes=90,
         paper_only=True,
         status="paper_candidate",
         evidence_grade="promising_underpowered",
         evidence_artifact="config/strategy_evidence/ctx_vwap_displacement-0.1.0.json",
-        evidence="TSLA showed PF 6.73 in the $150-$250 slice, but only five fills existed and the single later-period fill lost.",
-        observation_only=True,
+        evidence="Historical TSLA research showed PF 6.73 in a five-fill $150-$250 slice. It is enabled for paper trading on TSLA and AMZN while the bot collects a larger 90-minute same-contract sample.",
+        observation_only=False,
     ),
     "CTX_1H_SQUEEZE_MACD_LONG": ReviewedStrategy(
         strategy_id="CTX_1H_SQUEEZE_MACD_LONG",
@@ -326,12 +334,14 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
             "signal_source": rule.signal_source,
             "implementation": rule.implementation,
             "exit_minutes": rule.exit_minutes,
+            "research_exit_minutes": reviewed_research_exit_minutes(rule.strategy_id),
             "paper_only": rule.paper_only,
             "status": rule.status,
             "evidence_grade": rule.evidence_grade,
             "evidence_artifact": rule.evidence_artifact,
             "evidence": rule.evidence,
             "backtest": _backtest_display(rule),
+            "research_scope": "all_collected_tickers",
             "control_kind": "observation" if rule.observation_only else "execution",
             "observation_only": rule.observation_only,
             "enabled": bool(settings.get(rule.setting_key, False)) and rule.strategy_id not in integrity_errors,
@@ -383,18 +393,24 @@ def reviewed_execution_strategy_ids() -> set[str]:
     }
 
 
+def reviewed_research_exit_minutes(strategy_id: object) -> int:
+    """Return the fixed forward mark used only for cross-ticker research."""
+    rule = REVIEWED_STRATEGIES.get(str(strategy_id or "").strip().upper())
+    if rule is None:
+        return 90
+    return int(rule.research_exit_minutes or rule.exit_minutes or 90)
+
+
 def enabled_observation_strategy_ids(
     settings: dict, *, ticker: object | None = None,
 ) -> set[str]:
     """Return user-enabled, fail-closed research observers for one ticker."""
-    normalized_ticker = str(ticker or "").strip().upper()
     return {
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
         if rule.observation_only
         and strategy_id not in reviewed_strategy_integrity_errors()
         and bool(settings.get(rule.setting_key, False))
-        and (not normalized_ticker or normalized_ticker in rule.tickers)
     }
 
 
@@ -419,10 +435,11 @@ def strategy_ids_for_source(source: SignalSource) -> set[str]:
 def reviewed_exit_summary(strategy_id: object, *, verb: str = "exit") -> str:
     """Describe the registry-owned same-contract exit without a second map."""
     rule = REVIEWED_STRATEGIES.get(str(strategy_id or "").strip().upper())
-    if rule is None or rule.exit_minutes is None:
+    if rule is None:
         return "No reviewed exit policy is registered."
+    minutes = reviewed_research_exit_minutes(rule.strategy_id)
     action = "measure the executable bid" if verb == "measure" else "exit at the executable bid"
-    return f"Hold the same selected contract for {rule.exit_minutes} minutes, then {action}."
+    return f"Hold the same selected contract for {minutes} minutes, then {action}."
 
 
 def enabled_reviewed_strategy_ids(
@@ -436,11 +453,19 @@ def enabled_reviewed_strategy_ids(
     """
     normalized_ticker = str(ticker or "").strip().upper()
     from config.strategy_ticker_recommendations import (
-        has_user_live_enabled, is_live_enabled_pair, is_user_authorized_ticker,
+        has_user_live_enabled, has_user_paper_enabled, is_live_enabled_pair,
+        is_paper_enabled_pair, is_user_authorized_ticker,
     )
     is_paper = bool(settings.get("paper_trading", True)) if paper is None else bool(paper)
 
     def _mode_eligible(strategy_id: str, rule: ReviewedStrategy) -> bool:
+        if rule.observation_only:
+            if not is_paper:
+                return False
+            return (
+                is_paper_enabled_pair(strategy_id, normalized_ticker, settings)
+                if normalized_ticker else has_user_paper_enabled(strategy_id, settings)
+            )
         if is_paper or not rule.paper_only:
             return True
         # Keep rules without general live-order authority out of ordinary live
@@ -455,7 +480,6 @@ def enabled_reviewed_strategy_ids(
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
         if strategy_id not in reviewed_strategy_integrity_errors()
-        and not rule.observation_only
         and bool(settings.get(rule.setting_key, False))
         and (not normalized_ticker or is_user_authorized_ticker(strategy_id, normalized_ticker, settings))
         and _mode_eligible(strategy_id, rule)

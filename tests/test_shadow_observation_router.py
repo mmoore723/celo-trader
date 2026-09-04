@@ -170,6 +170,7 @@ class ShadowObservationRouterTests(unittest.TestCase):
             (strategy_id, lambda _frame, ticker: _signal(strategy_id)),
         ]), patch.object(router, "compute_adx", return_value=30.0), \
              patch.object(router, "_authorized_for_order", return_value=True), \
+             patch("config.strategy_ticker_recommendations.is_paper_enabled_pair", return_value=False), \
              patch("shadow_ledger.resolve_due_directional_outcomes", return_value=None):
             returned = router.route_signals(
                 frame, "TSLA", enabled_strategies={strategy_id}, quiet=True,
@@ -180,6 +181,31 @@ class ShadowObservationRouterTests(unittest.TestCase):
         self.assertEqual([strategy_id], observed)
         self.assertEqual([strategy_id], resolved)
         self.assertEqual([], returned)
+
+    def test_qualified_user_approved_observer_can_return_only_in_paper(self) -> None:
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        strategy_id = "CTX_ORB_NR7_OR_INSIDE"
+        with patch.object(router, "ACTIVE_STRATEGIES", [
+            (strategy_id, lambda _frame, ticker: _signal(strategy_id)),
+        ]), patch.object(router, "compute_adx", return_value=30.0), \
+             patch.object(router, "_authorized_for_order", return_value=True), \
+             patch("config.strategy_ticker_recommendations.is_paper_enabled_pair", return_value=True):
+            returned = router.route_signals(
+                frame, "AAPL", enabled_strategies={strategy_id}, quiet=True,
+                prepared_today=frame, preserve_reviewed_paid_rules=True,
+            )
+        self.assertEqual([strategy_id], [signal.strategy_id for signal in returned])
+
+        with patch.object(router, "ACTIVE_STRATEGIES", [
+            (strategy_id, lambda _frame, ticker: _signal(strategy_id)),
+        ]), patch.object(router, "compute_adx", return_value=30.0), \
+             patch.object(router, "_authorized_for_order", return_value=True), \
+             patch("config.strategy_ticker_recommendations.is_paper_enabled_pair", return_value=False):
+            live_returned = router.route_signals(
+                frame, "AAPL", enabled_strategies={strategy_id}, quiet=True,
+                prepared_today=frame, preserve_reviewed_paid_rules=True,
+            )
+        self.assertEqual([], live_returned)
 
 
 if __name__ == "__main__":

@@ -1293,6 +1293,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     # Budget cap now SCALES with the account: max_spend = balance × max_position_dollars_pct.
     # max_position_dollars_pct (15) was previously a dead setting — $750 was a
     max_spend = _preview_max_spend
+    # A research rule can graduate only into this user's paper account here.
+    # Live-money authority remains on the separate reviewed promotion path.
+    try:
+        from config.strategy_ticker_recommendations import is_paper_enabled_pair
+        _paper_approved_match = bool(paper) and is_paper_enabled_pair(
+            strategy_id, ticker, settings,
+        )
+    except Exception:
+        logger.exception("Could not evaluate paper approval for %s/%s", strategy_id, ticker)
+        _paper_approved_match = False
     # V2's paid TSLA study used a distinct, predeclared contract rule.  Keep
     # Lock the V2 strategy to its reviewed contract definition in *both* paper
     # and a future explicitly-approved live mode.  Today V2 remains disabled
@@ -1301,6 +1311,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     if _v2_paid_parity:
         contract, _sel_info = select_reviewed_v2_contract(
             tradier, ticker, direction, current_price, max_spend,
+            approved_dynamic_match=_paper_approved_match,
         )
     else:
         contract, _sel_info = select_contract(tradier, ticker, direction, current_price, max_spend)
@@ -1525,11 +1536,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         n_contracts = _max_affordable
 
     # A newly qualified dynamic strategy/ticker match still requires this
-    # user's explicit consent. Once enabled, it uses the same risk-based sizing
-    # as every other reviewed strategy—there is no separate pilot clamp.
+    # user's explicit consent. Paper approval and the separately reviewed live
+    # approval remain distinct, but both use the ordinary risk-based sizing.
     try:
         from config.strategy_ticker_recommendations import is_live_enabled_pair
-        _user_approved_match = is_live_enabled_pair(strategy_id, ticker, settings)
+        _user_approved_match = (
+            _paper_approved_match
+            if paper else is_live_enabled_pair(strategy_id, ticker, settings)
+        )
     except Exception:
         logger.exception("Could not evaluate live approval for %s/%s", strategy_id, ticker)
         _user_approved_match = False

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import unittest
 from unittest.mock import patch
 
-from trading.entry.contract import select_v2_orb_paper_contract
+from trading.entry.contract import select_reviewed_v2_contract, select_v2_orb_paper_contract
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 
 
@@ -84,6 +84,23 @@ class V2OrbPaperContractTests(unittest.TestCase):
         contract, info = select_v2_orb_paper_contract(broker, "SPY", "bullish", 500, 500)
         self.assertEqual("selected", info["reason"])
         self.assertEqual("v2_spy_trend_paid_near_money_otm_v1", contract["selection_model"])
+
+    def test_out_of_scope_ticker_is_readable_for_research_but_not_orders(self) -> None:
+        expiry = (self.market_date + timedelta(days=7)).isoformat()
+        broker = _FakeTradier({expiry: [{"symbol": "AAPL_NEAR", "strike": 201, "bid": 2.90, "ask": 3.00}]})
+        blocked, info = select_reviewed_v2_contract(
+            broker, "AAPL", "bullish", 200, 500,
+        )
+        self.assertIsNone(blocked)
+        self.assertEqual("unsupported_v2_ticker", info["reason"])
+        observed, _ = select_reviewed_v2_contract(
+            broker, "AAPL", "bullish", 200, 500, for_display=True,
+        )
+        self.assertEqual("AAPL_NEAR", observed["symbol"])
+        promoted, _ = select_reviewed_v2_contract(
+            broker, "AAPL", "bullish", 200, 500, approved_dynamic_match=True,
+        )
+        self.assertEqual("AAPL_NEAR", promoted["symbol"])
 
 
 if __name__ == "__main__":

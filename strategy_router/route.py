@@ -135,6 +135,22 @@ def route_signals(
         strategy_id for strategy_id, rule in REVIEWED_STRATEGIES.items()
         if rule.observation_only
     }
+    # A catalog research rule may cross into *paper* execution only for one
+    # forward-qualified ticker that this user explicitly approved. It remains
+    # an observer everywhere else and can never use this path in live mode.
+    _paper_promoted: set[str] = set()
+    if _order_strategies:
+        from config import get_settings
+        from config.strategy_ticker_recommendations import is_paper_enabled_pair
+        settings = get_settings()
+        requested_observers = _order_strategies & _catalog_observers
+        _paper_promoted = {
+            strategy_id for strategy_id in requested_observers
+            if is_paper_enabled_pair(strategy_id, ticker, settings)
+        }
+        _observation_only |= requested_observers - _paper_promoted
+        _order_strategies -= requested_observers - _paper_promoted
+    _catalog_observers -= _paper_promoted
     if _order_strategies is None:
         _observation_only |= _catalog_observers
     else:

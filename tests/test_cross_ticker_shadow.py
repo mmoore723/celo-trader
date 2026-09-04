@@ -41,6 +41,20 @@ class CrossTickerShadowTests(unittest.TestCase):
             pd.DataFrame(), ticker="AAPL", account_scope="acct-1",
         ))
 
+    def test_context_strategy_uses_source_alias_but_keeps_actual_ticker_scope(self) -> None:
+        calls = []
+
+        def evaluator(frame, ticker="", execution_scope=None):
+            calls.append((ticker, execution_scope))
+            return _signal("CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG")
+
+        result = evaluate_bar_strategy(
+            "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG", evaluator,
+            pd.DataFrame({"close": [100.0]}), ticker="AAPL", account_scope="acct-2",
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(("TSLA", "cross_ticker_shadow:acct-2:AAPL"), calls[0])
+
     @patch("trading.orb_retouch_execution.update_one_minute_orb_retouch")
     def test_orb_adapter_preserves_actual_state_but_calls_locked_tsla_rule(self, reviewed) -> None:
         reviewed.return_value = (None, "waiting")

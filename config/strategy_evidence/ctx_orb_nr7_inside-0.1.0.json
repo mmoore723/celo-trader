@@ -8,7 +8,7 @@
   "implementation": "strategies.context_strategy_observers",
   "implementation_sha256_at_review": "08718c6d33283a6a251e98d4be56025ac311a871c7f3c8e2145a40cfccc3f535",
   "market_data": {"source": "paid Databento OPRA CBBO-1m archives", "execution_model": "actual option ask strictly after signal; same-contract actual bid at structural exit; fee and $10 monthly-plan stress", "contract_policy": "$150-$250 ask proxy; historical CBBO archive has no Greeks"},
-  "display_metrics": {"profit_factor": 1.70, "trades": 32, "scope": "TSLA · $150-$250 contracts", "comparison": "Broad TSLA PF 1.30 · early-period PF 1.09 · AMZN PF 0.51 (11 fills) · QQQ PF 0.52 (2 fills)", "target_profit_factor": 1.5, "meets_target": true, "note": "Overall target passed only in one contract-price slice; chronological stability did not."},
+  "display_metrics": {"profit_factor": 1.70, "trades": 32, "scope": "TSLA · $150-$250 contracts", "comparison": "All TSLA prices PF 1.30 · older test dates PF 1.09 · AMZN PF 0.51 (11 fills) · QQQ PF 0.52 (2 fills)", "target_profit_factor": 1.5, "meets_target": true, "note": "Overall target passed only in one contract-price slice; results were not stable across older and newer dates."},
   "decision": "Collect prospective evidence only. Do not authorize paper or live orders until stability and exact lifecycle gates pass.",
   "source_reports": ["research/reports/paid_tsla_context_strategy_matrix_v2.json", "research/reports/paid_spy_context_strategy_matrix_v2.json", "research/reports/paid_amzn_context_strategy_matrix_v3.json", "research/reports/paid_qqq_context_strategy_matrix_through_2026_08_24_v1.json"]
 }

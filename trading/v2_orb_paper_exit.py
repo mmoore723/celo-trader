@@ -14,14 +14,13 @@ paths.
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
-from config.strategy_catalog import REVIEWED_STRATEGIES
+from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_research_exit_minutes
 
 
 V2_ORB_PAID_MARKOUT_MINUTES = 90
 V2_EXIT_MINUTES_BY_STRATEGY = {
-    strategy_id: rule.exit_minutes
+    strategy_id: reviewed_research_exit_minutes(strategy_id)
     for strategy_id, rule in REVIEWED_STRATEGIES.items()
-    if rule.exit_minutes is not None
 }
 
 

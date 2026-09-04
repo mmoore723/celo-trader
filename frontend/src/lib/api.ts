@@ -92,6 +92,33 @@ export interface CandidateScorecard {
   total_candidates: number; measured_candidates: number; next_outcome_at: string | null;
   strategies: CandidateScorecardRow[];
 }
+export interface StrategyTickerResearchPair {
+  ticker: string;
+  status: "working" | "promising" | "needs_tuning" | "not_working" | "collecting" | "no_setups";
+  explanation: string;
+  market_days: number;
+  setups: number;
+  option_results: number;
+  profit_factor: number | "infinite" | null;
+  net_one_contract_pnl: number;
+  direction_accuracy: number | null;
+  tradable: boolean;
+}
+export interface StrategyResearchMatrix {
+  days: number;
+  target_profit_factor: number;
+  account_scoped: boolean;
+  ticker_count: number;
+  strategy_count: number;
+  strategies: {
+    strategy_id: string;
+    display_name: string;
+    research_enabled: boolean;
+    trading_tickers: string[];
+    exit_minutes: number;
+    pairs: StrategyTickerResearchPair[];
+  }[];
+}
 export interface DailyEvidenceScorecard {
   date: string; mode: "paper" | "live"; account_scoped: boolean;
   session_result: { grade: string; label: string; net_pnl: number; basis: string };
@@ -760,6 +787,7 @@ export interface AppSettings {
   observe_ctx_vwap_ker_enabled?: boolean;
   observe_ctx_vwap_displacement_enabled?: boolean;
   observe_ctx_squeeze_macd_enabled?: boolean;
+  research_strategy_ids?: string[];
   opportunity_tier_enabled?: boolean; // observation-only lower-confidence research cohort; does not change account mode
   daily_loss_hard_cap_pct?: number; // 2026-07-24: 24h kill-lock threshold, was hardcoded 10% (default 10)
   min_grade_filter_enabled?: boolean; // 2026-07-24: blocks entries below min_entry_grade (default off)
@@ -777,7 +805,8 @@ export interface BrokerReadiness {
 }
 
 export interface TestedStrategyInventory {
-  strategies: {strategy_id: string; display_name: string; tickers: string[]; reports: string[]; report_count: number}[];
+  strategies: {strategy_id: string; display_name: string; tickers: string[]; reports: string[]; report_count: number; research_supported?: boolean; research_enabled?: boolean}[];
+  runtime_research?: {strategy_id: string; display_name: string; version: string; exit_minutes: number; enabled: boolean; research_scope: "all_collected_tickers"}[];
   reports_scanned: number;
   other_studies: string[];
   report_details: Record<string, {title: string; purpose: string; decision: string; status: string}>;
@@ -794,6 +823,7 @@ export interface ReviewedStrategyCatalogEntry {
   signal_source: "bar_close" | "live_retouch" | "one_minute_state";
   implementation: string;
   exit_minutes: number | null;
+  research_exit_minutes: number;
   paper_only: boolean;
   status: "paper_candidate" | "retired";
   evidence_grade: "passed_declared_holdout" | "promising_underpowered" | "promising_inconsistent" | "failed_profit_factor";
@@ -808,6 +838,7 @@ export interface ReviewedStrategyCatalogEntry {
     meets_target?: boolean;
     note?: string;
   };
+  research_scope: "all_collected_tickers";
   control_kind: "execution" | "observation";
   observation_only: boolean;
   enabled: boolean;
@@ -843,6 +874,7 @@ export interface StrategyTickerRecommendation {
   display_name: string;
   evidence_summary: string;
   evidence_artifact: string;
+  qualification_verified: boolean;
   metrics: Record<string, number | string | boolean | null>;
   published_at: string;
   decision: "paper_enabled" | "live_enabled" | "observing" | "pending";
@@ -1089,6 +1121,7 @@ export const api = {
       `/api/strategy-health/daily-scorecard?mode=${mode}${date ? `&date=${date}` : ""}`
     ),
     candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
+    researchMatrix: (days = 90) => request<StrategyResearchMatrix>(`/api/strategy-health/research-matrix?days=${days}`),
     qqqOpeningResearch: () => request<PaperResearchScorecard>("/api/strategy-health/paper-research/qqq-opening"),
     paidTslaV2Orb: () => request<PaidResearchEvidence>("/api/strategy-health/research/paid-tsla-v2-orb"),
     paidTslaTrendProgress: () => request<PaidTrendResearchProgress>("/api/strategy-health/research/paid-tsla-trend-progress"),
