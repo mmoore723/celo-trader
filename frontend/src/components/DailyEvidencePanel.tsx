@@ -24,6 +24,7 @@ export function DailyEvidencePanel({ data }: { data?: DailyEvidenceScorecard }) 
   ];
   const missed = data.decisions.missed_executable_moves["planned_hold"];
   const fillLeakage = data.execution.quote_to_fill;
+  const quoteReplay = data.execution.tradier_quote_replay;
   const fillLeakageDollars = fillLeakage?.signed_adverse_slippage_dollars;
   const fillLeakageAmount = fillLeakageDollars === null || fillLeakageDollars === undefined
     ? null
@@ -56,6 +57,19 @@ export function DailyEvidencePanel({ data }: { data?: DailyEvidenceScorecard }) 
             : "."}{" "}
           Recorded ask-to-bid quotes only; these are not guaranteed fills or profit.
         </p>
+      )}
+      {quoteReplay?.measured_trades > 0 && quoteReplay.quote_pnl_after_fees !== null && (
+        <div className="rounded-md px-3 py-2" style={{ background: "var(--muted)" }}>
+          <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+            Tradier reality check: <strong style={{ color: quoteReplay.quote_pnl_after_fees >= 0 ? "var(--positive)" : "var(--negative)" }}>
+              {quoteReplay.quote_pnl_after_fees >= 0 ? "+" : "-"}${Math.abs(quoteReplay.quote_pnl_after_fees).toFixed(2)}
+            </strong>{" "}
+            after modeled fees, using the saved ask to enter and bid to exit. PF {quoteReplay.quote_profit_factor_after_fees === null ? "—" : quoteReplay.quote_profit_factor_after_fees.toFixed(2)} across {quoteReplay.measured_trades} trade{quoteReplay.measured_trades === 1 ? "" : "s"}.
+          </p>
+          <p className="text-[10px] mt-1" style={{ color: "var(--ink-faint)" }}>
+            {quoteReplay.exact_exit_quotes} exact exit quote{quoteReplay.exact_exit_quotes === 1 ? "" : "s"}; {quoteReplay.legacy_nearby_marks} older nearby estimate{quoteReplay.legacy_nearby_marks === 1 ? "" : "s"}. Quote replay is not a guaranteed broker fill.
+          </p>
+        </div>
       )}
       {fillLeakage?.paired_fills > 0 && fillLeakageAmount !== null && (
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>

@@ -52,14 +52,24 @@ class DailyEvidenceScorecardTests(unittest.TestCase):
     def test_scorecard_combines_profit_decisions_execution_and_replay(self) -> None:
         self._trade("mine", 1, 50)
         self._trade("mine", 2, -25)
-        for trade_id in (1, 2):
+        for trade_id, exit_bid in ((1, 1.5), (2, .75)):
             self.conn.execute("""
                 INSERT INTO option_quote_observations
                   (trade_id,observed_at,observed_minute,observation_kind,
                    contract_symbol,bid,ask,mid,last,fill_price,source)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)
-            """, (trade_id, "2026-08-26T10:30:00-04:00", f"2026-08-26T10:{trade_id:02d}",
-                  "exit", "SPY260828C00650000", 1, 1.02, 1.01, 1, 1, "test"))
+            """, (trade_id, "2026-08-26T10:00:00-04:00", "2026-08-26T10:00",
+                  "entry", "SPY260828C00650000", .98, 1.0, .99, 1, 1,
+                  "tradier_chain"))
+            self.conn.execute("""
+                INSERT INTO option_quote_observations
+                  (trade_id,observed_at,observed_minute,observation_kind,
+                   contract_symbol,bid,ask,mid,last,fill_price,source)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """, (trade_id, "2026-08-26T10:30:00-04:00", "2026-08-26T10:30",
+                  "exit", "SPY260828C00650000", exit_bid, exit_bid + .02,
+                  exit_bid + .01, exit_bid, exit_bid,
+                  "tradier_pre_submit_exit_quote"))
         self.conn.execute("""
             INSERT INTO shadow_candidates
               (candidate_id,observed_at,ticker,strategy_id,direction,confidence,
@@ -97,6 +107,11 @@ class DailyEvidenceScorecardTests(unittest.TestCase):
         self.assertEqual(100.0, result["execution"]["entry_fill_rate_pct"])
         self.assertEqual(2, result["execution"]["quote_to_fill"]["paired_fills"])
         self.assertEqual(2.0, result["execution"]["quote_to_fill"]["signed_adverse_slippage_dollars"])
+        quote_replay = result["execution"]["tradier_quote_replay"]
+        self.assertEqual(2, quote_replay["measured_trades"])
+        self.assertEqual(2, quote_replay["exact_exit_quotes"])
+        self.assertEqual(24.52, quote_replay["quote_pnl_after_fees"])
+        self.assertEqual(1.971474, quote_replay["quote_profit_factor_after_fees"])
         self.assertEqual(100.0, result["decisions"]["directional_accuracy_pct"])
         self.assertTrue(result["replay"]["passed"])
 

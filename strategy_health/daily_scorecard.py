@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 import json
 
+from research.paper_quote_realism import analyze as analyze_paper_quotes
 from strategy_health.golden_replay import replay_event_tape
 
 
@@ -188,6 +189,10 @@ def build_daily_scorecard(tape: dict) -> dict:
     filled = lambda rows: any(row.get("event_type") in {"filled", "partial_filled"} for row in rows)
     issues = sum(any(bool(row.get("is_issue")) for row in rows) for rows in attempts.values())
     quote_to_fill = _quote_to_fill(attempts)
+    quote_replay = analyze_paper_quotes(
+        exits,
+        [e["payload"] for e in events if e["kind"] == "trade_quote"],
+    )
     replay = replay_event_tape(events)
     missed_moves = _missed_moves(events)
     missed_moves["planned_hold"] = _exact_missed_order_markout(events)
@@ -202,6 +207,13 @@ def build_daily_scorecard(tape: dict) -> dict:
         observations.append(
             f"Confirmed fills cost ${quote_to_fill['signed_adverse_slippage_dollars']:.2f} "
             "more than the saved Tradier natural-side quotes."
+        )
+    quote_summary = quote_replay["summary"]
+    if quote_summary["measured_trades"]:
+        observations.append(
+            "Saved Tradier ask-to-bid replay estimates "
+            f"${quote_summary['quote_pnl_after_fees']:+.2f} after modeled fees "
+            f"versus ${quote_summary['recorded_paper_pnl']:+.2f} recorded paper P&L."
         )
     if replay["coverage_pct"] < 100: observations.append("Some decisions or fills are missing linked replay evidence.")
     strategy_replay = replay["strategy_replay"]
@@ -236,7 +248,12 @@ def build_daily_scorecard(tape: dict) -> dict:
                       "exit_attempts": len(exit_attempts), "exit_filled": sum(filled(rows) for rows in exit_attempts),
                       "exit_fill_rate_pct": round(sum(filled(rows) for rows in exit_attempts) / len(exit_attempts) * 100, 1) if exit_attempts else None,
                       "attempts_with_issues": issues,
-                      "quote_to_fill": quote_to_fill},
+                      "quote_to_fill": quote_to_fill,
+                      "tradier_quote_replay": {
+                          **quote_summary,
+                          "excluded": quote_replay["excluded"],
+                          "basis": quote_replay["warning"],
+                      }},
         "replay": replay, "observations": observations,
         "launch_readiness": {"status": "not_determined_by_one_day", "note": "Launch readiness requires after-cost results across multiple independent sessions and a chronological holdout."},
     }

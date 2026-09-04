@@ -146,6 +146,20 @@ export interface DailyEvidenceScorecard {
       average_signed_slippage_per_contract: number | null;
       interpretation: string;
     };
+    tradier_quote_replay: {
+      measured_trades: number;
+      exact_exit_quotes: number;
+      legacy_nearby_marks: number;
+      recorded_paper_pnl: number | null;
+      quote_pnl_before_fees: number | null;
+      quote_pnl_after_fees: number | null;
+      quote_profit_factor_after_fees: number | null;
+      paper_minus_quote_before_fees: number | null;
+      gross_profit_after_fees: number | null;
+      gross_loss_after_fees: number | null;
+      excluded: Record<string, number>;
+      basis: string;
+    };
   };
   replay: {
     passed: boolean; chronological: boolean; coverage_pct: number;
