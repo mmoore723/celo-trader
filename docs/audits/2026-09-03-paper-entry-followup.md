@@ -11,7 +11,45 @@ connection has not yet been validated by a subsequent complete broker trade.
 Audit scope: the admin account, Alpaca Paper, September 3 Eastern time;
 production records inspected after the market close. No credentials, broker
 selection, trading mode, strategy rules, or risk limits were changed. No test
-orders were submitted. This patch is local and tested; deployment is pending.
+orders were submitted. The application changes were deployed and verified on
+September 3 at 8:03:50 PM ET; see the release verification below.
+
+## Release verification
+
+- Deployed code: `cf8b57b597d7a66ef0c8fcda6eb25821c6519301`, including the
+  application patch `8fb9d0e` and a timezone-independent test-fixture correction.
+- Previous rollback version: `0126d79f8be753d2d40451404871bac08ed054fe`.
+- Release source: the verified private `mmoore723/celo-trader` repository.
+  Local main, GitHub, and EC2 were synchronized; unrelated research was excluded.
+- The first server-side test run caught a machine-date assumption in the old
+  contract-selection test at UTC midnight. The guard restored the previous
+  checkout before restarting. The fixture now pins New York time; no contract
+  selection or strategy logic was changed to make the test pass.
+- Revalidation: 574 backend tests, 33 frontend tests, lint and frontend build
+  passed locally; all 65 focused tests then passed on EC2 before restart.
+- The restarted service was active/running with zero automatic restarts.
+  Both the local and public health endpoints returned healthy.
+- Public HTML, entry bundle, Live Trading bundle, Settings bundle, and
+  connection-health helper were byte-identical to the tested build. The HTML
+  response uses `no-cache, no-store, must-revalidate`.
+- Signed-in browser verification showed Alpaca Paper and Tradier Production
+  connected with a fresh ET check time; the current Alpaca Settings page had
+  the production token field and no unused Sandbox/live-account fields.
+- Credential-file fingerprint and strategy/risk settings matched the pre-release
+  snapshot. Alpaca Paper remained selected, the bot resumed, and broker positions
+  and open orders remained zero. No credential save or trading-control button
+  was used during browser verification.
+- Initial post-release application event review found only INFO events and no
+  recorded WARNING, ERROR, or CRITICAL events. This is a bounded after-hours
+  smoke check, not a claim of observed trade execution or a completed live trial.
+- The user's completion preference is now recorded in `CLAUDE.md`: approved
+  application work includes scoped deployment and verification unless the user
+  requests local-only work or a concrete blocker prevents deployment.
+
+Security follow-up: the existing EC2 Git remote embeds a GitHub deployment
+token, and it appeared in diagnostic output during repository verification.
+Rotate that GitHub token and use secure credential storage; do not copy the
+value into this report. No Alpaca or Tradier secret was exposed or changed.
 
 ## Recorded signal outcomes
 
