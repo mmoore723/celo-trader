@@ -94,6 +94,12 @@ class ResearchPassTests(unittest.TestCase):
         self.assertIn("Setup found", message)
         self.assertIn("no fill confirmed", message)
 
+    def test_shared_expiry_status_names_the_actual_strategy(self):
+        strategy = "V2_TSLA_TWO_LEG_TREND_PULLBACK"
+        message = scan_message("TSLA", {strategy}, {strategy: "entry_window_expired"}, [])
+        self.assertIn("Two-leg: its entry time has passed", message)
+        self.assertNotIn("ORB:", message)
+
     def test_narration_is_once_per_minute_unless_result_changes(self):
         state = {}
         now = datetime(2026, 9, 4, 10, 25)

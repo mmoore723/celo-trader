@@ -3,17 +3,18 @@ from config.strategy_catalog import REVIEWED_STRATEGIES
 from database import log_event
 
 _REASONS = {
-    "outside_validated_direction": "ORB: first break was down; this setup trades calls only",
-    "waiting_for_impulse_pullback_reclaim": "Two-leg: waiting for a completed pullback and reclaim",
+    "outside_validated_direction": "first break was down; this setup trades calls only",
+    "waiting_for_impulse_pullback_reclaim": "waiting for a completed pullback and reclaim",
     "already_emitted": "Setup already recorded today",
     "outside_entry_window": "Outside this strategy's entry time",
-    "entry_window_expired": "ORB: its entry time has passed",
-    "armed_waiting_for_first_retouch": "ORB: waiting for price to revisit the breakout line",
-    "building_or_waiting_for_breakout": "ORB: waiting for the first range break",
-    "emitted": "ORB: setup already recorded today",
-    "failed_retouch": "ORB: price failed the retouch",
+    "entry_window_expired": "its entry time has passed",
+    "armed_waiting_for_first_retouch": "waiting for price to revisit the breakout line",
+    "building_or_waiting_for_breakout": "waiting for the first range break",
+    "emitted": "setup already recorded today",
+    "failed_retouch": "price failed the retouch",
     "data_check_failed": "Market-data check failed",
 }
+_LABELS = {"V2_ORB_PULLBACK": "ORB", "V2_TSLA_TWO_LEG_TREND_PULLBACK": "Two-leg"}
 
 
 def scan_message(ticker, enabled, statuses, signals):
@@ -23,7 +24,8 @@ def scan_message(ticker, enabled, statuses, signals):
         return f"[{ticker}] Setup found: {names}. Checking order safeguards; no fill confirmed yet."
     if not enabled:
         return f"[{ticker}] Research only — no strategy is enabled to trade this ticker."
-    reasons = list(dict.fromkeys(_REASONS[value] for key, value in statuses.items()
+    reasons = list(dict.fromkeys(f"{_LABELS.get(key, key)}: {_REASONS[value]}"
+                                for key, value in statuses.items()
                                 if key in enabled and value in _REASONS))
     detail = "; ".join(reasons)
     return f"[{ticker}] Checked {len(enabled)} enabled strategies — no entry setup." + (f" {detail}." if detail else "")
