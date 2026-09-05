@@ -39,7 +39,17 @@ class SpyFailedRangeRecoveryV2Tests(unittest.TestCase):
         self.assertIsNotNone(first)
         self.assertEqual("bearish", first.direction)
         self.assertEqual("completed_1m_failure_then_next_1m_entry", first.meta["entry_timing"])
+        self.assertIn("pa_body_to_range", first.meta)
+        self.assertIn("pa_close_to_vwap_atr", first.meta)
         self.assertIsNone(second)
+
+    def test_does_not_catch_up_an_expired_morning_signal(self) -> None:
+        opening = [(100.0, 101.0, 99.0, 100.0)] * 15
+        signal = [(101.0, 101.4, 100.9, 101.2), (101.3, 101.3, 100.8, 100.9)]
+        later = [(100.9, 101.0, 100.7, 100.8)] * 5
+        frame = _frame(opening + signal + later)
+        with patch.object(recovery.pd.Timestamp, "now", return_value=pd.Timestamp("2026-08-10 09:52")):
+            self.assertIsNone(recovery.evaluate(frame, "SPY", execution_scope="restarted-user"))
 
     def test_never_runs_on_unvalidated_ticker(self) -> None:
         self.assertIsNone(recovery.evaluate(_frame([(100, 101, 99, 100)] * 20), "TSLA"))

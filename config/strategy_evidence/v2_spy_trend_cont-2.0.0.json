@@ -10,7 +10,7 @@
   "runtime_policy_sources": [
     {
       "path": "trading/portfolio_policy.py",
-      "sha256": "c2cd4ce0bdec6586756a8ba88d064ed93d8355123a4c2acc61c674459b457d5a"
+      "sha256": "1c052740f79ade7a6063a66c082ffe06d1193fac486a8c6b2968b64f9dfe45f4"
     }
   ],
   "market_data": {

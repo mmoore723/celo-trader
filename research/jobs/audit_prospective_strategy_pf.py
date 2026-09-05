@@ -30,10 +30,33 @@ DEFAULT_FEE_PER_CONTRACT_PER_SIDE = .12
 DEFAULT_SLIPPAGE_PRICE_PER_SIDE = .01
 DEFAULT_MONTHLY_SUBSCRIPTION = 10.0
 DEFAULT_STARTING_CAPITAL = 5_000.0
+MAX_SIGNAL_DELAY_SECONDS_BY_STRATEGY = {
+    # Trigger bars store their opening timestamp. Five-minute rules become
+    # actionable immediately after that candle closes.
+    "V2_SPY_TREND_CONT": 390,
+    "V2_SPY_AFTERNOON_FVG": 390,
+    # One-minute rules become actionable immediately after that candle closes.
+    "V2_FAILED_OR_BREAK_VWAP_REVERSION": 150,
+    "V2_TSLA_TWO_LEG_TREND_PULLBACK": 150,
+}
+DEFAULT_MAX_SIGNAL_DELAY_SECONDS = 390
 
 
 def _moment(value: object) -> datetime:
     return datetime.fromisoformat(str(value))
+
+
+def _signal_is_timely(row: dict[str, Any]) -> bool:
+    """Reject restarted/replayed signals which were no longer actionable."""
+    if not row.get("trigger_bar"):
+        return False
+    observed = _moment(row["observed_at"]).replace(tzinfo=None)
+    trigger = _moment(row["trigger_bar"]).replace(tzinfo=None)
+    delay = (observed - trigger).total_seconds()
+    maximum = MAX_SIGNAL_DELAY_SECONDS_BY_STRATEGY.get(
+        str(row.get("strategy_id") or ""), DEFAULT_MAX_SIGNAL_DELAY_SECONDS,
+    )
+    return 0 <= delay <= maximum
 
 
 def _factor(values: Iterable[float]) -> float | str | None:
@@ -170,10 +193,9 @@ def _account_replay(
 
 def _setup_groups(candidates: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     """Collapse duplicate writes of the same completed trigger candle."""
-    by_identity: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    by_identity: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in candidates:
         identity = (
-            str(row["observed_at"])[:10],
             str(row["ticker"]),
             str(row["strategy_id"]),
             str(row["direction"]),
@@ -217,10 +239,12 @@ def analyze(
         rule = REVIEWED_STRATEGIES.get(str(row["strategy_id"]))
         if rule is None:
             exclusion_reasons["strategy_not_in_reviewed_catalog"] += 1
-        elif rule.observation_only or rule.exit_minutes is None:
+        elif rule.exit_minutes is None:
             exclusion_reasons["no_registered_executable_exit"] += 1
         elif str(row["ticker"]).upper() not in rule.tickers:
             exclusion_reasons["ticker_outside_reviewed_scope"] += 1
+        elif not _signal_is_timely(row):
+            exclusion_reasons["expired_or_replayed_signal"] += 1
         else:
             eligible_candidates.append(row)
 
@@ -301,7 +325,7 @@ def analyze(
     by_strategy: dict[str, Any] = {}
     auditable_strategy_ids = sorted(
         strategy_id for strategy_id, rule in REVIEWED_STRATEGIES.items()
-        if not rule.observation_only and rule.exit_minutes is not None
+        if rule.exit_minutes is not None
     )
     for strategy_id in auditable_strategy_ids:
         rows = [row for row in measured if row["strategy_id"] == strategy_id]
@@ -328,14 +352,17 @@ def analyze(
 
     all_strategy_rows_diagnostic = _summary(measured)
     account_level_replay = _account_replay(
-        measured,
+        [
+            row for row in measured
+            if not REVIEWED_STRATEGIES[str(row["strategy_id"])].observation_only
+        ],
         fee_per_contract_per_side=fee_per_contract_per_side,
         slippage_price_per_side=slippage_price_per_side,
     )
     return {
         "purpose": "Prospective, independent-episode strategy PF from real scanner option quotes; research only.",
         "database": str(db_path),
-        "measurement": "Reviewed ticker scope only; first priced candidate per stable trigger candle; then one non-overlapping one-contract position per ticker/strategy; PF uses net dollars from recorded ask to exact-contract registered-horizon bid.",
+        "measurement": "Reviewed ticker scope only; expired/replayed signals excluded; first priced candidate per stable trigger candle; then one non-overlapping one-contract position per ticker/strategy; PF uses net dollars from recorded ask to exact-contract registered-horizon bid.",
         "quote_sources": dict(Counter(str(row["source"]) for row in quote_rows)),
         "costs": {
             "fee_per_contract_per_side": fee_per_contract_per_side,

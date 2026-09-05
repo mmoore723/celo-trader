@@ -6,7 +6,7 @@
   "evidence_grade": "passed_declared_holdout",
   "ticker_scope": ["SPY"],
   "implementation": "strategies.spy_failed_range_recovery_v2.evaluate",
-  "implementation_sha256_at_review": "049ad0f02e9e1aaa58b2dc66f059fec9aa4010b5aac4fced46058aa133ecfb73",
+  "implementation_sha256_at_review": "6dbf550fd6c3f92ec33dde3de92780b6086631e48d2900e45f63337c2c45bb1f",
   "market_data": {
     "source": "paid Databento OPRA CBBO-1m archive",
     "bars_sha256": "a9cfcb0d273881b7831d67b9321653350571b16cce17aed1b83f37c66d748273",
@@ -27,7 +27,8 @@
   "validation": {"measured_signals": 7, "win_rate_pct": 57.14, "average_return_pct": 2.4255, "median_return_pct": 5.0325, "profit_factor": 1.4589},
   "holdout": {"measured_signals": 9, "win_rate_pct": 66.67, "average_return_pct": 12.1989, "median_return_pct": 15.9574, "profit_factor": 5.9671},
   "all": {"measured_signals": 21, "win_rate_pct": 61.9, "average_return_pct": 7.165, "median_return_pct": 7.9254, "profit_factor": 3.0364},
-  "display_metrics": {"profit_factor": 3.04, "trades": 21, "scope": "SPY · 30-minute hold · all paid quotes", "comparison": "Selection PF 2.60 · validation PF 1.46 · holdout PF 5.97", "target_profit_factor": 1.5, "meets_target": true, "note": "Passed the declared chronological gate; prospective account validation is still required."},
-  "decision": "The predeclared selection, June validation, and untouched July holdout gates passed; register as an opt-in paper candidate.",
+  "prospective_validation": {"as_of": "2026-09-04", "source": "saved Tradier exact-contract paper candidate quotes", "cost_model": "recorded ask to 30-minute bid plus $0.01 slippage and $0.12 fee per side", "independent_trades": 6, "trading_days": 6, "wins": 1, "net_pnl_one_contract": -302.44, "median_pnl_one_contract": -62.74, "profit_factor": 0.0671, "decision": "Current forward sample is below target; execution setting remains user-controlled."},
+  "display_metrics": {"profit_factor": 3.04, "trades": 21, "scope": "SPY · 30-minute hold · all paid quotes", "comparison": "Past test PF 3.04 · current paper quote PF 0.07 (6 trades)", "target_profit_factor": 1.5, "meets_target": true, "note": "The historical holdout passed, but the current paper quote sample is losing. Keep collecting and review before live use."},
+  "decision": "The historical chronological gates passed, but the current forward sample is below target. Preserve the user's paper setting and continue collecting.",
   "source_reports": ["research/reports/paid_spy_failed_range_recovery_v1.json"]
 }

@@ -6,7 +6,7 @@
   "evidence_grade": "promising_underpowered",
   "ticker_scope": ["SPY"],
   "implementation": "strategies.spy_afternoon_fvg_v2.evaluate",
-  "implementation_sha256_at_review": "39ecae191729e58adc28a7cf2bfe9f5b818db07c4eec544eb7d4954a241c9657",
+  "implementation_sha256_at_review": "f15da414f5d6a78e91908a5904a865ec0a669c2e4956e83de5eaeed49c83e3a2",
   "market_data": {
     "source": "paid Databento OPRA CBBO-1m archive",
     "bars_sha256": "a9cfcb0d273881b7831d67b9321653350571b16cce17aed1b83f37c66d748273",
@@ -17,7 +17,8 @@
   "training": {"measured_signals": 14, "average_return_pct": 4.6443, "median_return_pct": 4.6351, "win_rate_pct": 78.57, "profit_factor": 3.2072},
   "holdout": {"measured_signals": 9, "average_return_pct": 3.6124, "median_return_pct": 2.584, "win_rate_pct": 66.67, "profit_factor": 10.1865},
   "monthly_stability": {"decision": "stable_across_months", "months": ["2026-05", "2026-06", "2026-07"], "trades": 23, "average_return_pct": 4.2405, "median_return_pct": 3.5599, "profit_factor": 3.9558},
-  "display_metrics": {"profit_factor": 3.96, "trades": 23, "scope": "SPY · 30-minute hold · May-July", "comparison": "Train PF 3.21 (14 fills) · holdout PF 10.19 (9 fills)", "target_profit_factor": 1.5, "meets_target": true, "note": "PF passed, but the predeclared training sample missed its 15-fill minimum by one."},
-  "decision": "Promising monthly evidence, but the original predeclared split had 14 training signals versus a 15-signal minimum. Retain as paper candidate rather than call it fully passed.",
+  "prospective_validation": {"as_of": "2026-09-04", "source": "saved Tradier exact-contract paper candidate quotes", "cost_model": "recorded ask to 30-minute bid plus $0.01 slippage and $0.12 fee per side", "independent_trades": 10, "trading_days": 10, "wins": 4, "net_pnl_one_contract": -119.4, "median_pnl_one_contract": -11.24, "profit_factor": 0.416, "decision": "Current forward sample is below target; execution setting remains user-controlled."},
+  "display_metrics": {"profit_factor": 3.96, "trades": 23, "scope": "SPY · 30-minute hold · May-July", "comparison": "Past test PF 3.96 · current paper quote PF 0.42 (10 trades)", "target_profit_factor": 1.5, "meets_target": true, "note": "The older test was promising, but the current paper quote sample is losing. Keep collecting and review before live use."},
+  "decision": "Promising historical evidence, but the original split was underpowered and the current forward sample is below target. Preserve the user's paper setting and continue collecting.",
   "source_reports": ["research/reports/paid_spy_afternoon_fvg_v2_tune_fast.json", "research/reports/paid_spy_afternoon_fvg_v2_monthly.json"]
 }

@@ -329,6 +329,9 @@ def route_signals(
         except Exception as exc:
             logger.warning("Strategy %s raised: %s", strategy_id, exc, exc_info=True)
 
+    if not signals:
+        return []
+
     # A reviewed paid-data signal has its complete decision rule tested as one
     # unit. In either account mode, do not substitute this legacy router's
     # independent ADX/VWAP/grade/MTF/confidence/veto opinions for that rule.

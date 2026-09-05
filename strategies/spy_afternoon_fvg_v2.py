@@ -127,11 +127,12 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
 
 def evaluate(
     today: pd.DataFrame, ticker: str = "", execution_scope: str | None = None,
+    now: object | None = None,
 ) -> Signal | None:
     ticker = ticker.strip().upper()
     if ticker not in VALIDATED_TICKERS:
         return None
-    candidate = _signal_from_completed_bars(_complete_five_minute_bars(today))
+    candidate = _signal_from_completed_bars(_complete_five_minute_bars(today, now=now))
     if candidate is None:
         return None
     lower = float(candidate.meta["gap_lower"])

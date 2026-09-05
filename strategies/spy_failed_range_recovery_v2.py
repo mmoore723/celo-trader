@@ -13,7 +13,8 @@ from datetime import time
 import pandas as pd
 
 from strategies.base import Signal
-from strategies.market_structure import Bar, Side, _opening_range
+from strategies.market_structure import Bar, Side, _atr, _ema, _opening_range
+from strategies.price_action_context import describe_price_action
 from strategies.spy_trend_continuation_v2 import _execution_scope
 
 
@@ -98,20 +99,44 @@ def _candidate_from_completed_bars(bars: tuple[Bar, ...]) -> tuple[Side, Bar, fl
     return None
 
 
-def evaluate(today: pd.DataFrame, ticker: str = "", execution_scope: str | None = None) -> Signal | None:
+def evaluate(
+    today: pd.DataFrame,
+    ticker: str = "",
+    execution_scope: str | None = None,
+    now: object | None = None,
+) -> Signal | None:
     ticker = ticker.strip().upper()
     if ticker not in VALIDATED_TICKERS:
         return None
-    bars = _completed_one_minute_bars(today)
+    bars = _completed_one_minute_bars(today, now=now)
     candidate = _candidate_from_completed_bars(bars)
     if candidate is None:
         return None
     side, trigger, stop, target, range_high, range_low = candidate
-    session_key = (_execution_scope(execution_scope), ticker, trigger.timestamp.date().isoformat())
     trigger_time = pd.Timestamp(trigger.timestamp)
+    # This paid rule enters on the minute immediately after the completed
+    # failure candle.  Recomputing the first morning failure after a process
+    # restart must not turn that expired setup into an afternoon (or next-day)
+    # order.  Historical/research calls still work because they advance the
+    # input frame one completed bar at a time.
+    if trigger_time != pd.Timestamp(bars[-1].timestamp):
+        return None
+    session_key = (_execution_scope(execution_scope), ticker, trigger.timestamp.date().isoformat())
     if _emitted_trigger_by_session.get(session_key) == trigger_time:
         return None
     _emitted_trigger_by_session[session_key] = trigger_time
+    closes = [bar.close for bar in bars[-20:]]
+    atr = _atr(bars, 14)
+    price_action = (
+        describe_price_action(
+            bars,
+            atr=atr,
+            fast_ema=_ema(closes[-8:], 8),
+            slow_ema=_ema(closes, 20),
+            vwap=_session_vwap(bars),
+        ).features()
+        if atr > 0 else {}
+    )
     latest = today.sort_values("time").iloc[-1]
     return Signal(
         strategy_id=STRATEGY_ID,
@@ -120,6 +145,7 @@ def evaluate(today: pd.DataFrame, ticker: str = "", execution_scope: str | None 
         rvol=float(latest.get("rvol", 0.0) or 0.0),
         trigger_bar=trigger_time,
         meta={
+            **price_action,
             "trigger": "downward_opening_range_break_failed_back_inside"
             if side is Side.LONG else "upward_opening_range_break_failed_back_inside",
             "or_high": round(range_high, 6), "or_low": round(range_low, 6),
