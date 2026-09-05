@@ -531,3 +531,14 @@ Do not rerun a rejected idea unchanged. Reopen one only if at least one of these
 - **Result:** no subset passed the eligibility gate, so no subset was selected. The closest adequately sampled combination—SPY Afternoon FVG + SPY Failed-Range Recovery + TSLA Two-Leg Trend Pullback—had 121 eligibility trades, PF **1.4731**, and positive median +1.8309%; it then produced only PF **1.2589** across 23 June trades before improving to PF 3.6766 across 27 July trades.
 - **Decision:** **NO RUNTIME SUBSET CHANGE.** Disabling or combining current strategies does not create a chronologically repeatable PF 1.50 portfolio. The automated screen replaces repeated manual subset reruns; any future strategy addition can be evaluated by the same eligibility-only selection rule.
 - **Evidence:** `research/reports/paid_reviewed_launch_readiness_v5.json`.
+
+### SPY Trend three-bar repair — paper validation (2026-09-05)
+
+- **Parity reconstruction:** 156 paid option markouts reduced to 86 signals the production adapter could emit and 72 after the existing SPY afternoon-slot reservation.
+- **Invalid prior repair:** the deployed 0.50-ATR room gate retained 51 trades but produced -$614.24 and PF **0.5274** after modeled one-contract costs. It lost in May and June and is superseded.
+- **Repair:** require higher lows across the last three completed bars for calls or lower highs for puts. The causal definition came from the existing finite price-action family and does not read future bars.
+- **Historical consistency:** 46 trades produced +$431.96 and PF **1.7473** after costs. May was PF 2.3831 across 9 trades, June PF 1.5935 across 18, and July PF 1.7042 across 19.
+- **Independent evidence:** 21 saved real-time Tradier quote episodes across 12 days produced PF **18.7593** after modeled costs. Only four linked Alpaca fills contained the required metadata; their PF was 2.1111, too small for promotion.
+- **Execution repair:** reviewed paper entries are capped at the exact Tradier ask used for analysis instead of chasing to the separate five-percent risk-sizing ceiling.
+- **Decision:** **KEEP ENABLED IN PAPER; DO NOT PROMOTE LIVE.** The exact variant was selected after all historical periods were visible, so the strategy remains promising/underpowered until a larger same-broker fill cohort confirms it.
+- **Evidence:** `docs/audits/2026-09-05-spy-trend-three-bar-repair.md`.

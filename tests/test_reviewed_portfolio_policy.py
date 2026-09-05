@@ -4,7 +4,6 @@ from datetime import datetime
 import unittest
 
 from trading.portfolio_policy import (
-    SPY_TREND_MIN_ROOM_ATR,
     reviewed_portfolio_entry_policy,
     reviewed_strategy_entry_policy,
 )
@@ -41,45 +40,55 @@ class ReviewedPortfolioPolicyTests(unittest.TestCase):
     def test_rule_is_inactive_when_afternoon_fvg_is_disabled(self):
         self.assertTrue(_decision(14, 0, fvg_enabled=False).allowed)
 
-    def test_spy_trend_needs_room_before_resistance_for_calls(self):
+    def test_spy_trend_requires_higher_lows_for_calls(self):
         decision = reviewed_strategy_entry_policy(
             ticker="SPY",
             strategy_id="V2_SPY_TREND_CONT",
             direction="bullish",
-            signal_meta={"pa_resistance_distance_atr": SPY_TREND_MIN_ROOM_ATR - 0.01},
+            signal_meta={"pa_consecutive_higher_lows": False},
         )
         self.assertFalse(decision.allowed)
-        self.assertEqual("spy_trend_level_too_close", decision.reason_code)
-        self.assertIn("resistance", decision.reason_detail)
+        self.assertEqual("spy_trend_three_bar_structure_missing", decision.reason_code)
+        self.assertIn("higher lows", decision.reason_detail)
 
-    def test_spy_trend_needs_room_before_support_for_puts(self):
+    def test_spy_trend_requires_lower_highs_for_puts(self):
         decision = reviewed_strategy_entry_policy(
             ticker="SPY",
             strategy_id="V2_SPY_TREND_CONT",
             direction="bearish",
-            signal_meta={"pa_support_distance_atr": 0.49},
+            signal_meta={"pa_consecutive_lower_highs": False},
         )
         self.assertFalse(decision.allowed)
-        self.assertIn("support", decision.reason_detail)
+        self.assertIn("lower highs", decision.reason_detail)
 
-    def test_spy_trend_allows_exact_threshold_or_no_detected_wall(self):
-        at_threshold = reviewed_strategy_entry_policy(
+    def test_spy_trend_allows_matching_three_bar_structure(self):
+        bullish = reviewed_strategy_entry_policy(
             ticker="SPY",
             strategy_id="V2_SPY_TREND_CONT",
             direction="bullish",
-            signal_meta={"pa_resistance_distance_atr": 0.50},
+            signal_meta={"pa_consecutive_higher_lows": True},
         )
-        no_wall = reviewed_strategy_entry_policy(
+        bearish = reviewed_strategy_entry_policy(
             ticker="SPY",
             strategy_id="V2_SPY_TREND_CONT",
             direction="bearish",
-            signal_meta={"pa_support_distance_atr": None},
+            signal_meta={"pa_consecutive_lower_highs": True},
         )
-        self.assertTrue(at_threshold.allowed)
-        self.assertTrue(no_wall.allowed)
+        self.assertTrue(bullish.allowed)
+        self.assertTrue(bearish.allowed)
+
+    def test_spy_trend_fails_closed_when_structure_metadata_is_missing(self):
+        decision = reviewed_strategy_entry_policy(
+            ticker="SPY",
+            strategy_id="V2_SPY_TREND_CONT",
+            direction="bullish",
+            signal_meta={},
+        )
+        self.assertFalse(decision.allowed)
+        self.assertEqual("spy_trend_three_bar_structure_missing", decision.reason_code)
 
     def test_entry_context_rule_does_not_block_research_tickers_or_other_strategies(self):
-        metadata = {"pa_resistance_distance_atr": 0.01}
+        metadata = {"pa_consecutive_higher_lows": False}
         self.assertTrue(reviewed_strategy_entry_policy(
             ticker="TSLA", strategy_id="V2_SPY_TREND_CONT",
             direction="bullish", signal_meta=metadata,

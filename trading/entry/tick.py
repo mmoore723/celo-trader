@@ -121,7 +121,11 @@ from trading.position_manager import _manage_open_position, _close_position
 
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
 from trading.entry.contract import select_contract, select_reviewed_v2_contract
-from trading.v2_orb_paper_execution import entry_limit_prices, include_reviewed_tickers_when_v2_pilots_enabled
+from trading.v2_orb_paper_execution import (
+    entry_limit_prices,
+    entry_price_ceiling,
+    include_reviewed_tickers_when_v2_pilots_enabled,
+)
 from trading.v2_orb_execution_profile import (
     uses_reviewed_paid_execution_profile,
     uses_v2_orb_execution_profile,
@@ -947,9 +951,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         },
     }
 
-    # The SPY Trend candidate was already recorded above.  Keep collecting it
-    # for research, but only authorize an order when the chronological
-    # after-cost study found enough room before the next opposing price level.
+    # The SPY Trend candidate was already recorded above. Keep collecting it
+    # for research, but authorize an order only when the last three completed
+    # bars confirm structure in the trade direction.
     from trading.portfolio_policy import reviewed_strategy_entry_policy
     _strategy_decision = reviewed_strategy_entry_policy(
         ticker=ticker,
@@ -2027,7 +2031,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         order_type      = "limit",
         limit_price     = _order_mid,
         step_to_price   = _order_ask,
-        max_acceptable_price = eff_entry,
+        max_acceptable_price = entry_price_ceiling(
+            ask=ask_price,
+            risk_ceiling=eff_entry,
+            v2_paper_pilot=_v2_paid_parity,
+        ),
         allow_market_fallback = False,
         position_intent = "buy_to_open",
         # Rest the exact analyzed contract through most of the next one-minute

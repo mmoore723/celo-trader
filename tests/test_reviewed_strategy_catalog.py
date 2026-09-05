@@ -90,10 +90,11 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         self.assertFalse(replay["all_reported_markouts_reachable_by_production"])
         self.assertEqual(70, replay["reported_markouts_not_emittable_by_production"])
         self.assertEqual(72, replay["exact_deployed_policy_markouts"])
-        self.assertEqual(72, evidence["display_metrics"]["trades"])
-        self.assertAlmostEqual(0.98, evidence["display_metrics"]["profit_factor"])
-        self.assertFalse(evidence["display_metrics"]["meets_target"])
-        self.assertEqual("failed_profit_factor", rule.evidence_grade)
+        self.assertEqual(46, replay["repaired_three_bar_policy_markouts"])
+        self.assertEqual(46, evidence["display_metrics"]["trades"])
+        self.assertAlmostEqual(1.75, evidence["display_metrics"]["profit_factor"])
+        self.assertTrue(evidence["display_metrics"]["meets_target"])
+        self.assertEqual("promising_underpowered", rule.evidence_grade)
         self.assertTrue(rule.paper_only)
 
     def test_spy_afternoon_fvg_uses_reviewed_30_minute_exit(self) -> None:

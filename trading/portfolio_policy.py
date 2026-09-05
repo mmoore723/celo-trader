@@ -16,7 +16,6 @@ class PortfolioPolicyDecision:
 
 SPY_AFTERNOON_RESERVATION_START = time(13, 45)
 SPY_AFTERNOON_RESERVATION_END = time(15, 0)
-SPY_TREND_MIN_ROOM_ATR = 0.50
 
 
 def reviewed_strategy_entry_policy(
@@ -40,32 +39,23 @@ def reviewed_strategy_entry_policy(
 
     normalized_direction = str(direction or "").strip().lower()
     if normalized_direction in {"bullish", "long"}:
-        level_name = "resistance"
-        raw_distance = signal_meta.get("pa_resistance_distance_atr")
+        structure_present = signal_meta.get("pa_consecutive_higher_lows") is True
+        structure_name = "higher lows"
     elif normalized_direction in {"bearish", "short"}:
-        level_name = "support"
-        raw_distance = signal_meta.get("pa_support_distance_atr")
+        structure_present = signal_meta.get("pa_consecutive_lower_highs") is True
+        structure_name = "lower highs"
     else:
         return PortfolioPolicyDecision(allowed=True)
 
-    # The predeclared research rule treats no detected opposing pivot as open
-    # space. Preserve that exact behavior rather than inventing a substitute.
-    if raw_distance is None:
-        return PortfolioPolicyDecision(allowed=True)
-    try:
-        distance = float(raw_distance)
-    except (TypeError, ValueError):
-        return PortfolioPolicyDecision(allowed=True)
-    if distance >= SPY_TREND_MIN_ROOM_ATR:
+    if structure_present:
         return PortfolioPolicyDecision(allowed=True)
 
     return PortfolioPolicyDecision(
         allowed=False,
-        reason_code="spy_trend_level_too_close",
+        reason_code="spy_trend_three_bar_structure_missing",
         reason_detail=(
-            f"The next {level_name} level was only {distance:.2f} ATR away. "
-            f"SPY Trend requires at least {SPY_TREND_MIN_ROOM_ATR:.2f} ATR "
-            "of open space before it can place an order."
+            f"The last three completed candles did not form {structure_name} "
+            "in the trade direction."
         ),
     )
 

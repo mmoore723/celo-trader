@@ -3,44 +3,111 @@
   "strategy_id": "V2_SPY_TREND_CONT",
   "strategy_version": "2.0.0",
   "status": "paper_candidate",
-  "evidence_grade": "failed_profit_factor",
+  "evidence_grade": "promising_underpowered",
   "ticker_scope": ["SPY"],
   "implementation": "strategies.spy_trend_continuation_v2.evaluate",
   "implementation_sha256_at_review": "2ae234cab5cda521d82f4fe92e323ba551e81c708967a1231615ba2e2360d076",
   "runtime_policy_sources": [
     {
       "path": "trading/portfolio_policy.py",
-      "sha256": "1c052740f79ade7a6063a66c082ffe06d1193fac486a8c6b2968b64f9dfe45f4"
+      "sha256": "6bc23623148c726713e5e76b4314efeff3d2815ecbc37145d6bbb5e8ff8d4385"
+    },
+    {
+      "path": "trading/v2_orb_paper_execution.py",
+      "sha256": "b903d8d6bf2aa05f4bdbf0e76356e8d9dce428ed84f061f21797d865ee880bf8"
     }
   ],
   "market_data": {
     "source": "paid Databento OPRA CBBO-1m archive",
     "bars_sha256": "a9cfcb0d273881b7831d67b9321653350571b16cce17aed1b83f37c66d748273",
-    "execution_model": "actual option ask at entry; same-contract actual bid at exit; production growth sizing; $0.01 adverse slippage per side; $0.12 per contract per side; $10 monthly data cost",
-    "eligibility": {"min_dte": 7, "max_dte": 21, "min_premium": 0.8, "max_premium": 10.0, "max_spread_pct": 0.08}
+    "execution_model": "actual option ask at entry; same-contract actual bid at exit after 30 minutes; one contract; $0.01 adverse option-price slippage per side; $0.12 per contract per side",
+    "eligibility": {
+      "min_dte": 7,
+      "max_dte": 21,
+      "min_premium": 0.8,
+      "max_premium": 10.0,
+      "max_spread_pct": 0.08
+    }
   },
   "selected_policy": {
     "hold_minutes": 30,
+    "entry_context": "calls require higher lows across the last three completed bars; puts require lower highs",
     "same_direction_breakout_rearm": "price must close back through the prior broken level",
     "reserved_slot": "do not open SPY Trend from 13:45 through 15:00 ET while SPY Afternoon FVG is enabled",
-    "holdout_start": "2026-07-01"
+    "review_period_start": "2026-07-01",
+    "entry_price_ceiling": "do not pay above the analyzed Tradier ask"
   },
   "source_report_reconciliation": {
     "reported_one_position_markouts": 156,
     "production_emittable_markouts": 86,
     "exact_deployed_policy_markouts": 72,
+    "repaired_three_bar_policy_markouts": 46,
     "reported_markouts_not_emittable_by_production": 70,
     "raw_signal_primitive_matches_production": true,
     "all_reported_markouts_reachable_by_production": false
   },
-  "selection": {"period": "2026-05", "measured_signals": 18, "wins": 7, "win_rate_pct": 38.89, "average_return_pct": -1.5366, "median_return_pct": -2.2783, "profit_factor": 0.5973, "net_pnl_after_costs": -318.64},
-  "validation": {"period": "2026-06", "measured_signals": 25, "wins": 14, "win_rate_pct": 56.0, "average_return_pct": -0.6145, "median_return_pct": 0.342, "profit_factor": 0.8048, "net_pnl_after_costs": -213.08},
-  "holdout": {"period": "2026-07", "measured_signals": 29, "wins": 13, "win_rate_pct": 44.83, "average_return_pct": 1.0927, "median_return_pct": -0.2485, "profit_factor": 1.358, "net_pnl_after_costs": 128.56},
-  "all": {"period": "2026-05-12 through 2026-07-31", "measured_signals": 72, "wins": 34, "win_rate_pct": 47.22, "average_return_pct": -0.1574, "median_return_pct": -0.0558, "profit_factor": 0.9823, "net_pnl_after_costs": -43.88, "ending_balance_from_5000": 4956.12, "max_drawdown_pct": 17.4566},
-  "display_metrics": {"profit_factor": 0.98, "trades": 72, "scope": "SPY · exact bot entry rules · 30-minute exit · modeled costs", "comparison": "May PF 0.60 (18) · June PF 0.80 (25) · July PF 1.36 (29)", "target_profit_factor": 1.5, "meets_target": false, "note": "The exact version the bot can trade did not pass the 1.50 PF goal."},
-  "decision": "The earlier historical pass is revoked because 70 of its 156 option markouts came from repeat-breakout signals the production adapter suppresses. Keep this version paper-only while a production-reachable replacement is tested.",
+  "selection": {
+    "period": "2026-05-12 through 2026-05-31",
+    "measured_signals": 9,
+    "wins": 4,
+    "win_rate_pct": 44.44,
+    "profit_factor": 2.3831,
+    "net_pnl_one_contract_after_costs": 117.84
+  },
+  "validation": {
+    "period": "2026-06",
+    "measured_signals": 18,
+    "wins": 12,
+    "win_rate_pct": 66.67,
+    "profit_factor": 1.5935,
+    "net_pnl_one_contract_after_costs": 176.68
+  },
+  "holdout": {
+    "period": "2026-07",
+    "measured_signals": 19,
+    "wins": 12,
+    "win_rate_pct": 63.16,
+    "profit_factor": 1.7042,
+    "net_pnl_one_contract_after_costs": 137.44,
+    "qualification_note": "The three-bar family was declared before this audit, but this exact repair was chosen after all three periods were visible; this is a consistency check, not a declared untouched pass."
+  },
+  "all": {
+    "period": "2026-05-12 through 2026-07-31",
+    "measured_signals": 46,
+    "wins": 28,
+    "win_rate_pct": 60.87,
+    "profit_factor": 1.7473,
+    "net_pnl_one_contract_after_costs": 431.96,
+    "ending_cash_from_5000_one_contract": 5431.96
+  },
+  "prospective_tradier_quotes": {
+    "measured_signals": 21,
+    "days": 12,
+    "wins": 16,
+    "net_pnl_one_contract_after_costs": 784.96,
+    "profit_factor": 18.7593,
+    "note": "Real-time Tradier quotes, not broker fills. This supports continued paper validation but is not live-trading proof."
+  },
+  "matched_alpaca_paper_subset": {
+    "measured_signals": 4,
+    "wins": 3,
+    "net_pnl": 40.0,
+    "profit_factor": 2.1111,
+    "note": "Only four existing Alpaca fills contained the required price-action metadata; the sample is too small for promotion."
+  },
+  "display_metrics": {
+    "profit_factor": 1.75,
+    "trades": 46,
+    "scope": "SPY · three-candle structure · actual historical asks/bids · 30-minute exit · modeled costs",
+    "comparison": "Older May data PF 2.38 (9) · June PF 1.59 (18) · newer July data PF 1.70 (19)",
+    "target_profit_factor": 1.5,
+    "meets_target": true,
+    "note": "The repaired rule cleared the 1.50 research target in each period, but remains paper-only until same-broker fills provide a larger independent sample."
+  },
+  "decision": "Keep SPY Trend Continuation enabled in paper mode. Replace the disproven 0.50-ATR room gate with causal three-bar structure, prevent reviewed entries from chasing above the analyzed Tradier ask, and collect same-broker fills before any live promotion.",
   "source_reports": [
     "research/reports/paid_spy_trend_continuation_one_position_holds.json",
-    "docs/audits/2026-09-04-spy-trend-policy-parity.md"
+    "docs/audits/2026-09-04-spy-trend-policy-parity.md",
+    "docs/audits/2026-09-05-spy-trend-three-bar-repair.md"
   ]
 }

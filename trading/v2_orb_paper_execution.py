@@ -20,6 +20,18 @@ def entry_limit_prices(*, ask: float, midpoint: float, v2_paper_pilot: bool) -> 
     return round(midpoint, 2), round(ask, 2)
 
 
+def entry_price_ceiling(*, ask: float, risk_ceiling: float, v2_paper_pilot: bool) -> float:
+    """Return the highest permitted fill price for an option buy.
+
+    Reviewed paid-quote studies measure a buy at the observed Tradier ask.
+    Their paper orders must not chase above that ask, even when the separate
+    risk-sizing allowance could afford a more expensive fill.
+    """
+    if ask <= 0 or risk_ceiling <= 0:
+        raise ValueError("entry prices must be positive")
+    return round(ask if v2_paper_pilot else risk_ceiling, 2)
+
+
 def exit_limit_prices(*, bid: float, midpoint: float, v2_paper_pilot: bool) -> tuple[float, Optional[float]]:
     """Return (initial_limit, step_to_price) for an option sell."""
     if bid <= 0 or midpoint <= 0:

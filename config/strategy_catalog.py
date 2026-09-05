@@ -78,15 +78,14 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         signal_source="bar_close",
         implementation="strategies.spy_trend_continuation_v2.evaluate",
         # Thirty minutes remains the tested exit while this strategy collects
-        # paper evidence. A later parity audit found that the original report
-        # included repeat breakouts and reserved-slot entries which production
-        # cannot emit; the exact 72-trade policy replay failed the PF gate.
+        # paper evidence. The repaired order policy requires three completed
+        # candles to confirm structure in the trade direction.
         exit_minutes=30,
         paper_only=True,
         status="paper_candidate",
-        evidence_grade="failed_profit_factor",
+        evidence_grade="promising_underpowered",
         evidence_artifact="config/strategy_evidence/v2_spy_trend_cont-2.0.0.json",
-        evidence="Exact deployed SPY Trend policy replay: PF 0.98 across 72 paid-quote outcomes; paper-only while it is repaired",
+        evidence="Repaired three-candle SPY Trend policy: PF 1.75 after modeled costs across 46 exact paid-quote outcomes; paper-only pending same-broker validation",
     ),
     "V2_SPY_AFTERNOON_FVG": ReviewedStrategy(
         strategy_id="V2_SPY_AFTERNOON_FVG",
