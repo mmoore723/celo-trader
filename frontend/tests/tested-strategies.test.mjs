@@ -43,6 +43,8 @@ function render(data, currentIds = [], researchIds = []) {
 
 test("historical and ID-less tests remain visible without order switches", () => {
   const html = render(fixture);
+  assert.match(html, /Saved research archive/);
+  assert.match(html, /1 strategies not rebuilt · 1 other studies · 2 saved reports/);
   assert.match(html, /VWAP pullback/);
   assert.match(html, /Legacy test/);
   assert.match(html, /Result: reject/);

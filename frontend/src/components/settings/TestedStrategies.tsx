@@ -63,9 +63,9 @@ export function TestedStrategies({
       })}
 
     <details className="mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-      <summary className="cursor-pointer text-sm font-medium">Saved tests not yet rebuilt ({savedOnly.length + data.other_studies.length})</summary>
+      <summary className="cursor-pointer text-sm font-medium">Saved research archive</summary>
       <p className="text-xs my-2" style={{ color: "var(--ink-muted)" }}>
-        These are saved reports, not working strategy code. They stay here so no research is lost.
+        {savedOnly.length} strategies not rebuilt · {data.other_studies.length} other studies · {data.reports_scanned} saved reports
       </p>
       <label className="text-xs font-medium" htmlFor="strategy-library-search">Find a strategy</label>
       <input id="strategy-library-search" className="input w-full mt-1 mb-3" placeholder="Strategy name or ticker…" value={search} onChange={event => setSearch(event.target.value)} />
