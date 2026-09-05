@@ -3,7 +3,7 @@
   "strategy_id": "V2_FAILED_OR_BREAK_VWAP_REVERSION",
   "strategy_version": "2.0.0",
   "status": "paper_candidate",
-  "evidence_grade": "passed_declared_holdout",
+  "evidence_grade": "promising_inconsistent",
   "ticker_scope": ["SPY"],
   "implementation": "strategies.spy_failed_range_recovery_v2.evaluate",
   "implementation_sha256_at_review": "117e271a480b55e33fd4f6941cff6344f76ab15c3d05bfdfbe43ece2d57f958c",
@@ -27,8 +27,26 @@
   "validation": {"measured_signals": 7, "win_rate_pct": 57.14, "average_return_pct": 2.4255, "median_return_pct": 5.0325, "profit_factor": 1.4589},
   "holdout": {"measured_signals": 9, "win_rate_pct": 66.67, "average_return_pct": 12.1989, "median_return_pct": 15.9574, "profit_factor": 5.9671},
   "all": {"measured_signals": 21, "win_rate_pct": 61.9, "average_return_pct": 7.165, "median_return_pct": 7.9254, "profit_factor": 3.0364},
-  "prospective_validation": {"as_of": "2026-09-04", "source": "saved Tradier exact-contract paper candidate quotes", "cost_model": "recorded ask to 30-minute bid plus $0.01 slippage and $0.12 fee per side", "independent_trades": 6, "trading_days": 6, "wins": 1, "net_pnl_one_contract": -302.44, "median_pnl_one_contract": -62.74, "profit_factor": 0.0671, "decision": "Current forward sample is below target; execution setting remains user-controlled."},
-  "display_metrics": {"profit_factor": 3.04, "trades": 21, "scope": "SPY · 30-minute hold · all paid quotes", "comparison": "Past test PF 3.04 · current paper quote PF 0.07 (6 trades)", "target_profit_factor": 1.5, "meets_target": true, "note": "The historical holdout passed, but the current paper quote sample is losing. Keep collecting and review before live use."},
-  "decision": "The historical chronological gates passed, but the current forward sample is below target. Preserve the user's paper setting and continue collecting.",
-  "source_reports": ["research/reports/paid_spy_failed_range_recovery_v1.json"]
+  "long_history_generalization": {
+    "source": "Alpaca SPY regular-session one-minute bars",
+    "source_sha256": "07c7ef29ef6a776964ee7fc841487d71971a1316b2744d767eb8e3a8919a7f40",
+    "execution_model": "next one-minute open to the completed close 30 full minutes later, less 0.02% round-trip underlying allowance",
+    "independent_episodes": 383,
+    "by_period": {
+      "2024": {"trades": 139, "wins": 78, "net_return_pct": 1.6553, "median_return_pct": 0.0148, "profit_factor": 1.1825},
+      "2025": {"trades": 160, "wins": 71, "net_return_pct": -1.8297, "median_return_pct": -0.017, "profit_factor": 0.8848},
+      "2026_through_july": {"trades": 84, "wins": 42, "net_return_pct": 0.7006, "median_return_pct": -0.0049, "profit_factor": 1.082}
+    },
+    "confirmation_variants_tested": 9,
+    "fixed_holds_tested_minutes": [5, 10, 15, 20, 30, 45, 60, 90],
+    "passing_repairs": 0,
+    "decision": "The underlying signal family does not maintain PF 1.5 across calendar periods; option leverage cannot repair a missing directional edge."
+  },
+  "prospective_validation": {"as_of": "2026-09-04", "source": "timely saved Tradier exact-contract paper candidate quotes", "cost_model": "recorded ask to same-contract 30-minute bid plus $0.01 slippage and $0.65 fee per side", "independent_trades": 4, "trading_days": 4, "wins": 0, "net_pnl_one_contract": -286.20, "median_net_return_pct": -15.8596, "profit_factor": 0.0, "decision": "Every timely current paper outcome lost; execution setting remains user-controlled."},
+  "display_metrics": {"profit_factor": 3.04, "trades": 21, "scope": "SPY · original paid-option slice", "comparison": "Past 21-trade option PF 3.04 · broader history inconsistent · current paper PF 0.00 (4 timely results)", "target_profit_factor": 1.5, "meets_target": true, "note": "The original small paid-option test passed, but larger history and current paper evidence did not confirm it."},
+  "decision": "Classify the unchanged rule as promising but inconsistent. Preserve the user's switch, continue collection, and require a distinct entry family to pass chronological evidence before replacement.",
+  "source_reports": [
+    "research/reports/paid_spy_failed_range_recovery_v1.json",
+    "docs/audits/2026-09-05-failed-range-profitability-audit.md"
+  ]
 }

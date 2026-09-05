@@ -119,6 +119,10 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
     def test_spy_failed_range_recovery_uses_reviewed_30_minute_exit(self) -> None:
         self.assertEqual(30, REVIEWED_STRATEGIES["V2_FAILED_OR_BREAK_VWAP_REVERSION"].exit_minutes)
 
+    def test_spy_failed_range_evidence_is_not_presented_as_a_pass(self) -> None:
+        rule = REVIEWED_STRATEGIES["V2_FAILED_OR_BREAK_VWAP_REVERSION"]
+        self.assertEqual("promising_inconsistent", rule.evidence_grade)
+
     def test_displacement_is_paper_tradable_only_on_its_reviewed_tickers(self) -> None:
         strategy_id = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
         rule = REVIEWED_STRATEGIES[strategy_id]

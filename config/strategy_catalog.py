@@ -113,9 +113,9 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         exit_minutes=30,
         paper_only=False,
         status="paper_candidate",
-        evidence_grade="passed_declared_holdout",
+        evidence_grade="promising_inconsistent",
         evidence_artifact="config/strategy_evidence/v2_spy_failed_range_recovery-2.0.0.json",
-        evidence="SPY paid-quote failed opening-range recovery study: positive selection, validation, and untouched holdout",
+        evidence="The original 21-trade paid-option slice passed, but 383 long-history SPY episodes and four timely paper outcomes did not confirm the edge.",
     ),
     "V2_TSLA_TWO_LEG_TREND_PULLBACK": ReviewedStrategy(
         strategy_id="V2_TSLA_TWO_LEG_TREND_PULLBACK",
