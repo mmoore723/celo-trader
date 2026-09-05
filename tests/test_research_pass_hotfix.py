@@ -64,6 +64,36 @@ class ResearchPassTests(unittest.TestCase):
         self.assertIn("V2_SPY_TREND_CONT", args["observation_only_strategies"])
         self.assertTrue(args["observation_scope"].startswith("research_worker:"))
 
+    def test_tested_library_signal_on_non_native_ticker_reaches_option_observer(self):
+        market = Mock()
+        market.get_session_bars.return_value = ([{
+            "t": "2026-09-04T14:24:00Z", "o": 100, "h": 101,
+            "l": 99, "c": 100.5, "v": 1000,
+        }], False, True)
+        market.get_bars.return_value = ([], False)
+        signal = Signal(
+            strategy_id="V2_TREND_CONT", direction="bullish", confidence=0.7,
+            rvol=0.0, trigger_bar=pd.Timestamp("2026-09-04T10:25:00"),
+            meta={"observation_only": True},
+        )
+        research_settings = {
+            **settings(), "shadow_ledger_enabled": True,
+            "research_strategy_ids": ["V2_TREND_CONT"],
+        }
+        with ExitStack() as stack:
+            for name in ("record_scanner_candles", "capture_due_candidate_option_quotes"):
+                stack.enter_context(patch(f"trading.loop.research_pass.{name}"))
+            stack.enter_context(patch("trading.loop.research_pass.evaluate_injected_setups", return_value=([], {}, None)))
+            stack.enter_context(patch("trading.loop.research_pass.route_signals", return_value=[]))
+            stack.enter_context(patch("trading.loop.research_pass.evaluate_tested_research", return_value=[signal]))
+            observe = stack.enter_context(patch("trading.loop.research_pass.observe_candidate_contract"))
+            marked = stack.enter_context(patch("trading.loop.research_pass.mark_candidate_observed_only"))
+            observe_ticker(market, Mock(), "AAPL", research_settings, {}, Mock(), 4000, lambda: False)
+        observe.assert_called_once()
+        self.assertEqual("AAPL", observe.call_args.kwargs["ticker"])
+        self.assertIs(signal, observe.call_args.kwargs["signal"])
+        marked.assert_called_once_with(signal)
+
     def test_authorized_ticker_research_uses_separate_dedupe_scope(self):
         from importlib import import_module
         route = import_module("strategy_router.route")

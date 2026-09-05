@@ -74,13 +74,23 @@ def build_research_matrix(days: int = 90) -> dict:
         ).fetchall()
         candle_params: tuple[object, ...] = (cutoff[:10], account_id) if account_id else (cutoff[:10],)
         exposure = conn.execute(
-            "SELECT ticker,COUNT(DISTINCT substr(bar_time,1,10)) AS sessions "
+            "SELECT ticker,substr(bar_time,1,10) AS evidence_day "
             "FROM scanner_candle_observations WHERE bar_time >= ? AND "
-            + candle_account + " GROUP BY ticker",
+            + candle_account + " GROUP BY ticker,evidence_day",
             candle_params,
         ).fetchall()
 
-    sessions = {str(row["ticker"]).upper(): int(row["sessions"] or 0) for row in exposure}
+    # Candle archiving was introduced after candidate recording.  A ticker can
+    # therefore have genuine older candidate evidence while having no matching
+    # scanner-candle row.  Counting only the newer table made the UI claim
+    # "0 days watched" beside a real saved result.  The union is the honest
+    # lower bound: every candle day and every candidate day is a day with data.
+    evidence_days: dict[str, set[str]] = defaultdict(set)
+    for row in exposure:
+        evidence_days[str(row["ticker"]).upper()].add(str(row["evidence_day"])[:10])
+    for row in rows:
+        evidence_days[str(row["ticker"]).upper()].add(str(row["observed_at"])[:10])
+    sessions = {ticker: len(dates) for ticker, dates in evidence_days.items()}
     tickers = set(sessions) | {str(value).upper() for value in settings.get("watchlist", [])}
     tickers |= {str(row["ticker"]).upper() for row in rows}
     catalog_ids = {

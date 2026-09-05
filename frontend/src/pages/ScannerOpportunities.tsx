@@ -50,7 +50,7 @@ function ResearchRow({ pair }: { pair: StrategyTickerResearchPair }) {
     <div className="grid grid-cols-3 gap-2 mt-3 text-center">
       <div><strong className="block">{pf}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>Profit factor</span></div>
       <div><strong className="block">{pair.option_results}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>Option results</span></div>
-      <div><strong className="block">{pair.market_days}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>Days watched</span></div>
+      <div><strong className="block">{pair.market_days}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>Days with data</span></div>
     </div>
   </article>;
 }
