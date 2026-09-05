@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "strategy_id": "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
+  "strategy_version": "0.2.0",
+  "status": "paper_candidate",
+  "evidence_grade": "promising_underpowered",
+  "ticker_scope": ["AMZN", "TSLA"],
+  "implementation": "strategies.context_strategy_observers",
+  "implementation_sha256_at_review": "9b4c36afa8f65ea5841f520fd9a18238802b77681f80ccc583ed5439f98327ff",
+  "runtime_policy_sources": [
+    {
+      "path": "trading/entry/contract.py",
+      "sha256": "689776426ebdfebd2dad44f365dec87df6d37100f92eda39ff3796543ff28a17"
+    },
+    {
+      "path": "trading/vwap_displacement_exit.py",
+      "sha256": "fd9b33bfc98fff46ecd96e5d951d213a41ea3766563ee20223ace05eb6eaa21c"
+    },
+    {
+      "path": "trading/v2_orb_paper_exit.py",
+      "sha256": "2abfe6b3139760f8b42a3480631e4ccad90f1af794209ea8a652fce02ae449a4"
+    }
+  ],
+  "market_data": {
+    "source": "paid Databento OPRA CBBO-1m archives",
+    "execution_model": "actual option ask plus $0.01 entry slippage; same-contract actual bid minus $0.01 exit slippage; $0.65 fee per contract per side",
+    "contract_policy": "0-7 DTE OTM call with $1.50-$2.50 ask, selected closest to $2.00; maximum bid/ask spread 8%",
+    "bars_sha256": {
+      "TSLA": "eeae427d707adc321538eb6f102cf513644723936e9d1f88d5549eca10e604ac",
+      "AMZN": "e7577823ceeacc73d0b8a1e59d36edf84f26c10dc6fbf195f6ec1f17550ee31f"
+    }
+  },
+  "selected_policy": {
+    "entry": "completed five-minute VWAP touch/reclaim after at least 1% displacement by 10:30 ET",
+    "target": "first completed one-minute bar whose high reaches the prior intraday high frozen at signal time",
+    "stop": "first completed five-minute close below contemporaneous session VWAP",
+    "session_cap": "15:55 ET",
+    "missing_structure_safety_minutes": 90
+  },
+  "production_signal_replay": {
+    "TSLA": {"saved_signals": 5, "exact_matches": 5, "mismatches": 0},
+    "AMZN": {"saved_signals": 1, "exact_matches": 1, "mismatches": 0}
+  },
+  "fixed_90m_comparison": {
+    "trades": 5,
+    "wins": 3,
+    "net_pnl_one_contract": 33.5,
+    "profit_factor": 1.2825,
+    "warning": "The previously deployed fixed exit is below the 1.50 goal and was not the strategy's tested structural exit."
+  },
+  "historical_structural_exit_diagnostic": {
+    "all": {"trades": 6, "wins": 4, "net_pnl_one_contract": 227.2, "profit_factor": 7.2077},
+    "selection": {"trades": 4, "wins": 3, "net_pnl_one_contract": 183.8, "profit_factor": 9.2422},
+    "validation": {"trades": 1, "wins": 1, "net_pnl_one_contract": 57.7, "profit_factor": "no_losses"},
+    "later": {"trades": 1, "wins": 0, "net_pnl_one_contract": -14.3, "profit_factor": 0.0},
+    "by_ticker": {
+      "TSLA": {"trades": 5, "wins": 3, "net_pnl_one_contract": 175.5, "profit_factor": 5.7951},
+      "AMZN": {"trades": 1, "wins": 1, "net_pnl_one_contract": 51.7, "profit_factor": "no_losses"}
+    },
+    "warning": "Six outcomes are far too few to prove stable profitability. The latest chronological period contains one loss and no win."
+  },
+  "display_metrics": {
+    "profit_factor": 7.21,
+    "trades": 6,
+    "scope": "TSLA + AMZN · structural exit · current modeled costs",
+    "comparison": "4 wins, 2 losses, +$227.20 · latest test period: 1 loss",
+    "target_profit_factor": 1.5,
+    "meets_numeric_target": true,
+    "sample_is_sufficient": false,
+    "meets_target": false,
+    "note": "The exact historical repair clears the numeric goal, but six results do not prove that it is profitable. It remains paper-only while fresh results collect."
+  },
+  "decision": "Use the evidence-matched contract and structural exit in paper mode only, preserve the user's saved switch, and require substantially more fresh exact-contract outcomes before any live authority.",
+  "source_reports": [
+    "research/reports/paid_tsla_context_vwap_signal_v2.json",
+    "research/reports/paid_amzn_context_strategy_matrix_v3.json",
+    "research/reports/paid_tsla_vwap_displacement_fixed_90m_v1.json",
+    "research/reports/paid_amzn_vwap_displacement_fixed_90m_v1.json",
+    "research/jobs/audit_vwap_displacement_parity.py"
+  ]
+}

@@ -14,13 +14,14 @@ paths.
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
-from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_research_exit_minutes
+from config.strategy_catalog import REVIEWED_STRATEGIES
 
 
 V2_ORB_PAID_MARKOUT_MINUTES = 90
 V2_EXIT_MINUTES_BY_STRATEGY = {
-    strategy_id: reviewed_research_exit_minutes(strategy_id)
+    strategy_id: int(rule.exit_minutes)
     for strategy_id, rule in REVIEWED_STRATEGIES.items()
+    if rule.exit_minutes is not None
 }
 
 
@@ -32,19 +33,22 @@ def reviewed_entry_fits_session(
 ) -> tuple[bool, str]:
     """Return whether a reviewed fixed-hold entry can exit before cutoff."""
     normalized = str(strategy_id or "").strip().upper()
+    rule = REVIEWED_STRATEGIES.get(normalized)
     hold_minutes = V2_EXIT_MINUTES_BY_STRATEGY.get(normalized)
-    if hold_minutes is None:
+    minimum_session_minutes = int(rule.minimum_session_minutes) if rule is not None else 0
+    required_minutes = hold_minutes or minimum_session_minutes
+    if required_minutes <= 0:
         return True, "not_fixed_hold"
     cutoff_at = now.replace(
         hour=cutoff.hour, minute=cutoff.minute, second=0, microsecond=0,
     )
-    if now + timedelta(minutes=hold_minutes) > cutoff_at:
-        latest_entry = cutoff_at - timedelta(minutes=hold_minutes)
+    if now + timedelta(minutes=required_minutes) > cutoff_at:
+        latest_entry = cutoff_at - timedelta(minutes=required_minutes)
         return False, (
             f"reviewed_hold_would_cross_cutoff "
-            f"(hold={hold_minutes}m latest_entry={latest_entry:%H:%M} ET)"
+            f"(hold={required_minutes}m latest_entry={latest_entry:%H:%M} ET)"
         )
-    return True, "fits_session"
+    return True, "fits_session" if hold_minutes else "fits_structural_session"
 
 
 def evaluate_v2_orb_paper_exit(

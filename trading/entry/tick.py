@@ -120,7 +120,9 @@ from trading.diagnostics import _log_bar_thinking, _check_ghost_positions, _swee
 from trading.position_manager import _manage_open_position, _close_position
 
 # ── Split-out entry helpers (2026-08-01) ───────────────────────────────────
-from trading.entry.contract import select_contract, select_reviewed_v2_contract
+from trading.entry.contract import (
+    reviewed_contract_profile, select_contract, select_reviewed_v2_contract,
+)
 from trading.v2_orb_paper_execution import (
     entry_limit_prices,
     entry_price_ceiling,
@@ -914,18 +916,29 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     except (TypeError, ValueError):
         _recipe_max_spend = 0.0
     _reviewed_recipe = uses_v2_orb_execution_profile(strategy_id)
+    _reviewed_contract_profile = (
+        reviewed_contract_profile(strategy_id, ticker) if _reviewed_recipe else None
+    )
     _contract_recipe = {
         "option_type": "CALL" if direction == "bullish" else "PUT",
         "strike_rule": "closest out-of-the-money strike to the underlying at selection",
         "premium_rule": (
-            "$0.80–$10.00 ask" if _reviewed_recipe
+            f"${_reviewed_contract_profile.minimum_premium:.2f}–${_reviewed_contract_profile.maximum_premium:.2f} ask"
+            if _reviewed_contract_profile
             else f"${MIN_CONTRACT_COST:.2f}–${MAX_CONTRACT_COST:.2f} ask"
         ),
-        "expiration_rule": "7–21 calendar days to expiration" if _reviewed_recipe else "first broker-listed expiration with a qualifying contract",
+        "expiration_rule": (
+            f"{_reviewed_contract_profile.minimum_dte}–{_reviewed_contract_profile.maximum_dte} calendar days to expiration"
+            if _reviewed_contract_profile
+            else "first broker-listed expiration with a qualifying contract"
+        ),
         "spread_rule": "bid/ask spread no wider than 8% of mid" if _reviewed_recipe else f"bid/ask spread no wider than {float(settings.get('spread_gate_pct', 8) or 8):.0f}% of mid",
         "liquidity_rule": "broker-returned liquid chain" if _reviewed_recipe else f"open interest of at least {MIN_OPEN_INTEREST}",
         "maximum_cost": round(_recipe_max_spend, 2),
-        "selection_model": "reviewed paid-quote profile" if _reviewed_recipe else "standard liquid first-OTM profile",
+        "selection_model": (
+            _reviewed_contract_profile.selection_model
+            if _reviewed_contract_profile else "standard liquid first-OTM profile"
+        ),
     }
     # Durable, read-only explanation for Scanner Opportunities.  It begins
     # with the signal facts and is enriched below only when contract selection
@@ -1056,7 +1069,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         if _v2_paid_parity:
             _preview_contract, _preview_info = select_reviewed_v2_contract(
                 tradier, ticker, direction, current_price, _preview_max_spend,
-                for_display=True,
+                for_display=True, strategy_id=strategy_id,
             )
         else:
             _preview_contract, _preview_info = select_contract(
@@ -1353,6 +1366,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         contract, _sel_info = select_reviewed_v2_contract(
             tradier, ticker, direction, current_price, max_spend,
             approved_dynamic_match=_paper_approved_match,
+            strategy_id=strategy_id,
         )
     else:
         contract, _sel_info = select_contract(tradier, ticker, direction, current_price, max_spend)
@@ -1865,6 +1879,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         ask=ask_price, midpoint=_c_mid, v2_paper_pilot=_v2_paid_parity,
     )
     _candidate_id = None
+    _strategy_context = dict(_top.meta) if isinstance(_top.meta, dict) else {}
+    _strategy_context.pop("shadow_candidate_id", None)
+    _strategy_context.update({
+        "strategy_id": strategy_id,
+        "trigger_bar": str(_top.trigger_bar),
+        "direction": direction,
+    })
+    _strategy_context_json = _json.dumps(
+        _strategy_context, default=str, sort_keys=True,
+    )
     if isinstance(_opportunity_context, dict):
         _candidate_meta = _opportunity_context.get("strategy_meta")
         if isinstance(_candidate_meta, dict):
@@ -2068,6 +2092,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
                 "broker_account_id": settings.get("active_broker_account_id") or None,
                 "entry_reason": f"ORB {direction} | R:R={rr_audit['R_R_Ratio']}",
                 "annotations_json": _durable_annotations,
+                "strategy_context_json": _strategy_context_json,
             },
         },
     )
@@ -2206,6 +2231,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         stop_price      = _stop_px,
         target_price    = _target_px,
         annotations_json= _entry_annotations_json,
+        strategy_context_json=_strategy_context_json,
         tier            = _signal_tier,
         broker_account_id=settings.get("active_broker_account_id") or None,
         candidate_id     = _candidate_id,

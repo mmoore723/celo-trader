@@ -1,9 +1,10 @@
-"""Exact, fail-closed live observers for the context-strategy research matrix.
+"""Exact, fail-closed evaluators for the context-strategy research matrix.
 
 These evaluators reproduce the frozen signal premises tested in
-``research/engine/context_strategy_matrix.py``.  Their catalog entries are
-``observation_only``: signals are priced and journaled for prospective
-evidence, but the router invariant prevents them from reaching order code.
+``research/engine/context_strategy_matrix.py``. Most catalog entries are
+``observation_only`` and can never reach order code. VWAP 10:30 Displacement
+has a separately reviewed paper-execution version; the server catalog remains
+the authority for that promotion.
 
 The current-session DataFrame carries a compact multi-session OHLCV tape in
 ``DataFrame.attrs``.  If that context is absent or incomplete, every evaluator
@@ -162,7 +163,7 @@ def _orb_candidate(
                 "volume_ratio_20": round(volume_ratio, 6),
                 "entry_timing": "completed_1m_breakout_then_next_quote",
                 "exit_plan": "30% partial, 100% runner, or 1m close through opening-range midpoint",
-                "observation_only": True,
+                "observation_only": strategy_id != VWAP_DISPLACEMENT_LONG,
             },
         )
     return None
@@ -300,7 +301,7 @@ def _vwap_candidate(today: pd.DataFrame, *, ticker: str, strategy_id: str, execu
                 "displacement_at_1030": displacement,
                 "entry_timing": "completed_5m_touch_reclaim_then_next_quote",
                 "exit_plan": "previous high target or first 5m close below session VWAP",
-                "observation_only": True,
+                "observation_only": strategy_id != VWAP_DISPLACEMENT_LONG,
             },
         )
     return None

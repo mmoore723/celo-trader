@@ -141,9 +141,12 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         strategy_id = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
         rule = REVIEWED_STRATEGIES[strategy_id]
         settings = {rule.setting_key: True}
+        self.assertEqual("0.2.0", rule.version)
+        self.assertIsNone(rule.exit_minutes)
+        self.assertEqual(90, rule.research_exit_minutes)
+        self.assertEqual(5, rule.minimum_session_minutes)
         self.assertFalse(rule.observation_only)
         self.assertTrue(rule.paper_only)
-        self.assertEqual(90, rule.exit_minutes)
         self.assertIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="TSLA", paper=True))
         self.assertIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="AMZN", paper=True))
         self.assertNotIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=True))
@@ -152,9 +155,10 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
             item for item in public_strategy_catalog(settings)
             if item["strategy_id"] == strategy_id
         )
-        self.assertEqual(1.33, row["backtest"]["profit_factor"])
-        self.assertEqual(5, row["backtest"]["trades"])
-        self.assertFalse(row["backtest"]["meets_target"])
+        self.assertEqual(7.21, row["backtest"]["profit_factor"])
+        self.assertEqual(6, row["backtest"]["trades"])
+        self.assertTrue(row["backtest"]["meets_numeric_target"])
+        self.assertFalse(row["backtest"]["sample_is_sufficient"])
 
     def test_research_only_rules_have_a_fixed_forward_mark(self) -> None:
         self.assertEqual(90, reviewed_research_exit_minutes("CTX_ORB_NR7_OR_INSIDE"))

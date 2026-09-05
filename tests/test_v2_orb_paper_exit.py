@@ -25,6 +25,18 @@ class V2OrbPaperExitTests(unittest.TestCase):
             reviewed_entry_fits_session(datetime(2026, 8, 19, 15, 50), "OTHER"),
         )
 
+    def test_vwap_displacement_keeps_five_minutes_for_first_structural_bar(self) -> None:
+        strategy = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
+        self.assertEqual(
+            (True, "fits_structural_session"),
+            reviewed_entry_fits_session(datetime(2026, 8, 19, 15, 50), strategy),
+        )
+        fits, reason = reviewed_entry_fits_session(
+            datetime(2026, 8, 19, 15, 51), strategy,
+        )
+        self.assertFalse(fits)
+        self.assertIn("latest_entry=15:50 ET", reason)
+
     def test_holds_until_exact_paid_markout_window(self) -> None:
         entry = datetime(2026, 8, 3, 10, 40)
         self.assertEqual((False, "hold"), evaluate_v2_orb_paper_exit(entry, entry + timedelta(minutes=89, seconds=59)))

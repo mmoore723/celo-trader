@@ -11,6 +11,7 @@ both call sites verified to still resolve correctly after this split.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date
 from typing import Optional, Tuple
 
@@ -31,9 +32,63 @@ V2_ORB_PAPER_MIN_PREMIUM = 0.80
 V2_ORB_PAPER_MAX_PREMIUM = 10.00
 V2_ORB_PAPER_MAX_SPREAD_PCT = 0.08
 
+VWAP_DISPLACEMENT_STRATEGY_ID = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
+
+
+@dataclass(frozen=True)
+class ReviewedContractProfile:
+    """One strategy's frozen, evidence-matched option selection rules."""
+
+    selection_model: str
+    minimum_dte: int
+    maximum_dte: int
+    minimum_premium: float
+    maximum_premium: float
+    maximum_spread_pct: float
+    primary_policy: str
+
+
+def reviewed_contract_profile(
+    strategy_id: object, ticker: object,
+) -> ReviewedContractProfile:
+    """Return the exact contract cohort reviewed for this strategy.
+
+    Most reviewed strategies share the original 7--21 DTE near-money profile.
+    VWAP 10:30 Displacement is different: its paid result selected the real
+    0--7 DTE OTM call whose ask was closest to $2 inside a $1.50--$2.50 band.
+    Treating every reviewed strategy as the original ORB silently changed that
+    experiment in production.
+    """
+    normalized = str(strategy_id or "").strip().upper()
+    normalized_ticker = str(ticker or "").strip().upper()
+    if normalized == VWAP_DISPLACEMENT_STRATEGY_ID:
+        return ReviewedContractProfile(
+            selection_model="ctx_vwap_displacement_paid_target_150_250_v1",
+            minimum_dte=0,
+            maximum_dte=7,
+            minimum_premium=1.50,
+            maximum_premium=2.50,
+            maximum_spread_pct=0.08,
+            primary_policy="reviewed_target_150_250",
+        )
+    return ReviewedContractProfile(
+        selection_model=(
+            "v2_orb_paid_tsla_near_money_otm_v1"
+            if normalized_ticker == "TSLA"
+            else "v2_spy_trend_paid_near_money_otm_v1"
+        ),
+        minimum_dte=V2_ORB_PAPER_MIN_DTE,
+        maximum_dte=V2_ORB_PAPER_MAX_DTE,
+        minimum_premium=V2_ORB_PAPER_MIN_PREMIUM,
+        maximum_premium=V2_ORB_PAPER_MAX_PREMIUM,
+        maximum_spread_pct=V2_ORB_PAPER_MAX_SPREAD_PCT,
+        primary_policy="reviewed_nearest_expiry_otm",
+    )
+
 
 def _reviewed_contract_shadow_leaderboard(
     candidates: list[tuple[int, float, float, str, dict]],
+    profile: ReviewedContractProfile,
 ) -> list[dict]:
     """Return policy winners for research without influencing execution.
 
@@ -44,8 +99,16 @@ def _reviewed_contract_shadow_leaderboard(
     """
     if not candidates:
         return []
+    primary_key = (
+        (lambda item: (
+            abs(float(item[4].get("ask") or 0) - 2.0),
+            item[1], item[0], item[2], item[3],
+        ))
+        if profile.primary_policy == "reviewed_target_150_250"
+        else (lambda item: item[:4])
+    )
     policies = {
-        "reviewed_nearest_expiry_otm": lambda item: item[:4],
+        profile.primary_policy: primary_key,
         "tightest_spread": lambda item: (item[2], item[0], item[1], item[3]),
         "lowest_ask": lambda item: (float(item[4].get("ask") or float("inf")), item[0], item[1], item[3]),
         "highest_open_interest": lambda item: (-float(item[4].get("open_interest") or 0), item[2], item[0], item[3]),
@@ -72,7 +135,7 @@ def _reviewed_contract_shadow_leaderboard(
         row["policy_winner_for"].append(policy)
     return sorted(
         winners.values(),
-        key=lambda row: ("reviewed_nearest_expiry_otm" not in row["policy_winner_for"], row["symbol"]),
+        key=lambda row: (profile.primary_policy not in row["policy_winner_for"], row["symbol"]),
     )
 
 
@@ -248,34 +311,29 @@ def select_reviewed_v2_contract(
     max_spend: float,
     for_display: bool = False,
     approved_dynamic_match: bool = False,
+    strategy_id: object = None,
 ) -> Tuple[Optional[dict], dict]:
-    """Select the locked paid-quote contract profile for a reviewed ticker.
+    """Select the strategy-specific paid-quote contract profile.
 
-    The paid historical study used the nearest eligible expiry (7--21 DTE),
-    the closest *out-of-the-money* strike, a $0.80--$10.00 ask, and a maximum
-    8% bid/ask spread measured against mid.  This function applies those same
-    observable rules to the broker chain at entry time.  It does not loosen
-    the account's position-budget cap.  The policy is deliberately independent
-    of paper/live mode: paper evidence must exercise the same contract
-    definition that a later, explicitly approved live promotion would use.
-    Tradier's chain client also removes obviously invalid/illiquid rows
-    upstream; that limitation is returned in the audit metadata rather than
-    hidden.
+    The original reviewed strategies use the nearest 7--21 DTE OTM contract
+    inside a $0.80--$10.00 ask band. VWAP 10:30 Displacement instead uses its
+    actual tested cohort: 0--7 DTE OTM with a $1.50--$2.50 ask, closest to
+    $2.00. Both retain the reviewed 8% maximum spread and the account's
+    position-budget cap. The policy is deliberately independent of paper/live
+    mode so later promotion cannot silently change the selected contract.
     """
     ticker = ticker.strip().upper()
-    selection_model = (
-        "v2_orb_paid_tsla_near_money_otm_v1"
-        if ticker == "TSLA" else "v2_spy_trend_paid_near_money_otm_v1"
-    )
+    profile = reviewed_contract_profile(strategy_id, ticker)
     info: dict = {
         "reason": "no_chain_data",
-        "selection_model": selection_model,
+        "selection_model": profile.selection_model,
         "research_eligibility": {
-            "min_dte": V2_ORB_PAPER_MIN_DTE,
-            "max_dte": V2_ORB_PAPER_MAX_DTE,
-            "min_premium": V2_ORB_PAPER_MIN_PREMIUM,
-            "max_premium": V2_ORB_PAPER_MAX_PREMIUM,
-            "max_spread_pct": V2_ORB_PAPER_MAX_SPREAD_PCT,
+            "min_dte": profile.minimum_dte,
+            "max_dte": profile.maximum_dte,
+            "min_premium": profile.minimum_premium,
+            "max_premium": profile.maximum_premium,
+            "max_spread_pct": profile.maximum_spread_pct,
+            "primary_policy": profile.primary_policy,
         },
         "upstream_chain_liquidity_filtered": True,
     }
@@ -317,7 +375,7 @@ def select_reviewed_v2_contract(
         except (TypeError, ValueError):
             continue
         dte = (expiry_date - today).days
-        if not V2_ORB_PAPER_MIN_DTE <= dte <= V2_ORB_PAPER_MAX_DTE:
+        if not profile.minimum_dte <= dte <= profile.maximum_dte:
             continue
         try:
             chain = tradier.get_option_chain(ticker, str(expiry), option_type)
@@ -336,7 +394,7 @@ def select_reviewed_v2_contract(
             except (TypeError, ValueError):
                 continue
             is_otm = strike > current_price if option_type == "call" else strike < current_price
-            if not is_otm or not V2_ORB_PAPER_MIN_PREMIUM <= ask <= V2_ORB_PAPER_MAX_PREMIUM:
+            if not is_otm or not profile.minimum_premium <= ask <= profile.maximum_premium:
                 continue
             cost = ask * 100
             if cost > max_spend:
@@ -344,7 +402,7 @@ def select_reviewed_v2_contract(
                 continue
             mid = (ask + bid) / 2 if bid > 0 else 0.0
             spread_pct = (ask - bid) / mid if mid > 0 else float("inf")
-            if spread_pct > V2_ORB_PAPER_MAX_SPREAD_PCT:
+            if spread_pct > profile.maximum_spread_pct:
                 saw_liquid_candidate = True
                 continue
             symbol = str(contract.get("symbol") or "")
@@ -363,11 +421,18 @@ def select_reviewed_v2_contract(
             info["reason"] = "filtered"
         return None, info
 
-    _, _, spread_pct, _, selected = min(candidates, key=lambda item: item[:4])
+    if profile.primary_policy == "reviewed_target_150_250":
+        selected_key = lambda item: (
+            abs(float(item[4].get("ask") or 0) - 2.0),
+            item[1], item[0], item[2], item[3],
+        )
+    else:
+        selected_key = lambda item: item[:4]
+    _, _, spread_pct, _, selected = min(candidates, key=selected_key)
     info.update({
         "reason": "selected",
         "eligible_contract_count": len(candidates),
-        "shadow_contract_leaderboard": _reviewed_contract_shadow_leaderboard(candidates),
+        "shadow_contract_leaderboard": _reviewed_contract_shadow_leaderboard(candidates, profile),
         "selected_dte": (date.fromisoformat(selected["expiry"]) - today).days,
         "selected_spread_pct": round(spread_pct, 6),
     })

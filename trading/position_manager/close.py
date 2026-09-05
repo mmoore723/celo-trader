@@ -171,6 +171,7 @@ def _close_position(
             paper           = paper,
             strategy_id     = trade.get("strategy_id", "UNKNOWN"),
             annotations_json= trade.get("annotations_json"),
+            strategy_context_json=trade.get("strategy_context_json"),
             broker_account_id= trade.get("broker_account_id"),
             candidate_id     = trade.get("candidate_id"),
             parent_trade_id  = trade.get("parent_trade_id") or trade.get("id"),

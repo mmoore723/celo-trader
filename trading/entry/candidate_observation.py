@@ -14,7 +14,9 @@ from config import MIN_CONTRACT_COST, MAX_CONTRACT_COST, MIN_OPEN_INTEREST
 from config.strategy_catalog import reviewed_exit_summary
 from database.option_quotes import record_candidate_contract_alternative, record_candidate_option_quote
 from shadow_ledger import record_router_candidate, snapshot_candidate_plan
-from trading.entry.contract import select_contract, select_reviewed_v2_contract
+from trading.entry.contract import (
+    reviewed_contract_profile, select_contract, select_reviewed_v2_contract,
+)
 from trading.state import _now_et
 from trading.v2_orb_paper_execution import entry_limit_prices
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
@@ -60,6 +62,7 @@ def observe_candidate_contract(
             if reviewed:
                 contract, info = select_reviewed_v2_contract(
                     tradier, ticker, direction, price, maximum, for_display=True,
+                    strategy_id=strategy_id,
                 )
             else:
                 contract, info = select_contract(
@@ -114,15 +117,24 @@ def observe_candidate_contract(
             "planned_contracts": int(quantity),
             "estimated_position_cost": round(maximum_entry * quantity * 100, 2),
         })
+    reviewed_profile = reviewed_contract_profile(strategy_id, ticker) if reviewed else None
     recipe = {
         "option_type": "CALL" if direction.lower() in {"bullish", "long", "call"} else "PUT",
         "strike_rule": "closest out-of-the-money strike to the underlying at selection",
-        "premium_rule": "$0.80–$10.00 ask" if reviewed else f"${MIN_CONTRACT_COST:.2f}–${MAX_CONTRACT_COST:.2f} ask",
-        "expiration_rule": "7–21 calendar days to expiration" if reviewed else "first broker-listed expiration with a qualifying contract",
+        "premium_rule": (
+            f"${reviewed_profile.minimum_premium:.2f}–${reviewed_profile.maximum_premium:.2f} ask"
+            if reviewed_profile else f"${MIN_CONTRACT_COST:.2f}–${MAX_CONTRACT_COST:.2f} ask"
+        ),
+        "expiration_rule": (
+            f"{reviewed_profile.minimum_dte}–{reviewed_profile.maximum_dte} calendar days to expiration"
+            if reviewed_profile else "first broker-listed expiration with a qualifying contract"
+        ),
         "spread_rule": "bid/ask spread no wider than 8% of mid",
         "liquidity_rule": "broker-returned liquid chain" if reviewed else f"open interest of at least {MIN_OPEN_INTEREST}",
         "maximum_cost": round(maximum, 2),
-        "selection_model": "reviewed paid-quote profile" if reviewed else "standard liquid first-OTM profile",
+        "selection_model": (
+            reviewed_profile.selection_model if reviewed_profile else "standard liquid first-OTM profile"
+        ),
     }
     context = {
         "strategy_meta": meta,

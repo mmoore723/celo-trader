@@ -115,6 +115,36 @@ def _exit_latch_snapshot(position_state: dict) -> dict:
     }
 
 
+def _evaluate_reviewed_strategy_exit(
+    trade: dict,
+    entry_time: datetime | str | None,
+    now_et: datetime,
+    *,
+    one_minute_bars: pd.DataFrame | None,
+    five_minute_bars: pd.DataFrame | None,
+) -> tuple[bool, str] | None:
+    """Route a reviewed strategy to the exit policy its evidence declares."""
+    from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
+
+    strategy_id = str(trade.get("strategy_id") or "").strip().upper()
+    if not uses_v2_orb_execution_profile(strategy_id):
+        return None
+    if strategy_id == "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG":
+        from trading.vwap_displacement_exit import evaluate_vwap_displacement_exit
+
+        return evaluate_vwap_displacement_exit(
+            entry_time,
+            now_et,
+            one_minute_bars=one_minute_bars,
+            five_minute_bars=five_minute_bars,
+            strategy_context=trade.get("strategy_context_json"),
+        )
+
+    from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit
+
+    return evaluate_v2_orb_paper_exit(entry_time, now_et, strategy_id)
+
+
 def _manage_open_position(
     alpaca: "AlpacaClient",
     tradier: "TradierClient",
@@ -535,15 +565,21 @@ def _manage_open_position(
         _simplified_mode = bool(_gs_exit().get("simplified_exit_mode", True))
         _atr_for_exit        = locals().get("_atr")
         _underlying_for_exit = locals().get("_underlying_now")
-        # The V2 hypothesis has one locked 90-minute ask-to-bid policy.
-        # The policy is intentionally mode-independent: its paper evidence is
-        # a rehearsal of a future, separately approved live promotion, not a
-        # different strategy.  This branch does not enable V2 or live trading.
+        # Reviewed strategies use their evidence-matched exit rather than the
+        # generic adaptive manager. Most use a locked hold; VWAP Displacement
+        # owns the structural prior-high/VWAP/EOD policy below. This branch
+        # does not change strategy authorization or enable live trading.
         from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
         _is_v2_orb = uses_v2_orb_execution_profile(trade.get("strategy_id"))
-        if _is_v2_orb:
-            from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit
-            should_exit, reason = evaluate_v2_orb_paper_exit(entry_time, now_et, trade.get("strategy_id"))
+        _reviewed_exit = _evaluate_reviewed_strategy_exit(
+            trade,
+            entry_time,
+            now_et,
+            one_minute_bars=df_under,
+            five_minute_bars=df_5m,
+        )
+        if _reviewed_exit is not None:
+            should_exit, reason = _reviewed_exit
         elif _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
             from trading.simplified_exit_live import evaluate_simplified_live_exit
             should_exit, reason = evaluate_simplified_live_exit(
@@ -688,6 +724,7 @@ def _manage_open_position(
                 paper           = paper,
                 strategy_id     = trade.get("strategy_id", "UNKNOWN"),
                 annotations_json= trade.get("annotations_json"),
+                strategy_context_json=trade.get("strategy_context_json"),
                 broker_account_id= trade.get("broker_account_id"),
                 candidate_id     = trade.get("candidate_id"),
                 parent_trade_id  = trade.get("parent_trade_id") or trade.get("id"),

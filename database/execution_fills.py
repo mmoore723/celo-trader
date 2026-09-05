@@ -13,6 +13,7 @@ from broker.recovery_totals import totals
 ENTRY_FIELDS = {
     "ticker", "contract_symbol", "option_type", "strike", "expiry", "entry_reason",
     "paper", "strategy_id", "tier", "broker_account_id", "candidate_id", "annotations_json",
+    "strategy_context_json",
 }
 
 

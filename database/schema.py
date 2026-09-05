@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS trades (
     tier            TEXT    NOT NULL DEFAULT 'main',   -- 'main' | 'opportunity'
     broker_account_id TEXT,                            -- account/mode identity at entry
     candidate_id    TEXT,                              -- raw scanner candidate that became this trade
+    strategy_context_json TEXT,                        -- frozen entry-time facts used by strategy-specific exits
     parent_trade_id INTEGER,                           -- original row when this row is a partial close
     entry_order_id  TEXT,                              -- broker buy-to-open order id
     exit_order_id   TEXT,                              -- broker sell-to-close order id
@@ -530,6 +531,9 @@ def _init_db_at(db_path: Path) -> None:
             # copied from is ephemeral and gets overwritten).
             conn.execute("ALTER TABLE trades ADD COLUMN annotations_json TEXT")
             logger.info("Migration: added annotations_json column to %s", db_path.name)
+        if "strategy_context_json" not in _cols:
+            conn.execute("ALTER TABLE trades ADD COLUMN strategy_context_json TEXT")
+            logger.info("Migration: added strategy_context_json column to %s", db_path.name)
         _audit_cols = {row[1] for row in conn.execute("PRAGMA table_info(strategy_audits)")}
         if "audit_type" not in _audit_cols:
             # Existing rows are all from the daily audit (weekly didn't exist

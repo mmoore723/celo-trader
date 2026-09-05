@@ -179,6 +179,34 @@ class LoopLifecycleTests(unittest.TestCase):
 
 
 class DurableTradeLineageTests(unittest.TestCase):
+    def test_reviewed_strategy_context_survives_direct_trade_insert(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trades_paper.db"
+            _init_db_at(path)
+            conn = sqlite3.connect(path)
+            conn.row_factory = sqlite3.Row
+            now = datetime.fromisoformat("2026-08-14T10:31:00-04:00")
+            strategy_context = json.dumps({
+                "strategy_id": "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
+                "previous_high": 351.25,
+                "direction": "bullish",
+            }, sort_keys=True)
+
+            with patch("database.trades.get_conn", return_value=conn):
+                trade_id = insert_trade(
+                    "TSLA", "TSLA260821C00350000", "call", 350, "2026-08-21",
+                    1, 2.05, now, "vwap displacement",
+                    strategy_id="CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
+                    strategy_context_json=strategy_context,
+                )
+
+            row = conn.execute(
+                "SELECT strategy_context_json FROM trades WHERE id = ?", (trade_id,),
+            ).fetchone()
+            conn.close()
+
+        self.assertEqual(json.loads(strategy_context), json.loads(row["strategy_context_json"]))
+
     def test_broker_utc_fill_times_are_stored_as_eastern_wall_time(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trades_paper.db"

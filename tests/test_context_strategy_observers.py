@@ -40,6 +40,20 @@ def _nr7_frame() -> tuple[pd.DataFrame, pd.Timestamp]:
     return _build_indicator_frame(full), current + pd.Timedelta(hours=10)
 
 
+def _vwap_displacement_frame() -> tuple[pd.DataFrame, pd.Timestamp]:
+    session = pd.Timestamp("2026-09-03")
+    rows: list[dict] = []
+    for offset in range(65):
+        timestamp = session + pd.Timedelta(hours=9, minutes=30 + offset)
+        if offset < 55:
+            rows.append(_row(timestamp))
+        elif offset < 60:
+            rows.append(_row(timestamp, close=102.0, high=103.0, low=100.0, volume=100.0))
+        else:
+            rows.append(_row(timestamp, close=102.2, high=102.6, low=100.0, volume=100.0))
+    return _build_indicator_frame(pd.DataFrame(rows)), session + pd.Timedelta(hours=10, minutes=35)
+
+
 class ContextStrategyObserverTests(unittest.TestCase):
     def setUp(self) -> None:
         observers._emitted.clear()
@@ -75,6 +89,17 @@ class ContextStrategyObserverTests(unittest.TestCase):
     def test_observer_rejects_out_of_scope_ticker(self) -> None:
         today, now = _nr7_frame()
         self.assertIsNone(observers.evaluate_squeeze_macd(today, ticker="SPY", now=now))
+
+    def test_promoted_displacement_signal_is_not_labeled_research_only(self) -> None:
+        today, now = _vwap_displacement_frame()
+        signal = observers.evaluate_vwap_displacement(today, ticker="TSLA", now=now)
+
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(observers.VWAP_DISPLACEMENT_LONG, signal.strategy_id)
+        self.assertEqual(now, signal.trigger_bar)
+        self.assertFalse(signal.meta["observation_only"])
+        self.assertGreater(signal.meta["previous_high"], 102.2)
 
 
 if __name__ == "__main__":

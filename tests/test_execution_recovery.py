@@ -61,12 +61,18 @@ class RecoveryTests(unittest.TestCase):
         return copy.deepcopy(self.orders[oid])
 
     def context(self):
+        strategy_context = json.dumps({
+            "strategy_id": "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
+            "previous_high": 771.25,
+            "direction": "bullish",
+        }, sort_keys=True)
         return {"intent_id": "offline-intent", "stop_factor": 0.80, "target_factor": 1.50,
                 "direction": "bullish", "confidence": 0.8,
                 "entry_record": {"ticker": "SPY", "contract_symbol": SYMBOL,
                     "option_type": "call", "strike": 770, "expiry": "2026-09-11",
                     "paper": 1, "strategy_id": "V2_SPY_TREND_CONT", "tier": "main",
-                    "broker_account_id": ACCOUNT, "entry_reason": "offline replay"}}
+                    "broker_account_id": ACCOUNT, "entry_reason": "offline replay",
+                    "strategy_context_json": strategy_context}}
 
     def enter(self, context=None):
         return self.client.place_option_order(SYMBOL, 3, "buy", limit_price=1.60,
@@ -83,6 +89,10 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(3, fill["filled_qty"])
         self.assertEqual(1, len(self.rows()))
         self.assertAlmostEqual(1.60, self.rows()[0]["entry_price"])
+        self.assertEqual(
+            771.25,
+            json.loads(self.rows()[0]["strategy_context_json"])["previous_high"],
+        )
         self.assertIsNone(self.enter())
         self.assertEqual(1, len(self.submissions))
         self.assertEqual(set(), reconcile_orders(self.make_client()))

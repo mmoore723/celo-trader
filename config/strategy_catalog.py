@@ -51,6 +51,9 @@ class ReviewedStrategy:
     # when the eventual trading exit is still being designed.  This horizon
     # never grants order authority and is kept separate from ``exit_minutes``.
     research_exit_minutes: int | None = None
+    # Structural exits still need enough session left for their first
+    # completed decision bar. Zero means there is no extra entry cutoff.
+    minimum_session_minutes: int = 0
 
 
 REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
@@ -183,22 +186,23 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
     "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": ReviewedStrategy(
         strategy_id="CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
         display_name="VWAP Pullback (10:30 Displacement)",
-        version="0.1.0",
+        version="0.2.0",
         tickers=frozenset({"TSLA", "AMZN"}),
         setting_key="observe_ctx_vwap_displacement_enabled",
         signal_source="bar_close",
         implementation="strategies.context_strategy_observers",
-        # The historical five-fill result used a structural VWAP/HOD exit.
-        # Paper execution deliberately uses a fixed same-contract mark while
-        # enough prospective evidence is collected for that exit to be
-        # implemented and reviewed independently.
-        exit_minutes=90,
+        # The paid strategy itself exits at the frozen prior-day high, the
+        # first completed five-minute close through VWAP, or the 15:55 cap.
+        # A separate 90-minute quote remains useful for comparable research.
+        exit_minutes=None,
         paper_only=True,
         status="paper_candidate",
         evidence_grade="promising_underpowered",
-        evidence_artifact="config/strategy_evidence/ctx_vwap_displacement-0.1.0.json",
-        evidence="The exact 90-minute paper exit produced PF 1.33 across five measurable paid-quote results on TSLA and AMZN; enabled for paper collection, but not yet proven.",
+        evidence_artifact="config/strategy_evidence/ctx_vwap_displacement-0.2.0.json",
+        evidence="The evidence-matched structural paper exit produced PF 7.21 across six real paid-contract outcomes after current modeled costs; promising but far too small for launch proof.",
         observation_only=False,
+        research_exit_minutes=90,
+        minimum_session_minutes=5,
     ),
     "CTX_1H_SQUEEZE_MACD_LONG": ReviewedStrategy(
         strategy_id="CTX_1H_SQUEEZE_MACD_LONG",
@@ -334,6 +338,7 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
             "implementation": rule.implementation,
             "exit_minutes": rule.exit_minutes,
             "research_exit_minutes": reviewed_research_exit_minutes(rule.strategy_id),
+            "minimum_session_minutes": rule.minimum_session_minutes,
             "paper_only": rule.paper_only,
             "status": rule.status,
             "evidence_grade": rule.evidence_grade,
@@ -436,9 +441,17 @@ def reviewed_exit_summary(strategy_id: object, *, verb: str = "exit") -> str:
     rule = REVIEWED_STRATEGIES.get(str(strategy_id or "").strip().upper())
     if rule is None:
         return "No reviewed exit policy is registered."
-    minutes = reviewed_research_exit_minutes(rule.strategy_id)
-    action = "measure the executable bid" if verb == "measure" else "exit at the executable bid"
-    return f"Hold the same selected contract for {minutes} minutes, then {action}."
+    if verb == "measure":
+        minutes = reviewed_research_exit_minutes(rule.strategy_id)
+        return f"Hold the same selected contract for {minutes} minutes, then measure the executable bid."
+    if rule.strategy_id == "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG":
+        return (
+            "Exit when the underlying reaches the frozen prior high, the first "
+            "completed 5-minute candle closes below session VWAP, or at 3:55 PM ET."
+        )
+    if rule.exit_minutes is None:
+        return "No order exit is registered; this strategy records research only."
+    return f"Hold the same selected contract for {rule.exit_minutes} minutes, then exit at the executable bid."
 
 
 def enabled_reviewed_strategy_ids(

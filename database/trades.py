@@ -72,6 +72,7 @@ def insert_trade(
     stop_price: Optional[float] = None,    # option premium stop-loss level at entry
     target_price: Optional[float] = None,  # Stage-1 target at entry
     annotations_json: Optional[str] = None,  # JSON snapshot of entry-time chart annotations
+    strategy_context_json: Optional[str] = None,  # frozen signal facts used by reviewed exits
     tier: str = "main",                       # main setup pool | separately measured opportunity pool
     broker_account_id: Optional[str] = None,   # active Alpaca account/mode identity at entry
     candidate_id: Optional[str] = None,
@@ -88,15 +89,17 @@ def insert_trade(
             (ticker, contract_symbol, option_type, strike, expiry,
              contracts, entry_price, entry_time, entry_reason,
              status, paper, strategy_id, stop_price, target_price, annotations_json,
+             strategy_context_json,
              tier, broker_account_id, candidate_id, parent_trade_id,
              entry_order_id, entry_fill_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     with get_conn() as conn:
         cur = conn.execute(sql, (
             ticker, contract_symbol, option_type, strike, expiry,
             contracts, entry_price, _to_et_isoformat(entry_time), entry_reason,
             1 if paper else 0, strategy_id, stop_price, target_price, annotations_json,
+            strategy_context_json,
             tier if tier in ("main", "opportunity") else "main", broker_account_id,
             candidate_id, parent_trade_id, entry_order_id,
             _to_et_isoformat(entry_fill_time) if entry_fill_time is not None else None,

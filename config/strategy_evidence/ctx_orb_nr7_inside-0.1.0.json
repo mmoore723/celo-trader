@@ -6,7 +6,7 @@
   "evidence_grade": "promising_inconsistent",
   "ticker_scope": ["AMZN", "QQQ", "SPY", "TSLA"],
   "implementation": "strategies.context_strategy_observers",
-  "implementation_sha256_at_review": "08718c6d33283a6a251e98d4be56025ac311a871c7f3c8e2145a40cfccc3f535",
+  "implementation_sha256_at_review": "9b4c36afa8f65ea5841f520fd9a18238802b77681f80ccc583ed5439f98327ff",
   "market_data": {"source": "paid Databento OPRA CBBO-1m archives", "execution_model": "actual option ask strictly after signal; same-contract actual bid at structural exit; fee and $10 monthly-plan stress", "contract_policy": "$150-$250 ask proxy; historical CBBO archive has no Greeks"},
   "display_metrics": {"profit_factor": 1.70, "trades": 32, "scope": "TSLA · $150-$250 contracts", "comparison": "All TSLA prices PF 1.30 · older test dates PF 1.09 · AMZN PF 0.51 (11 fills) · QQQ PF 0.52 (2 fills)", "target_profit_factor": 1.5, "meets_target": true, "note": "Overall target passed only in one contract-price slice; results were not stable across older and newer dates."},
   "decision": "Collect prospective evidence only. Do not authorize paper or live orders until stability and exact lifecycle gates pass.",
