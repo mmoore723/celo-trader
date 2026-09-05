@@ -123,6 +123,10 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
 
     def test_spy_failed_range_evidence_is_not_presented_as_a_pass(self) -> None:
         rule = REVIEWED_STRATEGIES["V2_FAILED_OR_BREAK_VWAP_REVERSION"]
+        root = Path(__file__).resolve().parents[1]
+        evidence = json.loads((root / rule.evidence_artifact).read_text())
+        self.assertEqual("2.1.0", rule.version)
+        self.assertEqual(rule.version, evidence["strategy_version"])
         self.assertEqual("promising_inconsistent", rule.evidence_grade)
 
     def test_tsla_two_leg_evidence_matches_directional_repair(self) -> None:

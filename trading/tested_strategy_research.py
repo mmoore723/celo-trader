@@ -11,9 +11,9 @@ import pandas as pd
 from research.engine.models import Bar as ResearchBar, Side
 from research.engine.strategies import (
     AfternoonReversal, EMAPullbackRTH, FairValueGap, GapFillRTH,
-    MiddayBreakdown, OpeningMomentumRTH, OpeningRangeBreakout,
+    LongOnlyRangeSweepReclaim, MiddayBreakdown, OpeningMomentumRTH, OpeningRangeBreakout,
     ORBRsiMacdShort, SuperTrendReversal, TrendContinuation,
-    TurtleSoupRTH, VWAPPullback, VWAPReversionRTH,
+    TurtleSoupRTH, VWAPPullback, VWAPReversionRTH, RangeSweepReclaimConfig,
 )
 from strategies.base import Signal
 from strategies.spy_trend_continuation_v2 import _complete_five_minute_bars
@@ -30,6 +30,15 @@ class TestedResearchStrategy:
     exit_minutes: int = 90
 
 
+_LEGACY_DEFAULT_IDS = (
+    "V2_AFTERNOON_REVERSAL", "V2_EMA_PULLBACK_RTH", "V2_FAIR_VALUE_GAP",
+    "V2_GAP_FILL_RTH", "V2_MIDDAY_BREAKDOWN",
+    "V2_OPENING_MOMENTUM_RTH_EXPLORATORY", "V2_ORB_CONFIRMED_BREAKOUT",
+    "V2_SPY_ORB_RSI_MACD_SHORT", "V2_TREND_CONT", "V2_TURTLE_SOUP_RTH",
+    "V2_VWAP_PULLBACK", "V2_VWAP_REVERSION_RTH", "TV_SUPERTREND_REVERSAL_V4",
+)
+
+
 _SPECS = (
     TestedResearchStrategy("V2_AFTERNOON_REVERSAL", "Afternoon Reversal", AfternoonReversal),
     TestedResearchStrategy("V2_EMA_PULLBACK_RTH", "EMA Pullback", EMAPullbackRTH),
@@ -38,6 +47,14 @@ _SPECS = (
     TestedResearchStrategy("V2_MIDDAY_BREAKDOWN", "Midday Breakdown", MiddayBreakdown),
     TestedResearchStrategy("V2_OPENING_MOMENTUM_RTH_EXPLORATORY", "Opening Momentum", OpeningMomentumRTH),
     TestedResearchStrategy("V2_ORB_CONFIRMED_BREAKOUT", "Confirmed Opening-Range Breakout", OpeningRangeBreakout),
+    TestedResearchStrategy(
+        "V2_RANGE_SWEEP_RECLAIM",
+        "Range Sweep Reclaim (Calls)",
+        lambda: LongOnlyRangeSweepReclaim(RangeSweepReclaimConfig(
+            range_bars=30, maximum_efficiency=.30, minimum_sweep_atr=.15,
+        )),
+        exit_minutes=30,
+    ),
     TestedResearchStrategy("V2_SPY_ORB_RSI_MACD_SHORT", "ORB RSI/MACD Short", ORBRsiMacdShort),
     TestedResearchStrategy("V2_TREND_CONT", "Trend Continuation", TrendContinuation),
     TestedResearchStrategy("V2_TURTLE_SOUP_RTH", "Turtle Soup Reversal", TurtleSoupRTH),
@@ -54,7 +71,12 @@ def enabled_tested_research_ids(settings: dict) -> set[str]:
     selected = settings.get("research_strategy_ids", DEFAULT_TESTED_RESEARCH_IDS)
     if not isinstance(selected, (list, tuple, set)):
         selected = DEFAULT_TESTED_RESEARCH_IDS
-    return {str(value).upper() for value in selected} & set(TESTED_RESEARCH_STRATEGIES)
+    enabled = {str(value).upper() for value in selected}
+    # Add newly reconstructed, order-free rules only for accounts that still
+    # had every prior default selected. A deliberately paused list is kept.
+    if set(_LEGACY_DEFAULT_IDS).issubset(enabled):
+        enabled.update(DEFAULT_TESTED_RESEARCH_IDS)
+    return enabled & set(TESTED_RESEARCH_STRATEGIES)
 
 
 def public_tested_research_strategies(settings: dict) -> list[dict]:

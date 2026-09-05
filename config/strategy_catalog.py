@@ -108,7 +108,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
     "V2_FAILED_OR_BREAK_VWAP_REVERSION": ReviewedStrategy(
         strategy_id="V2_FAILED_OR_BREAK_VWAP_REVERSION",
         display_name="SPY Failed-Range Recovery",
-        version="2.0.0",
+        version="2.1.0",
         tickers=frozenset({"SPY"}),
         setting_key="strategy_spy_failed_range_recovery_v2_enabled",
         signal_source="bar_close",
@@ -117,7 +117,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         paper_only=False,
         status="paper_candidate",
         evidence_grade="promising_inconsistent",
-        evidence_artifact="config/strategy_evidence/v2_spy_failed_range_recovery-2.0.0.json",
+        evidence_artifact="config/strategy_evidence/v2_spy_failed_range_recovery-2.1.0.json",
         evidence="The original 21-trade paid-option slice passed, but 383 long-history SPY episodes and four timely paper outcomes did not confirm the edge.",
     ),
     "V2_TSLA_TWO_LEG_TREND_PULLBACK": ReviewedStrategy(

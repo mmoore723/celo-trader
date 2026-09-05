@@ -14,6 +14,9 @@ from research.engine.strategies.opening_momentum_rth import OpeningMomentumRTH, 
 from research.engine.strategies.supertrend_reversal import SuperTrendReversal, SuperTrendReversalConfig
 from research.engine.strategies.midday_breakdown import MiddayBreakdown, MiddayBreakdownConfig
 from research.engine.strategies.orb_rsi_macd import ORBRsiMacdShort, ORBRsiMacdShortConfig
+from research.engine.strategies.range_sweep_reclaim import (
+    LongOnlyRangeSweepReclaim, RangeSweepReclaim, RangeSweepReclaimConfig,
+)
 
 __all__ = [
     "AfternoonReversal", "AfternoonReversalConfig", "FairValueGap", "FairValueGapConfig",
@@ -29,4 +32,5 @@ __all__ = [
     "SuperTrendReversal", "SuperTrendReversalConfig",
     "MiddayBreakdown", "MiddayBreakdownConfig",
     "ORBRsiMacdShort", "ORBRsiMacdShortConfig",
+    "LongOnlyRangeSweepReclaim", "RangeSweepReclaim", "RangeSweepReclaimConfig",
 ]

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import unittest
 from unittest.mock import patch
 
 import pandas as pd
 
 from research.engine.models import Bar, Side, Signal as ResearchSignal
+from research.engine.strategies import LongOnlyRangeSweepReclaim, RangeSweepReclaimConfig
 from trading.tested_strategy_research import (
     DEFAULT_TESTED_RESEARCH_IDS, TESTED_RESEARCH_STRATEGIES,
     TestedResearchStrategy, enabled_tested_research_ids,
@@ -34,6 +35,19 @@ class TestedStrategyResearchTests(unittest.TestCase):
             enabled_tested_research_ids({"research_strategy_ids": ["V2_TREND_CONT", "MADE_UP"]}),
         )
 
+    def test_new_rule_joins_accounts_with_every_prior_rule_enabled(self):
+        prior_ids = set(DEFAULT_TESTED_RESEARCH_IDS) - {"V2_RANGE_SWEEP_RECLAIM"}
+        self.assertIn(
+            "V2_RANGE_SWEEP_RECLAIM",
+            enabled_tested_research_ids({"research_strategy_ids": sorted(prior_ids)}),
+        )
+
+    def test_partial_saved_selection_does_not_enable_new_rule(self):
+        self.assertEqual(
+            {"V2_TREND_CONT"},
+            enabled_tested_research_ids({"research_strategy_ids": ["V2_TREND_CONT"]}),
+        )
+
     def test_public_rows_say_the_actual_research_scope(self):
         rows = public_tested_research_strategies({"research_strategy_ids": ["V2_TREND_CONT"]})
         row = next(item for item in rows if item["strategy_id"] == "V2_TREND_CONT")
@@ -53,6 +67,34 @@ class TestedStrategyResearchTests(unittest.TestCase):
         self.assertEqual([], second)
         self.assertTrue(first[0].meta["observation_only"])
         self.assertEqual("2026-09-04 10:05:00", str(first[0].trigger_bar))
+
+    def test_range_sweep_research_uses_tested_long_only_rule_and_30_minute_mark(self):
+        spec = TESTED_RESEARCH_STRATEGIES["V2_RANGE_SWEEP_RECLAIM"]
+        self.assertEqual(30, spec.exit_minutes)
+        self.assertEqual("LongOnlyRangeSweepReclaim", spec.factory().__class__.__name__)
+
+    def test_range_sweep_long_adapter_replays_the_session_and_emits_latest_call(self):
+        start = datetime(2026, 1, 2, 10, 0)
+        bars = []
+        for index in range(21):
+            close = 100.0 + (.08 if index % 2 else -.08)
+            bars.append(Bar(
+                start + timedelta(minutes=index), close,
+                close + .10, close - .10, close, 1000,
+            ))
+        bars.extend((
+            Bar(start + timedelta(minutes=21), 99.55, 99.62, 99.38, 99.48, 1000),
+            Bar(start + timedelta(minutes=22), 99.50, 99.92, 99.45, 99.86, 1000),
+        ))
+        strategy = LongOnlyRangeSweepReclaim(RangeSweepReclaimConfig(
+            range_bars=20, minimum_sweep_atr=.10, minimum_vwap_room_atr=.01,
+            minimum_reward_risk=.05,
+        ))
+        signal = strategy.evaluate(bars)
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertEqual(Side.LONG, signal.side)
+        self.assertEqual(bars[-1].timestamp, signal.timestamp)
 
 
 if __name__ == "__main__":

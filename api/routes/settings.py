@@ -81,6 +81,7 @@ def publish_strategy_recommendation_endpoint(payload: PublishStrategyRecommendat
 @router.get("", response_model=Settings)
 def get_settings_endpoint() -> Settings:
     from config import get_settings, get_risk_tier, MAX_CONCURRENT_POSITIONS, STARTING_CAPITAL
+    from trading.tested_strategy_research import enabled_tested_research_ids
     s = get_settings()
     _risk_override = s.get("risk_per_trade")
     try:
@@ -111,7 +112,7 @@ def get_settings_endpoint() -> Settings:
         observe_ctx_vwap_ker_enabled=bool(s.get("observe_ctx_vwap_ker_enabled", True)),
         observe_ctx_vwap_displacement_enabled=bool(s.get("observe_ctx_vwap_displacement_enabled", True)),
         observe_ctx_squeeze_macd_enabled=bool(s.get("observe_ctx_squeeze_macd_enabled", True)),
-        research_strategy_ids=list(s.get("research_strategy_ids", [])),
+        research_strategy_ids=sorted(enabled_tested_research_ids(s)),
         opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters
