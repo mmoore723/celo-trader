@@ -38,6 +38,12 @@ def _completed_one_minute_bars(today: pd.DataFrame, now: object | None = None) -
     if cutoff.tzinfo is not None:
         cutoff = cutoff.tz_convert("America/New_York").tz_localize(None)
     rows = rows.loc[times < cutoff.floor("min")]
+    # The paid study and its exact production-parity proof use regular-session
+    # bars only.  The live Alpaca frame can also contain sparse premarket and
+    # postmarket observations; allowing those into session VWAP, ATR, or
+    # price-action context makes production evaluate a different rule.
+    clocks = pd.to_datetime(rows["time"]).dt.time
+    rows = rows.loc[(clocks >= time(9, 30)) & (clocks < time(16, 0))]
     return tuple(
         Bar(
             pd.Timestamp(row.time).to_pydatetime(), float(row.open), float(row.high),

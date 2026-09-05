@@ -28,6 +28,22 @@ class SpyFailedRangeRecoveryV2Tests(unittest.TestCase):
         self.assertEqual(15, len(bars))
         self.assertEqual(datetime(2026, 8, 10, 9, 44), bars[-1].timestamp)
 
+    def test_excludes_extended_hours_from_reviewed_session_inputs(self) -> None:
+        regular = _frame([(100, 101, 99, 100)] * 16)
+        extended = pd.DataFrame({
+            "time": [pd.Timestamp("2026-08-10 08:00"), pd.Timestamp("2026-08-10 16:00")],
+            "open": [90.0, 110.0], "high": [91.0, 111.0],
+            "low": [89.0, 109.0], "close": [90.0, 110.0],
+            "volume": [10000.0, 10000.0], "rvol": [1.0, 1.0],
+        })
+        frame = pd.concat([extended, regular], ignore_index=True)
+
+        bars = recovery._completed_one_minute_bars(frame, now=datetime(2026, 8, 10, 16, 1))
+
+        self.assertEqual(16, len(bars))
+        self.assertEqual(datetime(2026, 8, 10, 9, 30), bars[0].timestamp)
+        self.assertEqual(datetime(2026, 8, 10, 9, 45), bars[-1].timestamp)
+
     def test_bearish_recovery_emits_once_after_failed_up_break(self) -> None:
         opening = [(100.0, 101.0, 99.0, 100.0)] * 15
         # Range width=2. A 101.20 close proves the upward break; the next red
