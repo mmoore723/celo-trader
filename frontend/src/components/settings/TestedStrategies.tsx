@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type TestedStrategyInventory } from "../../lib/api";
+import { StrategyToggleCard } from "./StrategyToggleCard";
 
 function Study({ report, data }: { report: string; data: TestedStrategyInventory }) {
   const detail = data.report_details[report];
@@ -23,10 +24,10 @@ export function TestedStrategies({
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["tested-strategies", researchIds], queryFn: api.settings.testedStrategies,
   });
-  if (isPending) return <section className="card p-4"><p role="status">Loading strategies…</p></section>;
-  if (isError || data?.unavailable || !data) return <section className="card p-4" role="alert">
+  if (isPending) return <div className="mt-2"><p role="status">Loading strategies…</p></div>;
+  if (isError || data?.unavailable || !data) return <div className="mt-2" role="alert">
     Strategies could not be loaded. <button className="btn btn-ghost" onClick={() => refetch()}>Try again</button>
-  </section>;
+  </div>;
 
   const runtime = data.runtime_research ?? [];
   const runtimeIds = new Set(runtime.map(row => row.strategy_id));
@@ -41,20 +42,25 @@ export function TestedStrategies({
     onResearchIdsChange([...next].sort());
   };
 
-  return <section className="card p-4" id="tested-strategy-library">
-    <h3 className="text-sm font-semibold">More strategies being tested</h3>
-    <p className="text-xs mt-1 mb-3" style={{ color: "var(--ink-muted)" }}>
-      These run on every ticker the bot collects. They only gather results; they cannot place an order.
-    </p>
-    <div className="grid gap-2 sm:grid-cols-2">
-      {runtime.map(strategy => {
+  return <div className="mt-2" id="tested-strategy-library">
+    {runtime.map((strategy, index) => {
         const enabled = researchIds.includes(strategy.strategy_id);
-        return <label key={strategy.strategy_id} className="rounded-lg p-3 flex items-center justify-between gap-3 cursor-pointer" style={{ border: "1px solid var(--border)", background: "var(--surface-raised)" }}>
-          <span><strong className="block text-sm">{strategy.display_name}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>{enabled ? "Researching all collected tickers" : "Research paused"}</span></span>
-          <input type="checkbox" checked={enabled} onChange={event => toggle(strategy.strategy_id, event.target.checked)} aria-label={`Research ${strategy.display_name}`} />
-        </label>;
+        return <StrategyToggleCard
+          key={strategy.strategy_id}
+          separated={index > 0}
+          label={`${strategy.display_name} · v${strategy.version}`}
+          checked={enabled}
+          onChange={value => toggle(strategy.strategy_id, value)}
+        >
+          <p className="text-xs pb-1 -mt-1" style={{ color: "var(--ink-muted)" }}>
+            <strong style={{ color: "var(--warning)" }}>Historical PF collecting</strong>
+            {" · Goal 1.5"}
+          </p>
+          <p className="text-xs pb-3" style={{ color: "var(--warning)" }}>
+            {enabled ? "Researching every collected ticker · No orders" : "Research paused · No orders"}
+          </p>
+        </StrategyToggleCard>;
       })}
-    </div>
 
     <details className="mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
       <summary className="cursor-pointer text-sm font-medium">Saved tests not yet rebuilt ({savedOnly.length + data.other_studies.length})</summary>
@@ -75,5 +81,5 @@ export function TestedStrategies({
       {filtered.length > 30 && <p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>Showing the first 30 matches. Search to narrow the list.</p>}
       {!query && data.other_studies.length > 30 && <p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>Showing the first 30 saved studies without a strategy name.</p>}
     </details>
-  </section>;
+  </div>;
 }

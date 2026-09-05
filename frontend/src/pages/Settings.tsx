@@ -11,25 +11,7 @@ import { loadCredentialDisplay, maskCredentialForDisplay } from "../lib/credenti
 import { needsTradierSandbox } from "../lib/connectionHealthView.js";
 import { TestedStrategies } from "../components/settings/TestedStrategies";
 import { StrategyRecommendations } from "../components/settings/StrategyRecommendations";
-
-function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return (
-    <label className={`flex items-center justify-between gap-3 py-2 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
-      <span className="text-sm" style={{ color: "var(--ink)" }}>{label}</span>
-      <button type="button"
-        className={`toggle-track ${checked ? "on" : ""}`}
-        onClick={() => { if (!disabled) onChange(!checked); }}
-        role="switch"
-        aria-checked={checked}
-        aria-disabled={disabled}
-        disabled={disabled}
-        aria-label={label}
-      >
-        <div className="toggle-thumb" />
-      </button>
-    </label>
-  );
-}
+import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
 
 const DEFAULT: AppSettings = {
   broker_provider: "alpaca",
@@ -378,13 +360,14 @@ export function Settings() {
       ? `${actual.total_pnl >= 0 ? "+" : "-"}$${Math.abs(actual.total_pnl).toFixed(2)}`
       : null;
     return (
-      <div key={strategy.strategy_id} className={`rounded-lg px-3 ${index ? "mt-2" : ""}`} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-        <Toggle
+      <StrategyToggleCard
+        key={strategy.strategy_id}
+        separated={index > 0}
           label={`${strategy.display_name} · v${strategy.version}`}
           checked={switchEnabled}
           onChange={(v) => set(strategy.setting_key, v)}
           disabled={strategy.integrity_errors.length > 0}
-        />
+      >
         <p className="text-xs pb-1 -mt-1" style={{ color: "var(--ink-muted)" }}>
           <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>
             Historical PF {pfLabel}
@@ -416,7 +399,7 @@ export function Settings() {
             Disabled because its code no longer matches the reviewed evidence.
           </p>
         )}
-      </div>
+      </StrategyToggleCard>
     );
   }
 
@@ -882,13 +865,12 @@ export function Settings() {
           On means keep testing. These strategies cannot place an order.
         </p>
         {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}
+        <TestedStrategies
+          currentIds={(strategyCatalog?.strategies ?? []).map(strategy => strategy.strategy_id)}
+          researchIds={form.research_strategy_ids ?? []}
+          onResearchIdsChange={ids => set("research_strategy_ids", ids)}
+        />
       </div>
-
-      <TestedStrategies
-        currentIds={(strategyCatalog?.strategies ?? []).map(strategy => strategy.strategy_id)}
-        researchIds={form.research_strategy_ids ?? []}
-        onResearchIdsChange={ids => set("research_strategy_ids", ids)}
-      />
       </div>
 
       {/* Save / Discard */}

@@ -7,7 +7,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ts from "typescript";
 
 const source = readFileSync(new URL("../src/components/settings/TestedStrategies.tsx", import.meta.url), "utf8");
+const cardSource = readFileSync(new URL("../src/components/settings/StrategyToggleCard.tsx", import.meta.url), "utf8");
 const apiStub = "data:text/javascript," + encodeURIComponent("export const api = {settings:{testedStrategies:()=>Promise.resolve({})}};");
+let cardCompiled = ts.transpileModule(cardSource, { compilerOptions: {
+  jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext,
+} }).outputText;
+cardCompiled = cardCompiled.replaceAll(JSON.stringify("react/jsx-runtime"), JSON.stringify(import.meta.resolve("react/jsx-runtime")));
+const cardStub = `data:text/javascript;base64,${Buffer.from(cardCompiled).toString("base64")}`;
 let compiled = ts.transpileModule(source, { compilerOptions: {
   jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext,
 } }).outputText;
@@ -15,6 +21,7 @@ for (const name of ["react", "react/jsx-runtime", "@tanstack/react-query"]) {
   compiled = compiled.replaceAll(JSON.stringify(name), JSON.stringify(import.meta.resolve(name)));
 }
 compiled = compiled.replace('"../../lib/api"', JSON.stringify(apiStub));
+compiled = compiled.replace('"./StrategyToggleCard"', JSON.stringify(cardStub));
 const { TestedStrategies } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 const fixture = {
   runtime_research: [],
@@ -66,4 +73,20 @@ test("long inventories use a bounded first view and search", () => {
   assert.doesNotMatch(html, /Strategy 30/);
   assert.match(html, /Showing the first 30 matches/);
   assert.match(html, /Find a strategy/);
+});
+
+test("working research strategies use the same accessible toggle-card pattern", () => {
+  const runtime = [{
+    strategy_id: "V2_OPENING_MOMENTUM_RTH_EXPLORATORY",
+    display_name: "Opening Momentum", version: "research.1",
+    exit_minutes: 90, enabled: true, research_scope: "all_collected_tickers",
+  }];
+  const html = render({...fixture, runtime_research: runtime}, [], [runtime[0].strategy_id]);
+  assert.match(html, /Opening Momentum · vresearch\.1/);
+  assert.match(html, /role="switch"/);
+  assert.match(html, /aria-checked="true"/);
+  assert.match(html, /Historical PF collecting/);
+  assert.match(html, /Goal 1\.5/);
+  assert.match(html, /Researching every collected ticker · No orders/);
+  assert.doesNotMatch(html, /type="checkbox"/);
 });
