@@ -101,7 +101,20 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         self.assertTrue(rule.paper_only)
 
     def test_spy_afternoon_fvg_uses_reviewed_30_minute_exit(self) -> None:
-        self.assertEqual(30, REVIEWED_STRATEGIES["V2_SPY_AFTERNOON_FVG"].exit_minutes)
+        root = Path(__file__).resolve().parents[1]
+        rule = REVIEWED_STRATEGIES["V2_SPY_AFTERNOON_FVG"]
+        evidence = json.loads((root / rule.evidence_artifact).read_text())
+        self.assertEqual(30, rule.exit_minutes)
+        self.assertEqual("2.1.0", rule.version)
+        self.assertEqual(19, evidence["historical_repair_diagnostic"]["repaired_all"]["trades"])
+        self.assertAlmostEqual(
+            2.2165,
+            evidence["historical_repair_diagnostic"]["repaired_all"]["profit_factor"],
+        )
+        self.assertEqual(
+            "bullish retest close above EMA8; bearish retest close below EMA8",
+            evidence["selected_policy"]["trigger_confirmation"],
+        )
 
     def test_spy_failed_range_recovery_uses_reviewed_30_minute_exit(self) -> None:
         self.assertEqual(30, REVIEWED_STRATEGIES["V2_FAILED_OR_BREAK_VWAP_REVERSION"].exit_minutes)

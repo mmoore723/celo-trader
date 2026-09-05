@@ -31,6 +31,15 @@ _START = time(13, 30)
 _END = time(15, 0)
 
 
+def _trigger_close_confirms_direction(direction: str, close: float, fast_ema: float) -> bool:
+    """Reject a retest candle that has already crossed against the setup."""
+    if direction == "bullish":
+        return close > fast_ema
+    if direction == "bearish":
+        return close < fast_ema
+    raise ValueError(f"unsupported direction: {direction}")
+
+
 def _session_vwap(bars: Sequence[Bar]) -> float:
     price_volume = volume = 0.0
     for bar in bars:
@@ -70,7 +79,10 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
         intervening = today[middle + 2:-1]
         if before.high < after.low:
             lower, upper = before.high, after.low
-            if upper - lower < _MIN_GAP_ATR * atr or not (fast > slow and current.close > vwap):
+            if upper - lower < _MIN_GAP_ATR * atr or not (
+                fast > slow and current.close > vwap
+                and _trigger_close_confirms_direction("bullish", current.close, fast)
+            ):
                 continue
             if any(bar.low <= upper and bar.high >= lower for bar in intervening):
                 continue
@@ -90,6 +102,7 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                             "gap_lower": round(lower, 6), "gap_upper": round(upper, 6),
                             "atr": round(atr, 6), "vwap": round(vwap, 6),
                             "ema_fast": round(fast, 6), "ema_slow": round(slow, 6),
+                            "trigger_close_confirmed_ema8": True,
                             "trigger": "upward_gap_retest", "v2_entry_reference": current.close,
                             "v2_stop": stop, "v2_target": current.close + 2.0 * risk,
                             "entry_bar_low": stop, "entry_bar_high": None,
@@ -97,7 +110,10 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                     )
         elif before.low > after.high:
             lower, upper = after.high, before.low
-            if upper - lower < _MIN_GAP_ATR * atr or not (fast < slow and current.close < vwap):
+            if upper - lower < _MIN_GAP_ATR * atr or not (
+                fast < slow and current.close < vwap
+                and _trigger_close_confirms_direction("bearish", current.close, fast)
+            ):
                 continue
             if any(bar.low <= upper and bar.high >= lower for bar in intervening):
                 continue
@@ -117,6 +133,7 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                             "gap_lower": round(lower, 6), "gap_upper": round(upper, 6),
                             "atr": round(atr, 6), "vwap": round(vwap, 6),
                             "ema_fast": round(fast, 6), "ema_slow": round(slow, 6),
+                            "trigger_close_confirmed_ema8": True,
                             "trigger": "downward_gap_retest", "v2_entry_reference": current.close,
                             "v2_stop": stop, "v2_target": current.close - 2.0 * risk,
                             "entry_bar_low": None, "entry_bar_high": stop,

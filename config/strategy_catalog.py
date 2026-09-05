@@ -90,7 +90,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
     "V2_SPY_AFTERNOON_FVG": ReviewedStrategy(
         strategy_id="V2_SPY_AFTERNOON_FVG",
         display_name="SPY Afternoon Fair Value Gap",
-        version="2.0.0",
+        version="2.1.0",
         tickers=frozenset({"SPY"}),
         setting_key="strategy_spy_afternoon_fvg_v2_enabled",
         signal_source="bar_close",
@@ -99,8 +99,8 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         paper_only=False,
         status="paper_candidate",
         evidence_grade="promising_underpowered",
-        evidence_artifact="config/strategy_evidence/v2_spy_afternoon_fvg-2.0.0.json",
-        evidence="SPY paid-quote afternoon first-retest FVG study: positive May–July, but one signal short of the predeclared training minimum",
+        evidence_artifact="config/strategy_evidence/v2_spy_afternoon_fvg-2.1.0.json",
+        evidence="EMA8-confirmed SPY FVG retest: after-cost PF 2.22 across 19 paid-quote outcomes; paper repair awaiting fresh forward validation",
     ),
     "V2_FAILED_OR_BREAK_VWAP_REVERSION": ReviewedStrategy(
         strategy_id="V2_FAILED_OR_BREAK_VWAP_REVERSION",

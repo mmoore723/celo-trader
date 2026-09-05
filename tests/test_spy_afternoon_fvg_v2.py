@@ -51,6 +51,29 @@ class SpyAfternoonFvgV2Tests(unittest.TestCase):
         self.assertIsNone(afternoon_fvg._signal_from_completed_bars(before_window))
         self.assertIsNone(afternoon_fvg._signal_from_completed_bars(after_window))
 
+    def test_rule_rejects_bullish_retest_that_closes_back_below_fast_ema(self) -> None:
+        bars = list(_valid_bars())
+        impulse = bars[17]
+        bars[17] = Bar(
+            impulse.timestamp, 101.62, 104.20, 101.55, 104.00, impulse.volume,
+        )
+        after = bars[18]
+        bars[18] = Bar(
+            after.timestamp, 103.30, 103.60, 102.00, 103.50, after.volume,
+        )
+        retest = bars[19]
+        bars[19] = Bar(
+            retest.timestamp, 103.00, 103.10, 101.80, 102.06, retest.volume,
+        )
+
+        self.assertIsNone(afternoon_fvg._signal_from_completed_bars(tuple(bars)))
+
+    def test_trigger_close_confirmation_is_symmetric(self) -> None:
+        self.assertTrue(afternoon_fvg._trigger_close_confirms_direction("bullish", 101, 100))
+        self.assertFalse(afternoon_fvg._trigger_close_confirms_direction("bullish", 99, 100))
+        self.assertTrue(afternoon_fvg._trigger_close_confirms_direction("bearish", 99, 100))
+        self.assertFalse(afternoon_fvg._trigger_close_confirms_direction("bearish", 101, 100))
+
     def test_live_adapter_is_spy_only_and_does_not_repeat_same_retest(self) -> None:
         frame = pd.DataFrame({
             "time": [datetime(2026, 8, 10, 13, 31)],

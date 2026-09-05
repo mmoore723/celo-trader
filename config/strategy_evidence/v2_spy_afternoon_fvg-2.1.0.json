@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "strategy_id": "V2_SPY_AFTERNOON_FVG",
+  "strategy_version": "2.1.0",
+  "status": "paper_candidate",
+  "evidence_grade": "promising_underpowered",
+  "ticker_scope": ["SPY"],
+  "implementation": "strategies.spy_afternoon_fvg_v2.evaluate",
+  "implementation_sha256_at_review": "0f17123d22c8d3e9f9d794be4226ec02f5387f17af3fefd3df2e32e61cd8904e",
+  "market_data": {
+    "source": "paid Databento OPRA CBBO-1m archive",
+    "bars_sha256": "a9cfcb0d273881b7831d67b9321653350571b16cce17aed1b83f37c66d748273",
+    "execution_model": "actual option ask plus $0.01 entry slippage; same-contract actual bid minus $0.01 exit slippage; no midpoint or synthetic option price",
+    "fee_per_contract_per_side": 0.65,
+    "eligibility": {
+      "min_dte": 7,
+      "max_dte": 21,
+      "min_premium": 0.8,
+      "max_premium": 10.0,
+      "max_spread_pct": 0.08
+    }
+  },
+  "selected_policy": {
+    "variant": "live_baseline_0_50_atr_with_ema8_trigger_confirmation",
+    "hold_minutes": 30,
+    "holdout_start": "2026-07-01",
+    "trigger_confirmation": "bullish retest close above EMA8; bearish retest close below EMA8"
+  },
+  "historical_repair_diagnostic": {
+    "source_report_sha256": "9762ce048d048b34fba6672a57434fd9fd1ef26dc0198ecf97eeed85447b7bce",
+    "baseline": {
+      "trades": 23,
+      "wins": 16,
+      "net_pnl_one_contract": 454.1,
+      "median_pnl_one_contract": 17.7,
+      "profit_factor": 3.1111
+    },
+    "repaired_all": {
+      "trades": 19,
+      "wins": 13,
+      "net_pnl_one_contract": 261.3,
+      "median_pnl_one_contract": 7.7,
+      "profit_factor": 2.2165
+    },
+    "repaired_training": {
+      "trades": 11,
+      "wins": 8,
+      "net_pnl_one_contract": 168.7,
+      "median_pnl_one_contract": 18.7,
+      "profit_factor": 1.8884
+    },
+    "repaired_holdout": {
+      "trades": 8,
+      "wins": 5,
+      "net_pnl_one_contract": 92.6,
+      "median_pnl_one_contract": 6.2,
+      "profit_factor": 4.7189
+    }
+  },
+  "prospective_baseline": {
+    "as_of": "2026-09-04",
+    "independent_trades": 8,
+    "wins": 2,
+    "net_pnl_one_contract": -171.4,
+    "median_pnl_one_contract": -21.8,
+    "profit_factor": 0.1869,
+    "decision": "Version 2.0.0 is losing in the current sample and needs an entry repair."
+  },
+  "prospective_repair_replay": {
+    "production_snapshot_sha256": "b08759489fd7963b0a0451c97588a2e55f4cd1fd482e5a5beb8d33deb94090d6",
+    "replayable_baseline_trades": 6,
+    "accepted_by_repair": 3,
+    "accepted_net_pnl_one_contract": -51.9,
+    "rejected_by_repair": 3,
+    "rejected_net_pnl_one_contract": -158.9,
+    "unscorable_without_retained_scanner_candles": 2,
+    "warning": "Exploratory stress evidence only; the repair was investigated after these outcomes were visible."
+  },
+  "display_metrics": {
+    "profit_factor": 2.22,
+    "trades": 19,
+    "scope": "SPY · 30-minute hold · May-July · EMA8-confirmed trigger",
+    "comparison": "Repaired past test PF 2.22 · fresh forward sample now collecting",
+    "target_profit_factor": 1.5,
+    "meets_target": true,
+    "note": "The repair removes directionally contradictory retest candles, but remains paper-only evidence until fresh exact-contract results pass."
+  },
+  "decision": "Deploy the causal EMA8 trigger confirmation as a paper repair, preserve the user's saved switch, and require fresh forward validation before live use.",
+  "source_reports": [
+    "research/reports/paid_spy_afternoon_fvg_v2_tune_fast.json",
+    "docs/audits/2026-09-05-spy-afternoon-fvg-trigger-confirmation.md"
+  ]
+}
