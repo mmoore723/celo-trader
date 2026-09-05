@@ -17,6 +17,10 @@ from shadow_ledger import record_router_candidate, snapshot_candidate_plan
 from trading.entry.contract import (
     reviewed_contract_profile, select_contract, select_reviewed_v2_contract,
 )
+from trading.research_contract_selection import (
+    RESEARCH_CONTRACT_SOURCE, RESEARCH_MAX_CONTRACT_DOLLARS, research_contract_profile,
+    select_research_contract,
+)
 from trading.state import _now_et
 from trading.v2_orb_paper_execution import entry_limit_prices
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
@@ -36,6 +40,7 @@ def observe_candidate_contract(
     *, ticker: str, signal: object, underlying_price: float | None,
     tradier: Any, balance: float, risk: Any, settings: dict,
     selection_cache: dict[tuple[object, ...], tuple[dict | None, dict]] | None = None,
+    research_only: bool = False,
 ) -> None:
     """Record a raw candidate and, when possible, its display-only contract."""
     record_router_candidate(ticker, signal, underlying_price)
@@ -48,8 +53,15 @@ def observe_candidate_contract(
         return
 
     reviewed = uses_v2_orb_execution_profile(strategy_id)
-    maximum = _max_spend(float(balance), settings)
+    research_profile = research_contract_profile(strategy_id) if research_only else None
+    maximum = (
+        RESEARCH_MAX_CONTRACT_DOLLARS
+        if research_only else _max_spend(float(balance), settings)
+    )
     cache_key = (
+        "research" if research_only else "execution_preview",
+        strategy_id.upper(),
+        research_profile.version if research_profile else None,
         reviewed, ticker.upper(), direction.lower(), round(price, 4), round(maximum, 2),
     )
     cached = selection_cache.get(cache_key) if selection_cache is not None else None
@@ -59,7 +71,11 @@ def observe_candidate_contract(
         info = dict(cached_info or {})
     else:
         try:
-            if reviewed:
+            if research_only:
+                contract, info = select_research_contract(
+                    tradier, ticker, direction, price, strategy_id,
+                )
+            elif reviewed:
                 contract, info = select_reviewed_v2_contract(
                     tradier, ticker, direction, price, maximum, for_display=True,
                     strategy_id=strategy_id,
@@ -88,6 +104,8 @@ def observe_candidate_contract(
         "liquidity_detail": (info or {}).get("illiquid_fail"),
         "eligible_contract_count": (info or {}).get("eligible_contract_count"),
         "shadow_contract_leaderboard": (info or {}).get("shadow_contract_leaderboard", []),
+        "research_profile": (info or {}).get("research_profile"),
+        "selected_policy": (info or {}).get("selected_policy"),
     }
     quantity = None
     if contract:
@@ -95,12 +113,13 @@ def observe_candidate_contract(
         ask = float(contract.get("ask") or 0)
         midpoint = round((bid + ask) / 2.0, 4) if bid > 0 else ask
         working_limit, step_limit = entry_limit_prices(
-            ask=ask, midpoint=midpoint, v2_paper_pilot=reviewed,
+            ask=ask, midpoint=midpoint,
+            v2_paper_pilot=reviewed or research_only,
         )
-        maximum_entry = risk.slippage_adjusted_entry(ask)
+        maximum_entry = ask if research_only else risk.slippage_adjusted_entry(ask)
         # Quantity remains sized at the hard ceiling, not at the optimistic
         # first limit. That prevents a reprice from exceeding approved risk.
-        quantity = risk.calculate_contracts(maximum_entry, balance)
+        quantity = 1 if research_only else risk.calculate_contracts(maximum_entry, balance)
         preview.update({
             "symbol": contract.get("symbol"), "strike": contract.get("strike"),
             "expiry": contract.get("expiry"), "bid": contract.get("bid"),
@@ -117,24 +136,43 @@ def observe_candidate_contract(
             "planned_contracts": int(quantity),
             "estimated_position_cost": round(maximum_entry * quantity * 100, 2),
         })
-    reviewed_profile = reviewed_contract_profile(strategy_id, ticker) if reviewed else None
+    reviewed_profile = (
+        reviewed_contract_profile(strategy_id, ticker)
+        if reviewed and not research_only else None
+    )
     recipe = {
         "option_type": "CALL" if direction.lower() in {"bullish", "long", "call"} else "PUT",
-        "strike_rule": "closest out-of-the-money strike to the underlying at selection",
+        "strike_rule": (
+            "compare declared out-of-the-money contract policies"
+            if research_only else
+            "closest out-of-the-money strike to the underlying at selection"
+        ),
         "premium_rule": (
+            f"${research_profile.minimum_premium:.2f}–${research_profile.maximum_premium:.2f} ask"
+            if research_profile else
             f"${reviewed_profile.minimum_premium:.2f}–${reviewed_profile.maximum_premium:.2f} ask"
             if reviewed_profile else f"${MIN_CONTRACT_COST:.2f}–${MAX_CONTRACT_COST:.2f} ask"
         ),
         "expiration_rule": (
+            f"{research_profile.minimum_dte}–{research_profile.maximum_dte} calendar days to expiration"
+            if research_profile else
             f"{reviewed_profile.minimum_dte}–{reviewed_profile.maximum_dte} calendar days to expiration"
             if reviewed_profile else "first broker-listed expiration with a qualifying contract"
         ),
         "spread_rule": "bid/ask spread no wider than 8% of mid",
-        "liquidity_rule": "broker-returned liquid chain" if reviewed else f"open interest of at least {MIN_OPEN_INTEREST}",
+        "liquidity_rule": (
+            "broker-returned liquid chain"
+            if research_only or reviewed else
+            f"open interest of at least {MIN_OPEN_INTEREST}"
+        ),
         "maximum_cost": round(maximum, 2),
         "selection_model": (
+            research_profile.version if research_profile else
             reviewed_profile.selection_model if reviewed_profile else "standard liquid first-OTM profile"
         ),
+        "purpose": "research_only_no_orders" if research_only else "execution_preview",
+        "research_profile": (info or {}).get("research_profile") if research_only else None,
+        "selected_policy": (info or {}).get("selected_policy") if research_only else None,
     }
     context = {
         "strategy_meta": meta,
@@ -152,11 +190,18 @@ def observe_candidate_contract(
         record_candidate_option_quote(
             candidate_id=candidate_id, contract_symbol=str(contract.get("symbol") or ""),
             observation_kind="entry", observed_at=_now_et(), quote=contract,
-            source="tradier_observation_only_preview",
+            source=(
+                RESEARCH_CONTRACT_SOURCE
+                if research_only else "tradier_observation_only_preview"
+            ),
         )
     for alternative in preview.get("shadow_contract_leaderboard", []):
         record_candidate_contract_alternative(
             candidate_id=candidate_id, contract=alternative,
             observation_kind="entry", observed_at=_now_et(),
             policies=alternative.get("policy_winner_for", []),
+            source=(
+                RESEARCH_CONTRACT_SOURCE
+                if research_only else "reviewed_selector_shadow"
+            ),
         )

@@ -125,7 +125,12 @@ class ResearchMatrixTests(unittest.TestCase):
                 trigger_bar TEXT, direction TEXT, metadata_json TEXT
             );
             CREATE TABLE candidate_option_quote_observations (
-                candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL, observed_at TEXT
+                candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL,
+                observed_at TEXT, source TEXT
+            );
+            CREATE TABLE candidate_contract_alternatives (
+                candidate_id TEXT, contract_symbol TEXT, observation_kind TEXT,
+                bid REAL, ask REAL, observed_at TEXT, policy_json TEXT, source TEXT
             );
             CREATE TABLE scanner_candle_observations (
                 ticker TEXT, bar_time TEXT, broker_account_id TEXT
@@ -139,10 +144,23 @@ class ResearchMatrixTests(unittest.TestCase):
             "c2", "2026-09-03T11:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 0, -0.4, "acct",
             "2026-09-03T11:00:00", "bearish", "{}",
         ))
-        conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?)", [
-            ("c1", "entry", 1.9, 2.0, "2026-09-03T10:00:00"),
-            ("c1", "mark_30m", 3.0, 3.1, "2026-09-03T10:30:00"),
-            ("c2", "entry", 1.9, 2.0, "2026-09-03T11:00:00"),
+        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
+            "other-user", "2026-09-03T12:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 1, 2.0, "other",
+            "2026-09-03T12:00:00", "bullish", "{}",
+        ))
+        conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?,?)", [
+            ("c1", "entry", 1.9, 2.0, "2026-09-03T10:00:00", "tradier_research_contract_v1"),
+            ("c1", "mark_30m", 3.0, 3.1, "2026-09-03T10:30:00", "followup"),
+            ("c2", "entry", 1.9, 2.0, "2026-09-03T11:00:00", "legacy_preview"),
+            ("c2", "mark_30m", 9.0, 9.1, "2026-09-03T11:30:00", "followup"),
+            ("other-user", "entry", 1.9, 2.0, "2026-09-03T12:00:00", "tradier_research_contract_v1"),
+            ("other-user", "mark_30m", 9.0, 9.1, "2026-09-03T12:30:00", "followup"),
+        ])
+        conn.executemany("INSERT INTO candidate_contract_alternatives VALUES (?,?,?,?,?,?,?,?)", [
+            ("c1", "AAPL_TEST", "entry", 1.9, 2.0, "2026-09-03T10:00:00", '["target_150_250"]', "tradier_research_contract_v1"),
+            ("c1", "AAPL_TEST", "mark_30m", 3.0, 3.1, "2026-09-03T10:30:00", '["target_150_250"]', "tradier_alternative_followup"),
+            ("other-user", "AAPL_OTHER", "entry", 1.9, 2.0, "2026-09-03T12:00:00", '["target_150_250"]', "tradier_research_contract_v1"),
+            ("other-user", "AAPL_OTHER", "mark_30m", 9.0, 9.1, "2026-09-03T12:30:00", '["target_150_250"]', "tradier_alternative_followup"),
         ])
         conn.execute("INSERT INTO scanner_candle_observations VALUES (?,?,?)", (
             "AAPL", "2026-09-03T09:30:00", "acct",
@@ -172,6 +190,9 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertGreater(pair["net_one_contract_pnl"], 0)
         self.assertEqual(1, pair["market_days"])
         self.assertFalse(pair["tradable"])
+        self.assertEqual("target_150_250", pair["leading_contract_test"]["policy"])
+        self.assertEqual(1, pair["leading_contract_test"]["option_results"])
+        self.assertEqual(1, pair["legacy_option_profiles_ignored"])
         conn.close()
 
     def test_older_candidate_is_a_data_day_when_candle_archive_did_not_exist(self):
@@ -184,7 +205,12 @@ class ResearchMatrixTests(unittest.TestCase):
                 trigger_bar TEXT, direction TEXT, metadata_json TEXT
             );
             CREATE TABLE candidate_option_quote_observations (
-                candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL, observed_at TEXT
+                candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL,
+                observed_at TEXT, source TEXT
+            );
+            CREATE TABLE candidate_contract_alternatives (
+                candidate_id TEXT, contract_symbol TEXT, observation_kind TEXT,
+                bid REAL, ask REAL, observed_at TEXT, policy_json TEXT, source TEXT
             );
             CREATE TABLE scanner_candle_observations (
                 ticker TEXT, bar_time TEXT, broker_account_id TEXT

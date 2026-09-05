@@ -74,7 +74,7 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
                 observe_candidate_contract(
                     ticker=symbol, signal=signal, underlying_price=price,
                     tradier=tradier, balance=balance, risk=risk, settings=settings,
-                    selection_cache=cache,
+                    selection_cache=cache, research_only=True,
                 )
 
         # Never call _tick or return these signals to the trading loop.

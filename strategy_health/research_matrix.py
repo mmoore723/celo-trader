@@ -7,17 +7,29 @@ import json
 
 from config.market_constants import COMMISSION_PER_CONTRACT
 from config.strategy_catalog import (
-    REVIEWED_STRATEGIES, reviewed_research_exit_minutes,
+    REVIEWED_STRATEGIES, enabled_reviewed_strategy_ids, reviewed_research_exit_minutes,
     reviewed_strategy_ids,
 )
 from strategy_health.candidate_evidence import candidate_signal_is_timely
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
 )
+from trading.research_contract_selection import (
+    RESEARCH_CONTRACT_PROFILE_VERSION, RESEARCH_CONTRACT_SOURCE,
+)
 
 OPTION_SLIPPAGE_PER_SIDE = 0.01
 EXIT_WINDOWS = (30, 60, 90)
 QUOTE_WINDOW_GRACE_MINUTES = 5
+CONTRACT_POLICY_LABELS = {
+    "target_150_250": "$150–$250 closest to $200",
+    "nearest_weekly_150_1000": "Nearest weekly $150–$1,000",
+    "closest_otm_150_1000": "Closest OTM $150–$1,000",
+    "tightest_spread_150_1000": "Tightest spread $150–$1,000",
+    "lowest_ask_150_1000": "Lowest ask $150–$1,000",
+    "highest_open_interest_150_1000": "Highest open interest $150–$1,000",
+    "highest_volume_150_1000": "Highest volume $150–$1,000",
+}
 
 
 def _parse_time(raw: object) -> datetime:
@@ -127,6 +139,70 @@ def _exit_summary(samples: list, exit_minutes: int) -> tuple[dict, list[tuple[st
         "net_one_contract_pnl": round(sum(profits), 2),
         "mistimed_quotes_ignored": sum(result[1] == "mistimed_quote" for _, result in measured),
     }, dated_profits)
+
+
+def _without_incomparable_quotes(row: object, *, research_pair: bool) -> dict:
+    """Keep setups but blank quotes captured under the wrong contract profile."""
+    item = dict(row)
+    source = str(item.get("entry_source") or "")
+    comparable = (
+        source == RESEARCH_CONTRACT_SOURCE
+        if research_pair else source != RESEARCH_CONTRACT_SOURCE
+    )
+    if comparable:
+        return item
+    for key in (
+        "entry_ask", "entry_quote_at", "bid_30", "mark_30_at",
+        "bid_60", "mark_60_at", "bid_90", "mark_90_at",
+    ):
+        item[key] = None
+    return item
+
+
+def _contract_policy_summaries(
+    grouped: dict[tuple[str, str, str], list], *, strategy_id: str,
+    ticker: str, exit_minutes: int, sessions: int,
+) -> list[dict]:
+    """Score each current research contract policy without mixing policies."""
+    summaries: list[dict] = []
+    for (row_strategy, row_ticker, policy), raw_samples in grouped.items():
+        if row_strategy != strategy_id or row_ticker != ticker:
+            continue
+        timely = [row for row in raw_samples if candidate_signal_is_timely(row)]
+        current, _, _ = _current_rule_samples(timely, strategy_id, ticker)
+        independent = _independent_samples(current, exit_minutes)
+        summary, dated_profits = _exit_summary(independent, exit_minutes)
+        result_days = len({day for day, _ in dated_profits})
+        older, newer = _chronological_factors(dated_profits)
+        status, explanation = research_status(
+            results=summary["option_results"], days=result_days,
+            sessions=sessions, factor=summary["profit_factor"],
+            older_factor=older, newer_factor=newer,
+        )
+        summaries.append({
+            "policy": policy,
+            "label": CONTRACT_POLICY_LABELS.get(policy, policy.replace("_", " ").title()),
+            "profile_version": RESEARCH_CONTRACT_PROFILE_VERSION,
+            "status": status,
+            "explanation": explanation,
+            "option_results": summary["option_results"],
+            "option_result_days": result_days,
+            "wins": summary["wins"],
+            "win_rate_pct": summary["win_rate_pct"],
+            "profit_factor": summary["profit_factor"],
+            "net_one_contract_pnl": summary["net_one_contract_pnl"],
+            "mistimed_quotes_ignored": summary["mistimed_quotes_ignored"],
+            "older_profit_factor": older,
+            "newer_profit_factor": newer,
+        })
+    return sorted(
+        summaries,
+        key=lambda item: (
+            -int(item["option_results"]),
+            -_numeric_factor(item["profit_factor"]),
+            item["label"],
+        ),
+    )
 
 
 def _current_rule_samples(samples: list, strategy_id: str, ticker: str) -> tuple[list, int, int]:
@@ -259,6 +335,7 @@ def build_research_matrix(days: int = 90) -> dict:
                       s.direction_correct,s.directional_move_pct,
                       MAX(CASE WHEN q.observation_kind='entry' THEN q.ask END) AS entry_ask,
                       MAX(CASE WHEN q.observation_kind='entry' THEN q.observed_at END) AS entry_quote_at,
+                      MAX(CASE WHEN q.observation_kind='entry' THEN q.source END) AS entry_source,
                       MAX(CASE WHEN q.observation_kind='mark_30m' THEN q.bid END) AS bid_30,
                       MAX(CASE WHEN q.observation_kind='mark_30m' THEN q.observed_at END) AS mark_30_at,
                       MAX(CASE WHEN q.observation_kind='mark_60m' THEN q.bid END) AS bid_60,
@@ -270,6 +347,26 @@ def build_research_matrix(days: int = 90) -> dict:
                WHERE s.observed_at >= ? AND """ + candidate_account +
             " GROUP BY s.candidate_id ORDER BY s.observed_at",
             params,
+        ).fetchall()
+        alternative_rows = conn.execute(
+            """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
+                      s.direction,s.metadata_json,a.contract_symbol,
+                      MAX(CASE WHEN a.observation_kind='entry' THEN a.ask END) AS entry_ask,
+                      MAX(CASE WHEN a.observation_kind='entry' THEN a.observed_at END) AS entry_quote_at,
+                      MAX(CASE WHEN a.observation_kind='entry' THEN a.policy_json END) AS policy_json,
+                      MAX(CASE WHEN a.observation_kind='entry' THEN a.source END) AS entry_source,
+                      MAX(CASE WHEN a.observation_kind='mark_30m' THEN a.bid END) AS bid_30,
+                      MAX(CASE WHEN a.observation_kind='mark_30m' THEN a.observed_at END) AS mark_30_at,
+                      MAX(CASE WHEN a.observation_kind='mark_60m' THEN a.bid END) AS bid_60,
+                      MAX(CASE WHEN a.observation_kind='mark_60m' THEN a.observed_at END) AS mark_60_at,
+                      MAX(CASE WHEN a.observation_kind='mark_90m' THEN a.bid END) AS bid_90,
+                      MAX(CASE WHEN a.observation_kind='mark_90m' THEN a.observed_at END) AS mark_90_at
+               FROM shadow_candidates s
+               JOIN candidate_contract_alternatives a ON a.candidate_id=s.candidate_id
+               WHERE s.observed_at >= ? AND """ + candidate_account +
+            " GROUP BY s.candidate_id,a.contract_symbol "
+            "HAVING entry_source = ? ORDER BY s.observed_at",
+            params + (RESEARCH_CONTRACT_SOURCE,),
         ).fetchall()
         candle_params: tuple[object, ...] = (cutoff[:10], account_id) if account_id else (cutoff[:10],)
         exposure = conn.execute(
@@ -302,6 +399,22 @@ def build_research_matrix(days: int = 90) -> dict:
     grouped: dict[tuple[str, str], list] = defaultdict(list)
     for row in rows:
         grouped[(str(row["strategy_id"]).upper(), str(row["ticker"]).upper())].append(row)
+    alternative_grouped: dict[tuple[str, str, str], list] = defaultdict(list)
+    for row in alternative_rows:
+        try:
+            policies = json.loads(str(row["policy_json"] or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            policies = []
+        if not isinstance(policies, list):
+            continue
+        for policy in policies:
+            normalized_policy = str(policy or "").strip()
+            if normalized_policy in CONTRACT_POLICY_LABELS:
+                alternative_grouped[(
+                    str(row["strategy_id"]).upper(),
+                    str(row["ticker"]).upper(),
+                    normalized_policy,
+                )].append(row)
 
     strategy_rows = []
     for strategy_id in strategy_ids:
@@ -314,7 +427,24 @@ def build_research_matrix(days: int = 90) -> dict:
         )
         pairs = []
         for ticker in sorted(tickers):
-            raw_samples = grouped.get((strategy_id, ticker), [])
+            trading_enabled = bool(
+                rule and not rule.observation_only
+                and strategy_id in enabled_reviewed_strategy_ids(settings, ticker=ticker)
+                and ticker in rule.tickers
+            )
+            source_samples = grouped.get((strategy_id, ticker), [])
+            research_pair = not trading_enabled
+            legacy_option_profiles_ignored = sum(
+                1 for row in source_samples
+                if _row_value(row, "entry_ask") is not None
+                and (
+                    str(_row_value(row, "entry_source") or "") == RESEARCH_CONTRACT_SOURCE
+                ) != research_pair
+            )
+            raw_samples = [
+                _without_incomparable_quotes(row, research_pair=research_pair)
+                for row in source_samples
+            ]
             timely_samples = [
                 row for row in raw_samples if candidate_signal_is_timely(row)
             ]
@@ -357,6 +487,10 @@ def build_research_matrix(days: int = 90) -> dict:
                 factor=factor, older_factor=older_factor, newer_factor=newer_factor,
                 exit_minutes=exit_minutes, exit_summaries=exit_summaries,
             )
+            contract_tests = _contract_policy_summaries(
+                alternative_grouped, strategy_id=strategy_id, ticker=ticker,
+                exit_minutes=exit_minutes, sessions=sessions.get(ticker, 0),
+            ) if research_pair else []
             pairs.append({
                 "ticker": ticker,
                 "status": status,
@@ -377,12 +511,18 @@ def build_research_matrix(days: int = 90) -> dict:
                 "direction_accuracy": direction_accuracy,
                 "quote_coverage_pct": round(current_summary["option_results"] / len(samples) * 100, 1) if samples else None,
                 "mistimed_quotes_ignored": current_summary["mistimed_quotes_ignored"],
+                "legacy_option_profiles_ignored": legacy_option_profiles_ignored,
                 "older_profit_factor": older_factor,
                 "newer_profit_factor": newer_factor,
                 "diagnosis": diagnosis,
                 "next_action": next_action,
                 "exit_comparison": exit_summaries,
-                "tradable": bool(rule and not rule.observation_only and ticker in rule.tickers),
+                "contract_tests": contract_tests,
+                "leading_contract_test": contract_tests[0] if contract_tests else None,
+                "research_contract_profile": (
+                    RESEARCH_CONTRACT_PROFILE_VERSION if research_pair else None
+                ),
+                "tradable": trading_enabled,
             })
         priority = {"working": 0, "promising": 1, "losing_so_far": 2, "needs_tuning": 3, "not_working": 4, "collecting": 5, "no_setups": 6}
         strategy_rows.append({

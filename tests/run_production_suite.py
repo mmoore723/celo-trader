@@ -55,6 +55,7 @@ RESEARCH_WORKSPACE_ONLY = {
     "test_time_of_day_periodicity",
     "test_tsla_noise_momentum_account",
     "test_two_leg_tuning",
+    "test_vwap_displacement_audit",
 }
 
 

@@ -48,6 +48,7 @@ function ResearchRow({ pair, strategyName, exitMinutes }: { pair: StrategyTicker
         <div className="flex flex-wrap items-center gap-2"><strong className="text-lg">{pair.ticker}</strong><span className={`badge ${pair.tradable ? "badge-green" : "badge-blue"}`}>{pair.tradable ? "TRADING ON" : "RESEARCH"}</span></div>
         <p className="text-sm mt-1">{strategyName}</p>
         <p className="text-xs font-semibold mt-1" style={{ color: status.color }}>{status.label}</p>
+        {pair.leading_contract_test && pair.leading_contract_test.option_results > 0 && <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Most option evidence: {pair.leading_contract_test.label} · PF {profitFactorText(pair.leading_contract_test.profit_factor)} ({pair.leading_contract_test.option_results})</p>}
       </div>
       <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>PF</span><strong>{profitFactorText(pair.profit_factor)}</strong></div>
       <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>Results</span><strong>{pair.option_results}</strong><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>{pair.option_result_days} days</span></div>
@@ -69,12 +70,14 @@ function ResearchRow({ pair, strategyName, exitMinutes }: { pair: StrategyTicker
         {pair.rule_unscored > 0 && <p><b>Old rows not comparable:</b> {pair.rule_unscored}</p>}
         {pair.stale_or_replayed > 0 && <p><b>Late signals ignored:</b> {pair.stale_or_replayed}</p>}
         {pair.mistimed_quotes_ignored > 0 && <p><b>Late prices ignored:</b> {pair.mistimed_quotes_ignored}</p>}
+        {pair.legacy_option_profiles_ignored > 0 && <p><b>Old option tests kept out:</b> {pair.legacy_option_profiles_ignored}</p>}
         {pair.older_profit_factor != null && <p><b>Older dates PF:</b> {profitFactorText(pair.older_profit_factor)}</p>}
         {pair.newer_profit_factor != null && <p><b>Newer dates PF:</b> {profitFactorText(pair.newer_profit_factor)}</p>}
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         {pair.exit_comparison.map(exit => <span key={exit.minutes} className="badge">{exit.minutes} min: PF {profitFactorText(exit.profit_factor)} ({exit.option_results}){exit.mistimed_quotes_ignored ? ` · ${exit.mistimed_quotes_ignored} late ignored` : ""}</span>)}
       </div>
+      {pair.contract_tests.length > 0 && <div className="mt-3"><p className="font-medium">Which option choice is working?</p><div className="flex flex-wrap gap-2 mt-2">{pair.contract_tests.map(test => <span key={test.policy} className="badge">{test.label}: PF {profitFactorText(test.profit_factor)} ({test.option_results})</span>)}</div></div>}
     </details>
   </article>;
 }

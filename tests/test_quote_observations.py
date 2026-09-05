@@ -36,7 +36,7 @@ class PaperOptionQuoteTests(unittest.TestCase):
                 confidence=.81, meta={},
             ),
             SimpleNamespace(
-                strategy_id="V2_SPY_AFTERNOON_FVG", direction="bullish",
+                strategy_id="V2_SPY_TREND_CONT", direction="bullish",
                 confidence=.78, meta={},
             ),
         ]
@@ -86,6 +86,105 @@ class PaperOptionQuoteTests(unittest.TestCase):
             self.assertEqual(5.10, preview["working_limit"])
             self.assertIsNone(preview["step_limit"])
             self.assertEqual(5.10, preview["maximum_entry_price"])
+
+    def test_candidate_preview_cache_never_crosses_strategy_profiles(self) -> None:
+        """Same ticker/price must not reuse a different strategy's contract."""
+        from trading.entry.candidate_observation import observe_candidate_contract
+
+        risk = SimpleNamespace(
+            slippage_adjusted_entry=lambda ask: ask,
+            calculate_contracts=lambda _entry, _balance: 1,
+        )
+        candidate_ids = iter(("trend", "displacement"))
+
+        def record_candidate(_ticker, signal, _underlying):
+            signal.meta["shadow_candidate_id"] = next(candidate_ids)
+
+        contract = {
+            "symbol": "SPY260821C00780000", "strike": 780,
+            "expiry": "2026-08-21", "bid": 1.9, "ask": 2.0,
+            "spread": .1, "volume": 100, "open_interest": 1000,
+        }
+        cache: dict = {}
+        signals = [
+            SimpleNamespace(strategy_id="V2_SPY_TREND_CONT", direction="bullish", confidence=.8, meta={}),
+            SimpleNamespace(strategy_id="CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG", direction="bullish", confidence=.8, meta={}),
+        ]
+        with patch(
+            "trading.entry.candidate_observation.record_router_candidate",
+            side_effect=record_candidate,
+        ), patch(
+            "trading.entry.candidate_observation.select_reviewed_v2_contract",
+            return_value=(contract, {}),
+        ) as selector, patch(
+            "trading.entry.candidate_observation.snapshot_candidate_plan",
+        ), patch(
+            "trading.entry.candidate_observation.record_candidate_option_quote",
+        ):
+            for signal in signals:
+                observe_candidate_contract(
+                    ticker="SPY", signal=signal, underlying_price=779.0,
+                    tradier=SimpleNamespace(), balance=5000.0, risk=risk,
+                    settings={"max_position_dollars": 750.0},
+                    selection_cache=cache,
+                )
+
+        self.assertEqual(2, selector.call_count)
+
+    def test_research_preview_uses_one_thousand_dollar_observation_cap_not_order_budget(self) -> None:
+        from trading.entry.candidate_observation import observe_candidate_contract
+
+        signal = SimpleNamespace(
+            strategy_id="V2_FAIR_VALUE_GAP", direction="bullish",
+            confidence=.75, meta={},
+        )
+        contract = {
+            "symbol": "AAPL260911C00260000", "strike": 260,
+            "expiry": "2026-09-11", "bid": 8.9, "ask": 9.0,
+            "spread": .1, "volume": 100, "open_interest": 1000,
+            "selection_model": "research_contracts_v1",
+        }
+        info = {
+            "reason": "selected", "selected_policy": "closest_otm_150_1000",
+            "research_profile": {
+                "version": "research_contracts_v1", "min_dte": 0, "max_dte": 7,
+                "min_premium": 1.5, "max_premium": 10.0,
+            },
+        }
+
+        def record_candidate(_ticker, observed_signal, _underlying):
+            observed_signal.meta["shadow_candidate_id"] = "research-candidate"
+
+        risk = SimpleNamespace(
+            slippage_adjusted_entry=lambda ask: ask * 2,
+            calculate_contracts=lambda _entry, _balance: 0,
+        )
+        with patch(
+            "trading.entry.candidate_observation.record_router_candidate",
+            side_effect=record_candidate,
+        ), patch(
+            "trading.entry.candidate_observation.select_research_contract",
+            return_value=(contract, info),
+        ) as selector, patch(
+            "trading.entry.candidate_observation.select_contract",
+        ) as execution_selector, patch(
+            "trading.entry.candidate_observation.snapshot_candidate_plan",
+        ) as snapshot, patch(
+            "trading.entry.candidate_observation.record_candidate_option_quote",
+        ):
+            observe_candidate_contract(
+                ticker="AAPL", signal=signal, underlying_price=259.0,
+                tradier=SimpleNamespace(), balance=50.0, risk=risk,
+                settings={"max_position_dollars": 25.0}, research_only=True,
+            )
+
+        selector.assert_called_once()
+        execution_selector.assert_not_called()
+        plan = snapshot.call_args.args[0]
+        self.assertEqual(1000.0, plan["contract_recipe"]["maximum_cost"])
+        self.assertEqual("research_only_no_orders", plan["contract_recipe"]["purpose"])
+        self.assertEqual(1, plan["planned_quantity"])
+        self.assertEqual(900.0, plan["contract_preview"]["estimated_position_cost"])
 
     def test_standard_preview_shows_first_limit_reprice_and_risk_ceiling_separately(self) -> None:
         """The learner-facing price plan must mirror normal execution semantics."""

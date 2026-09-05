@@ -92,6 +92,22 @@ export interface CandidateScorecard {
   total_candidates: number; measured_candidates: number; next_outcome_at: string | null;
   strategies: CandidateScorecardRow[];
 }
+export interface ResearchContractTest {
+  policy: string;
+  label: string;
+  profile_version: string;
+  status: StrategyTickerResearchPair["status"];
+  explanation: string;
+  option_results: number;
+  option_result_days: number;
+  wins: number;
+  win_rate_pct: number | null;
+  profit_factor: number | "infinite" | null;
+  net_one_contract_pnl: number;
+  mistimed_quotes_ignored: number;
+  older_profit_factor: number | "infinite" | null;
+  newer_profit_factor: number | "infinite" | null;
+}
 export interface StrategyTickerResearchPair {
   ticker: string;
   status: "working" | "promising" | "losing_so_far" | "needs_tuning" | "not_working" | "collecting" | "no_setups";
@@ -112,6 +128,7 @@ export interface StrategyTickerResearchPair {
   direction_accuracy: number | null;
   quote_coverage_pct: number | null;
   mistimed_quotes_ignored: number;
+  legacy_option_profiles_ignored: number;
   older_profit_factor: number | "infinite" | null;
   newer_profit_factor: number | "infinite" | null;
   diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
@@ -125,6 +142,9 @@ export interface StrategyTickerResearchPair {
     net_one_contract_pnl: number;
     mistimed_quotes_ignored: number;
   }[];
+  contract_tests: ResearchContractTest[];
+  leading_contract_test: ResearchContractTest | null;
+  research_contract_profile: string | null;
   tradable: boolean;
 }
 export interface StrategyResearchMatrix {

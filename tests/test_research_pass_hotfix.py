@@ -92,6 +92,7 @@ class ResearchPassTests(unittest.TestCase):
         observe.assert_called_once()
         self.assertEqual("AAPL", observe.call_args.kwargs["ticker"])
         self.assertIs(signal, observe.call_args.kwargs["signal"])
+        self.assertTrue(observe.call_args.kwargs["research_only"])
         marked.assert_called_once_with(signal)
 
     def test_authorized_ticker_research_uses_separate_dedupe_scope(self):
