@@ -10,7 +10,7 @@
   "runtime_policy_sources": [
     {
       "path": "trading/portfolio_policy.py",
-      "sha256": "6bc23623148c726713e5e76b4314efeff3d2815ecbc37145d6bbb5e8ff8d4385"
+      "sha256": "24d921f4accd90ec6a406c246631267828a23e34c98a4e5ce26b20b66d85dbea"
     },
     {
       "path": "trading/v2_orb_paper_execution.py",
@@ -85,12 +85,12 @@
     "ending_cash_from_5000_one_contract": 5431.96
   },
   "prospective_tradier_quotes": {
-    "measured_signals": 21,
-    "days": 12,
-    "wins": 16,
-    "net_pnl_one_contract_after_costs": 784.96,
-    "profit_factor": 18.7593,
-    "note": "Real-time Tradier quotes, not broker fills. This supports continued paper validation but is not live-trading proof."
+    "measured_signals": 18,
+    "days": 9,
+    "wins": 13,
+    "net_pnl_one_contract_after_costs": 724.68,
+    "profit_factor": 17.3955,
+    "note": "Real-time Tradier quotes within five minutes of the declared 30-minute exit, not broker fills. This supports continued paper validation but is not live-trading proof."
   },
   "matched_alpaca_paper_subset": {
     "measured_signals": 4,
@@ -112,6 +112,7 @@
   "source_reports": [
     "research/reports/paid_spy_trend_continuation_one_position_holds.json",
     "docs/audits/2026-09-04-spy-trend-policy-parity.md",
-    "docs/audits/2026-09-05-spy-trend-three-bar-repair.md"
+    "docs/audits/2026-09-05-spy-trend-three-bar-repair.md",
+    "docs/audits/2026-09-05-production-prospective-evidence-integrity.md"
   ]
 }

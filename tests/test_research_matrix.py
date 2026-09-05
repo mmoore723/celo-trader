@@ -5,8 +5,9 @@ import unittest
 from unittest.mock import patch
 
 from strategy_health.research_matrix import (
-    _chronological_factors, _diagnosis, _factor, _independent_samples, _quote_profit,
-    build_research_matrix, research_status,
+    _chronological_factors, _current_rule_samples, _diagnosis, _exit_summary,
+    _factor, _independent_samples, _quote_profit, build_research_matrix,
+    research_status,
 )
 
 
@@ -21,6 +22,32 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertIsNone(_quote_profit(row, 30))
         row["bid_30"] = 3.0
         self.assertAlmostEqual(96.7, _quote_profit(row, 30))
+
+    def test_late_quote_is_not_mislabeled_as_a_fixed_horizon_result(self):
+        row = {
+            "observed_at": "2026-09-03T10:00:00-04:00",
+            "entry_ask": 2.0,
+            "bid_30": 3.0,
+            "entry_quote_at": "2026-09-03T10:00:01-04:00",
+            "mark_30_at": "2026-09-03T10:41:00-04:00",
+        }
+        summary, profits = _exit_summary([row], 30)
+        self.assertEqual([], profits)
+        self.assertEqual(0, summary["option_results"])
+        self.assertEqual(1, summary["mistimed_quotes_ignored"])
+
+    def test_matrix_applies_current_rule_without_counting_old_unknown_rows(self):
+        samples = [
+            {"direction": "bullish", "metadata_json": '{"pa_consecutive_higher_lows": true}'},
+            {"direction": "bullish", "metadata_json": '{"pa_consecutive_higher_lows": false}'},
+            {"direction": "bullish", "metadata_json": "{}"},
+        ]
+        eligible, rejected, unscored = _current_rule_samples(
+            samples, "V2_SPY_TREND_CONT", "SPY",
+        )
+        self.assertEqual(1, len(eligible))
+        self.assertEqual(1, rejected)
+        self.assertEqual(1, unscored)
 
     def test_independent_samples_collapse_same_trigger_and_holding_overlap(self):
         samples = [
@@ -38,6 +65,7 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("working", research_status(results=20, days=8, sessions=30, factor=1.5)[0])
         self.assertEqual("promising", research_status(results=5, days=2, sessions=30, factor=6.73)[0])
         self.assertEqual("collecting", research_status(results=1, days=1, sessions=30, factor="infinite")[0])
+        self.assertEqual("losing_so_far", research_status(results=4, days=4, sessions=30, factor=0.0)[0])
         self.assertEqual("losing_so_far", research_status(results=5, days=5, sessions=30, factor=0.0)[0])
         self.assertEqual("needs_tuning", research_status(results=10, days=4, sessions=30, factor=1.2)[0])
         self.assertEqual("not_working", research_status(results=20, days=8, sessions=30, factor=0.9)[0])
@@ -73,6 +101,20 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("exit", diagnosis)
         self.assertIn("30-minute", action)
 
+    def test_promising_option_result_is_not_overridden_by_other_horizon_direction(self):
+        diagnosis, action = _diagnosis(
+            status="promising", setups=20, option_results=18,
+            direction_results=19, direction_accuracy=47.4, factor=15.25,
+            older_factor=None, newer_factor=None, exit_minutes=30,
+            exit_summaries=[
+                {"minutes": 30, "option_results": 18, "profit_factor": 15.25},
+                {"minutes": 60, "option_results": 13, "profit_factor": 4.36},
+                {"minutes": 90, "option_results": 10, "profit_factor": 4.64},
+            ],
+        )
+        self.assertEqual("more_data", diagnosis)
+        self.assertIn("sample is too small", action)
+
     def test_matrix_reads_only_the_active_account_and_real_option_marks(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -80,26 +122,27 @@ class ResearchMatrixTests(unittest.TestCase):
             CREATE TABLE shadow_candidates (
                 candidate_id TEXT, observed_at TEXT, ticker TEXT, strategy_id TEXT,
                 direction_correct INTEGER, directional_move_pct REAL, broker_account_id TEXT,
-                trigger_bar TEXT, direction TEXT
+                trigger_bar TEXT, direction TEXT, metadata_json TEXT
             );
             CREATE TABLE candidate_option_quote_observations (
-                candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL
+                candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL, observed_at TEXT
             );
             CREATE TABLE scanner_candle_observations (
                 ticker TEXT, bar_time TEXT, broker_account_id TEXT
             );
         """)
-        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", (
+        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
             "c1", "2026-09-03T10:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 1, 1.2, "acct",
-            "2026-09-03T10:00:00", "bullish",
+            "2026-09-03T10:00:00", "bullish", "{}",
         ))
-        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", (
+        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
             "c2", "2026-09-03T11:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 0, -0.4, "acct",
-            "2026-09-03T11:00:00", "bearish",
+            "2026-09-03T11:00:00", "bearish", "{}",
         ))
-        conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?)", [
-            ("c1", "entry", 1.9, 2.0), ("c1", "mark_30m", 3.0, 3.1),
-            ("c2", "entry", 1.9, 2.0),
+        conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?)", [
+            ("c1", "entry", 1.9, 2.0, "2026-09-03T10:00:00"),
+            ("c1", "mark_30m", 3.0, 3.1, "2026-09-03T10:30:00"),
+            ("c2", "entry", 1.9, 2.0, "2026-09-03T11:00:00"),
         ])
         conn.execute("INSERT INTO scanner_candle_observations VALUES (?,?,?)", (
             "AAPL", "2026-09-03T09:30:00", "acct",
@@ -138,18 +181,18 @@ class ResearchMatrixTests(unittest.TestCase):
             CREATE TABLE shadow_candidates (
                 candidate_id TEXT, observed_at TEXT, ticker TEXT, strategy_id TEXT,
                 direction_correct INTEGER, directional_move_pct REAL, broker_account_id TEXT,
-                trigger_bar TEXT, direction TEXT
+                trigger_bar TEXT, direction TEXT, metadata_json TEXT
             );
             CREATE TABLE candidate_option_quote_observations (
-                candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL
+                candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL, observed_at TEXT
             );
             CREATE TABLE scanner_candle_observations (
                 ticker TEXT, bar_time TEXT, broker_account_id TEXT
             );
         """)
-        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", (
+        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
             "older", "2026-08-10T10:00:00", "ABNB", "V2_SPY_AFTERNOON_FVG",
-            None, None, "acct", "2026-08-10T10:00:00", "bullish",
+            None, None, "acct", "2026-08-10T10:00:00", "bullish", "{}",
         ))
 
         @contextmanager

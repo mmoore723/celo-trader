@@ -3,27 +3,34 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import json
 
 from config.market_constants import COMMISSION_PER_CONTRACT
 from config.strategy_catalog import (
     REVIEWED_STRATEGIES, reviewed_research_exit_minutes,
     reviewed_strategy_ids,
 )
+from strategy_health.candidate_evidence import candidate_signal_is_timely
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
 )
 
 OPTION_SLIPPAGE_PER_SIDE = 0.01
 EXIT_WINDOWS = (30, 60, 90)
+QUOTE_WINDOW_GRACE_MINUTES = 5
+
+
+def _parse_time(raw: object) -> datetime:
+    parsed = datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 def _sample_time(row: object) -> datetime:
     """Return a comparable trigger time without trusting display formatting."""
     raw = row["trigger_bar"] or row["observed_at"]
-    parsed = datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
-    return parsed
+    return _parse_time(raw)
 
 
 def _independent_samples(samples: list, hold_minutes: int) -> list:
@@ -68,28 +75,46 @@ def _numeric_factor(value: object) -> float:
     return float("inf") if value == "infinite" else float(value or 0)
 
 
-def _quote_profit(row: object, exit_minutes: int) -> float | None:
-    """Return one-contract after-cost P&L only when both quotes really exist."""
-    if exit_minutes not in EXIT_WINDOWS:
+def _row_value(row: object, key: str) -> object:
+    try:
+        return row[key]
+    except (KeyError, IndexError):
         return None
+
+
+def _quote_measurement(row: object, exit_minutes: int) -> tuple[float | None, str | None]:
+    """Return after-cost P&L and why an apparent result was not usable."""
+    if exit_minutes not in EXIT_WINDOWS:
+        return None, "unsupported_horizon"
     entry_raw = row["entry_ask"]
     exit_raw = row[f"bid_{exit_minutes}"]
     if entry_raw is None or exit_raw is None:
-        return None
+        return None, "missing_quote"
     entry = float(entry_raw)
     exit_bid = float(exit_raw)
     if entry <= 0 or exit_bid < 0:
-        return None
+        return None, "invalid_quote"
+    entry_at = _row_value(row, "entry_quote_at")
+    exit_at = _row_value(row, f"mark_{exit_minutes}_at")
+    if entry_at and exit_at:
+        elapsed = (_parse_time(exit_at) - _parse_time(entry_at)).total_seconds() / 60
+        if elapsed < exit_minutes or elapsed > exit_minutes + QUOTE_WINDOW_GRACE_MINUTES:
+            return None, "mistimed_quote"
     modeled_entry = entry + OPTION_SLIPPAGE_PER_SIDE
     modeled_exit = max(0.0, exit_bid - OPTION_SLIPPAGE_PER_SIDE)
-    return round((modeled_exit - modeled_entry) * 100 - 2 * COMMISSION_PER_CONTRACT, 2)
+    return round((modeled_exit - modeled_entry) * 100 - 2 * COMMISSION_PER_CONTRACT, 2), None
+
+
+def _quote_profit(row: object, exit_minutes: int) -> float | None:
+    """Return one-contract after-cost P&L only when both quotes really exist."""
+    return _quote_measurement(row, exit_minutes)[0]
 
 
 def _exit_summary(samples: list, exit_minutes: int) -> tuple[dict, list[tuple[str, float]]]:
+    measured = [(row, _quote_measurement(row, exit_minutes)) for row in samples]
     dated_profits = [
-        (str(row["observed_at"])[:10], profit)
-        for row in samples
-        if (profit := _quote_profit(row, exit_minutes)) is not None
+        (str(row["observed_at"])[:10], result[0])
+        for row, result in measured if result[0] is not None
     ]
     profits = [profit for _, profit in dated_profits]
     wins = sum(1 for profit in profits if profit > 0)
@@ -100,7 +125,37 @@ def _exit_summary(samples: list, exit_minutes: int) -> tuple[dict, list[tuple[st
         "win_rate_pct": round(wins / len(profits) * 100, 1) if profits else None,
         "profit_factor": _factor(profits),
         "net_one_contract_pnl": round(sum(profits), 2),
+        "mistimed_quotes_ignored": sum(result[1] == "mistimed_quote" for _, result in measured),
     }, dated_profits)
+
+
+def _current_rule_samples(samples: list, strategy_id: str, ticker: str) -> tuple[list, int, int]:
+    """Keep only candidates reconstructable under the currently deployed rule."""
+    from trading.portfolio_policy import reviewed_strategy_entry_evidence_status
+
+    eligible = []
+    rejected = 0
+    unscored = 0
+    for row in samples:
+        try:
+            metadata = json.loads(str(_row_value(row, "metadata_json") or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            metadata = {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        status = reviewed_strategy_entry_evidence_status(
+            ticker=ticker,
+            strategy_id=strategy_id,
+            direction=row["direction"],
+            signal_meta=metadata,
+        )
+        if status in {"not_applicable", "passed"}:
+            eligible.append(row)
+        elif status == "rejected":
+            rejected += 1
+        else:
+            unscored += 1
+    return eligible, rejected, unscored
 
 
 def _chronological_factors(dated_profits: list[tuple[str, float]]) -> tuple[object, object]:
@@ -127,7 +182,7 @@ def research_status(
         return "not_working", "This version is losing and needs a change."
     if results >= 10 and numeric < 1.5:
         return "needs_tuning", "PF is below 1.5. Keep the data and tune the rule."
-    if results >= 5 and numeric < 1.0:
+    if results >= 3 and numeric < 1.0:
         return "losing_so_far", "The first results are losing. Do not promote this pair yet."
     if results >= 5 and numeric >= 1.5:
         return "promising", "PF is above 1.5, but there are not enough results yet."
@@ -170,13 +225,13 @@ def _diagnosis(
         best = max(alternatives, key=lambda item: _numeric_factor(item["profit_factor"]))
         if _numeric_factor(best["profit_factor"]) >= 1.5 and _numeric_factor(factor) < 1.5:
             return "exit", f"The {best['minutes']}-minute exit tested better. Validate it on newer dates."
+    if status == "promising":
+        return "more_data", "PF is above 1.5, but the sample is too small. Keep collecting."
     if direction_results >= 10 and direction_accuracy is not None:
         if direction_accuracy < 50:
             return "entry", "The stock moved the wrong way too often. Fix the entry rule."
         if direction_accuracy >= 60 and _numeric_factor(factor) < 1.5:
             return "contract_exit", "The stock direction works, but the option does not. Test contract selection and exit."
-    if status == "promising":
-        return "more_data", "PF is above 1.5, but the sample is too small. Keep collecting."
     return "entry", "PF is below 1.5. Retest the entry rule before enabling it."
 
 
@@ -200,12 +255,16 @@ def build_research_matrix(days: int = 90) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
-                      s.direction,
+                      s.direction,s.metadata_json,
                       s.direction_correct,s.directional_move_pct,
                       MAX(CASE WHEN q.observation_kind='entry' THEN q.ask END) AS entry_ask,
+                      MAX(CASE WHEN q.observation_kind='entry' THEN q.observed_at END) AS entry_quote_at,
                       MAX(CASE WHEN q.observation_kind='mark_30m' THEN q.bid END) AS bid_30,
+                      MAX(CASE WHEN q.observation_kind='mark_30m' THEN q.observed_at END) AS mark_30_at,
                       MAX(CASE WHEN q.observation_kind='mark_60m' THEN q.bid END) AS bid_60,
-                      MAX(CASE WHEN q.observation_kind='mark_90m' THEN q.bid END) AS bid_90
+                      MAX(CASE WHEN q.observation_kind='mark_60m' THEN q.observed_at END) AS mark_60_at,
+                      MAX(CASE WHEN q.observation_kind='mark_90m' THEN q.bid END) AS bid_90,
+                      MAX(CASE WHEN q.observation_kind='mark_90m' THEN q.observed_at END) AS mark_90_at
                FROM shadow_candidates s
                LEFT JOIN candidate_option_quote_observations q ON q.candidate_id=s.candidate_id
                WHERE s.observed_at >= ? AND """ + candidate_account +
@@ -256,12 +315,19 @@ def build_research_matrix(days: int = 90) -> dict:
         pairs = []
         for ticker in sorted(tickers):
             raw_samples = grouped.get((strategy_id, ticker), [])
-            samples = _independent_samples(raw_samples, exit_minutes)
+            timely_samples = [
+                row for row in raw_samples if candidate_signal_is_timely(row)
+            ]
+            stale_or_replayed = len(raw_samples) - len(timely_samples)
+            rule_samples, rule_rejected, rule_unscored = _current_rule_samples(
+                timely_samples, strategy_id, ticker,
+            )
+            samples = _independent_samples(rule_samples, exit_minutes)
             exit_summaries = []
             current_results: list[tuple[str, float]] = []
             current_summary = None
             for window in EXIT_WINDOWS:
-                window_samples = _independent_samples(raw_samples, window)
+                window_samples = _independent_samples(rule_samples, window)
                 summary, results = _exit_summary(window_samples, window)
                 exit_summaries.append(summary)
                 if window == exit_minutes:
@@ -271,6 +337,7 @@ def build_research_matrix(days: int = 90) -> dict:
                     "minutes": exit_minutes, "option_results": 0, "wins": 0,
                     "win_rate_pct": None, "profit_factor": None,
                     "net_one_contract_pnl": 0.0,
+                    "mistimed_quotes_ignored": 0,
                 }
             factor = current_summary["profit_factor"]
             option_result_days = len({day for day, _ in current_results})
@@ -297,6 +364,9 @@ def build_research_matrix(days: int = 90) -> dict:
                 "market_days": sessions.get(ticker, 0),
                 "setups": len(samples),
                 "raw_observations": len(raw_samples),
+                "rule_rejected": rule_rejected,
+                "rule_unscored": rule_unscored,
+                "stale_or_replayed": stale_or_replayed,
                 "option_results": current_summary["option_results"],
                 "option_result_days": option_result_days,
                 "wins": current_summary["wins"],
@@ -306,6 +376,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 "direction_results": measured,
                 "direction_accuracy": direction_accuracy,
                 "quote_coverage_pct": round(current_summary["option_results"] / len(samples) * 100, 1) if samples else None,
+                "mistimed_quotes_ignored": current_summary["mistimed_quotes_ignored"],
                 "older_profit_factor": older_factor,
                 "newer_profit_factor": newer_factor,
                 "diagnosis": diagnosis,
@@ -325,7 +396,7 @@ def build_research_matrix(days: int = 90) -> dict:
     return {
         "days": days,
         "target_profit_factor": 1.5,
-        "cost_model": f"saved ask to bid, ${OPTION_SLIPPAGE_PER_SIDE:.2f} adverse slippage per side, ${COMMISSION_PER_CONTRACT:.2f} fee per side",
+        "cost_model": f"saved ask to bid within {QUOTE_WINDOW_GRACE_MINUTES} minutes of the named exit, ${OPTION_SLIPPAGE_PER_SIDE:.2f} adverse slippage per side, ${COMMISSION_PER_CONTRACT:.2f} fee per side",
         "account_scoped": bool(account_id),
         "ticker_count": len(tickers),
         "strategy_count": len(strategy_rows),

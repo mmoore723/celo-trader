@@ -17,7 +17,7 @@ class ProspectiveStrategyPfTests(unittest.TestCase):
                 CREATE TABLE shadow_candidates (
                     candidate_id TEXT PRIMARY KEY, observed_at TEXT, ticker TEXT,
                     strategy_id TEXT, direction TEXT, trigger_bar TEXT, final_outcome TEXT,
-                    linked_trade_id INTEGER
+                    linked_trade_id INTEGER, metadata_json TEXT
                 );
                 CREATE TABLE candidate_option_quote_observations (
                     candidate_id TEXT, observed_at TEXT, observation_kind TEXT,
@@ -25,14 +25,14 @@ class ProspectiveStrategyPfTests(unittest.TestCase):
                 );
             """)
             candidates = [
-                ("first", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "observed_only", None),
-                ("repeat", "2026-08-01T10:01:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "entered", 7),
-                ("stale-repeat", "2026-08-01T10:10:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "entered", 8),
-                ("overlap", "2026-08-01T10:20:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bearish", "2026-08-01 10:15:00", "blocked", None),
-                ("later", "2026-08-01T10:30:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 10:25:00", "blocked", None),
-                ("wrong-ticker", "2026-08-01T11:30:00-04:00", "TSLA", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 11:25:00", "observed_only", None),
+                ("first", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "observed_only", None, '{"pa_consecutive_higher_lows": true}'),
+                ("repeat", "2026-08-01T10:01:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "entered", 7, '{"pa_consecutive_higher_lows": true}'),
+                ("stale-repeat", "2026-08-01T10:10:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "entered", 8, '{"pa_consecutive_higher_lows": true}'),
+                ("overlap", "2026-08-01T10:20:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bearish", "2026-08-01 10:15:00", "blocked", None, '{"pa_consecutive_lower_highs": true}'),
+                ("later", "2026-08-01T10:30:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 10:25:00", "blocked", None, '{"pa_consecutive_higher_lows": true}'),
+                ("wrong-ticker", "2026-08-01T11:30:00-04:00", "TSLA", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 11:25:00", "observed_only", None, "{}"),
             ]
-            conn.executemany("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?)", candidates)
+            conn.executemany("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", candidates)
             quotes = [
                 ("first", candidates[0][1], "entry", "SPY-C", 0.99, 1.00, "tradier_preview"),
                 ("first", "2026-08-01T10:30:00-04:00", "mark_30m", "SPY-C", 1.10, 1.11, "tradier_followup"),
@@ -78,16 +78,16 @@ class ProspectiveStrategyPfTests(unittest.TestCase):
                 CREATE TABLE shadow_candidates (
                     candidate_id TEXT PRIMARY KEY, observed_at TEXT, ticker TEXT,
                     strategy_id TEXT, direction TEXT, trigger_bar TEXT, final_outcome TEXT,
-                    linked_trade_id INTEGER
+                    linked_trade_id INTEGER, metadata_json TEXT
                 );
                 CREATE TABLE candidate_option_quote_observations (
                     candidate_id TEXT, observed_at TEXT, observation_kind TEXT,
                     contract_symbol TEXT, bid REAL, ask REAL, source TEXT
                 );
             """)
-            conn.executemany("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?)", [
-                ("first", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "blocked", None),
-                ("repeat", "2026-08-01T10:05:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "entered", 9),
+            conn.executemany("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", [
+                ("first", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "blocked", None, '{"pa_consecutive_higher_lows": true}'),
+                ("repeat", "2026-08-01T10:05:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "entered", 9, '{"pa_consecutive_higher_lows": true}'),
             ])
             conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?,?,?)", [
                 ("first", "2026-08-01T10:00:00-04:00", "entry", "SPY-C", .99, 1.0, "tradier_preview"),
@@ -102,6 +102,64 @@ class ProspectiveStrategyPfTests(unittest.TestCase):
             self.assertEqual(1, report["unmeasured_episode_reasons"]["missing_mark_30m"])
             self.assertEqual(0, report["account_level_replay"]["account_trades"])
 
+    def test_audit_rejects_mistimed_fixed_horizon_quote(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "mistimed.db"
+            conn = sqlite3.connect(path)
+            conn.executescript("""
+                CREATE TABLE shadow_candidates (
+                    candidate_id TEXT PRIMARY KEY, observed_at TEXT, ticker TEXT,
+                    strategy_id TEXT, direction TEXT, trigger_bar TEXT, final_outcome TEXT,
+                    linked_trade_id INTEGER, metadata_json TEXT
+                );
+                CREATE TABLE candidate_option_quote_observations (
+                    candidate_id TEXT, observed_at TEXT, observation_kind TEXT,
+                    contract_symbol TEXT, bid REAL, ask REAL, source TEXT
+                );
+            """)
+            conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", (
+                "late", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_AFTERNOON_FVG",
+                "bullish", "2026-08-01 09:55:00", "observed_only", None, "{}",
+            ))
+            conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?,?,?)", [
+                ("late", "2026-08-01T10:00:00-04:00", "entry", "SPY-C", .99, 1.0, "tradier_preview"),
+                ("late", "2026-08-01T10:41:00-04:00", "mark_30m", "SPY-C", 2.0, 2.01, "tradier_followup"),
+            ])
+            conn.commit()
+            conn.close()
+
+            report = analyze(path)
+            self.assertEqual(1, report["independent_episodes"])
+            self.assertEqual(0, report["measured_episodes"])
+            self.assertEqual(1, report["unmeasured_episode_reasons"]["mistimed_mark_30m"])
+
+    def test_audit_uses_current_strategy_entry_rule(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rule.db"
+            conn = sqlite3.connect(path)
+            conn.executescript("""
+                CREATE TABLE shadow_candidates (
+                    candidate_id TEXT PRIMARY KEY, observed_at TEXT, ticker TEXT,
+                    strategy_id TEXT, direction TEXT, trigger_bar TEXT, final_outcome TEXT,
+                    linked_trade_id INTEGER, metadata_json TEXT
+                );
+                CREATE TABLE candidate_option_quote_observations (
+                    candidate_id TEXT, observed_at TEXT, observation_kind TEXT,
+                    contract_symbol TEXT, bid REAL, ask REAL, source TEXT
+                );
+            """)
+            conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", (
+                "rejected", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT",
+                "bullish", "2026-08-01 09:55:00", "observed_only", None,
+                '{"pa_consecutive_higher_lows": false}',
+            ))
+            conn.commit()
+            conn.close()
+
+            report = analyze(path)
+            self.assertEqual(0, report["eligible_reviewed_scope_candidates"])
+            self.assertEqual(1, report["excluded_candidate_reasons"]["rejected_by_current_strategy_rule"])
+
     def test_account_replay_removes_cross_strategy_same_ticker_overlap(self) -> None:
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "portfolio.db"
@@ -110,7 +168,7 @@ class ProspectiveStrategyPfTests(unittest.TestCase):
                 CREATE TABLE shadow_candidates (
                     candidate_id TEXT PRIMARY KEY, observed_at TEXT, ticker TEXT,
                     strategy_id TEXT, direction TEXT, trigger_bar TEXT, final_outcome TEXT,
-                    linked_trade_id INTEGER
+                    linked_trade_id INTEGER, metadata_json TEXT
                 );
                 CREATE TABLE candidate_option_quote_observations (
                     candidate_id TEXT, observed_at TEXT, observation_kind TEXT,
@@ -118,10 +176,10 @@ class ProspectiveStrategyPfTests(unittest.TestCase):
                 );
             """)
             candidates = [
-                ("trend", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "observed_only", None),
-                ("failed", "2026-08-01T10:10:00-04:00", "SPY", "V2_FAILED_OR_BREAK_VWAP_REVERSION", "bullish", "2026-08-01 10:09:00", "observed_only", None),
+                ("trend", "2026-08-01T10:00:00-04:00", "SPY", "V2_SPY_TREND_CONT", "bullish", "2026-08-01 09:55:00", "observed_only", None, '{"pa_consecutive_higher_lows": true}'),
+                ("failed", "2026-08-01T10:10:00-04:00", "SPY", "V2_FAILED_OR_BREAK_VWAP_REVERSION", "bullish", "2026-08-01 10:09:00", "observed_only", None, "{}"),
             ]
-            conn.executemany("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?)", candidates)
+            conn.executemany("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", candidates)
             conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?,?,?)", [
                 ("trend", candidates[0][1], "entry", "SPY-C", .99, 1.0, "tradier_preview"),
                 ("trend", "2026-08-01T10:30:00-04:00", "mark_30m", "SPY-C", 1.1, 1.11, "tradier_followup"),

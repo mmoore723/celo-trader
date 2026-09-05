@@ -99,6 +99,9 @@ export interface StrategyTickerResearchPair {
   market_days: number;
   setups: number;
   raw_observations: number;
+  rule_rejected: number;
+  rule_unscored: number;
+  stale_or_replayed: number;
   option_results: number;
   option_result_days: number;
   wins: number;
@@ -108,6 +111,7 @@ export interface StrategyTickerResearchPair {
   direction_results: number;
   direction_accuracy: number | null;
   quote_coverage_pct: number | null;
+  mistimed_quotes_ignored: number;
   older_profit_factor: number | "infinite" | null;
   newer_profit_factor: number | "infinite" | null;
   diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
@@ -119,6 +123,7 @@ export interface StrategyTickerResearchPair {
     win_rate_pct: number | null;
     profit_factor: number | "infinite" | null;
     net_one_contract_pnl: number;
+    mistimed_quotes_ignored: number;
   }[];
   tradable: boolean;
 }

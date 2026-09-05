@@ -5,6 +5,7 @@ import unittest
 
 from trading.portfolio_policy import (
     reviewed_portfolio_entry_policy,
+    reviewed_strategy_entry_evidence_status,
     reviewed_strategy_entry_policy,
 )
 
@@ -86,6 +87,24 @@ class ReviewedPortfolioPolicyTests(unittest.TestCase):
         )
         self.assertFalse(decision.allowed)
         self.assertEqual("spy_trend_three_bar_structure_missing", decision.reason_code)
+
+    def test_saved_evidence_does_not_treat_missing_old_metadata_as_current_rule(self):
+        self.assertEqual("unscored", reviewed_strategy_entry_evidence_status(
+            ticker="SPY", strategy_id="V2_SPY_TREND_CONT",
+            direction="bullish", signal_meta={},
+        ))
+        self.assertEqual("rejected", reviewed_strategy_entry_evidence_status(
+            ticker="SPY", strategy_id="V2_SPY_TREND_CONT",
+            direction="bullish", signal_meta={"pa_consecutive_higher_lows": False},
+        ))
+        self.assertEqual("passed", reviewed_strategy_entry_evidence_status(
+            ticker="SPY", strategy_id="V2_SPY_TREND_CONT",
+            direction="bullish", signal_meta={"pa_consecutive_higher_lows": True},
+        ))
+        self.assertEqual("not_applicable", reviewed_strategy_entry_evidence_status(
+            ticker="TSLA", strategy_id="V2_SPY_TREND_CONT",
+            direction="bullish", signal_meta={},
+        ))
 
     def test_entry_context_rule_does_not_block_research_tickers_or_other_strategies(self):
         metadata = {"pa_consecutive_higher_lows": False}

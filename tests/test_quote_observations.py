@@ -223,12 +223,18 @@ class PaperOptionQuoteTests(unittest.TestCase):
                     observed_at=datetime.fromisoformat("2026-08-03T10:00:00-04:00"),
                     policies=["tightest_spread"], source="test",
                 ))
-                captured = capture_due_candidate_option_quotes(
-                    ticker="TSLA",
-                    observed_at=datetime.fromisoformat("2026-08-03T11:31:00-04:00"),
-                    quote_lookup=lambda symbol: {**quote, "symbol": symbol},
-                    broker_account_id="acct",
-                )
+                captured = 0
+                for observed_at in (
+                    "2026-08-03T10:31:00-04:00",
+                    "2026-08-03T11:01:00-04:00",
+                    "2026-08-03T11:31:00-04:00",
+                ):
+                    captured += capture_due_candidate_option_quotes(
+                        ticker="TSLA",
+                        observed_at=datetime.fromisoformat(observed_at),
+                        quote_lookup=lambda symbol: {**quote, "symbol": symbol},
+                        broker_account_id="acct",
+                    )
             kinds = [row[0] for row in conn.execute(
                 "SELECT observation_kind FROM candidate_option_quote_observations ORDER BY id"
             ).fetchall()]
@@ -242,6 +248,42 @@ class PaperOptionQuoteTests(unittest.TestCase):
         self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], kinds)
         self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], alt_kinds)
         self.assertEqual(0, trade_count)
+
+    def test_candidate_quote_sweep_does_not_backfill_missed_horizons_late(self) -> None:
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "paper.db"
+            _init_db_at(db_path)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """INSERT INTO shadow_candidates
+                   (candidate_id, observed_at, ticker, strategy_id, direction,
+                    confidence, tier, broker_account_id)
+                   VALUES ('late-candidate', '2026-08-03T10:00:00-04:00', 'TSLA',
+                           'TEST', 'bullish', .8, 'main', 'acct')"""
+            )
+            conn.commit()
+            with patch("database.option_quotes.get_conn", return_value=conn):
+                self.assertTrue(record_candidate_option_quote(
+                    candidate_id="late-candidate",
+                    contract_symbol="TSLA260807C00300000",
+                    observation_kind="entry",
+                    observed_at=datetime.fromisoformat("2026-08-03T10:00:00-04:00"),
+                    quote={"bid": 4.9, "ask": 5.1}, source="test",
+                ))
+                captured = capture_due_candidate_option_quotes(
+                    ticker="TSLA",
+                    observed_at=datetime.fromisoformat("2026-08-03T11:42:00-04:00"),
+                    quote_lookup=lambda symbol: {"symbol": symbol, "bid": 5.5, "ask": 5.6},
+                    broker_account_id="acct",
+                )
+            kinds = [row[0] for row in conn.execute(
+                "SELECT observation_kind FROM candidate_option_quote_observations ORDER BY id"
+            )]
+            conn.close()
+
+        self.assertEqual(0, captured)
+        self.assertEqual(["entry"], kinds)
 
     def test_final_order_contract_replaces_preview_and_preserves_preview_as_alternative(self) -> None:
         """The primary candidate quote must match the exact executable intent."""

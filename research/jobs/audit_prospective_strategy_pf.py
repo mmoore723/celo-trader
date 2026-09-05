@@ -21,6 +21,9 @@ from typing import Any, Iterable
 
 from config.strategy_catalog import REVIEWED_STRATEGIES
 from research.jobs.evaluate_reviewed_strategy_selector import simulate_policy
+from strategy_health.candidate_evidence import candidate_signal_is_timely
+from strategy_health.research_matrix import QUOTE_WINDOW_GRACE_MINUTES
+from trading.portfolio_policy import reviewed_strategy_entry_evidence_status
 
 
 PF_TARGET = 1.50
@@ -30,33 +33,8 @@ DEFAULT_FEE_PER_CONTRACT_PER_SIDE = .12
 DEFAULT_SLIPPAGE_PRICE_PER_SIDE = .01
 DEFAULT_MONTHLY_SUBSCRIPTION = 10.0
 DEFAULT_STARTING_CAPITAL = 5_000.0
-MAX_SIGNAL_DELAY_SECONDS_BY_STRATEGY = {
-    # Trigger bars store their opening timestamp. Five-minute rules become
-    # actionable immediately after that candle closes.
-    "V2_SPY_TREND_CONT": 390,
-    "V2_SPY_AFTERNOON_FVG": 390,
-    # One-minute rules become actionable immediately after that candle closes.
-    "V2_FAILED_OR_BREAK_VWAP_REVERSION": 150,
-    "V2_TSLA_TWO_LEG_TREND_PULLBACK": 150,
-}
-DEFAULT_MAX_SIGNAL_DELAY_SECONDS = 390
-
-
 def _moment(value: object) -> datetime:
     return datetime.fromisoformat(str(value))
-
-
-def _signal_is_timely(row: dict[str, Any]) -> bool:
-    """Reject restarted/replayed signals which were no longer actionable."""
-    if not row.get("trigger_bar"):
-        return False
-    observed = _moment(row["observed_at"]).replace(tzinfo=None)
-    trigger = _moment(row["trigger_bar"]).replace(tzinfo=None)
-    delay = (observed - trigger).total_seconds()
-    maximum = MAX_SIGNAL_DELAY_SECONDS_BY_STRATEGY.get(
-        str(row.get("strategy_id") or ""), DEFAULT_MAX_SIGNAL_DELAY_SECONDS,
-    )
-    return 0 <= delay <= maximum
 
 
 def _factor(values: Iterable[float]) -> float | str | None:
@@ -220,7 +198,7 @@ def analyze(
     conn.row_factory = sqlite3.Row
     candidates = [dict(row) for row in conn.execute(
         "SELECT candidate_id, observed_at, ticker, strategy_id, direction, trigger_bar, "
-        "final_outcome, linked_trade_id "
+        "final_outcome, linked_trade_id, metadata_json "
         "FROM shadow_candidates ORDER BY observed_at"
     )]
     quote_rows = conn.execute(
@@ -243,10 +221,25 @@ def analyze(
             exclusion_reasons["no_registered_executable_exit"] += 1
         elif str(row["ticker"]).upper() not in rule.tickers:
             exclusion_reasons["ticker_outside_reviewed_scope"] += 1
-        elif not _signal_is_timely(row):
+        elif not candidate_signal_is_timely(row):
             exclusion_reasons["expired_or_replayed_signal"] += 1
         else:
-            eligible_candidates.append(row)
+            try:
+                metadata = json.loads(str(row.get("metadata_json") or "{}"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                metadata = {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            policy_status = reviewed_strategy_entry_evidence_status(
+                ticker=row["ticker"], strategy_id=row["strategy_id"],
+                direction=row["direction"], signal_meta=metadata,
+            )
+            if policy_status == "rejected":
+                exclusion_reasons["rejected_by_current_strategy_rule"] += 1
+            elif policy_status == "unscored":
+                exclusion_reasons["missing_current_rule_evidence"] += 1
+            else:
+                eligible_candidates.append(row)
 
     priced_setups: list[dict[str, Any]] = []
     setup_groups = _setup_groups(eligible_candidates)
@@ -281,6 +274,19 @@ def analyze(
             continue
         if str(entry["contract_symbol"]) != str(exit_quote["contract_symbol"]):
             priced_setups.append({**base, "measurement_error": "contract_mismatch"})
+            continue
+        elapsed_minutes = (
+            _moment(exit_quote["observed_at"]) - _moment(entry["observed_at"])
+        ).total_seconds() / 60
+        if (
+            elapsed_minutes < int(rule.exit_minutes)
+            or elapsed_minutes > int(rule.exit_minutes) + QUOTE_WINDOW_GRACE_MINUTES
+        ):
+            priced_setups.append({
+                **base,
+                "measurement_error": f"mistimed_{exit_kind}",
+                "actual_elapsed_minutes": round(elapsed_minutes, 2),
+            })
             continue
         ask = float(entry["ask"] or 0)
         bid = float(exit_quote["bid"] or 0)
@@ -362,7 +368,7 @@ def analyze(
     return {
         "purpose": "Prospective, independent-episode strategy PF from real scanner option quotes; research only.",
         "database": str(db_path),
-        "measurement": "Reviewed ticker scope only; expired/replayed signals excluded; first priced candidate per stable trigger candle; then one non-overlapping one-contract position per ticker/strategy; PF uses net dollars from recorded ask to exact-contract registered-horizon bid.",
+        "measurement": f"Reviewed ticker scope and current entry rule only; expired/replayed signals excluded; first priced candidate per stable trigger candle; then one non-overlapping one-contract position per ticker/strategy; PF uses net dollars from recorded ask to the exact-contract registered-horizon bid captured no more than {QUOTE_WINDOW_GRACE_MINUTES} minutes late.",
         "quote_sources": dict(Counter(str(row["source"]) for row in quote_rows)),
         "costs": {
             "fee_per_contract_per_side": fee_per_contract_per_side,

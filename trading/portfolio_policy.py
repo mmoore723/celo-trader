@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, time
-from typing import Mapping, Optional
+from typing import Literal, Mapping, Optional
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,53 @@ class PortfolioPolicyDecision:
 
 SPY_AFTERNOON_RESERVATION_START = time(13, 45)
 SPY_AFTERNOON_RESERVATION_END = time(15, 0)
+
+
+def _reviewed_strategy_structure_requirement(
+    *, ticker: object, strategy_id: object, direction: object,
+) -> tuple[str, str] | None:
+    """Return the recorded evidence field required by a reviewed entry rule."""
+    if (
+        str(ticker or "").strip().upper() != "SPY"
+        or str(strategy_id or "").strip().upper() != "V2_SPY_TREND_CONT"
+    ):
+        return None
+    normalized_direction = str(direction or "").strip().lower()
+    if normalized_direction in {"bullish", "long"}:
+        return "pa_consecutive_higher_lows", "higher lows"
+    if normalized_direction in {"bearish", "short"}:
+        return "pa_consecutive_lower_highs", "lower highs"
+    return None
+
+
+def reviewed_strategy_entry_evidence_status(
+    *,
+    ticker: object,
+    strategy_id: object,
+    direction: object,
+    signal_meta: Mapping[str, object],
+) -> Literal["not_applicable", "unscored", "passed", "rejected"]:
+    """Classify saved evidence against the entry rule currently in production.
+
+    Older candidates may predate the metadata required to reconstruct a newer
+    rule. They must not be silently counted as either wins or losses for the
+    current version.
+    """
+    requirement = _reviewed_strategy_structure_requirement(
+        ticker=ticker, strategy_id=strategy_id, direction=direction,
+    )
+    if requirement is None:
+        return "not_applicable"
+    required_field, _ = requirement
+    if required_field not in signal_meta:
+        return "unscored"
+    decision = reviewed_strategy_entry_policy(
+        ticker=ticker,
+        strategy_id=strategy_id,
+        direction=direction,
+        signal_meta=signal_meta,
+    )
+    return "passed" if decision.allowed else "rejected"
 
 
 def reviewed_strategy_entry_policy(
@@ -31,21 +78,13 @@ def reviewed_strategy_entry_policy(
     policy only controls whether an already-observed SPY candidate may reach
     an order, keeping research collection separate from trade authorization.
     """
-    if (
-        str(ticker or "").strip().upper() != "SPY"
-        or str(strategy_id or "").strip().upper() != "V2_SPY_TREND_CONT"
-    ):
+    requirement = _reviewed_strategy_structure_requirement(
+        ticker=ticker, strategy_id=strategy_id, direction=direction,
+    )
+    if requirement is None:
         return PortfolioPolicyDecision(allowed=True)
-
-    normalized_direction = str(direction or "").strip().lower()
-    if normalized_direction in {"bullish", "long"}:
-        structure_present = signal_meta.get("pa_consecutive_higher_lows") is True
-        structure_name = "higher lows"
-    elif normalized_direction in {"bearish", "short"}:
-        structure_present = signal_meta.get("pa_consecutive_lower_highs") is True
-        structure_name = "lower highs"
-    else:
-        return PortfolioPolicyDecision(allowed=True)
+    required_field, structure_name = requirement
+    structure_present = signal_meta.get(required_field) is True
 
     if structure_present:
         return PortfolioPolicyDecision(allowed=True)

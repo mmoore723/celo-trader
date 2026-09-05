@@ -18,6 +18,11 @@ from database.helpers import _to_et_isoformat
 
 logger = logging.getLogger("celo_trader.database")
 
+# A fixed-horizon mark must be captured close to that horizon. A quote first
+# seen after a restart much later in the day is real, but it is not a truthful
+# 30/60/90-minute result and must remain absent from that bucket.
+CANDIDATE_MARK_GRACE_MINUTES = 5
+
 
 def _number(value: Any) -> Optional[float]:
     try:
@@ -239,7 +244,10 @@ def capture_due_candidate_option_quotes(
             for row in rows:
                 started = datetime.fromisoformat(str(row["observed_at"]))
                 for kind, minutes in horizons:
-                    if observed_at < started + timedelta(minutes=minutes):
+                    due_at = started + timedelta(minutes=minutes)
+                    if observed_at < due_at:
+                        continue
+                    if observed_at > due_at + timedelta(minutes=CANDIDATE_MARK_GRACE_MINUTES):
                         continue
                     exists = conn.execute(
                         "SELECT 1 FROM candidate_option_quote_observations WHERE candidate_id=? AND observation_kind=?",
@@ -271,7 +279,10 @@ def capture_due_candidate_option_quotes(
         for row in alt_rows:
             started = datetime.fromisoformat(str(row["observed_at"]))
             for kind, minutes in horizons:
-                if observed_at < started + timedelta(minutes=minutes):
+                due_at = started + timedelta(minutes=minutes)
+                if observed_at < due_at:
+                    continue
+                if observed_at > due_at + timedelta(minutes=CANDIDATE_MARK_GRACE_MINUTES):
                     continue
                 with get_conn() as conn:
                     exists = conn.execute(
