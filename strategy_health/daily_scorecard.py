@@ -115,7 +115,7 @@ def _missed_moves(events: list[dict]) -> dict:
         if event["kind"] == "candidate_quote":
             quotes[event["candidate_id"]][event["payload"]["observation_kind"]] = event["payload"]
     horizons = {}
-    for mark_name in ("mark_30m", "mark_60m", "mark_90m"):
+    for mark_name in ("mark_30m", "mark_60m", "mark_90m", "mark_120m"):
         returns = []
         for candidate_id, candidate in candidates.items():
             if candidate.get("final_outcome") == "entered": continue

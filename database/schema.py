@@ -255,7 +255,7 @@ CREATE TABLE IF NOT EXISTS candidate_option_quote_observations (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     candidate_id     TEXT    NOT NULL,
     observed_at      TEXT    NOT NULL,
-    observation_kind TEXT    NOT NULL, -- entry | mark_30m | mark_60m | mark_90m
+    observation_kind TEXT    NOT NULL, -- entry | mark_30m | mark_60m | mark_90m | mark_120m
     contract_symbol  TEXT    NOT NULL,
     bid              REAL,
     ask              REAL,
@@ -279,7 +279,7 @@ CREATE TABLE IF NOT EXISTS candidate_contract_alternatives (
     candidate_id     TEXT    NOT NULL,
     contract_symbol  TEXT    NOT NULL,
     observed_at      TEXT    NOT NULL,
-    observation_kind TEXT    NOT NULL, -- entry | mark_30m | mark_60m | mark_90m
+    observation_kind TEXT    NOT NULL, -- entry | mark_30m | mark_60m | mark_90m | mark_120m
     bid              REAL,
     ask              REAL,
     mid              REAL,

@@ -20,8 +20,12 @@ logger = logging.getLogger("celo_trader.database")
 
 # A fixed-horizon mark must be captured close to that horizon. A quote first
 # seen after a restart much later in the day is real, but it is not a truthful
-# 30/60/90-minute result and must remain absent from that bucket.
+# 30/60/90/120-minute result and must remain absent from that bucket.
 CANDIDATE_MARK_GRACE_MINUTES = 5
+CANDIDATE_MARK_HORIZONS = (30, 60, 90, 120)
+CANDIDATE_OBSERVATION_KINDS = frozenset({
+    "entry", *(f"mark_{minutes}m" for minutes in CANDIDATE_MARK_HORIZONS),
+})
 
 
 def _number(value: Any) -> Optional[float]:
@@ -91,9 +95,11 @@ def record_candidate_option_quote(
     observed_at: datetime, quote: Mapping[str, Any] | None, source: str,
 ) -> bool:
     """Store an executable quote for a scanner candidate, never an order."""
-    allowed = {"entry", "mark_30m", "mark_60m", "mark_90m"}
-    if observation_kind not in allowed:
-        raise ValueError(f"observation_kind must be one of {sorted(allowed)}")
+    if observation_kind not in CANDIDATE_OBSERVATION_KINDS:
+        raise ValueError(
+            "observation_kind must be one of "
+            f"{sorted(CANDIDATE_OBSERVATION_KINDS)}"
+        )
     if not candidate_id or not contract_symbol:
         return False
     quote = quote or {}
@@ -191,9 +197,11 @@ def record_candidate_contract_alternative(
     source: str = "reviewed_selector_shadow",
 ) -> bool:
     """Persist one non-executing contract-policy observation."""
-    allowed = {"entry", "mark_30m", "mark_60m", "mark_90m"}
-    if observation_kind not in allowed:
-        raise ValueError(f"observation_kind must be one of {sorted(allowed)}")
+    if observation_kind not in CANDIDATE_OBSERVATION_KINDS:
+        raise ValueError(
+            "observation_kind must be one of "
+            f"{sorted(CANDIDATE_OBSERVATION_KINDS)}"
+        )
     symbol = str(contract.get("symbol") or contract.get("contract_symbol") or "")
     if not candidate_id or not symbol:
         return False
@@ -219,12 +227,14 @@ def capture_due_candidate_option_quotes(
     *, ticker: str, observed_at: datetime, quote_lookup,
     broker_account_id: str | None = None,
 ) -> int:
-    """Capture due 30/60/90-minute bid/ask marks for today's candidates.
+    """Capture due 30/60/90/120-minute bid/ask marks for today's candidates.
 
     The supplied callback only reads a quote. This function has no broker
     order method and its table has no quantity/order fields by design.
     """
-    horizons = (("mark_30m", 30), ("mark_60m", 60), ("mark_90m", 90))
+    horizons = tuple(
+        (f"mark_{minutes}m", minutes) for minutes in CANDIDATE_MARK_HORIZONS
+    )
     clauses = ["s.ticker = ?", "substr(s.observed_at, 1, 10) = ?",
                "q.observation_kind = 'entry'"]
     params: list[Any] = [ticker.upper(), observed_at.date().isoformat()]

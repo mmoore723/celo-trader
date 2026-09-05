@@ -17,9 +17,10 @@ from trading.tested_strategy_research import (
 from trading.research_contract_selection import (
     RESEARCH_CONTRACT_PROFILE_VERSION, RESEARCH_CONTRACT_SOURCE,
 )
+from database.option_quotes import CANDIDATE_MARK_HORIZONS
 
 OPTION_SLIPPAGE_PER_SIDE = 0.01
-EXIT_WINDOWS = (30, 60, 90)
+EXIT_WINDOWS = CANDIDATE_MARK_HORIZONS
 QUOTE_WINDOW_GRACE_MINUTES = 5
 CONTRACT_POLICY_LABELS = {
     "target_150_250": "$150–$250 closest to $200",
@@ -154,6 +155,7 @@ def _without_incomparable_quotes(row: object, *, research_pair: bool) -> dict:
     for key in (
         "entry_ask", "entry_quote_at", "bid_30", "mark_30_at",
         "bid_60", "mark_60_at", "bid_90", "mark_90_at",
+        "bid_120", "mark_120_at",
     ):
         item[key] = None
     return item
@@ -341,7 +343,9 @@ def build_research_matrix(days: int = 90) -> dict:
                       MAX(CASE WHEN q.observation_kind='mark_60m' THEN q.bid END) AS bid_60,
                       MAX(CASE WHEN q.observation_kind='mark_60m' THEN q.observed_at END) AS mark_60_at,
                       MAX(CASE WHEN q.observation_kind='mark_90m' THEN q.bid END) AS bid_90,
-                      MAX(CASE WHEN q.observation_kind='mark_90m' THEN q.observed_at END) AS mark_90_at
+                      MAX(CASE WHEN q.observation_kind='mark_90m' THEN q.observed_at END) AS mark_90_at,
+                      MAX(CASE WHEN q.observation_kind='mark_120m' THEN q.bid END) AS bid_120,
+                      MAX(CASE WHEN q.observation_kind='mark_120m' THEN q.observed_at END) AS mark_120_at
                FROM shadow_candidates s
                LEFT JOIN candidate_option_quote_observations q ON q.candidate_id=s.candidate_id
                WHERE s.observed_at >= ? AND """ + candidate_account +
@@ -360,7 +364,9 @@ def build_research_matrix(days: int = 90) -> dict:
                       MAX(CASE WHEN a.observation_kind='mark_60m' THEN a.bid END) AS bid_60,
                       MAX(CASE WHEN a.observation_kind='mark_60m' THEN a.observed_at END) AS mark_60_at,
                       MAX(CASE WHEN a.observation_kind='mark_90m' THEN a.bid END) AS bid_90,
-                      MAX(CASE WHEN a.observation_kind='mark_90m' THEN a.observed_at END) AS mark_90_at
+                      MAX(CASE WHEN a.observation_kind='mark_90m' THEN a.observed_at END) AS mark_90_at,
+                      MAX(CASE WHEN a.observation_kind='mark_120m' THEN a.bid END) AS bid_120,
+                      MAX(CASE WHEN a.observation_kind='mark_120m' THEN a.observed_at END) AS mark_120_at
                FROM shadow_candidates s
                JOIN candidate_contract_alternatives a ON a.candidate_id=s.candidate_id
                WHERE s.observed_at >= ? AND """ + candidate_account +

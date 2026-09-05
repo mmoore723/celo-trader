@@ -29,7 +29,8 @@ def load_completed_observations(db_paths: Iterable[Path]) -> list[dict]:
                        JOIN candidate_option_quote_observations e
                          ON e.candidate_id=s.candidate_id AND e.observation_kind='entry'
                        JOIN candidate_option_quote_observations x ON x.candidate_id=s.candidate_id
-                       WHERE x.observation_kind IN ('mark_30m','mark_60m','mark_90m')"""
+                       WHERE x.observation_kind IN
+                             ('mark_30m','mark_60m','mark_90m','mark_120m')"""
             for source in conn.execute(query):
                 rule = REVIEWED_STRATEGIES.get(str(source["strategy_id"]).upper())
                 expected = (

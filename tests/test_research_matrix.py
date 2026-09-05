@@ -148,6 +148,12 @@ class ResearchMatrixTests(unittest.TestCase):
             "other-user", "2026-09-03T12:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 1, 2.0, "other",
             "2026-09-03T12:00:00", "bullish", "{}",
         ))
+        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
+            "impulse", "2026-09-03T10:00:00", "AAPL",
+            "V2_IMPULSE_ANCHORED_VWAP_PULLBACK", 1, 1.4, "acct",
+            "2026-09-03T10:00:00", "bullish",
+            '{"strategy_version":"research.1"}',
+        ))
         conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?,?)", [
             ("c1", "entry", 1.9, 2.0, "2026-09-03T10:00:00", "tradier_research_contract_v1"),
             ("c1", "mark_30m", 3.0, 3.1, "2026-09-03T10:30:00", "followup"),
@@ -155,6 +161,8 @@ class ResearchMatrixTests(unittest.TestCase):
             ("c2", "mark_30m", 9.0, 9.1, "2026-09-03T11:30:00", "followup"),
             ("other-user", "entry", 1.9, 2.0, "2026-09-03T12:00:00", "tradier_research_contract_v1"),
             ("other-user", "mark_30m", 9.0, 9.1, "2026-09-03T12:30:00", "followup"),
+            ("impulse", "entry", 1.9, 2.0, "2026-09-03T10:00:00", "tradier_research_contract_v1"),
+            ("impulse", "mark_120m", 3.0, 3.1, "2026-09-03T12:00:00", "followup"),
         ])
         conn.executemany("INSERT INTO candidate_contract_alternatives VALUES (?,?,?,?,?,?,?,?)", [
             ("c1", "AAPL_TEST", "entry", 1.9, 2.0, "2026-09-03T10:00:00", '["target_150_250"]', "tradier_research_contract_v1"),
@@ -172,7 +180,7 @@ class ResearchMatrixTests(unittest.TestCase):
 
         settings = {
             "active_broker_account_id": "acct", "watchlist": ["AAPL"],
-            "research_strategy_ids": [],
+            "research_strategy_ids": ["V2_IMPULSE_ANCHORED_VWAP_PULLBACK"],
         }
         with patch("config.get_settings", return_value=settings), patch(
             "database.get_conn", side_effect=connection,
@@ -193,6 +201,22 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("target_150_250", pair["leading_contract_test"]["policy"])
         self.assertEqual(1, pair["leading_contract_test"]["option_results"])
         self.assertEqual(1, pair["legacy_option_profiles_ignored"])
+        impulse = next(
+            item for item in matrix["strategies"]
+            if item["strategy_id"] == "V2_IMPULSE_ANCHORED_VWAP_PULLBACK"
+        )
+        impulse_pair = next(item for item in impulse["pairs"] if item["ticker"] == "AAPL")
+        self.assertEqual(120, impulse["exit_minutes"])
+        self.assertEqual(1, impulse_pair["option_results"])
+        self.assertEqual(100.0, impulse_pair["win_rate_pct"])
+        self.assertGreater(impulse_pair["net_one_contract_pnl"], 0)
+        self.assertEqual(
+            1,
+            next(
+                result for result in impulse_pair["exit_comparison"]
+                if result["minutes"] == 120
+            )["option_results"],
+        )
         conn.close()
 
     def test_older_candidate_is_a_data_day_when_candle_archive_did_not_exist(self):

@@ -327,6 +327,7 @@ class PaperOptionQuoteTests(unittest.TestCase):
                     "2026-08-03T10:31:00-04:00",
                     "2026-08-03T11:01:00-04:00",
                     "2026-08-03T11:31:00-04:00",
+                    "2026-08-03T12:01:00-04:00",
                 ):
                     captured += capture_due_candidate_option_quotes(
                         ticker="TSLA",
@@ -343,9 +344,15 @@ class PaperOptionQuoteTests(unittest.TestCase):
             ).fetchall()]
             conn.close()
 
-        self.assertEqual(6, captured)
-        self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], kinds)
-        self.assertEqual(["entry", "mark_30m", "mark_60m", "mark_90m"], alt_kinds)
+        self.assertEqual(8, captured)
+        self.assertEqual(
+            ["entry", "mark_30m", "mark_60m", "mark_90m", "mark_120m"],
+            kinds,
+        )
+        self.assertEqual(
+            ["entry", "mark_30m", "mark_60m", "mark_90m", "mark_120m"],
+            alt_kinds,
+        )
         self.assertEqual(0, trade_count)
 
     def test_candidate_quote_sweep_does_not_backfill_missed_horizons_late(self) -> None:

@@ -468,7 +468,7 @@ export interface ScannerOpportunityContractPreview extends ScannerOpportunityCon
   estimated_position_cost?: number | null;
 }
 export interface ScannerOpportunityQuoteMark {
-  observation_kind: "entry" | "mark_30m" | "mark_60m" | "mark_90m" | string;
+  observation_kind: "entry" | "mark_30m" | "mark_60m" | "mark_90m" | "mark_120m" | string;
   observed_at: string; contract_symbol: string;
   bid?: number | null; ask?: number | null; mid?: number | null; last?: number | null;
   executable_return_pct?: number | null; source?: string;
