@@ -315,6 +315,13 @@ export interface StrategyRow {
   avg_loss: number;
   profit_factor: number;
   avg_mfe_pct: number;
+  current_version?: string | null;
+  current_version_trades?: number;
+  current_version_wins?: number;
+  current_version_losses?: number;
+  current_version_total_pnl?: number;
+  current_version_profit_factor?: number;
+  prior_or_unversioned_trades?: number;
 }
 
 export interface HourRow {

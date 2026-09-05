@@ -6,7 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
 import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib/api";
-import { strategyPerformanceForId, strategyPerformanceState } from "../lib/strategyPerformance.js";
+import { currentVersionPerformance, strategyPerformanceForId, strategyPerformanceState } from "../lib/strategyPerformance.js";
 import { loadCredentialDisplay, maskCredentialForDisplay } from "../lib/credentialDisplay.js";
 import { needsTradierSandbox } from "../lib/connectionHealthView.js";
 import { TestedStrategies } from "../components/settings/TestedStrategies";
@@ -349,11 +349,10 @@ export function Settings() {
     const pfLabel = typeof pf === "number" ? pf.toFixed(2) : (pf || "not recorded");
     const target = strategy.backtest?.target_profit_factor ?? 1.5;
     const reliableTarget = strategy.backtest?.meets_target && strategy.evidence_grade === "passed_declared_holdout";
-    const actual = strategyPerformanceForId(actualStrategyAnalytics?.by_strategy, strategy.strategy_id);
+    const allActual = strategyPerformanceForId(actualStrategyAnalytics?.by_strategy, strategy.strategy_id);
+    const actual = currentVersionPerformance(allActual);
     const actualState = strategyPerformanceState(actual, target, 30);
-    const actualEvidenceLabel = !actualState.hasResult
-      ? "no actual trades yet"
-      : actualState.enoughEvidence
+    const actualEvidenceLabel = actualState.enoughEvidence
         ? (actualState.meetsTarget ? "30-trade target passed" : "below target")
         : "sample still collecting";
     const actualPnl = actual
@@ -378,11 +377,11 @@ export function Settings() {
         {!strategy.observation_only && (
           <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
             <strong style={{ color: actualState.meetsTarget ? "var(--positive)" : actualState.hasResult ? "var(--warning)" : "var(--ink-muted)" }}>
-              Current {actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} {actualAccountMode} PF {actualState.pfLabel}
+              Current v{strategy.version} {actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} {actualAccountMode}{actualState.hasResult ? ` PF ${actualState.pfLabel}` : " · collecting"}
             </strong>
             {` · ${actualState.trades} actual trade${actualState.trades === 1 ? "" : "s"}`}
             {actualPnl ? ` · ${actualPnl}` : ""}
-            {` · ${actualEvidenceLabel}`}
+            {actualState.hasResult ? ` · ${actualEvidenceLabel}` : ""}
           </p>
         )}
         <p className="text-xs pb-3" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--ink-muted)" }}>
@@ -393,6 +392,11 @@ export function Settings() {
         <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
           <summary className="cursor-pointer">Why this status?</summary>
           <p className="mt-1">{strategy.backtest?.comparison || strategy.evidence}</p>
+          {(allActual?.prior_or_unversioned_trades ?? 0) > 0 && (
+            <p className="mt-1">
+              {allActual!.prior_or_unversioned_trades} earlier or unversioned paper trade{allActual!.prior_or_unversioned_trades === 1 ? " is" : "s are"} kept in Performance history but not counted as proof for v{strategy.version}.
+            </p>
+          )}
         </details>
         {strategy.integrity_errors.length > 0 && (
           <p className="text-xs pb-3" style={{ color: "#f87171" }}>

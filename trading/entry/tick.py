@@ -1881,8 +1881,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     _candidate_id = None
     _strategy_context = dict(_top.meta) if isinstance(_top.meta, dict) else {}
     _strategy_context.pop("shadow_candidate_id", None)
+    from config.strategy_catalog import REVIEWED_STRATEGIES
+    _current_rule = REVIEWED_STRATEGIES.get(str(strategy_id).strip().upper())
     _strategy_context.update({
         "strategy_id": strategy_id,
+        "strategy_version": _current_rule.version if _current_rule is not None else None,
         "trigger_bar": str(_top.trigger_bar),
         "direction": direction,
     })

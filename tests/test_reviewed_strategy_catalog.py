@@ -86,6 +86,8 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         rule = REVIEWED_STRATEGIES["V2_SPY_TREND_CONT"]
         evidence = json.loads((root / rule.evidence_artifact).read_text())
+        self.assertEqual("2.1.0", rule.version)
+        self.assertEqual(rule.version, evidence["strategy_version"])
         replay = evidence["source_report_reconciliation"]
         self.assertFalse(replay["all_reported_markouts_reachable_by_production"])
         self.assertEqual(70, replay["reported_markouts_not_emittable_by_production"])

@@ -110,14 +110,22 @@ def get_all_trades(
     clauses: list[str] = []
     params: list[object] = []
     if status_filter in {"open", "closed"}:
-        clauses.append("status = ?")
+        clauses.append("t.status = ?")
         params.append(status_filter)
     if broker_account_id:
-        clauses.append("broker_account_id = ?")
+        clauses.append("t.broker_account_id = ?")
         params.append(broker_account_id)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    ordering = "entry_time DESC" if status_filter == "open" else "COALESCE(exit_time, entry_time) DESC"
-    sql = f"SELECT * FROM trades{where} ORDER BY {ordering} LIMIT ?"
+    ordering = "t.entry_time DESC" if status_filter == "open" else "COALESCE(t.exit_time, t.entry_time) DESC"
+    # Keep the exact strategy version which created each candidate beside the
+    # trade.  Older rows remain NULL; they are still valid history, but must
+    # not be presented as forward evidence for a later strategy revision.
+    sql = (
+        "SELECT t.*, json_extract(sc.metadata_json, '$.strategy_version') "
+        "AS candidate_strategy_version FROM trades AS t "
+        "LEFT JOIN shadow_candidates AS sc ON sc.candidate_id = t.candidate_id"
+        f"{where} ORDER BY {ordering} LIMIT ?"
+    )
     params.append(limit)
 
     try:

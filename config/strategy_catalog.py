@@ -75,7 +75,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
     "V2_SPY_TREND_CONT": ReviewedStrategy(
         strategy_id="V2_SPY_TREND_CONT",
         display_name="SPY Trend Continuation",
-        version="2.0.0",
+        version="2.1.0",
         tickers=frozenset({"SPY"}),
         setting_key="strategy_spy_trend_cont_v2_enabled",
         signal_source="bar_close",
@@ -87,7 +87,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         paper_only=True,
         status="paper_candidate",
         evidence_grade="promising_underpowered",
-        evidence_artifact="config/strategy_evidence/v2_spy_trend_cont-2.0.0.json",
+        evidence_artifact="config/strategy_evidence/v2_spy_trend_cont-2.1.0.json",
         evidence="Repaired three-candle SPY Trend policy: PF 1.75 after modeled costs across 46 exact paid-quote outcomes; paper-only pending same-broker validation",
     ),
     "V2_SPY_AFTERNOON_FVG": ReviewedStrategy(

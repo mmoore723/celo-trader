@@ -198,7 +198,7 @@ class StrategyTickerConsentTests(unittest.TestCase):
             publish_qualified_recommendation({
                 "decision": "insufficient_evidence",
                 "strategy_id": "V2_SPY_TREND_CONT",
-                "strategy_version": "2.0.0",
+                "strategy_version": "2.1.0",
                 "ticker": "QQQ",
             }, evidence_artifact="data/latest.json")
 
@@ -215,7 +215,7 @@ class StrategyTickerConsentTests(unittest.TestCase):
         publish_qualified_recommendation({
             "decision": "qualified",
             "strategy_id": "V2_SPY_TREND_CONT",
-            "strategy_version": "2.0.0",
+            "strategy_version": "2.1.0",
             "ticker": "QQQ",
             "holdout_start": "2026-08-01",
             "training": {"profit_factor": 1.4, "trading_days": 10},

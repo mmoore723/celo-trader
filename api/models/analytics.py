@@ -19,6 +19,13 @@ class StrategyRow(BaseModel):
     avg_loss: float       # avg P&L on losing trades (negative)
     profit_factor: float  # gross_wins / abs(gross_losses)
     avg_mfe_pct: float
+    current_version: str | None = None
+    current_version_trades: int = 0
+    current_version_wins: int = 0
+    current_version_losses: int = 0
+    current_version_total_pnl: float = 0.0
+    current_version_profit_factor: float = 0.0
+    prior_or_unversioned_trades: int = 0
 
 class HourRow(BaseModel):
     hour: int

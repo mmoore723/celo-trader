@@ -17,7 +17,7 @@ class LearningSecurityTests(unittest.TestCase):
     def example(self):
         return {
             "example_id": "ex-1", "strategy_id": "V2_SPY_TREND_CONT",
-            "strategy_version": "2.0.0", "ticker": "SPY",
+            "strategy_version": "2.1.0", "ticker": "SPY",
             "observed_at": "2026-08-21T10:10:00-04:00", "decision_bar_index": 1,
             "bars": [{"time": "10:09"}, {"time": "10:10"}, {"time": "10:11"}],
             "category": "clean_win", "outcome": "entered", "direction": "bullish",
@@ -92,7 +92,7 @@ class LearningSecurityTests(unittest.TestCase):
 
             row = {"candidate_id": "real-1", "observed_at": "2026-08-21T10:10:00-04:00",
                    "strategy_id": "V2_SPY_TREND_CONT", "ticker": "SPY", "direction": "bullish",
-                   "confidence": 0.8, "metadata_json": '{"strategy_version":"2.0.0"}',
+                   "confidence": 0.8, "metadata_json": '{"strategy_version":"2.1.0"}',
                    "final_outcome": "observed_only", "direction_correct": 1,
                    "outcome_observed_at": "2026-08-21T11:10:00-04:00"}
             with test_conn() as conn:

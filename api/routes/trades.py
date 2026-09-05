@@ -88,6 +88,27 @@ def _parse_mtf_bias(raw: object) -> dict | None:
         return None
 
 
+def _strategy_version_from_trade_row(row: dict) -> str | None:
+    """Return the exact reviewed version which produced a trade, if known.
+
+    New trades freeze the version in ``strategy_context_json``. Candidate
+    metadata is the compatibility source for the period after candidate
+    versioning existed but before the trade-context column was deployed.
+    Missing versions stay missing; guessing would mix old rules into current
+    forward evidence.
+    """
+    raw_context = row.get("strategy_context_json")
+    if raw_context:
+        try:
+            context = _json.loads(raw_context)
+        except (TypeError, ValueError, _json.JSONDecodeError):
+            context = None
+        if isinstance(context, dict) and context.get("strategy_version"):
+            return str(context["strategy_version"])
+    candidate_version = row.get("candidate_strategy_version")
+    return str(candidate_version) if candidate_version else None
+
+
 def _row_to_trade(row: dict) -> Trade:
     # DB stores 'realized_pnl' not 'pnl'; 'paper' int not 'mode' string;
     # 'direction' doesn't exist — derive from option_type.
@@ -289,6 +310,7 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
     from collections import defaultdict
     from database import get_all_trades
     from config import get_settings
+    from config.strategy_catalog import REVIEWED_STRATEGIES
 
     account_id = get_settings().get("active_broker_account_id") or None
     rows = get_all_trades(limit=2000, mode=mode, status_filter="closed", broker_account_id=account_id) or []
@@ -298,6 +320,10 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
         "trades": 0, "wins": 0, "losses": 0,
         "total_pnl": 0.0, "win_pnl": 0.0, "loss_pnl": 0.0,
         "mfe_sum": 0.0, "mfe_count": 0,
+    })
+    current_strat: dict = defaultdict(lambda: {
+        "trades": 0, "wins": 0, "losses": 0,
+        "total_pnl": 0.0, "win_pnl": 0.0, "loss_pnl": 0.0,
     })
     for r in rows:
         sid  = r.get("strategy_id") or "UNKNOWN"
@@ -316,6 +342,18 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
             strat[sid]["mfe_sum"]   += (float(r["peak_price"]) - ep) / ep * 100
             strat[sid]["mfe_count"] += 1
 
+        rule = REVIEWED_STRATEGIES.get(str(sid).strip().upper())
+        if rule is not None and _strategy_version_from_trade_row(r) == rule.version:
+            versioned = current_strat[sid]
+            versioned["trades"] += 1
+            versioned["total_pnl"] += pnl
+            if pnl > 0:
+                versioned["wins"] += 1
+                versioned["win_pnl"] += pnl
+            elif pnl < 0:
+                versioned["losses"] += 1
+                versioned["loss_pnl"] += pnl
+
     by_strategy = [
         StrategyRow(
             strategy_id   = sid,
@@ -328,6 +366,19 @@ def get_analytics(mode: str = Query("paper")) -> TradeAnalytics:
             avg_loss      = round(v["loss_pnl"] / v["losses"], 2) if v["losses"] else 0.0,
             profit_factor = round(v["win_pnl"] / abs(v["loss_pnl"]), 2) if v["loss_pnl"] else 0.0,
             avg_mfe_pct   = round(v["mfe_sum"] / v["mfe_count"], 1) if v["mfe_count"] else 0.0,
+            current_version=(
+                REVIEWED_STRATEGIES[str(sid).strip().upper()].version
+                if str(sid).strip().upper() in REVIEWED_STRATEGIES else None
+            ),
+            current_version_trades=current_strat[sid]["trades"],
+            current_version_wins=current_strat[sid]["wins"],
+            current_version_losses=current_strat[sid]["losses"],
+            current_version_total_pnl=round(current_strat[sid]["total_pnl"], 2),
+            current_version_profit_factor=(
+                round(current_strat[sid]["win_pnl"] / abs(current_strat[sid]["loss_pnl"]), 2)
+                if current_strat[sid]["loss_pnl"] else 0.0
+            ),
+            prior_or_unversioned_trades=(v["trades"] - current_strat[sid]["trades"]),
         )
         for sid, v in sorted(strat.items(), key=lambda kv: -kv[1]["total_pnl"])
     ]

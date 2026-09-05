@@ -8,6 +8,18 @@ export function strategyPerformanceForId(rows, strategyId) {
   return rows.find((row) => row?.strategy_id === strategyId) ?? null;
 }
 
+export function currentVersionPerformance(row) {
+  if (!row) return null;
+  return {
+    strategy_id: row.strategy_id,
+    trades: Number(row.current_version_trades ?? 0),
+    wins: Number(row.current_version_wins ?? 0),
+    losses: Number(row.current_version_losses ?? 0),
+    total_pnl: Number(row.current_version_total_pnl ?? 0),
+    profit_factor: Number(row.current_version_profit_factor ?? 0),
+  };
+}
+
 export function strategyPerformanceState(row, target = 1.5, minimumTrades = 30) {
   const trades = Number(row?.trades ?? 0);
   const wins = Number(row?.wins ?? 0);

@@ -81,7 +81,7 @@ class LearningExampleTests(unittest.TestCase):
         self.assertEqual(0, _decision_bar_index(bars, "2026-08-21T09:59:00-04:00"))
 
     def test_examples_require_recorded_version_and_reviewed_ticker(self):
-        row = self.row(ticker="SPY", metadata_json='{"strategy_version":"2.0.0"}')
+        row = self.row(ticker="SPY", metadata_json='{"strategy_version":"2.1.0"}')
         self.assertTrue(_eligible_recorded_row(row))
         self.assertFalse(_eligible_recorded_row({**row, "ticker": "QQQ"}))
         self.assertFalse(_eligible_recorded_row({**row, "metadata_json": "{}"}))

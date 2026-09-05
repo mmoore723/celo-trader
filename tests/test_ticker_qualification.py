@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from strategy_health.ticker_qualification import qualify_pair, normalize_completed_observations
 
 
-def observations(*, positive=True, version="2.0.0", duplicate=False):
+def observations(*, positive=True, version="2.1.0", duplicate=False):
     rows = []
     start = datetime(2026, 1, 2, 10, 0)
     for index in range(40):
