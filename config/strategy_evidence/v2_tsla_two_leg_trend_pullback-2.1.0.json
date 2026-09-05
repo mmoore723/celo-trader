@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "strategy_id": "V2_TSLA_TWO_LEG_TREND_PULLBACK",
+  "strategy_version": "2.1.0",
+  "status": "paper_candidate",
+  "evidence_grade": "promising_inconsistent",
+  "ticker_scope": ["TSLA"],
+  "implementation": "trading.two_leg_trend_pullback_execution",
+  "implementation_sha256_at_review": "e4b2fc94284d8aaf40bdcc78c6d3275c8bfde18bfef28a1431f88e98fc0db547",
+  "market_data": {
+    "source": "paid Databento OPRA CBBO-1m archive",
+    "bars_sha256": "eeae427d707adc321538eb6f102cf513644723936e9d1f88d5549eca10e604ac",
+    "execution_model": "next-minute actual option ask; same-contract actual bid after 90 minutes; $0.01 adverse price slippage and $0.65 fee per side",
+    "eligibility": {
+      "min_dte": 7,
+      "max_dte": 21,
+      "min_premium": 0.8,
+      "max_premium": 10.0,
+      "max_spread_pct": 0.08
+    }
+  },
+  "selected_policy": {
+    "variant": "directionally_confirmed_reclaim",
+    "hold_minutes": 90,
+    "holdout_start": "2026-05-19",
+    "trigger_confirmation": "completed reclaim candle has same-direction momentum, engulfing, or rejection"
+  },
+  "historical_repair_diagnostic": {
+    "source_report_sha256": "b7eb48398820a8e2d4427e68395ed057166da1731cad603308f7deaa36414f4a",
+    "exact_production_signal_matches": 127,
+    "signal_mismatches": 0,
+    "baseline": {
+      "trades": 127,
+      "wins": 69,
+      "net_pnl_one_contract": 3699.9,
+      "median_net_return_pct": 1.6756,
+      "profit_factor": 1.4919
+    },
+    "repaired_all": {
+      "trades": 76,
+      "wins": 43,
+      "net_pnl_one_contract": 3539.2,
+      "median_net_return_pct": 1.9208,
+      "profit_factor": 2.0428
+    },
+    "repaired_older": {
+      "trades": 66,
+      "wins": 36,
+      "net_pnl_one_contract": 2507.2,
+      "median_net_return_pct": 1.6972,
+      "profit_factor": 1.8237
+    },
+    "repaired_later": {
+      "trades": 10,
+      "wins": 7,
+      "net_pnl_one_contract": 1032.0,
+      "median_net_return_pct": 3.1889,
+      "profit_factor": 3.9494
+    },
+    "warning": "This confirmation was predeclared in the saved context study but was not its training-selected winner. It is now frozen as a prospective paper repair; later-period figures are supportive, not untouched confirmation."
+  },
+  "prospective_baseline": {
+    "as_of": "2026-09-04",
+    "independent_trades": 7,
+    "wins": 3,
+    "net_pnl_one_contract": -23.1,
+    "median_net_return_pct": -7.5603,
+    "profit_factor": 0.9274,
+    "entered_trade_subset": {
+      "trades": 3,
+      "wins": 1,
+      "net_pnl_one_contract": -144.9,
+      "profit_factor": 0.0116
+    }
+  },
+  "prospective_repair_replay": {
+    "production_snapshot_sha256": "b08759489fd7963b0a0451c97588a2e55f4cd1fd482e5a5beb8d33deb94090d6",
+    "replayable_baseline_trades": 5,
+    "accepted_by_repair": 3,
+    "accepted_net_pnl_one_contract": 220.1,
+    "accepted_profit_factor": 4.0027,
+    "rejected_by_repair": 2,
+    "rejected_net_pnl_one_contract": -116.6,
+    "unscorable_without_retained_scanner_candles": 2,
+    "warning": "Exploratory stress evidence only; this repair was investigated after these outcomes were visible."
+  },
+  "display_metrics": {
+    "profit_factor": 2.04,
+    "trades": 76,
+    "scope": "TSLA · 90-minute hold · directionally confirmed paid outcomes",
+    "comparison": "Older PF 1.82 (66) · later PF 3.95 (10) · current baseline PF 0.93 (7)",
+    "target_profit_factor": 1.5,
+    "meets_target": true,
+    "note": "Historical repair clears the numeric goal, but must prove itself on fresh paper trades before live use."
+  },
+  "decision": "Deploy the causal candle confirmation as a paper repair without changing the user's saved switch or 90-minute exit. Require fresh forward evidence before live authority.",
+  "source_reports": [
+    "research/reports/paid_tsla_two_leg_tuning_v1.json",
+    "research/reports/paid_tsla_two_leg_price_action_context_v2.json",
+    "research/jobs/audit_tsla_two_leg_directional_repair.py"
+  ]
+}

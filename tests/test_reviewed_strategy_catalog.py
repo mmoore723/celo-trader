@@ -123,6 +123,20 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         rule = REVIEWED_STRATEGIES["V2_FAILED_OR_BREAK_VWAP_REVERSION"]
         self.assertEqual("promising_inconsistent", rule.evidence_grade)
 
+    def test_tsla_two_leg_evidence_matches_directional_repair(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        rule = REVIEWED_STRATEGIES["V2_TSLA_TWO_LEG_TREND_PULLBACK"]
+        evidence = json.loads((root / rule.evidence_artifact).read_text())
+        self.assertEqual("2.1.0", rule.version)
+        self.assertEqual(90, rule.exit_minutes)
+        self.assertEqual("directionally_confirmed_reclaim", evidence["selected_policy"]["variant"])
+        self.assertEqual(76, evidence["historical_repair_diagnostic"]["repaired_all"]["trades"])
+        self.assertAlmostEqual(
+            2.0428,
+            evidence["historical_repair_diagnostic"]["repaired_all"]["profit_factor"],
+        )
+        self.assertEqual("promising_inconsistent", rule.evidence_grade)
+
     def test_displacement_is_paper_tradable_only_on_its_reviewed_tickers(self) -> None:
         strategy_id = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
         rule = REVIEWED_STRATEGIES[strategy_id]

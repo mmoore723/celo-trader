@@ -120,7 +120,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
     "V2_TSLA_TWO_LEG_TREND_PULLBACK": ReviewedStrategy(
         strategy_id="V2_TSLA_TWO_LEG_TREND_PULLBACK",
         display_name="TSLA Two-Leg Trend Pullback",
-        version="2.0.0",
+        version="2.1.0",
         tickers=frozenset({"TSLA"}),
         setting_key="strategy_tsla_two_leg_trend_pullback_v2_enabled",
         signal_source="one_minute_state",
@@ -129,8 +129,8 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         paper_only=False,
         status="paper_candidate",
         evidence_grade="promising_inconsistent",
-        evidence_artifact="config/strategy_evidence/v2_tsla_two_leg_trend_pullback-2.0.0.json",
-        evidence="TSLA paid-quote VWAP/EMA two-leg study: positive train/holdout aggregate but inconsistent by month; paper candidate only",
+        evidence_artifact="config/strategy_evidence/v2_tsla_two_leg_trend_pullback-2.1.0.json",
+        evidence="TSLA paid-quote repair: same-direction reclaim confirmation improved after-cost PF to 1.82 on 66 older and 3.95 on 10 later outcomes; fresh paper proof is still required",
     ),
     "CTX_ORB_NR7_OR_INSIDE": ReviewedStrategy(
         strategy_id="CTX_ORB_NR7_OR_INSIDE",

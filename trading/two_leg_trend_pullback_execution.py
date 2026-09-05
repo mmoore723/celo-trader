@@ -8,7 +8,8 @@ only *completed* one-minute regular-session candles:
   impulse;
 * price makes a controlled 0.25--1.25 ATR pullback to EMA(9) without closing
   through VWAP; and
-* a completed one-minute candle reclaims the pullback's prior high/low.
+* a completed one-minute candle reclaims the pullback's prior high/low and
+  confirms the move with same-direction momentum, engulfing, or rejection.
 
 The entry loop then selects the same reviewed near-money option and records
 the next-minute executable ask.  The 90-minute same-contract bid exit is
@@ -23,7 +24,7 @@ from typing import MutableMapping
 import pandas as pd
 
 from strategies.base import Signal
-from strategies.price_action_context import describe_price_action
+from strategies.price_action_context import PriceActionContext, describe_price_action
 
 
 STRATEGY_ID = "V2_TSLA_TWO_LEG_TREND_PULLBACK"
@@ -121,6 +122,20 @@ def _reference_close(bars: list[_Bar]) -> float | None:
     return None
 
 
+def _has_directional_confirmation(context: PriceActionContext, direction: str) -> bool:
+    """Return the paid-study candle confirmation for the completed reclaim.
+
+    The context contains only bars at or before the reclaim bar.  Keeping this
+    predicate here makes the production decision auditable and prevents a
+    later candle from rescuing a weak reclaim.
+    """
+    if direction == "bullish":
+        return context.momentum_long or context.bullish_engulfing or context.bullish_rejection
+    if direction == "bearish":
+        return context.momentum_short or context.bearish_engulfing or context.bearish_rejection
+    raise ValueError(f"unsupported direction: {direction}")
+
+
 def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
     """Replay the small state machine and only return a current-minute signal.
 
@@ -166,6 +181,16 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                     else:
                         leg.pullback_extreme = min(leg.pullback_extreme, current.low)
                         if current.close > previous.high and current.close > fast:
+                            context = describe_price_action(
+                                history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
+                            )
+                            if not _has_directional_confirmation(context, "bullish"):
+                                # The reviewed study permits one setup per
+                                # session.  Reject this completed reclaim for
+                                # the day instead of searching forward after
+                                # seeing its outcome.
+                                leg = None
+                                return None
                             stop = min(leg.pullback_extreme, current.close - atr)
                             risk = current.close - stop
                             if risk > 0:
@@ -173,12 +198,11 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                     confidence=0.80, strategy_id=STRATEGY_ID, direction="bullish", rvol=current.rvol,
                                     trigger_bar=current.timestamp,
                                     meta={
-                                        **describe_price_action(
-                                            history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
-                                        ).features(),
+                                        **context.features(),
                                         "v2_hypothesis": "two_leg_impulse_vwap_hold_pullback_1m_reclaim",
-                                        "validated_entry_rule": "after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_completed_1m_reclaim",
+                                        "validated_entry_rule": "after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_directionally_confirmed_completed_1m_reclaim",
                                         "entry_timing": "completed_1m_reclaim_then_next_1m_option_ask",
+                                        "directional_confirmation": True,
                                         "reference_945": round(reference, 6), "vwap": round(vwap, 6),
                                         "fast_ema": round(fast, 6), "slow_ema": round(slow, 6), "atr": round(atr, 6),
                                         "impulse_extreme": round(leg.impulse_extreme, 6),
@@ -207,6 +231,12 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                     else:
                         leg.pullback_extreme = max(leg.pullback_extreme, current.high)
                         if current.close < previous.low and current.close < fast:
+                            context = describe_price_action(
+                                history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
+                            )
+                            if not _has_directional_confirmation(context, "bearish"):
+                                leg = None
+                                return None
                             stop = max(leg.pullback_extreme, current.close + atr)
                             risk = stop - current.close
                             if risk > 0:
@@ -214,12 +244,11 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                     confidence=0.80, strategy_id=STRATEGY_ID, direction="bearish", rvol=current.rvol,
                                     trigger_bar=current.timestamp,
                                     meta={
-                                        **describe_price_action(
-                                            history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
-                                        ).features(),
+                                        **context.features(),
                                         "v2_hypothesis": "two_leg_impulse_vwap_hold_pullback_1m_reclaim",
-                                        "validated_entry_rule": "after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_completed_1m_reclaim",
+                                        "validated_entry_rule": "after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_directionally_confirmed_completed_1m_reclaim",
                                         "entry_timing": "completed_1m_reclaim_then_next_1m_option_ask",
+                                        "directional_confirmation": True,
                                         "reference_945": round(reference, 6), "vwap": round(vwap, 6),
                                         "fast_ema": round(fast, 6), "slow_ema": round(slow, 6), "atr": round(atr, 6),
                                         "impulse_extreme": round(leg.impulse_extreme, 6),
