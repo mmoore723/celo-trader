@@ -197,7 +197,7 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
         status="paper_candidate",
         evidence_grade="promising_underpowered",
         evidence_artifact="config/strategy_evidence/ctx_vwap_displacement-0.1.0.json",
-        evidence="Historical TSLA research showed PF 6.73 in a five-fill $150-$250 slice. It is enabled for paper trading on TSLA and AMZN while the bot collects a larger 90-minute same-contract sample.",
+        evidence="The exact 90-minute paper exit produced PF 1.33 across five measurable paid-quote results on TSLA and AMZN; enabled for paper collection, but not yet proven.",
         observation_only=False,
     ),
     "CTX_1H_SQUEEZE_MACD_LONG": ReviewedStrategy(

@@ -7,8 +7,32 @@
   "ticker_scope": ["AMZN", "TSLA"],
   "implementation": "strategies.context_strategy_observers",
   "implementation_sha256_at_review": "08718c6d33283a6a251e98d4be56025ac311a871c7f3c8e2145a40cfccc3f535",
-  "market_data": {"source": "paid Databento OPRA CBBO-1m archives", "execution_model": "actual option ask strictly after signal; same-contract actual bid at structural VWAP/HOD exit; fee and $10 monthly-plan stress", "contract_policy": "$150-$250 ask proxy; historical CBBO archive has no Greeks"},
-  "display_metrics": {"profit_factor": 6.73, "trades": 5, "scope": "TSLA · $150-$250 contracts", "comparison": "TSLA: 3 older test fills, 1 check fill, and 1 newest fill (a loss) · AMZN: 1 winning fill", "target_profit_factor": 1.5, "meets_target": true, "note": "PF is not trustworthy yet because both ticker samples are far too small and TSLA's newest result lost."},
-  "decision": "User-approved paper execution on TSLA and AMZN only, with a 90-minute same-contract exit while prospective evidence grows. The five-fill historical PF is reference evidence, not proof of the paper exit.",
-  "source_reports": ["research/reports/paid_tsla_context_vwap_signal_v2.json", "research/reports/paid_amzn_context_strategy_matrix_v3.json"]
+  "market_data": {
+    "source": "paid Databento OPRA CBBO-1m archives",
+    "execution_model": "actual option ask strictly after signal; same-contract actual bid after the deployed 90-minute paper exit; $0.01 adverse option-price slippage per side and $0.12 per contract per side",
+    "contract_policy": "$150-$250 ask proxy; historical CBBO archive has no Greeks"
+  },
+  "historical_structural_exit_reference": {
+    "profit_factor": 6.73,
+    "trades": 5,
+    "scope": "TSLA only",
+    "warning": "This used a structural VWAP/HOD exit that the paper bot does not execute and therefore is not the production-policy PF."
+  },
+  "display_metrics": {
+    "profit_factor": 1.33,
+    "trades": 5,
+    "scope": "TSLA + AMZN · exact 90-minute paper exit · modeled costs",
+    "comparison": "3 wins, 2 losses, +$38.80 at one contract · 1 additional TSLA result had no recorded 90-minute bid",
+    "target_profit_factor": 1.5,
+    "meets_target": false,
+    "note": "The current paper rule is below the 1.50 target and the sample is far too small. It remains enabled only to collect more paper evidence."
+  },
+  "decision": "Keep the user-approved paper execution scope on TSLA and AMZN while prospective evidence grows. Do not claim PF 6.73 for the running 90-minute rule or promote it live.",
+  "source_reports": [
+    "research/reports/paid_tsla_context_vwap_signal_v2.json",
+    "research/reports/paid_amzn_context_strategy_matrix_v3.json",
+    "research/reports/paid_tsla_vwap_displacement_fixed_90m_v1.json",
+    "research/reports/paid_amzn_vwap_displacement_fixed_90m_v1.json",
+    "docs/audits/2026-09-05-vwap-displacement-90m-parity.md"
+  ]
 }

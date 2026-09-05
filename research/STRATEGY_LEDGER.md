@@ -542,3 +542,12 @@ Do not rerun a rejected idea unchanged. Reopen one only if at least one of these
 - **Execution repair:** reviewed paper entries are capped at the exact Tradier ask used for analysis instead of chasing to the separate five-percent risk-sizing ceiling.
 - **Decision:** **KEEP ENABLED IN PAPER; DO NOT PROMOTE LIVE.** The exact variant was selected after all historical periods were visible, so the strategy remains promising/underpowered until a larger same-broker fill cohort confirms it.
 - **Evidence:** `docs/audits/2026-09-05-spy-trend-three-bar-repair.md`.
+
+### Exact six-strategy launch audit and VWAP exit parity (2026-09-05)
+
+- **SPY Trend correction:** a machine replay now saves the exact 46-row cohort behind PF **1.7473** and +$431.96. It reproduces the full 156 -> 86 -> 72 -> 46 policy funnel and fails on count drift. The correct after-cost win count is 25; 28 was the raw quote win count before slippage and fees.
+- **Missing strategy found:** the launch audit previously covered five strategies and omitted the user-approved VWAP 10:30 Displacement paper rule. Its displayed PF 6.73 used a structural exit that the running bot does not execute.
+- **Exact 90-minute VWAP result:** four measurable TSLA contracts plus one AMZN contract produced 3 wins, 2 losses, +$38.80 at one contract, and PF **1.3331** after $0.01 adverse slippage per side and $0.12 fees per side. A sixth TSLA entry had no real bid in the 90-minute window and remains explicitly missing.
+- **Six-strategy account result:** the corrected current-policy replay accepted 250 trades, grew $5,000 to $13,011.12, and produced full-history PF **1.5236**. It still failed launch: the older eligibility period was PF **1.2870**; the eligibility-selected subset passed that earlier period at PF 1.5210 but failed June validation at PF **1.2249**. Later June and July results cannot erase that chronological failure.
+- **Decision:** **NOT LAUNCH-READY; NO SWITCH CHANGE.** Keep paper collection running. Settings must show PF 1.33 for the actual VWAP paper exit, not PF 6.73 from a different exit. Continue separating execution-feed losses from strategy losses before any live promotion.
+- **Evidence:** `research/reports/paid_spy_trend_deployed_cohort_v1.json`, `research/reports/paid_tsla_vwap_displacement_fixed_90m_v1.json`, `research/reports/paid_amzn_vwap_displacement_fixed_90m_v1.json`, `research/reports/paid_reviewed_launch_readiness_v7.json`, and `docs/audits/2026-09-05-vwap-displacement-90m-parity.md`.

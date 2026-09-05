@@ -13,6 +13,7 @@ STRATEGIES = (
     "V2_SPY_AFTERNOON_FVG",
     "V2_ORB_PULLBACK",
     "V2_TSLA_TWO_LEG_TREND_PULLBACK",
+    "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG",
 )
 
 
@@ -182,7 +183,7 @@ class ReviewedLaunchReadinessTests(unittest.TestCase):
             holdout_start=date(2026, 5, 1),
         )
         screen = report["exhaustive_subset_screen"]
-        self.assertEqual(31, screen["candidate_count"])
+        self.assertEqual(63, screen["candidate_count"])
         self.assertEqual([primary], screen["selected"]["strategy_ids"])
         self.assertTrue(screen["selected"]["eligibility_passed"])
         self.assertFalse(screen["selected"]["gates"]["validation"]["net_profitable"])

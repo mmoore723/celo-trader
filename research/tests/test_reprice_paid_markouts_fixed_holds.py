@@ -5,10 +5,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from research.jobs.reprice_paid_markouts_fixed_holds import reprice_day
+from research.jobs.reprice_paid_markouts_fixed_holds import reprice_day, rows_at_path
 
 
 class RepricePaidMarkoutsTests(unittest.TestCase):
+    def test_reads_frozen_entries_from_any_explicit_report_path(self) -> None:
+        row = {"signal_time": "2026-01-01T10:00:00-05:00"}
+        payload = {"results": {"strategy": {"contract_policy": [row]}}}
+
+        self.assertEqual(
+            [row], rows_at_path(payload, "results.strategy.contract_policy"),
+        )
+
     def test_reuses_contract_and_entry_and_finds_each_first_bid(self) -> None:
         signal = datetime(2026, 5, 13, 13, 40, tzinfo=timezone.utc)
         entry = signal + timedelta(minutes=1, seconds=12)
@@ -33,6 +41,7 @@ class RepricePaidMarkoutsTests(unittest.TestCase):
         self.assertEqual(10.0, result[5][0]["return_pct"])
         self.assertEqual(1.80, result[10][0]["exit_bid"])
         self.assertEqual(contract, result[10][0]["contract"])
+        self.assertEqual("SPY", result[10][0]["ticker"])
         self.assertEqual(entry.isoformat(), result[10][0]["entry_time"])
         self.assertIsNone(result[10][0]["underlying_exit"])
 

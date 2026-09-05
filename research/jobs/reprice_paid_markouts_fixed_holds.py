@@ -18,10 +18,28 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research.engine.option_markouts import _window_matcher
-from research.engine.providers.databento import _open_csv, _parse_symbol, _prices, _timestamp
+from research.engine.providers.databento import (
+    _open_csv,
+    _parse_symbol,
+    _prices,
+    _timestamp,
+    convert_databento_dbn_file,
+)
 from research.jobs.run_paid_databento_job import (
     archive_filenames, batch_file_date, extract_archive_file, write_checkpoint,
 )
+
+
+def rows_at_path(payload: object, dotted_path: str) -> list[dict[str, object]]:
+    """Read a reusable markout list without requiring one report schema."""
+    value = payload
+    for part in dotted_path.split("."):
+        if not isinstance(value, dict) or part not in value:
+            raise ValueError(f"input has no rows path {dotted_path!r}")
+        value = value[part]
+    if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
+        raise ValueError(f"input rows path {dotted_path!r} must resolve to a list of objects")
+    return value
 
 
 def reprice_day(
@@ -81,6 +99,7 @@ def reprice_day(
                 continue
             timestamp, exit_bid = quote
             output = dict(row)
+            output["ticker"] = ticker.upper()
             output["exit_time"] = timestamp.isoformat()
             output["exit_bid"] = exit_bid
             output["return_pct"] = round(
@@ -95,7 +114,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--input", type=Path, required=True)
-    parser.add_argument("--source-rule", default="fixed_30m")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--source-rule",
+        default="fixed_30m",
+        help="Rule under markouts_by_rule (legacy shorthand).",
+    )
+    source.add_argument(
+        "--source-rows-path",
+        help="Dotted path to frozen entry rows in any completed report.",
+    )
     parser.add_argument("--ticker", required=True)
     parser.add_argument("--hold-minutes", type=int, nargs="+", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -104,11 +132,14 @@ def main() -> None:
     holds = tuple(sorted(set(args.hold_minutes)))
     if not args.archive.exists() or not holds or any(hold < 1 for hold in holds):
         parser.error("an existing archive and positive hold minutes are required")
-    source = json.loads(args.input.read_text(encoding="utf-8"))
-    raw = source.get("markouts_by_rule")
-    if not source.get("complete") or not isinstance(raw, dict) or args.source_rule not in raw:
-        parser.error("input must be a complete paid study with the requested source rule")
-    entries = list(raw[args.source_rule])
+    source_report = json.loads(args.input.read_text(encoding="utf-8"))
+    if not source_report.get("complete"):
+        parser.error("input must be a complete paid study")
+    rows_path = args.source_rows_path or f"markouts_by_rule.{args.source_rule}"
+    try:
+        entries = list(rows_at_path(source_report, rows_path))
+    except ValueError as exc:
+        parser.error(str(exc))
     grouped: dict[str, list[dict[str, object]]] = {}
     for row in entries:
         grouped.setdefault(datetime.fromisoformat(str(row["signal_time"])).date().isoformat(), []).append(row)
@@ -128,7 +159,7 @@ def main() -> None:
     args.scratch_dir.mkdir(parents=True, exist_ok=True)
     base = {
         "purpose": "Exit-only fixed-hold repricing of frozen paid-option entries; research-only.",
-        "source_study": str(args.input), "source_rule": args.source_rule,
+        "source_study": str(args.input), "source_rows_path": rows_path,
         "ticker": args.ticker.upper(), "hold_minutes_tested": list(holds),
         "entry_invariant": "exact source signal, contract, entry timestamp, and real entry ask",
         "execution": "first real same-contract bid in the one-minute window at each exit clock",
@@ -140,15 +171,22 @@ def main() -> None:
         filename = filenames[trading_day]
         source_path = args.archive / filename if args.archive.is_dir() else None
         staged: Path | None = None
+        decoded: Path | None = None
         try:
             staged = source_path or extract_archive_file(args.archive, filename, args.scratch_dir / filename)
+            quote_path = staged
+            if ".dbn" in filename.lower():
+                decoded = args.scratch_dir / f"{Path(filename).name}.decoded.csv.zst"
+                quote_path = convert_databento_dbn_file(staged, decoded)
             by_hold, missing_for_day = reprice_day(
-                staged, grouped[trading_day], holds, ticker=args.ticker.upper(),
+                quote_path, grouped[trading_day], holds, ticker=args.ticker.upper(),
             )
             for hold, rows in by_hold.items():
                 marks[hold].extend(rows)
             missing.extend(missing_for_day)
         finally:
+            if decoded is not None:
+                decoded.unlink(missing_ok=True)
             if staged is not None and source_path is None:
                 staged.unlink(missing_ok=True)
         completed.add(trading_day)

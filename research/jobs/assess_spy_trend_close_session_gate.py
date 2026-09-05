@@ -219,6 +219,7 @@ def main() -> None:
     parser.add_argument("--spy-trend", type=Path, required=True)
     parser.add_argument("--spy-fvg", type=Path, required=True)
     parser.add_argument("--tsla-two-leg", type=Path, required=True)
+    parser.add_argument("--vwap-displacement", type=Path, nargs="+", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--prospective-pf-report", type=Path)
     parser.add_argument("--validation-start", type=date.fromisoformat, default=date(2026, 6, 1))
@@ -233,6 +234,7 @@ def main() -> None:
             "V2_SPY_TREND_CONT": args.spy_trend,
             "V2_SPY_AFTERNOON_FVG": args.spy_fvg,
             "V2_TSLA_TWO_LEG_TREND_PULLBACK": args.tsla_two_leg,
+            "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": args.vwap_displacement,
         }),
         validation_start=args.validation_start,
         holdout_start=args.holdout_start,

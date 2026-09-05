@@ -51,22 +51,25 @@
     "measured_signals": 9,
     "wins": 4,
     "win_rate_pct": 44.44,
+    "raw_quote_wins_before_costs": 4,
     "profit_factor": 2.3831,
     "net_pnl_one_contract_after_costs": 117.84
   },
   "validation": {
     "period": "2026-06",
     "measured_signals": 18,
-    "wins": 12,
-    "win_rate_pct": 66.67,
+    "wins": 11,
+    "win_rate_pct": 61.11,
+    "raw_quote_wins_before_costs": 12,
     "profit_factor": 1.5935,
     "net_pnl_one_contract_after_costs": 176.68
   },
   "holdout": {
     "period": "2026-07",
     "measured_signals": 19,
-    "wins": 12,
-    "win_rate_pct": 63.16,
+    "wins": 10,
+    "win_rate_pct": 52.63,
+    "raw_quote_wins_before_costs": 12,
     "profit_factor": 1.7042,
     "net_pnl_one_contract_after_costs": 137.44,
     "qualification_note": "The three-bar family was declared before this audit, but this exact repair was chosen after all three periods were visible; this is a consistency check, not a declared untouched pass."
@@ -74,8 +77,9 @@
   "all": {
     "period": "2026-05-12 through 2026-07-31",
     "measured_signals": 46,
-    "wins": 28,
-    "win_rate_pct": 60.87,
+    "wins": 25,
+    "win_rate_pct": 54.35,
+    "raw_quote_wins_before_costs": 28,
     "profit_factor": 1.7473,
     "net_pnl_one_contract_after_costs": 431.96,
     "ending_cash_from_5000_one_contract": 5431.96

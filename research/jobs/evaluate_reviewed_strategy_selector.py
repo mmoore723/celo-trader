@@ -15,7 +15,7 @@ from datetime import date, datetime
 import json
 from pathlib import Path
 from statistics import median
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Sequence
 
 
 Policy = Literal["all_affordable", "causal_trailing_quality"]
@@ -47,6 +47,11 @@ STRATEGY_SPECS: dict[str, dict[str, Any]] = {
         "ticker": "TSLA",
         "grade": "promising_inconsistent",
         "path": ("markouts_by_variant_hold", "baseline", "90"),
+    },
+    "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": {
+        "ticker": None,
+        "grade": "promising_underpowered",
+        "path": ("markouts_by_hold", "90"),
     },
 }
 
@@ -93,20 +98,33 @@ def load_source(path: Path, strategy_id: str) -> list[dict[str, Any]]:
         required = ("signal_time", "entry_time", "exit_time", "entry_ask", "exit_bid", "return_pct")
         if any(row.get(field) is None for field in required):
             continue
+        ticker = str(row.get("ticker") or spec.get("ticker") or "").strip().upper()
+        if not ticker:
+            raise ValueError(f"{path} row has no ticker and strategy spec has no default")
         normalized.append({
             **row,
             "strategy_id": strategy_id,
-            "ticker": spec["ticker"],
+            "ticker": ticker,
             "evidence_grade": spec["grade"],
         })
     return normalized
 
 
-def load_reviewed_markouts(paths: dict[str, Path]) -> list[dict[str, Any]]:
+def load_reviewed_markouts(
+    paths: dict[str, Path | Sequence[Path]],
+) -> list[dict[str, Any]]:
     missing = set(STRATEGY_SPECS) - set(paths)
     if missing:
         raise ValueError(f"missing strategy reports: {', '.join(sorted(missing))}")
-    return [row for strategy_id in STRATEGY_SPECS for row in load_source(paths[strategy_id], strategy_id)]
+    output: list[dict[str, Any]] = []
+    for strategy_id in STRATEGY_SPECS:
+        sources = paths[strategy_id]
+        source_paths = [sources] if isinstance(sources, Path) else list(sources)
+        if not source_paths:
+            raise ValueError(f"missing strategy reports: {strategy_id}")
+        for source_path in source_paths:
+            output.extend(load_source(source_path, strategy_id))
+    return output
 
 
 @dataclass
@@ -502,7 +520,7 @@ def build_report(
         and all(protected_contribution_gates.values())
     )
     return {
-        "purpose": "Causal combined selector for all five reviewed paid-option strategy candidates; research-only.",
+        "purpose": "Causal combined selector for all reviewed paid-option strategy candidates; research-only.",
         "complete": True,
         "candidate_markouts": len(candidates),
         "holdout_start": holdout_start.isoformat(),
@@ -549,6 +567,7 @@ def main() -> None:
     parser.add_argument("--spy-trend", type=Path, required=True)
     parser.add_argument("--spy-fvg", type=Path, required=True)
     parser.add_argument("--tsla-two-leg", type=Path, required=True)
+    parser.add_argument("--vwap-displacement", type=Path, nargs="+", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--holdout-start", type=date.fromisoformat, default=date(2026, 7, 1))
     parser.add_argument("--starting-capital", type=float, default=5_000.0)
@@ -570,6 +589,7 @@ def main() -> None:
         "V2_SPY_TREND_CONT": args.spy_trend,
         "V2_SPY_AFTERNOON_FVG": args.spy_fvg,
         "V2_TSLA_TWO_LEG_TREND_PULLBACK": args.tsla_two_leg,
+        "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": args.vwap_displacement,
     }
     report = build_report(
         load_reviewed_markouts(paths),

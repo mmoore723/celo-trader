@@ -94,6 +94,9 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         self.assertEqual(46, evidence["display_metrics"]["trades"])
         self.assertAlmostEqual(1.75, evidence["display_metrics"]["profit_factor"])
         self.assertTrue(evidence["display_metrics"]["meets_target"])
+        self.assertEqual(28, evidence["all"]["raw_quote_wins_before_costs"])
+        self.assertEqual(25, evidence["all"]["wins"])
+        self.assertAlmostEqual(54.35, evidence["all"]["win_rate_pct"])
         self.assertEqual("promising_underpowered", rule.evidence_grade)
         self.assertTrue(rule.paper_only)
 
@@ -114,6 +117,13 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         self.assertIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="AMZN", paper=True))
         self.assertNotIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="SPY", paper=True))
         self.assertNotIn(strategy_id, enabled_reviewed_strategy_ids(settings, ticker="TSLA", paper=False))
+        row = next(
+            item for item in public_strategy_catalog(settings)
+            if item["strategy_id"] == strategy_id
+        )
+        self.assertEqual(1.33, row["backtest"]["profit_factor"])
+        self.assertEqual(5, row["backtest"]["trades"])
+        self.assertFalse(row["backtest"]["meets_target"])
 
     def test_research_only_rules_have_a_fixed_forward_mark(self) -> None:
         self.assertEqual(90, reviewed_research_exit_minutes("CTX_ORB_NR7_OR_INSIDE"))

@@ -33,16 +33,20 @@ library before this repair. It uses completed bars only; it does not read a
 future candle. Applied to the exact 72 order-reachable outcomes, it retained
 46 trades:
 
-| Period | Trades | Wins | Net after costs | PF |
-| --- | ---: | ---: | ---: | ---: |
-| May 12–31 | 9 | 4 | +$117.84 | 2.3831 |
-| June | 18 | 12 | +$176.68 | 1.5935 |
-| July | 19 | 12 | +$137.44 | 1.7042 |
-| All | 46 | 28 | +$431.96 | 1.7473 |
+| Period | Trades | Raw quote wins | Wins after costs | Net after costs | PF |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| May 12–31 | 9 | 4 | 4 | +$117.84 | 2.3831 |
+| June | 18 | 12 | 11 | +$176.68 | 1.5935 |
+| July | 19 | 12 | 10 | +$137.44 | 1.7042 |
+| All | 46 | 28 | 25 | +$431.96 | 1.7473 |
 
 Each row uses one contract, the historical Tradier/OPRA ask at entry, the same
 contract's bid 30 minutes later, $0.01 adverse option-price slippage on each
 side, and $0.12 per contract on each side.
+
+The prior manifest called every positive raw ask-to-bid move a win while its
+PF and P&L included slippage and fees. The table now distinguishes those raw
+quote wins from trades that remain positive after the stated costs.
 
 This is a chronological consistency check, not a declared holdout pass. The
 variant family was predeclared, but this exact repair was selected after all

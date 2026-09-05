@@ -45,7 +45,7 @@ from research.engine.strategies import (
 )
 
 
-_FILE_DATE = re.compile(r"-(\d{8})\.cbbo-1m\.csv(?:\.zst)?$")
+_FILE_DATE = re.compile(r"-(\d{8})\.cbbo-1m\.(?:csv|dbn)(?:\.zst)?$")
 _FTP_HOST = "ftp.databento.com"
 
 

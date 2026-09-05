@@ -12,7 +12,7 @@ import re
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Iterable, Iterator, TextIO
+from typing import Callable, Iterable, Iterator, TextIO
 
 
 _OCC = re.compile(r"^\s*([A-Z.]+)\s*(\d{6})([CP])(\d{8})\s*$")
@@ -20,6 +20,35 @@ _PRICE_COLUMNS = (
     ("bid_px_00", "ask_px_00"),  # Databento CBBO/CMBP CSV export
     ("bid", "ask"),               # normalized/test fixture input
 )
+
+
+def convert_databento_dbn_file(
+    source_path: str | Path,
+    output_path: str | Path,
+) -> Path:
+    """Decode native DBN data with embedded option-symbol mappings applied."""
+    source = Path(source_path)
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import databento as db
+    except ImportError as exc:
+        raise RuntimeError(
+            "Install databento>=0.82,<0.83 to decode .dbn.zst research files"
+        ) from exc
+    store = db.DBNStore.from_file(source)
+    try:
+        store.to_csv(
+            destination,
+            pretty_px=True,
+            pretty_ts=True,
+            map_symbols=True,
+            compression="zstd",
+        )
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    return destination
 
 
 @contextmanager
@@ -77,6 +106,33 @@ def _prices(row: dict[str, str]) -> tuple[float, float] | None:
         if bid > 0 and ask >= bid and ask < 1_000_000:
             return bid, ask
     return None
+
+
+def filter_databento_cbbo_file(
+    source_path: str | Path,
+    output_path: str | Path,
+    keep_timestamp: Callable[[datetime], bool],
+) -> Path:
+    """Write only paid CBBO rows that can participate in declared windows."""
+    source = Path(source_path)
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with _open_csv(source) as handle, destination.open(
+        "w", encoding="utf-8", newline="",
+    ) as output:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames or "symbol" not in reader.fieldnames:
+            raise ValueError(f"{source.name} is missing Databento symbol column")
+        writer = csv.DictWriter(output, fieldnames=reader.fieldnames)
+        writer.writeheader()
+        for row in reader:
+            try:
+                timestamp = datetime.fromisoformat(_timestamp(row))
+            except ValueError:
+                continue
+            if keep_timestamp(timestamp):
+                writer.writerow(row)
+    return destination
 
 
 def normalize_databento_cbbo_files(
