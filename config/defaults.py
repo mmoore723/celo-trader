@@ -143,8 +143,10 @@ _DEFAULTS = {
     # Reconstructed, deterministic research-engine strategies. These run on
     # every ticker collected by the research worker and have no order path.
     "research_strategy_ids": [
+        "V2_AFTERNOON_COMPRESSION_BREAKOUT",
         "V2_AFTERNOON_REVERSAL", "V2_EMA_PULLBACK_RTH", "V2_FAIR_VALUE_GAP",
         "V2_GAP_FILL_RTH", "V2_MIDDAY_BREAKDOWN",
+        "V2_IMPULSE_ANCHORED_VWAP_PULLBACK",
         "V2_OPENING_MOMENTUM_RTH_EXPLORATORY", "V2_ORB_CONFIRMED_BREAKOUT",
         "V2_RANGE_SWEEP_RECLAIM",
         "V2_SPY_ORB_RSI_MACD_SHORT", "V2_TREND_CONT", "V2_TURTLE_SOUP_RTH",

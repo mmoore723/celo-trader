@@ -1,6 +1,9 @@
 """Small, side-effect-free V2 strategy hypotheses."""
 
 from research.engine.strategies.afternoon_reversal import AfternoonReversal, AfternoonReversalConfig
+from research.engine.strategies.afternoon_compression_breakout import (
+    AfternoonCompressionBreakout, AfternoonCompressionBreakoutConfig,
+)
 from research.engine.strategies.fair_value_gap import FairValueGap, FairValueGapConfig
 from research.engine.strategies.opening_range_pullback import OpeningRangePullback, OpeningRangePullbackConfig
 from research.engine.strategies.opening_range_breakout import OpeningRangeBreakout, OpeningRangeBreakoutConfig
@@ -17,8 +20,12 @@ from research.engine.strategies.orb_rsi_macd import ORBRsiMacdShort, ORBRsiMacdS
 from research.engine.strategies.range_sweep_reclaim import (
     LongOnlyRangeSweepReclaim, RangeSweepReclaim, RangeSweepReclaimConfig,
 )
+from research.engine.strategies.impulse_anchored_vwap_pullback import (
+    ImpulseAnchoredVwapConfig, ImpulseAnchoredVwapPullback,
+)
 
 __all__ = [
+    "AfternoonCompressionBreakout", "AfternoonCompressionBreakoutConfig",
     "AfternoonReversal", "AfternoonReversalConfig", "FairValueGap", "FairValueGapConfig",
     "OpeningRangePullback", "OpeningRangePullbackConfig",
     "OpeningRangeBreakout", "OpeningRangeBreakoutConfig",
@@ -33,4 +40,5 @@ __all__ = [
     "MiddayBreakdown", "MiddayBreakdownConfig",
     "ORBRsiMacdShort", "ORBRsiMacdShortConfig",
     "LongOnlyRangeSweepReclaim", "RangeSweepReclaim", "RangeSweepReclaimConfig",
+    "ImpulseAnchoredVwapConfig", "ImpulseAnchoredVwapPullback",
 ]

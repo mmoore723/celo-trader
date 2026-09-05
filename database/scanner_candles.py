@@ -44,3 +44,29 @@ def record_scanner_candles(
             rows,
         )
         return conn.total_changes - before
+
+
+def load_scanner_candles(
+    ticker: str,
+    *,
+    broker_account_id: str | None = None,
+    timeframe: str = "1Min",
+    limit: int = 10_000,
+) -> pd.DataFrame:
+    """Load one account's most recent canonical scanner bars, oldest first."""
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT bar_time,open,high,low,close,volume
+               FROM (
+                 SELECT bar_time,open,high,low,close,volume
+                 FROM scanner_candle_observations
+                 WHERE broker_account_id=? AND ticker=? AND timeframe=?
+                 ORDER BY bar_time DESC LIMIT ?
+               ) ORDER BY bar_time""",
+            (str(broker_account_id or ""), ticker.strip().upper(), timeframe, limit),
+        ).fetchall()
+    return pd.DataFrame.from_records(
+        rows, columns=("time", "open", "high", "low", "close", "volume"),
+    )

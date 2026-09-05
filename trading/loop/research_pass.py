@@ -9,7 +9,7 @@ from config.strategy_catalog import (
     enabled_observation_strategy_ids, enabled_reviewed_strategy_ids,
     reviewed_execution_strategy_ids,
 )
-from database import record_scanner_candles
+from database import load_scanner_candles, record_scanner_candles
 from database.option_quotes import capture_due_candidate_option_quotes
 from shadow_ledger import mark_candidate_observed_only
 from signals import bars_to_df
@@ -91,8 +91,13 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
         )
         if returned:
             raise RuntimeError("Observation router unexpectedly returned executable signals")
+        tested_frame = load_scanner_candles(
+            ticker, broker_account_id=account, timeframe="1Min", limit=10_000,
+        )
+        if tested_frame.empty:
+            tested_frame = current
         for signal in evaluate_tested_research(
-            frame, ticker, tested_ids, scope=observation_scope, now=_now_et(),
+            tested_frame, ticker, tested_ids, scope=observation_scope, now=_now_et(),
         ):
             record(ticker, signal, float(current["close"].iloc[-1]))
             mark_candidate_observed_only(signal)

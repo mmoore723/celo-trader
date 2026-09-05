@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from database.scanner_candles import record_scanner_candles
+from database.scanner_candles import load_scanner_candles, record_scanner_candles
 from database.schema import _init_db_at
 
 
@@ -37,12 +37,16 @@ class ScannerCandleTests(unittest.TestCase):
                 record_scanner_candles("aapl", frame, broker_account_id="one")
                 record_scanner_candles("aapl", frame, broker_account_id="one")
                 record_scanner_candles("aapl", frame, broker_account_id="two")
+                loaded = load_scanner_candles("aapl", broker_account_id="one", limit=1)
 
             with sqlite3.connect(path) as conn:
                 rows = conn.execute(
                     "SELECT broker_account_id, ticker, COUNT(*) FROM scanner_candle_observations GROUP BY 1,2 ORDER BY 1"
                 ).fetchall()
             self.assertEqual([("one", "AAPL", 2), ("two", "AAPL", 2)], rows)
+            self.assertEqual(1, len(loaded))
+            self.assertEqual(pd.Timestamp("2026-08-21 09:31"), pd.Timestamp(loaded.iloc[0]["time"]))
+            self.assertEqual(102, loaded.iloc[0]["close"])
 
 
 if __name__ == "__main__":

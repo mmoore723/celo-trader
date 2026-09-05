@@ -871,7 +871,7 @@ export interface BrokerReadiness {
 
 export interface TestedStrategyInventory {
   strategies: {strategy_id: string; display_name: string; tickers: string[]; reports: string[]; report_count: number; research_supported?: boolean; research_enabled?: boolean}[];
-  runtime_research?: {strategy_id: string; display_name: string; version: string; exit_minutes: number; enabled: boolean; research_scope: "all_collected_tickers"}[];
+  runtime_research?: {strategy_id: string; display_name: string; version: string; exit_minutes: number; timeframe_minutes: number; enabled: boolean; research_scope: "all_collected_tickers"}[];
   reports_scanned: number;
   other_studies: string[];
   report_details: Record<string, {title: string; purpose: string; decision: string; status: string}>;

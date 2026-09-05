@@ -8,15 +8,17 @@ from typing import Callable, Iterable
 
 import pandas as pd
 
+from research.engine.data import resample_regular_session
 from research.engine.models import Bar as ResearchBar, Side
 from research.engine.strategies import (
+    AfternoonCompressionBreakout, AfternoonCompressionBreakoutConfig,
     AfternoonReversal, EMAPullbackRTH, FairValueGap, GapFillRTH,
-    LongOnlyRangeSweepReclaim, MiddayBreakdown, OpeningMomentumRTH, OpeningRangeBreakout,
+    ImpulseAnchoredVwapConfig, ImpulseAnchoredVwapPullback,
+    MiddayBreakdown, OpeningMomentumRTH, OpeningRangeBreakout,
     ORBRsiMacdShort, SuperTrendReversal, TrendContinuation,
-    TurtleSoupRTH, VWAPPullback, VWAPReversionRTH, RangeSweepReclaimConfig,
+    TurtleSoupRTH, VWAPPullback, VWAPReversionRTH, RangeSweepReclaim, RangeSweepReclaimConfig,
 )
 from strategies.base import Signal
-from strategies.spy_trend_continuation_v2 import _complete_five_minute_bars
 
 logger = logging.getLogger("celo_trader.research")
 
@@ -28,6 +30,9 @@ class TestedResearchStrategy:
     factory: Callable[[], object]
     version: str = "research.1"
     exit_minutes: int = 90
+    timeframe_minutes: int = 5
+    allowed_sides: frozenset[Side] | None = None
+    implementation: str | None = None
 
 
 _LEGACY_DEFAULT_IDS = (
@@ -40,20 +45,36 @@ _LEGACY_DEFAULT_IDS = (
 
 
 _SPECS = (
+    TestedResearchStrategy(
+        "V2_AFTERNOON_COMPRESSION_BREAKOUT", "Afternoon Compression Breakout",
+        lambda: AfternoonCompressionBreakout(AfternoonCompressionBreakoutConfig(
+            max_compression_pct=.004, entry_end=time(15, 0),
+        )), exit_minutes=30, timeframe_minutes=1,
+    ),
     TestedResearchStrategy("V2_AFTERNOON_REVERSAL", "Afternoon Reversal", AfternoonReversal),
-    TestedResearchStrategy("V2_EMA_PULLBACK_RTH", "EMA Pullback", EMAPullbackRTH),
+    TestedResearchStrategy(
+        "V2_EMA_PULLBACK_RTH", "EMA Pullback", EMAPullbackRTH,
+        timeframe_minutes=15,
+    ),
     TestedResearchStrategy("V2_FAIR_VALUE_GAP", "Fair Value Gap", FairValueGap),
     TestedResearchStrategy("V2_GAP_FILL_RTH", "Gap Fill", GapFillRTH),
     TestedResearchStrategy("V2_MIDDAY_BREAKDOWN", "Midday Breakdown", MiddayBreakdown),
     TestedResearchStrategy("V2_OPENING_MOMENTUM_RTH_EXPLORATORY", "Opening Momentum", OpeningMomentumRTH),
     TestedResearchStrategy("V2_ORB_CONFIRMED_BREAKOUT", "Confirmed Opening-Range Breakout", OpeningRangeBreakout),
     TestedResearchStrategy(
+        "V2_IMPULSE_ANCHORED_VWAP_PULLBACK", "Impulse Anchored VWAP Pullback",
+        lambda: ImpulseAnchoredVwapPullback(ImpulseAnchoredVwapConfig(
+            stop_buffer_atr=.50, target_r=2.0,
+        )), exit_minutes=120,
+    ),
+    TestedResearchStrategy(
         "V2_RANGE_SWEEP_RECLAIM",
         "Range Sweep Reclaim (Calls)",
-        lambda: LongOnlyRangeSweepReclaim(RangeSweepReclaimConfig(
+        lambda: RangeSweepReclaim(RangeSweepReclaimConfig(
             range_bars=30, maximum_efficiency=.30, minimum_sweep_atr=.15,
         )),
-        exit_minutes=30,
+        exit_minutes=30, timeframe_minutes=1,
+        allowed_sides=frozenset({Side.LONG}),
     ),
     TestedResearchStrategy("V2_SPY_ORB_RSI_MACD_SHORT", "ORB RSI/MACD Short", ORBRsiMacdShort),
     TestedResearchStrategy("V2_TREND_CONT", "Trend Continuation", TrendContinuation),
@@ -87,6 +108,7 @@ def public_tested_research_strategies(settings: dict) -> list[dict]:
             "display_name": item.display_name,
             "version": item.version,
             "exit_minutes": item.exit_minutes,
+            "timeframe_minutes": item.timeframe_minutes,
             "enabled": item.strategy_id in enabled,
             "research_scope": "all_collected_tickers",
         }
@@ -98,7 +120,9 @@ def strategy_details(strategy_id: object) -> TestedResearchStrategy | None:
     return TESTED_RESEARCH_STRATEGIES.get(str(strategy_id or "").strip().upper())
 
 
-def _research_bars(frame: pd.DataFrame, now: object | None) -> tuple[ResearchBar, ...]:
+def _research_bars(
+    frame: pd.DataFrame, now: object | None, timeframe_minutes: int,
+) -> tuple[ResearchBar, ...]:
     required = {"time", "open", "high", "low", "close", "volume"}
     if frame.empty or not required.issubset(frame.columns):
         return ()
@@ -107,45 +131,68 @@ def _research_bars(frame: pd.DataFrame, now: object | None) -> tuple[ResearchBar
     if rows["time"].dt.tz is not None:
         rows["time"] = rows["time"].dt.tz_convert("America/New_York").dt.tz_localize(None)
     rows = rows.sort_values("time").drop_duplicates("time", keep="last")
-    current_date = rows["time"].dt.date.max()
-    prior = rows.loc[rows["time"].dt.date < current_date]
-    current = rows.loc[rows["time"].dt.date == current_date]
-    current_bars = _complete_five_minute_bars(current, now=now)
-    combined = [
+    cutoff = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="America/New_York")
+    if cutoff.tzinfo is not None:
+        cutoff = cutoff.tz_convert("America/New_York").tz_localize(None)
+    cutoff = cutoff.floor("min")
+    rows = rows.loc[
+        (rows["time"] < cutoff)
+        & (rows["time"].dt.time >= time(9, 30))
+        & (rows["time"].dt.time < time(16, 0))
+    ]
+    one_minute = tuple(
         ResearchBar(
             pd.Timestamp(row.time).to_pydatetime(), float(row.open), float(row.high),
             float(row.low), float(row.close), float(row.volume or 0),
         )
-        for row in prior.itertuples(index=False)
-        if row.time.time() >= time(9, 30)
-        and row.time.time() < time(16, 0)
-    ]
-    combined.extend(
-        ResearchBar(bar.timestamp, bar.open, bar.high, bar.low, bar.close, bar.volume)
-        for bar in current_bars
+        for row in rows.itertuples(index=False)
     )
-    return tuple(combined[-1600:])
+    bars = resample_regular_session(
+        one_minute, source_minutes=1, target_minutes=timeframe_minutes,
+    )
+    return tuple(bars[-500:])
+
+
+def _latest_candidate(strategy: object, bars: tuple[ResearchBar, ...]):
+    """Replay completed bars once and return only a signal on the newest bar."""
+    history: list[ResearchBar] = []
+    latest = None
+    for bar in bars:
+        history.append(bar)
+        candidate = strategy.evaluate(history)
+        if candidate is not None:
+            latest = candidate
+    if latest is not None and latest.timestamp == bars[-1].timestamp:
+        return latest
+    return None
 
 
 def evaluate_tested_research(
     frame: pd.DataFrame, ticker: str, strategy_ids: Iterable[str], *,
     scope: str, now: object | None = None,
 ) -> list[Signal]:
-    bars = _research_bars(frame, now)
-    if not bars:
-        return []
     results: list[Signal] = []
+    bars_by_timeframe: dict[int, tuple[ResearchBar, ...]] = {}
     for strategy_id in strategy_ids:
         spec = strategy_details(strategy_id)
         if spec is None:
             continue
+        if spec.timeframe_minutes not in bars_by_timeframe:
+            bars_by_timeframe[spec.timeframe_minutes] = _research_bars(
+                frame, now, spec.timeframe_minutes,
+            )
+        bars = bars_by_timeframe[spec.timeframe_minutes]
+        if not bars:
+            continue
         try:
             strategy = spec.factory()
-            candidate = strategy.evaluate(bars)
+            candidate = _latest_candidate(strategy, bars)
         except Exception:
             logger.warning("Tested strategy research failed for %s/%s", strategy_id, ticker, exc_info=True)
             continue
         if candidate is None:
+            continue
+        if spec.allowed_sides is not None and candidate.side not in spec.allowed_sides:
             continue
         key = (scope, ticker.upper(), spec.strategy_id, candidate.timestamp.isoformat())
         if key in _emitted:
@@ -156,13 +203,14 @@ def evaluate_tested_research(
             direction="bullish" if candidate.side is Side.LONG else "bearish",
             confidence=0.70,
             rvol=0.0,
-            trigger_bar=pd.Timestamp(candidate.timestamp) + timedelta(minutes=5),
+            trigger_bar=pd.Timestamp(candidate.timestamp) + timedelta(minutes=spec.timeframe_minutes),
             meta={
                 **dict(candidate.features),
                 "strategy_version": spec.version,
-                "implementation": strategy.__class__.__module__,
+                "implementation": spec.implementation or strategy.__class__.__module__,
                 "research_library": True,
-                "entry_timing": "completed_5m_signal_then_next_quote",
+                "timeframe_minutes": spec.timeframe_minutes,
+                "entry_timing": f"completed_{spec.timeframe_minutes}m_signal_then_next_quote",
                 "underlying_stop": candidate.stop,
                 "underlying_target": candidate.target,
                 "exit_plan": f"same-contract bid after {spec.exit_minutes} minutes",

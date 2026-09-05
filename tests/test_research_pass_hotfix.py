@@ -55,6 +55,9 @@ class ResearchPassTests(unittest.TestCase):
         with ExitStack() as stack:
             for name in ("record_scanner_candles", "capture_due_candidate_option_quotes"):
                 stack.enter_context(patch(f"trading.loop.research_pass.{name}"))
+            stack.enter_context(patch(
+                "trading.loop.research_pass.load_scanner_candles", return_value=pd.DataFrame(),
+            ))
             stack.enter_context(patch("trading.loop.research_pass.evaluate_injected_setups", return_value=([], {}, None)))
             route = stack.enter_context(patch("trading.loop.research_pass.route_signals", return_value=[]))
             observe_ticker(market, Mock(), "TSLA", settings(), {}, Mock(), 4000, lambda: False)
@@ -83,6 +86,9 @@ class ResearchPassTests(unittest.TestCase):
         with ExitStack() as stack:
             for name in ("record_scanner_candles", "capture_due_candidate_option_quotes"):
                 stack.enter_context(patch(f"trading.loop.research_pass.{name}"))
+            stack.enter_context(patch(
+                "trading.loop.research_pass.load_scanner_candles", return_value=pd.DataFrame(),
+            ))
             stack.enter_context(patch("trading.loop.research_pass.evaluate_injected_setups", return_value=([], {}, None)))
             stack.enter_context(patch("trading.loop.research_pass.route_signals", return_value=[]))
             stack.enter_context(patch("trading.loop.research_pass.evaluate_tested_research", return_value=[signal]))

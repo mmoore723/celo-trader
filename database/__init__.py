@@ -41,7 +41,7 @@ from database.research_observations import (
     start_paper_research_observation, close_due_paper_research_observations,
     get_paper_research_scorecard,
 )
-from database.scanner_candles import record_scanner_candles
+from database.scanner_candles import load_scanner_candles, record_scanner_candles
 from database.underlying_quotes import record_underlying_quote
 from database.trades_query import get_open_trades, get_open_trade, get_all_trades
 from database.summary import _upsert_daily_summary, get_daily_summaries, get_cumulative_pnl
@@ -63,7 +63,7 @@ __all__ = [
     "record_candidate_option_quote", "promote_candidate_entry_quote",
     "capture_due_candidate_option_quotes",
     "start_paper_research_observation", "close_due_paper_research_observations", "get_paper_research_scorecard",
-    "record_scanner_candles", "record_underlying_quote",
+    "load_scanner_candles", "record_scanner_candles", "record_underlying_quote",
     "get_open_trades", "get_open_trade", "get_all_trades",
     "_upsert_daily_summary", "get_daily_summaries", "get_cumulative_pnl",
     "log_event", "log_ai_reasoning", "get_ai_reasoning_log", "get_ai_reasoning_entry",
