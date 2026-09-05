@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from config.market_constants import COMMISSION_PER_CONTRACT
 from config.strategy_catalog import (
@@ -15,6 +15,43 @@ from trading.tested_strategy_research import (
 
 OPTION_SLIPPAGE_PER_SIDE = 0.01
 EXIT_WINDOWS = (30, 60, 90)
+
+
+def _sample_time(row: object) -> datetime:
+    """Return a comparable trigger time without trusting display formatting."""
+    raw = row["trigger_bar"] or row["observed_at"]
+    parsed = datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _independent_samples(samples: list, hold_minutes: int) -> list:
+    """Collapse restart duplicates and fixed-hold overlaps into real episodes.
+
+    A research worker can observe the same still-valid trigger more than once,
+    especially after a restart.  A fixed-hold replay also cannot enter another
+    position in the same strategy/ticker while the first one is still open.
+    Counting either case as a new trade inflates sample size and profit factor.
+    """
+    accepted = []
+    seen_triggers: set[tuple[str, str]] = set()
+    next_entry_at: datetime | None = None
+    for row in sorted(samples, key=_sample_time):
+        trigger = str(row["trigger_bar"] or "").strip()
+        dedupe_key = (
+            str(row["direction"] or "").lower(),
+            trigger or str(row["candidate_id"]),
+        )
+        if dedupe_key in seen_triggers:
+            continue
+        seen_triggers.add(dedupe_key)
+        signal_time = _sample_time(row)
+        if next_entry_at is not None and signal_time < next_entry_at:
+            continue
+        accepted.append(row)
+        next_entry_at = signal_time + timedelta(minutes=max(1, int(hold_minutes)))
+    return accepted
 
 
 def _factor(profits: list[float]) -> float | str | None:
@@ -90,7 +127,9 @@ def research_status(
         return "not_working", "This version is losing and needs a change."
     if results >= 10 and numeric < 1.5:
         return "needs_tuning", "PF is below 1.5. Keep the data and tune the rule."
-    if results and numeric >= 1.5:
+    if results >= 5 and numeric < 1.0:
+        return "losing_so_far", "The first results are losing. Do not promote this pair yet."
+    if results >= 5 and numeric >= 1.5:
         return "promising", "PF is above 1.5, but there are not enough results yet."
     if results:
         return "collecting", "More results are needed before judging it."
@@ -111,6 +150,13 @@ def _diagnosis(
     coverage = option_results / setups if setups else 0
     if setups >= 5 and coverage < 0.5:
         return "price_data", "Too many option prices are missing. Fix price data before judging it."
+    if status == "losing_so_far":
+        if direction_results >= 5 and direction_accuracy is not None:
+            if direction_accuracy < 50:
+                return "entry", "The stock moved the wrong way too often. Fix this pair's entry rule."
+            if direction_accuracy >= 60:
+                return "contract_exit", "The stock direction is working, but the option is losing. Test its contract and exit."
+        return "early_loss", "This pair is losing so far. Keep collecting, but review its entry, option, and exit."
     if option_results < 10:
         return "more_data", "Not enough option results yet. Keep collecting."
     if older_factor is not None and newer_factor is not None:
@@ -153,7 +199,8 @@ def build_research_matrix(days: int = 90) -> dict:
     params: tuple[object, ...] = (cutoff, account_id) if account_id else (cutoff,)
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT s.candidate_id,s.observed_at,s.ticker,s.strategy_id,
+            """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
+                      s.direction,
                       s.direction_correct,s.directional_move_pct,
                       MAX(CASE WHEN q.observation_kind='entry' THEN q.ask END) AS entry_ask,
                       MAX(CASE WHEN q.observation_kind='mark_30m' THEN q.bid END) AS bid_30,
@@ -208,12 +255,14 @@ def build_research_matrix(days: int = 90) -> dict:
         )
         pairs = []
         for ticker in sorted(tickers):
-            samples = grouped.get((strategy_id, ticker), [])
+            raw_samples = grouped.get((strategy_id, ticker), [])
+            samples = _independent_samples(raw_samples, exit_minutes)
             exit_summaries = []
             current_results: list[tuple[str, float]] = []
             current_summary = None
             for window in EXIT_WINDOWS:
-                summary, results = _exit_summary(samples, window)
+                window_samples = _independent_samples(raw_samples, window)
+                summary, results = _exit_summary(window_samples, window)
                 exit_summaries.append(summary)
                 if window == exit_minutes:
                     current_summary, current_results = summary, results
@@ -247,6 +296,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 "explanation": explanation,
                 "market_days": sessions.get(ticker, 0),
                 "setups": len(samples),
+                "raw_observations": len(raw_samples),
                 "option_results": current_summary["option_results"],
                 "option_result_days": option_result_days,
                 "wins": current_summary["wins"],
@@ -263,7 +313,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 "exit_comparison": exit_summaries,
                 "tradable": bool(rule and not rule.observation_only and ticker in rule.tickers),
             })
-        priority = {"working": 0, "promising": 1, "needs_tuning": 2, "not_working": 3, "collecting": 4, "no_setups": 5}
+        priority = {"working": 0, "promising": 1, "losing_so_far": 2, "needs_tuning": 3, "not_working": 4, "collecting": 5, "no_setups": 6}
         strategy_rows.append({
             "strategy_id": strategy_id,
             "display_name": display_name,

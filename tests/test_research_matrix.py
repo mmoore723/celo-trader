@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from strategy_health.research_matrix import (
-    _chronological_factors, _diagnosis, _factor, _quote_profit,
+    _chronological_factors, _diagnosis, _factor, _independent_samples, _quote_profit,
     build_research_matrix, research_status,
 )
 
@@ -22,9 +22,23 @@ class ResearchMatrixTests(unittest.TestCase):
         row["bid_30"] = 3.0
         self.assertAlmostEqual(96.7, _quote_profit(row, 30))
 
+    def test_independent_samples_collapse_same_trigger_and_holding_overlap(self):
+        samples = [
+            {"candidate_id": "first", "observed_at": "2026-09-04T10:01:00", "trigger_bar": "2026-09-04T10:00:00", "direction": "bullish"},
+            {"candidate_id": "repeat", "observed_at": "2026-09-04T10:05:00", "trigger_bar": "2026-09-04T10:00:00", "direction": "bullish"},
+            {"candidate_id": "overlap", "observed_at": "2026-09-04T10:11:00", "trigger_bar": "2026-09-04T10:10:00", "direction": "bearish"},
+            {"candidate_id": "next", "observed_at": "2026-09-04T10:31:00", "trigger_bar": "2026-09-04T10:30:00", "direction": "bullish"},
+        ]
+        self.assertEqual(
+            ["first", "next"],
+            [row["candidate_id"] for row in _independent_samples(samples, 30)],
+        )
+
     def test_plain_statuses_require_both_results_and_days(self):
         self.assertEqual("working", research_status(results=20, days=8, sessions=30, factor=1.5)[0])
         self.assertEqual("promising", research_status(results=5, days=2, sessions=30, factor=6.73)[0])
+        self.assertEqual("collecting", research_status(results=1, days=1, sessions=30, factor="infinite")[0])
+        self.assertEqual("losing_so_far", research_status(results=5, days=5, sessions=30, factor=0.0)[0])
         self.assertEqual("needs_tuning", research_status(results=10, days=4, sessions=30, factor=1.2)[0])
         self.assertEqual("not_working", research_status(results=20, days=8, sessions=30, factor=0.9)[0])
         self.assertEqual("no_setups", research_status(results=0, days=0, sessions=20, factor=None)[0])
@@ -65,7 +79,8 @@ class ResearchMatrixTests(unittest.TestCase):
         conn.executescript("""
             CREATE TABLE shadow_candidates (
                 candidate_id TEXT, observed_at TEXT, ticker TEXT, strategy_id TEXT,
-                direction_correct INTEGER, directional_move_pct REAL, broker_account_id TEXT
+                direction_correct INTEGER, directional_move_pct REAL, broker_account_id TEXT,
+                trigger_bar TEXT, direction TEXT
             );
             CREATE TABLE candidate_option_quote_observations (
                 candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL
@@ -74,11 +89,13 @@ class ResearchMatrixTests(unittest.TestCase):
                 ticker TEXT, bar_time TEXT, broker_account_id TEXT
             );
         """)
-        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?)", (
+        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", (
             "c1", "2026-09-03T10:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 1, 1.2, "acct",
+            "2026-09-03T10:00:00", "bullish",
         ))
-        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?)", (
+        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", (
             "c2", "2026-09-03T11:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 0, -0.4, "acct",
+            "2026-09-03T11:00:00", "bearish",
         ))
         conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?)", [
             ("c1", "entry", 1.9, 2.0), ("c1", "mark_30m", 3.0, 3.1),
@@ -120,7 +137,8 @@ class ResearchMatrixTests(unittest.TestCase):
         conn.executescript("""
             CREATE TABLE shadow_candidates (
                 candidate_id TEXT, observed_at TEXT, ticker TEXT, strategy_id TEXT,
-                direction_correct INTEGER, directional_move_pct REAL, broker_account_id TEXT
+                direction_correct INTEGER, directional_move_pct REAL, broker_account_id TEXT,
+                trigger_bar TEXT, direction TEXT
             );
             CREATE TABLE candidate_option_quote_observations (
                 candidate_id TEXT, observation_kind TEXT, bid REAL, ask REAL
@@ -129,9 +147,9 @@ class ResearchMatrixTests(unittest.TestCase):
                 ticker TEXT, bar_time TEXT, broker_account_id TEXT
             );
         """)
-        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?)", (
+        conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?)", (
             "older", "2026-08-10T10:00:00", "ABNB", "V2_SPY_AFTERNOON_FVG",
-            None, None, "acct",
+            None, None, "acct", "2026-08-10T10:00:00", "bullish",
         ))
 
         @contextmanager

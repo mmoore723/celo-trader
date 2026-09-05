@@ -33,6 +33,7 @@ function DecisionCard({ entry }: { entry: ScannerOpportunity }) {
 const STATUS: Record<StrategyTickerResearchPair["status"], { label: string; color: string }> = {
   working: { label: "Working", color: "var(--positive)" },
   promising: { label: "Looks promising", color: "var(--accent)" },
+  losing_so_far: { label: "Losing so far", color: "var(--negative)" },
   needs_tuning: { label: "Needs tuning", color: "var(--warning)" },
   not_working: { label: "Not working", color: "var(--negative)" },
   collecting: { label: "Collecting results", color: "var(--ink-muted)" },
@@ -60,7 +61,7 @@ function ResearchRow({ pair, strategyName, exitMinutes }: { pair: StrategyTicker
     <details className="mt-3 pt-3 text-xs" style={{ borderTop: "1px solid var(--border)" }}>
       <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>See why</summary>
       <div className="grid gap-2 mt-3 sm:grid-cols-2 lg:grid-cols-4" style={{ color: "var(--ink-muted)" }}>
-        <p><b>Setups:</b> {pair.setups} across {pair.market_days} data days</p>
+        <p><b>Independent setups:</b> {pair.setups} across {pair.market_days} data days</p>
         <p><b>Usable option prices:</b> {pair.quote_coverage_pct == null ? "—" : `${pair.quote_coverage_pct}%`}</p>
         <p><b>Stock moved correctly:</b> {pair.direction_accuracy == null ? "—" : `${pair.direction_accuracy}% of ${pair.direction_results}`}</p>
         <p><b>Compared exit:</b> {exitMinutes} minutes</p>
@@ -92,10 +93,10 @@ export function ScannerOpportunities() {
     <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>What the bot did and what it learned</p><h1 className="text-xl font-semibold mt-1">Decisions &amp; Research</h1></div>{view === "decisions" && <label className="text-xs" style={{ color: "var(--ink-muted)" }}>Trading day<input className="input ml-2" type="date" value={date} onChange={event => setDate(event.target.value)} /></label>}</header>
     <div className="flex gap-2"><button className={`btn ${view === "decisions" ? "btn-primary" : "btn-ghost"}`} onClick={() => setView("decisions")}>Trading decisions</button><button className={`btn ${view === "research" ? "btn-primary" : "btn-ghost"}`} onClick={() => setView("research")}>Research results</button></div>
     {view === "decisions" ? <><div className="grid grid-cols-3 gap-3">{[["Trades entered", entered, "var(--positive)"], ["Orders not filled", unfilled, "var(--warning)"], ["Setups skipped", skipped, "var(--negative)"]].map(([label, value, color]) => <div className="card p-3" key={String(label)}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold" style={{ color: String(color) }}>{String(value)}</p></div>)}</div>{error ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load decisions: {(error as Error).message}</div> : decisions.length ? <div className="space-y-3">{decisions.map(entry => <DecisionCard key={entry.id} entry={entry} />)}</div> : <div className="card p-8 text-center"><SearchX size={24} className="mx-auto" /><p className="mt-2 font-medium">No setup reached the trading path on this day.</p></div>}</> : <>
-      <div className="card p-4"><h2 className="font-semibold">Which strategy works on which ticker?</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Goal: PF {matrix?.target_profit_factor.toFixed(1) ?? "1.5"}. Every row is one strategy + ticker. Missing prices are not counted as losses.</p></div>
+      <div className="card p-4"><h2 className="font-semibold">Which strategy works on which ticker?</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Goal: PF {matrix?.target_profit_factor.toFixed(1) ?? "1.5"}. Every row is one strategy + ticker. Repeated scans count once. Missing prices are not counted as losses.</p></div>
       {matrixLoading && !matrix ? <PageLoader label="Research results" /> : matrixError ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load research: {(matrixError as Error).message}</div> : matrix ? <>
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          {[["Pairs with results", measuredPairs.length], ["Working", measuredPairs.filter(pair => pair.status === "working").length], ["Promising", measuredPairs.filter(pair => pair.status === "promising").length], ["Need a change", measuredPairs.filter(pair => ["needs_tuning", "not_working"].includes(pair.status)).length]].map(([label, value]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><strong className="text-xl">{value}</strong></div>)}
+          {[["Pairs with results", measuredPairs.length], ["Working", measuredPairs.filter(pair => pair.status === "working").length], ["Promising", measuredPairs.filter(pair => pair.status === "promising").length], ["Need a change", measuredPairs.filter(pair => ["losing_so_far", "needs_tuning", "not_working"].includes(pair.status)).length]].map(([label, value]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><strong className="text-xl">{value}</strong></div>)}
         </div>
         <div className="card p-4 grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-medium">Strategy<select className="select w-full mt-2" value={selected} onChange={event => setSelected(event.target.value)}><option value="all">All strategies</option>{matrix.strategies.map(strategy => <option key={strategy.strategy_id} value={strategy.strategy_id}>{strategy.display_name}</option>)}</select></label>
@@ -103,7 +104,7 @@ export function ScannerOpportunities() {
         </div>
         <div className="space-y-3">{researchPairs.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} exitMinutes={strategy.exit_minutes} />)}</div>
         {!researchPairs.length && <div className="card p-8 text-center">No strategy–ticker pairs match these filters yet.</div>}
-        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How results are calculated</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. “Working” requires PF 1.5+, at least 20 option results, at least 8 setup days, and no failure on newer dates.</p></details>
+        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How results are calculated</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same trigger counts once, and overlapping fixed-hold trades are excluded. “Working” requires PF 1.5+, at least 20 option results, at least 8 setup days, and no failure on newer dates.</p></details>
       </> : <div className="card p-8 text-center">No research results are available yet.</div>}
     </>}
   </div>;

@@ -87,13 +87,13 @@ fi
 echo "==> Checking patch integrity..."
 git diff --check
 
-TEST_PYTHON="python3"
-if [ -x ".venv-paid-research/bin/python" ]; then
+TEST_PYTHON="${CELO_TEST_PYTHON:-python3}"
+if [ -z "${CELO_TEST_PYTHON:-}" ] && [ -x ".venv-paid-research/bin/python" ]; then
   TEST_PYTHON=".venv-paid-research/bin/python"
 fi
 
-echo "==> Running the complete Python acceptance suite..."
-"$TEST_PYTHON" -m unittest discover -s tests -p 'test_*.py'
+echo "==> Running the complete production Python acceptance suite..."
+"$TEST_PYTHON" tests/run_production_suite.py
 
 echo "==> Linting React frontend..."
 cd frontend
@@ -137,19 +137,27 @@ fi
 echo "==> Production files included in this release:"
 git diff --cached --name-only
 
-if git diff --cached --quiet; then
-  echo "Nothing to deploy. No production changes were staged."
-  exit 0
-fi
-
 if git diff --cached --name-only | grep -Eq '(^|/)(\.env|credentials\.enc|users\.db)$'; then
   echo "Refusing deployment: a secret-bearing runtime file is staged."
   exit 1
 fi
 
-echo "==> Committing + pushing to GitHub..."
-git commit -m "chore: production release $(date +%Y-%m-%d)"
-git push origin main
+if ! git diff --cached --quiet; then
+  echo "==> Committing production changes..."
+  git commit -m "chore: production release $(date +%Y-%m-%d)"
+fi
+
+echo "==> Checking and pushing the verified release commit to GitHub main..."
+git fetch origin main
+if ! git merge-base --is-ancestor origin/main HEAD; then
+  echo "Refusing deployment: the verified release is not a fast-forward of origin/main."
+  exit 1
+fi
+if [ "$(git rev-list --count origin/main..HEAD)" -gt 0 ]; then
+  git push origin HEAD:main
+else
+  echo "GitHub main already contains this release."
+fi
 
 echo "==> Verifying the EC2 checkout is safe to update..."
 REMOTE_TRACKED_DIRTY="$(

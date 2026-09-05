@@ -94,10 +94,11 @@ export interface CandidateScorecard {
 }
 export interface StrategyTickerResearchPair {
   ticker: string;
-  status: "working" | "promising" | "needs_tuning" | "not_working" | "collecting" | "no_setups";
+  status: "working" | "promising" | "losing_so_far" | "needs_tuning" | "not_working" | "collecting" | "no_setups";
   explanation: string;
   market_days: number;
   setups: number;
+  raw_observations: number;
   option_results: number;
   option_result_days: number;
   wins: number;
@@ -109,7 +110,7 @@ export interface StrategyTickerResearchPair {
   quote_coverage_pct: number | null;
   older_profit_factor: number | "infinite" | null;
   newer_profit_factor: number | "infinite" | null;
-  diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "unstable" | "entry" | "exit" | "contract_exit";
+  diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
   next_action: string;
   exit_comparison: {
     minutes: number;

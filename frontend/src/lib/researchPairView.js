@@ -1,10 +1,11 @@
 const STATUS_RANK = {
   working: 0,
   promising: 1,
-  needs_tuning: 2,
-  not_working: 3,
-  collecting: 4,
-  no_setups: 5,
+  losing_so_far: 2,
+  needs_tuning: 3,
+  not_working: 4,
+  collecting: 5,
+  no_setups: 6,
 };
 
 const ACTION_LABELS = {
@@ -13,6 +14,7 @@ const ACTION_LABELS = {
   no_setups: "No setup yet",
   price_data: "Fix price data",
   unstable: "Changed over time",
+  early_loss: "Losing — review",
   entry: "Fix the entry",
   exit: "Test the exit",
   contract_exit: "Test option + exit",
@@ -29,7 +31,7 @@ export function profitFactorText(value) {
 
 export function researchPairVisible(pair, filter) {
   if (filter === "all") return true;
-  if (filter === "attention") return ["price_data", "unstable", "entry", "exit", "contract_exit"].includes(pair.diagnosis);
+  if (filter === "attention") return ["price_data", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis);
   if (filter === "passing") return ["working", "promising"].includes(pair.status);
   return pair.setups > 0 || pair.option_results > 0;
 }

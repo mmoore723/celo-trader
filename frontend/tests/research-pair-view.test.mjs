@@ -32,4 +32,9 @@ test("plain labels explain PF and the next action", () => {
   assert.equal(profitFactorText("infinite"), "∞");
   assert.equal(profitFactorText(1.567), "1.57");
   assert.equal(researchActionLabel("contract_exit"), "Test option + exit");
+  assert.equal(researchActionLabel("early_loss"), "Losing — review");
+});
+
+test("an early losing pair appears in needs attention", () => {
+  assert.equal(researchPairVisible(pair({ status: "losing_so_far", diagnosis: "early_loss", option_results: 5 }), "attention"), true);
 });
