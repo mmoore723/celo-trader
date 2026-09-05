@@ -1,0 +1,35 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  profitFactorText, researchActionLabel, researchPairVisible, sortResearchPairs,
+} from "../src/lib/researchPairView.js";
+
+const pair = (overrides = {}) => ({
+  ticker: "SPY", status: "collecting", diagnosis: "more_data",
+  setups: 0, option_results: 0, ...overrides,
+});
+
+test("the normal view hides empty combinations but keeps setups with missing quotes", () => {
+  assert.equal(researchPairVisible(pair(), "evidence"), false);
+  assert.equal(researchPairVisible(pair({ setups: 3 }), "evidence"), true);
+});
+
+test("needs-attention shows only a pair with an actionable diagnosis", () => {
+  assert.equal(researchPairVisible(pair({ diagnosis: "entry" }), "attention"), true);
+  assert.equal(researchPairVisible(pair({ diagnosis: "more_data" }), "attention"), false);
+});
+
+test("working and promising pairs sort ahead of collecting pairs", () => {
+  const rows = [
+    { pair: pair({ ticker: "AAPL" }), strategy: { display_name: "Alpha" } },
+    { pair: pair({ ticker: "SPY", status: "working", option_results: 20 }), strategy: { display_name: "Beta" } },
+    { pair: pair({ ticker: "QQQ", status: "promising", option_results: 5 }), strategy: { display_name: "Gamma" } },
+  ];
+  assert.deepEqual(sortResearchPairs(rows).map(row => row.pair.ticker), ["SPY", "QQQ", "AAPL"]);
+});
+
+test("plain labels explain PF and the next action", () => {
+  assert.equal(profitFactorText("infinite"), "∞");
+  assert.equal(profitFactorText(1.567), "1.57");
+  assert.equal(researchActionLabel("contract_exit"), "Test option + exit");
+});

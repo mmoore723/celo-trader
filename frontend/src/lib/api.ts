@@ -99,14 +99,32 @@ export interface StrategyTickerResearchPair {
   market_days: number;
   setups: number;
   option_results: number;
+  option_result_days: number;
+  wins: number;
+  win_rate_pct: number | null;
   profit_factor: number | "infinite" | null;
   net_one_contract_pnl: number;
+  direction_results: number;
   direction_accuracy: number | null;
+  quote_coverage_pct: number | null;
+  older_profit_factor: number | "infinite" | null;
+  newer_profit_factor: number | "infinite" | null;
+  diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "unstable" | "entry" | "exit" | "contract_exit";
+  next_action: string;
+  exit_comparison: {
+    minutes: number;
+    option_results: number;
+    wins: number;
+    win_rate_pct: number | null;
+    profit_factor: number | "infinite" | null;
+    net_one_contract_pnl: number;
+  }[];
   tradable: boolean;
 }
 export interface StrategyResearchMatrix {
   days: number;
   target_profit_factor: number;
+  cost_model: string;
   account_scoped: boolean;
   ticker_count: number;
   strategy_count: number;

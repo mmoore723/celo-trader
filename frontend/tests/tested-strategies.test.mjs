@@ -32,30 +32,18 @@ const fixture = {
     "reports/legacy.json": {title: "Legacy test", purpose: "No strategy ID", decision: "", status: "saved_study"},
   },
 };
-function render(data, currentIds = [], researchIds = []) {
+function render(data, researchIds = []) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   if (data) client.setQueryData(["tested-strategies", researchIds], data);
   const html = renderToStaticMarkup(createElement(QueryClientProvider, {client},
-    createElement(TestedStrategies, {currentIds, researchIds, onResearchIdsChange: () => {}})));
+    createElement(TestedStrategies, {researchIds, onResearchIdsChange: () => {}})));
   client.clear();
   return html;
 }
 
-test("historical and ID-less tests remain visible without order switches", () => {
+test("developer research archives are not shown as user controls", () => {
   const html = render(fixture);
-  assert.match(html, /Saved research archive/);
-  assert.match(html, /1 strategies not rebuilt · 1 other studies · 2 saved reports/);
-  assert.match(html, /VWAP pullback/);
-  assert.match(html, /Legacy test/);
-  assert.match(html, /Result: reject/);
-  assert.doesNotMatch(html, /role="switch"|Enable for/);
-  assert.match(html, /&lt;script&gt;/);
-  assert.doesNotMatch(html, /<script>/);
-});
-
-test("current-catalog history is retained instead of filtered out", () => {
-  assert.match(render(fixture, ["OLD_VWAP"]), /Already active elsewhere/);
-  assert.match(render(fixture, ["OLD_VWAP"]), /Old VWAP test/);
+  assert.doesNotMatch(html, /Saved research archive|VWAP pullback|Legacy test|Saved test only/);
 });
 
 test("loading and failed library are not reported as zero tested strategies", () => {
@@ -68,22 +56,13 @@ test("loading and failed library are not reported as zero tested strategies", ()
   assert.doesNotMatch(failed, /No saved tests|VWAP pullback/);
 });
 
-test("long inventories use a bounded first view and search", () => {
-  const strategies = Array.from({length: 45}, (_, i) => ({...fixture.strategies[0], strategy_id: `S_${i}`, display_name: `Strategy ${i}`}));
-  const html = render({...fixture, strategies});
-  assert.match(html, /Strategy 29/);
-  assert.doesNotMatch(html, /Strategy 30/);
-  assert.match(html, /Showing the first 30 matches/);
-  assert.match(html, /Find a strategy/);
-});
-
 test("working research strategies use the same accessible toggle-card pattern", () => {
   const runtime = [{
     strategy_id: "V2_OPENING_MOMENTUM_RTH_EXPLORATORY",
     display_name: "Opening Momentum", version: "research.1",
     exit_minutes: 90, enabled: true, research_scope: "all_collected_tickers",
   }];
-  const html = render({...fixture, runtime_research: runtime}, [], [runtime[0].strategy_id]);
+  const html = render({...fixture, runtime_research: runtime}, [runtime[0].strategy_id]);
   assert.match(html, /Opening Momentum · vresearch\.1/);
   assert.match(html, /role="switch"/);
   assert.match(html, /aria-checked="true"/);

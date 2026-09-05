@@ -13,6 +13,9 @@ from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
 )
 
+OPTION_SLIPPAGE_PER_SIDE = 0.01
+EXIT_WINDOWS = (30, 60, 90)
+
 
 def _factor(profits: list[float]) -> float | str | None:
     wins = sum(value for value in profits if value > 0)
@@ -24,9 +27,64 @@ def _factor(profits: list[float]) -> float | str | None:
     return round(wins / losses, 2)
 
 
-def research_status(*, results: int, days: int, sessions: int, factor: object) -> tuple[str, str]:
-    numeric = float("inf") if factor == "infinite" else float(factor or 0)
+def _numeric_factor(value: object) -> float:
+    return float("inf") if value == "infinite" else float(value or 0)
+
+
+def _quote_profit(row: object, exit_minutes: int) -> float | None:
+    """Return one-contract after-cost P&L only when both quotes really exist."""
+    if exit_minutes not in EXIT_WINDOWS:
+        return None
+    entry_raw = row["entry_ask"]
+    exit_raw = row[f"bid_{exit_minutes}"]
+    if entry_raw is None or exit_raw is None:
+        return None
+    entry = float(entry_raw)
+    exit_bid = float(exit_raw)
+    if entry <= 0 or exit_bid < 0:
+        return None
+    modeled_entry = entry + OPTION_SLIPPAGE_PER_SIDE
+    modeled_exit = max(0.0, exit_bid - OPTION_SLIPPAGE_PER_SIDE)
+    return round((modeled_exit - modeled_entry) * 100 - 2 * COMMISSION_PER_CONTRACT, 2)
+
+
+def _exit_summary(samples: list, exit_minutes: int) -> tuple[dict, list[tuple[str, float]]]:
+    dated_profits = [
+        (str(row["observed_at"])[:10], profit)
+        for row in samples
+        if (profit := _quote_profit(row, exit_minutes)) is not None
+    ]
+    profits = [profit for _, profit in dated_profits]
+    wins = sum(1 for profit in profits if profit > 0)
+    return ({
+        "minutes": exit_minutes,
+        "option_results": len(profits),
+        "wins": wins,
+        "win_rate_pct": round(wins / len(profits) * 100, 1) if profits else None,
+        "profit_factor": _factor(profits),
+        "net_one_contract_pnl": round(sum(profits), 2),
+    }, dated_profits)
+
+
+def _chronological_factors(dated_profits: list[tuple[str, float]]) -> tuple[object, object]:
+    days = sorted({day for day, _ in dated_profits})
+    if len(dated_profits) < 20 or len(days) < 8:
+        return None, None
+    split = min(max(5, int(len(days) * 0.7)), len(days) - 3)
+    older_days = set(days[:split])
+    older = [profit for day, profit in dated_profits if day in older_days]
+    newer = [profit for day, profit in dated_profits if day not in older_days]
+    return _factor(older), _factor(newer)
+
+
+def research_status(
+    *, results: int, days: int, sessions: int, factor: object,
+    older_factor: object = None, newer_factor: object = None,
+) -> tuple[str, str]:
+    numeric = _numeric_factor(factor)
     if results >= 20 and days >= 8 and numeric >= 1.5:
+        if newer_factor is not None and _numeric_factor(newer_factor) < 1.5:
+            return "needs_tuning", "It worked on older dates but fell below 1.5 on newer dates."
         return "working", "PF is at least 1.5 across enough days."
     if results >= 20 and numeric < 1.0:
         return "not_working", "This version is losing and needs a change."
@@ -39,6 +97,41 @@ def research_status(*, results: int, days: int, sessions: int, factor: object) -
     if sessions >= 20:
         return "no_setups", "The bot watched this ticker but the setup did not appear."
     return "collecting", "The bot is still collecting market days."
+
+
+def _diagnosis(
+    *, status: str, setups: int, option_results: int, direction_results: int,
+    direction_accuracy: float | None, factor: object, older_factor: object,
+    newer_factor: object, exit_minutes: int, exit_summaries: list[dict],
+) -> tuple[str, str]:
+    if status == "working":
+        return "ready", "Passed PF 1.5 and the minimum sample checks."
+    if setups == 0:
+        return "no_setups", "No setup yet. Keep watching."
+    coverage = option_results / setups if setups else 0
+    if setups >= 5 and coverage < 0.5:
+        return "price_data", "Too many option prices are missing. Fix price data before judging it."
+    if option_results < 10:
+        return "more_data", "Not enough option results yet. Keep collecting."
+    if older_factor is not None and newer_factor is not None:
+        if _numeric_factor(older_factor) >= 1.5 and _numeric_factor(newer_factor) < 1.5:
+            return "unstable", "Worked on older dates, but not newer dates. Retest the entry."
+    alternatives = [
+        summary for summary in exit_summaries
+        if summary["minutes"] != exit_minutes and summary["option_results"] >= 10
+    ]
+    if alternatives:
+        best = max(alternatives, key=lambda item: _numeric_factor(item["profit_factor"]))
+        if _numeric_factor(best["profit_factor"]) >= 1.5 and _numeric_factor(factor) < 1.5:
+            return "exit", f"The {best['minutes']}-minute exit tested better. Validate it on newer dates."
+    if direction_results >= 10 and direction_accuracy is not None:
+        if direction_accuracy < 50:
+            return "entry", "The stock moved the wrong way too often. Fix the entry rule."
+        if direction_accuracy >= 60 and _numeric_factor(factor) < 1.5:
+            return "contract_exit", "The stock direction works, but the option does not. Test contract selection and exit."
+    if status == "promising":
+        return "more_data", "PF is above 1.5, but the sample is too small. Keep collecting."
+    return "entry", "PF is below 1.5. Retest the entry rule before enabling it."
 
 
 def build_research_matrix(days: int = 90) -> dict:
@@ -116,30 +209,58 @@ def build_research_matrix(days: int = 90) -> dict:
         pairs = []
         for ticker in sorted(tickers):
             samples = grouped.get((strategy_id, ticker), [])
-            completed_days = {str(row["observed_at"])[:10] for row in samples}
-            profits = []
-            for row in samples:
-                entry = float(row["entry_ask"] or 0)
-                bid = float(row[f"bid_{exit_minutes}"] or 0) if exit_minutes in {30, 60, 90} else 0
-                if entry > 0 and bid >= 0:
-                    profits.append((bid - entry) * 100 - 2 * COMMISSION_PER_CONTRACT)
-            factor = _factor(profits)
+            exit_summaries = []
+            current_results: list[tuple[str, float]] = []
+            current_summary = None
+            for window in EXIT_WINDOWS:
+                summary, results = _exit_summary(samples, window)
+                exit_summaries.append(summary)
+                if window == exit_minutes:
+                    current_summary, current_results = summary, results
+            if current_summary is None:
+                current_summary = {
+                    "minutes": exit_minutes, "option_results": 0, "wins": 0,
+                    "win_rate_pct": None, "profit_factor": None,
+                    "net_one_contract_pnl": 0.0,
+                }
+            factor = current_summary["profit_factor"]
+            option_result_days = len({day for day, _ in current_results})
+            older_factor, newer_factor = _chronological_factors(current_results)
             status, explanation = research_status(
-                results=len(profits), days=len(completed_days),
+                results=current_summary["option_results"], days=option_result_days,
                 sessions=sessions.get(ticker, 0), factor=factor,
+                older_factor=older_factor, newer_factor=newer_factor,
             )
             correct = sum(1 for row in samples if row["direction_correct"] == 1)
             measured = sum(1 for row in samples if row["direction_correct"] is not None)
+            direction_accuracy = round(correct / measured * 100, 1) if measured else None
+            diagnosis, next_action = _diagnosis(
+                status=status, setups=len(samples),
+                option_results=current_summary["option_results"],
+                direction_results=measured, direction_accuracy=direction_accuracy,
+                factor=factor, older_factor=older_factor, newer_factor=newer_factor,
+                exit_minutes=exit_minutes, exit_summaries=exit_summaries,
+            )
             pairs.append({
                 "ticker": ticker,
                 "status": status,
                 "explanation": explanation,
                 "market_days": sessions.get(ticker, 0),
                 "setups": len(samples),
-                "option_results": len(profits),
+                "option_results": current_summary["option_results"],
+                "option_result_days": option_result_days,
+                "wins": current_summary["wins"],
+                "win_rate_pct": current_summary["win_rate_pct"],
                 "profit_factor": factor,
-                "net_one_contract_pnl": round(sum(profits), 2),
-                "direction_accuracy": round(correct / measured * 100, 1) if measured else None,
+                "net_one_contract_pnl": current_summary["net_one_contract_pnl"],
+                "direction_results": measured,
+                "direction_accuracy": direction_accuracy,
+                "quote_coverage_pct": round(current_summary["option_results"] / len(samples) * 100, 1) if samples else None,
+                "older_profit_factor": older_factor,
+                "newer_profit_factor": newer_factor,
+                "diagnosis": diagnosis,
+                "next_action": next_action,
+                "exit_comparison": exit_summaries,
                 "tradable": bool(rule and not rule.observation_only and ticker in rule.tickers),
             })
         priority = {"working": 0, "promising": 1, "needs_tuning": 2, "not_working": 3, "collecting": 4, "no_setups": 5}
@@ -154,6 +275,7 @@ def build_research_matrix(days: int = 90) -> dict:
     return {
         "days": days,
         "target_profit_factor": 1.5,
+        "cost_model": f"saved ask to bid, ${OPTION_SLIPPAGE_PER_SIDE:.2f} adverse slippage per side, ${COMMISSION_PER_CONTRACT:.2f} fee per side",
         "account_scoped": bool(account_id),
         "ticker_count": len(tickers),
         "strategy_count": len(strategy_rows),

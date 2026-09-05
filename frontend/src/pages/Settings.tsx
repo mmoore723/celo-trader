@@ -866,7 +866,6 @@ export function Settings() {
         </p>
         {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}
         <TestedStrategies
-          currentIds={(strategyCatalog?.strategies ?? []).map(strategy => strategy.strategy_id)}
           researchIds={form.research_strategy_ids ?? []}
           onResearchIdsChange={ids => set("research_strategy_ids", ids)}
         />
