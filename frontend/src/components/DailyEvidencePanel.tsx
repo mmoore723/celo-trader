@@ -36,7 +36,7 @@ export function DailyEvidencePanel({ data, loading = false, failed = false }: {
   const replayColor = data.replay.coverage_pct === 100 ? "var(--positive)" : "#ffd740";
   const stats = [
     { label: "Profit factor", value: pf, note: "gross wins ÷ gross losses" },
-    { label: "Signal accuracy", value: valueOrDash(data.decisions.directional_accuracy_pct, "%"), note: `${data.decisions.measured} measured candidates` },
+    { label: "Trade win rate", value: valueOrDash(data.trading.win_rate_pct, "%"), note: `${data.trading.wins}/${data.trading.closed_trades} closed trades` },
     { label: "Entry fills", value: valueOrDash(data.execution.entry_fill_rate_pct, "%"), note: `${data.execution.entry_filled}/${data.execution.entry_attempts} attempts` },
     { label: "Replay coverage", value: `${data.replay.coverage_pct}%`, note: data.replay.passed ? "evidence linked" : "links need review", color: replayColor },
   ];
@@ -55,7 +55,7 @@ export function DailyEvidencePanel({ data, loading = false, failed = false }: {
       <div>
         <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>What the evidence says</h3>
         <p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-          Profit, decision quality, order execution, and record completeness are scored separately.
+          Profit, completed trades, order execution, and record completeness are scored separately.
         </p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

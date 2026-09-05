@@ -172,8 +172,11 @@ export interface DailyEvidenceScorecard {
     avg_loss: number | null; largest_loss: number | null;
   };
   decisions: {
-    candidates: number; entered: number; blocked: number; measured: number;
+    candidates: number; independent_candidates: number;
+    entered: number; blocked: number; measured: number;
     directional_accuracy_pct: number | null;
+    research_candidates: number; research_measured: number;
+    research_directional_accuracy_pct: number | null;
     missed_executable_moves: Record<string, {
       measured: number; profitable: number; avg_executable_return_pct: number | null;
       estimated_pnl_dollars?: number | null; contracts?: number; basis?: string;

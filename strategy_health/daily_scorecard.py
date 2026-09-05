@@ -26,6 +26,46 @@ def _profit_factor(pnls: list[float]) -> float | str | None:
     return round(gains / losses, 2)
 
 
+def _independent_candidates(candidates: list[dict]) -> list[dict]:
+    """Collapse repeated evaluations of one completed strategy trigger.
+
+    The scanner can observe the same completed bar more than once while a
+    session is running, and a process restart can evaluate it again.  Those
+    rows remain useful audit evidence, but counting each as a new prediction
+    inflates the denominator of the daily accuracy metric.
+    """
+    independent: dict[tuple[str, ...], dict] = {}
+    for row in sorted(
+        candidates,
+        key=lambda item: (str(item.get("observed_at") or ""), str(item.get("candidate_id") or "")),
+    ):
+        trigger = str(row.get("trigger_bar") or "").strip()
+        key = (
+            str(row.get("strategy_id") or "").upper(),
+            str(row.get("ticker") or "").upper(),
+            str(row.get("direction") or "").lower(),
+            trigger,
+        ) if trigger else ("candidate", str(row.get("candidate_id") or ""))
+        existing = independent.get(key)
+        outcome_priority = {"entered": 3, "blocked": 2, "observed_only": 1, "pending": 0}
+        if (
+            existing is None
+            or outcome_priority.get(str(row.get("final_outcome")), -1)
+            >= outcome_priority.get(str(existing.get("final_outcome")), -1)
+        ):
+            independent[key] = row
+    return list(independent.values())
+
+
+def _accuracy(rows: list[dict]) -> tuple[int, float | None]:
+    measured = [row for row in rows if row.get("direction_correct") is not None]
+    correct = sum(bool(row.get("direction_correct")) for row in measured)
+    return (
+        len(measured),
+        round(correct / len(measured) * 100, 1) if measured else None,
+    )
+
+
 def _quote_to_fill(attempts: dict[str, list[dict]]) -> dict:
     """Compare confirmed fills with the saved natural-side decision quote."""
     pairs: list[dict] = []
@@ -186,7 +226,17 @@ def build_daily_scorecard(tape: dict, *, include_strategy_replay: bool = False) 
     pnl = round(sum(pnls), 2)
     letter, label = _grade(pnl)
     candidates = [e["payload"] for e in events if e["kind"] == "candidate"]
-    measured = [row for row in candidates if row.get("direction_correct") is not None]
+    independent_candidates = _independent_candidates(candidates)
+    tradable_candidates = [
+        row for row in independent_candidates
+        if row.get("final_outcome") in {"entered", "blocked"}
+    ]
+    research_candidates = [
+        row for row in independent_candidates
+        if row.get("final_outcome") == "observed_only"
+    ]
+    measured, directional_accuracy = _accuracy(tradable_candidates)
+    research_measured, research_accuracy = _accuracy(research_candidates)
 
     attempts: dict[str, list[dict]] = defaultdict(list)
     for event in events:
@@ -249,9 +299,15 @@ def build_daily_scorecard(tape: dict, *, include_strategy_replay: bool = False) 
                     "avg_win": round(sum(gains) / len(gains), 2) if gains else None,
                     "avg_loss": round(sum(losses) / len(losses), 2) if losses else None,
                     "largest_loss": round(min(losses), 2) if losses else None},
-        "decisions": {"candidates": len(candidates), "entered": sum(row.get("final_outcome") == "entered" for row in candidates),
-                      "blocked": sum(row.get("final_outcome") == "blocked" for row in candidates),
-                      "measured": len(measured), "directional_accuracy_pct": round(sum(bool(row.get("direction_correct")) for row in measured) / len(measured) * 100, 1) if measured else None,
+        "decisions": {"candidates": len(candidates),
+                      "independent_candidates": len(independent_candidates),
+                      "entered": sum(row.get("final_outcome") == "entered" for row in independent_candidates),
+                      "blocked": sum(row.get("final_outcome") == "blocked" for row in independent_candidates),
+                      "measured": measured,
+                      "directional_accuracy_pct": directional_accuracy,
+                      "research_candidates": len(research_candidates),
+                      "research_measured": research_measured,
+                      "research_directional_accuracy_pct": research_accuracy,
                       "missed_executable_moves": missed_moves},
         "execution": {"entry_attempts": len(entry_attempts), "entry_filled": sum(filled(rows) for rows in entry_attempts),
                       "entry_fill_rate_pct": round(sum(filled(rows) for rows in entry_attempts) / len(entry_attempts) * 100, 1) if entry_attempts else None,

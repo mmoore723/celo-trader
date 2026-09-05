@@ -122,6 +122,33 @@ class DailyEvidenceScorecardTests(unittest.TestCase):
         self.assertFalse(tape["account_scoped"])
         self.assertEqual([], tape["events"])
 
+    def test_accuracy_separates_trade_signals_from_research_and_duplicates(self) -> None:
+        rows = [
+            ("entered", "2026-08-26T10:00:00-04:00", "bar-a", "entered", 1),
+            ("duplicate", "2026-08-26T10:01:00-04:00", "bar-a", "entered", 1),
+            ("blocked", "2026-08-26T10:02:00-04:00", "bar-b", "blocked", 0),
+            ("research-loss", "2026-08-26T10:03:00-04:00", "bar-c", "observed_only", 0),
+        ]
+        self.conn.executemany("""
+            INSERT INTO shadow_candidates
+              (candidate_id,observed_at,ticker,strategy_id,direction,trigger_bar,
+               confidence,broker_account_id,final_outcome,direction_correct)
+            VALUES (?,?,'SPY','TEST','bullish',?,.8,'mine',?,?)
+        """, rows)
+
+        result = build_daily_scorecard(build_event_tape(
+            self.conn, "2026-08-26", "paper", "mine",
+        ))
+
+        self.assertEqual(4, result["decisions"]["candidates"])
+        self.assertEqual(3, result["decisions"]["independent_candidates"])
+        self.assertEqual(1, result["decisions"]["entered"])
+        self.assertEqual(1, result["decisions"]["blocked"])
+        self.assertEqual(2, result["decisions"]["measured"])
+        self.assertEqual(50.0, result["decisions"]["directional_accuracy_pct"])
+        self.assertEqual(1, result["decisions"]["research_measured"])
+        self.assertEqual(0.0, result["decisions"]["research_directional_accuracy_pct"])
+
     def test_live_scorecard_defers_expensive_strategy_replay(self) -> None:
         self._trade("mine", 1, 25)
 
