@@ -30,6 +30,7 @@ export interface OverlayInputs {
   orHigh?: number;
   orLow?: number;
   positionLevels?: PositionLevels;
+  positionLevelsOnCandleScale?: boolean;
   simulationOverlay?: SimulationOverlay;
   replayTrade?: ReplayTrade;
 }
@@ -202,6 +203,11 @@ export class OverlayManager {
     }
 
     // ── Position bracket (live open trade) ──────────────────────────────────
+    // On an underlying chart, option entry/stop/target values must stay on a
+    // separate hidden scale. On the exact option-contract chart those values
+    // share the candle's units, so draw them on the candle scale but use the
+    // non-autoscaling reference series: distant targets/stops remain overlays
+    // and never crush real candles into tiny dashes.
     // FIX 2026-07-31: entry/stop/target/trail are OPTION premium dollars
     // (e.g. $4.85), not stock price — drawn on `candle` they collapsed to a
     // sliver at the bottom of AMZN's $260-360 axis. Now anchored to their
@@ -213,15 +219,26 @@ export class OverlayManager {
     const pl = input.positionLevels;
     if (pl?.entry != null) {
       const entry = pl.entry;
-      const anchor = this.ensureTradeLevelAnchor();
+      const anchor = input.positionLevelsOnCandleScale
+        ? referenceAnchor
+        : this.ensureTradeLevelAnchor();
       const defs: { key: "stop" | "target" | "trail"; color: string; label: string }[] = [
         { key: "stop", color: P.stop, label: "Stop" }, { key: "target", color: P.target, label: "Target" }, { key: "trail", color: P.trail, label: "Trail" },
       ];
-      // Seed the anchor's own data so it has a sensible range to autoscale
-      // against — a flat line at `entry` spanning the loaded bars. Price
-      // lines (below) factor into a series' autoscale too, so this plus the
-      // stop/target/trail lines together produce correct relative spacing.
-      anchor.setData([{ time: firstT, value: entry }, { time: lastT, value: entry }]);
+      if (!input.positionLevelsOnCandleScale) {
+        // Seed the separate option-level scale. The exact-contract path uses
+        // referenceAnchor, which already follows the candle scale.
+        anchor.setData([{ time: firstT, value: entry }, { time: lastT, value: entry }]);
+      } else {
+        if (pl.target != null && pl.target > entry) zoneSpecs.push({
+          id: "position_reward", fromTime: firstT, toTime: lastT,
+          low: entry, high: pl.target, color: P.target + "18",
+        });
+        if (pl.stop != null && pl.stop > 0 && pl.stop < entry) zoneSpecs.push({
+          id: "position_risk", fromTime: firstT, toTime: lastT,
+          low: pl.stop, high: entry, color: P.stop + "18",
+        });
+      }
       this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price: entry, color: P.entry, lineWidth: 2, title: `Entry $${entry.toFixed(2)}` }) });
       for (const d of defs) {
         const price = pl[d.key];

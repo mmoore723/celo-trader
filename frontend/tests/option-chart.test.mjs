@@ -11,6 +11,9 @@ const compiled = ts.transpileModule(source, {
 });
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(compiled.outputText).toString("base64")}`;
 const { optionMetrics, quoteSegments } = await import(moduleUrl);
+const optionPlot = await readFile(new URL("../src/components/charts/OptionPricePlot.tsx", import.meta.url), "utf8");
+const tradeChart = await readFile(new URL("../src/components/charts/TradeChart.tsx", import.meta.url), "utf8");
+const overlays = await readFile(new URL("../src/components/charts/chartOverlays.ts", import.meta.url), "utf8");
 
 const base = { option_type: "put", contracts: 2, entry_price: 4, stop_price: 3, target_price: 6,
   closed: false, quotes: [{ time: 100, bid: 4.1, ask: 4.3 }] };
@@ -44,4 +47,16 @@ test("inverted or missing reference levels do not become fake profit/loss boxes"
 test("quote gaps are not interpolated as continuous prices", () => {
   const quotes = [100, 160, 500, 560].map(time => ({ time, bid: 4, ask: 4.2 }));
   assert.deepEqual(quoteSegments(quotes), [quotes.slice(0, 2), quotes.slice(2)]);
+});
+
+test("position view uses the standard candle chart with a non-distorting position overlay", () => {
+  assert.match(optionPlot, /import \{ TradeChart \} from "\.\/TradeChart"/);
+  assert.match(optionPlot, /bars=\{bars\}/);
+  assert.match(optionPlot, /trades=\{\[chartTrade\]\}/);
+  assert.match(optionPlot, /positionLevelsOnCandleScale/);
+  assert.doesNotMatch(optionPlot, /<svg/);
+  assert.match(tradeChart, /positionLevelsOnCandleScale/);
+  assert.match(overlays, /position_reward/);
+  assert.match(overlays, /position_risk/);
+  assert.match(overlays, /referenceAnchor/);
 });

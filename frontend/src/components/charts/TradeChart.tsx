@@ -40,6 +40,8 @@ export interface TradeChartProps {
   orHigh?: number;
   orLow?: number;
   positionLevels?: PositionLevels;
+  /** Position prices use the candle's units (for an exact option-contract chart). */
+  positionLevelsOnCandleScale?: boolean;
   simulationOverlay?: SimulationOverlay;
   replayTrade?: ReplayTrade;
   height?: number;
@@ -63,7 +65,7 @@ export function TradeChart({
   showVwap = true, showVwapBands = true, showOR = true, showSwings = true,
   showStructure = true, showPremiumDiscount = false, showKillzones = false, showExecutionGrade = true,
   showRsi = true, showMacd = true,
-  orHigh, orLow, positionLevels, simulationOverlay, replayTrade,
+  orHigh, orLow, positionLevels, positionLevelsOnCandleScale = false, simulationOverlay, replayTrade,
   height = 420, ticker, revealCount, revealStart, viewportKey,
   showPositionCard = true, currentOptionPrice = null,
   drawingEnabled = false, clearDrawingsToken = 0,
@@ -110,13 +112,13 @@ export function TradeChart({
       showVwap, showSwings, showStructure, showPremiumDiscount, showKillzones, showExecutionGrade,
       orHigh: showOR ? orHigh : undefined,
       orLow: showOR ? orLow : undefined,
-      positionLevels, simulationOverlay, replayTrade,
+      positionLevels, positionLevelsOnCandleScale, simulationOverlay, replayTrade,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     bars, trades, annotations, revealCount, revealStart, showVwap, showVwapBands, showOR, showSwings,
     showStructure, showPremiumDiscount, showKillzones, showExecutionGrade,
-    orHigh, orLow, positionLevels, simulationOverlay, replayTrade,
+    orHigh, orLow, positionLevels, positionLevelsOnCandleScale, simulationOverlay, replayTrade,
   ]);
 
   // Manual chart study: click once for the start and once for the end. These
