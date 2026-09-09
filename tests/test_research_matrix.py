@@ -7,7 +7,7 @@ from unittest.mock import patch
 from strategy_health.research_matrix import (
     _chronological_factors, _chronological_split_date, _contract_selection_message,
     _contract_selection_reasons, _current_rule_samples, _diagnosis, _exit_summary,
-    _factor, _improvement_tests, _independent_samples, _quote_profit, build_research_matrix,
+    _distinct_samples, _factor, _improvement_tests, _quote_profit, build_research_matrix,
     research_status,
 )
 
@@ -65,7 +65,7 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual(0, unscored)
         self.assertEqual(2, previous_version)
 
-    def test_independent_samples_collapse_same_trigger_and_holding_overlap(self):
+    def test_research_samples_keep_overlaps_but_collapse_exact_restart_duplicates(self):
         samples = [
             {"candidate_id": "first", "observed_at": "2026-09-04T10:01:00", "trigger_bar": "2026-09-04T10:00:00", "direction": "bullish"},
             {"candidate_id": "repeat", "observed_at": "2026-09-04T10:05:00", "trigger_bar": "2026-09-04T10:00:00", "direction": "bullish"},
@@ -73,8 +73,8 @@ class ResearchMatrixTests(unittest.TestCase):
             {"candidate_id": "next", "observed_at": "2026-09-04T10:31:00", "trigger_bar": "2026-09-04T10:30:00", "direction": "bullish"},
         ]
         self.assertEqual(
-            ["first", "next"],
-            [row["candidate_id"] for row in _independent_samples(samples, 30)],
+            ["first", "overlap", "next"],
+            [row["candidate_id"] for row in _distinct_samples(samples, 30)],
         )
 
     def test_plain_statuses_require_both_results_and_days(self):
@@ -85,7 +85,7 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("losing_so_far", research_status(results=5, days=5, sessions=30, factor=0.0)[0])
         self.assertEqual("needs_tuning", research_status(results=10, days=4, sessions=30, factor=1.2)[0])
         self.assertEqual("not_working", research_status(results=20, days=8, sessions=30, factor=0.9)[0])
-        self.assertEqual("no_setups", research_status(results=0, days=0, sessions=20, factor=None)[0])
+        self.assertEqual("needs_tuning", research_status(results=0, days=0, sessions=10, factor=None)[0])
 
     def test_recent_dates_must_still_pass_before_a_pair_is_working(self):
         dated = []
@@ -179,20 +179,22 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("Setup found; no option matched", plans[0]["title"])
         self.assertNotIn("quote capture", plans[0]["test"])
 
-    def test_no_setup_plan_waits_for_minimum_market_days_before_entry_audit(self):
+    def test_no_setup_plan_starts_entry_tuning_after_ten_market_days(self):
         early = _improvement_tests(
-            setups=0, sessions=15, option_results=0, option_result_days=0,
+            setups=0, sessions=4, option_results=0, option_result_days=0,
             direction_results=0, direction_accuracy=None, factor=None,
             exit_minutes=90, exit_summaries=[], contract_tests=[],
         )
-        self.assertEqual("Keep watching for the setup", early[0]["title"])
-        self.assertIn("5 more market days", early[0]["test"])
+        self.assertEqual("Build the baseline", early[0]["title"])
+        self.assertIn("6 more market days", early[0]["test"])
         mature = _improvement_tests(
-            setups=0, sessions=20, option_results=0, option_result_days=0,
+            setups=0, sessions=10, option_results=0, option_result_days=0,
             direction_results=0, direction_accuracy=None, factor=None,
             exit_minutes=90, exit_summaries=[], contract_tests=[],
         )
-        self.assertEqual("Check which entry rule blocks it", mature[0]["title"])
+        self.assertEqual("Tune the entry rules", mature[0]["title"])
+        self.assertIn("one gate at a time", mature[0]["test"])
+
 
     def test_matrix_reads_only_the_active_account_and_real_option_marks(self):
         conn = sqlite3.connect(":memory:")

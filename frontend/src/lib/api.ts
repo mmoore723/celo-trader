@@ -137,7 +137,7 @@ export interface StrategyTickerResearchPair {
   older_profit_factor: number | "infinite" | null;
   newer_profit_factor: number | "infinite" | null;
   comparison_split_date?: string | null;
-  diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "contract_selection" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
+  diagnosis: "ready" | "more_data" | "no_setups" | "entry_tuning" | "price_data" | "contract_selection" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
   next_action: string;
   improvement_tests: {
     title: string;

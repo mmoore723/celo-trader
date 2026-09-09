@@ -12,6 +12,7 @@ const ACTION_LABELS = {
   ready: "Ready for review",
   more_data: "Keep collecting",
   no_setups: "No setup yet",
+  entry_tuning: "Tune the entry",
   price_data: "Fix price data",
   contract_selection: "No option matched",
   unstable: "Changed over time",
@@ -47,8 +48,7 @@ export function researchPairVisible(pair, filter) {
   if (filter === "results") return pair.option_results > 0;
   if (filter === "no_option") return pair.option_results === 0 && pair.setups > 0;
   if (filter === "no_setup") return pair.setups === 0;
-  if (filter === "attention") return ["price_data", "contract_selection", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis)
-    || (pair.diagnosis === "no_setups" && pair.market_days >= 20);
+  if (filter === "attention") return ["entry_tuning", "price_data", "contract_selection", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis);
   if (filter === "passing") return pair.option_results > 0 && numericProfitFactor(pair.profit_factor) >= 1.5;
   return pair.option_results > 0;
 }

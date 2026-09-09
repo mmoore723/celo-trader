@@ -55,7 +55,7 @@ test("PF 1.5 filter reflects the number instead of a delayed status label", () =
   assert.equal(researchPairVisible(pair({ status: "promising", option_results: 8, profit_factor: 1.2 }), "passing"), false);
 });
 
-test("a ticker watched for 20 days with no setup needs an entry-gate experiment", () => {
-  assert.equal(researchPairVisible(pair({ diagnosis: "no_setups", market_days: 20 }), "attention"), true);
+test("a ticker watched for 10 days with no setup needs an entry-gate experiment", () => {
+  assert.equal(researchPairVisible(pair({ diagnosis: "entry_tuning", market_days: 10 }), "attention"), true);
   assert.equal(researchPairVisible(pair({ diagnosis: "no_setups", market_days: 4 }), "attention"), false);
 });

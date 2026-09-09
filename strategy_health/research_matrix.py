@@ -23,6 +23,7 @@ from database.option_quotes import CANDIDATE_MARK_HORIZONS
 OPTION_SLIPPAGE_PER_SIDE = 0.01
 EXIT_WINDOWS = CANDIDATE_MARK_HORIZONS
 QUOTE_WINDOW_GRACE_MINUTES = 5
+ENTRY_TUNING_MARKET_DAYS = 10
 CONTRACT_POLICY_LABELS = {
     "target_150_250": "$150–$250 closest to $200",
     "nearest_weekly_150_1000": "Nearest weekly $150–$1,000",
@@ -47,17 +48,15 @@ def _sample_time(row: object) -> datetime:
     return _parse_time(raw)
 
 
-def _independent_samples(samples: list, hold_minutes: int) -> list:
-    """Collapse restart duplicates and fixed-hold overlaps into real episodes.
+def _distinct_samples(samples: list, _hold_minutes: int) -> list:
+    """Keep every distinct research play; collapse exact restart duplicates.
 
-    A research worker can observe the same still-valid trigger more than once,
-    especially after a restart.  A fixed-hold replay also cannot enter another
-    position in the same strategy/ticker while the first one is still open.
-    Counting either case as a new trade inflates sample size and profit factor.
+    Research may model many overlapping hypothetical positions.  Paper/live
+    portfolio limits do not apply here.  Only the same direction and exact
+    trigger timestamp is a duplicate rather than a new play.
     """
     accepted = []
     seen_triggers: set[tuple[str, str]] = set()
-    next_entry_at: datetime | None = None
     for row in sorted(samples, key=_sample_time):
         trigger = str(row["trigger_bar"] or "").strip()
         dedupe_key = (
@@ -67,11 +66,7 @@ def _independent_samples(samples: list, hold_minutes: int) -> list:
         if dedupe_key in seen_triggers:
             continue
         seen_triggers.add(dedupe_key)
-        signal_time = _sample_time(row)
-        if next_entry_at is not None and signal_time < next_entry_at:
-            continue
         accepted.append(row)
-        next_entry_at = signal_time + timedelta(minutes=max(1, int(hold_minutes)))
     return accepted
 
 
@@ -216,8 +211,8 @@ def _contract_policy_summaries(
             continue
         timely = [row for row in raw_samples if candidate_signal_is_timely(row)]
         current, _, _, _ = _current_rule_samples(timely, strategy_id, ticker)
-        independent = _independent_samples(current, exit_minutes)
-        summary, dated_profits = _exit_summary(independent, exit_minutes)
+        distinct = _distinct_samples(current, exit_minutes)
+        summary, dated_profits = _exit_summary(distinct, exit_minutes)
         result_days = len({day for day, _ in dated_profits})
         older, newer = _chronological_factors(dated_profits)
         comparison_split_date = _chronological_split_date(dated_profits)
@@ -333,8 +328,8 @@ def research_status(
         return "promising", "PF is above 1.5, but there are not enough results yet."
     if results:
         return "collecting", "More results are needed before judging it."
-    if sessions >= 20:
-        return "no_setups", "The bot watched this ticker but the setup did not appear."
+    if sessions >= ENTRY_TUNING_MARKET_DAYS:
+        return "needs_tuning", "No setup appeared across enough market days. Test the entry rules."
     return "collecting", "The bot is still collecting market days."
 
 
@@ -344,10 +339,13 @@ def _diagnosis(
     newer_factor: object, exit_minutes: int, exit_summaries: list[dict],
     comparison_split_date: str | None = None,
     selection_reasons: dict[str, int] | None = None,
+    sessions: int = 0,
 ) -> tuple[str, str]:
     if status == "working":
         return "ready", "Passed PF 1.5 and the minimum sample checks."
     if setups == 0:
+        if sessions >= ENTRY_TUNING_MARKET_DAYS:
+            return "entry_tuning", "No setup appeared in 10 market days. Test one entry rule at a time."
         return "no_setups", "No setup yet. Keep watching."
     if option_results == 0 and selection_reasons:
         _, action = _contract_selection_message(selection_reasons)
@@ -396,14 +394,14 @@ def _improvement_tests(
     plans: list[dict] = []
     coverage = option_results / setups if setups else 0.0
     if setups == 0:
-        remaining = max(0, 20 - sessions)
+        remaining = max(0, ENTRY_TUNING_MARKET_DAYS - sessions)
         return [{
-            "title": "Keep watching for the setup" if remaining else "Check which entry rule blocks it",
+            "title": "Build the baseline" if remaining else "Tune the entry rules",
             "evidence": f"0 setups across {sessions} collected market days.",
             "test": (
-                f"Keep the strategy unchanged for {remaining} more market day{'s' if remaining != 1 else ''}."
+                f"Collect {remaining} more market day{'s' if remaining != 1 else ''}, then start the entry test."
                 if remaining else
-                "Replay time, direction, and volume separately to identify the blocking rule without loosening everything at once."
+                "Run research-only replays one gate at a time: time window, then trend, then volume. Keep production unchanged until one version passes later dates."
             ),
         }]
     if option_results == 0 and selection_reasons:
@@ -416,7 +414,7 @@ def _improvement_tests(
     elif coverage < 0.7:
         plans.append({
             "title": "Complete option pricing first",
-            "evidence": f"Only {option_results} of {setups} independent setups have a usable ask-to-bid result ({coverage * 100:.0f}%).",
+            "evidence": f"Only {option_results} of {setups} distinct research plays have a usable ask-to-bid result ({coverage * 100:.0f}%).",
             "test": "Repair or extend quote capture for the same contract before judging entry or exit changes.",
         })
     if direction_results >= 5 and direction_accuracy is not None:
@@ -626,13 +624,13 @@ def build_research_matrix(days: int = 90) -> dict:
             rule_samples, rule_rejected, rule_unscored, previous_version_rows = _current_rule_samples(
                 timely_samples, strategy_id, ticker,
             )
-            samples = _independent_samples(rule_samples, exit_minutes)
+            samples = _distinct_samples(rule_samples, exit_minutes)
             selection_reasons = _contract_selection_reasons(samples)
             exit_summaries = []
             current_results: list[tuple[str, float]] = []
             current_summary = None
             for window in EXIT_WINDOWS:
-                window_samples = _independent_samples(rule_samples, window)
+                window_samples = _distinct_samples(rule_samples, window)
                 summary, results = _exit_summary(window_samples, window)
                 exit_summaries.append(summary)
                 if window == exit_minutes:
@@ -666,6 +664,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 exit_minutes=exit_minutes, exit_summaries=exit_summaries,
                 comparison_split_date=comparison_split_date,
                 selection_reasons=selection_reasons,
+                sessions=sessions.get(ticker, 0),
             )
             contract_tests = _contract_policy_summaries(
                 alternative_grouped, strategy_id=strategy_id, ticker=ticker,

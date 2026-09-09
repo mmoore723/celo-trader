@@ -45,7 +45,8 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
   const status = STATUS[pair.status];
   const resultState = pair.option_results > 0
     ? status.label
-    : pair.setups > 0 ? "Setup found · no option matched" : "No setup yet";
+    : pair.setups > 0 ? "Setup found · no option matched"
+      : pair.diagnosis === "entry_tuning" ? "Needs entry tuning" : "Building baseline";
   const progress = Math.min(100, Math.round(Math.min(pair.option_results / 20, pair.option_result_days / 8) * 100));
   const plan = pair.improvement_tests?.[0];
   const testedProfitFactor = backtest.profit_factor === "no fills" ? null : backtest.profit_factor ?? null;
@@ -56,7 +57,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
         <div className="flex flex-wrap items-center gap-2"><strong className="text-base">{pair.ticker}</strong><span className={`badge ${pair.tradable ? "badge-green" : "badge-blue"}`}>{pair.tradable ? "TRADING ON" : "TESTING"}</span><span className="text-xs font-semibold" style={{ color: status.color }}>{resultState}</span></div>
         <p className="text-sm truncate mt-1">{strategyName} · v{strategyVersion}</p>
         <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{pair.first_data_date ? `Data since ${evidenceDate(pair.first_data_date)} · ${pair.market_days} market days` : "No market data collected for this ticker yet"}</p>
-        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{pair.raw_observations} raw trigger{pair.raw_observations === 1 ? "" : "s"} → {pair.setups} independent setup{pair.setups === 1 ? "" : "s"} → {pair.option_results} priced result{pair.option_results === 1 ? "" : "s"}</p>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{pair.raw_observations} raw trigger{pair.raw_observations === 1 ? "" : "s"} → {pair.setups} distinct research play{pair.setups === 1 ? "" : "s"} → {pair.option_results} priced result{pair.option_results === 1 ? "" : "s"}</p>
         {pair.tradable && backtest.trades != null && backtest.trades > 0 && <p className="text-xs mt-1 font-medium" style={{ color: "var(--ink-muted)" }}>{backtest.historical_test_through ? `Tested through ${evidenceDate(backtest.historical_test_through)}` : "Reviewed test"}: PF {profitFactorText(testedProfitFactor)} · {backtest.trades} results</p>}
       </div>
       <div>
@@ -78,7 +79,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
     <details className="px-3 pb-3 text-xs">
       <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>Evidence and test plan</summary>
       <div className="grid gap-2 mt-3 sm:grid-cols-2 lg:grid-cols-4" style={{ color: "var(--ink-muted)" }}>
-        <p><b>Independent setups:</b> {pair.setups} across {pair.market_days} data days</p>
+        <p><b>Research plays:</b> {pair.setups} across {pair.market_days} data days</p>
         <p><b>Usable option prices:</b> {pair.quote_coverage_pct == null ? "—" : `${pair.quote_coverage_pct}%`}</p>
         <p><b>Stock moved correctly:</b> {pair.direction_accuracy == null ? "—" : `${pair.direction_accuracy}% of ${pair.direction_results}`}</p>
         <p><b>Compared exit:</b> {exitMinutes} minutes</p>
@@ -123,7 +124,7 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
   const needsWork = useMemo(() => allPairs.filter(pair => researchPairVisible(pair, "attention")), [allPairs]);
   const readyToReview = useMemo(() => allPairs.filter(pair => pair.diagnosis === "ready"), [allPairs]);
   const rawTriggers = allPairs.reduce((sum, pair) => sum + pair.raw_observations, 0);
-  const independentSetups = allPairs.reduce((sum, pair) => sum + pair.setups, 0);
+  const researchPlays = allPairs.reduce((sum, pair) => sum + pair.setups, 0);
   const groupedResearchPairs = useMemo(() => [
     { key: "ready", title: "Ready to review", note: "Enough proof passed the goal and safety checks.", rows: researchPairs.filter(row => row.pair.diagnosis === "ready") },
     { key: "work", title: "Needs work", note: "The next test is shown on each row.", rows: researchPairs.filter(row => researchPairVisible(row.pair, "attention")) },
@@ -156,12 +157,12 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
               {[["results", `Has results (${measuredPairs.length})`], ["no_option", `Setup, no option (${setupWithoutOption.length})`], ["no_setup", `No setup (${noSetupPairs.length})`], ["attention", `Needs work (${needsWork.length})`], ["passing", `At PF goal (${passingNow.length})`], ["all", `Everything (${allPairs.length})`]].map(([value, label]) => <button key={value} type="button" className={`btn btn-sm ${researchFilter === value ? "btn-primary" : "btn-ghost"}`} aria-pressed={researchFilter === value} onClick={() => setResearchFilter(value)}>{label}</button>)}
             </div>
           </div>
-          {tickerSearch.trim() && <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface-raised))", color: "var(--ink-muted)" }}><strong style={{ color: "var(--ink)" }}>{tickerSearch.trim().toUpperCase()}</strong> · {rawTriggers} raw trigger{rawTriggers === 1 ? "" : "s"} → {independentSetups} independent setup{independentSetups === 1 ? "" : "s"} → {measuredPairs.reduce((sum, pair) => sum + pair.option_results, 0)} priced result{measuredPairs.reduce((sum, pair) => sum + pair.option_results, 0) === 1 ? "" : "s"}</div>}
+          {tickerSearch.trim() && <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface-raised))", color: "var(--ink-muted)" }}><strong style={{ color: "var(--ink)" }}>{tickerSearch.trim().toUpperCase()}</strong> · {rawTriggers} raw trigger{rawTriggers === 1 ? "" : "s"} → {researchPlays} distinct research play{researchPlays === 1 ? "" : "s"} → {measuredPairs.reduce((sum, pair) => sum + pair.option_results, 0)} priced result{measuredPairs.reduce((sum, pair) => sum + pair.option_results, 0) === 1 ? "" : "s"}</div>}
           <p className="text-xs" style={{ color: "var(--ink-muted)" }}>PF compares total wins with total losses. A win-only sample says “No losses yet” until a loss gives PF a denominator.</p>
         </div>
         <div className="space-y-6">{groupedResearchPairs.map(group => <section key={group.key} className="space-y-2"><div className="flex flex-wrap items-baseline gap-2"><h2 className="text-base font-semibold">{group.title}</h2><span className="badge">{group.rows.length}</span><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{group.note}</p></div>{group.rows.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} strategyVersion={strategy.version} backtest={strategy.backtest} exitMinutes={strategy.exit_minutes} />)}</section>)}</div>
         {!researchPairs.length && <div className="card p-8 text-center">No strategy–ticker pairs match these filters yet.</div>}
-        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How the proof works</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same trigger counts once, and overlapping tests are excluded. A recommendation requires PF 1.5+, at least 20 priced results, at least 8 result days, and passing results on the latest test dates.</p></details>
+        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How the proof works</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same exact trigger counts once; every distinct trigger is tested even when several research plays overlap. A recommendation requires PF 1.5+, at least 20 priced results, at least 8 result days, and passing results on the latest test dates.</p></details>
       </> : <div className="card p-8 text-center">No research results are available yet.</div>}
     </>}
   </div>;

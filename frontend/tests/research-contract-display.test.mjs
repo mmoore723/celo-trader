@@ -15,7 +15,8 @@ test("research results separate no setup from no matching option", () => {
   assert.match(source, /Setup, no option/);
   assert.match(source, /No setup/);
   assert.match(source, /raw trigger/);
-  assert.match(source, /independent setup/);
+  assert.match(source, /distinct research play/);
+  assert.match(source, /several research plays overlap/);
   assert.doesNotMatch(source, /`Waiting \(\$\{waiting\}\)`/);
 });
 const settingsSource = readFileSync(
