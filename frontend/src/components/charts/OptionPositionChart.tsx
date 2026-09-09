@@ -27,9 +27,9 @@ export function OptionPositionView({ data }: { data: OptionChartData }) {
         <span>Reference target: {changeAt(target)} total</span><span>Reference stop: {changeAt(stop)} total</span>
       </div>
       <p>Reference levels—not automatic exit orders. P&L is before fees.</p>
-      <p role={stale ? "status" : undefined}>{quote ? `Captured ${new Date(quote.time*1000).toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET${stale ? " — not a current price." : " · Tradier"}` : "Waiting for quote history."}</p>
+      <p role={stale ? "status" : undefined}>{quote ? `Executable bid captured ${new Date(quote.time*1000).toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET${stale ? " — not a current price." : " · Tradier"}` : "Waiting for an executable quote."}</p>
       <details><summary className="cursor-pointer">Price details</summary>
-        <p className="pt-2">Solid: bid. Dashed: ask. Times: ET. Quotes are sampled, not candles; capture time is not the exchange quote time. The bot follows its strategy&apos;s exit rules.{data.truncated ? " Latest 5,000 records shown." : ""}</p>
+        <p className="pt-2">Candles are the exact contract&apos;s real one-minute Tradier Time &amp; Sales OHLCV. Entry and exit circles are actual fills. P&amp;L uses the latest recorded executable bid, not the candle close. Missing minutes stay missing.{data.truncated ? " Latest 5,000 quote records shown." : ""}</p>
       </details>
     </div>
   </section>;
@@ -41,7 +41,7 @@ export function OptionPositionChart({ trade }: { trade: Trade }) {
   const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["option-chart", user?.user_id ?? user?.email, mode, trade.id],
     queryFn: () => api.trades.optionChart(trade.id, mode),
-    enabled: !!user, gcTime: 0, staleTime: 0, retry: false, refetchInterval: 15_000,
+    enabled: !!user, gcTime: 0, staleTime: 0, retry: false, refetchInterval: 60_000,
   });
   if (isLoading) return <p role="status" className="p-6 text-sm">Loading recorded option prices…</p>;
   if (isError || !data) return <div role="alert" className="p-6 text-sm">Option prices could not be loaded. <button className="btn btn-sm btn-ghost" onClick={() => refetch()}>Try again</button></div>;

@@ -151,9 +151,9 @@ export function LiveTrading() {
   const [chartExpanded,  setChartExpanded]    = useState(() => {
     try {
       const saved = window.localStorage.getItem("celo-live-chart-expanded");
-      return saved == null ? false : saved === "true";
+      return saved == null ? true : saved === "true";
     } catch {
-      return false;
+      return true;
     }
   });
   const chartReplayRef  = useRef<BoomerangReplayHandle>(null);
@@ -378,42 +378,30 @@ export function LiveTrading() {
     <>
     <div className="p-4 flex flex-col gap-4">
 
-      {/* ── Stat bar ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3 items-start">
-        {[
-          { label: "Current Equity", value: status?.broker_connected ? `$${status.account_balance.toFixed(2)}` : "Not connected" },
-          { label: "Day Open",    value: status?.broker_connected ? `$${(status.day_start_balance ?? status.account_balance).toFixed(2)}` : "—" },
-          { label: "Session P&L", value: (
-            <span className="flex items-center gap-1.5 flex-wrap">
-              <PnlBadge value={status?.session_pnl} />
-              <span
-                className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
-                style={{
-                  background: status?.is_paper !== false
-                    ? "rgba(234, 148, 29, 0.15)"
-                    : "rgba(34, 197, 94, 0.15)",
-                  color: status?.is_paper !== false ? "#ea941d" : "#22c55e",
-                  border: `1px solid ${status?.is_paper !== false ? "#ea941d55" : "#22c55e55"}`,
-                }}
-              >
-                {status?.is_paper !== false ? "Paper" : "Live"}
-              </span>
-            </span>
-          )},
-          { label: "Opt BP",  value: `$${(status?.options_buying_power ?? 0).toFixed(2)}` },
-          { label: "Open",    value: openTrades.length },
-          { label: "Signal",  value: status?.last_strategy_id ?? "—" },
-          { label: "Mode",    value: status?.mode ? (status.mode as string).toUpperCase() : "—" },
-        ].map((s) => (
-          <div key={s.label} className="card px-4 py-2.5 flex flex-col gap-0.5 min-w-[110px]">
-            <span className="text-xs" style={{ color: "var(--ink-muted)" }}>{s.label}</span>
-            <span className="num font-semibold text-sm" style={{ color: "var(--ink)" }}>
-              {s.value}
-            </span>
-          </div>
-        ))}
-
-      </div>
+      {/* One account ribbon establishes context without seven competing cards. */}
+      <section className="card px-4 py-3 flex flex-col gap-3 lg:flex-row lg:items-center" aria-label="Trading account snapshot">
+        <div className="flex items-center gap-2 lg:pr-5 lg:border-r" style={{ borderColor: "var(--border)" }}>
+          <span className="text-sm font-semibold">Trading workspace</span>
+          <span className={`badge ${status?.is_paper !== false ? "badge-yellow" : "badge-green"}`}>
+            {status?.is_paper !== false ? "Paper" : "Live"}
+          </span>
+          <span className="text-xs" style={{ color: status?.running ? "var(--positive)" : "var(--ink-muted)" }}>
+            {status?.running ? "Bot running" : "Bot stopped"}
+          </span>
+        </div>
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-5 lg:flex-1">
+          {[
+            { label: "Equity", value: status?.broker_connected ? `$${status.account_balance.toFixed(2)}` : "Not connected" },
+            { label: "Day open", value: status?.broker_connected ? `$${(status.day_start_balance ?? status.account_balance).toFixed(2)}` : "—" },
+            { label: "Today", value: <PnlBadge value={status?.session_pnl} /> },
+            { label: "Buying power", value: `$${(status?.options_buying_power ?? 0).toFixed(2)}` },
+            { label: "Open positions", value: openTrades.length },
+          ].map(item => <div key={item.label} className="min-w-0">
+            <dt className="text-[10px] uppercase tracking-wide text-ink-muted">{item.label}</dt>
+            <dd className="num text-sm font-semibold truncate">{item.value}</dd>
+          </div>)}
+        </dl>
+      </section>
 
       {status?.opportunity_window?.expires_at && (
         <div
@@ -554,10 +542,10 @@ export function LiveTrading() {
           >
             <div className="min-w-0">
               <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                {ticker} {optionChart.view === "option" ? "option" : "stock"} chart
+                {ticker} {optionChart.view === "option" ? "position" : "market"} chart
               </div>
               <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                {optionChart.view === "option" ? "The price of your exact option contract." : "Stock price and market setup."}
+                {optionChart.view === "option" ? "Your exact option contract in real one-minute candles." : "Underlying candles, levels, and setup context."}
               </div>
             </div>
             <div className="flex-1" />
@@ -707,8 +695,11 @@ export function LiveTrading() {
               day-by-day scanner trail shown on Scanner Opportunities. */}
           <div className="border-t px-3 py-2 flex items-center justify-between"
                style={{ borderColor: "var(--border)" }}>
-            <span className="text-xs font-semibold uppercase tracking-wider"
-                  style={{ color: "var(--ink-muted)" }}>Today's Trade Setups</span>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wider"
+                    style={{ color: "var(--ink-muted)" }}>Next trade</span>
+              <p className="text-[10px] text-ink-faint">Setups that advanced far enough to act on or review.</p>
+            </div>
             <Link to="/journal?tab=decisions" className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>Open Journal → Bot Decisions</Link>
           </div>
           <div className="overflow-y-auto flex-1 p-2" style={{ background: "var(--surface-raised)" }}>
@@ -794,7 +785,7 @@ export function LiveTrading() {
         </div>
       </div>
 
-      {/* ── Open positions + eval log ─────────────────────────────────────── */}
+      {/* ── Manage positions, then inspect the bot's activity ─────────────── */}
       <div className="card overflow-hidden">
         {/* Open positions */}
         <div>
@@ -885,10 +876,11 @@ export function LiveTrading() {
           </div>
         </div>
 
-        {/* Keep the live decision trail attached to the positions it explains.
-            Stacking these sections also removes the large empty column when
-            there are no open positions. */}
-        <div className="flex flex-col border-t" style={{ borderColor: "var(--border)" }}>
+      </div>
+
+      <div className="card overflow-hidden flex flex-col">
+        <div className="px-3 pt-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Live activity</div>
+        <div className="flex flex-col">
         <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
              style={{ borderColor: "var(--border)" }}>
           {(["board", "log"] as const).map((tab) => (
@@ -1195,7 +1187,7 @@ export function LiveTrading() {
           })()}
         </div>
         )}
-        </div>
+      </div>
       </div>
 
       {/* ── News feed ───────────────────────────────────────────────────────── */}

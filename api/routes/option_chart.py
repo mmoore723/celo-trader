@@ -1,4 +1,5 @@
 """Authenticated option-price history; reads only the current user's account."""
+from datetime import datetime, timezone
 import logging
 from typing import Literal
 
@@ -32,4 +33,35 @@ def option_chart(request: Request, trade_id: int = Path(ge=1),
         raise HTTPException(503, "Option prices could not be loaded. Try again.") from None
     if result is None:
         raise HTTPException(404, "Trade not found in this account")
+
+    # The chart uses real one-minute OHLCV from Tradier Time & Sales for the
+    # exact OCC contract. Sampled bid/ask observations remain separate because
+    # they are useful for executable P&L but are not market candles.
+    if result.get("entry_time") and result.get("contract_symbol"):
+        try:
+            from broker import get_tradier_market_client
+            start = datetime.fromtimestamp(float(result["entry_time"]), timezone.utc)
+            finish = datetime.fromtimestamp(
+                min(float(result.get("exit_time") or result["as_of"]), float(result["as_of"])),
+                timezone.utc,
+            )
+            raw_bars = get_tradier_market_client().get_option_bars(
+                str(result["contract_symbol"]), start, finish, interval="1min",
+            )
+            result["candles"] = [
+                {
+                    "time": datetime.fromisoformat(str(bar["t"]).replace("Z", "+00:00")).timestamp(),
+                    "open": float(bar["o"]), "high": float(bar["h"]),
+                    "low": float(bar["l"]), "close": float(bar["c"]),
+                    "volume": int(bar.get("v") or 0),
+                }
+                for bar in raw_bars
+                if all(bar.get(key) is not None for key in ("t", "o", "h", "l", "c"))
+            ]
+            if result["candles"]:
+                result["candle_source"] = "tradier_timesales_1min"
+        except Exception:
+            # Quote history and fills still render honestly when an expired
+            # contract or a temporary market-data failure has no OHLC history.
+            logger.warning("Exact-contract one-minute candles unavailable", exc_info=True)
     return result

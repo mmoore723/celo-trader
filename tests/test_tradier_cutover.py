@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -45,6 +46,18 @@ class TradierMarketTests(unittest.TestCase):
         })
         quote = client.get_latest_quote("SPY")
         self.assertEqual(10.0, quote["quote_age_seconds"])
+
+    def test_exact_option_timesales_returns_real_one_minute_ohlcv(self):
+        client = _MarketClient({
+            "/markets/timesales": {"series": {"data": [{
+                "time": "2026-09-01T10:00:00", "open": 4.0, "high": 4.4,
+                "low": 3.9, "close": 4.2, "volume": 73, "vwap": 4.17,
+            }]}},
+        })
+        rows = client.get_option_bars(
+            "SPY260904C00650000", datetime(2026, 9, 1, 10), datetime(2026, 9, 1, 11),
+        )
+        self.assertEqual((4.0, 4.4, 3.9, 4.2, 73), tuple(rows[0][key] for key in "ohlcv"))
 
 
 class TradierCutoverTests(unittest.TestCase):

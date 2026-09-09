@@ -155,6 +155,27 @@ class TradierMarketMixin:
         rows = _objects((payload.get("series") or {}).get("data"))
         return [normalized for normalized in (_bar(row) for row in rows) if normalized]
 
+    def get_option_bars(
+        self, option_symbol: str, start: datetime, end: datetime,
+        *, interval: str = "1min", limit: int = 5000,
+    ) -> list[dict]:
+        """Return exchange-reported OHLCV bars for one exact OCC contract.
+
+        Tradier's production Time & Sales endpoint accepts OCC option symbols.
+        Keeping this separate from sampled quote observations prevents a bid or
+        midpoint sample from being presented as a market candle.
+        """
+        if not getattr(self, "api_key", "") or not option_symbol:
+            return []
+        if interval not in {"1min", "5min", "15min"}:
+            raise ValueError("unsupported option bar interval")
+        try:
+            rows = self._timesales(option_symbol, interval, start, end)
+            return rows[-max(1, min(int(limit), 5000)):]
+        except Exception as exc:
+            logger.warning("get_option_bars(%s) failed: %s", option_symbol, exc)
+            return []
+
     def get_bars(self, symbol: str, timeframe: str, limit: int = 100) -> tuple[list[dict], bool]:
         try:
             normalized = {"1Min": "1min", "5Min": "5min", "15Min": "15min"}

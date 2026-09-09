@@ -19,6 +19,13 @@ await page.route("**/api/**", async route => {
     expiry: "2026-09-04", contracts: tsla ? 1 : 2, entry_price: entry, entry_time: now-1800,
     stop_price: tsla ? 1.2 : 3.3, target_price: tsla ? 3 : 6.2, exit_price: null,
     exit_time: null, realized_pnl: null, closed: false, truncated: false, as_of: now,
+    candle_source: state === "empty" ? null : "tradier_timesales_1min",
+    candles: state === "empty" ? [] : Array.from({ length: 30 }, (_, i) => {
+      const close = entry+Math.sin(i/4)*0.25+i*0.015;
+      const open = entry+Math.sin(Math.max(0, i-1)/4)*0.25+Math.max(0, i-1)*0.015;
+      return { time: now-1800+i*60, open, high: Math.max(open, close)+0.06,
+        low: Math.max(0.01, Math.min(open, close)-0.05), close, volume: 20+i*3 };
+    }),
     quotes: state === "empty" ? [] : Array.from({ length: 30 }, (_, i) => ({ time: now-1800+i*60-(state === "stale" ? 900 : 0), bid: entry+Math.sin(i/4)*0.25+i*0.015, ask: entry+Math.sin(i/4)*0.25+i*0.015+0.06 })),
   } });
 });
@@ -28,6 +35,7 @@ try {
   await page.getByRole("heading", { name: "SPY 770 CALL · 2026-09-04" }).waitFor();
   assert.equal(await page.getByTestId("profit-zone").count(), 1);
   assert.equal(await page.getByTestId("risk-zone").count(), 1);
+  assert.equal(await page.getByTestId("option-candle").count(), 30);
   await page.screenshot({ path: "/private/tmp/celo-option-chart-desktop.png", fullPage: true });
   await page.getByRole("button", { name: "Stock price", exact: true }).click();
   await page.getByRole("button", { name: "Refresh state", exact: false }).click();
@@ -46,11 +54,11 @@ try {
     state = scenario;
     await page.getByRole("button", { name: "Stock price", exact: true }).click();
     await page.getByRole("button", { name: "Option price", exact: true }).click();
-    await page.getByText(scenario === "stale" ? /not a current price/ : scenario === "empty" ? /No recorded quotes yet/ : /Option prices could not be loaded/).waitFor();
+    await page.getByText(scenario === "stale" ? /not a current price/ : scenario === "empty" ? /No one-minute trades were returned/ : /Option prices could not be loaded/).waitFor();
   }
   state = "normal";
   await page.getByRole("button", { name: "Try again" }).click();
   await page.getByRole("heading", { name: /TSLA/ }).waitFor();
   assert.deepEqual(errors, []);
-  console.log("PASS: position selection, stock override survives refresh, call/put identity, risk boxes, 320/390px, dark theme, stale/empty/error/retry; no page errors.");
+  console.log("PASS: real option candles, position selection, stock override survives refresh, call/put identity, risk boxes, 320/390px, dark theme, stale/empty/error/retry; no page errors.");
 } finally { await browser.close(); }

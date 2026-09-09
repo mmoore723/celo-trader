@@ -4,6 +4,8 @@ export interface OptionChartData {
   entry_price: number | null; entry_time: number | null;
   exit_price: number | null; exit_time: number | null; realized_pnl: number | null;
   stop_price: number | null; target_price: number | null; closed: boolean;
+  candles: { time: number; open: number; high: number; low: number; close: number; volume: number }[];
+  candle_source: "tradier_timesales_1min" | null;
   quotes: { time: number; bid: number; ask: number }[]; truncated: boolean; as_of: number;
 }
 

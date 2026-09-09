@@ -8,6 +8,7 @@ import tempfile
 import types
 import unittest
 from unittest.mock import patch
+from unittest.mock import Mock
 
 from fastapi import FastAPI
 from jose import jwt
@@ -64,7 +65,8 @@ class OptionChartTests(unittest.TestCase):
         self.assertEqual(result["entry_time"], datetime(2026, 9, 4, 14, tzinfo=timezone.utc).timestamp())
         self.assertEqual(result["quotes"], [{"time": 1788530700.0, "bid": 4.1, "ask": 4.2}])
         self.assertEqual(result["option_type"], "put")
-        self.assertNotIn("ohlc", result)
+        self.assertEqual(result["candles"], [])
+        self.assertIsNone(result["candle_source"])
         json.dumps(result, allow_nan=False)
 
     def test_mode_account_missing_file_fail_closed(self):
@@ -140,10 +142,16 @@ class OptionChartTests(unittest.TestCase):
             return SimpleNamespace(status_code=messages[0]["status"], text=body, json=lambda: json.loads(body))
         def get_user(uid):
             return {"user_id": uid, "username": uid, "session_version": 1, "is_admin": False}
+        market = Mock()
+        market.get_option_bars.return_value = [{
+            "t": "2026-09-04T14:05:00Z", "o": 4.0, "h": 4.3,
+            "l": 3.9, "c": 4.2, "v": 41, "vw": 4.13,
+        }]
         with patch("api.middleware.auth.jwt_secret", return_value=SECRET), \
              patch.dict("sys.modules", {"auth.users": types.SimpleNamespace(get_user=get_user)}), \
              patch("config.paths.get_user_data_dir", side_effect=lambda **kw: self.root / get_current_user_id()), \
-             patch("config.get_settings", side_effect=lambda: {"active_broker_account_id": get_current_user_id()+"-account"}):
+             patch("config.get_settings", side_effect=lambda: {"active_broker_account_id": get_current_user_id()+"-account"}), \
+             patch("broker.get_tradier_market_client", return_value=market):
             self.assertEqual(get("/api/trades/1/option-chart").status_code, 401)
             for user in ("alice", "bob", "alice"):
                 token = jwt.encode({"sub": user, "session_version": 1}, SECRET, algorithm=JWT_ALGORITHM)
@@ -153,6 +161,8 @@ class OptionChartTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 200, response.text)
                     self.assertEqual(response.json()["ticker"], user.upper())
                     self.assertEqual(response.json()["mode"], mode)
+                    self.assertEqual(response.json()["candles"][0]["open"], 4.0)
+                    self.assertEqual(response.json()["candle_source"], "tradier_timesales_1min")
             self.assertEqual(get("/api/trades/1/option-chart?mode=wrong").status_code, 422)
             self.assertEqual(get("/api/trades/0/option-chart").status_code, 422)
             self.assertEqual(get("/api/trades/999/option-chart").status_code, 404)
