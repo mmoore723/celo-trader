@@ -26,7 +26,6 @@ from datetime import timedelta
 from trading.state import _now_et, _get_stop_event, get_user_state, set_user_risk
 from config import get_bot_state_path, atomic_write_json
 from trading.loop.audits import (
-    _run_nightly_strategy_audit_once,
     _run_nightly_ticker_qualification_once,
     _run_weekly_strategy_review_once,
 )
@@ -347,7 +346,12 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                         f"🌙 Markets closed — bot resting until 8:00 AM ET "
                         f"({_wake.strftime('%a %b %d')}). No API calls during this window.",
                     )
-                    _run_nightly_strategy_audit_once(alpaca)
+                    # Daily evidence is now built from the account-scoped event
+                    # tape and real trades.  Do not also launch the legacy
+                    # eight-ticker bar replay here: after the research universe
+                    # expanded, that duplicate diagnostic could monopolize a CPU
+                    # core for about an hour after every service restart.  Its
+                    # explicit admin/on-demand route remains available.
                     _run_nightly_ticker_qualification_once()
                     _run_weekly_strategy_review_once(alpaca)
 

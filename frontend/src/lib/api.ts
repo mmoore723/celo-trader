@@ -1093,9 +1093,21 @@ export interface BrokerOrderFlowResponse {
   attempts: BrokerOrderAttempt[];
 }
 
+export interface AdminSystemHealth {
+  disk: {
+    status: "good" | "watch" | "critical";
+    used_percent: number;
+    free_bytes: number;
+    total_bytes: number;
+  };
+}
+
 // ── Bot ────────────────────────────────────────────────────────────────────
 
 export const api = {
+  admin: {
+    systemHealth: () => request<AdminSystemHealth>("/api/admin/system-health"),
+  },
   bot: {
     status:    () => request<BotStatus>("/api/bot/status"),
     start:     () => request<{ok:boolean;message:string}>("/api/bot/start", { method: "POST" }),

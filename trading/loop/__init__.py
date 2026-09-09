@@ -11,7 +11,6 @@ cleanup); no logic changed, only relocated.
 from trading.loop.lifecycle import run_trading_loop, stop_loop, _sleep_until_next_day
 from trading.loop.inner import _run_trading_loop_inner
 from trading.loop.audits import (
-    _run_nightly_strategy_audit_once,
     _run_nightly_ticker_qualification_once,
     _run_weekly_strategy_review_once,
 )
@@ -19,6 +18,6 @@ from trading.loop.audits import (
 __all__ = [
     "run_trading_loop", "stop_loop", "_sleep_until_next_day",
     "_run_trading_loop_inner",
-    "_run_nightly_strategy_audit_once", "_run_nightly_ticker_qualification_once",
+    "_run_nightly_ticker_qualification_once",
     "_run_weekly_strategy_review_once",
 ]

@@ -365,32 +365,22 @@ export function Settings() {
       <StrategyToggleCard
         key={strategy.strategy_id}
         separated={false}
-          label={`${strategy.display_name} · v${strategy.version}`}
+          label={strategy.display_name}
           checked={switchEnabled}
           onChange={(v) => set(strategy.setting_key, v)}
           disabled={strategy.integrity_errors.length > 0}
       >
-        <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--positive)" }}>
-          {strategy.observation_only ? "RESEARCH ONLY · No orders" : `CAN TRADE · ${strategy.tickers.join(", ")}`}
+        <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>
+          <strong style={{ color: strategy.observation_only ? "var(--warning)" : "var(--positive)" }}>
+            {strategy.observation_only ? "Research only" : "Trading on"}
+          </strong>
+          {strategy.observation_only ? " · Every collected ticker · No orders" : ` · ${strategy.tickers.join(", ")}`}
+          {!strategy.observation_only && ` · ${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode}: ${actualState.hasResult ? `PF ${actualState.pfLabel}` : "collecting"} (${actualState.trades} trade${actualState.trades === 1 ? "" : "s"}${actualPnl ? `, ${actualPnl}` : ""})`}
         </p>
-        {!strategy.observation_only && (
-          <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
-            <strong style={{ color: actualState.meetsTarget ? "var(--positive)" : actualState.hasResult ? "var(--warning)" : "var(--ink-muted)" }}>
-              Current v{strategy.version} {actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} {actualAccountMode}{actualState.hasResult ? ` PF ${actualState.pfLabel}` : " · collecting"}
-            </strong>
-            {` · ${actualState.trades} actual trade${actualState.trades === 1 ? "" : "s"}`}
-            {actualPnl ? ` · ${actualPnl}` : ""}
-            {actualState.hasResult ? ` · ${actualEvidenceLabel}` : ""}
-          </p>
-        )}
-        <p className="text-xs pb-2" style={{ color: "var(--ink-muted)" }}>
-          {strategy.observation_only
-            ? "Testing on every ticker the bot collects."
-            : "May place orders on the tickers above. Research keeps testing it on every other collected ticker."}
-        </p>
-        <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
-          <summary className="cursor-pointer">Backtest details</summary>
-          <p className="mt-1"><strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>Backtest PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}{` · Goal ${target.toFixed(1)}`}</p>
+        <details className="text-xs pb-2" style={{ color: "var(--ink-muted)" }}>
+          <summary className="cursor-pointer">See test proof</summary>
+          <p className="mt-1">Version {strategy.version} · <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>Backtest PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` from ${strategy.backtest.trades} results` : ""}{` · Goal ${target.toFixed(1)}`}</p>
+          {!strategy.observation_only && actualState.hasResult && <p className="mt-1">Current paper proof: {actualEvidenceLabel}.</p>}
           <p className="mt-1">{strategy.backtest?.comparison || strategy.evidence}</p>
           {(allActual?.prior_or_unversioned_trades ?? 0) > 0 && (
             <p className="mt-1">
@@ -539,16 +529,19 @@ export function Settings() {
 
       {/* Plain-language controls that directly change order size or stop trading. */}
       <div className="card p-4">
-        <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Money and safety</h3>
-        <p className="text-xs mt-1 mb-3" style={{ color: "var(--ink-muted)" }}>These settings are used by the bot before it sends an order.</p>
+        <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Trade limits</h3><span className="badge badge-green">USED ON EVERY ORDER</span></div>
 
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-4 pt-2">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Trade risk
-              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>{form.risk_auto ? "Automatic changes with the account balance." : "Maximum account percentage risked on one setup."}</span>
+              Position size
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>{form.risk_auto ? "Automatic for the current balance" : `${form.risk_pct}% risk per setup`}</span>
             </label>
-            <input
+            <button type="button" className={`btn ${form.risk_auto ? "btn-primary" : "btn-ghost"}`} onClick={() => set("risk_auto", !form.risk_auto)}>{form.risk_auto ? "Automatic" : "Manual"}</button>
+          </div>
+
+          {!form.risk_auto && <div className="flex items-center justify-between gap-4 pl-3">
+            <label className="text-xs" style={{ color: "var(--ink-muted)" }}>Risk per setup</label><div className="flex items-center gap-1"><input
               type="number"
               step="0.1"
               min="0.1"
@@ -557,22 +550,14 @@ export function Settings() {
               disabled={form.risk_auto}
               onChange={(e) => {
                 set("risk_pct", parseFloat(e.target.value));
-                set("risk_auto", false);
               }}
-              className="input w-24"
-            />
-          </div>
-
-          <Toggle
-            label="Let the bot size trades from the account balance"
-            checked={form.risk_auto ?? true}
-            onChange={(v) => set("risk_auto", v)}
-          />
+              className="input w-20"
+            /><span className="text-sm">%</span></div>
+          </div>}
 
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Open trades at once
-              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>The bot will not open more positions than this.</span>
+              Maximum open trades
             </label>
             <input
               type="number"
@@ -585,15 +570,15 @@ export function Settings() {
           </div>
 
           <div className="flex items-center justify-between gap-4">
-            <label className="text-sm" style={{ color: "var(--ink)" }}>Largest contract the bot may buy<span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>Percentage of the account balance.</span></label>
+            <label className="text-sm" style={{ color: "var(--ink)" }}>Maximum contract cost<span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>Percent of account balance</span></label>
             <div className="flex items-center gap-1"><input type="number" step="1" min="5" max="100" value={form.max_position_dollars_pct ?? 15} onChange={(e) => set("max_position_dollars_pct", parseFloat(e.target.value))} className="input w-20" /><span className="text-sm">%</span></div>
           </div>
           <div className="flex items-center justify-between gap-4">
-            <label className="text-sm" style={{ color: "var(--ink)" }}>Stop opening trades after a daily loss<span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>The bot pauses new entries for the rest of the trading day.</span></label>
+            <label className="text-sm" style={{ color: "var(--ink)" }}>Daily loss stop<span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>Pauses new entries for the day</span></label>
             <div className="flex items-center gap-1"><input type="number" step="1" min="3" max="30" value={form.daily_loss_hard_cap_pct ?? 10} onChange={(e) => set("daily_loss_hard_cap_pct", parseFloat(e.target.value))} className="input w-20" /><span className="text-sm">%</span></div>
           </div>
           <details className="pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-            <summary className="text-xs cursor-pointer font-medium">More money settings</summary>
+            <summary className="text-xs cursor-pointer font-medium">More trade limits</summary>
             <div className="mt-3 flex flex-col gap-3">
               <div className="flex items-center justify-between gap-4"><label className="text-sm">Minimum reward compared with risk<span className="block text-xs" style={{ color: "var(--ink-muted)" }}>Skips a setup when its planned reward is too small.</span></label><select className="select w-40" value={form.rr_ratio_mode} onChange={(e) => set("rr_ratio_mode", e.target.value)}><option value="auto">Automatic</option><option value="small_account">1.2 to 1</option><option value="professional">1.6 to 1</option></select></div>
               <Toggle label="Use profit to increase future trade size" checked={form.growth_mode} onChange={(v) => set("growth_mode", v)} />
@@ -627,11 +612,11 @@ export function Settings() {
 
       {/* Detailed entry/exit behavior stays available without overwhelming the main page. */}
       <details className="card p-4">
-        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>How entries and exits work</summary>
-        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Open this only when you want to change how a setup qualifies or how a position closes.</p>
+        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>Entry and exit controls</summary>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Advanced controls. Current values stay active while this is closed.</p>
         <div className="flex flex-col gap-5 mt-4">
         <section className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Contract and safety limits</h3>
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Contract filters</h3>
         {form.simplified_exit_mode && (
           <p className="text-xs mb-3" style={{ color: "var(--warning)" }}>
             Simplified Exit is active: positions use a hard stop, underlying Chandelier exit, and time cap.
@@ -775,7 +760,8 @@ export function Settings() {
 
       {/* Watchlist */}
       <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Watchlist</h3>
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Always include</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>The scanner checks these tickers even when they are not in today's top results.</p>
         <textarea
           className="input w-full font-mono text-sm"
           rows={3}
@@ -786,9 +772,7 @@ export function Settings() {
           }
           placeholder="SPY, QQQ, NVDA…"
         />
-        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>
-          Comma-separated tickers. Scanner may override this during market hours.
-        </p>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Separate tickers with commas.</p>
       </div>
 
       {/* API Credentials — two independent panels, see the comment above
@@ -805,12 +789,10 @@ export function Settings() {
       </div>
       <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
       {/* Strategies */}
-      <section>
-        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Can place orders</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          On means the strategy may place {actualAccountMode} orders on the tickers listed under “Trades.” Research continues on all other collected tickers.
-        </p>
-        <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}</div>
+      <section className="card p-4">
+        <div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Trading strategies</h3><span className="badge badge-green">CAN PLACE {actualAccountMode.toUpperCase()} ORDERS</span></div>
+        <p className="text-xs mt-1 mb-2" style={{ color: "var(--ink-muted)" }}>Each row shows its approved tickers. Research still tests every other collected ticker.</p>
+        <div>{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}</div>
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
           New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
         </div>
@@ -828,12 +810,10 @@ export function Settings() {
         )}
       </section>
 
-      <section>
-        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research only</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          On means keep testing. These strategies cannot place an order.
-        </p>
-        <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
+      <section className="card p-4">
+        <div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research strategies</h3><span className="badge badge-blue">NO ORDERS</span></div>
+        <p className="text-xs mt-1 mb-2" style={{ color: "var(--ink-muted)" }}>On means keep testing it on every collected ticker.</p>
+        <div>{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
         <TestedStrategies
           researchIds={form.research_strategy_ids ?? []}
           onResearchIdsChange={ids => set("research_strategy_ids", ids)}

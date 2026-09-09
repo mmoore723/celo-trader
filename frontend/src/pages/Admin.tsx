@@ -3,7 +3,7 @@
  */
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { UserPlus, Link2, Trash2, RefreshCw, KeyRound, AlertTriangle, CheckCircle2, BrainCircuit } from "lucide-react";
+import { UserPlus, Link2, Trash2, RefreshCw, KeyRound, AlertTriangle, CheckCircle2, BrainCircuit, HardDrive } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { PasswordChecklist, isPasswordValid } from "../components/PasswordChecklist";
 import { api } from "../lib/api";
@@ -37,6 +37,12 @@ export function Admin() {
     queryKey: ["admin-learning-ranker-status"],
     queryFn: api.learning.rankerStatus,
     refetchInterval: 60_000,
+    retry: false,
+  });
+  const { data: systemHealth, isError: systemHealthError } = useQuery({
+    queryKey: ["admin-system-health"],
+    queryFn: api.admin.systemHealth,
+    refetchInterval: 5 * 60_000,
     retry: false,
   });
   const { data: testedStrategies, isError: testedStrategiesError } = useQuery({
@@ -257,6 +263,19 @@ export function Admin() {
             <details className="mt-1"><summary className="text-[10px] cursor-pointer" style={{ color: "var(--ink-faint)" }}>{remaining.toLocaleString()} still needed · What counts?</summary><p className="text-xs mt-2" style={{ color: "var(--ink-muted)" }}>Only complete, independent setup outcomes count—not total trades or repeated scanner checks. The model remains off and cannot approve, reject, size, or place trades.</p></details>
           </>;
         })() : <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading ML readiness…</p>}
+      </section>
+
+      <section className="card px-3 py-2" aria-label="Server storage">
+        <div className="flex items-center gap-2 text-xs">
+          <HardDrive size={15} style={{ color: systemHealth?.disk.status === "critical" ? "var(--negative)" : systemHealth?.disk.status === "watch" ? "var(--warning)" : "var(--positive)" }} />
+          <strong style={{ color: "var(--ink)" }}>Server storage</strong>
+          {systemHealthError ? <span style={{ color: "var(--negative)" }}>unavailable</span> : systemHealth ? <>
+            <span style={{ color: "var(--ink-muted)" }}>{systemHealth.disk.used_percent}% used</span>
+            <span className="ml-auto" style={{ color: systemHealth.disk.status === "good" ? "var(--positive)" : systemHealth.disk.status === "watch" ? "var(--warning)" : "var(--negative)" }}>
+              {systemHealth.disk.status === "good" ? "Good" : systemHealth.disk.status === "watch" ? "Getting full" : "Action needed"}
+            </span>
+          </> : <span style={{ color: "var(--ink-muted)" }}>checking…</span>}
+        </div>
       </section>
 
       <details className="card p-4">

@@ -18,8 +18,10 @@ EnvironmentFile=/opt/celo_trader/.env
 ExecStart=/opt/celo_trader/venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8501 --workers 1 --timeout-graceful-shutdown 20
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/celo_trader/log/dashboard.log
-StandardError=append:/opt/celo_trader/log/dashboard.log
+# Keep service output in journald, which already has bounded retention.  The
+# previous append-only file grew past 600 MB and was never rotated.
+StandardOutput=journal
+StandardError=journal
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

@@ -63,10 +63,10 @@ test("working research strategies use the same accessible toggle-card pattern", 
     exit_minutes: 90, enabled: true, research_scope: "all_collected_tickers",
   }];
   const html = render({...fixture, runtime_research: runtime}, [runtime[0].strategy_id]);
-  assert.match(html, /Opening Momentum · vresearch\.1/);
+  assert.match(html, /Opening Momentum/);
   assert.match(html, /role="switch"/);
   assert.match(html, /aria-checked="true"/);
-  assert.match(html, /RESEARCH ONLY · No orders/);
-  assert.match(html, /Testing on every ticker the bot collects/);
+  assert.match(html, /Research only · Testing every collected ticker/);
+  assert.doesNotMatch(html, /research\.1/);
   assert.doesNotMatch(html, /type="checkbox"/);
 });

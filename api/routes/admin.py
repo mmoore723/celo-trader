@@ -6,9 +6,12 @@ The frontend's /admin page calls these to create/invite/delete users.
 """
 from __future__ import annotations
 import logging
+import shutil
+from pathlib import Path
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel, Field
+from config.paths import BASE_DIR
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -41,6 +44,19 @@ class MaintenanceRequest(BaseModel):
     collection_only: bool = False
 
 
+def _disk_health(path: str | Path = BASE_DIR) -> dict:
+    """Cheap filesystem-capacity check; never walks or changes user data."""
+    total, used, free = shutil.disk_usage(path)
+    used_percent = round((used / total * 100.0) if total else 0.0, 1)
+    status = "critical" if used_percent >= 90 else "watch" if used_percent >= 80 else "good"
+    return {
+        "status": status,
+        "used_percent": used_percent,
+        "free_bytes": free,
+        "total_bytes": total,
+    }
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/users")
@@ -48,6 +64,13 @@ async def list_users(request: Request):
     _require_admin(request)
     from auth.users import list_users as _list
     return {"users": _list()}
+
+
+@router.get("/system-health")
+async def system_health(request: Request):
+    """Small admin status check with no filenames, credentials, or user data."""
+    _require_admin(request)
+    return {"disk": _disk_health()}
 
 
 @router.post("/users")
