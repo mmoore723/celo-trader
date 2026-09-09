@@ -40,6 +40,7 @@ def mount_frontend(app: FastAPI, root: Path) -> None:
         # requests (favicon.svg, logo.png, robots.txt, etc.) and return index.html.
         # List every static file in dist/ root that the browser might request.
         _STATIC_ROOT_FILES = ["favicon.svg", "favicon.ico", "favicon.png",
+                              "celo-favicon-20260909.svg",
                               "logo.png", "logo.svg", "mascot.png",
                               "robots.txt", "site.webmanifest"]
         for _fname in _STATIC_ROOT_FILES:
