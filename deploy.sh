@@ -31,6 +31,10 @@ PRODUCTION_PATHS=(
   broker
   config
   database
+  deploy/application_log_retention.py
+  deploy/celo-dashboard-logrotate
+  deploy/celo-journald.conf
+  deploy/release_retention.py
   docs/adr/0004-atomic-tradier-broker-cutover.md
   frontend
   logger_config

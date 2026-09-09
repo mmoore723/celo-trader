@@ -1,0 +1,10 @@
+/opt/celo_trader/log/dashboard.log {
+    daily
+    maxsize 25M
+    rotate 4
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su ec2-user ec2-user
+}
