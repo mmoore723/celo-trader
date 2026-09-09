@@ -4,7 +4,7 @@ logger_config/__init__.py — Production-ready structured logging for CeloTrader
 Features:
   - JSON-formatted log lines (every field parseable by Splunk / any log aggregator)
   - Mandatory fields on every entry: timestamp, level, module_name, line_number
-  - RotatingFileHandler: 10 MB max, 5 backup files
+  - Daily file rotation: 14 compressed troubleshooting days
   - Secret redaction: ALPACA_SECRET_KEY and TRADIER_API_KEY values are masked
   - Decoupled from trade execution: a logging failure never raises to the caller
   - TradeContext adapter: bind ticker/contract/session_id once, auto-included thereafter

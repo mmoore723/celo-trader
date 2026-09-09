@@ -184,6 +184,10 @@ echo "==> Installing the reviewed systemd unit..."
 ssh -i "$EC2_KEY" "$EC2_HOST" \
   "sudo install -m 0644 $EC2_DIR/celo-dashboard.service /etc/systemd/system/celo-dashboard.service && sudo systemctl daemon-reload"
 
+echo "==> Installing bounded journal and legacy dashboard-log retention..."
+ssh -i "$EC2_KEY" "$EC2_HOST" \
+  "sudo install -D -m 0644 $EC2_DIR/deploy/celo-journald.conf /etc/systemd/journald.conf.d/celo-trader-retention.conf && sudo install -m 0644 $EC2_DIR/deploy/celo-dashboard-logrotate /etc/logrotate.d/celo-trader"
+
 echo "==> Verifying required production secrets..."
 ssh -i "$EC2_KEY" "$EC2_HOST" \
   "cd $EC2_DIR && test -f .env && test \$(grep -E '^JWT_SECRET=.{32,}$' .env | wc -l) -eq 1 && test \$(grep -E '^ENCRYPTION_KEY=.+$' .env | wc -l) -eq 1"
@@ -206,6 +210,10 @@ if ! ssh -i "$EC2_KEY" "$EC2_HOST" "curl --fail --silent --show-error --retry 12
   fi
   exit 1
 fi
+
+echo "==> Applying post-health storage retention..."
+ssh -i "$EC2_KEY" "$EC2_HOST" \
+  "cd $EC2_DIR && $EC2_DIR/venv/bin/python deploy/release_retention.py --root /var/tmp --keep 2 && $EC2_DIR/venv/bin/python deploy/application_log_retention.py --root $EC2_DIR/log --retention-days 14 && sudo systemctl restart systemd-journald && sudo journalctl --vacuum-size=512M && sudo /usr/sbin/logrotate --force /etc/logrotate.d/celo-trader"
 
 echo ""
 echo "✓ Done. Dashboard: https://celotrader.com"

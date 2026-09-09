@@ -18,7 +18,7 @@ _configured = False   # guard against double-configuration
 def setup_logging(level: int = LOG_LEVEL) -> logging.Logger:
     """
     Configure the root 'celo_trader' logger with:
-      - JSON RotatingFileHandler  → bot.log  (10 MB × 5 backups)
+      - JSON daily file handler → bot.log (14 compressed troubleshooting days)
       - Plain-text StreamHandler  → stdout   (dev-friendly)
 
     Call exactly once at application startup.  Safe to call multiple times
@@ -49,7 +49,8 @@ def setup_logging(level: int = LOG_LEVEL) -> logging.Logger:
             "event": "logging_initialised",
             "log_file": str(LOG_FILE),
             "rotation": "midnight",
-            "backup_count": 30,
+            "backup_count": 14,
+            "compression": "gzip",
             "level": logging.getLevelName(level),
         },
     )

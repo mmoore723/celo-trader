@@ -5,8 +5,11 @@ Split out of the old single logger_config.py (2026-08-01, file-size
 cleanup); no logic changed, only relocated.
 """
 
+import gzip
 import logging
 import logging.handlers
+import shutil
+from pathlib import Path
 
 from config import BASE_DIR
 
@@ -20,18 +23,27 @@ LOG_FILE = LOG_DIR / "bot.log"
 
 
 def _make_rotating_handler() -> logging.handlers.TimedRotatingFileHandler:
-    """Rotate at midnight, keep 30 days — enough to debug strategy regressions."""
+    """Rotate at midnight and keep 14 compressed troubleshooting days."""
     handler = logging.handlers.TimedRotatingFileHandler(
         filename    = str(LOG_FILE),
         when        = "midnight",   # new file each trading day
-        backupCount = 30,           # 30 days of history on disk
+        backupCount = 14,
         encoding    = "utf-8",
         utc         = False,        # rotate in server local time
     )
     # Suffix: bot.log.2026-07-09
     handler.suffix = "%Y-%m-%d"
+    handler.namer = lambda name: f"{name}.gz"
+    handler.rotator = _gzip_rotated_log
     handler.setFormatter(_JsonFormatter())
     return handler
+
+
+def _gzip_rotated_log(source: str, destination: str) -> None:
+    """Compress a completed daily log before removing its plain-text copy."""
+    with open(source, "rb") as source_file, gzip.open(destination, "wb", compresslevel=6) as archive:
+        shutil.copyfileobj(source_file, archive)
+    Path(source).unlink()
 
 
 def _make_console_handler() -> logging.StreamHandler:
