@@ -212,8 +212,13 @@ export function TradeChart({
                   {unrealPct != null && <span style={{ color: pnlColor, opacity: 0.75, fontSize: 9 }}>({unrealPct >= 0 ? "+" : ""}{unrealPct.toFixed(1)}%)</span>}
                 </div>
               )}
-              {cardHovered && pl.stop && <div style={{ fontSize: 10, color: palette.stop, marginTop: 2 }}>Stop {pl.stop.toFixed(2)}</div>}
-              {cardHovered && pl.target && <div style={{ fontSize: 10, color: palette.target, marginTop: 2 }}>Target {pl.target.toFixed(2)}</div>}
+              {(cardHovered || positionLevelsOnCandleScale) && (
+                <div style={{ display: "flex", gap: 8, marginTop: 4, padding: "3px 7px", borderRadius: 4, background: theme === "dark" ? "rgba(19,23,34,0.9)" : "rgba(255,255,255,0.9)", border: `1px solid ${palette.border}` }}>
+                  <span style={{ color: palette.entry }}>Entry ${pl.entry.toFixed(2)}</span>
+                  {pl.target && <span style={{ color: palette.target }}>Target ${pl.target.toFixed(2)}</span>}
+                  {pl.stop && <span style={{ color: palette.stop }}>Stop ${pl.stop.toFixed(2)}</span>}
+                </div>
+              )}
             </div>
           );
         })()}

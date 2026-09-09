@@ -230,19 +230,30 @@ export class OverlayManager {
         // referenceAnchor, which already follows the candle scale.
         anchor.setData([{ time: firstT, value: entry }, { time: lastT, value: entry }]);
       } else {
-        if (pl.target != null && pl.target > entry) zoneSpecs.push({
+        // A regular candle chart must be scaled by the traded prices, not by
+        // a far-away reference target or stop. Clamp the colored position
+        // zones to the actual visible candle range. The full target/stop
+        // values remain in the position HUD; an in-range level still gets a
+        // native chart line below.
+        const candleLow = Math.min(...input.bars.map((bar) => bar.low));
+        const candleHigh = Math.max(...input.bars.map((bar) => bar.high));
+        if (pl.target != null && pl.target > entry && candleHigh > entry) zoneSpecs.push({
           id: "position_reward", fromTime: firstT, toTime: lastT,
-          low: entry, high: pl.target, color: P.target + "18",
+          low: entry, high: Math.min(pl.target, candleHigh), color: P.target + "18",
         });
-        if (pl.stop != null && pl.stop > 0 && pl.stop < entry) zoneSpecs.push({
+        if (pl.stop != null && pl.stop > 0 && pl.stop < entry && candleLow < entry) zoneSpecs.push({
           id: "position_risk", fromTime: firstT, toTime: lastT,
-          low: pl.stop, high: entry, color: P.stop + "18",
+          low: Math.max(pl.stop, candleLow), high: entry, color: P.stop + "18",
         });
       }
       this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price: entry, color: P.entry, lineWidth: 2, title: `Entry $${entry.toFixed(2)}` }) });
       for (const d of defs) {
         const price = pl[d.key];
-        if (price != null && price > 0) this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price, color: d.color, lineWidth: 1, lineStyle: d.key === "trail" ? LineStyle.Dashed : LineStyle.Solid, title: `${d.label} $${price.toFixed(2)}` }) });
+        const inVisibleCandleRange = !input.positionLevelsOnCandleScale
+          || (price != null
+            && price >= Math.min(...input.bars.map((bar) => bar.low))
+            && price <= Math.max(...input.bars.map((bar) => bar.high)));
+        if (price != null && price > 0 && inVisibleCandleRange) this.priceLines.push({ series: anchor, line: anchor.createPriceLine({ price, color: d.color, lineWidth: 1, lineStyle: d.key === "trail" ? LineStyle.Dashed : LineStyle.Solid, title: `${d.label} $${price.toFixed(2)}` }) });
       }
     } else if (this.tradeLevelAnchor) {
       this.tradeLevelAnchor.setData([]);

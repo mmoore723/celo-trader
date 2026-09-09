@@ -58,5 +58,7 @@ test("position view uses the standard candle chart with a non-distorting positio
   assert.match(tradeChart, /positionLevelsOnCandleScale/);
   assert.match(overlays, /position_reward/);
   assert.match(overlays, /position_risk/);
+  assert.match(overlays, /Math\.min\(pl\.target, candleHigh\)/);
+  assert.match(overlays, /inVisibleCandleRange/);
   assert.match(overlays, /referenceAnchor/);
 });
