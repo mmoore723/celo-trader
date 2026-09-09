@@ -389,7 +389,7 @@ export function Settings() {
         </p>}
         <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
           <summary className="cursor-pointer">Test dates and proof</summary>
-          <p className="mt-1">Goal PF {target.toFixed(1)} · {strategy.observation_only ? "Tests every collected ticker; cannot place orders." : `${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode} orders only on ${strategy.tickers.join(", ")}.`}</p>
+          <p className="mt-1">Goal PF {target.toFixed(1)}{!strategy.observation_only ? ` · ${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode} orders only on ${strategy.tickers.join(", ")}.` : ""}</p>
           <p className="mt-1">{strategy.backtest?.comparison || strategy.evidence}</p>
           {currentPairs.some(pair => pair.previous_version_rows > 0) && <p className="mt-1">Earlier-version setups remain saved but are not mixed into the current PF.</p>}
         </details>
@@ -822,7 +822,7 @@ export function Settings() {
       <section>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research only</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} A match can be recommended after at least {strategyResearch?.recommendation_policy.minimum_market_days ?? 20} market days and {strategyResearch?.recommendation_policy.minimum_result_days ?? 8} days with option results, if its PF and safety checks pass.
+          On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} A match can be recommended after at least {strategyResearch?.recommendation_policy.minimum_market_days ?? 20} market days for that ticker and {strategyResearch?.recommendation_policy.minimum_result_days ?? 8} days with option results, if its PF and safety checks pass.
         </p>
         <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
         <TestedStrategies

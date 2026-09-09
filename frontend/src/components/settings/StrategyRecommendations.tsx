@@ -11,7 +11,7 @@ export function StrategyRecommendations({
   return <section className="card p-4">
     <h3 className="text-sm font-semibold">New strategy matches</h3>
     <p className="text-xs mt-1 mb-3" style={{ color: "var(--ink-muted)" }}>
-      A passing match appears after at least {minimumMarketDays} market days and {minimumResultDays} days with option results. You choose whether the bot may trade it.
+      A passing match appears after at least {minimumMarketDays} market days for that ticker and {minimumResultDays} days with option results. You choose whether the bot may trade it.
     </p>
     {!recommendations.length ? <div className="rounded-lg p-3 text-xs" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)", border: "1px solid var(--border)" }}>
       No new matches need your answer.
