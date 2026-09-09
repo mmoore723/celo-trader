@@ -10,6 +10,7 @@ import { useBotStore } from "../store/bot";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { preferredDailyBriefTicker } from "../lib/dailyBriefSelection.js";
+import { premarketDayOutlook } from "../lib/premarketOutlook.js";
 import { DailyEvidencePanel } from "../components/DailyEvidencePanel";
 import type { DailyEvidenceScorecard } from "../lib/api";
 import { isTradingDayFinal, newYorkDateKey } from "../lib/marketSession.js";
@@ -441,6 +442,7 @@ export function DailyBrief() {
     () => new Map<string, PremarketTicker>(premarket.map(p => [p.ticker, p])),
     [premarket],
   );
+  const dayOutlook = useMemo(() => premarketDayOutlook(premarket), [premarket]);
 
   // Only show tickers with a complete pre-market report. Scanner-only names
   // are not useful here because they have no plan, levels, or timeframe read.
@@ -543,18 +545,47 @@ export function DailyBrief() {
       {briefTab === "premarket" && (
         <>
           <div className="card overflow-hidden">
-            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "var(--border)" }}>
+            <div className="px-4 py-3 border-b flex items-start justify-between gap-3" style={{ borderColor: "var(--border)" }}>
               <div>
                 <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>🏟️ Daily Market Report</h3>
                 <p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
                   Best matches first, from 100 down. The score shows fit—not a promised win.
                 </p>
+                <details className="mt-1">
+                  <summary className="text-[10px] cursor-pointer" style={{ color: "var(--accent)" }}>How the score works</summary>
+                  <p className="text-[10px] mt-1 max-w-xl leading-relaxed" style={{ color: "var(--ink-faint)" }}>
+                    Each strategy starts with 30–48 points. It gets 7 points for every agreeing minute, hour, day, week, or month view; up to 15 for volume; and extra points when its own rule is present, such as NR7, an inside day, or KER above 0.60. The score stops at 100. It measures setup fit—not win probability.
+                  </p>
+                </details>
               </div>
               {pmLoading && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "var(--muted)", color: "var(--ink-faint)" }}>
                   Loading…
                 </span>
               )}
+            </div>
+
+            <div
+              className="mx-3 mt-3 rounded-xl border px-3 py-2.5 flex items-start gap-3"
+              style={{
+                borderColor: dayOutlook.level === "green" ? "var(--positive)" : dayOutlook.level === "red" ? "var(--negative)" : dayOutlook.level === "yellow" ? "var(--warning)" : "var(--border)",
+                background: dayOutlook.level === "green" ? "var(--positive-bg)" : dayOutlook.level === "red" ? "var(--negative-bg)" : "var(--muted)",
+              }}
+            >
+              <span className="text-2xl" aria-hidden="true">{dayOutlook.emoji}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-xs font-black tracking-wide" style={{ color: "var(--ink)" }}>TODAY'S TRADE WEATHER</span>
+                  <span className="text-[10px] font-bold" style={{ color: dayOutlook.level === "green" ? "var(--positive)" : dayOutlook.level === "red" ? "var(--negative)" : dayOutlook.level === "yellow" ? "var(--warning)" : "var(--ink-muted)" }}>
+                    {dayOutlook.label}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold mt-0.5" style={{ color: "var(--ink)" }}>{dayOutlook.summary}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: "var(--ink-muted)" }}>{dayOutlook.detail}</p>
+                <p className="text-[10px] mt-1" style={{ color: "var(--ink-faint)" }}>
+                  Based only on {dayOutlook.tradableCount} ticker{dayOutlook.tradableCount === 1 ? "" : "s"} the bot may trade. This rates trade conditions—not market direction.
+                </p>
+              </div>
             </div>
 
             {allTickers.length === 0 ? (
