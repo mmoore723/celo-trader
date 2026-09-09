@@ -374,17 +374,19 @@ export function Settings() {
           onChange={(v) => set(strategy.setting_key, v)}
           disabled={strategy.integrity_errors.length > 0}
       >
-        <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--positive)" }}>
-          {strategy.observation_only ? "RESEARCH ONLY · No orders" : `CAN TRADE · ${strategy.tickers.join(", ")}`}
-        </p>
+        {!strategy.observation_only && <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: "var(--positive)" }}>
+          CAN TRADE · {strategy.tickers.join(", ")}
+        </p>}
         <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
           <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Recorded test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}
         </p>
-        {!strategy.observation_only && (
+        {!strategy.observation_only ? (
           <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
             <strong>{strategy.backtest?.forward_evidence_start ? `Results since ${evidenceDate(strategy.backtest.forward_evidence_start)}` : `Current v${strategy.version} results`}:</strong> {pairProof}
           </p>
-        )}
+        ) : <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
+          <strong>Current PF {matrixStrategy?.current_evidence.profit_factor === "infinite" ? "∞" : typeof matrixStrategy?.current_evidence.profit_factor === "number" ? matrixStrategy.current_evidence.profit_factor.toFixed(2) : "—"}</strong> · {matrixStrategy?.current_evidence.option_results ?? 0} option results across all collected tickers
+        </p>}
         <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
           <summary className="cursor-pointer">Test dates and proof</summary>
           <p className="mt-1">Goal PF {target.toFixed(1)} · {strategy.observation_only ? "Tests every collected ticker; cannot place orders." : `${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode} orders only on ${strategy.tickers.join(", ")}.`}</p>
@@ -445,6 +447,8 @@ export function Settings() {
       <StrategyRecommendations
         recommendations={strategyRecommendations?.recommendations ?? []}
         onDecision={decideRecommendation}
+        minimumMarketDays={strategyResearch?.recommendation_policy.minimum_market_days}
+        minimumResultDays={strategyResearch?.recommendation_policy.minimum_result_days}
       />
       {/* Trading Mode */}
       <div className="card p-4">
@@ -818,12 +822,13 @@ export function Settings() {
       <section>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research only</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          On means keep testing. These strategies cannot place an order.
+          On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} A match can be recommended after at least {strategyResearch?.recommendation_policy.minimum_market_days ?? 20} market days and {strategyResearch?.recommendation_policy.minimum_result_days ?? 8} days with option results, if its PF and safety checks pass.
         </p>
         <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
         <TestedStrategies
           researchIds={form.research_strategy_ids ?? []}
           onResearchIdsChange={ids => set("research_strategy_ids", ids)}
+          researchMatrix={strategyResearch}
         />
       </section>
       </div>

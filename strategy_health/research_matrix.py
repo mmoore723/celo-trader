@@ -11,6 +11,7 @@ from config.strategy_catalog import (
     reviewed_strategy_ids,
 )
 from strategy_health.candidate_evidence import candidate_signal_is_timely
+from strategy_health.ticker_qualification import DEFAULT_POLICY
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
 )
@@ -418,6 +419,7 @@ def build_research_matrix(days: int = 90) -> dict:
     for row in rows:
         evidence_days[str(row["ticker"]).upper()].add(str(row["observed_at"])[:10])
     sessions = {ticker: len(dates) for ticker, dates in evidence_days.items()}
+    all_evidence_dates = sorted({day for dates in evidence_days.values() for day in dates})
     tickers = set(sessions) | {str(value).upper() for value in settings.get("watchlist", [])}
     tickers |= {str(row["ticker"]).upper() for row in rows}
     catalog_ids = {
@@ -457,6 +459,7 @@ def build_research_matrix(days: int = 90) -> dict:
             if rule else (runtime.exit_minutes if runtime else 90)
         )
         pairs = []
+        strategy_current_results: list[tuple[str, float]] = []
         for ticker in sorted(tickers):
             trading_enabled = bool(
                 rule and not rule.observation_only
@@ -500,6 +503,7 @@ def build_research_matrix(days: int = 90) -> dict:
                     "net_one_contract_pnl": 0.0,
                     "mistimed_quotes_ignored": 0,
                 }
+            strategy_current_results.extend(current_results)
             factor = current_summary["profit_factor"]
             option_result_days = len({day for day, _ in current_results})
             older_factor, newer_factor = _chronological_factors(current_results)
@@ -567,6 +571,14 @@ def build_research_matrix(days: int = 90) -> dict:
             "version": rule.version if rule else runtime.version,
             "backtest": _backtest_display(rule) if rule else {},
             "research_enabled": True,
+            "current_evidence": {
+                "profit_factor": _factor([profit for _, profit in strategy_current_results]),
+                "option_results": len(strategy_current_results),
+                "option_result_days": len({day for day, _ in strategy_current_results}),
+                "net_one_contract_pnl": round(
+                    sum(profit for _, profit in strategy_current_results), 2,
+                ),
+            },
             "trading_tickers": sorted(rule.tickers) if rule and not rule.observation_only else [],
             "exit_minutes": exit_minutes,
             "pairs": sorted(pairs, key=lambda pair: (priority[pair["status"]], pair["ticker"])),
@@ -574,6 +586,15 @@ def build_research_matrix(days: int = 90) -> dict:
     return {
         "days": days,
         "target_profit_factor": 1.5,
+        "collection_started_on": all_evidence_dates[0] if all_evidence_dates else None,
+        "collected_market_days": len(all_evidence_dates),
+        "recommendation_policy": {
+            "minimum_market_days": DEFAULT_POLICY.minimum_observed_sessions,
+            "minimum_result_days": (
+                DEFAULT_POLICY.minimum_inference_days + DEFAULT_POLICY.minimum_holdout_days
+            ),
+            "target_profit_factor": DEFAULT_POLICY.target_profit_factor,
+        },
         "cost_model": f"saved ask to bid within {QUOTE_WINDOW_GRACE_MINUTES} minutes of the named exit, ${OPTION_SLIPPAGE_PER_SIDE:.2f} adverse slippage per side, ${COMMISSION_PER_CONTRACT:.2f} fee per side",
         "account_scoped": bool(account_id),
         "ticker_count": len(tickers),

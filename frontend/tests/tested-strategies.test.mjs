@@ -66,7 +66,9 @@ test("working research strategies use the same accessible toggle-card pattern", 
   assert.match(html, /Opening Momentum/);
   assert.match(html, /role="switch"/);
   assert.match(html, /aria-checked="true"/);
-  assert.match(html, /Research only · Testing every collected ticker/);
+  assert.match(html, /Current PF/);
+  assert.match(html, /0 option results/);
+  assert.doesNotMatch(html, /Research only · Testing every collected ticker/);
   assert.doesNotMatch(html, /research\.1/);
   assert.doesNotMatch(html, /type="checkbox"/);
 });

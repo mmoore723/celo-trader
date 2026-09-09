@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../../lib/api";
+import { api, type StrategyResearchMatrix } from "../../lib/api";
 import { StrategyToggleCard } from "./StrategyToggleCard";
 
 export function TestedStrategies({
-  researchIds, onResearchIdsChange,
+  researchIds, onResearchIdsChange, researchMatrix,
 }: {
   researchIds: string[];
   onResearchIdsChange: (ids: string[]) => void;
+  researchMatrix?: StrategyResearchMatrix;
 }) {
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["tested-strategies", researchIds], queryFn: api.settings.testedStrategies,
@@ -23,9 +24,12 @@ export function TestedStrategies({
     onResearchIdsChange([...next].sort());
   };
 
-  return <div className="mt-1" id="tested-strategy-library">
+  const factorText = (value: number | "infinite" | null | undefined) => value === "infinite" ? "∞" : typeof value === "number" ? value.toFixed(2) : "—";
+
+  return <div className="mt-1 grid gap-3 lg:grid-cols-2" id="tested-strategy-library">
     {runtime.map((strategy) => {
         const enabled = researchIds.includes(strategy.strategy_id);
+        const evidence = researchMatrix?.strategies.find(item => item.strategy_id === strategy.strategy_id)?.current_evidence;
         return <StrategyToggleCard
           key={strategy.strategy_id}
           separated={false}
@@ -33,9 +37,9 @@ export function TestedStrategies({
           checked={enabled}
           onChange={value => toggle(strategy.strategy_id, value)}
         >
-          <p className="text-xs pb-2 -mt-1" style={{ color: enabled ? "var(--warning)" : "var(--ink-muted)" }}>
-            {enabled ? "Research only · Testing every collected ticker" : "Research paused"}
-          </p>
+          {enabled ? <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>
+            Current PF {factorText(evidence?.profit_factor)} · {evidence?.option_results ?? 0} option results
+          </p> : <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>Paused</p>}
         </StrategyToggleCard>;
       })}
   </div>;

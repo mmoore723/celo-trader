@@ -1,15 +1,17 @@
 import type { StrategyTickerRecommendation } from "../../lib/api";
 
 export function StrategyRecommendations({
-  recommendations, onDecision,
+  recommendations, onDecision, minimumMarketDays = 20, minimumResultDays = 8,
 }: {
   recommendations: StrategyTickerRecommendation[];
   onDecision: (strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") => void;
+  minimumMarketDays?: number;
+  minimumResultDays?: number;
 }) {
   return <section className="card p-4">
     <h3 className="text-sm font-semibold">New strategy matches</h3>
     <p className="text-xs mt-1 mb-3" style={{ color: "var(--ink-muted)" }}>
-      When research finds a strategy that works on a new ticker, choose whether the bot may trade it.
+      A passing match appears after at least {minimumMarketDays} market days and {minimumResultDays} days with option results. You choose whether the bot may trade it.
     </p>
     {!recommendations.length ? <div className="rounded-lg p-3 text-xs" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)", border: "1px solid var(--border)" }}>
       No new matches need your answer.

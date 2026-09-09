@@ -153,6 +153,13 @@ export interface StrategyTickerResearchPair {
 export interface StrategyResearchMatrix {
   days: number;
   target_profit_factor: number;
+  collection_started_on: string | null;
+  collected_market_days: number;
+  recommendation_policy: {
+    minimum_market_days: number;
+    minimum_result_days: number;
+    target_profit_factor: number;
+  };
   cost_model: string;
   account_scoped: boolean;
   ticker_count: number;
@@ -169,6 +176,12 @@ export interface StrategyResearchMatrix {
       meets_target?: boolean;
       historical_test_through?: string;
       forward_evidence_start?: string;
+    };
+    current_evidence: {
+      profit_factor: number | "infinite" | null;
+      option_results: number;
+      option_result_days: number;
+      net_one_contract_pnl: number;
     };
     research_enabled: boolean;
     trading_tickers: string[];
