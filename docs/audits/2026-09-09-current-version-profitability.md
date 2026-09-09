@@ -14,11 +14,11 @@ candidate.
 | --- | ---: | ---: | --- |
 | SPY Afternoon Fair Value Gap | 2.1.0 | 0 | Not yet judgeable |
 | TSLA Two-Leg Trend Pullback | 2.1.0 | 0 | Not yet judgeable |
-| SPY Failed-Range Recovery | 2.1.0 | 1 | One win, about +$45.70 after configured costs; far too small to establish an edge |
+| SPY Failed-Range Recovery | 2.1.0 | 1 | One win, +$44.70 after configured costs; far too small to establish an edge |
 
 The Failed-Range result used the saved Tradier ask of $3.34, the 30-minute bid
 of $3.82, $0.01 adverse slippage on each side, and $0.65 commission on each
-side: `(3.81 - 3.35) * 100 - 1.30 = $45.70`.
+side: `(3.81 - 3.35) * 100 - 1.30 = $44.70`.
 
 ## Repaired historical evidence
 
