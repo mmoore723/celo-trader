@@ -68,8 +68,37 @@ class StrategyPremarketTests(unittest.TestCase):
             executable_strategy_ids=set(), research_strategy_ids={"CTX_1H_SQUEEZE_MACD_LONG"},
         )
         self.assertFalse(plan["tradeable_today"])
-        self.assertIn("cannot place an order", plan["entry_note"])
+        self.assertIn("finished one-hour candle", plan["entry_note"])
+        self.assertIn("no early stop", plan["stop_note"].lower())
+        self.assertIn("90 minutes", plan["target_note"])
+        self.assertIn("executable bid", plan["target_note"])
         self.assertFalse(plan["strategy_matches"][0]["can_trade"])
+
+    def test_research_plan_shows_the_real_strategy_trigger_not_permission_copy(self):
+        context = [{"label": name, "bias": "up", "change_pct": 1.0}
+                   for name in ("Minute", "Hour", "Day", "Week", "Month")]
+        plan = strategy_aware_plan(
+            ticker="AMZN", context=context, daily_bars=daily(range(90, 101)),
+            hourly_bars=daily(range(100, 111)), gap_pct=0.2, rvol=1.2,
+            executable_strategy_ids=set(), research_strategy_ids={"CTX_VWAP_PULLBACK_KER10_LONG"},
+        )
+        self.assertFalse(plan["tradeable_today"])
+        self.assertIn("KER check must pass", plan["entry_note"])
+        self.assertNotIn("cannot place an order", plan["entry_note"])
+        self.assertIn("after costs", plan["target_note"])
+
+    def test_tradable_displacement_plan_separates_stop_and_profit_target(self):
+        context = [{"label": name, "bias": "up", "change_pct": 1.0}
+                   for name in ("Minute", "Hour", "Day", "Week", "Month")]
+        plan = strategy_aware_plan(
+            ticker="AMZN", context=context, daily_bars=daily(range(90, 101)),
+            hourly_bars=daily(range(100, 111)), gap_pct=0.2, rvol=1.2,
+            executable_strategy_ids={"CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"},
+            research_strategy_ids=set(),
+        )
+        self.assertTrue(plan["tradeable_today"])
+        self.assertIn("below VWAP", plan["stop_note"])
+        self.assertIn("high that was set", plan["target_note"])
 
     def test_no_generic_orb_plan_is_invented_for_unknown_ticker(self):
         plan = strategy_aware_plan(

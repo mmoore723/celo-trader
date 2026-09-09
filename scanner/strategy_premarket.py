@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Iterable, Mapping, Sequence
 
-from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_exit_summary
+from config.strategy_catalog import (
+    REVIEWED_STRATEGIES,
+    reviewed_research_exit_minutes,
+)
 
 
 def _price(row: Mapping[str, object], key: str = "c") -> float:
@@ -160,6 +163,25 @@ _ENTRY = {
 }
 
 
+def _plan_exit_copy(strategy_id: str, *, tradeable: bool) -> tuple[str, str]:
+    """Describe the exit that the bot really executes or measures today."""
+    if strategy_id == "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG" and tradeable:
+        return (
+            "A finished five-minute candle closes below VWAP, or the clock reaches 3:55 PM ET.",
+            "Take profit when price reaches the high that was set before the pullback.",
+        )
+    minutes = reviewed_research_exit_minutes(strategy_id)
+    if tradeable:
+        return (
+            f"The {minutes}-minute hold ends. This version has no separate early stop.",
+            f"Sell the same contract after {minutes} minutes at the executable bid.",
+        )
+    return (
+        f"There is no early stop in this test. The result is checked {minutes} minutes after entry.",
+        f"After {minutes} minutes, compare the same contract's executable bid with its entry price after costs.",
+    )
+
+
 def strategy_aware_plan(
     *, ticker: str, context: Sequence[Mapping[str, object]],
     daily_bars: Sequence[Mapping[str, object]], gap_pct: float, rvol: float,
@@ -196,14 +218,8 @@ def strategy_aware_plan(
     strategy_id = str(best["strategy_id"])
     tradeable = bool(best["can_trade"])
     direction = str(best["direction"])
-    if not tradeable:
-        entry_note = "Research only—this ticker/strategy pair cannot place an order."
-        stop_note = "No order is authorized."
-        target_note = reviewed_exit_summary(strategy_id, verb="measure")
-    else:
-        entry_note = _ENTRY.get(strategy_id, "Wait for the strategy's exact intraday trigger.")
-        stop_note = "Use the strategy's tested exit rule. The bot does not make up a stop before the entry exists."
-        target_note = reviewed_exit_summary(strategy_id)
+    entry_note = _ENTRY.get(strategy_id, "Wait for the strategy's exact intraday trigger.")
+    stop_note, target_note = _plan_exit_copy(strategy_id, tradeable=tradeable)
     return {
         "fit_score": int(best["fit_score"]), "readiness_score": int(best["fit_score"]), "direction": direction,
         "tradeable_today": tradeable, "best_strategy": best,
