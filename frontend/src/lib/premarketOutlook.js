@@ -23,7 +23,6 @@ export function premarketDayOutlook(tickers) {
     return {
       level: "waiting",
       label: "WAITING",
-      emoji: "🌫️",
       summary: "No tradable setup is ready yet.",
       detail: "The bot is still watching for a clean match on a ticker it may trade.",
       tradableCount: 0,
@@ -49,7 +48,6 @@ export function premarketDayOutlook(tickers) {
     return {
       level: "green",
       label: "GREEN · CLEAR",
-      emoji: "☀️",
       summary: `Clear setups are forming on ${clearCount} tradable tickers.`,
       detail: "Several tickers agree across timeframes. Wait for each strategy's exact entry trigger.",
       tradableCount: tradable.length,
@@ -62,7 +60,6 @@ export function premarketDayOutlook(tickers) {
     return {
       level: "yellow",
       label: "YELLOW · SELECTIVE",
-      emoji: "⛅",
       summary: clearCount === 1
         ? "One tradable ticker looks clear; the rest need more proof."
         : "Some tradable setups are forming, but the picture is not fully clear.",
@@ -76,7 +73,6 @@ export function premarketDayOutlook(tickers) {
   return {
     level: "red",
     label: "RED · CHOPPY",
-    emoji: "🌧️",
     summary: mixedCount > 0
       ? `${mixedCount} tradable ticker${mixedCount === 1 ? " has" : "s have"} mixed timeframe signals.`
       : "The tradable tickers do not have a clean setup yet.",

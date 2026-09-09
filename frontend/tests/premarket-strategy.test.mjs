@@ -17,10 +17,11 @@ test("premarket list contains only complete reports and explains descending scor
   assert.doesNotMatch(source, /scanner-only extras/);
 });
 
-test("premarket report explains the fit score and shows trade weather", () => {
+test("premarket report explains the fit score and shows a trading outlook", () => {
   assert.match(source, /How the score works/);
   assert.match(source, /7 points for every agreeing minute, hour, day, week, or month view/);
-  assert.match(source, /TODAY'S TRADE WEATHER/);
+  assert.match(source, /TODAY'S TRADING OUTLOOK/);
+  assert.doesNotMatch(source, /TRADE WEATHER/);
   assert.match(source, /Based only on \{dayOutlook\.tradableCount\}/);
   assert.match(source, /rates trade conditions—not market direction/);
 });

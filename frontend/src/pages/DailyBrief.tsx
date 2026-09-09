@@ -572,10 +572,9 @@ export function DailyBrief() {
                 background: dayOutlook.level === "green" ? "var(--positive-bg)" : dayOutlook.level === "red" ? "var(--negative-bg)" : "var(--muted)",
               }}
             >
-              <span className="text-2xl" aria-hidden="true">{dayOutlook.emoji}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="text-xs font-black tracking-wide" style={{ color: "var(--ink)" }}>TODAY'S TRADE WEATHER</span>
+                  <span className="text-xs font-black tracking-wide" style={{ color: "var(--ink)" }}>TODAY'S TRADING OUTLOOK</span>
                   <span className="text-[10px] font-bold" style={{ color: dayOutlook.level === "green" ? "var(--positive)" : dayOutlook.level === "red" ? "var(--negative)" : dayOutlook.level === "yellow" ? "var(--warning)" : "var(--ink-muted)" }}>
                     {dayOutlook.label}
                   </span>

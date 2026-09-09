@@ -3,7 +3,6 @@ import type { PremarketTicker } from "./api";
 export interface PremarketDayOutlook {
   level: "waiting" | "green" | "yellow" | "red";
   label: string;
-  emoji: string;
   summary: string;
   detail: string;
   tradableCount: number;
