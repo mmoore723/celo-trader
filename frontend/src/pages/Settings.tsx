@@ -6,7 +6,6 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
 import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib/api";
-import { currentVersionPerformance, strategyPerformanceForId, strategyPerformanceState } from "../lib/strategyPerformance.js";
 import { loadCredentialDisplay, maskCredentialForDisplay } from "../lib/credentialDisplay.js";
 import { needsTradierSandbox } from "../lib/connectionHealthView.js";
 import { TestedStrategies } from "../components/settings/TestedStrategies";
@@ -309,13 +308,14 @@ export function Settings() {
     queryKey: ["strategy-catalog"],
     queryFn: api.settings.strategies,
   });
-  // Actual performance belongs to the last saved broker/mode, not an unsaved
-  // form choice the user may still discard.
+  // Evidence belongs to the last saved broker/mode, not an unsaved form choice
+  // the user may still discard.
   const actualAccountMode = (data?.paper_trading ?? form.paper_trading) ? "paper" : "live";
   const actualBrokerProvider = data?.broker_provider ?? form.broker_provider ?? "alpaca";
-  const { data: actualStrategyAnalytics } = useQuery({
-    queryKey: ["strategy-performance-for-settings", actualBrokerProvider, actualAccountMode],
-    queryFn: () => api.trades.analytics(actualAccountMode),
+  const { data: strategyResearch } = useQuery({
+    queryKey: ["strategy-research-matrix"],
+    queryFn: () => api.strategyHealth.researchMatrix(90),
+    refetchInterval: 60_000,
   });
   const { data: strategyHistory } = useQuery({
     queryKey: ["strategy-setting-history"],
@@ -356,15 +356,15 @@ export function Settings() {
     const pfLabel = typeof pf === "number" ? pf.toFixed(2) : (pf || "not recorded");
     const target = strategy.backtest?.target_profit_factor ?? 1.5;
     const reliableTarget = strategy.backtest?.meets_target && strategy.evidence_grade === "passed_declared_holdout";
-    const allActual = strategyPerformanceForId(actualStrategyAnalytics?.by_strategy, strategy.strategy_id);
-    const actual = currentVersionPerformance(allActual);
-    const actualState = strategyPerformanceState(actual, target, 30);
-    const actualEvidenceLabel = actualState.enoughEvidence
-        ? (actualState.meetsTarget ? "30-trade target passed" : "below target")
-        : "sample still collecting";
-    const actualPnl = actual
-      ? `${actual.total_pnl >= 0 ? "+" : "-"}$${Math.abs(actual.total_pnl).toFixed(2)}`
-      : null;
+    const matrixStrategy = strategyResearch?.strategies.find(item => item.strategy_id === strategy.strategy_id);
+    const currentPairs = (matrixStrategy?.pairs ?? []).filter(pair => strategy.tickers.includes(pair.ticker));
+    const pairProof = currentPairs.length
+      ? currentPairs.map(pair => {
+          const factor = pair.profit_factor === "infinite" ? "∞" : typeof pair.profit_factor === "number" ? pair.profit_factor.toFixed(2) : "—";
+          const pnl = `${pair.net_one_contract_pnl >= 0 ? "+" : "-"}$${Math.abs(pair.net_one_contract_pnl).toFixed(2)}`;
+          return `${pair.ticker} PF ${factor} · ${pair.option_results} option result${pair.option_results === 1 ? "" : "s"} · ${pnl}`;
+        }).join(" · ")
+      : `PF — · 0 option results`;
     return (
       <StrategyToggleCard
         key={strategy.strategy_id}
@@ -377,30 +377,19 @@ export function Settings() {
         <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--positive)" }}>
           {strategy.observation_only ? "RESEARCH ONLY · No orders" : `CAN TRADE · ${strategy.tickers.join(", ")}`}
         </p>
+        <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
+          <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Recorded test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}
+        </p>
         {!strategy.observation_only && (
           <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
-            <strong style={{ color: actualState.meetsTarget ? "var(--positive)" : actualState.hasResult ? "var(--warning)" : "var(--ink-muted)" }}>
-              {strategy.backtest?.forward_evidence_start ? `Results since ${evidenceDate(strategy.backtest.forward_evidence_start)}` : `Current v${strategy.version}`} · {actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} {actualAccountMode}{actualState.hasResult ? ` PF ${actualState.pfLabel}` : " · collecting"}
-            </strong>
-            {` · ${actualState.trades} actual trade${actualState.trades === 1 ? "" : "s"}`}
-            {actualPnl ? ` · ${actualPnl}` : ""}
-            {actualState.hasResult ? ` · ${actualEvidenceLabel}` : ""}
+            <strong>{strategy.backtest?.forward_evidence_start ? `Results since ${evidenceDate(strategy.backtest.forward_evidence_start)}` : `Current v${strategy.version} results`}:</strong> {pairProof}
           </p>
         )}
-        <p className="text-xs pb-2" style={{ color: "var(--ink-muted)" }}>
-          {strategy.observation_only
-            ? "Testing on every ticker the bot collects."
-            : "May place orders on the tickers above. Research keeps testing it on every other collected ticker."}
-        </p>
         <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
           <summary className="cursor-pointer">Test dates and proof</summary>
-          <p className="mt-1"><strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Saved test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}{` · Goal ${target.toFixed(1)}`}</p>
+          <p className="mt-1">Goal PF {target.toFixed(1)} · {strategy.observation_only ? "Tests every collected ticker; cannot place orders." : `${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode} orders only on ${strategy.tickers.join(", ")}.`}</p>
           <p className="mt-1">{strategy.backtest?.comparison || strategy.evidence}</p>
-          {(allActual?.prior_or_unversioned_trades ?? 0) > 0 && (
-            <p className="mt-1">
-              {allActual!.prior_or_unversioned_trades} earlier or unversioned paper trade{allActual!.prior_or_unversioned_trades === 1 ? " is" : "s are"} kept in Performance history but not counted as proof for v{strategy.version}.
-            </p>
-          )}
+          {currentPairs.some(pair => pair.previous_version_rows > 0) && <p className="mt-1">Earlier-version setups remain saved but are not mixed into the current PF.</p>}
         </details>
         {strategy.integrity_errors.length > 0 && (
           <p className="text-xs pb-3" style={{ color: "#f87171" }}>

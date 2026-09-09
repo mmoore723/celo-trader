@@ -26,6 +26,8 @@ test("research results distinguish dated tests from the current strategy version
 test("strategy settings use distinct cards and explicit evidence dates", () => {
   assert.match(settingsSource, /Results since/);
   assert.match(settingsSource, /Tests through/);
+  assert.match(settingsSource, /option result/);
   assert.match(settingsSource, /grid gap-3 lg:grid-cols-2/);
   assert.doesNotMatch(settingsSource, /Past test/);
+  assert.doesNotMatch(settingsSource, /May place orders on the tickers above/);
 });
