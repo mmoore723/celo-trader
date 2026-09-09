@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from api.routes.market import get_premarket_report
+from api.routes.market import _rank_premarket_results, get_premarket_report
 from trading.state import _now_et
 
 
@@ -26,6 +26,16 @@ class _Alpaca:
 
 
 class PremarketReportTests(unittest.TestCase):
+    def test_reports_rank_from_highest_fit_score_to_lowest(self):
+        rows = [
+            {"ticker": "SPY", "fit_score": 64, "tradeable_today": True, "is_pinned": True},
+            {"ticker": "AMZN", "fit_score": 91, "tradeable_today": False, "is_pinned": False},
+            {"ticker": "QQQ", "fit_score": 78, "tradeable_today": True, "is_pinned": False},
+        ]
+        ranked = _rank_premarket_results(rows)
+        self.assertEqual(["AMZN", "QQQ", "SPY"], [row["ticker"] for row in ranked])
+        self.assertEqual([1, 2, 3], [row["rank"] for row in ranked])
+
     def test_report_uses_real_multiframe_data_and_last_completed_daily_bar(self):
         now = _now_et()
         daily_index = pd.DatetimeIndex([

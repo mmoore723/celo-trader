@@ -1,22 +1,13 @@
 /**
- * Pick the first Daily Brief ticker only after the watchlist and premarket
- * requests have both settled. Watchlist order wins because it reflects the
- * user's configured priorities; scanner-only names are fallback candidates.
+ * Pick only from tickers that have a complete pre-market report.
  */
 export function preferredDailyBriefTicker({
   selected,
   loading,
-  pinnedTickers,
   premarketTickers,
-  scannerTickers,
 }) {
   if (loading) return selected;
-
-  const available = [...new Set([
-    ...pinnedTickers,
-    ...premarketTickers,
-    ...scannerTickers,
-  ])];
+  const available = [...new Set(premarketTickers)];
 
   if (selected && available.includes(selected)) return selected;
   return available[0] ?? "";

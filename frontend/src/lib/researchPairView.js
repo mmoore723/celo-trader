@@ -29,6 +29,13 @@ export function profitFactorText(value) {
   return typeof value === "number" ? value.toFixed(2) : "—";
 }
 
+/** Human-readable live PF. A win-only sample has no gross loss denominator. */
+export function researchProfitFactorText(value, results) {
+  if (!results) return "Waiting";
+  if (value === "infinite") return "No losses yet";
+  return typeof value === "number" ? value.toFixed(2) : "Waiting";
+}
+
 export function numericProfitFactor(value) {
   if (value === "infinite") return Number.POSITIVE_INFINITY;
   return typeof value === "number" ? value : Number.NaN;
@@ -36,10 +43,12 @@ export function numericProfitFactor(value) {
 
 export function researchPairVisible(pair, filter) {
   if (filter === "all") return true;
+  if (filter === "results") return pair.option_results > 0;
+  if (filter === "waiting") return pair.option_results === 0;
   if (filter === "attention") return ["price_data", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis)
     || (pair.diagnosis === "no_setups" && pair.market_days >= 20);
   if (filter === "passing") return pair.option_results > 0 && numericProfitFactor(pair.profit_factor) >= 1.5;
-  return pair.setups > 0 || pair.option_results > 0;
+  return pair.option_results > 0;
 }
 
 export function sortResearchPairs(rows) {

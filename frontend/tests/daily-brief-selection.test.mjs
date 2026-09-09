@@ -6,28 +6,22 @@ test("does not select a scanner result while preferred data is still loading", (
   assert.equal(preferredDailyBriefTicker({
     selected: "",
     loading: true,
-    pinnedTickers: [],
     premarketTickers: [],
-    scannerTickers: ["ABBV"],
   }), "");
 });
 
-test("selects the first configured watchlist ticker after data settles", () => {
+test("selects the highest-ranked completed premarket report after data settles", () => {
   assert.equal(preferredDailyBriefTicker({
     selected: "",
     loading: false,
-    pinnedTickers: ["SPY", "QQQ"],
     premarketTickers: ["ABBV", "SPY"],
-    scannerTickers: ["ABBV"],
-  }), "SPY");
+  }), "ABBV");
 });
 
 test("preserves a valid manual selection and replaces a stale one", () => {
   const input = {
     loading: false,
-    pinnedTickers: ["SPY"],
     premarketTickers: ["SPY", "ABBV"],
-    scannerTickers: [],
   };
   assert.equal(preferredDailyBriefTicker({ ...input, selected: "ABBV" }), "ABBV");
   assert.equal(preferredDailyBriefTicker({ ...input, selected: "TSLA" }), "SPY");

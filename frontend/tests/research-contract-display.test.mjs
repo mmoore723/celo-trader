@@ -19,7 +19,8 @@ test("research results expose strategy-ticker contract policy evidence", () => {
 
 test("research results distinguish dated tests from the current strategy version", () => {
   assert.match(source, /Tests through/);
-  assert.match(source, /Current PF/);
+  assert.match(source, /Test PF/);
+  assert.match(source, /No losses yet/);
   assert.match(source, /Data since/);
   assert.match(source, /market days/);
   assert.match(source, /Earlier-version setups kept separate/);

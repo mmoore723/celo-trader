@@ -5,7 +5,7 @@
  */
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, type Trade, type ScannerResult, type PremarketTicker } from "../lib/api";
+import { api, type Trade, type PremarketTicker } from "../lib/api";
 import { useBotStore } from "../store/bot";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
@@ -23,16 +23,6 @@ function today() {
     timeZone: "America/New_York",
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
-}
-
-/** Rank emoji for scanner-only tickers (no premarket data). */
-function rankEmoji(rank: number, chg: number) {
-  if (rank === 1) return "🥇";
-  if (rank === 2) return "🥈";
-  if (rank === 3) return "🥉";
-  if (chg > 2)   return "🔥";
-  if (chg < -2)  return "📉";
-  return "👀";
 }
 
 /** Text color for a setup grade. */
@@ -262,10 +252,10 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
       <div className="flex items-center gap-2 flex-wrap">
         <div
           className="text-[10px] font-black px-2 py-0.5 rounded-full"
-          title="Current measured context, not a win probability or backtest result."
+          title="How closely today's market matches this strategy. This is not a win promise."
           style={{ background: gradeBg(pm.grade), color: gradeColor(pm.grade), border: `1px solid ${gradeColor(pm.grade)}50` }}
         >
-          Readiness {pm.readiness_score}/100
+          Match {pm.readiness_score}/100
         </div>
         <span className="text-xl font-bold" style={{ color: "var(--ink)" }}>{pm.ticker}</span>
         <span className="num text-base font-semibold" style={{ color: "var(--ink-muted)" }}>${pm.price.toFixed(2)}</span>
@@ -273,7 +263,7 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
           className="text-[10px] font-bold px-2 py-0.5 rounded-full"
           style={{ color: dirColor, background: "var(--muted)" }}
         >
-          <Tooltip text={GLOSSARY.Direction}>Market bias: {dirLabel}</Tooltip>
+          <Tooltip text={GLOSSARY.Direction}>Leaning: {dirLabel}</Tooltip>
         </span>
         <span className={`badge ${pm.tradeable_today ? "badge-green" : "badge-blue"}`}>
           {pm.tradeable_today ? "Can trade" : "Research only"}
@@ -291,7 +281,7 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
         {(pm.timeframes ?? []).map(frame => {
           const color = frame.bias === "up" ? "var(--positive)" : frame.bias === "down" ? "var(--negative)" : "var(--ink-muted)";
           return <div key={frame.label} className="rounded-md px-2 py-1.5 text-center" style={{ background: "var(--muted)" }}>
-            <div className="text-[9px] uppercase tracking-wide text-ink-faint">{frame.label}</div>
+            <div className="text-[9px] uppercase tracking-wide text-ink-faint">{{ Minute: "Now (1 min)", Hour: "Short (1 hr)", Day: "Today", Week: "Week", Month: "Month" }[frame.label] ?? frame.label}</div>
             <div className="text-xs font-semibold" style={{ color }}>
               {frame.bias === "unavailable" ? "—" : `${frame.bias === "up" ? "↑" : frame.bias === "down" ? "↓" : "→"} ${frame.change_pct?.toFixed(1)}%`}
             </div>
@@ -300,14 +290,14 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
       </div>
 
       {pm.best_strategy && <div className="rounded-md px-3 py-2.5" style={{ background: "var(--accent-subtle)", borderLeft: "3px solid var(--accent)" }}>
-        <div className="text-[9px] uppercase tracking-wide text-ink-faint">Best strategy match today</div>
-        <div className="text-sm font-semibold">{pm.best_strategy.name} · readiness {pm.best_strategy.readiness_score}/100</div>
+        <div className="text-[9px] uppercase tracking-wide text-ink-faint">Best fit today</div>
+        <div className="text-sm font-semibold">{pm.best_strategy.name} · match {pm.best_strategy.readiness_score}/100</div>
         <p className="text-xs text-ink-muted mt-1">{pm.best_strategy.reason}</p>
         {pm.strategy_matches.length > 1 && <details className="mt-2 text-xs">
-          <summary className="cursor-pointer text-ink-muted">Other strategy matches</summary>
+          <summary className="cursor-pointer text-ink-muted">See other fits</summary>
           <div className="pt-2 flex flex-col gap-1">
             {pm.strategy_matches.slice(1).map(match => <div key={match.strategy_id} className="flex justify-between gap-3">
-              <span>{match.name}</span><span className="num">{match.readiness_score}/100 · {match.can_trade ? "can trade" : "research"}</span>
+              <span>{match.name}</span><span className="num">{match.readiness_score}/100 · {match.can_trade ? "orders on" : "testing"}</span>
             </div>)}
           </div>
         </details>}
@@ -316,12 +306,12 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
       {/* Stats grid */}
       <div className="grid grid-cols-3 gap-1.5">
         {([
-          { label: "RVOL",       tip: GLOSSARY.RVOL,    value: `${pm.rvol.toFixed(2)}×`,         color: pm.rvol >= 2 ? "var(--positive)" : pm.rvol >= 1.5 ? "#ffd740" : "var(--ink)" },
-          { label: "ATR",        tip: GLOSSARY.ATR,     value: `$${pm.atr.toFixed(2)}`,           color: "var(--ink)" },
-          { label: "ATR%",       tip: GLOSSARY["ATR%"], value: `${pm.atr_pct.toFixed(2)}%`,       color: "var(--ink)" },
-          { label: "Prev Close", tip: "",               value: `$${pm.prev_close.toFixed(2)}`,    color: "var(--ink-muted)" },
-          { label: "Prev High",  tip: "",               value: `$${pm.prev_high.toFixed(2)}`,     color: "var(--positive)" },
-          { label: "Prev Low",   tip: "",               value: `$${pm.prev_low.toFixed(2)}`,      color: "var(--negative)" },
+          { label: "Volume now",        tip: GLOSSARY.RVOL,    value: `${pm.rvol.toFixed(2)}×`,   color: pm.rvol >= 2 ? "var(--positive)" : pm.rvol >= 1.5 ? "#ffd740" : "var(--ink)" },
+          { label: "Usual daily move",  tip: GLOSSARY.ATR,     value: `$${pm.atr.toFixed(2)}`,     color: "var(--ink)" },
+          { label: "Usual move %",      tip: GLOSSARY["ATR%"], value: `${pm.atr_pct.toFixed(2)}%`, color: "var(--ink)" },
+          { label: "Yesterday close",   tip: "",               value: `$${pm.prev_close.toFixed(2)}`, color: "var(--ink-muted)" },
+          { label: "Yesterday high",    tip: "",               value: `$${pm.prev_high.toFixed(2)}`,  color: "var(--positive)" },
+          { label: "Yesterday low",     tip: "",               value: `$${pm.prev_low.toFixed(2)}`,   color: "var(--negative)" },
         ] as {label:string;tip:string;value:string;color:string}[]).map(s => (
           <div key={s.label} className="rounded-md px-2 py-1.5 flex flex-col" style={{ background: "var(--muted)" }}>
             <span className="text-[9px] uppercase tracking-wide" style={{ color: "var(--ink-faint)" }}>
@@ -336,7 +326,7 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
       <div className="rounded-md px-3 py-2.5" style={{ background: "var(--muted)" }}>
         <div className="flex justify-between text-[9px] mb-1.5" style={{ color: "var(--ink-faint)" }}>
           <span>▼ ${pm.prev_low.toFixed(2)}</span>
-          <span>Yesterday's Range</span>
+          <span>Yesterday: low to high</span>
           <span>▲ ${pm.prev_high.toFixed(2)}</span>
         </div>
         <div className="relative rounded-full" style={{ height: 6, background: "rgba(255,255,255,0.07)" }}>
@@ -368,16 +358,16 @@ function PremarketDetail({ pm }: { pm: PremarketTicker }) {
         style={{ background: "var(--muted)", borderLeft: `3px solid ${dirColor}` }}
       >
         <div className="text-[10px] font-bold uppercase tracking-wide mb-0.5" style={{ color: "var(--ink-muted)" }}>
-          📋 {pm.tradeable_today ? "Today's Playbook" : "Research Plan"}
+          📋 {pm.tradeable_today ? "Today's plan" : "What the bot is testing"}
         </div>
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          <span className="font-semibold" style={{ color: "var(--ink)" }}>🎯 Entry:</span> {pm.entry_note}
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>🎯 What must happen:</span> {pm.entry_note}
         </p>
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          <span className="font-semibold" style={{ color: "var(--ink)" }}>🛑 Stop:</span> {pm.stop_note}
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>🛑 Get out if:</span> {pm.stop_note}
         </p>
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          <span className="font-semibold" style={{ color: "var(--ink)" }}>💰 Target:</span> {pm.target_note}
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>💰 Profit plan:</span> {pm.target_note}
         </p>
       </div>
 
@@ -440,12 +430,6 @@ export function DailyBrief() {
     refetchInterval: 30_000,
   });
 
-  const { data: scanner = [] } = useQuery({
-    queryKey: ["scanner"],
-    queryFn:  api.market.scanner,
-    refetchInterval: 60_000,
-  });
-
   // Rich premarket endpoint — includes ALL watchlist tickers with live Alpaca + yfinance data
   const { data: premarket = [], isLoading: pmLoading } = useQuery<PremarketTicker[]>({
     queryKey: ["premarket"],
@@ -458,46 +442,26 @@ export function DailyBrief() {
     [premarket],
   );
 
-  const { data: settings, isLoading: settingsLoading } = useQuery({
-    queryKey: ["settings"],
-    queryFn:  api.settings.get,
-    staleTime: 60_000,
-  });
-  const pinnedTickers: string[] = useMemo(() => settings?.watchlist ?? [], [settings?.watchlist]);
-
-  // Unified list: the user's watchlist first, then rich report and scanner-only extras.
+  // Only show tickers with a complete pre-market report. Scanner-only names
+  // are not useful here because they have no plan, levels, or timeframe read.
   const pmTickers = useMemo(() => premarket.map(p => p.ticker), [premarket]);
-  const scannerTickers = useMemo(
-    () => scanner.map((s: ScannerResult) => s.ticker),
-    [scanner],
-  );
-  const allTickers = useMemo(
-    () => [...new Set([...pinnedTickers, ...pmTickers, ...scannerTickers])],
-    [pinnedTickers, pmTickers, scannerTickers],
-  );
+  const allTickers = pmTickers;
 
   const [selected, setSelected]   = useState<string>("");
   const [briefTab, setBriefTab]   = useState<"premarket" | "postmarket">(
     isTradingDayFinal() ? "postmarket" : "premarket"
   );
-  // Wait until both priority sources settle so a fast scanner response cannot
-  // select a hidden scanner-only ticker before the watchlist arrives.
   useEffect(() => {
     const next = preferredDailyBriefTicker({
       selected,
-      loading: pmLoading || settingsLoading,
-      pinnedTickers,
+      loading: pmLoading,
       premarketTickers: pmTickers,
-      scannerTickers,
     });
     if (next !== selected) setSelected(next);
   }, [
     selected,
     pmLoading,
-    settingsLoading,
-    pinnedTickers,
     pmTickers,
-    scannerTickers,
   ]);
 
   // Today's trades
@@ -526,8 +490,6 @@ export function DailyBrief() {
   ).slice(0, 15);
 
   const selectedPm   = pmMap.get(selected) ?? null;
-  const selectedScan = scanner.find((s: ScannerResult) => s.ticker === selected) ?? null;
-
   return (
     <>
     <div className="p-4 flex flex-col gap-4 max-w-4xl">
@@ -573,7 +535,7 @@ export function DailyBrief() {
           className={`btn btn-sm ${briefTab === "postmarket" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setBriefTab("postmarket")}
         >
-          📊 Post-Market Review
+          📊 Post-Market
         </button>
       </div>
 
@@ -585,7 +547,7 @@ export function DailyBrief() {
               <div>
                 <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>🏟️ Daily Market Report</h3>
                 <p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-                  Watchlist priorities, key levels, and trade plans · live values refresh every 60s.
+                  Best matches first, from 100 down. The score shows fit—not a promised win.
                 </p>
               </div>
               {pmLoading && (
@@ -610,9 +572,8 @@ export function DailyBrief() {
                 >
                   {allTickers.map((ticker) => {
                     const pm       = pmMap.get(ticker);
-                    const s        = scanner.find((r: ScannerResult) => r.ticker === ticker);
                     const isActive = ticker === selected;
-                    const chg      = pm?.gap_pct ?? s?.change_pct ?? 0;
+                    const chg      = pm?.gap_pct ?? 0;
                     const chgColor = chg >= 0 ? "var(--positive)" : "var(--negative)";
                     return (
                       <button
@@ -625,26 +586,19 @@ export function DailyBrief() {
                           borderBottom: "1px solid var(--border)",
                         }}
                       >
-                        {/* Strategy-fit score (if available) or scanner rank. */}
-                        {pm ? (
-                          <div
-                            className="text-[9px] font-black rounded px-1 py-0.5 shrink-0"
-                            style={{ background: pm.tradeable_today ? "var(--positive-bg)" : "var(--accent-subtle)", color: pm.tradeable_today ? "var(--positive)" : "var(--accent)", minWidth: 28, textAlign: "center" }}
-                          >
-                            {pm.readiness_score}
-                          </div>
-                        ) : (
-                          <span className="text-sm shrink-0">
-                            {s ? rankEmoji(s.rank, s.change_pct) : "📌"}
-                          </span>
-                        )}
+                        <div
+                          className="text-[9px] font-black rounded px-1 py-0.5 shrink-0"
+                          style={{ background: pm?.tradeable_today ? "var(--positive-bg)" : "var(--accent-subtle)", color: pm?.tradeable_today ? "var(--positive)" : "var(--accent)", minWidth: 28, textAlign: "center" }}
+                        >
+                          {pm?.readiness_score}
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-bold truncate" style={{ color: "var(--ink)" }}>{ticker}</div>
                           <div
                             className="text-[10px] num font-semibold"
-                            style={{ color: (pm || s) ? chgColor : "var(--ink-faint)" }}
+                            style={{ color: pm ? chgColor : "var(--ink-faint)" }}
                           >
-                            {(pm || s) ? `${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%` : "no data"}
+                            {pm ? `${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%` : "no data"}
                           </div>
                         </div>
                       </button>
@@ -659,45 +613,8 @@ export function DailyBrief() {
                   ) : selectedPm ? (
                     /* Rich premarket report */
                     <PremarketDetail pm={selectedPm} />
-                  ) : selectedScan ? (
-                    /* Fallback: scanner data only */
-                    <div className="flex flex-col gap-4">
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <span className="text-xl font-bold" style={{ color: "var(--ink)" }}>{selectedScan.ticker}</span>
-                        <span
-                          className="text-sm num font-semibold"
-                          style={{ color: selectedScan.change_pct >= 0 ? "var(--positive)" : "var(--negative)" }}
-                        >
-                          {selectedScan.change_pct >= 0 ? "+" : ""}{selectedScan.change_pct.toFixed(2)}%
-                        </span>
-                        <span className="text-xs" style={{ color: "var(--ink-muted)" }}>· Rank #{selectedScan.rank}</span>
-                      </div>
-                      <div className="grid grid-cols-4 gap-2">
-                        {[
-                          { label: "Price",  value: `$${selectedScan.price.toFixed(2)}`,                                                       color: "var(--ink)" },
-                          { label: "RVOL",   value: `${selectedScan.rvol.toFixed(2)}×`,                                                        color: selectedScan.rvol >= 2 ? "var(--positive)" : "var(--ink)" },
-                          { label: "ATR",    value: `$${selectedScan.atr.toFixed(2)}`,                                                          color: "var(--ink)" },
-                          { label: "Change", value: `${selectedScan.change_pct >= 0 ? "+" : ""}${selectedScan.change_pct.toFixed(2)}%`,        color: selectedScan.change_pct >= 0 ? "var(--positive)" : "var(--negative)" },
-                        ].map(stat => (
-                          <div key={stat.label} className="rounded-lg px-3 py-2 flex flex-col gap-0.5" style={{ background: "var(--muted)" }}>
-                            <span className="text-[10px] uppercase tracking-wide" style={{ color: "var(--ink-faint)" }}>{stat.label}</span>
-                            <span className="text-sm num font-semibold" style={{ color: stat.color }}>{stat.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs" style={{ color: "var(--ink-faint)" }}>
-                        The live scanner found this ticker, but its full watchlist report is not available yet.
-                      </p>
-                    </div>
                   ) : (
-                    /* Pinned but no data yet */
-                    <div className="flex flex-col gap-2">
-                      <span className="text-2xl">📌</span>
-                      <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{selected}</p>
-                      <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                        Pinned ticker — its full market report is still loading.
-                      </p>
-                    </div>
+                    <p className="text-sm" style={{ color: "var(--ink-muted)" }}>This ticker does not have a complete morning report, so it was removed from the list.</p>
                   )}
                 </div>
               </div>

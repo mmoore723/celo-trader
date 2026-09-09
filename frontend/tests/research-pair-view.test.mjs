@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  profitFactorText, researchActionLabel, researchPairVisible, sortResearchPairs,
+  profitFactorText, researchActionLabel, researchPairVisible, researchProfitFactorText, sortResearchPairs,
 } from "../src/lib/researchPairView.js";
 
 const pair = (overrides = {}) => ({
@@ -9,9 +9,10 @@ const pair = (overrides = {}) => ({
   setups: 0, option_results: 0, ...overrides,
 });
 
-test("the normal view hides empty combinations but keeps setups with missing quotes", () => {
-  assert.equal(researchPairVisible(pair(), "evidence"), false);
-  assert.equal(researchPairVisible(pair({ setups: 3 }), "evidence"), true);
+test("the normal results view shows only priced results", () => {
+  assert.equal(researchPairVisible(pair(), "results"), false);
+  assert.equal(researchPairVisible(pair({ setups: 3 }), "results"), false);
+  assert.equal(researchPairVisible(pair({ setups: 3, option_results: 1 }), "results"), true);
 });
 
 test("needs-attention shows only a pair with an actionable diagnosis", () => {
@@ -31,6 +32,8 @@ test("working and promising pairs sort ahead of collecting pairs", () => {
 test("plain labels explain PF and the next action", () => {
   assert.equal(profitFactorText("infinite"), "∞");
   assert.equal(profitFactorText(1.567), "1.57");
+  assert.equal(researchProfitFactorText("infinite", 1), "No losses yet");
+  assert.equal(researchProfitFactorText(null, 0), "Waiting");
   assert.equal(researchActionLabel("contract_exit"), "Test option + exit");
   assert.equal(researchActionLabel("early_loss"), "Losing — review");
 });

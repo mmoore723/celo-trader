@@ -18,6 +18,22 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 _ET = pytz.timezone("America/New_York")
 
 
+def _rank_premarket_results(results: list[dict]) -> list[dict]:
+    """Return complete morning reports from strongest match score to weakest."""
+    ranked = sorted(
+        results,
+        key=lambda row: (
+            int(row.get("fit_score") or 0),
+            bool(row.get("tradeable_today")),
+            bool(row.get("is_pinned")),
+        ),
+        reverse=True,
+    )
+    for rank, row in enumerate(ranked, 1):
+        row["rank"] = rank
+    return ranked
+
+
 def _market_is_open() -> bool:
     """
     True only during regular market hours (9:30–16:00 ET, Mon–Fri).
@@ -599,6 +615,12 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
             target_note = str(plan["target_note"])
             setup_notes = str(plan["setup_notes"])
 
+            # A pre-market card is useful only when it has real price and
+            # prior-session levels. Incomplete scanner names stay out of the
+            # brief instead of promising a report that may arrive too late.
+            if price <= 0 or prev_close <= 0 or prev_high <= 0 or prev_low <= 0:
+                continue
+
             results.append({
                 "ticker": ticker, "price": round(price, 2),
                 "prev_close": round(prev_close, 2), "prev_high": round(prev_high, 2),
@@ -618,23 +640,9 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
                 "is_pinned": ticker in _pin_set, "rank": rank,
             })
         except Exception:
-            results.append({
-                "ticker": ticker, "price": 0, "prev_close": 0, "prev_high": 0, "prev_low": 0,
-                "gap_pct": 0, "atr": 0, "atr_pct": 0, "avg_vol_20d": 0, "daily_vol": 0,
-                "rvol": 0, "implied_move_pct": 0, "grade": "Watch", "direction": "neutral",
-                "fit_score": 0, "readiness_score": 0, "tradeable_today": False, "best_strategy": None,
-                "strategy_matches": [], "timeframes": [],
-                "entry_note": "", "stop_note": "", "target_note": "",
-                "key_levels": [], "setup_notes": "Data unavailable.",
-                "is_pinned": ticker in _pin_set, "rank": rank,
-            })
+            continue
 
-    results.sort(key=lambda row: (
-        bool(row.get("tradeable_today")), int(row.get("fit_score") or 0), bool(row.get("is_pinned")),
-    ), reverse=True)
-    for rank, row in enumerate(results, 1):
-        row["rank"] = rank
-    return results
+    return _rank_premarket_results(results)
 
 
 @router.post("/scan-now")

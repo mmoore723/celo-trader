@@ -23,7 +23,7 @@ test("bot decisions live inside the journal while research remains separate", ()
 test("post-market history uses the selected trade ledger and performance stats share one row", () => {
   assert.match(dailyBrief, /const grade = dayGrade\(totalPnl\)/);
   assert.doesNotMatch(dailyBrief, /scorecard\.session_result\.grade/);
-  assert.match(dailyBrief, /📊 Post-Market Review/);
+  assert.match(dailyBrief, /📊 Post-Market/);
   assert.doesNotMatch(dailyBrief, /Live Review/);
   assert.match(performance, /grid grid-cols-2 sm:grid-cols-4 gap-2/);
   assert.doesNotMatch(performance, /gridTemplateColumns: "repeat\(2,1fr\)"/);

@@ -117,46 +117,46 @@ def _fit(strategy_id: str, *, context: Sequence[Mapping[str, object]],
     if strategy_id == "CTX_ORB_NR7_OR_INSIDE":
         context_ready = compressed or _inside_day(daily_bars)
         score = 35 + volume_points + (40 if context_ready else 0)
-        reason = "Yesterday passed the NR7/inside-day context gate; the opening trigger still must confirm." if context_ready else "Yesterday did not pass the NR7/inside-day context gate."
+        reason = "Yesterday had the smallest range in seven days or stayed inside the day before. Now wait for the opening breakout and strong volume." if context_ready else "Yesterday was not an NR7 or inside day, so this setup is a weaker fit today."
     elif strategy_id == "CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG":
         context_ready = _prior_range_lt_atr10(daily_bars)
         score = 35 + volume_points + (40 if context_ready else 0)
-        reason = "Yesterday's range was below ATR10; the opening trigger still must confirm." if context_ready else "Yesterday's range was not below ATR10."
+        reason = "Yesterday moved less than its usual 10-day range. Now wait for the opening breakout and strong volume." if context_ready else "Yesterday moved more than this setup allows, so it is a weaker fit today."
     elif strategy_id == "V2_ORB_PULLBACK":
         score = 45 + volume_points + trend_points + min(8, round(abs(gap_pct) * 2))
-        reason = "Morning context is ranked, but the reviewed range break and first retouch must happen after the open."
+        reason = "The morning trend looks useful. The bot still needs a clean opening-range break and the first pullback after the open."
     elif strategy_id in {"V2_SPY_TREND_CONT", "V2_TSLA_TWO_LEG_TREND_PULLBACK", "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"}:
         score = 38 + trend_points + volume_points + (8 if direction != "neutral" else 0)
-        reason = f"{agreeing} of 5 available timeframes lean {direction}; wait for the strategy's intraday trigger."
+        reason = f"{agreeing} of 5 time views point {direction}. The bot still waits for this strategy's exact entry pattern."
     elif strategy_id == "V2_SPY_AFTERNOON_FVG":
         score = 46 + trend_points + volume_points
-        reason = "Context is being prepared now; this strategy cannot trigger before its 1:30–3:00 PM window."
+        reason = "The bigger trend is being checked now. This setup only looks for an entry from 1:30 to 3:00 PM."
     elif strategy_id == "V2_FAILED_OR_BREAK_VWAP_REVERSION":
         score = 48 + volume_points + (14 if abs(gap_pct) < 1.5 else 2)
-        reason = "Watch for an opening-range break that fails and reclaims VWAP; no premarket entry is implied."
+        reason = "The bot will watch for an opening break that fails, then comes back above or below VWAP. No entry can happen yet."
     elif strategy_id == "CTX_VWAP_PULLBACK_KER10_LONG":
         ker = _kaufman(hourly_bars)
         score = 30 + trend_points + volume_points + (35 if ker is not None and ker > 0.60 else 0)
-        reason = f"Hourly context KER is {ker:.2f}; the strategy will recompute its exact regular-session gate before any trigger." if ker is not None else "There are not yet 11 hourly closes to estimate KER context."
+        reason = f"The one-hour trend-efficiency score is {ker:.2f}. The exact KER rule will be checked again before any entry." if ker is not None else "The bot needs 11 one-hour closes before it can measure trend efficiency (KER)."
     elif strategy_id == "CTX_1H_SQUEEZE_MACD_LONG":
         score = 38 + trend_points + volume_points
-        reason = "The exact one-hour Bollinger/Keltner contraction and MACD release are evaluated after completed regular-session hourly bars."
+        reason = "The bot is checking for tight one-hour price bands. It still needs a finished hourly candle and a rising MACD breakout."
     else:
         score, reason = 35 + trend_points + volume_points, "Waiting for this strategy's exact trigger."
     return max(0, min(100, score)), direction, reason
 
 
 _ENTRY = {
-    "V2_ORB_PULLBACK": "After 9:45, wait for a range break, first retouch, and a completed one-minute confirmation.",
-    "V2_SPY_TREND_CONT": "Wait for the reviewed five-minute continuation structure to close in the trend direction.",
-    "V2_SPY_AFTERNOON_FVG": "Do not enter in the morning. Check for the reviewed FVG retest from 1:30–3:00 PM.",
-    "V2_FAILED_OR_BREAK_VWAP_REVERSION": "Wait for a range break to fail, then require the reviewed VWAP reclaim.",
-    "V2_TSLA_TWO_LEG_TREND_PULLBACK": "Wait for two clear pullback legs and a completed resumption candle with VWAP alignment.",
-    "CTX_ORB_NR7_OR_INSIDE": "After 9:45, require the context filter, range break, and volume confirmation.",
-    "CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG": "After 9:45, require the ATR context filter and confirmed range break.",
-    "CTX_VWAP_PULLBACK_KER10_LONG": "After the trend is established, require the KER filter and a five-minute VWAP/EMA reclaim.",
-    "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": "After 10:30, require displacement, a VWAP touch, and a five-minute close back above EMA 9.",
-    "CTX_1H_SQUEEZE_MACD_LONG": "Require a one-hour squeeze release with a positive, rising MACD histogram.",
+    "V2_ORB_PULLBACK": "After 9:45, price must break the opening range, pull back to it once, then finish a one-minute candle in the breakout direction.",
+    "V2_SPY_TREND_CONT": "A five-minute candle must finish the reviewed continuation pattern in the trend direction.",
+    "V2_SPY_AFTERNOON_FVG": "Nothing in the morning. From 1:30–3:00 PM, price must return to the reviewed fair-value gap and confirm the move.",
+    "V2_FAILED_OR_BREAK_VWAP_REVERSION": "Price must break the opening range, fail, then cross back over VWAP with confirmation.",
+    "V2_TSLA_TWO_LEG_TREND_PULLBACK": "Price must make two clear pullback legs, stay on the correct side of VWAP, then finish a candle back with the trend.",
+    "CTX_ORB_NR7_OR_INSIDE": "After 9:45, price must break the opening range and the breakout candle needs the required volume.",
+    "CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG": "After 9:45, yesterday's range check must pass and price must confirm an opening-range break.",
+    "CTX_VWAP_PULLBACK_KER10_LONG": "After a clean trend forms, the KER check must pass and a five-minute candle must reclaim VWAP and EMA 9.",
+    "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": "After 10:30, price must move away from VWAP, touch it again, then finish a five-minute candle above EMA 9.",
+    "CTX_1H_SQUEEZE_MACD_LONG": "A finished one-hour candle must break the squeeze while the MACD bars are above zero and rising.",
 }
 
 
@@ -202,7 +202,7 @@ def strategy_aware_plan(
         target_note = reviewed_exit_summary(strategy_id, verb="measure")
     else:
         entry_note = _ENTRY.get(strategy_id, "Wait for the strategy's exact intraday trigger.")
-        stop_note = "Use the strategy's reviewed invalidation; do not invent an ATR stop before entry."
+        stop_note = "Use the strategy's tested exit rule. The bot does not make up a stop before the entry exists."
         target_note = reviewed_exit_summary(strategy_id)
     return {
         "fit_score": int(best["fit_score"]), "readiness_score": int(best["fit_score"]), "direction": direction,

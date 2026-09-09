@@ -4,11 +4,17 @@ import test from "node:test";
 
 const source = readFileSync(new URL("../src/pages/DailyBrief.tsx", import.meta.url), "utf8");
 
-test("premarket report shows strategy readiness across all five requested timeframes", () => {
-  assert.match(source, /Readiness \{pm\.readiness_score\}\/100/);
+test("premarket report shows strategy fit across all five requested timeframes", () => {
+  assert.match(source, /Match \{pm\.readiness_score\}\/100/);
   assert.match(source, /Market direction by timeframe/);
-  assert.match(source, /Best strategy match today/);
+  assert.match(source, /Best fit today/);
   assert.match(source, /Research only/);
+});
+
+test("premarket list contains only complete reports and explains descending scores", () => {
+  assert.match(source, /Best matches first, from 100 down/);
+  assert.doesNotMatch(source, /The live scanner found this ticker/);
+  assert.doesNotMatch(source, /scanner-only extras/);
 });
 
 test("premarket report cannot launch the old fabricated generic simulation", () => {
