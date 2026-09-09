@@ -2,6 +2,8 @@
   "schema_version": 1,
   "strategy_id": "V2_FAILED_OR_BREAK_VWAP_REVERSION",
   "strategy_version": "2.1.0",
+  "historical_test_through": "2026-09-04",
+  "forward_evidence_start": "2026-09-05",
   "status": "paper_candidate",
   "evidence_grade": "promising_inconsistent",
   "ticker_scope": ["SPY"],

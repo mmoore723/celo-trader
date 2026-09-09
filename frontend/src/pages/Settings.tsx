@@ -69,6 +69,10 @@ const TIMEZONES = [
   { value: "UTC",                 label: "UTC" },
 ];
 
+const evidenceDate = (value?: string) => value
+  ? new Date(`${value}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  : "";
+
 // ── Credentials panel ──────────────────────────────────────────────────────
 function CredentialField({
   label, name, value, onChange, show, onToggle, hint, savedMask
@@ -365,22 +369,32 @@ export function Settings() {
       <StrategyToggleCard
         key={strategy.strategy_id}
         separated={false}
-          label={strategy.display_name}
+          label={`${strategy.display_name} · v${strategy.version}`}
           checked={switchEnabled}
           onChange={(v) => set(strategy.setting_key, v)}
           disabled={strategy.integrity_errors.length > 0}
       >
-        <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>
-          <strong style={{ color: strategy.observation_only ? "var(--warning)" : "var(--positive)" }}>
-            {strategy.observation_only ? "Research only" : "Trading on"}
-          </strong>
-          {strategy.observation_only ? " · Every collected ticker · No orders" : ` · ${strategy.tickers.join(", ")}`}
-          {!strategy.observation_only && ` · ${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode}: ${actualState.hasResult ? `PF ${actualState.pfLabel}` : "collecting"} (${actualState.trades} trade${actualState.trades === 1 ? "" : "s"}${actualPnl ? `, ${actualPnl}` : ""})`}
+        <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--positive)" }}>
+          {strategy.observation_only ? "RESEARCH ONLY · No orders" : `CAN TRADE · ${strategy.tickers.join(", ")}`}
         </p>
-        <details className="text-xs pb-2" style={{ color: "var(--ink-muted)" }}>
-          <summary className="cursor-pointer">See test proof</summary>
-          <p className="mt-1">Version {strategy.version} · <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>Backtest PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` from ${strategy.backtest.trades} results` : ""}{` · Goal ${target.toFixed(1)}`}</p>
-          {!strategy.observation_only && actualState.hasResult && <p className="mt-1">Current paper proof: {actualEvidenceLabel}.</p>}
+        {!strategy.observation_only && (
+          <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
+            <strong style={{ color: actualState.meetsTarget ? "var(--positive)" : actualState.hasResult ? "var(--warning)" : "var(--ink-muted)" }}>
+              {strategy.backtest?.forward_evidence_start ? `Results since ${evidenceDate(strategy.backtest.forward_evidence_start)}` : `Current v${strategy.version}`} · {actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} {actualAccountMode}{actualState.hasResult ? ` PF ${actualState.pfLabel}` : " · collecting"}
+            </strong>
+            {` · ${actualState.trades} actual trade${actualState.trades === 1 ? "" : "s"}`}
+            {actualPnl ? ` · ${actualPnl}` : ""}
+            {actualState.hasResult ? ` · ${actualEvidenceLabel}` : ""}
+          </p>
+        )}
+        <p className="text-xs pb-2" style={{ color: "var(--ink-muted)" }}>
+          {strategy.observation_only
+            ? "Testing on every ticker the bot collects."
+            : "May place orders on the tickers above. Research keeps testing it on every other collected ticker."}
+        </p>
+        <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
+          <summary className="cursor-pointer">Test dates and proof</summary>
+          <p className="mt-1"><strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Saved test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}{` · Goal ${target.toFixed(1)}`}</p>
           <p className="mt-1">{strategy.backtest?.comparison || strategy.evidence}</p>
           {(allActual?.prior_or_unversioned_trades ?? 0) > 0 && (
             <p className="mt-1">
@@ -789,10 +803,12 @@ export function Settings() {
       </div>
       <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
       {/* Strategies */}
-      <section className="card p-4">
-        <div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Trading strategies</h3><span className="badge badge-green">CAN PLACE {actualAccountMode.toUpperCase()} ORDERS</span></div>
-        <p className="text-xs mt-1 mb-2" style={{ color: "var(--ink-muted)" }}>Each row shows its approved tickers. Research still tests every other collected ticker.</p>
-        <div>{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}</div>
+      <section>
+        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Can place orders</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          On means the strategy may place {actualAccountMode} orders on the tickers listed under “Trades.” Research continues on all other collected tickers.
+        </p>
+        <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}</div>
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
           New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
         </div>
@@ -810,10 +826,12 @@ export function Settings() {
         )}
       </section>
 
-      <section className="card p-4">
-        <div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research strategies</h3><span className="badge badge-blue">NO ORDERS</span></div>
-        <p className="text-xs mt-1 mb-2" style={{ color: "var(--ink-muted)" }}>On means keep testing it on every collected ticker.</p>
-        <div>{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
+      <section>
+        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research only</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          On means keep testing. These strategies cannot place an order.
+        </p>
+        <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
         <TestedStrategies
           researchIds={form.research_strategy_ids ?? []}
           onResearchIdsChange={ids => set("research_strategy_ids", ids)}

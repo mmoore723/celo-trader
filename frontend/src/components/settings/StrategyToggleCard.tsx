@@ -36,8 +36,8 @@ export function StrategyToggleCard({
   separated?: boolean;
 }) {
   return <div
-    className={`px-1 py-1 ${separated ? "mt-2" : ""}`}
-    style={{ borderBottom: "1px solid var(--border)" }}
+    className={`rounded-lg px-3 ${separated ? "mt-2" : ""}`}
+    style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}
   >
     <Toggle label={label} checked={checked} onChange={onChange} disabled={disabled} />
     {children}

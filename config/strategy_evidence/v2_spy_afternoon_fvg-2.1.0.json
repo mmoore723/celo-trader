@@ -2,6 +2,8 @@
   "schema_version": 1,
   "strategy_id": "V2_SPY_AFTERNOON_FVG",
   "strategy_version": "2.1.0",
+  "historical_test_through": "2026-09-04",
+  "forward_evidence_start": "2026-09-05",
   "status": "paper_candidate",
   "evidence_grade": "promising_underpowered",
   "ticker_scope": ["SPY"],
@@ -80,7 +82,7 @@
     "profit_factor": 2.22,
     "trades": 19,
     "scope": "SPY · 30-minute hold · May-July · EMA8-confirmed trigger",
-    "comparison": "Repaired past test PF 2.22 · fresh forward sample now collecting",
+    "comparison": "Tests through Sep 4, 2026 PF 2.22 · results since Sep 5 now collecting",
     "target_profit_factor": 1.5,
     "meets_target": true,
     "note": "The repair removes directionally contradictory retest candles, but remains paper-only evidence until fresh exact-contract results pass."

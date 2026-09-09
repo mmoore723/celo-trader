@@ -7,7 +7,7 @@ import json
 
 from config.market_constants import COMMISSION_PER_CONTRACT
 from config.strategy_catalog import (
-    REVIEWED_STRATEGIES, enabled_reviewed_strategy_ids, reviewed_research_exit_minutes,
+    REVIEWED_STRATEGIES, _backtest_display, enabled_reviewed_strategy_ids, reviewed_research_exit_minutes,
     reviewed_strategy_ids,
 )
 from strategy_health.candidate_evidence import candidate_signal_is_timely
@@ -171,7 +171,7 @@ def _contract_policy_summaries(
         if row_strategy != strategy_id or row_ticker != ticker:
             continue
         timely = [row for row in raw_samples if candidate_signal_is_timely(row)]
-        current, _, _ = _current_rule_samples(timely, strategy_id, ticker)
+        current, _, _, _ = _current_rule_samples(timely, strategy_id, ticker)
         independent = _independent_samples(current, exit_minutes)
         summary, dated_profits = _exit_summary(independent, exit_minutes)
         result_days = len({day for day, _ in dated_profits})
@@ -210,13 +210,19 @@ def _contract_policy_summaries(
     )
 
 
-def _current_rule_samples(samples: list, strategy_id: str, ticker: str) -> tuple[list, int, int]:
-    """Keep only candidates reconstructable under the currently deployed rule."""
+def _current_rule_samples(
+    samples: list, strategy_id: str, ticker: str,
+) -> tuple[list, int, int, int]:
+    """Keep only evidence emitted by the exact currently deployed version."""
     from trading.portfolio_policy import reviewed_strategy_entry_evidence_status
 
     eligible = []
     rejected = 0
     unscored = 0
+    previous_version = 0
+    reviewed = REVIEWED_STRATEGIES.get(strategy_id)
+    runtime = strategy_details(strategy_id)
+    current_version = reviewed.version if reviewed else (runtime.version if runtime else None)
     for row in samples:
         try:
             metadata = json.loads(str(_row_value(row, "metadata_json") or "{}"))
@@ -224,6 +230,9 @@ def _current_rule_samples(samples: list, strategy_id: str, ticker: str) -> tuple
             metadata = {}
         if not isinstance(metadata, dict):
             metadata = {}
+        if current_version is not None and str(metadata.get("strategy_version") or "") != current_version:
+            previous_version += 1
+            continue
         status = reviewed_strategy_entry_evidence_status(
             ticker=ticker,
             strategy_id=strategy_id,
@@ -236,7 +245,7 @@ def _current_rule_samples(samples: list, strategy_id: str, ticker: str) -> tuple
             rejected += 1
         else:
             unscored += 1
-    return eligible, rejected, unscored
+    return eligible, rejected, unscored, previous_version
 
 
 def _chronological_factors(dated_profits: list[tuple[str, float]]) -> tuple[object, object]:
@@ -471,7 +480,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 row for row in raw_samples if candidate_signal_is_timely(row)
             ]
             stale_or_replayed = len(raw_samples) - len(timely_samples)
-            rule_samples, rule_rejected, rule_unscored = _current_rule_samples(
+            rule_samples, rule_rejected, rule_unscored, previous_version_rows = _current_rule_samples(
                 timely_samples, strategy_id, ticker,
             )
             samples = _independent_samples(rule_samples, exit_minutes)
@@ -525,6 +534,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 "raw_observations": len(raw_samples),
                 "rule_rejected": rule_rejected,
                 "rule_unscored": rule_unscored,
+                "previous_version_rows": previous_version_rows,
                 "stale_or_replayed": stale_or_replayed,
                 "option_results": current_summary["option_results"],
                 "option_result_days": option_result_days,
@@ -554,6 +564,8 @@ def build_research_matrix(days: int = 90) -> dict:
         strategy_rows.append({
             "strategy_id": strategy_id,
             "display_name": display_name,
+            "version": rule.version if rule else runtime.version,
+            "backtest": _backtest_display(rule) if rule else {},
             "research_enabled": True,
             "trading_tickers": sorted(rule.tickers) if rule and not rule.observation_only else [],
             "exit_minutes": exit_minutes,

@@ -38,16 +38,31 @@ class ResearchMatrixTests(unittest.TestCase):
 
     def test_matrix_applies_current_rule_without_counting_old_unknown_rows(self):
         samples = [
-            {"direction": "bullish", "metadata_json": '{"pa_consecutive_higher_lows": true}'},
-            {"direction": "bullish", "metadata_json": '{"pa_consecutive_higher_lows": false}'},
-            {"direction": "bullish", "metadata_json": "{}"},
+            {"direction": "bullish", "metadata_json": '{"strategy_version":"2.1.0","pa_consecutive_higher_lows": true}'},
+            {"direction": "bullish", "metadata_json": '{"strategy_version":"2.1.0","pa_consecutive_higher_lows": false}'},
+            {"direction": "bullish", "metadata_json": '{"strategy_version":"2.1.0"}'},
         ]
-        eligible, rejected, unscored = _current_rule_samples(
+        eligible, rejected, unscored, previous_version = _current_rule_samples(
             samples, "V2_SPY_TREND_CONT", "SPY",
         )
         self.assertEqual(1, len(eligible))
         self.assertEqual(1, rejected)
         self.assertEqual(1, unscored)
+        self.assertEqual(0, previous_version)
+
+    def test_matrix_keeps_previous_strategy_versions_out_of_current_results(self):
+        samples = [
+            {"direction": "bullish", "metadata_json": '{"strategy_version":"2.1.0"}'},
+            {"direction": "bullish", "metadata_json": '{"strategy_version":"2.0.0"}'},
+            {"direction": "bullish", "metadata_json": "{}"},
+        ]
+        eligible, rejected, unscored, previous_version = _current_rule_samples(
+            samples, "V2_SPY_AFTERNOON_FVG", "SPY",
+        )
+        self.assertEqual(1, len(eligible))
+        self.assertEqual(0, rejected)
+        self.assertEqual(0, unscored)
+        self.assertEqual(2, previous_version)
 
     def test_independent_samples_collapse_same_trigger_and_holding_overlap(self):
         samples = [
@@ -142,15 +157,15 @@ class ResearchMatrixTests(unittest.TestCase):
         """)
         conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
             "c1", "2026-09-03T10:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 1, 1.2, "acct",
-            "2026-09-03T10:00:00", "bullish", "{}",
+            "2026-09-03T10:00:00", "bullish", '{"strategy_version":"2.1.0"}',
         ))
         conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
             "c2", "2026-09-03T11:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 0, -0.4, "acct",
-            "2026-09-03T11:00:00", "bearish", "{}",
+            "2026-09-03T11:00:00", "bearish", '{"strategy_version":"2.1.0"}',
         ))
         conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
             "other-user", "2026-09-03T12:00:00", "AAPL", "V2_SPY_AFTERNOON_FVG", 1, 2.0, "other",
-            "2026-09-03T12:00:00", "bullish", "{}",
+            "2026-09-03T12:00:00", "bullish", '{"strategy_version":"2.1.0"}',
         ))
         conn.execute("INSERT INTO shadow_candidates VALUES (?,?,?,?,?,?,?,?,?,?)", (
             "impulse", "2026-09-03T10:00:00", "AAPL",
@@ -191,6 +206,11 @@ class ResearchMatrixTests(unittest.TestCase):
         ), patch("database._now_et", return_value=datetime(2026, 9, 4, 12, 0)):
             matrix = build_research_matrix(90)
         row = next(item for item in matrix["strategies"] if item["strategy_id"] == "V2_SPY_AFTERNOON_FVG")
+        self.assertEqual("2.1.0", row["version"])
+        self.assertEqual(19, row["backtest"]["trades"])
+        self.assertAlmostEqual(2.22, row["backtest"]["profit_factor"])
+        self.assertEqual("2026-09-04", row["backtest"]["historical_test_through"])
+        self.assertEqual("2026-09-05", row["backtest"]["forward_evidence_start"])
         pair = next(item for item in row["pairs"] if item["ticker"] == "AAPL")
         self.assertEqual(1, pair["option_results"])
         self.assertEqual(1, pair["option_result_days"])

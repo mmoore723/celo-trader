@@ -118,6 +118,7 @@ export interface StrategyTickerResearchPair {
   raw_observations: number;
   rule_rejected: number;
   rule_unscored: number;
+  previous_version_rows: number;
   stale_or_replayed: number;
   option_results: number;
   option_result_days: number;
@@ -159,6 +160,16 @@ export interface StrategyResearchMatrix {
   strategies: {
     strategy_id: string;
     display_name: string;
+    version: string;
+    backtest: {
+      profit_factor?: number | "infinite" | "no fills";
+      trades?: number;
+      scope?: string;
+      note?: string;
+      meets_target?: boolean;
+      historical_test_through?: string;
+      forward_evidence_start?: string;
+    };
     research_enabled: boolean;
     trading_tickers: string[];
     exit_minutes: number;
@@ -913,6 +924,8 @@ export interface ReviewedStrategyCatalogEntry {
     target_profit_factor?: number;
     meets_target?: boolean;
     note?: string;
+    historical_test_through?: string;
+    forward_evidence_start?: string;
   };
   research_scope: "all_collected_tickers";
   control_kind: "execution" | "observation";

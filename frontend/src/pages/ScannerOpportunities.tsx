@@ -13,6 +13,7 @@ const NAMES: Record<string, string> = {
   CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG: "VWAP Pullback (10:30 Displacement)",
 };
 const todayEt = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const evidenceDate = (value?: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
 const time = (value?: string | null) => value ? new Date(value).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }) : "—";
 const money = (value?: number | null) => value == null ? "—" : `$${Number(value).toFixed(2)}`;
 
@@ -40,18 +41,19 @@ const STATUS: Record<StrategyTickerResearchPair["status"], { label: string; colo
   no_setups: { label: "No setups yet", color: "var(--ink-muted)" },
 };
 
-function ResearchRow({ pair, strategyName, exitMinutes }: { pair: StrategyTickerResearchPair; strategyName: string; exitMinutes: number }) {
+function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinutes }: { pair: StrategyTickerResearchPair; strategyName: string; strategyVersion: string; backtest: { profit_factor?: number | "infinite" | "no fills"; trades?: number; scope?: string; historical_test_through?: string }; exitMinutes: number }) {
   const status = STATUS[pair.status];
   return <article className="card p-4">
     <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1.5fr)_repeat(4,minmax(5rem,.55fr))_minmax(14rem,1.5fr)] lg:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2"><strong className="text-lg">{pair.ticker}</strong><span className={`badge ${pair.tradable ? "badge-green" : "badge-blue"}`}>{pair.tradable ? "TRADING ON" : "RESEARCH"}</span></div>
-        <p className="text-sm mt-1">{strategyName}</p>
+        <p className="text-sm mt-1">{strategyName} · v{strategyVersion}</p>
+        {backtest.trades != null && backtest.trades > 0 && <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{backtest.historical_test_through ? `Tests through ${evidenceDate(backtest.historical_test_through)}` : "Saved test"}: PF {profitFactorText(backtest.profit_factor === "no fills" ? null : backtest.profit_factor ?? null)} · {backtest.trades} results</p>}
         <p className="text-xs font-semibold mt-1" style={{ color: status.color }}>{status.label}</p>
         {pair.leading_contract_test && pair.leading_contract_test.option_results > 0 && <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Most option evidence: {pair.leading_contract_test.label} · PF {profitFactorText(pair.leading_contract_test.profit_factor)} ({pair.leading_contract_test.option_results})</p>}
       </div>
-      <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>PF</span><strong>{profitFactorText(pair.profit_factor)}</strong></div>
-      <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>Results</span><strong>{pair.option_results}</strong><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>{pair.option_result_days} days</span></div>
+      <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>Current PF</span><strong>{profitFactorText(pair.profit_factor)}</strong></div>
+      <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>Current results</span><strong>{pair.option_results}</strong><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>{pair.option_result_days} days</span></div>
       <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>Wins</span><strong>{pair.win_rate_pct == null ? "—" : `${pair.win_rate_pct}%`}</strong></div>
       <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>1-contract P&amp;L</span><strong style={{ color: pair.net_one_contract_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>{money(pair.net_one_contract_pnl)}</strong></div>
       <div className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
@@ -67,7 +69,8 @@ function ResearchRow({ pair, strategyName, exitMinutes }: { pair: StrategyTicker
         <p><b>Stock moved correctly:</b> {pair.direction_accuracy == null ? "—" : `${pair.direction_accuracy}% of ${pair.direction_results}`}</p>
         <p><b>Compared exit:</b> {exitMinutes} minutes</p>
         {pair.rule_rejected > 0 && <p><b>Filtered by current rule:</b> {pair.rule_rejected}</p>}
-        {pair.rule_unscored > 0 && <p><b>Rows missing this rule version:</b> {pair.rule_unscored}</p>}
+        {pair.previous_version_rows > 0 && <p><b>Earlier-version setups kept separate:</b> {pair.previous_version_rows}</p>}
+        {pair.rule_unscored > 0 && <p><b>Current-version setups missing proof:</b> {pair.rule_unscored}</p>}
         {pair.stale_or_replayed > 0 && <p><b>Late signals ignored:</b> {pair.stale_or_replayed}</p>}
         {pair.mistimed_quotes_ignored > 0 && <p><b>Late prices ignored:</b> {pair.mistimed_quotes_ignored}</p>}
         {pair.legacy_option_profiles_ignored > 0 && <p><b>Rows using a different option test:</b> {pair.legacy_option_profiles_ignored}</p>}
@@ -108,7 +111,7 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
           <label className="text-sm font-medium">Strategy<select className="select w-full mt-2" value={selected} onChange={event => setSelected(event.target.value)}><option value="all">All strategies</option>{matrix.strategies.map(strategy => <option key={strategy.strategy_id} value={strategy.strategy_id}>{strategy.display_name}</option>)}</select></label>
           <label className="text-sm font-medium">Show<select className="select w-full mt-2" value={researchFilter} onChange={event => setResearchFilter(event.target.value)}><option value="evidence">Pairs with setups</option><option value="attention">Needs attention</option><option value="passing">Working or promising</option><option value="all">Everything being watched</option></select></label>
         </div>
-        <div className="space-y-3">{researchPairs.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} exitMinutes={strategy.exit_minutes} />)}</div>
+        <div className="space-y-3">{researchPairs.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} strategyVersion={strategy.version} backtest={strategy.backtest} exitMinutes={strategy.exit_minutes} />)}</div>
         {!researchPairs.length && <div className="card p-8 text-center">No strategy–ticker pairs match these filters yet.</div>}
         <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How results are calculated</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same trigger counts once, and overlapping fixed-hold trades are excluded. “Working” requires PF 1.5+, at least 20 option results, at least 8 setup days, and the most recent dated test window must also pass.</p></details>
       </> : <div className="card p-8 text-center">No research results are available yet.</div>}

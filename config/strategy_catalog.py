@@ -236,7 +236,11 @@ def _backtest_display(rule: ReviewedStrategy) -> dict:
     except (OSError, json.JSONDecodeError):
         return {}
     display = evidence.get("display_metrics")
-    return dict(display) if isinstance(display, dict) else {}
+    result = dict(display) if isinstance(display, dict) else {}
+    for field in ("historical_test_through", "forward_evidence_start"):
+        if isinstance(evidence.get(field), str):
+            result[field] = evidence[field]
+    return result
 
 
 def _implementation_path(implementation: str) -> Path:
