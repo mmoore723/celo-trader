@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from api.routes.trades import get_analytics, get_performance, _strategy_version_from_trade_row
+from api.routes.trades import get_analytics, get_performance, list_trades, _strategy_version_from_trade_row
 from database.schema import _init_db_at
 from database.trades_query import get_all_trades as read_all_trades
 
@@ -23,6 +23,21 @@ class PerformanceAccountScopeTests(unittest.TestCase):
         self.assertIn("currently connected", result.data_scope_note)
         get_all_trades.assert_called_once_with(
             limit=1000, mode="paper", broker_account_id="alpaca:paper:current",
+        )
+
+    @patch("config.get_settings", return_value={"active_broker_account_id": "alpaca:paper:current"})
+    @patch("database.get_all_trades")
+    def test_daily_brief_endpoint_keeps_account_and_date_scope(
+        self, get_all_trades, _get_settings,
+    ):
+        get_all_trades.return_value = []
+
+        result = list_trades(mode="paper", limit=200, status="all", date="2026-09-04")
+
+        self.assertEqual(0, result.total)
+        get_all_trades.assert_called_once_with(
+            limit=200, mode="paper", status_filter="all",
+            broker_account_id="alpaca:paper:current", trading_date="2026-09-04",
         )
 
     def test_strategy_version_prefers_frozen_trade_context(self):
@@ -70,6 +85,29 @@ class PerformanceAccountScopeTests(unittest.TestCase):
 
         self.assertEqual(1, len(rows))
         self.assertEqual("2.1.0", rows[0]["candidate_strategy_version"])
+
+    def test_trade_reader_filters_one_daily_brief_by_entry_date(self):
+        with TemporaryDirectory() as directory:
+            db_path = Path(directory) / "trades_paper.db"
+            _init_db_at(db_path)
+            with sqlite3.connect(db_path) as conn:
+                for day, ticker in (("2026-09-04", "SPY"), ("2026-09-08", "TSLA")):
+                    conn.execute(
+                        """INSERT INTO trades
+                           (ticker, contract_symbol, option_type, strike, expiry, contracts,
+                            entry_price, entry_time, exit_time, exit_price,
+                            realized_pnl, status, paper, broker_account_id)
+                           VALUES (?, ?, 'call', 100.0, '2026-09-18', 1, 2.0, ?, ?, 2.2, 20.0,
+                                   'closed', 1, 'paper:current')""",
+                        (ticker, f"{ticker}-OPTION", f"{day}T10:00:00", f"{day}T10:30:00"),
+                    )
+            with patch("database.connection.get_db_path", return_value=db_path):
+                rows = read_all_trades(
+                    mode="paper", broker_account_id="paper:current",
+                    trading_date="2026-09-04",
+                )
+
+        self.assertEqual(["SPY"], [row["ticker"] for row in rows])
 
     @patch("config.get_settings", return_value={"active_broker_account_id": "alpaca:paper:current"})
     @patch("database.get_all_trades")

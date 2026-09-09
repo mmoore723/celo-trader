@@ -10,5 +10,5 @@ test("research results expose strategy-ticker contract policy evidence", () => {
   assert.match(source, /Most option evidence/);
   assert.match(source, /Which option choice is working\?/);
   assert.match(source, /contract_tests/);
-  assert.match(source, /Old option tests kept out/);
+  assert.match(source, /Rows using a different option test/);
 });

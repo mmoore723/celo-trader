@@ -176,10 +176,12 @@ def _contract_policy_summaries(
         summary, dated_profits = _exit_summary(independent, exit_minutes)
         result_days = len({day for day, _ in dated_profits})
         older, newer = _chronological_factors(dated_profits)
+        comparison_split_date = _chronological_split_date(dated_profits)
         status, explanation = research_status(
             results=summary["option_results"], days=result_days,
             sessions=sessions, factor=summary["profit_factor"],
             older_factor=older, newer_factor=newer,
+            comparison_split_date=comparison_split_date,
         )
         summaries.append({
             "policy": policy,
@@ -196,6 +198,7 @@ def _contract_policy_summaries(
             "mistimed_quotes_ignored": summary["mistimed_quotes_ignored"],
             "older_profit_factor": older,
             "newer_profit_factor": newer,
+            "comparison_split_date": comparison_split_date,
         })
     return sorted(
         summaries,
@@ -247,14 +250,25 @@ def _chronological_factors(dated_profits: list[tuple[str, float]]) -> tuple[obje
     return _factor(older), _factor(newer)
 
 
+def _chronological_split_date(dated_profits: list[tuple[str, float]]) -> str | None:
+    """Name the exact first day of the recent comparison window."""
+    days = sorted({day for day, _ in dated_profits})
+    if len(dated_profits) < 20 or len(days) < 8:
+        return None
+    split = min(max(5, int(len(days) * 0.7)), len(days) - 3)
+    return days[split]
+
+
 def research_status(
     *, results: int, days: int, sessions: int, factor: object,
     older_factor: object = None, newer_factor: object = None,
+    comparison_split_date: str | None = None,
 ) -> tuple[str, str]:
     numeric = _numeric_factor(factor)
     if results >= 20 and days >= 8 and numeric >= 1.5:
         if newer_factor is not None and _numeric_factor(newer_factor) < 1.5:
-            return "needs_tuning", "It worked on older dates but fell below 1.5 on newer dates."
+            boundary = comparison_split_date or "the comparison date"
+            return "needs_tuning", f"It passed before {boundary} but fell below 1.5 from {boundary}."
         return "working", "PF is at least 1.5 across enough days."
     if results >= 20 and numeric < 1.0:
         return "not_working", "This version is losing and needs a change."
@@ -275,6 +289,7 @@ def _diagnosis(
     *, status: str, setups: int, option_results: int, direction_results: int,
     direction_accuracy: float | None, factor: object, older_factor: object,
     newer_factor: object, exit_minutes: int, exit_summaries: list[dict],
+    comparison_split_date: str | None = None,
 ) -> tuple[str, str]:
     if status == "working":
         return "ready", "Passed PF 1.5 and the minimum sample checks."
@@ -294,7 +309,8 @@ def _diagnosis(
         return "more_data", "Not enough option results yet. Keep collecting."
     if older_factor is not None and newer_factor is not None:
         if _numeric_factor(older_factor) >= 1.5 and _numeric_factor(newer_factor) < 1.5:
-            return "unstable", "Worked on older dates, but not newer dates. Retest the entry."
+            boundary = comparison_split_date or "the comparison date"
+            return "unstable", f"Worked before {boundary}, but not from {boundary}. Retest the entry."
     alternatives = [
         summary for summary in exit_summaries
         if summary["minutes"] != exit_minutes and summary["option_results"] >= 10
@@ -302,7 +318,7 @@ def _diagnosis(
     if alternatives:
         best = max(alternatives, key=lambda item: _numeric_factor(item["profit_factor"]))
         if _numeric_factor(best["profit_factor"]) >= 1.5 and _numeric_factor(factor) < 1.5:
-            return "exit", f"The {best['minutes']}-minute exit tested better. Validate it on newer dates."
+            return "exit", f"The {best['minutes']}-minute exit tested better. Validate it on future dates."
     if status == "promising":
         return "more_data", "PF is above 1.5, but the sample is too small. Keep collecting."
     if direction_results >= 10 and direction_accuracy is not None:
@@ -478,10 +494,12 @@ def build_research_matrix(days: int = 90) -> dict:
             factor = current_summary["profit_factor"]
             option_result_days = len({day for day, _ in current_results})
             older_factor, newer_factor = _chronological_factors(current_results)
+            comparison_split_date = _chronological_split_date(current_results)
             status, explanation = research_status(
                 results=current_summary["option_results"], days=option_result_days,
                 sessions=sessions.get(ticker, 0), factor=factor,
                 older_factor=older_factor, newer_factor=newer_factor,
+                comparison_split_date=comparison_split_date,
             )
             correct = sum(1 for row in samples if row["direction_correct"] == 1)
             measured = sum(1 for row in samples if row["direction_correct"] is not None)
@@ -492,6 +510,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 direction_results=measured, direction_accuracy=direction_accuracy,
                 factor=factor, older_factor=older_factor, newer_factor=newer_factor,
                 exit_minutes=exit_minutes, exit_summaries=exit_summaries,
+                comparison_split_date=comparison_split_date,
             )
             contract_tests = _contract_policy_summaries(
                 alternative_grouped, strategy_id=strategy_id, ticker=ticker,
@@ -520,6 +539,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 "legacy_option_profiles_ignored": legacy_option_profiles_ignored,
                 "older_profit_factor": older_factor,
                 "newer_profit_factor": newer_factor,
+                "comparison_split_date": comparison_split_date,
                 "diagnosis": diagnosis,
                 "next_action": next_action,
                 "exit_comparison": exit_summaries,

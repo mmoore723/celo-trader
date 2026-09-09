@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from strategy_health.research_matrix import (
-    _chronological_factors, _current_rule_samples, _diagnosis, _exit_summary,
+    _chronological_factors, _chronological_split_date, _current_rule_samples, _diagnosis, _exit_summary,
     _factor, _independent_samples, _quote_profit, build_research_matrix,
     research_status,
 )
@@ -71,21 +71,25 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("not_working", research_status(results=20, days=8, sessions=30, factor=0.9)[0])
         self.assertEqual("no_setups", research_status(results=0, days=0, sessions=20, factor=None)[0])
 
-    def test_newer_dates_must_still_pass_before_a_pair_is_working(self):
+    def test_recent_dates_must_still_pass_before_a_pair_is_working(self):
         dated = []
         for day in range(1, 8):
             dated.extend([(f"2026-08-{day:02d}", 50.0)] * 2)
         for day in range(8, 11):
             dated.extend([(f"2026-08-{day:02d}", -10.0)] * 2)
         older, newer = _chronological_factors(dated)
+        split_date = _chronological_split_date(dated)
         self.assertEqual("infinite", older)
         self.assertEqual(0.0, newer)
         status, message = research_status(
             results=20, days=10, sessions=30, factor=11.67,
             older_factor=older, newer_factor=newer,
+            comparison_split_date=split_date,
         )
         self.assertEqual("needs_tuning", status)
-        self.assertIn("newer dates", message)
+        self.assertEqual("2026-08-08", split_date)
+        self.assertIn("before 2026-08-08", message)
+        self.assertIn("from 2026-08-08", message)
 
     def test_diagnosis_points_to_an_exit_only_when_an_observed_exit_passes(self):
         diagnosis, action = _diagnosis(

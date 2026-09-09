@@ -67,12 +67,12 @@ function ResearchRow({ pair, strategyName, exitMinutes }: { pair: StrategyTicker
         <p><b>Stock moved correctly:</b> {pair.direction_accuracy == null ? "—" : `${pair.direction_accuracy}% of ${pair.direction_results}`}</p>
         <p><b>Compared exit:</b> {exitMinutes} minutes</p>
         {pair.rule_rejected > 0 && <p><b>Filtered by current rule:</b> {pair.rule_rejected}</p>}
-        {pair.rule_unscored > 0 && <p><b>Old rows not comparable:</b> {pair.rule_unscored}</p>}
+        {pair.rule_unscored > 0 && <p><b>Rows missing this rule version:</b> {pair.rule_unscored}</p>}
         {pair.stale_or_replayed > 0 && <p><b>Late signals ignored:</b> {pair.stale_or_replayed}</p>}
         {pair.mistimed_quotes_ignored > 0 && <p><b>Late prices ignored:</b> {pair.mistimed_quotes_ignored}</p>}
-        {pair.legacy_option_profiles_ignored > 0 && <p><b>Old option tests kept out:</b> {pair.legacy_option_profiles_ignored}</p>}
-        {pair.older_profit_factor != null && <p><b>Older dates PF:</b> {profitFactorText(pair.older_profit_factor)}</p>}
-        {pair.newer_profit_factor != null && <p><b>Newer dates PF:</b> {profitFactorText(pair.newer_profit_factor)}</p>}
+        {pair.legacy_option_profiles_ignored > 0 && <p><b>Rows using a different option test:</b> {pair.legacy_option_profiles_ignored}</p>}
+        {pair.older_profit_factor != null && <p><b>Before {pair.comparison_split_date ?? "the comparison date"} PF:</b> {profitFactorText(pair.older_profit_factor)}</p>}
+        {pair.newer_profit_factor != null && <p><b>From {pair.comparison_split_date ?? "the comparison date"} PF:</b> {profitFactorText(pair.newer_profit_factor)}</p>}
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         {pair.exit_comparison.map(exit => <span key={exit.minutes} className="badge">{exit.minutes} min: PF {profitFactorText(exit.profit_factor)} ({exit.option_results}){exit.mistimed_quotes_ignored ? ` · ${exit.mistimed_quotes_ignored} late ignored` : ""}</span>)}
@@ -82,8 +82,8 @@ function ResearchRow({ pair, strategyName, exitMinutes }: { pair: StrategyTicker
   </article>;
 }
 
-export function ScannerOpportunities() {
-  const [view, setView] = useState<"decisions" | "research">("decisions"), [date, setDate] = useState(todayEt()), [selected, setSelected] = useState("all"), [researchFilter, setResearchFilter] = useState("evidence");
+export function ScannerOpportunities({ view = "decisions" }: { view?: "decisions" | "research" }) {
+  const [date, setDate] = useState(todayEt()), [selected, setSelected] = useState("all"), [researchFilter, setResearchFilter] = useState("evidence");
   const { data, isLoading, error } = useQuery({ queryKey: ["scanner-opportunities", date], queryFn: () => api.signals.opportunities({ date, limit: 1000 }), refetchInterval: 15_000 });
   const { data: matrix, isLoading: matrixLoading, error: matrixError } = useQuery({ queryKey: ["strategy-research-matrix"], queryFn: () => api.strategyHealth.researchMatrix(90), refetchInterval: 60_000 });
   const decisions = useMemo(() => collapseOpportunityEpisodes(data?.entries ?? []).filter(entry => opportunityLifecycle(entry) !== "research"), [data?.entries]);
@@ -97,10 +97,9 @@ export function ScannerOpportunities() {
   const skipped = decisions.filter(entry => opportunityLifecycle(entry) === "stopped" && entry.reason_code !== "entry_price_not_reached").length;
   if (view === "decisions" && isLoading && !data) return <PageLoader label="Today's Decisions" />;
   return <div className="page-container space-y-4">
-    <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>What the bot did and what it learned</p><h1 className="text-xl font-semibold mt-1">Decisions &amp; Research</h1></div>{view === "decisions" && <label className="text-xs" style={{ color: "var(--ink-muted)" }}>Trading day<input className="input ml-2" type="date" value={date} onChange={event => setDate(event.target.value)} /></label>}</header>
-    <div className="flex gap-2"><button className={`btn ${view === "decisions" ? "btn-primary" : "btn-ghost"}`} onClick={() => setView("decisions")}>Trading decisions</button><button className={`btn ${view === "research" ? "btn-primary" : "btn-ghost"}`} onClick={() => setView("research")}>Research results</button></div>
+    <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>{view === "decisions" ? "Before and during each order" : "Strategy + ticker evidence"}</p><h1 className="text-xl font-semibold mt-1">{view === "decisions" ? "Today's Decisions" : "Research Results"}</h1><p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>{view === "decisions" ? "Setups the bot considered, including why one entered or stopped. The Trade Journal starts after an order becomes a position." : "See which strategy works with which ticker. Research observes only and cannot place an order."}</p></div>{view === "decisions" && <label className="text-xs" style={{ color: "var(--ink-muted)" }}>Trading day<input className="input ml-2" type="date" value={date} onChange={event => setDate(event.target.value)} /></label>}</header>
     {view === "decisions" ? <><div className="grid grid-cols-3 gap-3">{[["Trades entered", entered, "var(--positive)"], ["Orders not filled", unfilled, "var(--warning)"], ["Setups skipped", skipped, "var(--negative)"]].map(([label, value, color]) => <div className="card p-3" key={String(label)}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold" style={{ color: String(color) }}>{String(value)}</p></div>)}</div>{error ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load decisions: {(error as Error).message}</div> : decisions.length ? <div className="space-y-3">{decisions.map(entry => <DecisionCard key={entry.id} entry={entry} />)}</div> : <div className="card p-8 text-center"><SearchX size={24} className="mx-auto" /><p className="mt-2 font-medium">No setup reached the trading path on this day.</p></div>}</> : <>
-      <div className="card p-4"><h2 className="font-semibold">Which strategy works on which ticker?</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Goal: PF {matrix?.target_profit_factor.toFixed(1) ?? "1.5"}. Every row is one strategy + ticker. Repeated scans count once. Old-rule, missing, and late prices are not counted as results.</p></div>
+      <div className="card p-4"><h2 className="font-semibold">Which strategy works on which ticker?</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Goal: PF {matrix?.target_profit_factor.toFixed(1) ?? "1.5"}. Every row is one strategy + ticker. Repeated scans count once. Rows from a different rule version, missing prices, and late prices are not counted.</p></div>
       {matrixLoading && !matrix ? <PageLoader label="Research results" /> : matrixError ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load research: {(matrixError as Error).message}</div> : matrix ? <>
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
           {[["Pairs with results", measuredPairs.length], ["Working", measuredPairs.filter(pair => pair.status === "working").length], ["Promising", measuredPairs.filter(pair => pair.status === "promising").length], ["Need a change", measuredPairs.filter(pair => ["losing_so_far", "needs_tuning", "not_working"].includes(pair.status)).length]].map(([label, value]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><strong className="text-xl">{value}</strong></div>)}
@@ -111,7 +110,7 @@ export function ScannerOpportunities() {
         </div>
         <div className="space-y-3">{researchPairs.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} exitMinutes={strategy.exit_minutes} />)}</div>
         {!researchPairs.length && <div className="card p-8 text-center">No strategy–ticker pairs match these filters yet.</div>}
-        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How results are calculated</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same trigger counts once, and overlapping fixed-hold trades are excluded. “Working” requires PF 1.5+, at least 20 option results, at least 8 setup days, and no failure on newer dates.</p></details>
+        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How results are calculated</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same trigger counts once, and overlapping fixed-hold trades are excluded. “Working” requires PF 1.5+, at least 20 option results, at least 8 setup days, and the most recent dated test window must also pass.</p></details>
       </> : <div className="card p-8 text-center">No research results are available yet.</div>}
     </>}
   </div>;

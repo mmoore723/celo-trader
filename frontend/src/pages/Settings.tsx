@@ -632,12 +632,13 @@ export function Settings() {
         </div>
       </div>
 
-      {/* Trade Parameters */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Trade Parameters</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          Live-tuning — changes apply on the next bot tick (&lt;60 s). No restart needed.
-        </p>
+      {/* Detailed gates stay available without overwhelming the main page. */}
+      <details className="card p-4">
+        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>Advanced trade rules</summary>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Contract limits and entry/exit rules. Changes apply within 60 seconds.</p>
+        <div className="flex flex-col gap-5 mt-4">
+        <section className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Contract and safety limits</h3>
         {form.simplified_exit_mode && (
           <p className="text-xs mb-3" style={{ color: "var(--warning)" }}>
             Simplified Exit is active: positions use a hard stop, underlying Chandelier exit, and time cap.
@@ -763,10 +764,10 @@ export function Settings() {
             />
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Exit engine — controls how an OPEN position gets closed */}
-      <div className="card p-4">
+      <section className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
         <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Exit engine</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           Controls how the bot closes a position once it's already open.
@@ -781,14 +782,13 @@ export function Settings() {
           On (default): the 3-rule exit that beat the full 9-condition engine
           on realized R:R in backtesting. Off: falls back to the full engine.
         </p>
-      </div>
+      </section>
 
       {/* Entry confirmation — controls whether a trade gets taken at all */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Entry confirmation</h3>
+      <section className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
+        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>1-hour entry check</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          Runs before a trade is entered, not after — adjusts a signal's
-          confidence rather than closing anything.
+          Checks the 1-hour trend before an entry. It never closes a position.
         </p>
         <Toggle
           label="MTF confirmation gate (live 1Hour bias check)"
@@ -796,8 +796,7 @@ export function Settings() {
           onChange={(v) => set("mtf_confirmation_enabled", v)}
         />
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          Unlike every other gate, this depends on a live "as-of-now" API
-          fetch and can't be validated against the backtester.
+          Uses the current API view and is not part of historical backtests.
         </p>
         <Toggle
           label="Opportunity cohort (observation-only lower-confidence experiments)"
@@ -809,7 +808,9 @@ export function Settings() {
           and hurt results. When off, candidates are still tagged in Strategy
           Health so you can learn from them without letting them enter.
         </p>
-      </div>
+      </section>
+        </div>
+      </details>
 
       {/* Watchlist */}
       <div className="card p-4">

@@ -92,6 +92,7 @@ def get_open_trade(broker_account_id: str | None = None) -> Optional[dict]:
 def get_all_trades(
     limit: int = 500, mode: str = "paper", status_filter: str = "all",
     broker_account_id: str | None = None, user_id: str | None = None,
+    trading_date: str | None = None,
 ) -> list[dict]:
     """
     Return trades for the journal page.
@@ -115,6 +116,13 @@ def get_all_trades(
     if broker_account_id:
         clauses.append("t.broker_account_id = ?")
         params.append(broker_account_id)
+    if trading_date:
+        # Trade timestamps are stored in New York session time.  Daily Brief
+        # groups a trade by the day it was entered, so the calendar popup must
+        # use the same definition instead of fetching an arbitrary recent
+        # slice and hoping the selected day is still present.
+        clauses.append("substr(t.entry_time, 1, 10) = ?")
+        params.append(trading_date)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     ordering = "t.entry_time DESC" if status_filter == "open" else "COALESCE(t.exit_time, t.entry_time) DESC"
     # Keep the exact strategy version which created each candidate beside the

@@ -112,7 +112,8 @@ function AppShell() {
           <Route path="/trading"     element={<LiveTrading />} />
           <Route path="/performance" element={<Performance />} />
           <Route path="/journal"     element={<Journal />} />
-          <Route path="/opportunities" element={<ScannerOpportunities />} />
+          <Route path="/opportunities" element={<ScannerOpportunities view="decisions" />} />
+          <Route path="/research"    element={<ScannerOpportunities view="research" />} />
           <Route path="/backtest"    element={<Backtest />} />
           <Route path="/ai-reasoning" element={<AiReasoning />} />
           <Route path="/playbooks"   element={<Playbooks />} />

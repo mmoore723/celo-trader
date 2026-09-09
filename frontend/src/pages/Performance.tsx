@@ -14,10 +14,10 @@
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ComposedChart, Bar, Line,
   BarChart, Bar as RBar,
   XAxis, YAxis, Tooltip as ChartTooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell,
 } from "recharts";
+import { X } from "lucide-react";
 import { api } from "../lib/api";
 import { useThemeStore } from "../store/theme";
 import { useBotStore } from "../store/bot";
@@ -25,6 +25,7 @@ import { PageLoader } from "../components/PageLoader";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { formatSignedCurrency } from "../lib/money.js";
+import { PostMarketReport } from "./DailyBrief";
 
 // ── Exit reason categorisation (frontend only) ────────────────────────────────
 type ExitGroup = "target" | "timecap" | "signal" | "stop" | "cutoff" | "other";
@@ -74,9 +75,10 @@ function pnlColor(pnl: number | undefined, maxAbs: number, dark: boolean): strin
 }
 
 function CalendarMonth({
-  year, month, pnlMap, maxAbs, dark,
+  year, month, pnlMap, maxAbs, dark, onSelect,
 }: {
   year: number; month: number; pnlMap: Record<string,number>; maxAbs: number; dark: boolean;
+  onSelect: (date: string) => void;
 }) {
   const firstDay    = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -101,12 +103,15 @@ function CalendarMonth({
           const ds  = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
           const pnl = pnlMap[ds];
           return (
-            <div key={i} title={pnl != null ? `${ds}: ${pnl>=0?"+":""}$${pnl.toFixed(2)}` : ds}
+            <button key={i} type="button" title={`${pnl != null ? `${pnl>=0?"+":""}$${pnl.toFixed(2)} · ` : ""}Open ${ds} brief`}
+              onClick={() => onSelect(ds)}
               style={{
                 height: 26, borderRadius: 3,
                 background: pnlColor(pnl, maxAbs, dark),
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                border: "none", cursor: "pointer", padding: 0,
               }}
+              aria-label={`Open post-market brief for ${ds}`}
             >
               <span style={{ fontSize: 8, color: pnl!=null ? (dark?"#e6edf3":"#1f2937") : "var(--ink-faint)", fontWeight: pnl!=null?600:400 }}>
                 {day}
@@ -116,7 +121,7 @@ function CalendarMonth({
                   {pnl>=0?"+":""}{Math.abs(pnl)>=100?`$${Math.round(pnl)}`:`$${pnl.toFixed(0)}`}
                 </span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -153,6 +158,7 @@ export function Performance() {
   const botStatus  = useBotStore((s) => s.status);
   const defaultMode: "paper"|"live" = botStatus?.is_paper===false ? "live" : "paper";
   const [mode, setMode] = useState<"paper"|"live">(defaultMode);
+  const [briefDate, setBriefDate] = useState<string | null>(null);
   const { theme } = useThemeStore();
   const dark = theme === "dark";
 
@@ -178,25 +184,7 @@ export function Performance() {
     retry: false,
   });
 
-  // Actual Alpaca daily P&L — truth from portfolio/history, not bot assumed fills.
-  // Silently falls back to bot DB data if unavailable (circuit open, key missing, etc.)
-  const { data: alpacaDailyRaw = [] } = useQuery({
-    queryKey: ["alpaca-daily-pnl"],
-    queryFn:  () => api.trades.alpacaDailyPnl(),
-    refetchInterval: 60_000,
-    retry: false,
-  });
-
   // ── All useMemo calls before any conditional return (Rules of Hooks) ─────────
-
-  // Daily chart data: bars for daily P&L + cumulative equity line
-  const dailyChart = useMemo(() => {
-    let cum = 0;
-    return (perf?.daily_summaries ?? []).map((d) => {
-      cum += d.pnl;
-      return { date: d.date.slice(5), pnl: +d.pnl.toFixed(2), equity: +cum.toFixed(2) };
-    });
-  }, [perf]);
 
   // Exit reason aggregation — merge raw strings into categories
   const exitBreakdown = useMemo(() => {
@@ -233,19 +221,28 @@ export function Performance() {
     return Math.max(gross, 1);
   }, [analytics]);
 
-  // Calendar pnl map — prefer Alpaca portfolio/history (actual fills) over bot DB
-  const { pnlMap, calMaxAbs, usingAlpaca } = useMemo(() => {
+  // Calendar and every headline metric use the same confirmed bot-trade ledger.
+  // Mixing Alpaca portfolio history here with strategy-scoped rows elsewhere
+  // made totals disagree whenever the brokerage account contained other P&L.
+  const { pnlMap, calMaxAbs } = useMemo(() => {
     const m: Record<string, number> = {};
-    // Use Alpaca data if available (non-empty), else fall back to bot DB
-    if (alpacaDailyRaw.length > 0) {
-      for (const d of alpacaDailyRaw) m[d.date] = d.pnl;
-      const maxAbs = Math.max(1, ...Object.values(m).map(Math.abs));
-      return { pnlMap: m, calMaxAbs: maxAbs, usingAlpaca: true };
-    }
     for (const d of (perf?.daily_summaries ?? [])) m[d.date] = d.pnl;
     const maxAbs = Math.max(1, ...Object.values(m).map(Math.abs));
-    return { pnlMap: m, calMaxAbs: maxAbs, usingAlpaca: false };
-  }, [alpacaDailyRaw, perf]);
+    return { pnlMap: m, calMaxAbs: maxAbs };
+  }, [perf]);
+
+  const { data: briefTrades, isLoading: briefTradesLoading, isError: briefTradesFailed } = useQuery({
+    queryKey: ["performance-daily-brief-trades", mode, briefDate],
+    queryFn: () => api.trades.list(mode, "all", briefDate!),
+    enabled: !!briefDate,
+    retry: false,
+  });
+  const { data: briefScorecard, isLoading: briefScorecardLoading, isError: briefScorecardFailed } = useQuery({
+    queryKey: ["performance-daily-brief-scorecard", mode, briefDate],
+    queryFn: () => api.strategyHealth.dailyScorecard(mode, briefDate!),
+    enabled: !!briefDate,
+    retry: false,
+  });
 
   if (isLoading && !perf) return <PageLoader label="Performance" />;
 
@@ -264,11 +261,7 @@ export function Performance() {
   const streak     = perf?.current_streak ?? 0;
   // Edge ratio: avg win ÷ avg loss (avg_loss is negative)
   const edgeRatio  = avgLoss < 0 ? (avgWin / Math.abs(avgLoss)).toFixed(1) : null;
-  // Total P&L: prefer Alpaca actual fills, fall back to bot DB
-  const alpacaTotalPnl = alpacaDailyRaw.length > 0
-    ? alpacaDailyRaw.reduce((s, d) => s + d.pnl, 0)
-    : null;
-  const displayPnl = alpacaTotalPnl ?? (perf?.total_pnl ?? 0);
+  const displayPnl = perf?.total_pnl ?? 0;
 
   const byStrategy = analytics?.by_strategy ?? [];
   const evidenceByStrategy = new Map((evidence?.strategies ?? []).map((row) => [row.strategy_id, row]));
@@ -296,25 +289,6 @@ export function Performance() {
         ))}
       </div>
 
-      {perf && (
-        <div
-          role="status"
-          style={{
-            borderRadius: 8,
-            border: `1px solid ${perf.account_scoped ? "rgba(22,163,74,0.25)" : "rgba(234,88,12,0.35)"}`,
-            background: perf.account_scoped ? "rgba(22,163,74,0.06)" : "rgba(234,88,12,0.07)",
-            color: "var(--ink-muted)",
-            padding: "9px 11px",
-            fontSize: 12,
-          }}
-        >
-          <strong style={{ color: "var(--ink)" }}>
-            {perf.account_scoped ? "Account-safe history" : "History needs an account link"}
-          </strong>
-          {" — "}{perf.data_scope_note}
-        </div>
-      )}
-
       {/* ── Key stats strip ───────────────────────────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}
            className="sm:grid-cols-4">
@@ -341,10 +315,10 @@ export function Performance() {
             <span style={{ fontSize: 11, color: "var(--ink-muted)" }}>Total P&L</span>
             <span style={{
               fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 99,
-              background: usingAlpaca ? "rgba(38,166,154,0.12)" : "rgba(239,83,80,0.12)",
-              color: usingAlpaca ? "#26a69a" : "#ef5350",
+              background: "rgba(38,166,154,0.12)",
+              color: "#26a69a",
             }}>
-              {usingAlpaca ? "✓ Alpaca" : "⚠ est."}
+              ✓ closed trades
             </span>
           </div>
           <span style={{
@@ -354,7 +328,7 @@ export function Performance() {
             {formatSignedCurrency(displayPnl)}
           </span>
           <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>
-            {usingAlpaca ? "actual fills" : "bot estimates"}
+            same ledger as the tables below
           </span>
         </div>
 
@@ -375,13 +349,7 @@ export function Performance() {
               <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", marginBottom: 2 }}>Monthly Calendar</h3>
               <p style={{ fontSize: 11, color: "var(--ink-muted)" }}>Daily P&L colour intensity</p>
             </div>
-            <span style={{
-              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
-              background: usingAlpaca ? "rgba(38,166,154,0.12)" : "rgba(239,83,80,0.12)",
-              color: usingAlpaca ? "#26a69a" : "#ef5350",
-            }}>
-              {usingAlpaca ? "✓ Actual Alpaca fills" : "⚠ Bot estimates (Alpaca unavailable)"}
-            </span>
+            <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>Select a day to open its final brief</span>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:24 }}>
             {[1, 0].map((offset) => {
@@ -389,7 +357,7 @@ export function Performance() {
               return (
                 <CalendarMonth key={offset}
                   year={d.getFullYear()} month={d.getMonth()}
-                  pnlMap={pnlMap} maxAbs={calMaxAbs} dark={dark} />
+                  pnlMap={pnlMap} maxAbs={calMaxAbs} dark={dark} onSelect={setBriefDate} />
               );
             })}
           </div>
@@ -410,37 +378,8 @@ export function Performance() {
         </div>
       )}
 
-      {/* ── Daily P&L bars + cumulative equity line ───────────────────────── */}
-      {dailyChart.length > 0 && (
-        <div className="card p-4">
-          <Hdr title="Daily P&L & Equity Curve"
-               sub="Bars = daily P&L · Line = cumulative equity" />
-          <ResponsiveContainer width="100%" height={200}>
-            <ComposedChart data={dailyChart} margin={{ top: 4, right: 12, left: -10, bottom: 0 }}>
-              <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: tickColor }} />
-              <YAxis tick={{ fontSize: 10, fill: tickColor }}
-                     tickFormatter={(v) => `$${v}`} />
-              <ChartTooltip
-                contentStyle={{ background: dark?"#161b22":"#fff",
-                  border: `1px solid ${dark?"#30363d":"#e2e5ed"}`, borderRadius:8, fontSize:12 }}
-                formatter={(v: unknown, name: unknown) =>
-                  [`$${(v as number).toFixed(2)}`, name==="pnl" ? "Daily P&L" : "Equity"]}
-              />
-              <ReferenceLine y={0} stroke={dark?"#30363d":"#e2e5ed"} />
-              <Bar dataKey="pnl" radius={[3,3,0,0]} maxBarSize={40}>
-                {dailyChart.map((d, i) => (
-                  <Cell key={i} fill={d.pnl >= 0 ? posColor : negColor} />
-                ))}
-              </Bar>
-              <Line type="monotone" dataKey="equity" stroke={lineColor}
-                    strokeWidth={2} dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* ── Strategy breakdown ────────────────────────────────────────────── */}
+      {/* ── Strategy + exits side by side ────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(360px,1fr))", gap: 12, alignItems: "start" }}>
       {byStrategy.length > 0 && (
         <div className="card p-4">
           <Hdr title="Strategy Performance"
@@ -602,7 +541,18 @@ export function Performance() {
           </div>
         </div>
       )}
-
+      </div>
+      {briefDate && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(15, 23, 42, 0.68)" }} role="dialog" aria-modal="true" aria-label={`Post-market brief for ${briefDate}`} onMouseDown={event => { if (event.target === event.currentTarget) setBriefDate(null); }}>
+          <div className="card w-full max-w-4xl max-h-[90vh] overflow-y-auto p-4" style={{ background: "var(--surface)" }}>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div><p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>Post-market daily brief</p><h2 className="text-lg font-semibold">{briefDate}</h2></div>
+              <button type="button" className="btn btn-ghost" onClick={() => setBriefDate(null)} aria-label="Close daily brief"><X size={18} /></button>
+            </div>
+            {(briefTradesLoading || briefScorecardLoading) ? <PageLoader label="Daily brief" /> : (briefTradesFailed || briefScorecardFailed) ? <div role="alert" className="p-6 text-sm" style={{ color: "var(--negative)" }}>This daily brief could not be loaded.</div> : <PostMarketReport trades={briefTrades?.trades ?? []} scorecard={briefScorecard} scorecardLoading={false} scorecardFailed={false} finalized reportDate={briefDate} />}
+          </div>
+        </div>
+      )}
       {/* ── Ticker + Hour side by side ────────────────────────────────────── */}
       <div style={{ display:"grid", gap:12, gridTemplateColumns:"1fr 1fr" }}>
 

@@ -311,7 +311,7 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
         self.assertEqual(1.70, row["backtest"]["profit_factor"])
         self.assertEqual(32, row["backtest"]["trades"])
         self.assertIn("TSLA", row["backtest"]["scope"])
-        self.assertIn("older test dates PF 1.09", row["backtest"]["comparison"])
+        self.assertIn("before May 1, 2026 PF 1.09", row["backtest"]["comparison"])
 
     def test_observer_switch_is_isolated_per_user(self) -> None:
         from config import settings_store

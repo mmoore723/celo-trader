@@ -103,7 +103,7 @@
     "profit_factor": 1.75,
     "trades": 46,
     "scope": "SPY · three-candle structure · actual historical asks/bids · 30-minute exit · modeled costs",
-    "comparison": "Older May data PF 2.38 (9) · June PF 1.59 (18) · newer July data PF 1.70 (19)",
+    "comparison": "May 2026 PF 2.38 (9) · June 2026 PF 1.59 (18) · July 2026 PF 1.70 (19)",
     "target_profit_factor": 1.5,
     "meets_target": true,
     "note": "The repaired rule cleared the 1.50 research target in each period, but remains paper-only until same-broker fills provide a larger independent sample."

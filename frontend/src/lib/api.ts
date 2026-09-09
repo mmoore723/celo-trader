@@ -107,6 +107,7 @@ export interface ResearchContractTest {
   mistimed_quotes_ignored: number;
   older_profit_factor: number | "infinite" | null;
   newer_profit_factor: number | "infinite" | null;
+  comparison_split_date?: string | null;
 }
 export interface StrategyTickerResearchPair {
   ticker: string;
@@ -131,6 +132,7 @@ export interface StrategyTickerResearchPair {
   legacy_option_profiles_ignored: number;
   older_profit_factor: number | "infinite" | null;
   newer_profit_factor: number | "infinite" | null;
+  comparison_split_date?: string | null;
   diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
   next_action: string;
   exit_comparison: {
@@ -1101,7 +1103,9 @@ export const api = {
   trades: {
     optionChart: (id: number, mode: "paper" | "live") =>
       request<OptionChartData>(`/api/trades/${id}/option-chart?mode=${mode}`),
-    list:          (mode="paper", status="all") => request<TradeListResponse>(`/api/trades?mode=${mode}&status=${status}`),
+    list:          (mode="paper", status="all", date?: string) => request<TradeListResponse>(
+      `/api/trades?mode=${mode}&status=${status}${date ? `&date=${encodeURIComponent(date)}` : ""}`
+    ),
     open:          () => request<Trade[]>("/api/trades/open"),
     performance:   (mode="paper") => request<PerformanceStats>(`/api/trades/performance?mode=${mode}`),
     analytics:     (mode="paper") => request<TradeAnalytics>(`/api/trades/analytics?mode=${mode}`),

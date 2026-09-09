@@ -1,7 +1,7 @@
 /**
  * Admin.tsx — User management + Emergency Controls (admin only). Mobile-responsive.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { UserPlus, Link2, Trash2, RefreshCw, KeyRound, AlertTriangle, CheckCircle2, BrainCircuit } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
@@ -32,12 +32,26 @@ export function Admin() {
   const [inviteExp, setInviteExp]   = useState<number>(48);
   const [inviting, setInviting]     = useState(false);
   const [copied, setCopied]         = useState(false);
+  const [strategySearch, setStrategySearch] = useState("");
   const { data: ranker, isError: rankerError } = useQuery({
     queryKey: ["admin-learning-ranker-status"],
     queryFn: api.learning.rankerStatus,
     refetchInterval: 60_000,
     retry: false,
   });
+  const { data: testedStrategies, isError: testedStrategiesError } = useQuery({
+    queryKey: ["admin-tested-strategy-inventory"],
+    queryFn: api.settings.testedStrategies,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const strategiesNotRebuilt = useMemo(() => {
+    const query = strategySearch.trim().toLowerCase();
+    return (testedStrategies?.strategies ?? [])
+      .filter(strategy => !strategy.research_supported)
+      .filter(strategy => !query || strategy.display_name.toLowerCase().includes(query));
+  }, [testedStrategies, strategySearch]);
+  const strategiesNotRebuiltCount = (testedStrategies?.strategies ?? []).filter(strategy => !strategy.research_supported).length;
 
   // ── Emergency / Maintenance state ─────────────────────────────────────────
   const [maintActive,  setMaintActive]  = useState(false);
@@ -244,6 +258,19 @@ export function Admin() {
           </>;
         })() : <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading ML readiness…</p>}
       </section>
+
+      <details className="card p-4">
+        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>
+          Strategies not rebuilt ({strategiesNotRebuiltCount})
+        </summary>
+        <div className="mt-3">
+          <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Saved test ideas that do not yet have a runnable all-ticker rule. They are not running and cannot trade.</p>
+          <input className="input w-full mt-3" value={strategySearch} onChange={event => setStrategySearch(event.target.value)} placeholder="Find a strategy" aria-label="Find a strategy that is not rebuilt" />
+          {testedStrategiesError ? <p className="text-xs mt-3" style={{ color: "var(--negative)" }}>Strategy list unavailable.</p> : !testedStrategies ? <p className="text-xs mt-3" style={{ color: "var(--ink-muted)" }}>Loading strategy list…</p> : strategiesNotRebuilt.length ? <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-3 max-h-64 overflow-y-auto">
+            {strategiesNotRebuilt.map(strategy => <p key={strategy.strategy_id} className="text-xs py-1 border-b" style={{ color: "var(--ink)", borderColor: "var(--border)" }}>{strategy.display_name}</p>)}
+          </div> : <p className="text-xs mt-3" style={{ color: "var(--ink-muted)" }}>{strategySearch ? "No strategies match that search." : "Every saved strategy has been rebuilt."}</p>}
+        </div>
+      </details>
 
       {/* ── Emergency Controls ──────────────────────────────────────────── */}
       <div

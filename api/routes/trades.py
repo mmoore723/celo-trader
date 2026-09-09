@@ -173,6 +173,7 @@ def list_trades(
     mode: str = Query("paper", enum=["paper", "live"]),
     limit: int = Query(200, ge=1, le=1000),
     status: str = Query("all", enum=["all", "open", "closed"]),
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ) -> TradeListResponse:
     from database import get_all_trades
     from config import get_settings
@@ -180,6 +181,7 @@ def list_trades(
     rows = get_all_trades(
         limit=limit, mode=mode, status_filter=status,
         broker_account_id=account_id,
+        trading_date=date,
     ) or []
 
     trades = [_row_to_trade(r) for r in rows]

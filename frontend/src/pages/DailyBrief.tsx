@@ -79,12 +79,13 @@ function dayGrade(pnl: number) {
 }
 
 // ── Post-Market Report ─────────────────────────────────────────────────────────
-function PostMarketReport({ trades, scorecard, scorecardLoading, scorecardFailed, finalized }: {
+export function PostMarketReport({ trades, scorecard, scorecardLoading, scorecardFailed, finalized, reportDate }: {
   trades: Trade[];
   scorecard?: DailyEvidenceScorecard;
   scorecardLoading: boolean;
   scorecardFailed: boolean;
   finalized: boolean;
+  reportDate?: string;
 }) {
   const closed   = trades.filter(t => t.status === "closed");
   const wins     = closed.filter(t => (t.pnl ?? 0) > 0);
@@ -98,6 +99,9 @@ function PostMarketReport({ trades, scorecard, scorecardLoading, scorecardFailed
     : fallbackGrade;
   const avgWin   = wins.length   ? wins.reduce((s, t) => s + (t.pnl ?? 0), 0) / wins.length   : 0;
   const avgLoss  = losses.length ? losses.reduce((s, t) => s + (t.pnl ?? 0), 0) / losses.length : 0;
+  const sessionLabel = reportDate
+    ? new Date(`${reportDate}T12:00:00`).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    : "Today";
 
   if (closed.length === 0) {
     return (
@@ -105,7 +109,7 @@ function PostMarketReport({ trades, scorecard, scorecardLoading, scorecardFailed
         <DailyEvidencePanel data={scorecard} loading={scorecardLoading} failed={scorecardFailed} />
         <div className="card p-8 text-center flex flex-col items-center gap-2">
           <p className="text-3xl">📋</p>
-          <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>No completed trades yet today.</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>No completed trades for {sessionLabel}.</p>
           <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Candidates and order attempts still appear in the evidence review above.</p>
         </div>
       </div>
@@ -139,7 +143,7 @@ function PostMarketReport({ trades, scorecard, scorecardLoading, scorecardFailed
         </div>
         <div className="flex-1">
           <p className="text-base font-bold" style={{ color: "var(--ink)" }}>
-            {grade.emoji} {finalized ? "Today's Final Grade" : "Today's Grade So Far"}: <span style={{ color: pnlColor }}>{grade.letter}</span>
+            {grade.emoji} {finalized ? `Final Grade for ${sessionLabel}` : `Grade So Far for ${sessionLabel}`}: <span style={{ color: pnlColor }}>{grade.letter}</span>
           </p>
           <p className="text-sm mt-0.5" style={{ color: "var(--ink-muted)" }}>{grade.msg}</p>
           <p className="text-xs mt-1" style={{ color: "var(--ink-faint)" }}>
@@ -163,7 +167,7 @@ function PostMarketReport({ trades, scorecard, scorecardLoading, scorecardFailed
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-2" style={{ color: "var(--ink)" }}>📖 What Happened Today — In Plain English</h3>
         <p className="text-sm leading-relaxed" style={{ color: "var(--ink-muted)" }}>
-          Today the bot took <strong>{closed.length} trade{closed.length !== 1 ? "s" : ""}</strong>, {perfDesc}.
+          On {sessionLabel}, the bot took <strong>{closed.length} trade{closed.length !== 1 ? "s" : ""}</strong>, {perfDesc}.
           The account {dirWord} <strong style={{ color: pnlColor }}>${absAmt}</strong>.{avgNote} {outcomeNote}
         </p>
       </div>
