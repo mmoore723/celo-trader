@@ -4,7 +4,7 @@ import { SearchX } from "lucide-react";
 import { api, type ScannerOpportunity, type StrategyTickerResearchPair } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 import { collapseOpportunityEpisodes, opportunityDecisionTitle, opportunityLifecycle, opportunityReason } from "../lib/opportunitySemantics.js";
-import { profitFactorText, researchActionLabel, researchPairVisible, sortResearchPairs } from "../lib/researchPairView.js";
+import { numericProfitFactor, profitFactorText, researchActionLabel, researchPairVisible, sortResearchPairs } from "../lib/researchPairView.js";
 
 const NAMES: Record<string, string> = {
   V2_ORB_PULLBACK: "Opening-Range Pullback", V2_SPY_TREND_CONT: "SPY Trend Continuation",
@@ -43,26 +43,33 @@ const STATUS: Record<StrategyTickerResearchPair["status"], { label: string; colo
 
 function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinutes }: { pair: StrategyTickerResearchPair; strategyName: string; strategyVersion: string; backtest: { profit_factor?: number | "infinite" | "no fills"; trades?: number; scope?: string; historical_test_through?: string }; exitMinutes: number }) {
   const status = STATUS[pair.status];
-  return <article className="card p-4">
-    <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1.5fr)_repeat(4,minmax(5rem,.55fr))_minmax(14rem,1.5fr)] lg:items-center">
-      <div>
-        <div className="flex flex-wrap items-center gap-2"><strong className="text-lg">{pair.ticker}</strong><span className={`badge ${pair.tradable ? "badge-green" : "badge-blue"}`}>{pair.tradable ? "TRADING ON" : "RESEARCH"}</span></div>
-        <p className="text-sm mt-1">{strategyName} · v{strategyVersion}</p>
-        {backtest.trades != null && backtest.trades > 0 && <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{backtest.historical_test_through ? `Tests through ${evidenceDate(backtest.historical_test_through)}` : "Saved test"}: PF {profitFactorText(backtest.profit_factor === "no fills" ? null : backtest.profit_factor ?? null)} · {backtest.trades} results</p>}
-        <p className="text-xs font-semibold mt-1" style={{ color: status.color }}>{status.label}</p>
-        {pair.leading_contract_test && pair.leading_contract_test.option_results > 0 && <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Most option evidence: {pair.leading_contract_test.label} · PF {profitFactorText(pair.leading_contract_test.profit_factor)} ({pair.leading_contract_test.option_results})</p>}
+  const progress = Math.min(100, Math.round(Math.min(pair.option_results / 20, pair.option_result_days / 8) * 100));
+  const plan = pair.improvement_tests?.[0];
+  return <article className="card overflow-hidden" style={{ borderLeft: `4px solid ${status.color}` }}>
+    <div className="grid gap-3 p-3 lg:grid-cols-[minmax(14rem,1.35fr)_minmax(19rem,1fr)_minmax(18rem,1.2fr)] lg:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2"><strong className="text-base">{pair.ticker}</strong><span className={`badge ${pair.tradable ? "badge-green" : "badge-blue"}`}>{pair.tradable ? "TRADING ON" : "TESTING"}</span><span className="text-xs font-semibold" style={{ color: status.color }}>{status.label}</span></div>
+        <p className="text-sm truncate mt-1">{strategyName} · v{strategyVersion}</p>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{pair.first_data_date ? `Data since ${evidenceDate(pair.first_data_date)} · ${pair.market_days} market days` : "No market data collected for this ticker yet"}</p>
       </div>
-      <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>Current PF</span><strong>{profitFactorText(pair.profit_factor)}</strong></div>
-      <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>Current results</span><strong>{pair.option_results}</strong><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>{pair.option_result_days} days</span></div>
-      <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>Wins</span><strong>{pair.win_rate_pct == null ? "—" : `${pair.win_rate_pct}%`}</strong></div>
-      <div><span className="text-xs block" style={{ color: "var(--ink-muted)" }}>1-contract P&amp;L</span><strong style={{ color: pair.net_one_contract_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>{money(pair.net_one_contract_pnl)}</strong></div>
-      <div className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-        <strong className="text-sm">{researchActionLabel(pair.diagnosis)}</strong>
-        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{pair.next_action}</p>
+      <div>
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Current PF</span><strong>{profitFactorText(pair.profit_factor)}</strong></div>
+          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Results</span><strong>{pair.option_results}</strong></div>
+          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Wins</span><strong>{pair.win_rate_pct == null ? "—" : `${pair.win_rate_pct}%`}</strong></div>
+          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>P&amp;L</span><strong style={{ color: pair.net_one_contract_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>{money(pair.net_one_contract_pnl)}</strong></div>
+        </div>
+        <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surface-sunken, var(--border))" }} aria-label={`${progress}% of minimum evidence collected`}><div className="h-full rounded-full" style={{ width: `${progress}%`, background: "linear-gradient(90deg, var(--accent), var(--positive))" }} /></div>
+        <p className="text-[11px] mt-1 text-right" style={{ color: "var(--ink-muted)" }}>{progress}% of minimum evidence</p>
+      </div>
+      <div className="rounded-lg px-3 py-2" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface-raised))", border: "1px solid color-mix(in srgb, var(--accent) 24%, var(--border))" }}>
+        <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>Next experiment</span>
+        <strong className="text-sm block mt-0.5">{plan?.title ?? researchActionLabel(pair.diagnosis)}</strong>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{plan?.test ?? pair.next_action}</p>
       </div>
     </div>
-    <details className="mt-3 pt-3 text-xs" style={{ borderTop: "1px solid var(--border)" }}>
-      <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>See why</summary>
+    <details className="px-3 pb-3 text-xs">
+      <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>Evidence and test plan</summary>
       <div className="grid gap-2 mt-3 sm:grid-cols-2 lg:grid-cols-4" style={{ color: "var(--ink-muted)" }}>
         <p><b>Independent setups:</b> {pair.setups} across {pair.market_days} data days</p>
         <p><b>Usable option prices:</b> {pair.quote_coverage_pct == null ? "—" : `${pair.quote_coverage_pct}%`}</p>
@@ -77,6 +84,8 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
         {pair.older_profit_factor != null && <p><b>Before {pair.comparison_split_date ?? "the comparison date"} PF:</b> {profitFactorText(pair.older_profit_factor)}</p>}
         {pair.newer_profit_factor != null && <p><b>From {pair.comparison_split_date ?? "the comparison date"} PF:</b> {profitFactorText(pair.newer_profit_factor)}</p>}
       </div>
+      {backtest.trades != null && backtest.trades > 0 && <p className="mt-3" style={{ color: "var(--ink-muted)" }}><b>{backtest.historical_test_through ? `Tests through ${evidenceDate(backtest.historical_test_through)}` : "Saved test"}:</b> PF {profitFactorText(backtest.profit_factor === "no fills" ? null : backtest.profit_factor ?? null)} · {backtest.trades} results</p>}
+      {pair.improvement_tests?.length > 0 && <div className="grid gap-2 mt-3 md:grid-cols-3">{pair.improvement_tests.map(item => <div key={item.title} className="rounded-lg p-2" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}><b>{item.title}</b><p className="mt-1" style={{ color: "var(--ink-muted)" }}>{item.evidence}</p><p className="mt-1">{item.test}</p></div>)}</div>}
       <div className="flex flex-wrap gap-2 mt-3">
         {pair.exit_comparison.map(exit => <span key={exit.minutes} className="badge">{exit.minutes} min: PF {profitFactorText(exit.profit_factor)} ({exit.option_results}){exit.mistimed_quotes_ignored ? ` · ${exit.mistimed_quotes_ignored} late ignored` : ""}</span>)}
       </div>
@@ -94,26 +103,37 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
     const rows = (matrix?.strategies ?? []).flatMap(strategy => strategy.pairs.map(pair => ({ pair, strategy })));
     return sortResearchPairs(rows.filter(row => selected === "all" || row.strategy.strategy_id === selected).filter(row => researchPairVisible(row.pair, researchFilter)));
   }, [matrix, selected, researchFilter]);
-  const measuredPairs = useMemo(() => (matrix?.strategies ?? []).flatMap(strategy => strategy.pairs).filter(pair => pair.option_results > 0), [matrix]);
+  const allPairs = useMemo(() => (matrix?.strategies ?? []).flatMap(strategy => strategy.pairs), [matrix]);
+  const setupPairs = useMemo(() => allPairs.filter(pair => pair.setups > 0), [allPairs]);
+  const measuredPairs = useMemo(() => allPairs.filter(pair => pair.option_results > 0), [allPairs]);
+  const passingNow = useMemo(() => measuredPairs.filter(pair => numericProfitFactor(pair.profit_factor) >= (matrix?.target_profit_factor ?? 1.5)), [matrix?.target_profit_factor, measuredPairs]);
+  const belowGoal = measuredPairs.length - passingNow.length;
   const entered = decisions.filter(entry => entry.outcome === "entered").length;
   const unfilled = decisions.filter(entry => entry.reason_code === "entry_price_not_reached").length;
   const skipped = decisions.filter(entry => opportunityLifecycle(entry) === "stopped" && entry.reason_code !== "entry_price_not_reached").length;
   if (view === "decisions" && isLoading && !data) return <PageLoader label="Bot Decisions" />;
   return <div className={`${embedded ? "space-y-4" : "page-container space-y-4"}`}>
-    <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>{view === "decisions" ? "Before an order" : "Strategy + ticker evidence"}</p><h1 className="text-xl font-semibold mt-1">{view === "decisions" ? "Bot Decisions" : "Research Results"}</h1><p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>{view === "decisions" ? "See why the bot entered, could not fill, or skipped each setup." : "See which strategy works with which ticker. Research observes only and cannot place an order."}</p></div>{view === "decisions" && <label className="text-xs" style={{ color: "var(--ink-muted)" }}>Trading day<input className="input ml-2" type="date" value={date} onChange={event => setDate(event.target.value)} /></label>}</header>
+    <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>{view === "decisions" ? "Before an order" : "Research pulse"}</p><h1 className="text-xl font-semibold mt-1">{view === "decisions" ? "Bot Decisions" : "Strategy + Ticker Lab"}</h1><p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>{view === "decisions" ? "See why the bot entered, could not fill, or skipped each setup." : "One row per strategy and ticker. See what is working now and the next experiment to run."}</p></div>{view === "decisions" && <label className="text-xs" style={{ color: "var(--ink-muted)" }}>Trading day<input className="input ml-2" type="date" value={date} onChange={event => setDate(event.target.value)} /></label>}</header>
     {view === "decisions" ? <><div className="grid grid-cols-3 gap-3">{[["Trades entered", entered, "var(--positive)"], ["Orders not filled", unfilled, "var(--warning)"], ["Setups skipped", skipped, "var(--negative)"]].map(([label, value, color]) => <div className="card p-3" key={String(label)}><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><p className="text-2xl font-semibold" style={{ color: String(color) }}>{String(value)}</p></div>)}</div>{error ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load decisions: {(error as Error).message}</div> : decisions.length ? <div className="space-y-3">{decisions.map(entry => <DecisionCard key={entry.id} entry={entry} />)}</div> : <div className="card p-8 text-center"><SearchX size={24} className="mx-auto" /><p className="mt-2 font-medium">No setup reached the trading path on this day.</p></div>}</> : <>
-      <div className="card p-4"><h2 className="font-semibold">Which strategy works on which ticker?</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Goal: PF {matrix?.target_profit_factor.toFixed(1) ?? "1.5"}. Every row is one strategy + ticker. Repeated scans count once. Rows from a different rule version, missing prices, and late prices are not counted.</p></div>
       {matrixLoading && !matrix ? <PageLoader label="Research results" /> : matrixError ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load research: {(matrixError as Error).message}</div> : matrix ? <>
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          {[["Pairs with results", measuredPairs.length], ["Working", measuredPairs.filter(pair => pair.status === "working").length], ["Promising", measuredPairs.filter(pair => pair.status === "promising").length], ["Need a change", measuredPairs.filter(pair => ["losing_so_far", "needs_tuning", "not_working"].includes(pair.status)).length]].map(([label, value]) => <div key={String(label)} className="card p-3"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</p><strong className="text-xl">{value}</strong></div>)}
+        <div className="card overflow-hidden">
+          <div className="grid gap-px grid-cols-2 lg:grid-cols-4" style={{ background: "var(--border)" }}>
+            {[["Active tests", allPairs.length], ["Found setups", setupPairs.length], [`PF ${matrix.target_profit_factor.toFixed(1)}+ now`, passingNow.length], ["Below PF goal", belowGoal]].map(([label, value]) => <div key={String(label)} className="p-3" style={{ background: "var(--surface-raised)" }}><strong className="text-xl block">{value}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</span></div>)}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-3 py-2 text-xs" style={{ color: "var(--ink-muted)", background: "color-mix(in srgb, var(--accent) 5%, var(--surface-raised))" }}>
+            <span><b>{matrix.ticker_count}</b> tickers collected so far</span>
+            <span><b>{matrix.strategy_count}</b> strategies tested on each</span>
+            {matrix.scanner_source_size > 0 && <span><b>{matrix.scanner_source_size.toLocaleString()}</b> optionable symbols screened · <b>{matrix.scanner_shortlist_size}</b> selected today</span>}
+            <span>Goal PF <b>{matrix.target_profit_factor.toFixed(1)}</b></span>
+          </div>
         </div>
         <div className="card p-4 grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-medium">Strategy<select className="select w-full mt-2" value={selected} onChange={event => setSelected(event.target.value)}><option value="all">All strategies</option>{matrix.strategies.map(strategy => <option key={strategy.strategy_id} value={strategy.strategy_id}>{strategy.display_name}</option>)}</select></label>
-          <label className="text-sm font-medium">Show<select className="select w-full mt-2" value={researchFilter} onChange={event => setResearchFilter(event.target.value)}><option value="evidence">Pairs with setups</option><option value="attention">Needs attention</option><option value="passing">Working or promising</option><option value="all">Everything being watched</option></select></label>
+          <label className="text-sm font-medium">Show<select className="select w-full mt-2" value={researchFilter} onChange={event => setResearchFilter(event.target.value)}><option value="evidence">With setup evidence</option><option value="attention">Needs an experiment</option><option value="passing">PF 1.5+ right now</option><option value="all">All active tests</option></select></label>
         </div>
         <div className="space-y-3">{researchPairs.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} strategyVersion={strategy.version} backtest={strategy.backtest} exitMinutes={strategy.exit_minutes} />)}</div>
         {!researchPairs.length && <div className="card p-8 text-center">No strategy–ticker pairs match these filters yet.</div>}
-        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How results are calculated</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same trigger counts once, and overlapping fixed-hold trades are excluded. “Working” requires PF 1.5+, at least 20 option results, at least 8 setup days, and the most recent dated test window must also pass.</p></details>
+        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How the proof works</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same trigger counts once, and overlapping tests are excluded. A recommendation requires PF 1.5+, at least 20 priced results, at least 8 result days, and passing results on the latest test dates.</p></details>
       </> : <div className="card p-8 text-center">No research results are available yet.</div>}
     </>}
   </div>;

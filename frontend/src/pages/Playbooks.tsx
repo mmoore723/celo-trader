@@ -62,7 +62,7 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
     emoji: "🔍",
     title: "How the Watchlist Gets Built",
     body: [
-      "The scanner runs daily_premarket_scan() once per session, at or after 9:30 ET. It pulls a snapshot of every ticker in the LIQUID_POOL (~140 stocks and ETFs) from Alpaca in one batch.",
+      "The scanner screens Alpaca’s active optionable stock list before the open, then refreshes it after 9:30 ET using the official opening print and current activity.",
       "Filter 1 — Price: stock must trade above $10. Sub-$10 names have thin options chains and erratic gaps.",
       "Filter 2 — Gap: the open price must be 1–4% away from yesterday's close (either direction). Below 1% = no real move. Above 4% = already overextended before the bell. ETFs get a lower floor of 0.5% because even a 0.5% gap on SPY is a real institutional move.",
       "Filter 3 — Volume: average daily volume over 20 days must exceed 2 million shares. Low-volume names have wide options spreads and fake breakouts.",
@@ -70,7 +70,7 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
       "Filter 5 — RVOL: relative volume (today's shares so far vs. historical same-time average) must be ≥ 2× for stocks, ≥ 1.5× for ETFs. Elevated volume means institutions are involved — the move is more likely real.",
       "Scoring: survivors are ranked by RVOL × gap size × ATR factor × liquidity bonus. ETFs get a 1.15× liquidity bonus because their options chains are deeper and spreads tighter.",
       "Affordability check: the scanner also estimates whether options on a ticker would actually fit your risk budget. If the estimated stop-loss on 1 contract (option premium × 30%) exceeds your risk budget, the ticker is heavily de-ranked — it would just be skipped every tick anyway.",
-      "The top 10 dynamic survivors join SPY, QQQ, and every ticker pinned in Settings. Pins and anchors never displace a ranked candidate. This same complete list powers the Daily Brief and the research collector, so anything shown as a potential ticker receives one-minute candle coverage.",
+      "The top 30 strategy-fit candidates join SPY, QQQ, and every ticker pinned in Settings. The shortlist balances compressed-range, inside-day, trend/pullback, and volatility candidates. This same list powers the Daily Brief and research collector, so every displayed candidate receives one-minute candle coverage.",
     ],
   },
   {

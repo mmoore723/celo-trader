@@ -10,7 +10,8 @@ const settingsSource = readFileSync(
 );
 
 test("research results expose strategy-ticker contract policy evidence", () => {
-  assert.match(source, /Most option evidence/);
+  assert.match(source, /Next experiment/);
+  assert.match(source, /Evidence and test plan/);
   assert.match(source, /Which option choice is working\?/);
   assert.match(source, /contract_tests/);
   assert.match(source, /Rows using a different option test/);
@@ -19,7 +20,8 @@ test("research results expose strategy-ticker contract policy evidence", () => {
 test("research results distinguish dated tests from the current strategy version", () => {
   assert.match(source, /Tests through/);
   assert.match(source, /Current PF/);
-  assert.match(source, /Current results/);
+  assert.match(source, /Data since/);
+  assert.match(source, /market days/);
   assert.match(source, /Earlier-version setups kept separate/);
 });
 

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from strategy_health.research_matrix import (
     _chronological_factors, _chronological_split_date, _current_rule_samples, _diagnosis, _exit_summary,
-    _factor, _independent_samples, _quote_profit, build_research_matrix,
+    _factor, _improvement_tests, _independent_samples, _quote_profit, build_research_matrix,
     research_status,
 )
 
@@ -134,6 +134,23 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("more_data", diagnosis)
         self.assertIn("sample is too small", action)
 
+    def test_improvement_plan_names_the_measured_problem_and_one_variable(self):
+        plans = _improvement_tests(
+            setups=12, sessions=20, option_results=8, option_result_days=6,
+            direction_results=9, direction_accuracy=44.4, factor=0.19,
+            exit_minutes=30,
+            exit_summaries=[
+                {"minutes": 30, "option_results": 8, "profit_factor": 0.19},
+                {"minutes": 60, "option_results": 8, "profit_factor": 0.56},
+            ],
+            contract_tests=[],
+        )
+        self.assertEqual("Complete option pricing first", plans[0]["title"])
+        self.assertIn("8 of 12", plans[0]["evidence"])
+        self.assertEqual("Test a stricter entry", plans[1]["title"])
+        self.assertIn("44.4%", plans[1]["evidence"])
+        self.assertIn("Hold the option and exit constant", plans[1]["test"])
+
     def test_matrix_reads_only_the_active_account_and_real_option_marks(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -227,6 +244,8 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual(1, row["current_evidence"]["option_results"])
         self.assertEqual("infinite", row["current_evidence"]["profit_factor"])
         self.assertEqual(1, pair["market_days"])
+        self.assertEqual("2026-09-03", pair["first_data_date"])
+        self.assertEqual("2026-09-03", pair["last_data_date"])
         self.assertFalse(pair["tradable"])
         self.assertEqual("target_150_250", pair["leading_contract_test"]["policy"])
         self.assertEqual(1, pair["leading_contract_test"]["option_results"])
@@ -290,6 +309,7 @@ class ResearchMatrixTests(unittest.TestCase):
         row = next(item for item in matrix["strategies"] if item["strategy_id"] == "V2_SPY_AFTERNOON_FVG")
         pair = next(item for item in row["pairs"] if item["ticker"] == "ABNB")
         self.assertEqual(1, pair["market_days"])
+        self.assertEqual("2026-08-10", pair["first_data_date"])
         self.assertEqual("collecting", pair["status"])
         conn.close()
 

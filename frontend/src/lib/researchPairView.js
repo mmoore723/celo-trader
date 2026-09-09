@@ -29,10 +29,16 @@ export function profitFactorText(value) {
   return typeof value === "number" ? value.toFixed(2) : "—";
 }
 
+export function numericProfitFactor(value) {
+  if (value === "infinite") return Number.POSITIVE_INFINITY;
+  return typeof value === "number" ? value : Number.NaN;
+}
+
 export function researchPairVisible(pair, filter) {
   if (filter === "all") return true;
-  if (filter === "attention") return ["price_data", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis);
-  if (filter === "passing") return ["working", "promising"].includes(pair.status);
+  if (filter === "attention") return ["price_data", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis)
+    || (pair.diagnosis === "no_setups" && pair.market_days >= 20);
+  if (filter === "passing") return pair.option_results > 0 && numericProfitFactor(pair.profit_factor) >= 1.5;
   return pair.setups > 0 || pair.option_results > 0;
 }
 

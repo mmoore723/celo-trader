@@ -18,13 +18,14 @@ call site elsewhere in the app is unaffected:
 
 Two-phase operation
 ───────────────────
-Phase 1  (first call after 9:30 ET each day):
-    daily_premarket_scan() fetches snapshots for the entire LIQUID_POOL (~150
-    tickers), filters by open-gap / price / avg-volume / ATR / RVOL, and writes
-    the top 10 "stocks in play" to scanner_state.json + daily_universe.json.
+Phase 1  (premarket, then refreshed after 9:30 ET each day):
+    daily_premarket_scan() discovers Alpaca's active optionable universe,
+    screens snapshots and daily history, balances the existing strategy
+    families, and writes the top 30 research candidates to disk. The reviewed
+    LIQUID_POOL remains only a network-failure fallback.
 
 Phase 2  (every subsequent run_scan() call during the session):
-    Rescores the already-selected 10-ticker universe by live RVOL × momentum so
+    Rescores the selected daily universe by live RVOL × momentum so
     the trading loop can always evaluate the hottest mover first.
 """
 

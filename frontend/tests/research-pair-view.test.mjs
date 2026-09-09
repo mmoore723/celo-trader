@@ -38,3 +38,13 @@ test("plain labels explain PF and the next action", () => {
 test("an early losing pair appears in needs attention", () => {
   assert.equal(researchPairVisible(pair({ status: "losing_so_far", diagnosis: "early_loss", option_results: 5 }), "attention"), true);
 });
+
+test("PF 1.5 filter reflects the number instead of a delayed status label", () => {
+  assert.equal(researchPairVisible(pair({ option_results: 2, profit_factor: 1.7 }), "passing"), true);
+  assert.equal(researchPairVisible(pair({ status: "promising", option_results: 8, profit_factor: 1.2 }), "passing"), false);
+});
+
+test("a ticker watched for 20 days with no setup needs an entry-gate experiment", () => {
+  assert.equal(researchPairVisible(pair({ diagnosis: "no_setups", market_days: 20 }), "attention"), true);
+  assert.equal(researchPairVisible(pair({ diagnosis: "no_setups", market_days: 4 }), "attention"), false);
+});

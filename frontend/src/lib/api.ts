@@ -113,6 +113,8 @@ export interface StrategyTickerResearchPair {
   ticker: string;
   status: "working" | "promising" | "losing_so_far" | "needs_tuning" | "not_working" | "collecting" | "no_setups";
   explanation: string;
+  first_data_date: string | null;
+  last_data_date: string | null;
   market_days: number;
   setups: number;
   raw_observations: number;
@@ -136,6 +138,11 @@ export interface StrategyTickerResearchPair {
   comparison_split_date?: string | null;
   diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
   next_action: string;
+  improvement_tests: {
+    title: string;
+    evidence: string;
+    test: string;
+  }[];
   exit_comparison: {
     minutes: number;
     option_results: number;
@@ -164,6 +171,10 @@ export interface StrategyResearchMatrix {
   account_scoped: boolean;
   ticker_count: number;
   strategy_count: number;
+  scanner_source: string | null;
+  scanner_source_size: number;
+  scanner_shortlist_size: number;
+  scanner_phase: "premarket" | "regular" | null;
   strategies: {
     strategy_id: string;
     display_name: string;

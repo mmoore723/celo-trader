@@ -568,7 +568,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     if not watchlist:
         # Watchlist empty: run an on-demand scan (missed pre-market, or first boot)
         try:
-            watchlist = run_scan(alpaca, max_tickers=10)
+            watchlist = run_scan(alpaca, max_tickers=30)
         except Exception:
             watchlist = get_watchlist()  # read from disk; falls back to SPY/QQQ
         if not watchlist:

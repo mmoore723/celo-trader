@@ -9,6 +9,7 @@ into AlpacaClient in broker/alpaca_client.py.
 """
 
 import logging
+import re
 from typing import Optional
 
 import requests
@@ -205,3 +206,37 @@ class AlpacaCoreMixin:
         except Exception as e:
             logger.warning("is_market_open check failed: %s — failing closed", e)
             return False
+
+    def get_optionable_assets(self) -> list[str]:
+        """Return Alpaca's current active, tradable US optionable underlyings.
+
+        The scanner uses this once per trading day to discover candidates. It
+        does not grant order authority; execution remains limited by the
+        reviewed strategy/ticker mappings.
+        """
+        if not self.api_key:
+            return []
+        assets = self._get(
+            f"{self.base}/v2/assets",
+            params={
+                "status": "active",
+                "asset_class": "us_equity",
+                "attributes": "has_options",
+            },
+        )
+        if not isinstance(assets, list):
+            return []
+        symbols: list[str] = []
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            symbol = str(asset.get("symbol") or "").upper().strip()
+            exchange = str(asset.get("exchange") or "").upper().strip()
+            if (
+                asset.get("tradable") is not True
+                or exchange == "OTC"
+                or not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,11}", symbol)
+            ):
+                continue
+            symbols.append(symbol)
+        return sorted(set(symbols))

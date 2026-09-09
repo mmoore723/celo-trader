@@ -1,44 +1,91 @@
-"""
-scanner/premarket.py — daily_premarket_scan: the full dynamic universe
-builder that runs once each trading day at/after 9:30 ET (gap/price/volume/
-ATR/RVOL filtering across LIQUID_POOL, writing the top N to disk).
+"""Broad optionable-universe scanner and strategy-aware daily shortlist."""
 
-Split out of the old single scanner.py (2026-08-01, file-size cleanup); no
-logic changed, only relocated.
-
-Kept as ONE function rather than split further: it is a single ordered
-filter-and-select pipeline (fetch snapshots -> gap filter -> price/volume
-filter -> ATR filter -> RVOL filter -> rank -> fallback to anchors if too
-few pass -> write to disk) where each stage's placement is load-bearing —
-the same "irreducible sequential function" exception used elsewhere in this
-refactor (e.g. broker/alpaca_bars.py's get_session_bars).
-"""
-
-import json
 import logging
-import time
+import math
 
-from config import TICKER_UNIVERSE
 from market_data import get_consolidated_daily_bars
 from scanner.constants import (
     ANCHOR_TICKERS, LIQUID_POOL, TICKER_BLACKLIST, _ETF_SET,
-    _MAX_GAP_PCT, _MIN_ATR_DOLLARS, _MIN_AVG_DAILY_VOL, _MIN_GAP_PCT,
+    _MIN_ATR_DOLLARS, _MIN_AVG_DAILY_VOL, _MIN_GAP_PCT,
     _MIN_GAP_PCT_ETF, _MIN_PRICE, _MIN_RVOL, _MIN_RVOL_ETF,
 )
 from scanner.helpers import _compute_atr, _et_now
-from scanner.state_io import _read_daily_universe, _write_daily_universe, _write_state
+from scanner.state_io import _write_daily_universe, _write_state
 from scanner.universe import build_collection_universe
 
 logger = logging.getLogger("celo_trader.scanner")
 
-def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> list[str]:
+SNAPSHOT_BATCH_SIZE = 200
+BROAD_PREFILTER_LIMIT = 180
+
+
+def _optionable_scan_pool(alpaca, user_pins: list[str]) -> tuple[list[str], str]:
+    """Load the live optionable universe, with the reviewed pool as fallback."""
+    try:
+        discovered = alpaca.get_optionable_assets()
+    except Exception as ex:
+        logger.warning("daily_premarket_scan: optionable asset discovery failed: %s", ex)
+        discovered = []
+    source = "Alpaca active optionable assets" if discovered else "reviewed fallback pool"
+    pool = list(dict.fromkeys(
+        [ticker for ticker in discovered or LIQUID_POOL if ticker not in TICKER_BLACKLIST]
+        + list(ANCHOR_TICKERS)
+        + user_pins
+    ))
+    return pool, source
+
+
+def _strategy_fit_labels(bars: list[dict], *, gap_pct: float, atr_usd: float, price: float) -> list[str]:
+    """Describe which existing strategy families made a ticker worth keeping."""
+    labels: list[str] = []
+    ranges = [max(0.0, float(row.get("h", 0)) - float(row.get("l", 0))) for row in bars[-7:]]
+    if ranges and ranges[-1] <= min(ranges):
+        labels.append("compressed-range ORB")
+    if len(bars) >= 2:
+        prior, latest = bars[-2], bars[-1]
+        if float(latest.get("h", 0)) <= float(prior.get("h", 0)) and float(latest.get("l", 0)) >= float(prior.get("l", 0)):
+            labels.append("inside-day ORB")
+    atr_pct = atr_usd / price * 100 if price > 0 else 0.0
+    if abs(gap_pct) >= 0.5 and atr_pct >= 1.0:
+        labels.append("trend / pullback")
+    if atr_pct >= 2.0:
+        labels.append("volatility")
+    return labels or ["liquid options candidate"]
+
+
+def _balanced_shortlist(scored: list[dict], max_tickers: int) -> list[dict]:
+    """Keep strong candidates from each existing strategy family."""
+    if max_tickers <= 0:
+        return []
+    families = ("compressed-range ORB", "inside-day ORB", "trend / pullback", "volatility")
+    chosen: list[dict] = []
+    seen: set[str] = set()
+    per_family = max(1, max_tickers // len(families))
+    for family in families:
+        for row in (item for item in scored if family in item.get("strategy_fit", [])):
+            if row["ticker"] in seen:
+                continue
+            chosen.append(row)
+            seen.add(row["ticker"])
+            if sum(family in item.get("strategy_fit", []) for item in chosen) >= per_family:
+                break
+    for row in scored:
+        if len(chosen) >= max_tickers:
+            break
+        if row["ticker"] not in seen:
+            chosen.append(row)
+            seen.add(row["ticker"])
+    return chosen[:max_tickers]
+
+
+def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> list[str]:
     """
-    Full dynamic universe scan — runs once each trading day at/after 9:30 ET.
+    Full dynamic universe scan — screens premarket, then refreshes after 9:30 ET.
 
     Pipeline
     ────────
-    1. Batch-fetch Alpaca snapshots for all LIQUID_POOL tickers (batches of 50).
-    2. Filter: price > $10, abs(open_gap) between 1 % and 4 %.
+    1. Discover active optionable underlyings and batch-fetch their snapshots.
+    2. Reduce thousands of symbols to the most active liquid candidates.
     3. Fetch 22 daily bars for each gap survivor.
     4. Filter: avg_daily_vol > 2 M, ATR(14) > $1.
     5. Compute RVOL vs time-normalized expected volume.
@@ -46,32 +93,18 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
     7. Return user pins + anchors + the top max_tickers dynamic candidates.
     8. Write results to daily_universe.json + scanner_state.json.
 
-    If called before 9:30 ET (pre-market), skips the scan and returns ANCHOR_TICKERS
-    as a fallback — the open price isn't available yet to compute a reliable gap.
+    Premarket uses latest price versus prior close. The regular-session refresh
+    uses the official opening price and current relative volume.
     """
     et_now = _et_now()
     today_str = et_now.strftime("%Y-%m-%d")
 
-    # Guard: need the open bar for reliable gap calculation.
-    # Pass force=True to bypass this guard (e.g. manual /api/market/scan-now trigger).
     session_open_min = 9 * 60 + 30
     current_min      = et_now.hour * 60 + et_now.minute
-    if current_min < session_open_min and not force:
-        logger.info(
-            "daily_premarket_scan: pre-market (%02d:%02d ET) — "
-            "skipping until session open", et_now.hour, et_now.minute,
-        )
-        # Return yesterday's universe or anchors as a placeholder
-        prev = _read_daily_universe()
-        return prev.get("universe") or list(ANCHOR_TICKERS)
+    scan_phase = "premarket" if current_min < session_open_min and not force else "regular"
 
     # Minutes elapsed since 9:30 (at least 1 to avoid division by zero)
     elapsed_min = max(1.0, current_min - session_open_min)
-
-    logger.info(
-        "daily_premarket_scan: scanning %d pool tickers (+%d min since open)",
-        len(LIQUID_POOL), int(elapsed_min),
-    )
 
     # ── Inject user-pinned tickers from Settings watchlist ───────────────────
     # Tickers the user pinned in Settings > Watchlist are always evaluated and
@@ -87,22 +120,18 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
     except Exception:
         _user_pins = []
 
-    # ── Step 1: Batch snapshots ───────────────────────────────────────────────
-    # Merge user-pinned tickers into the pool so they get snapshot data too.
-    pool = list(dict.fromkeys(                          # deduplicate, preserve order
-        [t for t in LIQUID_POOL if t not in TICKER_BLACKLIST]
-        + _user_pins
-    ))
+    # ── Step 1: Discover and snapshot the full optionable universe ────────────
+    pool, source = _optionable_scan_pool(alpaca, _user_pins)
+    logger.info("daily_premarket_scan: %s contains %d symbols", source, len(pool))
     all_snaps: dict[str, dict] = {}
-    batch_size = 50
-    for i in range(0, len(pool), batch_size):
-        batch = pool[i : i + batch_size]
+    for i in range(0, len(pool), SNAPSHOT_BATCH_SIZE):
+        batch = pool[i : i + SNAPSHOT_BATCH_SIZE]
         try:
             snaps = alpaca.get_snapshots(batch)
             all_snaps.update(snaps)
         except Exception as ex:
             logger.warning("daily_premarket_scan: snapshot batch %d failed: %s",
-                           i // batch_size, ex)
+                           i // SNAPSHOT_BATCH_SIZE, ex)
 
     logger.info("daily_premarket_scan: got snapshots for %d tickers", len(all_snaps))
 
@@ -117,18 +146,19 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
         if price < _MIN_PRICE:
             continue
 
-        # Gap = open vs previous close (open_price=0 means market not yet open)
-        gap_ref = open_price if open_price > 1.0 else price
+        # Premarket has no official open yet, so use the latest extended-hours
+        # price. After 9:30 use today's opening print.
+        gap_ref = price if scan_phase == "premarket" else (open_price if open_price > 1.0 else price)
         if prev_close <= 0:
             continue
         gap_pct = (gap_ref - prev_close) / prev_close * 100
         abs_gap  = abs(gap_pct)
 
-        # ETFs gap less than stocks by nature — use a lower minimum gap threshold
+        # A broad screen needs more than large gappers: compressed ORB and
+        # pullback strategies can be valid on smaller opening moves.
         _gap_min = _MIN_GAP_PCT_ETF if ticker in _ETF_SET else _MIN_GAP_PCT
-        if abs_gap < _gap_min or abs_gap > _MAX_GAP_PCT:
-            logger.debug("%s gap=%.2f%% outside [%.2f%%–%.0f%%] — skipped",
-                         ticker, gap_pct, _gap_min, _MAX_GAP_PCT)
+        discovery_floor = min(_gap_min, 0.25 if ticker in _ETF_SET else 0.50)
+        if abs_gap < discovery_floor and ticker not in _user_pins and ticker not in ANCHOR_TICKERS:
             continue
 
         candidates.append({
@@ -141,8 +171,17 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
             "prev_close": prev_close,
         })
 
-    logger.info("daily_premarket_scan: %d tickers passed price+gap filter",
-                len(candidates))
+    # Bound the expensive daily-history step while retaining both large movers
+    # and liquid names. This is a screen of the entire universe, not a fixed list.
+    candidates.sort(
+        key=lambda row: (
+            row["abs_gap"] * 3.0 + math.log10(max(1, row["daily_vol"])),
+            row["daily_vol"],
+        ),
+        reverse=True,
+    )
+    candidates = candidates[:BROAD_PREFILTER_LIMIT]
+    logger.info("daily_premarket_scan: %d symbols reached the daily-history screen", len(candidates))
 
     # ── Steps 3-6: Daily bars → avg vol, ATR, RVOL, score ────────────────────
     #
@@ -196,22 +235,23 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
 
             # ETFs get a lower RVOL bar — they don't spike like individual stocks
             _rvol_min = _MIN_RVOL_ETF if ticker in _ETF_SET else _MIN_RVOL
-            if elapsed_min >= 5:
+            if scan_phase == "premarket":
+                rvol_ok = True
+                rvol = max(0.25, rvol)
+            elif elapsed_min >= 5:
                 rvol_ok = rvol >= _rvol_min
             else:
                 rvol_ok = c["daily_vol"] >= one_bar_vol  # early: real volume check
-            if not rvol_ok:
-                logger.debug(
-                    "%s RVOL=%.2f < %.1f (vol=%d, exp=%d, elapsed=%.0f min) — skipped",
-                    ticker, rvol, _rvol_min, c["daily_vol"], int(expected_vol), elapsed_min,
-                )
-                continue
+            # RVOL is a ranking input, not a universal veto. The individual
+            # strategies apply their own entry gates after collection.
 
             # Composite score: RVOL (capped) × gap magnitude × ATR × ETF bonus
             rvol_capped = min(rvol, 20.0)   # prevent early-session inflation
             liq         = 1.15 if ticker in _ETF_SET else 1.0
             atr_factor  = min(atr_usd / 5.0, 2.0)  # caps contribution at 2×
-            score = rvol_capped * c["abs_gap"] * atr_factor * liq
+            liquidity_factor = min(2.0, max(0.6, math.log10(max(avg_daily_vol, 1)) / 4.0))
+            activity_factor = max(0.35, rvol_capped if rvol_ok else rvol_capped * 0.5)
+            score = activity_factor * (0.5 + min(c["abs_gap"], 12.0)) * atr_factor * liq * liquidity_factor
 
             # ── Affordability filter: de-rank tickers that would always bust the
             # position-size budget. Estimate: ATM option premium ≈ 0.5 × daily ATR.
@@ -235,10 +275,10 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
                 _est_premium       = atr_usd * 0.5             # rough ATM premium estimate
                 _est_contract_cost = _est_premium * 100.0       # full premium, 1 contract
                 if _budget > 0 and _est_contract_cost > _budget:
-                    score *= 0.05   # 95% penalty — bot can't afford even 1 contract
+                    score *= 0.50   # still research it; contract selection owns the real gate
                     logger.debug(
                         "%s affordability penalty: est_premium=$%.2f → contract_cost=$%.2f "
-                        "> budget=$%.2f (max_position_dollars_pct=%s, balance=$%.0f) → score de-ranked",
+                        "> budget=$%.2f (max_position_dollars_pct=%s, balance=$%.0f) → score reduced",
                         ticker, _est_premium, _est_contract_cost, _budget, _cap_pct, _bal,
                     )
             except Exception:
@@ -251,6 +291,9 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
                 "rvol":          round(rvol, 2),
                 "rvol_capped":   round(rvol_capped, 2),
                 "score":         round(score, 6),
+                "strategy_fit":  _strategy_fit_labels(
+                    bars, gap_pct=c["gap_pct"], atr_usd=atr_usd, price=c["price"],
+                ),
             })
 
         except Exception as ex:
@@ -258,7 +301,8 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
 
     # ── Sort and trim ─────────────────────────────────────────────────────────
     scored.sort(key=lambda x: x["score"], reverse=True)
-    dynamic_top = [s["ticker"] for s in scored[:max_tickers]]
+    selected = _balanced_shortlist(scored, max_tickers)
+    dynamic_top = [s["ticker"] for s in selected]
 
     logger.info(
         "daily_premarket_scan: %d survived all filters → top%d: %s",
@@ -279,7 +323,14 @@ def daily_premarket_scan(alpaca, max_tickers: int = 10, force: bool = False) -> 
     )
 
     # ── Persist results ───────────────────────────────────────────────────────
-    _write_daily_universe(today_str, top, scored[:max_tickers])
+    _write_daily_universe(today_str, top, selected, {
+        "phase": scan_phase,
+        "source": source,
+        "source_universe_size": len(pool),
+        "snapshots_received": len(all_snaps),
+        "daily_history_screened": len(candidates),
+        "research_candidates": len(dynamic_top),
+    })
     scores_dict = {s["ticker"]: s["score"] for s in scored}
     _write_state(top, scores_dict)
 

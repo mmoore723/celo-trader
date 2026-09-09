@@ -32,15 +32,19 @@ def _write_daily_universe(
     date: str,
     universe: list[str],
     details: list[dict],
+    scan_meta: dict | None = None,
 ) -> None:
     """Write the day's scanned universe to daily_universe.json."""
     try:
-        DAILY_UNIVERSE_PATH.write_text(json.dumps({
+        payload = {
             "date":         date,
             "universe":     universe,
             "scan_details": details,
             "written_utc":  datetime.utcnow().isoformat(),
-        }, indent=2))
+        }
+        if scan_meta:
+            payload["scan_meta"] = scan_meta
+        DAILY_UNIVERSE_PATH.write_text(json.dumps(payload, indent=2))
     except Exception as ex:
         logger.warning("daily_universe.json write failed: %s", ex)
 

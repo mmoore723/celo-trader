@@ -53,13 +53,13 @@ def _score_ticker(bars: list[dict], ticker: str) -> float:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def run_scan(alpaca, max_tickers: int = 10) -> list[str]:
+def run_scan(alpaca, max_tickers: int = 30) -> list[str]:
     """
     Entry point called by trading_logic._tick() and _evaluate_signals().
 
-    First call of the session (after 9:30 ET):
-        Runs daily_premarket_scan() — full pool scan, gap+RVOL filtering,
-        writes today's universe to disk.
+    First premarket call and first call after 9:30 ET:
+        Runs daily_premarket_scan() against the active optionable universe and
+        writes today's strategy-balanced research shortlist to disk.
 
     Subsequent calls:
         Rescores the already-selected universe by live 5-min RVOL × momentum so
@@ -71,7 +71,11 @@ def run_scan(alpaca, max_tickers: int = 10) -> list[str]:
     daily     = _read_daily_universe()
 
     # ── Phase 1: full scan (once per session, after market open) ─────────────
-    if daily.get("date") != today_str or not daily.get("universe"):
+    regular_refresh_due = (
+        daily.get("scan_meta", {}).get("phase") == "premarket"
+        and (_et_now().hour * 60 + _et_now().minute) >= 9 * 60 + 30
+    )
+    if daily.get("date") != today_str or not daily.get("universe") or regular_refresh_due:
         logger.info("run_scan: no fresh daily universe — triggering daily_premarket_scan")
         return daily_premarket_scan(alpaca, max_tickers)
 
@@ -121,4 +125,3 @@ def run_scan(alpaca, max_tickers: int = 10) -> list[str]:
                "top_scores": {t: scores.get(t, 0) for t in watchlist[:5]}},
     )
     return watchlist
-

@@ -378,7 +378,7 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
             ) or not _US.get("scan_watchlist")
             if _needs_scan:
                 try:
-                    wl = run_scan(alpaca, max_tickers=10)
+                    wl = run_scan(alpaca, max_tickers=30)
                     # Always prepend user's settings pins so tickers like XLE
                     # stay in the watchlist even if the scanner didn't rank them.
                     try:
@@ -394,7 +394,10 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
 
                     from scanner import _read_daily_universe, _et_now as _scanner_et_now
                     _du = _read_daily_universe()
-                    _full_scan_ran = (_du.get("date") == _scanner_et_now().strftime("%Y-%m-%d"))
+                    _full_scan_ran = (
+                        _du.get("date") == _scanner_et_now().strftime("%Y-%m-%d")
+                        and _du.get("scan_meta", {}).get("phase") == "regular"
+                    )
                     _US["scanner_ran_today"] = _full_scan_ran
 
                     _label = "🟢 Scan complete" if _full_scan_ran else "🟡 Pre-market (waiting for 9:30 open)"

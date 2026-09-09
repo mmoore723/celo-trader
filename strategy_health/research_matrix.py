@@ -339,9 +339,89 @@ def _diagnosis(
     return "entry", "PF is below 1.5. Retest the entry rule before enabling it."
 
 
+def _improvement_tests(
+    *, setups: int, sessions: int, option_results: int, option_result_days: int,
+    direction_results: int, direction_accuracy: float | None, factor: object,
+    exit_minutes: int, exit_summaries: list[dict], contract_tests: list[dict],
+) -> list[dict]:
+    """Turn measured weaknesses into specific next experiments, never claims."""
+    plans: list[dict] = []
+    coverage = option_results / setups if setups else 0.0
+    if setups == 0:
+        return [{
+            "title": "Find why no setup appeared",
+            "evidence": f"0 setups across {sessions} collected market days.",
+            "test": "Replay each entry gate separately—time window, trend direction, then volume—so the blocking condition is identified without loosening everything at once.",
+        }]
+    if coverage < 0.7:
+        plans.append({
+            "title": "Complete option pricing first",
+            "evidence": f"Only {option_results} of {setups} independent setups have a usable ask-to-bid result ({coverage * 100:.0f}%).",
+            "test": "Repair or extend quote capture for the same contract before judging entry or exit changes.",
+        })
+    if direction_results >= 5 and direction_accuracy is not None:
+        if direction_accuracy < 50:
+            plans.append({
+                "title": "Test a stricter entry",
+                "evidence": f"The stock moved in the predicted direction only {direction_accuracy:.1f}% of {direction_results} measured setups.",
+                "test": "Hold the option and exit constant; replay a 15-minute plus 1-hour direction-agreement gate on later, untouched dates.",
+            })
+        elif direction_accuracy < 60:
+            plans.append({
+                "title": "Test a chop filter",
+                "evidence": f"Direction accuracy is {direction_accuracy:.1f}% across {direction_results} measured setups.",
+                "test": "Hold the exit constant; compare one trend-efficiency or relative-volume threshold and validate it on later dates.",
+            })
+        elif _numeric_factor(factor) < 1.5:
+            plans.append({
+                "title": "Keep the entry; test option and exit",
+                "evidence": f"Direction accuracy is {direction_accuracy:.1f}%, but option PF is {_factor_label(factor)}.",
+                "test": "Do not tighten the signal yet. Compare the recorded contract policies and exit windows using the same setup dates.",
+            })
+    comparable_exits = [
+        row for row in exit_summaries
+        if row["minutes"] != exit_minutes and row["option_results"] >= 5
+    ]
+    if comparable_exits:
+        best = max(comparable_exits, key=lambda row: _numeric_factor(row["profit_factor"]))
+        if _numeric_factor(best["profit_factor"]) > _numeric_factor(factor):
+            plans.append({
+                "title": f"Forward-test the {best['minutes']}-minute exit",
+                "evidence": f"It produced PF {_factor_label(best['profit_factor'])} over {best['option_results']} recorded results versus PF {_factor_label(factor)} at {exit_minutes} minutes.",
+                "test": "Freeze the entry and contract choice, then validate this exit on future dates before changing production.",
+            })
+    comparable_contracts = [row for row in contract_tests if row["option_results"] >= 5]
+    if comparable_contracts:
+        best_contract = max(
+            comparable_contracts, key=lambda row: _numeric_factor(row["profit_factor"]),
+        )
+        if _numeric_factor(best_contract["profit_factor"]) > _numeric_factor(factor):
+            plans.append({
+                "title": f"Forward-test {best_contract['label']}",
+                "evidence": f"That contract rule produced PF {_factor_label(best_contract['profit_factor'])} over {best_contract['option_results']} recorded results.",
+                "test": "Keep the signal and exit unchanged so the contract rule is the only variable.",
+            })
+    if not plans:
+        remaining = max(0, 8 - option_result_days)
+        remaining_results = max(0, 20 - option_results)
+        plans.append({
+            "title": "Keep collecting unchanged",
+            "evidence": f"This pair has {option_results} priced results across the current exact strategy version.",
+            "test": f"Keep the rule fixed while collecting {remaining_results} more priced result{'s' if remaining_results != 1 else ''} and {remaining} more result day{'s' if remaining != 1 else ''}.",
+        })
+    return plans[:3]
+
+
+def _factor_label(value: object) -> str:
+    if value == "infinite":
+        return "∞"
+    return f"{float(value):.2f}" if isinstance(value, (int, float)) else "—"
+
+
 def build_research_matrix(days: int = 90) -> dict:
     from config import get_settings
     from database import get_conn, _now_et
+    from scanner.state_io import _read_daily_universe
 
     days = max(1, min(int(days), 365))
     settings = get_settings()
@@ -529,10 +609,20 @@ def build_research_matrix(days: int = 90) -> dict:
                 alternative_grouped, strategy_id=strategy_id, ticker=ticker,
                 exit_minutes=exit_minutes, sessions=sessions.get(ticker, 0),
             ) if research_pair else []
+            improvement_tests = _improvement_tests(
+                setups=len(samples), sessions=sessions.get(ticker, 0),
+                option_results=current_summary["option_results"],
+                option_result_days=option_result_days,
+                direction_results=measured, direction_accuracy=direction_accuracy,
+                factor=factor, exit_minutes=exit_minutes,
+                exit_summaries=exit_summaries, contract_tests=contract_tests,
+            )
             pairs.append({
                 "ticker": ticker,
                 "status": status,
                 "explanation": explanation,
+                "first_data_date": min(evidence_days.get(ticker, []), default=None),
+                "last_data_date": max(evidence_days.get(ticker, []), default=None),
                 "market_days": sessions.get(ticker, 0),
                 "setups": len(samples),
                 "raw_observations": len(raw_samples),
@@ -556,6 +646,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 "comparison_split_date": comparison_split_date,
                 "diagnosis": diagnosis,
                 "next_action": next_action,
+                "improvement_tests": improvement_tests,
                 "exit_comparison": exit_summaries,
                 "contract_tests": contract_tests,
                 "leading_contract_test": contract_tests[0] if contract_tests else None,
@@ -583,6 +674,7 @@ def build_research_matrix(days: int = 90) -> dict:
             "exit_minutes": exit_minutes,
             "pairs": sorted(pairs, key=lambda pair: (priority[pair["status"]], pair["ticker"])),
         })
+    scan_meta = (_read_daily_universe().get("scan_meta") or {})
     return {
         "days": days,
         "target_profit_factor": 1.5,
@@ -599,5 +691,9 @@ def build_research_matrix(days: int = 90) -> dict:
         "account_scoped": bool(account_id),
         "ticker_count": len(tickers),
         "strategy_count": len(strategy_rows),
+        "scanner_source": scan_meta.get("source"),
+        "scanner_source_size": int(scan_meta.get("source_universe_size") or 0),
+        "scanner_shortlist_size": int(scan_meta.get("research_candidates") or 0),
+        "scanner_phase": scan_meta.get("phase"),
         "strategies": strategy_rows,
     }
