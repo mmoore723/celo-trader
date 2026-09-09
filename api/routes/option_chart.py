@@ -1,5 +1,5 @@
 """Authenticated option-price history; reads only the current user's account."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Literal
 
@@ -40,11 +40,18 @@ def option_chart(request: Request, trade_id: int = Path(ge=1),
     if result.get("entry_time") and result.get("contract_symbol"):
         try:
             from broker import get_tradier_market_client
-            start = datetime.fromtimestamp(float(result["entry_time"]), timezone.utc)
-            finish = datetime.fromtimestamp(
+            entry = datetime.fromtimestamp(float(result["entry_time"]), timezone.utc)
+            exit_or_now = datetime.fromtimestamp(
                 min(float(result.get("exit_time") or result["as_of"]), float(result["as_of"])),
                 timezone.utc,
             )
+            start = entry - timedelta(minutes=20)
+            finish = min(
+                exit_or_now + (timedelta(minutes=20) if result.get("exit_time") else timedelta()),
+                datetime.fromtimestamp(float(result["as_of"]), timezone.utc),
+            )
+            result["window_start"] = start.timestamp()
+            result["window_end"] = finish.timestamp()
             raw_bars = get_tradier_market_client().get_option_bars(
                 str(result["contract_symbol"]), start, finish, interval="1min",
             )

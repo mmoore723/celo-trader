@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from broker.alpaca_core import AlpacaCoreMixin
 from scanner.premarket import (
@@ -6,9 +7,27 @@ from scanner.premarket import (
     _optionable_scan_pool,
     _strategy_fit_labels,
 )
+from scanner.scoring import run_scan
 
 
 class BroadOptionableScannerTests(unittest.TestCase):
+    def test_fresh_morning_universe_is_reused_without_intraday_rescan(self):
+        class NeverCalled:
+            def get_bars(self, *_args, **_kwargs):
+                raise AssertionError("a locked morning scan must not be rescored")
+
+        daily = {
+            "date": "2026-09-09",
+            "universe": ["META", "NVS", "SPY"],
+            "scan_details": [],
+            "scan_meta": {"phase": "premarket"},
+        }
+        with patch("scanner.scoring._et_now") as now, \
+             patch("scanner.scoring._read_daily_universe", return_value=daily), \
+             patch("config.get_settings", return_value={"watchlist": ["SPY"]}):
+            now.return_value.strftime.return_value = "2026-09-09"
+            self.assertEqual(["SPY", "META", "NVS", "QQQ"], run_scan(NeverCalled()))
+
     def test_asset_discovery_keeps_only_active_tradable_non_otc_symbols(self):
         client = AlpacaCoreMixin.__new__(AlpacaCoreMixin)
         client.api_key = "test"

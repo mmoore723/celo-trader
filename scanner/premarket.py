@@ -80,7 +80,7 @@ def _balanced_shortlist(scored: list[dict], max_tickers: int) -> list[dict]:
 
 def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> list[str]:
     """
-    Full dynamic universe scan — screens premarket, then refreshes after 9:30 ET.
+    Full dynamic universe scan — selects the morning universe once per day.
 
     Pipeline
     ────────
@@ -93,8 +93,9 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
     7. Return user pins + anchors + the top max_tickers dynamic candidates.
     8. Write results to daily_universe.json + scanner_state.json.
 
-    Premarket uses latest price versus prior close. The regular-session refresh
-    uses the official opening price and current relative volume.
+    Premarket uses latest price versus prior close. An explicit manual scan can
+    use the official opening price, but the automatic trading loop never
+    replaces the saved morning selection after the opening bell.
     """
     et_now = _et_now()
     today_str = et_now.strftime("%Y-%m-%d")

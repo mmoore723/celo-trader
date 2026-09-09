@@ -157,7 +157,7 @@ export function useChartCore(
   }, [palette.background, opts.height, opts.showRsi, opts.showMacd]);
 
   // ── Feed data whenever bars change ────────────────────────────────────────
-  function setBars(bars: Bar[], minuteTimelineEnd?: string) {
+  function setBars(bars: Bar[], minuteTimelineEnd?: string, minuteTimelineStart?: string) {
     const r = refs.current;
     if (!r.candle) return;
     if (bars.length === 0) {
@@ -188,7 +188,11 @@ export function useChartCore(
       // and no market movement is invented.
       const byMinute = new Map(actualCandles.map((bar) => [Math.floor(Number(bar.time) / 60) * 60, bar]));
       const volumeByMinute = new Map(actualVolume.map((bar) => [Math.floor(Number(bar.time) / 60) * 60, bar]));
-      const firstMinute = Math.min(...byMinute.keys());
+      const firstActual = Math.min(...byMinute.keys());
+      const requestedStart = minuteTimelineStart
+        ? Math.floor(new Date(minuteTimelineStart).getTime() / 60_000) * 60
+        : firstActual;
+      const firstMinute = Number.isFinite(requestedStart) ? Math.min(firstActual, requestedStart) : firstActual;
       const requestedEnd = Math.floor(new Date(minuteTimelineEnd).getTime() / 60_000) * 60;
       const lastActual = Math.max(...byMinute.keys());
       const lastMinute = Number.isFinite(requestedEnd) ? Math.max(lastActual, requestedEnd) : lastActual;

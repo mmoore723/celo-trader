@@ -163,6 +163,17 @@ class OptionChartTests(unittest.TestCase):
                     self.assertEqual(response.json()["mode"], mode)
                     self.assertEqual(response.json()["candles"][0]["open"], 4.0)
                     self.assertEqual(response.json()["candle_source"], "tradier_timesales_1min")
+                    self.assertEqual(
+                        response.json()["window_start"],
+                        datetime(2026, 9, 4, 13, 40, tzinfo=timezone.utc).timestamp(),
+                    )
+                    self.assertEqual(
+                        response.json()["window_end"],
+                        response.json()["as_of"],
+                    )
+                    requested_start, requested_end = market.get_option_bars.call_args.args[1:3]
+                    self.assertEqual(datetime(2026, 9, 4, 13, 40, tzinfo=timezone.utc), requested_start)
+                    self.assertEqual(response.json()["window_end"], requested_end.timestamp())
             self.assertEqual(get("/api/trades/1/option-chart?mode=wrong").status_code, 422)
             self.assertEqual(get("/api/trades/0/option-chart").status_code, 422)
             self.assertEqual(get("/api/trades/999/option-chart").status_code, 404)

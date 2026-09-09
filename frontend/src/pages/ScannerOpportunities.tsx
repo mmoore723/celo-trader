@@ -98,12 +98,18 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
 }
 
 export function ScannerOpportunities({ view = "decisions", embedded = false }: { view?: "decisions" | "research"; embedded?: boolean }) {
-  const [date, setDate] = useState(todayEt()), [selected, setSelected] = useState("all"), [researchFilter, setResearchFilter] = useState("results");
+  const [date, setDate] = useState(todayEt()), [selected, setSelected] = useState("all"), [tickerSearch, setTickerSearch] = useState(""), [researchFilter, setResearchFilter] = useState("results");
   const { data, isLoading, error } = useQuery({ queryKey: ["scanner-opportunities", date], queryFn: () => api.signals.opportunities({ date, limit: 1000 }), refetchInterval: 15_000 });
   const { data: matrix, isLoading: matrixLoading, error: matrixError } = useQuery({ queryKey: ["strategy-research-matrix"], queryFn: () => api.strategyHealth.researchMatrix(90), refetchInterval: 60_000 });
   const decisions = useMemo(() => collapseOpportunityEpisodes(data?.entries ?? []).filter(entry => opportunityLifecycle(entry) !== "research"), [data?.entries]);
   const allRows = useMemo(() => (matrix?.strategies ?? []).flatMap(strategy => strategy.pairs.map(pair => ({ pair, strategy }))), [matrix]);
-  const scopedRows = useMemo(() => allRows.filter(row => selected === "all" || row.strategy.strategy_id === selected), [allRows, selected]);
+  const scopedRows = useMemo(() => {
+    const wantedTicker = tickerSearch.trim().toUpperCase();
+    return allRows.filter(row =>
+      (selected === "all" || row.strategy.strategy_id === selected)
+      && (!wantedTicker || row.pair.ticker.includes(wantedTicker))
+    );
+  }, [allRows, selected, tickerSearch]);
   const researchPairs = useMemo(() => sortResearchPairs(scopedRows.filter(row => researchPairVisible(row.pair, researchFilter))), [scopedRows, researchFilter]);
   const allPairs = useMemo(() => scopedRows.map(row => row.pair), [scopedRows]);
   const measuredPairs = useMemo(() => allPairs.filter(pair => pair.option_results > 0), [allPairs]);
@@ -138,6 +144,7 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
         <div className="card p-4 space-y-3">
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm font-medium min-w-64 flex-1">Strategy<select className="select w-full mt-2" value={selected} onChange={event => setSelected(event.target.value)}><option value="all">All strategies</option>{matrix.strategies.map(strategy => <option key={strategy.strategy_id} value={strategy.strategy_id}>{strategy.display_name}</option>)}</select></label>
+            <label className="text-sm font-medium min-w-40">Ticker<input className="input w-full mt-2 uppercase" type="search" placeholder="META" value={tickerSearch} onChange={event => setTickerSearch(event.target.value)} /></label>
             <div className="flex flex-wrap gap-2" aria-label="Research result filters">
               {[["results", `Has results (${measuredPairs.length})`], ["attention", `Needs work (${needsWork.length})`], ["passing", `At PF goal (${passingNow.length})`], ["waiting", `Waiting (${waiting})`], ["all", `Everything (${allPairs.length})`]].map(([value, label]) => <button key={value} type="button" className={`btn btn-sm ${researchFilter === value ? "btn-primary" : "btn-ghost"}`} aria-pressed={researchFilter === value} onClick={() => setResearchFilter(value)}>{label}</button>)}
             </div>

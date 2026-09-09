@@ -12,21 +12,19 @@ call site elsewhere in the app is unaffected:
   state_io.py    — disk read/write for scanner_state.json / daily_universe.json
   premarket.py    — daily_premarket_scan (Phase 1, kept as one function --
                     see its own docstring)
-  scoring.py        — _score_ticker, run_scan (Phase 2 rescore)
+  scoring.py        — _score_ticker helper and locked daily run_scan
   windows.py          — is_premarket_window, is_scan_window, get_watchlist,
                         get_today_universe
 
-Two-phase operation
-───────────────────
-Phase 1  (premarket, then refreshed after 9:30 ET each day):
+Daily operation
+───────────────
+Phase 1  (once during the premarket window each day):
     daily_premarket_scan() discovers Alpaca's active optionable universe,
     screens snapshots and daily history, balances the existing strategy
     families, and writes the top 30 research candidates to disk. The reviewed
     LIQUID_POOL remains only a network-failure fallback.
 
-Phase 2  (every subsequent run_scan() call during the session):
-    Rescores the selected daily universe by live RVOL × momentum so
-    the trading loop can always evaluate the hottest mover first.
+Every subsequent run_scan() call reuses that same morning universe and order.
 """
 
 from scanner.constants import (

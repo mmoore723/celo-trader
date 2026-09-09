@@ -5,6 +5,11 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(
   new URL("../src/pages/ScannerOpportunities.tsx", import.meta.url), "utf8",
 );
+
+test("research results can be narrowed to one ticker", () => {
+  assert.match(source, /type="search" placeholder="META"/);
+  assert.match(source, /row\.pair\.ticker\.includes\(wantedTicker\)/);
+});
 const settingsSource = readFileSync(
   new URL("../src/pages/Settings.tsx", import.meta.url), "utf8",
 );

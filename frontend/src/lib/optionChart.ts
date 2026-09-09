@@ -7,6 +7,7 @@ export interface OptionChartData {
   candles: { time: number; open: number; high: number; low: number; close: number; volume: number }[];
   candle_source: "tradier_timesales_1min" | null;
   quotes: { time: number; bid: number; ask: number }[]; truncated: boolean; as_of: number;
+  window_start?: number; window_end?: number;
 }
 
 export const optionMoney = (value: number | null | undefined) =>

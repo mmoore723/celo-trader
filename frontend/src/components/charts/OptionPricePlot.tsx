@@ -57,7 +57,8 @@ export function OptionPricePlot({ data }: { data: OptionChartData }) {
     ticker={`${data.ticker} ${data.strike ?? ""} ${data.option_type.toUpperCase()}`.trim()}
     height={430}
     viewportKey={`option-position:${data.mode}:${data.trade_id}`}
-    minuteTimelineEnd={new Date(Math.min(data.exit_time ?? data.as_of, data.as_of) * 1000).toISOString()}
+    minuteTimelineStart={new Date((data.window_start ?? data.entry_time - 20 * 60) * 1000).toISOString()}
+    minuteTimelineEnd={new Date((data.window_end ?? Math.min((data.exit_time ?? data.as_of) + (data.exit_time ? 20 * 60 : 0), data.as_of)) * 1000).toISOString()}
     showVwap={false}
     showVwapBands={false}
     showOR={false}

@@ -372,10 +372,9 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
 
             # ── Daily scan ───────────────────────────────────────────────────
             # Run if: scan hasn't run today AND we're in the scan window.
-            # Also run if scan_watchlist is empty regardless of time — this
-            _needs_scan = (
-                not _US.get("scanner_ran_today") and is_scan_window()
-            ) or not _US.get("scan_watchlist")
+            # Outside that window, keep the safe startup seed rather than
+            # launching a new universe scan from a dashboard visit or restart.
+            _needs_scan = not _US.get("scanner_ran_today") and is_scan_window()
             if _needs_scan:
                 try:
                     wl = run_scan(alpaca, max_tickers=30)
@@ -394,16 +393,16 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
 
                     from scanner import _read_daily_universe, _et_now as _scanner_et_now
                     _du = _read_daily_universe()
-                    _full_scan_ran = (
+                    _morning_scan_locked = (
                         _du.get("date") == _scanner_et_now().strftime("%Y-%m-%d")
-                        and _du.get("scan_meta", {}).get("phase") == "regular"
+                        and bool(_du.get("universe"))
                     )
-                    _US["scanner_ran_today"] = _full_scan_ran
+                    _US["scanner_ran_today"] = _morning_scan_locked
 
-                    _label = "🟢 Scan complete" if _full_scan_ran else "🟡 Pre-market (waiting for 9:30 open)"
+                    _label = "🟢 Morning scan locked" if _morning_scan_locked else "🟡 Waiting for morning scan"
                     logger.info("scan_tick", extra={
                         "event": "scan_tick", "watchlist": wl,
-                        "full_scan": _full_scan_ran,
+                        "morning_scan_locked": _morning_scan_locked,
                     })
                     log_event("INFO", "scanner",
                               f"{_label}. Watchlist: {', '.join(wl)}")
