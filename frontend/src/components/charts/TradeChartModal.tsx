@@ -34,7 +34,7 @@ function tradeDateStr(t: Trade): string {
 
 export function TradeChartModal(props: Props) {
   const { open, onClose, ticker } = props;
-  const [tf, setTf] = useState("5Min");
+  const [tf, setTf] = useState(props.mode === "replay" ? "1Min" : "5Min");
   const replayRef = useRef<BoomerangReplayHandle>(null);
   const date = props.mode === "simulation" ? (props.date ?? new Date().toISOString().slice(0, 10)) : tradeDateStr(props.trade);
 
@@ -55,7 +55,7 @@ export function TradeChartModal(props: Props) {
   // Kick off the boomerang the moment bars are ready for a replay.
   useEffect(() => {
     if (open && props.mode === "replay" && bars.length > 0 && props.trade.entry_time) {
-      replayRef.current?.jumpToTime(props.trade.entry_time, props.trade.exit_time);
+      replayRef.current?.showTradeWindow(props.trade.entry_time, props.trade.exit_time);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, props.mode, tf, bars.length]);

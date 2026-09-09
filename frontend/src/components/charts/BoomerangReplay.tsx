@@ -18,16 +18,19 @@
 import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import { Play, Pause, SkipForward } from "lucide-react";
 import { TradeChart, type TradeChartProps } from "./TradeChart";
+import { POSITION_WINDOW_MINUTES, tradeWindowBounds } from "./tradeWindow";
 
 const SPEEDS = [1, 2, 4, 8] as const;
-const LEAD_IN_BARS = 15;      // candles of context shown before entry
-const TAIL_BARS = 8;          // candles played past the exit before stopping (historical mode)
+const LEAD_IN_BARS = POSITION_WINDOW_MINUTES;
+const TAIL_BARS = POSITION_WINDOW_MINUTES;
 
 export interface NarrationEvent { ts: string; message: string }
 
 export interface BoomerangReplayHandle {
-  /** Jump to `isoTime`, landing 15 bars before it, and start playing. */
+  /** Jump to `isoTime`, landing 20 bars before it, and start playing. */
   jumpToTime: (isoTime: string, stopAtIso?: string) => void;
+  /** Show 20 one-minute candles before entry through 20 after exit. */
+  showTradeWindow: (entryTime: string, exitTime?: string) => void;
 }
 
 interface Props extends TradeChartProps {
@@ -103,6 +106,14 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
       // time) — playback then grows the right edge forward from here.
       setIdx(Math.min(bars.length, entryIdx + 1));
       setPlaying(true);
+    },
+    showTradeWindow(entryTime: string, exitTime?: string) {
+      const { startIndex, endIndex } = tradeWindowBounds(bars, entryTime, exitTime);
+      wasAtLive.current = false;
+      setStartIdx(startIndex);
+      setStopAtIdx(null);
+      setIdx(endIndex);
+      setPlaying(false);
     },
   }), [bars]);
 

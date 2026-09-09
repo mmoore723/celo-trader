@@ -2,7 +2,7 @@
  * LiveTrading.tsx — Main trading cockpit.
  * Real-time chart, actionable trade alert, open positions, eval log, scanner.
  */
-import { useState, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ChevronDown, Newspaper, RefreshCw, Radio, Bot } from "lucide-react";
@@ -161,6 +161,7 @@ export function LiveTrading() {
   // Recreating lightweight-charts on every switch can leave a queued resize
   // callback touching an already-disposed canvas.
   const stockChartWasOpened = useRef(false);
+  const lastFramedPosition = useRef("");
 
   function toggleChart() {
     setChartExpanded((expanded) => {
@@ -335,14 +336,26 @@ export function LiveTrading() {
     },
   );
   const openTickerTrade   = tickerTrades.find((t: Trade) => !t.exit_time);
-  const positionLevels    = openTickerTrade ? {
-    entry:     openTickerTrade.entry_price  ?? undefined,
-    stop:      openTickerTrade.stop_price   ?? undefined,
-    target:    openTickerTrade.target_price ?? undefined,
-    trail:     (openTickerTrade as any).trail_price ?? undefined,
-    direction: (openTickerTrade.direction === "short" ? "short" : "long") as "long" | "short",
-    contracts: openTickerTrade.contracts    ?? undefined,
+  const displayedTrade    = optionChart.selected ?? openTickerTrade;
+  const positionLevels    = displayedTrade ? {
+    entry:     displayedTrade.entry_price  ?? undefined,
+    stop:      displayedTrade.stop_price   ?? undefined,
+    target:    displayedTrade.target_price ?? undefined,
+    trail:     (displayedTrade as any).trail_price ?? undefined,
+    direction: (displayedTrade.direction === "short" ? "short" : "long") as "long" | "short",
+    contracts: displayedTrade.contracts    ?? undefined,
   } : undefined;
+
+  // A selected position is a focused teaching view: show exactly 20 complete
+  // one-minute stock candles before its buy minute through 20 after its close.
+  useEffect(() => {
+    const selected = optionChart.selected;
+    if (optionChart.view !== "stock" || tf !== "1Min" || !selected?.entry_time || chartBars.length === 0) return;
+    const key = `${selected.mode}:${selected.id}:${selected.entry_time}:${selected.exit_time ?? "open"}`;
+    if (lastFramedPosition.current === key) return;
+    lastFramedPosition.current = key;
+    chartReplayRef.current?.showTradeWindow(selected.entry_time, selected.exit_time);
+  }, [optionChart.selected, optionChart.view, tf, chartBars.length]);
 
   // Narration for the boomerang replay's caption strip — reuses the same
   // trade-events endpoint the trade drawer already uses, scoped to whichever
@@ -676,7 +689,7 @@ export function LiveTrading() {
             mode="live"
             resetKey={`${ticker}|${tf}|${effectivePeriod}`}
             bars={chartBars}
-            trades={tickerTrades}
+            trades={optionChart.selected ? [optionChart.selected] : tickerTrades}
             showVwap={showVwap}
             showVwapBands={showVwapBands}
             showOR={showOR}
@@ -690,8 +703,10 @@ export function LiveTrading() {
             orLow={safeOrLow}
             positionLevels={positionLevels}
             currentOptionPrice={
-              openTickerTrade
-                ? (status?.open_positions?.[String(openTickerTrade.id)]?.current_option_price ?? null)
+              displayedTrade
+                ? (displayedTrade.exit_price
+                  ?? status?.open_positions?.[String(displayedTrade.id)]?.current_option_price
+                  ?? null)
                 : null
             }
             ticker={ticker}
