@@ -55,6 +55,7 @@ test("position view uses the standard candle chart with a non-distorting positio
   assert.match(optionPlot, /bars=\{bars\}/);
   assert.match(optionPlot, /trades=\{\[chartTrade\]\}/);
   assert.match(optionPlot, /positionLevelsOnCandleScale/);
+  assert.match(optionPlot, /minuteTimelineEnd=/);
   assert.doesNotMatch(optionPlot, /<svg/);
   assert.match(tradeChart, /positionLevelsOnCandleScale/);
   assert.match(overlays, /position_reward/);
@@ -64,4 +65,6 @@ test("position view uses the standard candle chart with a non-distorting positio
   assert.match(overlays, /referenceAnchor/);
   assert.match(chartCore, /if \(disposed \|\| !mainEl\.current\) return/);
   assert.match(chartCore, /disposed = true;\s*ro\.disconnect\(\)/);
+  assert.match(chartCore, /Whitespace carries no price or volume/);
+  assert.match(chartCore, /minute \+= 60/);
 });

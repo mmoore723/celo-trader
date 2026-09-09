@@ -54,6 +54,8 @@ export interface TradeChartProps {
   revealStart?: number;
   /** Refit only when this chart context changes, never on routine data polls. */
   viewportKey?: string;
+  /** End of an honest minute-by-minute timeline; missing minutes render blank. */
+  minuteTimelineEnd?: string;
   /** Two-click manual trend-line drawing for chart study. */
   drawingEnabled?: boolean;
   /** Increment to remove every user-drawn trend line. */
@@ -66,7 +68,7 @@ export function TradeChart({
   showStructure = true, showPremiumDiscount = false, showKillzones = false, showExecutionGrade = true,
   showRsi = true, showMacd = true,
   orHigh, orLow, positionLevels, positionLevelsOnCandleScale = false, simulationOverlay, replayTrade,
-  height = 420, ticker, revealCount, revealStart, viewportKey,
+  height = 420, ticker, revealCount, revealStart, viewportKey, minuteTimelineEnd,
   showPositionCard = true, currentOptionPrice = null,
   drawingEnabled = false, clearDrawingsToken = 0,
 }: TradeChartProps) {
@@ -105,7 +107,7 @@ export function TradeChart({
   }, [refs.current.chart]);
 
   useEffect(() => {
-    setBars(visibleBars);
+    setBars(visibleBars, minuteTimelineEnd);
     overlayMgr.current?.setVwap(visibleBars, showVwap, showVwapBands);
     overlayMgr.current?.apply({
       bars: visibleBars, trades: visibleTrades, annotations: visibleAnnotations,
@@ -119,6 +121,7 @@ export function TradeChart({
     bars, trades, annotations, revealCount, revealStart, showVwap, showVwapBands, showOR, showSwings,
     showStructure, showPremiumDiscount, showKillzones, showExecutionGrade,
     orHigh, orLow, positionLevels, positionLevelsOnCandleScale, simulationOverlay, replayTrade,
+    minuteTimelineEnd,
   ]);
 
   // Manual chart study: click once for the start and once for the end. These

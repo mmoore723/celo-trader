@@ -157,7 +157,7 @@ export function useChartCore(
   }, [palette.background, opts.height, opts.showRsi, opts.showMacd]);
 
   // ── Feed data whenever bars change ────────────────────────────────────────
-  function setBars(bars: Bar[]) {
+  function setBars(bars: Bar[], minuteTimelineEnd?: string) {
     const r = refs.current;
     if (!r.candle) return;
     if (bars.length === 0) {
@@ -171,9 +171,45 @@ export function useChartCore(
     }
     const closes = bars.map((b) => b.close);
 
-    r.candle.setData(bars.map((b) => ({ time: toEpochTime(b.time), open: b.open, high: b.high, low: b.low, close: b.close })));
+    const actualCandles = bars.map((b) => ({
+      time: toEpochTime(b.time), open: b.open, high: b.high, low: b.low, close: b.close,
+    }));
+    const actualVolume = bars.map((b) => ({
+      time: toEpochTime(b.time), value: b.volume,
+      color: b.close >= b.open ? palette.up + "33" : palette.down + "33",
+    }));
 
-    r.volume?.setData(bars.map((b) => ({ time: toEpochTime(b.time), value: b.volume, color: b.close >= b.open ? palette.up + "33" : palette.down + "33" })));
+    if (minuteTimelineEnd) {
+      // Option contracts often do not trade every minute. lightweight-charts
+      // normally places sparse bars next to each other, visually compressing
+      // 12:50, 12:56 and 1:02 into three adjacent candles. Insert native
+      // whitespace data for every missing minute so the x-axis remains a true
+      // one-minute clock. Whitespace carries no price or volume, so no candle
+      // and no market movement is invented.
+      const byMinute = new Map(actualCandles.map((bar) => [Math.floor(Number(bar.time) / 60) * 60, bar]));
+      const volumeByMinute = new Map(actualVolume.map((bar) => [Math.floor(Number(bar.time) / 60) * 60, bar]));
+      const firstMinute = Math.min(...byMinute.keys());
+      const requestedEnd = Math.floor(new Date(minuteTimelineEnd).getTime() / 60_000) * 60;
+      const lastActual = Math.max(...byMinute.keys());
+      const lastMinute = Number.isFinite(requestedEnd) ? Math.max(lastActual, requestedEnd) : lastActual;
+      const spanMinutes = (lastMinute - firstMinute) / 60;
+      if (spanMinutes >= 0 && spanMinutes <= 1_440) {
+        const candleTimeline: Array<(typeof actualCandles)[number] | { time: Time }> = [];
+        const volumeTimeline: Array<(typeof actualVolume)[number] | { time: Time }> = [];
+        for (let minute = firstMinute; minute <= lastMinute; minute += 60) {
+          candleTimeline.push(byMinute.get(minute) ?? { time: minute as Time });
+          volumeTimeline.push(volumeByMinute.get(minute) ?? { time: minute as Time });
+        }
+        r.candle.setData(candleTimeline);
+        r.volume?.setData(volumeTimeline);
+      } else {
+        r.candle.setData(actualCandles);
+        r.volume?.setData(actualVolume);
+      }
+    } else {
+      r.candle.setData(actualCandles);
+      r.volume?.setData(actualVolume);
+    }
 
     if (r.rsiLine) {
       const rsi = calcRSI(closes, 14);
