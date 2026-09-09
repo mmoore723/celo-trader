@@ -14,6 +14,7 @@ const { optionMetrics, quoteSegments } = await import(moduleUrl);
 const optionPlot = await readFile(new URL("../src/components/charts/OptionPricePlot.tsx", import.meta.url), "utf8");
 const tradeChart = await readFile(new URL("../src/components/charts/TradeChart.tsx", import.meta.url), "utf8");
 const overlays = await readFile(new URL("../src/components/charts/chartOverlays.ts", import.meta.url), "utf8");
+const chartCore = await readFile(new URL("../src/components/charts/chartCore.ts", import.meta.url), "utf8");
 
 const base = { option_type: "put", contracts: 2, entry_price: 4, stop_price: 3, target_price: 6,
   closed: false, quotes: [{ time: 100, bid: 4.1, ask: 4.3 }] };
@@ -61,4 +62,6 @@ test("position view uses the standard candle chart with a non-distorting positio
   assert.match(overlays, /Math\.min\(pl\.target, candleHigh\)/);
   assert.match(overlays, /inVisibleCandleRange/);
   assert.match(overlays, /referenceAnchor/);
+  assert.match(chartCore, /if \(disposed \|\| !mainEl\.current\) return/);
+  assert.match(chartCore, /disposed = true;\s*ro\.disconnect\(\)/);
 });

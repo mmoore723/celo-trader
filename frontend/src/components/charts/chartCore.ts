@@ -130,8 +130,12 @@ export function useChartCore(
     };
     chart.timeScale().subscribeVisibleTimeRangeChange(syncHandler);
 
+    let disposed = false;
     const ro = new ResizeObserver(() => {
-      if (!mainEl.current) return;
+      // ResizeObserver callbacks already queued by the browser may run after
+      // React has started unmounting this chart. Never call into a removed
+      // lightweight-charts canvas.
+      if (disposed || !mainEl.current) return;
       const w = mainEl.current.clientWidth;
       chart.applyOptions({ width: w });
       rsiChart?.applyOptions({ width: w });
@@ -140,6 +144,7 @@ export function useChartCore(
     ro.observe(mainEl.current);
 
     return () => {
+      disposed = true;
       ro.disconnect();
       chart.timeScale().unsubscribeVisibleTimeRangeChange(syncHandler);
       chart.remove();
