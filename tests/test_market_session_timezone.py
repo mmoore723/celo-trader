@@ -43,6 +43,7 @@ class MarketSessionTimezoneTests(unittest.TestCase):
             "trading/position_manager/close.py",
             "api/routes/settings.py",
             "api/routes/market.py",
+            "scanner/strategy_premarket.py",
         )
 
         offenders: list[str] = []
@@ -57,6 +58,12 @@ class MarketSessionTimezoneTests(unittest.TestCase):
             "Market-session logic must use trading.state._now_et(), not the "
             f"server's local calendar date: {offenders}",
         )
+
+    def test_premarket_does_not_shadow_the_new_york_clock(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "api/routes/market.py").read_text(encoding="utf-8")
+        self.assertNotIn("_now_et   =", source)
+        self.assertNotIn("_now_et =", source)
 
 
 if __name__ == "__main__":

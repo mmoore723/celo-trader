@@ -368,14 +368,14 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
     Returns per-ticker:
       price, prev_close, prev_high, prev_low, gap_pct,
       atr, atr_pct, avg_vol_20d, daily_vol, rvol,
-      implied_move_pct, grade (A+/A/B/C/Watch),
-      direction (calls/puts/neutral), key_levels,
+      implied_move_pct, readiness score (not a probability),
+      multi-timeframe market bias, strategy matches, key_levels,
       entry_note, stop_note, target_note, setup_notes,
       is_pinned, rank
 
     Data sources:
-      - yfinance daily bars (batch)   → ATR, prev H/L/C, avg volume
-      - Alpaca snapshots              → live price, change_pct, today's volume
+      - yfinance daily/intraday bars (batch) → five-timeframe context
+      - Alpaca snapshots                    → live price and today's volume
     """
     import concurrent.futures
     import datetime as _dt
@@ -397,6 +397,16 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
     if not all_tickers:
         return []
 
+    def _symbol_frame(raw, symbol: str):
+        """Normalize either yfinance MultiIndex orientation for one symbol."""
+        if raw is None or raw.empty or not isinstance(raw.columns, pd.MultiIndex):
+            return raw
+        for level in range(raw.columns.nlevels):
+            values = {str(value).upper() for value in raw.columns.get_level_values(level)}
+            if symbol.upper() in values:
+                return raw.xs(symbol, level=level, axis=1, drop_level=True)
+        return raw
+
     # ── Batch daily bars via yfinance (22 days → ATR + prev H/L/C + avg vol) ─
     yf_bars: dict[str, list] = {}
     try:
@@ -413,28 +423,70 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
             _raw = _ex.submit(_dl).result(timeout=20)
 
+        def _daily_records(frame):
+            frame = frame.dropna(subset=["Close"])
+            if frame.empty:
+                return []
+            rows = frame[["Open", "High", "Low", "Close", "Volume"]].tail(24).rename(
+                columns={"Open":"o", "High":"h", "Low":"l", "Close":"c", "Volume":"v"}
+            )
+            records = rows.to_dict("records")
+            for record, stamp in zip(records, rows.index):
+                record["session"] = str(getattr(stamp, "date", lambda: stamp)())
+                record["is_complete"] = record["session"] != _now_et().date().isoformat()
+            return records
+
         if not _raw.empty:
-            if hasattr(_raw.columns, "levels") and len(all_tickers) > 1:
-                # Multi-ticker: MultiIndex (field, ticker)
-                for _t in all_tickers:
-                    try:
-                        _df = _raw[_t].dropna(subset=["Close"])
-                        if not _df.empty:
-                            yf_bars[_t] = _df[["Open","High","Low","Close","Volume"]].tail(22).rename(
-                                columns={"Open":"o","High":"h","Low":"l","Close":"c","Volume":"v"}
-                            ).to_dict("records")
-                    except Exception:
-                        pass
-            else:
-                # Single ticker — plain DataFrame
-                _t = all_tickers[0]
-                _df = _raw.dropna(subset=["Close"])
-                if not _df.empty:
-                    yf_bars[_t] = _df[["Open","High","Low","Close","Volume"]].tail(22).rename(
-                        columns={"Open":"o","High":"h","Low":"l","Close":"c","Volume":"v"}
-                    ).to_dict("records")
+            for _t in all_tickers:
+                try:
+                    _records = _daily_records(_symbol_frame(_raw, _t))
+                    if _records:
+                        yf_bars[_t] = _records
+                except Exception:
+                    pass
     except Exception:
         pass  # proceed with Alpaca-only data
+
+    # Extended-hours intraday context. These are real completed Yahoo bars;
+    # the pure evaluator below never projects a future candle. Batch requests
+    # keep this to two calls for the whole report instead of two per ticker.
+    intraday_1m: dict[str, list] = {}
+    hourly_1h: dict[str, list] = {}
+    try:
+        import yfinance as _yf_intraday
+
+        def _intraday_download(interval: str, days: int):
+            _today_i = _now_et().date()
+            return _yf_intraday.download(
+                all_tickers,
+                start=(_today_i - _dt.timedelta(days=days)).strftime("%Y-%m-%d"),
+                end=(_today_i + _dt.timedelta(days=1)).strftime("%Y-%m-%d"),
+                interval=interval, prepost=True, progress=False, auto_adjust=True,
+                group_by="ticker",
+            )
+
+        def _split_intraday(raw, target: dict[str, list], tail: int) -> None:
+            if raw is None or raw.empty:
+                return
+            for symbol in all_tickers:
+                try:
+                    frame = _symbol_frame(raw, symbol)
+                    frame = frame.dropna(subset=["Close"])
+                    if frame.empty:
+                        continue
+                    target[symbol] = frame[["Open", "High", "Low", "Close", "Volume"]].tail(tail).rename(
+                        columns={"Open":"o", "High":"h", "Low":"l", "Close":"c", "Volume":"v"}
+                    ).to_dict("records")
+                except Exception:
+                    continue
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as _ex:
+            one_minute_future = _ex.submit(_intraday_download, "1m", 5)
+            hourly_future = _ex.submit(_intraday_download, "60m", 60)
+            _split_intraday(one_minute_future.result(timeout=20), intraday_1m, 1800)
+            _split_intraday(hourly_future.result(timeout=20), hourly_1h, 300)
+    except Exception:
+        pass
 
     # ── Alpaca snapshots: live price, change_pct, today's volume ─────────────
     try:
@@ -445,28 +497,19 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
         _snaps = {}
 
     # ── Helpers ───────────────────────────────────────────────────────────────
-    _ETF_SET = {"SPY","QQQ","IWM","DIA","XLE","GLD","XLK","XLF","XLV","XLY","SMH"}
     _pin_set = set(_pins)
 
     def _calc_atr(bars: list) -> float:
         if len(bars) < 2:
             return 0.0
+        bars = [bar for bar in bars if bar.get("is_complete") is not False][-15:]
         trs = []
-        for i in range(1, min(15, len(bars))):
+        for i in range(1, len(bars)):
             h = float(bars[i].get("h", 0) or 0)
             l = float(bars[i].get("l", 0) or 0)
             pc = float(bars[i-1].get("c", 0) or 0)
             trs.append(max(h - l, abs(h - pc), abs(l - pc)))
         return round(sum(trs[-14:]) / min(len(trs), 14), 2) if trs else 0.0
-
-    def _grade(gap: float, rvol: float, atr: float, etf: bool) -> str:
-        ag = abs(gap)
-        gmin = 0.5 if etf else 1.0
-        if ag >= 2.0 and rvol >= 2.5 and atr >= 1.5: return "A+"
-        if ag >= gmin  and rvol >= 2.0 and atr >= 1.0: return "A"
-        if ag >= gmin * 0.5 and rvol >= 1.5:           return "B"
-        if ag >= gmin * 0.25:                           return "C"
-        return "Watch"
 
     # ── Per-ticker processing ─────────────────────────────────────────────────
     results = []
@@ -474,22 +517,27 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
         try:
             snap  = _snaps.get(ticker, {})
             bars  = yf_bars.get(ticker, [])
-            is_etf = ticker in _ETF_SET
-
             price       = float(snap.get("price",      0) or 0)
             change_pct  = float(snap.get("change_pct", 0) or 0)
             daily_vol   = float(snap.get("daily_vol",  0) or 0)
             prev_close_snap = float(snap.get("prev_close", 0) or 0)
+            if price <= 0 and intraday_1m.get(ticker):
+                price = float(intraday_1m[ticker][-1].get("c", 0) or 0)
+            if price <= 0 and bars:
+                price = float(bars[-1].get("c", 0) or 0)
+            if daily_vol <= 0 and intraday_1m.get(ticker):
+                daily_vol = sum(float(row.get("v", 0) or 0) for row in intraday_1m[ticker][-960:])
 
             # Previous day's OHLCV from yfinance bars[-2] (bars[-1] may be partial today)
             prev_high = prev_low = prev_close = avg_vol_20d = 0.0
             atr_val   = 0.0
-            if len(bars) >= 2:
-                _pb       = bars[-2]   # yesterday's complete bar
+            _complete_bars = [bar for bar in bars if bar.get("is_complete") is not False]
+            if _complete_bars:
+                _pb       = _complete_bars[-1]
                 prev_high = float(_pb.get("h", 0) or 0)
                 prev_low  = float(_pb.get("l", 0) or 0)
                 prev_close = float(_pb.get("c", 0) or 0)
-                _vols     = [float(b.get("v", 0) or 0) for b in bars[:-1]]
+                _vols     = [float(b.get("v", 0) or 0) for b in _complete_bars]
                 avg_vol_20d = sum(_vols[-20:]) / max(len(_vols[-20:]), 1)
                 atr_val   = _calc_atr(bars)
 
@@ -502,14 +550,34 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
             # Time-normalized RVOL
             rvol = 0.0
             if avg_vol_20d > 0 and daily_vol > 0:
-                _now_et   = _dt.datetime.utcnow() - _dt.timedelta(hours=4)
-                _open_et  = _now_et.replace(hour=9, minute=30, second=0, microsecond=0)
-                _elapsed  = max(1.0, (_now_et - _open_et).total_seconds() / 60.0)
+                _clock_et = _now_et()
+                _open_et  = _clock_et.replace(hour=9, minute=30, second=0, microsecond=0)
+                _elapsed  = max(1.0, (_clock_et - _open_et).total_seconds() / 60.0)
                 _expected = max(avg_vol_20d * min(_elapsed / 390.0, 1.0), avg_vol_20d / 78.0)
                 rvol      = round(daily_vol / _expected, 1)
 
-            grade     = _grade(gap_pct, rvol, atr_val, is_etf)
-            direction = "calls" if gap_pct > 0.3 else "puts" if gap_pct < -0.3 else "neutral"
+            from config.strategy_catalog import (
+                REVIEWED_STRATEGIES, enabled_reviewed_strategy_ids,
+            )
+            from scanner.strategy_premarket import (
+                multi_timeframe_context, strategy_aware_plan,
+            )
+            timeframes = multi_timeframe_context(
+                minute_bars=intraday_1m.get(ticker, []),
+                hourly_bars=hourly_1h.get(ticker, []),
+                daily_bars=bars, current_price=price,
+            )
+            executable_ids = enabled_reviewed_strategy_ids(_settings, ticker=ticker)
+            plan = strategy_aware_plan(
+                ticker=ticker, context=timeframes, daily_bars=bars,
+                gap_pct=gap_pct, rvol=rvol,
+                executable_strategy_ids=executable_ids,
+                research_strategy_ids=set(REVIEWED_STRATEGIES) - executable_ids,
+                hourly_bars=hourly_1h.get(ticker, []),
+            )
+            fit_score = int(plan["fit_score"])
+            grade = "A" if fit_score >= 80 else "B" if fit_score >= 65 else "C" if fit_score >= 50 else "Watch"
+            direction = "calls" if plan["direction"] == "bullish" else "puts" if plan["direction"] == "bearish" else "neutral"
 
             # Key levels (sorted ascending)
             key_levels = []
@@ -526,50 +594,10 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
                 _kl("+1× ATR", price + atr_val, "target")
             key_levels.sort(key=lambda x: x["price"])
 
-            # Trade plan notes
-            def _plan(d):
-                if d == "calls":
-                    _entry = round(price + atr_val * 0.10, 2) if atr_val else price
-                    _stop  = round(price - atr_val * 0.50, 2) if atr_val else price * 0.98
-                    _t1    = round(price + atr_val * 0.75, 2) if atr_val else price * 1.015
-                    _t2    = round(max(prev_high, price + atr_val * 1.5), 2)
-                    return (
-                        f"Wait for ORB (9:30–9:40). Break above ORB high near ${_entry:.2f} with volume.",
-                        f"Below ORB low (~${_stop:.2f})",
-                        f"T1 ${_t1:.2f} · T2 ${_t2:.2f} (prev high / +1.5×ATR)"
-                    )
-                elif d == "puts":
-                    _entry = round(price - atr_val * 0.10, 2) if atr_val else price
-                    _stop  = round(price + atr_val * 0.50, 2) if atr_val else price * 1.02
-                    _t1    = round(price - atr_val * 0.75, 2) if atr_val else price * 0.985
-                    _t2    = round(min(prev_low if prev_low else price - atr_val * 1.5, price - atr_val * 1.5), 2)
-                    return (
-                        f"Wait for ORB (9:30–9:40). Break below ORB low near ${_entry:.2f} with volume.",
-                        f"Above ORB high (~${_stop:.2f})",
-                        f"T1 ${_t1:.2f} · T2 ${_t2:.2f} (prev low / -1.5×ATR)"
-                    )
-                return (
-                    "No clear gap. Wait for ORB to define the range before entry.",
-                    "Use ORB-based stop.",
-                    "Use ORB-based target."
-                )
-
-            entry_note, stop_note, target_note = _plan(direction)
-
-            ag = abs(gap_pct)
-            if grade in ("A+", "A"):
-                setup_notes = (f"Strong {'gap up' if gap_pct > 0 else 'gap down'} ({ag:.1f}%) with "
-                               f"{'elevated' if rvol >= 2 else 'above-average'} volume. "
-                               f"High-probability ORB setup — wait for the 9:40 break with confirmation.")
-            elif grade == "B":
-                setup_notes = (f"Moderate setup, {ag:.1f}% gap. Volume needs to confirm direction "
-                               f"at the open. Proceed only with a clean ORB break.")
-            elif grade == "C":
-                setup_notes = (f"Weak setup, small gap ({ag:.1f}%). Only trade if volume surges "
-                               f"significantly at the open — don't force it.")
-            else:
-                setup_notes = ("No significant gap or volume premarket. Monitor for intraday "
-                               "catalysts but avoid forcing an ORB setup on a flat open.")
+            entry_note = str(plan["entry_note"])
+            stop_note = str(plan["stop_note"])
+            target_note = str(plan["target_note"])
+            setup_notes = str(plan["setup_notes"])
 
             results.append({
                 "ticker": ticker, "price": round(price, 2),
@@ -579,6 +607,12 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
                 "avg_vol_20d": int(avg_vol_20d), "daily_vol": int(daily_vol),
                 "rvol": rvol, "implied_move_pct": round(atr_val / price * 100, 2) if price > 0 else 0.0,
                 "grade": grade, "direction": direction,
+                "fit_score": fit_score,
+                "readiness_score": fit_score,
+                "tradeable_today": bool(plan["tradeable_today"]),
+                "best_strategy": plan["best_strategy"],
+                "strategy_matches": plan["strategy_matches"],
+                "timeframes": timeframes,
                 "entry_note": entry_note, "stop_note": stop_note, "target_note": target_note,
                 "key_levels": key_levels, "setup_notes": setup_notes,
                 "is_pinned": ticker in _pin_set, "rank": rank,
@@ -588,11 +622,18 @@ def get_premarket_report(tickers: str = Query("")) -> list[dict]:
                 "ticker": ticker, "price": 0, "prev_close": 0, "prev_high": 0, "prev_low": 0,
                 "gap_pct": 0, "atr": 0, "atr_pct": 0, "avg_vol_20d": 0, "daily_vol": 0,
                 "rvol": 0, "implied_move_pct": 0, "grade": "Watch", "direction": "neutral",
+                "fit_score": 0, "readiness_score": 0, "tradeable_today": False, "best_strategy": None,
+                "strategy_matches": [], "timeframes": [],
                 "entry_note": "", "stop_note": "", "target_note": "",
                 "key_levels": [], "setup_notes": "Data unavailable.",
                 "is_pinned": ticker in _pin_set, "rank": rank,
             })
 
+    results.sort(key=lambda row: (
+        bool(row.get("tradeable_today")), int(row.get("fit_score") or 0), bool(row.get("is_pinned")),
+    ), reverse=True)
+    for rank, row in enumerate(results, 1):
+        row["rank"] = rank
     return results
 
 

@@ -9,8 +9,6 @@ import { api, type Trade, type ScannerResult, type PremarketTicker } from "../li
 import { useBotStore } from "../store/bot";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
-import { TradeChartModal as ChartModal } from "../components/charts/TradeChartModal";
-import type { SimulationOverlay } from "../lib/chart_types";
 import { preferredDailyBriefTicker } from "../lib/dailyBriefSelection.js";
 import { DailyEvidencePanel } from "../components/DailyEvidencePanel";
 import type { DailyEvidenceScorecard } from "../lib/api";
@@ -251,7 +249,7 @@ export function PostMarketReport({ trades, scorecard, scorecardLoading, scorecar
 }
 
 // ── Rich Premarket Detail Pane ─────────────────────────────────────────────────
-function PremarketDetail({ pm, onSimulate }: { pm: PremarketTicker; onSimulate: () => void }) {
+function PremarketDetail({ pm }: { pm: PremarketTicker }) {
   const range    = pm.prev_high - pm.prev_low;
   const pricePos = range > 0 ? Math.max(0, Math.min(100, ((pm.price - pm.prev_low) / range) * 100)) : 50;
   const closePos = range > 0 ? Math.max(0, Math.min(100, ((pm.prev_close - pm.prev_low) / range) * 100)) : 50;
@@ -264,9 +262,10 @@ function PremarketDetail({ pm, onSimulate }: { pm: PremarketTicker; onSimulate: 
       <div className="flex items-center gap-2 flex-wrap">
         <div
           className="text-[10px] font-black px-2 py-0.5 rounded-full"
+          title="Current measured context, not a win probability or backtest result."
           style={{ background: gradeBg(pm.grade), color: gradeColor(pm.grade), border: `1px solid ${gradeColor(pm.grade)}50` }}
         >
-          {pm.grade}
+          Readiness {pm.readiness_score}/100
         </div>
         <span className="text-xl font-bold" style={{ color: "var(--ink)" }}>{pm.ticker}</span>
         <span className="num text-base font-semibold" style={{ color: "var(--ink-muted)" }}>${pm.price.toFixed(2)}</span>
@@ -274,7 +273,10 @@ function PremarketDetail({ pm, onSimulate }: { pm: PremarketTicker; onSimulate: 
           className="text-[10px] font-bold px-2 py-0.5 rounded-full"
           style={{ color: dirColor, background: "var(--muted)" }}
         >
-          <Tooltip text={GLOSSARY.Direction}>{dirLabel}</Tooltip>
+          <Tooltip text={GLOSSARY.Direction}>Market bias: {dirLabel}</Tooltip>
+        </span>
+        <span className={`badge ${pm.tradeable_today ? "badge-green" : "badge-blue"}`}>
+          {pm.tradeable_today ? "Can trade" : "Research only"}
         </span>
         <span
           className="num text-sm font-semibold ml-auto"
@@ -283,6 +285,33 @@ function PremarketDetail({ pm, onSimulate }: { pm: PremarketTicker; onSimulate: 
           {pm.gap_pct >= 0 ? "+" : ""}{pm.gap_pct.toFixed(2)}% gap
         </span>
       </div>
+
+      {/* The five real timeframes requested for the morning decision. */}
+      <div className="grid grid-cols-5 gap-1.5" aria-label="Market direction by timeframe">
+        {(pm.timeframes ?? []).map(frame => {
+          const color = frame.bias === "up" ? "var(--positive)" : frame.bias === "down" ? "var(--negative)" : "var(--ink-muted)";
+          return <div key={frame.label} className="rounded-md px-2 py-1.5 text-center" style={{ background: "var(--muted)" }}>
+            <div className="text-[9px] uppercase tracking-wide text-ink-faint">{frame.label}</div>
+            <div className="text-xs font-semibold" style={{ color }}>
+              {frame.bias === "unavailable" ? "—" : `${frame.bias === "up" ? "↑" : frame.bias === "down" ? "↓" : "→"} ${frame.change_pct?.toFixed(1)}%`}
+            </div>
+          </div>;
+        })}
+      </div>
+
+      {pm.best_strategy && <div className="rounded-md px-3 py-2.5" style={{ background: "var(--accent-subtle)", borderLeft: "3px solid var(--accent)" }}>
+        <div className="text-[9px] uppercase tracking-wide text-ink-faint">Best strategy match today</div>
+        <div className="text-sm font-semibold">{pm.best_strategy.name} · readiness {pm.best_strategy.readiness_score}/100</div>
+        <p className="text-xs text-ink-muted mt-1">{pm.best_strategy.reason}</p>
+        {pm.strategy_matches.length > 1 && <details className="mt-2 text-xs">
+          <summary className="cursor-pointer text-ink-muted">Other strategy matches</summary>
+          <div className="pt-2 flex flex-col gap-1">
+            {pm.strategy_matches.slice(1).map(match => <div key={match.strategy_id} className="flex justify-between gap-3">
+              <span>{match.name}</span><span className="num">{match.readiness_score}/100 · {match.can_trade ? "can trade" : "research"}</span>
+            </div>)}
+          </div>
+        </details>}
+      </div>}
 
       {/* Stats grid */}
       <div className="grid grid-cols-3 gap-1.5">
@@ -339,7 +368,7 @@ function PremarketDetail({ pm, onSimulate }: { pm: PremarketTicker; onSimulate: 
         style={{ background: "var(--muted)", borderLeft: `3px solid ${dirColor}` }}
       >
         <div className="text-[10px] font-bold uppercase tracking-wide mb-0.5" style={{ color: "var(--ink-muted)" }}>
-          📋 Trade Plan
+          📋 {pm.tradeable_today ? "Today's Playbook" : "Research Plan"}
         </div>
         <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
           <span className="font-semibold" style={{ color: "var(--ink)" }}>🎯 Entry:</span> {pm.entry_note}
@@ -351,19 +380,6 @@ function PremarketDetail({ pm, onSimulate }: { pm: PremarketTicker; onSimulate: 
           <span className="font-semibold" style={{ color: "var(--ink)" }}>💰 Target:</span> {pm.target_note}
         </p>
       </div>
-
-      {/* Simulate on Chart button */}
-      <button
-        onClick={onSimulate}
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          width: "100%", padding: "8px 16px", borderRadius: 8, cursor: "pointer",
-          background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.35)",
-          color: "#f59e0b", fontSize: 12, fontWeight: 600, letterSpacing: "0.03em",
-        }}
-      >
-        📊 Simulate Trade on Chart
-      </button>
 
       {/* Key levels */}
       {pm.key_levels.length > 0 && (
@@ -464,25 +480,6 @@ export function DailyBrief() {
   const [briefTab, setBriefTab]   = useState<"premarket" | "postmarket">(
     isTradingDayFinal() ? "postmarket" : "premarket"
   );
-  const [simTicker, setSimTicker] = useState<string | null>(null);
-
-  // Build SimulationOverlay from a PremarketTicker's data
-  function buildSim(pm: PremarketTicker): SimulationOverlay {
-    const isCall = pm.direction === "calls";
-    const entry  = isCall ? pm.prev_high : pm.prev_low;
-    return {
-      direction:    pm.direction === "puts" ? "puts" : "calls",
-      grade:        pm.grade,
-      orbHigh:      pm.prev_high,
-      orbLow:       pm.prev_low,
-      entryTrigger: entry,
-      stage1Px:     isCall ? entry + pm.atr * 0.5 : entry - pm.atr * 0.5,
-      stopPx:       isCall ? entry - pm.atr * 0.3 : entry + pm.atr * 0.3,
-      currentPx:    pm.price,
-      atr:          pm.atr,
-    };
-  }
-
   // Wait until both priority sources settle so a fast scanner response cannot
   // select a hidden scanner-only ticker before the watchlist arrives.
   useEffect(() => {
@@ -615,7 +612,6 @@ export function DailyBrief() {
                     const pm       = pmMap.get(ticker);
                     const s        = scanner.find((r: ScannerResult) => r.ticker === ticker);
                     const isActive = ticker === selected;
-                    const grade    = pm?.grade ?? "—";
                     const chg      = pm?.gap_pct ?? s?.change_pct ?? 0;
                     const chgColor = chg >= 0 ? "var(--positive)" : "var(--negative)";
                     return (
@@ -629,13 +625,13 @@ export function DailyBrief() {
                           borderBottom: "1px solid var(--border)",
                         }}
                       >
-                        {/* Grade badge (if premarket data) or rank emoji */}
+                        {/* Strategy-fit score (if available) or scanner rank. */}
                         {pm ? (
                           <div
                             className="text-[9px] font-black rounded px-1 py-0.5 shrink-0"
-                            style={{ background: gradeBg(grade), color: gradeColor(grade), minWidth: 24, textAlign: "center", border: `1px solid ${gradeColor(grade)}80` }}
+                            style={{ background: pm.tradeable_today ? "var(--positive-bg)" : "var(--accent-subtle)", color: pm.tradeable_today ? "var(--positive)" : "var(--accent)", minWidth: 28, textAlign: "center" }}
                           >
-                            {grade}
+                            {pm.readiness_score}
                           </div>
                         ) : (
                           <span className="text-sm shrink-0">
@@ -662,7 +658,7 @@ export function DailyBrief() {
                     <p className="text-sm" style={{ color: "var(--ink-muted)" }}>Select a ticker to see details.</p>
                   ) : selectedPm ? (
                     /* Rich premarket report */
-                    <PremarketDetail pm={selectedPm} onSimulate={() => setSimTicker(selectedPm.ticker)} />
+                    <PremarketDetail pm={selectedPm} />
                   ) : selectedScan ? (
                     /* Fallback: scanner data only */
                     <div className="flex flex-col gap-4">
@@ -798,20 +794,6 @@ export function DailyBrief() {
 
     </div>
 
-    {/* Simulation chart modal — triggered by "Simulate Trade on Chart" button */}
-    {simTicker && (() => {
-      const pm = pmMap.get(simTicker);
-      if (!pm) return null;
-      return (
-        <ChartModal
-          open
-          onClose={() => setSimTicker(null)}
-          ticker={simTicker}
-          mode="simulation"
-          simulationOverlay={buildSim(pm)}
-        />
-      );
-    })()}
     </>
   );
 }

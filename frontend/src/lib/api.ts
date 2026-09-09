@@ -817,6 +817,12 @@ export interface PremarketTicker {
   implied_move_pct: number;
   grade: string;                // "A+" | "A" | "B" | "C" | "Watch"
   direction: string;            // "calls" | "puts" | "neutral"
+  fit_score: number;
+  readiness_score: number;
+  tradeable_today: boolean;
+  best_strategy: { strategy_id: string; name: string; fit_score: number; readiness_score: number; direction: string; can_trade: boolean; reason: string } | null;
+  strategy_matches: { strategy_id: string; name: string; fit_score: number; readiness_score: number; direction: string; can_trade: boolean; reason: string }[];
+  timeframes: { label: string; bias: "up" | "down" | "flat" | "unavailable"; change_pct: number | null }[];
   entry_note: string;
   stop_note: string;
   target_note: string;
