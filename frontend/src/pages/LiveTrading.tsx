@@ -130,7 +130,7 @@ function toDiscordStr(ev: any): string {
 
 export function LiveTrading() {
   const [ticker,          setTicker]          = useState("SPY");
-  const [tf,              setTf]              = useState("5Min");
+  const [tf,              setTf]              = useState("1Min");
   const [period,          setPeriod]          = useState<Period>("1D");
   const [showVwap,        setShowVwap]        = useState(true);
   const [showVwapBands,   setShowVwapBands]   = useState(true);
@@ -326,7 +326,14 @@ export function LiveTrading() {
   }, [scanner, openTrades]);
 
   const tickerTrades      = (todayTradesRaw as Trade[]).filter((t: Trade) => t.ticker === ticker);
-  const optionChart = useOptionChartSelection(ticker, [...openTrades, ...tickerTrades], setTicker, setChartExpanded);
+  const optionChart = useOptionChartSelection(
+    ticker, [...openTrades, ...tickerTrades], setTicker, setChartExpanded, "stock",
+    () => {
+      stockChartWasOpened.current = true;
+      setTf("1Min");
+      setPeriod("1D");
+    },
+  );
   const openTickerTrade   = tickerTrades.find((t: Trade) => !t.exit_time);
   const positionLevels    = openTickerTrade ? {
     entry:     openTickerTrade.entry_price  ?? undefined,
@@ -542,10 +549,14 @@ export function LiveTrading() {
           >
             <div className="min-w-0">
               <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                {ticker} {optionChart.view === "option" ? "position" : "market"} chart
+                {ticker} {optionChart.selected ? "position" : "market"} chart
               </div>
               <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                {optionChart.view === "option" ? "Your exact option contract in real one-minute candles." : "Underlying candles, levels, and setup context."}
+                {optionChart.view === "option"
+                  ? "Exact option trades; blank minutes mean the contract did not trade."
+                  : optionChart.selected
+                    ? "True one-minute stock candles with the option position overlaid."
+                    : "True one-minute stock candles, levels, and setup context."}
               </div>
             </div>
             <div className="flex-1" />
@@ -566,12 +577,16 @@ export function LiveTrading() {
           </div>
           {chartExpanded && <div id="live-market-chart">
           {optionChart.selected && <div className="flex flex-wrap items-center gap-2 p-3 border-b" style={{ borderColor: "var(--border)" }}>
-            {(["option", "stock"] as const).map(view => <button key={view} type="button" aria-pressed={optionChart.view === view}
+            {(["stock", "option"] as const).map(view => <button key={view} type="button" aria-pressed={optionChart.view === view}
               className={`btn btn-sm ${optionChart.view === view ? "btn-primary" : "btn-ghost"}`} onClick={() => {
-                if (view === "stock") stockChartWasOpened.current = true;
+                if (view === "stock") {
+                  stockChartWasOpened.current = true;
+                  setTf("1Min");
+                  setPeriod("1D");
+                }
                 optionChart.setView(view);
               }}>
-              {view === "option" ? "Option price" : "Stock price"}</button>)}
+              {view === "option" ? "Option trades" : "1-minute stock"}</button>)}
             {optionChart.available.length > 1 && <select aria-label="Chart position" className="select max-w-full"
               value={`${optionChart.selected.mode}:${optionChart.selected.id}`} onChange={e => {
                 const trade = optionChart.available.find(t => `${t.mode}:${t.id}` === e.target.value);

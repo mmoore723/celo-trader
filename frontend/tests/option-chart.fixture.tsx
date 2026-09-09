@@ -17,7 +17,7 @@ function Harness() {
   const [ticker, setTicker] = useState("SPY");
   const [expanded, setExpanded] = useState(false);
   const [poll, setPoll] = useState(0);
-  const choice = useOptionChartSelection(ticker, trades.map(t => ({ ...t })), setTicker, setExpanded);
+  const choice = useOptionChartSelection(ticker, trades.map(t => ({ ...t })), setTicker, setExpanded, "option");
   return <main style={{ maxWidth: 850, margin: "20px auto" }}>
     <p className="p-3 text-sm">UI TEST DATA — not real trading results</p>
     <nav className="p-3 flex flex-wrap gap-2">

@@ -15,6 +15,8 @@ const optionPlot = await readFile(new URL("../src/components/charts/OptionPriceP
 const tradeChart = await readFile(new URL("../src/components/charts/TradeChart.tsx", import.meta.url), "utf8");
 const overlays = await readFile(new URL("../src/components/charts/chartOverlays.ts", import.meta.url), "utf8");
 const chartCore = await readFile(new URL("../src/components/charts/chartCore.ts", import.meta.url), "utf8");
+const selection = await readFile(new URL("../src/components/charts/useOptionChartSelection.ts", import.meta.url), "utf8");
+const liveTrading = await readFile(new URL("../src/pages/LiveTrading.tsx", import.meta.url), "utf8");
 
 const base = { option_type: "put", contracts: 2, entry_price: 4, stop_price: 3, target_price: 6,
   closed: false, quotes: [{ time: 100, bid: 4.1, ask: 4.3 }] };
@@ -67,4 +69,8 @@ test("position view uses the standard candle chart with a non-distorting positio
   assert.match(chartCore, /disposed = true;\s*ro\.disconnect\(\)/);
   assert.match(chartCore, /Whitespace carries no price or volume/);
   assert.match(chartCore, /minute \+= 60/);
+  assert.match(selection, /defaultView: "option" \| "stock" = "stock"/);
+  assert.match(liveTrading, /useState\("1Min"\)/);
+  assert.match(liveTrading, /"True one-minute stock candles with the option position overlaid\."/);
+  assert.match(liveTrading, /"Option trades" : "1-minute stock"/);
 });
