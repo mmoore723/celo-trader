@@ -5,8 +5,11 @@ All routes require a valid session AND is_admin=True.
 The frontend's /admin page calls these to create/invite/delete users.
 """
 from __future__ import annotations
+import asyncio
 import logging
+import os
 import shutil
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Request, HTTPException
@@ -57,6 +60,36 @@ def _disk_health(path: str | Path = BASE_DIR) -> dict:
     }
 
 
+def _read_cpu_times(path: str | Path = "/proc/stat") -> tuple[int, int]:
+    """Return total and idle CPU ticks from Linux without a new dependency."""
+    first_line = Path(path).read_text(encoding="utf-8").splitlines()[0]
+    fields = first_line.split()
+    if not fields or fields[0] != "cpu":
+        raise ValueError("System CPU totals are unavailable")
+    ticks = [int(value) for value in fields[1:]]
+    if len(ticks) < 5:
+        raise ValueError("System CPU totals are incomplete")
+    total = sum(ticks)
+    idle = ticks[3] + (ticks[4] if len(ticks) > 4 else 0)
+    return total, idle
+
+
+def _cpu_health(sample_seconds: float = 0.1) -> dict:
+    """Take a short, system-wide CPU sample; never inspects user processes."""
+    before_total, before_idle = _read_cpu_times()
+    time.sleep(sample_seconds)
+    after_total, after_idle = _read_cpu_times()
+    elapsed = after_total - before_total
+    idle = after_idle - before_idle
+    used_percent = round(max(0.0, min(100.0, ((elapsed - idle) / elapsed * 100.0) if elapsed else 0.0)), 1)
+    status = "critical" if used_percent >= 90 else "watch" if used_percent >= 75 else "good"
+    return {
+        "status": status,
+        "used_percent": used_percent,
+        "cores": os.cpu_count() or 1,
+    }
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/users")
@@ -70,7 +103,10 @@ async def list_users(request: Request):
 async def system_health(request: Request):
     """Small admin status check with no filenames, credentials, or user data."""
     _require_admin(request)
-    return {"disk": _disk_health()}
+    return {
+        "disk": _disk_health(),
+        "cpu": await asyncio.to_thread(_cpu_health),
+    }
 
 
 @router.post("/users")

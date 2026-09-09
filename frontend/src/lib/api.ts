@@ -1137,6 +1137,11 @@ export interface AdminSystemHealth {
     free_bytes: number;
     total_bytes: number;
   };
+  cpu: {
+    status: "good" | "watch" | "critical";
+    used_percent: number;
+    cores: number;
+  };
 }
 
 // ── Bot ────────────────────────────────────────────────────────────────────

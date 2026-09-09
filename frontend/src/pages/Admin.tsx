@@ -3,7 +3,7 @@
  */
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { UserPlus, Link2, Trash2, RefreshCw, KeyRound, AlertTriangle, CheckCircle2, BrainCircuit, HardDrive } from "lucide-react";
+import { UserPlus, Link2, Trash2, RefreshCw, KeyRound, AlertTriangle, CheckCircle2, BrainCircuit, HardDrive, Cpu } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { PasswordChecklist, isPasswordValid } from "../components/PasswordChecklist";
 import { api } from "../lib/api";
@@ -42,7 +42,7 @@ export function Admin() {
   const { data: systemHealth, isError: systemHealthError } = useQuery({
     queryKey: ["admin-system-health"],
     queryFn: api.admin.systemHealth,
-    refetchInterval: 5 * 60_000,
+    refetchInterval: 60_000,
     retry: false,
   });
   const { data: testedStrategies, isError: testedStrategiesError } = useQuery({
@@ -265,16 +265,32 @@ export function Admin() {
         })() : <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Loading ML readiness…</p>}
       </section>
 
-      <section className="card px-3 py-2" aria-label="Server storage">
-        <div className="flex items-center gap-2 text-xs">
-          <HardDrive size={15} style={{ color: systemHealth?.disk.status === "critical" ? "var(--negative)" : systemHealth?.disk.status === "watch" ? "var(--warning)" : "var(--positive)" }} />
-          <strong style={{ color: "var(--ink)" }}>Server storage</strong>
-          {systemHealthError ? <span style={{ color: "var(--negative)" }}>unavailable</span> : systemHealth ? <>
-            <span style={{ color: "var(--ink-muted)" }}>{systemHealth.disk.used_percent}% used</span>
-            <span className="ml-auto" style={{ color: systemHealth.disk.status === "good" ? "var(--positive)" : systemHealth.disk.status === "watch" ? "var(--warning)" : "var(--negative)" }}>
-              {systemHealth.disk.status === "good" ? "Good" : systemHealth.disk.status === "watch" ? "Getting full" : "Action needed"}
-            </span>
-          </> : <span style={{ color: "var(--ink-muted)" }}>checking…</span>}
+      <section className="card p-3" aria-label="Server health">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-lg px-3 py-2" style={{ background: "var(--muted)" }}>
+            <div className="flex items-center gap-2 text-xs">
+              <HardDrive size={15} style={{ color: systemHealth?.disk.status === "critical" ? "var(--negative)" : systemHealth?.disk.status === "watch" ? "var(--warning)" : "var(--positive)" }} />
+              <strong style={{ color: "var(--ink)" }}>Server storage</strong>
+              {systemHealthError ? <span style={{ color: "var(--negative)" }}>unavailable</span> : systemHealth ? <span className="ml-auto" style={{ color: systemHealth.disk.status === "good" ? "var(--positive)" : systemHealth.disk.status === "watch" ? "var(--warning)" : "var(--negative)" }}>
+                {systemHealth.disk.status === "good" ? "Good" : systemHealth.disk.status === "watch" ? "Getting full" : "Action needed"}
+              </span> : <span style={{ color: "var(--ink-muted)" }}>checking…</span>}
+            </div>
+            {systemHealth && <p className="text-[10px] mt-1" style={{ color: "var(--ink-muted)" }}>
+              {systemHealth.disk.used_percent}% used · {(systemHealth.disk.free_bytes / 1024 ** 3).toFixed(1)} GB free
+            </p>}
+          </div>
+          <div className="rounded-lg px-3 py-2" style={{ background: "var(--muted)" }}>
+            <div className="flex items-center gap-2 text-xs">
+              <Cpu size={15} style={{ color: systemHealth?.cpu.status === "critical" ? "var(--negative)" : systemHealth?.cpu.status === "watch" ? "var(--warning)" : "var(--positive)" }} />
+              <strong style={{ color: "var(--ink)" }}>Server CPU</strong>
+              {systemHealthError ? <span style={{ color: "var(--negative)" }}>unavailable</span> : systemHealth ? <span className="ml-auto" style={{ color: systemHealth.cpu.status === "good" ? "var(--positive)" : systemHealth.cpu.status === "watch" ? "var(--warning)" : "var(--negative)" }}>
+                {systemHealth.cpu.status === "good" ? "Good" : systemHealth.cpu.status === "watch" ? "Working hard" : "Action needed"}
+              </span> : <span style={{ color: "var(--ink-muted)" }}>checking…</span>}
+            </div>
+            {systemHealth && <p className="text-[10px] mt-1" style={{ color: "var(--ink-muted)" }}>
+              {systemHealth.cpu.used_percent}% busy · {systemHealth.cpu.cores} CPU core{systemHealth.cpu.cores === 1 ? "" : "s"}
+            </p>}
+          </div>
         </div>
       </section>
 
