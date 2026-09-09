@@ -15,6 +15,8 @@ import {
 import { TradeChartModal as ChartModal } from "../components/charts/TradeChartModal";
 import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
+import { ScannerOpportunities } from "./ScannerOpportunities";
+import { useSearchParams } from "react-router-dom";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -585,10 +587,17 @@ function exportCsv(trades: Trade[], mode: string) {
 }
 
 export function Journal() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const botStatus = useBotStore((s) => s.status);
   const defaultMode: "paper" | "live" = botStatus?.is_paper === false ? "live" : "paper";
 
-  const [mainTab, setMainTab] = useState<"journal" | "order-flow" | "reconcile">("journal");
+  const requestedTab = searchParams.get("tab");
+  const initialTab = requestedTab === "decisions" || requestedTab === "order-flow" || requestedTab === "reconcile" ? requestedTab : "journal";
+  const [mainTab, setMainTab] = useState<"journal" | "decisions" | "order-flow" | "reconcile">(initialTab);
+  function chooseMainTab(tab: "journal" | "decisions" | "order-flow" | "reconcile") {
+    setMainTab(tab);
+    setSearchParams(tab === "journal" ? {} : { tab }, { replace: true });
+  }
 
   const [mode,        setMode]        = useState<"paper" | "live">(defaultMode);
   const [filter,      setFilter]      = useState<"all" | "open" | "closed">("all");
@@ -669,19 +678,25 @@ export function Journal() {
       <div className="flex gap-1">
         <button
           className={`btn btn-sm ${mainTab === "journal" ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => setMainTab("journal")}
+          onClick={() => chooseMainTab("journal")}
         >
           Journal
         </button>
         <button
+          className={`btn btn-sm ${mainTab === "decisions" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => chooseMainTab("decisions")}
+        >
+          Bot Decisions
+        </button>
+        <button
           className={`btn btn-sm ${mainTab === "order-flow" ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => setMainTab("order-flow")}
+          onClick={() => chooseMainTab("order-flow")}
         >
           Alpaca Order Flow
         </button>
         <button
           className={`btn btn-sm ${mainTab === "reconcile" ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => setMainTab("reconcile")}
+          onClick={() => chooseMainTab("reconcile")}
         >
           Reconcile
         </button>
@@ -690,6 +705,7 @@ export function Journal() {
       {/* Reconcile tab */}
       {mainTab === "reconcile" && <ReconcileTab />}
       {mainTab === "order-flow" && <OrderFlowTab mode={mode} />}
+      {mainTab === "decisions" && <ScannerOpportunities view="decisions" embedded />}
 
       {/* Journal tab — hidden when reconcile is active */}
       {mainTab === "journal" && (

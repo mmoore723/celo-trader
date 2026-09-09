@@ -290,8 +290,7 @@ export function Performance() {
       </div>
 
       {/* ── Key stats strip ───────────────────────────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}
-           className="sm:grid-cols-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
 
         {/* Win Rate */}
         <StatCard

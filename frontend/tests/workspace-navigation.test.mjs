@@ -6,12 +6,27 @@ const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("../src/components/layout/Sidebar.tsx", import.meta.url), "utf8");
 const opportunities = readFileSync(new URL("../src/pages/ScannerOpportunities.tsx", import.meta.url), "utf8");
 const admin = readFileSync(new URL("../src/pages/Admin.tsx", import.meta.url), "utf8");
+const journal = readFileSync(new URL("../src/pages/Journal.tsx", import.meta.url), "utf8");
+const dailyBrief = readFileSync(new URL("../src/pages/DailyBrief.tsx", import.meta.url), "utf8");
+const performance = readFileSync(new URL("../src/pages/Performance.tsx", import.meta.url), "utf8");
 
-test("decisions and research have separate routes and plain-language purposes", () => {
-  assert.match(app, /path="\/opportunities"[^\n]+view="decisions"/);
+test("bot decisions live inside the journal while research remains separate", () => {
+  assert.match(app, /path="\/opportunities"[^\n]+Navigate to="\/journal\?tab=decisions"/);
   assert.match(app, /path="\/research"[^\n]+view="research"/);
   assert.match(sidebar, /label: "Research Results", to: "\/research"/);
-  assert.match(opportunities, /The Trade Journal starts after an order becomes a position/);
+  assert.doesNotMatch(sidebar, /label: "Today's Decisions"/);
+  assert.match(journal, /Bot Decisions/);
+  assert.match(journal, /ScannerOpportunities view="decisions" embedded/);
+  assert.match(opportunities, /See why the bot entered, could not fill, or skipped each setup/);
+});
+
+test("post-market history uses the selected trade ledger and performance stats share one row", () => {
+  assert.match(dailyBrief, /const grade = dayGrade\(totalPnl\)/);
+  assert.doesNotMatch(dailyBrief, /scorecard\.session_result\.grade/);
+  assert.match(dailyBrief, /📊 Post-Market Review/);
+  assert.doesNotMatch(dailyBrief, /Live Review/);
+  assert.match(performance, /grid grid-cols-2 sm:grid-cols-4 gap-2/);
+  assert.doesNotMatch(performance, /gridTemplateColumns: "repeat\(2,1fr\)"/);
 });
 
 test("admin keeps unrebuilt saved strategy ideas compact and searchable", () => {

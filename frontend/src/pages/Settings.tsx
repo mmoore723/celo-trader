@@ -346,7 +346,7 @@ export function Settings() {
     setSaved(false);
   }
 
-  function strategyControl(strategy: ReviewedStrategyCatalogEntry, index: number) {
+  function strategyControl(strategy: ReviewedStrategyCatalogEntry) {
     const switchEnabled = Boolean(form[strategy.setting_key]);
     const pf = strategy.backtest?.profit_factor;
     const pfLabel = typeof pf === "number" ? pf.toFixed(2) : (pf || "not recorded");
@@ -364,18 +364,14 @@ export function Settings() {
     return (
       <StrategyToggleCard
         key={strategy.strategy_id}
-        separated={index > 0}
+        separated={false}
           label={`${strategy.display_name} · v${strategy.version}`}
           checked={switchEnabled}
           onChange={(v) => set(strategy.setting_key, v)}
           disabled={strategy.integrity_errors.length > 0}
       >
-        <p className="text-xs pb-1 -mt-1" style={{ color: "var(--ink-muted)" }}>
-          <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>
-            Historical PF {pfLabel}
-          </strong>
-          {strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}
-          {` · Goal ${target.toFixed(1)}`}
+        <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--positive)" }}>
+          {strategy.observation_only ? "RESEARCH ONLY · No orders" : `CAN TRADE · ${strategy.tickers.join(", ")}`}
         </p>
         {!strategy.observation_only && (
           <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
@@ -387,13 +383,14 @@ export function Settings() {
             {actualState.hasResult ? ` · ${actualEvidenceLabel}` : ""}
           </p>
         )}
-        <p className="text-xs pb-3" style={{ color: strategy.observation_only ? "var(--warning)" : "var(--ink-muted)" }}>
+        <p className="text-xs pb-2" style={{ color: "var(--ink-muted)" }}>
           {strategy.observation_only
-            ? "Researching every collected ticker · No orders"
-            : `Trades: ${strategy.tickers.join(", ")} · Also researches every collected ticker`}
+            ? "Testing on every ticker the bot collects."
+            : "May place orders on the tickers above. Research keeps testing it on every other collected ticker."}
         </p>
         <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
-          <summary className="cursor-pointer">Why this status?</summary>
+          <summary className="cursor-pointer">Backtest details</summary>
+          <p className="mt-1"><strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>Backtest PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}{` · Goal ${target.toFixed(1)}`}</p>
           <p className="mt-1">{strategy.backtest?.comparison || strategy.evidence}</p>
           {(allActual?.prior_or_unversioned_trades ?? 0) > 0 && (
             <p className="mt-1">
@@ -436,7 +433,7 @@ export function Settings() {
   }
 
   return (
-    <div className="p-4 max-w-2xl flex flex-col gap-4">
+    <div className="p-4 max-w-5xl flex flex-col gap-4">
       <div role="tablist" aria-label="Settings sections" className="flex gap-2">
         {(["general", "strategies"] as const).map(tab => <button key={tab} role="tab"
           id={`settings-tab-${tab}`} aria-selected={activeTab === tab} aria-controls={`settings-panel-${tab}`}
@@ -451,7 +448,7 @@ export function Settings() {
           className={`btn ${activeTab === tab ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategies"}</button>)}
       </div>
-      <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "flex flex-col gap-4" : "hidden"}>
+      <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "flex flex-col gap-4 max-w-2xl" : "hidden"}>
       <StrategyRecommendations
         recommendations={strategyRecommendations?.recommendations ?? []}
         onDecision={decideRecommendation}
@@ -540,14 +537,16 @@ export function Settings() {
         </div>
       </div>
 
-      {/* Risk */}
+      {/* Plain-language controls that directly change order size or stop trading. */}
       <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Risk</h3>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Money and safety</h3>
+        <p className="text-xs mt-1 mb-3" style={{ color: "var(--ink-muted)" }}>These settings are used by the bot before it sends an order.</p>
 
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Risk per trade (%)
+              Trade risk
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>{form.risk_auto ? "Automatic changes with the account balance." : "Maximum account percentage risked on one setup."}</span>
             </label>
             <input
               type="number"
@@ -565,14 +564,15 @@ export function Settings() {
           </div>
 
           <Toggle
-            label="Automatic risk tier (based on account balance)"
+            label="Let the bot size trades from the account balance"
             checked={form.risk_auto ?? true}
             onChange={(v) => set("risk_auto", v)}
           />
 
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Max concurrent positions
+              Open trades at once
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>The bot will not open more positions than this.</span>
             </label>
             <input
               type="number"
@@ -585,28 +585,21 @@ export function Settings() {
           </div>
 
           <div className="flex items-center justify-between gap-4">
-            <label className="text-sm" style={{ color: "var(--ink)" }}>R:R ratio mode</label>
-            <select
-              className="select w-40"
-              value={form.rr_ratio_mode}
-              onChange={(e) => set("rr_ratio_mode", e.target.value)}
-            >
-              <option value="auto">Automatic</option>
-              <option value="small_account">Small account (1.2:1 minimum)</option>
-              <option value="professional">Professional (1.6:1 minimum)</option>
-            </select>
+            <label className="text-sm" style={{ color: "var(--ink)" }}>Largest contract the bot may buy<span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>Percentage of the account balance.</span></label>
+            <div className="flex items-center gap-1"><input type="number" step="1" min="5" max="100" value={form.max_position_dollars_pct ?? 15} onChange={(e) => set("max_position_dollars_pct", parseFloat(e.target.value))} className="input w-20" /><span className="text-sm">%</span></div>
           </div>
-
-          <Toggle
-            label="Growth mode (reinvest profits)"
-            checked={form.growth_mode}
-            onChange={(v) => set("growth_mode", v)}
-          />
-          <Toggle
-            label="Flip trading (long → short on breakdown)"
-            checked={form.flip_trading_enabled}
-            onChange={(v) => set("flip_trading_enabled", v)}
-          />
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm" style={{ color: "var(--ink)" }}>Stop opening trades after a daily loss<span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>The bot pauses new entries for the rest of the trading day.</span></label>
+            <div className="flex items-center gap-1"><input type="number" step="1" min="3" max="30" value={form.daily_loss_hard_cap_pct ?? 10} onChange={(e) => set("daily_loss_hard_cap_pct", parseFloat(e.target.value))} className="input w-20" /><span className="text-sm">%</span></div>
+          </div>
+          <details className="pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+            <summary className="text-xs cursor-pointer font-medium">More money settings</summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-4"><label className="text-sm">Minimum reward compared with risk<span className="block text-xs" style={{ color: "var(--ink-muted)" }}>Skips a setup when its planned reward is too small.</span></label><select className="select w-40" value={form.rr_ratio_mode} onChange={(e) => set("rr_ratio_mode", e.target.value)}><option value="auto">Automatic</option><option value="small_account">1.2 to 1</option><option value="professional">1.6 to 1</option></select></div>
+              <Toggle label="Use profit to increase future trade size" checked={form.growth_mode} onChange={(v) => set("growth_mode", v)} />
+              <Toggle label="Allow a new opposite-direction trade after a breakdown" checked={form.flip_trading_enabled} onChange={(v) => set("flip_trading_enabled", v)} />
+            </div>
+          </details>
         </div>
       </div>
 
@@ -632,10 +625,10 @@ export function Settings() {
         </div>
       </div>
 
-      {/* Detailed gates stay available without overwhelming the main page. */}
+      {/* Detailed entry/exit behavior stays available without overwhelming the main page. */}
       <details className="card p-4">
-        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>Advanced trade rules</summary>
-        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Contract limits and entry/exit rules. Changes apply within 60 seconds.</p>
+        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>How entries and exits work</summary>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Open this only when you want to change how a setup qualifies or how a position closes.</p>
         <div className="flex flex-col gap-5 mt-4">
         <section className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
         <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Contract and safety limits</h3>
@@ -704,22 +697,6 @@ export function Settings() {
           </div>
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Daily loss hard cap (%)
-              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-                Freezes ALL trading for 24h if breached (default 10%). Was
-                hardcoded until 2026-07-24 — lower it carefully, small accounts
-                can trip a tight cap on normal option premium swings.
-              </span>
-            </label>
-            <input
-              type="number" step="1" min="3" max="30"
-              value={form.daily_loss_hard_cap_pct ?? 10}
-              onChange={(e) => set("daily_loss_hard_cap_pct", parseFloat(e.target.value))}
-              className="input w-24"
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <label className="text-sm" style={{ color: "var(--ink)" }}>
               Minimum entry grade
               <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
                 Block entries on tickers graded below this (matches the Daily
@@ -746,22 +723,6 @@ export function Settings() {
                 <option value="Watch">Watch</option>
               </select>
             </div>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Max spend per contract (% of balance)
-              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-                The real affordability cap — separate from risk %. A signal
-                gets skipped if the cheapest contract costs more than this.
-                Was hardcoded 15% with no UI until 2026-07-24.
-              </span>
-            </label>
-            <input
-              type="number" step="1" min="5" max="100"
-              value={form.max_position_dollars_pct ?? 15}
-              onChange={(e) => set("max_position_dollars_pct", parseFloat(e.target.value))}
-              className="input w-24"
-            />
           </div>
         </div>
       </section>
@@ -844,12 +805,12 @@ export function Settings() {
       </div>
       <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
       {/* Strategies */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Trading strategies</h3>
+      <section>
+        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Can place orders</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           On means the strategy may place {actualAccountMode} orders on the tickers listed under “Trades.” Research continues on all other collected tickers.
         </p>
-        {(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}
+        <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}</div>
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
           New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
         </div>
@@ -865,19 +826,19 @@ export function Settings() {
             </div>
           </details>
         )}
-      </div>
+      </section>
 
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Research strategies</h3>
+      <section>
+        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research only</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           On means keep testing. These strategies cannot place an order.
         </p>
-        {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}
+        <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
         <TestedStrategies
           researchIds={form.research_strategy_ids ?? []}
           onResearchIdsChange={ids => set("research_strategy_ids", ids)}
         />
-      </div>
+      </section>
       </div>
 
       {/* Save / Discard */}

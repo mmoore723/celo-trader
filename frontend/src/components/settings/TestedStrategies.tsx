@@ -23,22 +23,21 @@ export function TestedStrategies({
     onResearchIdsChange([...next].sort());
   };
 
-  return <div className="mt-2" id="tested-strategy-library">
-    {runtime.map((strategy, index) => {
+  return <div className="mt-3 grid gap-3 lg:grid-cols-2" id="tested-strategy-library">
+    {runtime.map((strategy) => {
         const enabled = researchIds.includes(strategy.strategy_id);
         return <StrategyToggleCard
           key={strategy.strategy_id}
-          separated={index > 0}
+          separated={false}
           label={`${strategy.display_name} · v${strategy.version}`}
           checked={enabled}
           onChange={value => toggle(strategy.strategy_id, value)}
         >
-          <p className="text-xs pb-1 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            <strong style={{ color: "var(--warning)" }}>Historical PF collecting</strong>
-            {" · Goal 1.5"}
+          <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: "var(--warning)" }}>
+            RESEARCH ONLY · No orders
           </p>
-          <p className="text-xs pb-3" style={{ color: "var(--warning)" }}>
-            {enabled ? "Researching every collected ticker · No orders" : "Research paused · No orders"}
+          <p className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
+            {enabled ? "Testing on every ticker the bot collects." : "Research is paused."}
           </p>
         </StrategyToggleCard>;
       })}

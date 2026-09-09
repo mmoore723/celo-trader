@@ -7,7 +7,7 @@
  *  3. If unauthenticated → show <Login />.
  *  4. If authenticated → show AppShell with all routes.
  */
-import { HashRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useWebSocket }    from "./hooks/useWebSocket";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -112,7 +112,7 @@ function AppShell() {
           <Route path="/trading"     element={<LiveTrading />} />
           <Route path="/performance" element={<Performance />} />
           <Route path="/journal"     element={<Journal />} />
-          <Route path="/opportunities" element={<ScannerOpportunities view="decisions" />} />
+          <Route path="/opportunities" element={<Navigate to="/journal?tab=decisions" replace />} />
           <Route path="/research"    element={<ScannerOpportunities view="research" />} />
           <Route path="/backtest"    element={<Backtest />} />
           <Route path="/ai-reasoning" element={<AiReasoning />} />

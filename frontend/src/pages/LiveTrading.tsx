@@ -543,8 +543,9 @@ export function LiveTrading() {
         })()}
       </div>}
 
-      {/* ── Main grid: chart + scanner ────────────────────────────────────── */}
-      <div className={`grid gap-4 ${chartExpanded ? "chart-scanner-grid" : "grid-cols-1"}`}>
+      {/* Chart is the cockpit. Supporting trade activity sits below it instead
+          of squeezing the teachable chart into a mismatched side column. */}
+      <div className="flex flex-col gap-4">
         {/* Chart panel */}
         <div className="card overflow-hidden">
           <div
@@ -708,9 +709,9 @@ export function LiveTrading() {
                style={{ borderColor: "var(--border)" }}>
             <span className="text-xs font-semibold uppercase tracking-wider"
                   style={{ color: "var(--ink-muted)" }}>Today's Trade Setups</span>
-            <Link to="/opportunities" className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>View all opportunities →</Link>
+            <Link to="/journal?tab=decisions" className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>Open Journal → Bot Decisions</Link>
           </div>
-          <div className="overflow-y-auto flex-1 p-2" style={{ minHeight: 240, background: "var(--surface-raised)" }}>
+          <div className="overflow-y-auto flex-1 p-2" style={{ background: "var(--surface-raised)" }}>
             {scannerOpportunityPreview.length === 0 ? (
               <p className="text-xs px-3 pb-3" style={{ color: "var(--ink-muted)" }}>
                 {status?.running
@@ -718,7 +719,7 @@ export function LiveTrading() {
                   : "Waiting for bot to start scanning…"}
               </p>
             ) : (
-              scannerOpportunityPreview.map((opportunity: any) => {
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{scannerOpportunityPreview.map((opportunity: any) => {
                 const lifecycle = opportunityLifecycle(opportunity);
                 const lifecycleText = lifecycleCopy(opportunity);
                 const isEntered = lifecycle === "entered";
@@ -787,7 +788,7 @@ export function LiveTrading() {
                     </div>
                   </button>
                 );
-              })
+              })}</div>
             )}
           </div>
         </div>

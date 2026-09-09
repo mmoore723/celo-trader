@@ -2,7 +2,7 @@
  * Sidebar — navigation + bot start/stop controls.
  */
 import {
-  Activity, BarChart2, BookOpen, Settings, ScanSearch, FlaskConical,
+  Activity, BarChart2, BookOpen, Settings, FlaskConical,
   Newspaper, Power, StopCircle, Skull, CalendarDays, ShieldCheck, LogOut,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -25,7 +25,6 @@ const NAV: NavItem[] = [
   { label: "Live Trading",  to: "/trading",     icon: <Activity size={16} /> },
   { label: "Performance",   to: "/performance", icon: <BarChart2 size={16} /> },
   { label: "Trade Journal", to: "/journal",     icon: <BookOpen size={16} /> },
-  { label: "Today's Decisions", to: "/opportunities", icon: <ScanSearch size={16} /> },
   { label: "Research Results", to: "/research", icon: <FlaskConical size={16} /> },
   { label: "Learning Hub", to: "/playbooks",   icon: <Newspaper size={16} /> },
   { label: "Settings",      to: "/settings",    icon: <Settings size={16} /> },
@@ -99,7 +98,7 @@ export function Sidebar() {
             to={item.to}
             end={item.to === "/"}
             onClick={() => {
-              if (item.to === "/opportunities") markOpportunitiesSeen();
+              if (item.to === "/journal") markOpportunitiesSeen();
               closeMobileSidebar();
             }}
             className={({ isActive }) =>
@@ -117,7 +116,7 @@ export function Sidebar() {
           >
             {item.icon}
             {item.label}
-            {item.to === "/opportunities" && newSetupCount > 0 && (
+            {item.to === "/journal" && newSetupCount > 0 && (
               <span className="ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold"
                     style={{ background: "var(--accent)", color: "white" }}>
                 {newSetupCount > 99 ? "99+" : `${newSetupCount} NEW`}

@@ -93,10 +93,11 @@ export function PostMarketReport({ trades, scorecard, scorecardLoading, scorecar
   const totalPnl = closed.reduce((s, t) => s + (t.pnl ?? 0), 0);
   const winRate  = closed.length ? Math.round((wins.length / closed.length) * 100) : 0;
   const pnlColor = totalPnl >= 0 ? "var(--positive)" : "var(--negative)";
-  const fallbackGrade = dayGrade(totalPnl);
-  const grade = scorecard?.session_result
-    ? { letter: scorecard.session_result.grade, emoji: totalPnl >= 0 ? "✅" : "🔴", msg: scorecard.session_result.label }
-    : fallbackGrade;
+  // The report and the letter grade must use the same dated trade ledger.
+  // A separately-built evidence tape can contain a different account/date
+  // slice, which previously made every historical calendar popup show "F"
+  // even when the selected day's trades were profitable.
+  const grade = dayGrade(totalPnl);
   const avgWin   = wins.length   ? wins.reduce((s, t) => s + (t.pnl ?? 0), 0) / wins.length   : 0;
   const avgLoss  = losses.length ? losses.reduce((s, t) => s + (t.pnl ?? 0), 0) / losses.length : 0;
   const sessionLabel = reportDate
@@ -151,7 +152,7 @@ export function PostMarketReport({ trades, scorecard, scorecardLoading, scorecar
             <strong style={{ color: pnlColor }}>{fmt(totalPnl)}</strong>
           </p>
           <p className="text-[10px] mt-1" style={{ color: "var(--ink-faint)" }}>
-            {scorecard?.session_result.basis ?? "This letter is based on realized P&L only."}
+            This letter is based on the completed trades shown for this date.
           </p>
           {!finalized && (
             <p className="text-[10px] mt-1 font-semibold" style={{ color: "#d97706" }}>
@@ -575,7 +576,7 @@ export function DailyBrief() {
           className={`btn btn-sm ${briefTab === "postmarket" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setBriefTab("postmarket")}
         >
-          {sessionFinal ? "📊 Post-Market" : "📊 Live Review"}
+          📊 Post-Market Review
         </button>
       </div>
 

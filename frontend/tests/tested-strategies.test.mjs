@@ -66,8 +66,7 @@ test("working research strategies use the same accessible toggle-card pattern", 
   assert.match(html, /Opening Momentum · vresearch\.1/);
   assert.match(html, /role="switch"/);
   assert.match(html, /aria-checked="true"/);
-  assert.match(html, /Historical PF collecting/);
-  assert.match(html, /Goal 1\.5/);
-  assert.match(html, /Researching every collected ticker · No orders/);
+  assert.match(html, /RESEARCH ONLY · No orders/);
+  assert.match(html, /Testing on every ticker the bot collects/);
   assert.doesNotMatch(html, /type="checkbox"/);
 });
