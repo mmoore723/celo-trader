@@ -43,6 +43,9 @@ const STATUS: Record<StrategyTickerResearchPair["status"], { label: string; colo
 
 function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinutes }: { pair: StrategyTickerResearchPair; strategyName: string; strategyVersion: string; backtest: { profit_factor?: number | "infinite" | "no fills"; trades?: number; scope?: string; historical_test_through?: string }; exitMinutes: number }) {
   const status = STATUS[pair.status];
+  const resultState = pair.option_results > 0
+    ? status.label
+    : pair.setups > 0 ? "Setup found · no option matched" : "No setup yet";
   const progress = Math.min(100, Math.round(Math.min(pair.option_results / 20, pair.option_result_days / 8) * 100));
   const plan = pair.improvement_tests?.[0];
   const testedProfitFactor = backtest.profit_factor === "no fills" ? null : backtest.profit_factor ?? null;
@@ -50,9 +53,10 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
   return <article className="card overflow-hidden" style={{ borderLeft: `4px solid ${status.color}` }}>
     <div className="grid gap-3 p-3 lg:grid-cols-[minmax(14rem,1.35fr)_minmax(19rem,1fr)_minmax(18rem,1.2fr)] lg:items-center">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2"><strong className="text-base">{pair.ticker}</strong><span className={`badge ${pair.tradable ? "badge-green" : "badge-blue"}`}>{pair.tradable ? "TRADING ON" : "TESTING"}</span><span className="text-xs font-semibold" style={{ color: status.color }}>{status.label}</span></div>
+        <div className="flex flex-wrap items-center gap-2"><strong className="text-base">{pair.ticker}</strong><span className={`badge ${pair.tradable ? "badge-green" : "badge-blue"}`}>{pair.tradable ? "TRADING ON" : "TESTING"}</span><span className="text-xs font-semibold" style={{ color: status.color }}>{resultState}</span></div>
         <p className="text-sm truncate mt-1">{strategyName} · v{strategyVersion}</p>
         <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{pair.first_data_date ? `Data since ${evidenceDate(pair.first_data_date)} · ${pair.market_days} market days` : "No market data collected for this ticker yet"}</p>
+        <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{pair.raw_observations} raw trigger{pair.raw_observations === 1 ? "" : "s"} → {pair.setups} independent setup{pair.setups === 1 ? "" : "s"} → {pair.option_results} priced result{pair.option_results === 1 ? "" : "s"}</p>
         {pair.tradable && backtest.trades != null && backtest.trades > 0 && <p className="text-xs mt-1 font-medium" style={{ color: "var(--ink-muted)" }}>{backtest.historical_test_through ? `Tested through ${evidenceDate(backtest.historical_test_through)}` : "Reviewed test"}: PF {profitFactorText(testedProfitFactor)} · {backtest.trades} results</p>}
       </div>
       <div>
@@ -60,7 +64,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Test PF</span><strong title={pair.profit_factor === "infinite" ? "There are wins but no gross losses yet, so a numeric PF cannot be calculated." : undefined}>{researchProfitFactorText(pair.profit_factor, pair.option_results)}</strong></div>
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Results</span><strong>{pair.option_results}</strong></div>
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Wins</span><strong>{pair.win_rate_pct == null ? "—" : `${pair.win_rate_pct}%`}</strong></div>
-          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>P&amp;L</span><strong style={{ color: pair.net_one_contract_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>{money(pair.net_one_contract_pnl)}</strong></div>
+          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>P&amp;L</span><strong style={{ color: pair.option_results === 0 ? "var(--ink-muted)" : pair.net_one_contract_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>{pair.option_results === 0 ? "—" : money(pair.net_one_contract_pnl)}</strong></div>
         </div>
         <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surface-sunken, var(--border))" }} aria-label={`${progress}% of minimum evidence collected`}><div className="h-full rounded-full" style={{ width: `${progress}%`, background: "linear-gradient(90deg, var(--accent), var(--positive))" }} /></div>
         <p className="text-[11px] mt-1 text-right" style={{ color: "var(--ink-muted)" }}>{progress}% of minimum evidence</p>
@@ -113,10 +117,13 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
   const researchPairs = useMemo(() => sortResearchPairs(scopedRows.filter(row => researchPairVisible(row.pair, researchFilter))), [scopedRows, researchFilter]);
   const allPairs = useMemo(() => scopedRows.map(row => row.pair), [scopedRows]);
   const measuredPairs = useMemo(() => allPairs.filter(pair => pair.option_results > 0), [allPairs]);
+  const setupWithoutOption = useMemo(() => allPairs.filter(pair => pair.option_results === 0 && pair.setups > 0), [allPairs]);
+  const noSetupPairs = useMemo(() => allPairs.filter(pair => pair.setups === 0), [allPairs]);
   const passingNow = useMemo(() => measuredPairs.filter(pair => numericProfitFactor(pair.profit_factor) >= (matrix?.target_profit_factor ?? 1.5)), [matrix?.target_profit_factor, measuredPairs]);
   const needsWork = useMemo(() => allPairs.filter(pair => researchPairVisible(pair, "attention")), [allPairs]);
   const readyToReview = useMemo(() => allPairs.filter(pair => pair.diagnosis === "ready"), [allPairs]);
-  const waiting = allPairs.length - measuredPairs.length;
+  const rawTriggers = allPairs.reduce((sum, pair) => sum + pair.raw_observations, 0);
+  const independentSetups = allPairs.reduce((sum, pair) => sum + pair.setups, 0);
   const groupedResearchPairs = useMemo(() => [
     { key: "ready", title: "Ready to review", note: "Enough proof passed the goal and safety checks.", rows: researchPairs.filter(row => row.pair.diagnosis === "ready") },
     { key: "work", title: "Needs work", note: "The next test is shown on each row.", rows: researchPairs.filter(row => researchPairVisible(row.pair, "attention")) },
@@ -132,7 +139,7 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
       {matrixLoading && !matrix ? <PageLoader label="Research results" /> : matrixError ? <div className="card p-4" style={{ color: "var(--negative)" }}>Could not load research: {(matrixError as Error).message}</div> : matrix ? <>
         <div className="card overflow-hidden">
           <div className="grid gap-px grid-cols-2 lg:grid-cols-4" style={{ background: "var(--border)" }}>
-            {[["Ready to review", readyToReview.length], ["Has priced results", measuredPairs.length], ["Needs work", needsWork.length], ["Waiting for first result", waiting]].map(([label, value]) => <div key={String(label)} className="p-3" style={{ background: "var(--surface-raised)" }}><strong className="text-xl block">{value}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</span></div>)}
+            {[["Ready to review", readyToReview.length], ["Has priced results", measuredPairs.length], ["Setup found, no option", setupWithoutOption.length], ["No setup yet", noSetupPairs.length]].map(([label, value]) => <div key={String(label)} className="p-3" style={{ background: "var(--surface-raised)" }}><strong className="text-xl block">{value}</strong><span className="text-xs" style={{ color: "var(--ink-muted)" }}>{label}</span></div>)}
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-3 py-2 text-xs" style={{ color: "var(--ink-muted)", background: "color-mix(in srgb, var(--accent) 5%, var(--surface-raised))" }}>
             <span><b>{matrix.ticker_count}</b> tickers collected so far</span>
@@ -146,9 +153,10 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
             <label className="text-sm font-medium min-w-64 flex-1">Strategy<select className="select w-full mt-2" value={selected} onChange={event => setSelected(event.target.value)}><option value="all">All strategies</option>{matrix.strategies.map(strategy => <option key={strategy.strategy_id} value={strategy.strategy_id}>{strategy.display_name}</option>)}</select></label>
             <label className="text-sm font-medium min-w-40">Ticker<input className="input w-full mt-2 uppercase" type="search" placeholder="META" value={tickerSearch} onChange={event => setTickerSearch(event.target.value)} /></label>
             <div className="flex flex-wrap gap-2" aria-label="Research result filters">
-              {[["results", `Has results (${measuredPairs.length})`], ["attention", `Needs work (${needsWork.length})`], ["passing", `At PF goal (${passingNow.length})`], ["waiting", `Waiting (${waiting})`], ["all", `Everything (${allPairs.length})`]].map(([value, label]) => <button key={value} type="button" className={`btn btn-sm ${researchFilter === value ? "btn-primary" : "btn-ghost"}`} aria-pressed={researchFilter === value} onClick={() => setResearchFilter(value)}>{label}</button>)}
+              {[["results", `Has results (${measuredPairs.length})`], ["no_option", `Setup, no option (${setupWithoutOption.length})`], ["no_setup", `No setup (${noSetupPairs.length})`], ["attention", `Needs work (${needsWork.length})`], ["passing", `At PF goal (${passingNow.length})`], ["all", `Everything (${allPairs.length})`]].map(([value, label]) => <button key={value} type="button" className={`btn btn-sm ${researchFilter === value ? "btn-primary" : "btn-ghost"}`} aria-pressed={researchFilter === value} onClick={() => setResearchFilter(value)}>{label}</button>)}
             </div>
           </div>
+          {tickerSearch.trim() && <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface-raised))", color: "var(--ink-muted)" }}><strong style={{ color: "var(--ink)" }}>{tickerSearch.trim().toUpperCase()}</strong> · {rawTriggers} raw trigger{rawTriggers === 1 ? "" : "s"} → {independentSetups} independent setup{independentSetups === 1 ? "" : "s"} → {measuredPairs.reduce((sum, pair) => sum + pair.option_results, 0)} priced result{measuredPairs.reduce((sum, pair) => sum + pair.option_results, 0) === 1 ? "" : "s"}</div>}
           <p className="text-xs" style={{ color: "var(--ink-muted)" }}>PF compares total wins with total losses. A win-only sample says “No losses yet” until a loss gives PF a denominator.</p>
         </div>
         <div className="space-y-6">{groupedResearchPairs.map(group => <section key={group.key} className="space-y-2"><div className="flex flex-wrap items-baseline gap-2"><h2 className="text-base font-semibold">{group.title}</h2><span className="badge">{group.rows.length}</span><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{group.note}</p></div>{group.rows.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} strategyVersion={strategy.version} backtest={strategy.backtest} exitMinutes={strategy.exit_minutes} />)}</section>)}</div>

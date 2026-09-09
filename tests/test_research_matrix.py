@@ -5,7 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from strategy_health.research_matrix import (
-    _chronological_factors, _chronological_split_date, _current_rule_samples, _diagnosis, _exit_summary,
+    _chronological_factors, _chronological_split_date, _contract_selection_message,
+    _contract_selection_reasons, _current_rule_samples, _diagnosis, _exit_summary,
     _factor, _improvement_tests, _independent_samples, _quote_profit, build_research_matrix,
     research_status,
 )
@@ -150,6 +151,48 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("Test a stricter entry", plans[1]["title"])
         self.assertIn("44.4%", plans[1]["evidence"])
         self.assertIn("Hold the option and exit constant", plans[1]["test"])
+
+    def test_unpriced_setup_reports_contract_screen_instead_of_quote_capture(self):
+        samples = [{
+            "entry_ask": None,
+            "metadata_json": '{"manual_plan":{"contract_preview":{"reason":"filtered"}}}',
+        }]
+        reasons = _contract_selection_reasons(samples)
+        self.assertEqual({"filtered": 1}, reasons)
+        evidence, experiment = _contract_selection_message(reasons)
+        self.assertIn("$1.50–$10", evidence)
+        self.assertIn("research only", experiment)
+        diagnosis, action = _diagnosis(
+            status="collecting", setups=1, option_results=0,
+            direction_results=0, direction_accuracy=None, factor=None,
+            older_factor=None, newer_factor=None, exit_minutes=90,
+            exit_summaries=[], selection_reasons=reasons,
+        )
+        self.assertEqual("contract_selection", diagnosis)
+        self.assertIn("wider premium or spread", action)
+        plans = _improvement_tests(
+            setups=1, sessions=15, option_results=0, option_result_days=0,
+            direction_results=0, direction_accuracy=None, factor=None,
+            exit_minutes=90, exit_summaries=[], contract_tests=[],
+            selection_reasons=reasons,
+        )
+        self.assertEqual("Setup found; no option matched", plans[0]["title"])
+        self.assertNotIn("quote capture", plans[0]["test"])
+
+    def test_no_setup_plan_waits_for_minimum_market_days_before_entry_audit(self):
+        early = _improvement_tests(
+            setups=0, sessions=15, option_results=0, option_result_days=0,
+            direction_results=0, direction_accuracy=None, factor=None,
+            exit_minutes=90, exit_summaries=[], contract_tests=[],
+        )
+        self.assertEqual("Keep watching for the setup", early[0]["title"])
+        self.assertIn("5 more market days", early[0]["test"])
+        mature = _improvement_tests(
+            setups=0, sessions=20, option_results=0, option_result_days=0,
+            direction_results=0, direction_accuracy=None, factor=None,
+            exit_minutes=90, exit_summaries=[], contract_tests=[],
+        )
+        self.assertEqual("Check which entry rule blocks it", mature[0]["title"])
 
     def test_matrix_reads_only_the_active_account_and_real_option_marks(self):
         conn = sqlite3.connect(":memory:")

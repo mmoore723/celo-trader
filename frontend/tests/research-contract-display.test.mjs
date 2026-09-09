@@ -10,6 +10,14 @@ test("research results can be narrowed to one ticker", () => {
   assert.match(source, /type="search" placeholder="META"/);
   assert.match(source, /row\.pair\.ticker\.includes\(wantedTicker\)/);
 });
+
+test("research results separate no setup from no matching option", () => {
+  assert.match(source, /Setup, no option/);
+  assert.match(source, /No setup/);
+  assert.match(source, /raw trigger/);
+  assert.match(source, /independent setup/);
+  assert.doesNotMatch(source, /`Waiting \(\$\{waiting\}\)`/);
+});
 const settingsSource = readFileSync(
   new URL("../src/pages/Settings.tsx", import.meta.url), "utf8",
 );

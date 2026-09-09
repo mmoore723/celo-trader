@@ -118,6 +118,7 @@ export interface StrategyTickerResearchPair {
   market_days: number;
   setups: number;
   raw_observations: number;
+  contract_selection_reasons: Record<string, number>;
   rule_rejected: number;
   rule_unscored: number;
   previous_version_rows: number;
@@ -136,7 +137,7 @@ export interface StrategyTickerResearchPair {
   older_profit_factor: number | "infinite" | null;
   newer_profit_factor: number | "infinite" | null;
   comparison_split_date?: string | null;
-  diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
+  diagnosis: "ready" | "more_data" | "no_setups" | "price_data" | "contract_selection" | "unstable" | "early_loss" | "entry" | "exit" | "contract_exit";
   next_action: string;
   improvement_tests: {
     title: string;

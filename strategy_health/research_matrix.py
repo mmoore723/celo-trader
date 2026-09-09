@@ -96,6 +96,49 @@ def _row_value(row: object, key: str) -> object:
         return None
 
 
+def _contract_selection_reasons(samples: list) -> dict[str, int]:
+    """Count why a detected setup did not receive an entry option quote."""
+    reasons: dict[str, int] = defaultdict(int)
+    for row in samples:
+        if _row_value(row, "entry_ask") is not None:
+            continue
+        try:
+            metadata = json.loads(str(_row_value(row, "metadata_json") or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            metadata = {}
+        preview = (
+            metadata.get("manual_plan", {}).get("contract_preview", {})
+            if isinstance(metadata, dict) else {}
+        )
+        reason = str(preview.get("reason") or "not_recorded").strip().lower()
+        reasons[reason] += 1
+    return dict(sorted(reasons.items()))
+
+
+def _contract_selection_message(reasons: dict[str, int]) -> tuple[str, str]:
+    """Explain a failed research option screen without calling it quote loss."""
+    total = sum(reasons.values())
+    if reasons.get("illiquid"):
+        return (
+            f"{total} setup{'s' if total != 1 else ''} appeared, but the matching options had spreads wider than 8%.",
+            "Compare a wider spread limit in research only; do not change the strategy entry yet.",
+        )
+    if reasons.get("no_chain_data") or reasons.get("no_expirations") or reasons.get("api_error"):
+        return (
+            f"{total} setup{'s' if total != 1 else ''} appeared; Tradier did not return a usable weekly option chain for at least one attempt.",
+            "Retry the same contract lookup on future setups and keep chain failures separate from strategy performance.",
+        )
+    if reasons.get("filtered"):
+        return (
+            f"{total} setup{'s' if total != 1 else ''} appeared, but no out-of-the-money option met the $1.50–$10 price and 8% spread rules.",
+            "Compare one wider premium or spread rule in research only while keeping the entry and exit unchanged.",
+        )
+    return (
+        f"{total} setup{'s' if total != 1 else ''} appeared, but no complete entry option price was recorded.",
+        "Record the exact contract-selection outcome on the next setup before changing the entry or exit.",
+    )
+
+
 def _quote_measurement(row: object, exit_minutes: int) -> tuple[float | None, str | None]:
     """Return after-cost P&L and why an apparent result was not usable."""
     if exit_minutes not in EXIT_WINDOWS:
@@ -300,11 +343,15 @@ def _diagnosis(
     direction_accuracy: float | None, factor: object, older_factor: object,
     newer_factor: object, exit_minutes: int, exit_summaries: list[dict],
     comparison_split_date: str | None = None,
+    selection_reasons: dict[str, int] | None = None,
 ) -> tuple[str, str]:
     if status == "working":
         return "ready", "Passed PF 1.5 and the minimum sample checks."
     if setups == 0:
         return "no_setups", "No setup yet. Keep watching."
+    if option_results == 0 and selection_reasons:
+        _, action = _contract_selection_message(selection_reasons)
+        return "contract_selection", action
     coverage = option_results / setups if setups else 0
     if setups >= 5 and coverage < 0.5:
         return "price_data", "Too many option prices are missing. Fix price data before judging it."
@@ -343,17 +390,30 @@ def _improvement_tests(
     *, setups: int, sessions: int, option_results: int, option_result_days: int,
     direction_results: int, direction_accuracy: float | None, factor: object,
     exit_minutes: int, exit_summaries: list[dict], contract_tests: list[dict],
+    selection_reasons: dict[str, int] | None = None,
 ) -> list[dict]:
     """Turn measured weaknesses into specific next experiments, never claims."""
     plans: list[dict] = []
     coverage = option_results / setups if setups else 0.0
     if setups == 0:
+        remaining = max(0, 20 - sessions)
         return [{
-            "title": "Find why no setup appeared",
+            "title": "Keep watching for the setup" if remaining else "Check which entry rule blocks it",
             "evidence": f"0 setups across {sessions} collected market days.",
-            "test": "Replay each entry gate separately—time window, trend direction, then volume—so the blocking condition is identified without loosening everything at once.",
+            "test": (
+                f"Keep the strategy unchanged for {remaining} more market day{'s' if remaining != 1 else ''}."
+                if remaining else
+                "Replay time, direction, and volume separately to identify the blocking rule without loosening everything at once."
+            ),
         }]
-    if coverage < 0.7:
+    if option_results == 0 and selection_reasons:
+        evidence, test = _contract_selection_message(selection_reasons)
+        plans.append({
+            "title": "Setup found; no option matched",
+            "evidence": evidence,
+            "test": test,
+        })
+    elif coverage < 0.7:
         plans.append({
             "title": "Complete option pricing first",
             "evidence": f"Only {option_results} of {setups} independent setups have a usable ask-to-bid result ({coverage * 100:.0f}%).",
@@ -567,6 +627,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 timely_samples, strategy_id, ticker,
             )
             samples = _independent_samples(rule_samples, exit_minutes)
+            selection_reasons = _contract_selection_reasons(samples)
             exit_summaries = []
             current_results: list[tuple[str, float]] = []
             current_summary = None
@@ -604,6 +665,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 factor=factor, older_factor=older_factor, newer_factor=newer_factor,
                 exit_minutes=exit_minutes, exit_summaries=exit_summaries,
                 comparison_split_date=comparison_split_date,
+                selection_reasons=selection_reasons,
             )
             contract_tests = _contract_policy_summaries(
                 alternative_grouped, strategy_id=strategy_id, ticker=ticker,
@@ -616,6 +678,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 direction_results=measured, direction_accuracy=direction_accuracy,
                 factor=factor, exit_minutes=exit_minutes,
                 exit_summaries=exit_summaries, contract_tests=contract_tests,
+                selection_reasons=selection_reasons,
             )
             pairs.append({
                 "ticker": ticker,
@@ -626,6 +689,7 @@ def build_research_matrix(days: int = 90) -> dict:
                 "market_days": sessions.get(ticker, 0),
                 "setups": len(samples),
                 "raw_observations": len(raw_samples),
+                "contract_selection_reasons": selection_reasons,
                 "rule_rejected": rule_rejected,
                 "rule_unscored": rule_unscored,
                 "previous_version_rows": previous_version_rows,

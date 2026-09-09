@@ -13,6 +13,7 @@ const ACTION_LABELS = {
   more_data: "Keep collecting",
   no_setups: "No setup yet",
   price_data: "Fix price data",
+  contract_selection: "No option matched",
   unstable: "Changed over time",
   early_loss: "Losing — review",
   entry: "Fix the entry",
@@ -31,9 +32,9 @@ export function profitFactorText(value) {
 
 /** Human-readable live PF. A win-only sample has no gross loss denominator. */
 export function researchProfitFactorText(value, results) {
-  if (!results) return "Waiting";
+  if (!results) return "—";
   if (value === "infinite") return "No losses yet";
-  return typeof value === "number" ? value.toFixed(2) : "Waiting";
+  return typeof value === "number" ? value.toFixed(2) : "—";
 }
 
 export function numericProfitFactor(value) {
@@ -44,8 +45,9 @@ export function numericProfitFactor(value) {
 export function researchPairVisible(pair, filter) {
   if (filter === "all") return true;
   if (filter === "results") return pair.option_results > 0;
-  if (filter === "waiting") return pair.option_results === 0;
-  if (filter === "attention") return ["price_data", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis)
+  if (filter === "no_option") return pair.option_results === 0 && pair.setups > 0;
+  if (filter === "no_setup") return pair.setups === 0;
+  if (filter === "attention") return ["price_data", "contract_selection", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis)
     || (pair.diagnosis === "no_setups" && pair.market_days >= 20);
   if (filter === "passing") return pair.option_results > 0 && numericProfitFactor(pair.profit_factor) >= 1.5;
   return pair.option_results > 0;

@@ -33,9 +33,17 @@ test("plain labels explain PF and the next action", () => {
   assert.equal(profitFactorText("infinite"), "∞");
   assert.equal(profitFactorText(1.567), "1.57");
   assert.equal(researchProfitFactorText("infinite", 1), "No losses yet");
-  assert.equal(researchProfitFactorText(null, 0), "Waiting");
+  assert.equal(researchProfitFactorText(null, 0), "—");
   assert.equal(researchActionLabel("contract_exit"), "Test option + exit");
+  assert.equal(researchActionLabel("contract_selection"), "No option matched");
   assert.equal(researchActionLabel("early_loss"), "Losing — review");
+});
+
+test("zero-result filters separate a found setup from no setup", () => {
+  assert.equal(researchPairVisible(pair({ setups: 2 }), "no_option"), true);
+  assert.equal(researchPairVisible(pair({ setups: 0 }), "no_option"), false);
+  assert.equal(researchPairVisible(pair({ setups: 0 }), "no_setup"), true);
+  assert.equal(researchPairVisible(pair({ setups: 2 }), "no_setup"), false);
 });
 
 test("an early losing pair appears in needs attention", () => {
