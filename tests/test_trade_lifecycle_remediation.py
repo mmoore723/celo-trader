@@ -177,6 +177,50 @@ class LoopLifecycleTests(unittest.TestCase):
         self.assertEqual(0.0, state["account_balance"])
         self.assertEqual(0.0, state["day_start_balance"])
 
+    def test_learning_curation_migrates_both_databases_for_old_users(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "celo_lifespan_learning_migration",
+            Path(__file__).parents[1] / "api" / "main" / "lifespan.py",
+        )
+        assert spec and spec.loader
+        lifespan = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lifespan)
+
+        auth_users = types.ModuleType("auth.users")
+        auth_users.list_users = lambda: [{
+            "user_id": "old-user", "username": "old", "is_admin": 0,
+        }]
+        learning = types.ModuleType("api.routes.learning")
+        curated: list[bool] = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            db_dir = Path(directory) / "old-user"
+            db_dir.mkdir()
+            for mode in ("paper", "live"):
+                sqlite3.connect(db_dir / f"trades_{mode}.db").close()
+
+            def sync_examples() -> int:
+                for mode in ("paper", "live"):
+                    with sqlite3.connect(db_dir / f"trades_{mode}.db") as conn:
+                        exists = conn.execute(
+                            "SELECT 1 FROM sqlite_master "
+                            "WHERE type='table' AND name='learning_examples'"
+                        ).fetchone()
+                        self.assertIsNotNone(exists)
+                curated.append(True)
+                return 0
+
+            learning._sync_curated_examples = sync_examples
+            with patch.dict(sys.modules, {
+                "auth.users": auth_users,
+                "api.routes.learning": learning,
+            }), patch("config.get_db_path", return_value=db_dir / "trades_paper.db"):
+                lifespan._refresh_learning_curation_once()
+
+        self.assertEqual([True], curated)
+        from auth.context import get_current_user_id
+        self.assertEqual("system", get_current_user_id())
+
 
 class DurableTradeLineageTests(unittest.TestCase):
     def test_reviewed_strategy_context_survives_direct_trade_insert(self) -> None:

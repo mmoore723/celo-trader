@@ -14,26 +14,41 @@ from fastapi import FastAPI
 _learning_stop = threading.Event()
 
 
+def _refresh_learning_curation_once() -> None:
+    """Migrate and refresh learning examples for every known tenant once."""
+    import logging
+
+    from auth.context import set_current_user
+    from auth.users import list_users
+    from api.routes.learning import _sync_curated_examples
+    from config import get_db_path
+    from database.schema import _init_db_at
+
+    try:
+        for user in list_users():
+            user_id = user["user_id"]
+            try:
+                set_current_user(user_id, user["username"], bool(user["is_admin"]))
+                db_dir = get_db_path(user_id=user_id).parent
+                for mode in ("paper", "live"):
+                    _init_db_at(db_dir / f"trades_{mode}.db")
+                _sync_curated_examples()
+            except Exception as exc:
+                logging.getLogger("celo_trader.learning").warning(
+                    "learning curation failed for user %s (non-fatal): %s", user_id, exc,
+                )
+    finally:
+        set_current_user("system", "system", False)
+
+
 def _learning_curation_worker() -> None:
     """Refresh each tenant's real-example manifest hourly, outside request paths."""
     import logging
-    from auth.context import set_current_user
     while not _learning_stop.is_set():
         try:
-            from auth.users import list_users
-            from api.routes.learning import _sync_curated_examples
-            for user in list_users():
-                try:
-                    set_current_user(user["user_id"], user["username"], bool(user["is_admin"]))
-                    _sync_curated_examples()
-                except Exception as exc:
-                    logging.getLogger("celo_trader.learning").warning(
-                        "learning curation failed for user %s (non-fatal): %s", user["user_id"], exc,
-                    )
+            _refresh_learning_curation_once()
         except Exception as exc:
             logging.getLogger("celo_trader.learning").warning("learning curation failed (non-fatal): %s", exc)
-        finally:
-            set_current_user("system", "system", False)
         _learning_stop.wait(3600)
 
 
