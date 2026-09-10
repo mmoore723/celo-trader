@@ -119,6 +119,10 @@ def run_research_pass(readers, snapshot, state, stopped):
     alpaca, tradier = readers
     if stopped():
         return
+    def profit_bars(ticker):
+        bars, error, _ = alpaca.get_session_bars(ticker, '1Min')
+        return bars_to_df(bars) if bars and not error else pd.DataFrame()
+
     def profit_checkpoint(force=False):
         if not snapshot['settings'].get('shadow_ledger_enabled', True) or stopped():
             return
@@ -128,7 +132,8 @@ def run_research_pass(readers, snapshot, state, stopped):
         state['profit_checkpoint_at'] = now
         try:
             capture_profit_protection(account=snapshot['settings'].get('active_broker_account_id'),
-                                      quote_lookup=tradier.get_option_quote, stopped=stopped, clock=_now_et)
+                                      quote_lookup=tradier.get_option_quote, bars_lookup=profit_bars,
+                                      stopped=stopped, clock=_now_et)
         except Exception:
             logger.warning('Profit-protection checkpoint failed; research continues', exc_info=True)
 

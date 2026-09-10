@@ -16,7 +16,7 @@ from strategy_health.exit_measurement import exit_measurement
 from strategy_health.authored_exit_summary import load_authored_exits, authored_summary
 from strategy_health.exit_protocols import PROTOCOLS
 from database.option_profit_protection import load as load_profit_tests
-from strategy_health.option_profit_protection import summary as profit_test_summary, STRATEGY_ID as PROFIT_STRATEGY
+from strategy_health.option_profit_protection import summary as profit_test_summary, PROTOCOL_BY_STRATEGY
 from strategy_health.ticker_qualification import DEFAULT_POLICY
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
@@ -735,7 +735,7 @@ def build_research_matrix(days: int = 90) -> dict:
             )
             pairs.append({
                 "ticker": ticker,
-                "profit_protection_comparison": profit_test_summary(samples, profit_tests) if strategy_id == PROFIT_STRATEGY else None,
+                "profit_protection_comparison": profit_test_summary(samples, profit_tests, strategy_id) if strategy_id in PROTOCOL_BY_STRATEGY else None,
                 "authored_exit_evidence": authored_summary(samples, authored_exits, PROTOCOLS[strategy_id]) if strategy_id in PROTOCOLS else None,
                 "status": status,
                 "explanation": explanation,

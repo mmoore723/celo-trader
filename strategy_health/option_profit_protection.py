@@ -9,13 +9,17 @@ from strategy_health.impulse_exit import et, executable_bid
 STRATEGY_ID = 'V2_SPY_TREND_CONT'
 PROTOCOL = 'option_bid_3spread_arm_2spread_trail_30m_v1'
 VERSION = '2.1.0'
+RECOVERY_STRATEGY_ID = 'V2_FAILED_OR_BREAK_VWAP_REVERSION'
+RECOVERY_PROTOCOL = 'recovery_vwap_then_option_3spread_2spread_30m_v1'
+PROTOCOL_BY_STRATEGY = {STRATEGY_ID: PROTOCOL, RECOVERY_STRATEGY_ID: RECOVERY_PROTOCOL}
 # Frozen before forward outcomes: $0.65/side, $0.01/side slippage, 100 shares.
 ROUND_TRIP_PRICE_COST = .033
 MAX_GAP_SECONDS = 120
 
 
 def metadata(strategy_id):
-    return {'profit_protection_protocol': PROTOCOL} if strategy_id == STRATEGY_ID else {}
+    protocol = PROTOCOL_BY_STRATEGY.get(strategy_id)
+    return {'profit_protection_protocol': protocol} if protocol else {}
 
 
 def initialize(entry_at, ask, bid):
@@ -31,7 +35,7 @@ def initialize(entry_at, ask, bid):
                 high_bid=None, stop=None)
 
 
-def advance(state, *, entry_at, ask, contract, now, quote=None):
+def advance(state, *, entry_at, ask, contract, now, quote=None, allow_arm=True):
     """Causal state transition: test prior stop; price only a later exchange bid.
 
     Both calls and puts are long options: a higher premium is favorable.
@@ -73,6 +77,8 @@ def advance(state, *, entry_at, ask, contract, now, quote=None):
     if out['last_bid_at'] and et(stamp) <= et(out['last_bid_at']):
         return out
     out.update(last_bid_at=stamp, last_received_at=now.isoformat(), quote_count=out['quote_count']+1)
+    if not allow_arm:
+        return out  # Pre-objective premium peaks cannot arm a later runner.
     previous_stop = out['stop']
     if previous_stop is not None and bid <= previous_stop:
         out['trail'].update(status='pending_quote', decision_at=now.isoformat(), reason='option_profit_trail')
@@ -84,10 +90,12 @@ def advance(state, *, entry_at, ask, contract, now, quote=None):
     return out
 
 
-def summary(samples, rows):
+def summary(samples, rows, strategy_id=STRATEGY_ID):
     from strategy_health.authored_exit_summary import net_profit
     from strategy_health.exit_comparison import totals
-    selected = [rows[s['candidate_id']] for s in samples if s['candidate_id'] in rows]
+    protocol = PROTOCOL_BY_STRATEGY[strategy_id]
+    selected = [rows[s['candidate_id']] for s in samples if s['candidate_id'] in rows
+                and rows[s['candidate_id']]['protocol'] == protocol]
     controls, trails, differences, days = [], [], [], set()
     statuses = {}
     for row in selected:
@@ -102,7 +110,8 @@ def summary(samples, rows):
             trails.append(b)
             differences.append(round(pb-pa, 2))
             days.add(et(row['entry_quote_at']).date().isoformat())
-    return dict(protocol=PROTOCOL, tracked=len(selected), paired_results=len(controls),
+    return dict(protocol=protocol, tracked=len(selected), paired_results=len(controls),
+                target_reached=sum(bool(r['state'].get('target_detected_at')) for r in selected),
                 paired_days=len(days), unpaired=len(selected)-len(controls), statuses=statuses,
                 control=totals(controls), trail=totals(trails),
                 average_improvement=round(sum(differences)/len(differences), 2) if differences else None,

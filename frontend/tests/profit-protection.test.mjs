@@ -29,3 +29,10 @@ test("comparison shows after-cost paired evidence without changing trading",()=>
   assert.match(html,/trading rules stay unchanged/);
   assert.match(html,/not broker fills/);
 });
+test("recovery trail explains its target gate without claiming an immediate sale",()=>{
+  const html=render({...empty,protocol:"recovery_vwap_then_option_3spread_2spread_30m_v1",target_reached:1});
+  assert.match(html,/Recovery profit protection test/);
+  assert.match(html,/1 plays reached the recovery target/);
+  assert.match(html,/reaching it does not sell the position/);
+  assert.doesNotMatch(render(empty),/reached the recovery target/);
+});
