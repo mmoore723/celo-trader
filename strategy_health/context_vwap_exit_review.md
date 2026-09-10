@@ -32,3 +32,20 @@ fee. Genuine KER entry/cross-ticker tests, completed-bar timing, session VWAP,
 missing inputs, real quote loss arithmetic, restart and account isolation
 are covered. Existing ORB premium paths are separately regression-tested.
 No PF improvement or live promotion claimed.
+
+## Displacement v0.2.0 registration — September 10, 2026
+
+Reviewed artifact config/strategy_evidence/ctx_vwap_displacement-0.2.0.json
+and trading/vwap_displacement_exit.py confirm the same structural plan.
+The new protocol stamps both the unchanged entry module and execution-exit
+module hashes. KER records/proof remain backward-compatible; each strategy
+and current version has separate results. Genuine META observation uses the
+actual candles through the existing alias/scope adapter, never order routing.
+
+With complete candles, parity tests cover prior-high target, five-minute VWAP
+stop and 15:55 cap against the actual execution evaluator. Research deliberately
+excludes the entry minute's potentially pre-purchase high and marks missing
+historical structure unmeasurable. The operational 90-minute missing-feed
+safety exit remains untouched; it cannot be claimed as proof that the strategy
+had no earlier exit. Both differences are tested and disclosed, not hidden
+under historical PF. No change to the user's Displacement trading switch.

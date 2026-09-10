@@ -6,7 +6,7 @@ from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
 from strategy_health import context_vwap_exit
 
 PROTOCOLS = {
-    context_vwap_exit.STRATEGY_ID: context_vwap_exit.PROTOCOL,
+    **context_vwap_exit.PROTOCOLS,
     **PREMIUM_PROTOCOLS,
     impulse_exit.STRATEGY_ID: impulse_exit.PROTOCOL,
     supertrend_exit.STRATEGY_ID: supertrend_exit.PROTOCOL,
@@ -71,8 +71,9 @@ def candidate_metadata(strategy_id, strategy):
 
 def first_exit(protocol, frame, *, entry_at, entry_quote_at, direction, meta, now):
     common = dict(entry_at=entry_at, entry_quote_at=entry_quote_at, direction=direction, now=now)
-    if protocol == context_vwap_exit.PROTOCOL:
-        return context_vwap_exit.first_exit(frame, **common, meta=meta)
+    if protocol in context_vwap_exit.PROTOCOLS.values():
+        strategy_id=next(key for key,value in context_vwap_exit.PROTOCOLS.items() if value==protocol)
+        return context_vwap_exit.first_exit(frame, **common, meta=meta, strategy_id=strategy_id)
     if protocol == impulse_exit.PROTOCOL:
         return impulse_exit.first_exit(frame, **common, stop=meta["underlying_stop"], target=meta["underlying_target"])
     if protocol == supertrend_exit.PROTOCOL:

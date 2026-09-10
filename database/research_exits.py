@@ -11,7 +11,7 @@ from database.helpers import _now_et
 from strategy_health.impulse_exit import et, executable_bid
 from strategy_health.exit_protocols import PROTOCOLS, first_exit
 from database.research_exit_variants import pending_variants
-from strategy_health.context_vwap_exit import PROTOCOL as CONTEXT_VWAP_PROTOCOL
+from strategy_health.context_vwap_exit import PROTOCOLS as CONTEXT_VWAP_PROTOCOLS
 
 logger = logging.getLogger("celo_trader.research")
 CREATE_TABLE = """CREATE TABLE IF NOT EXISTS research_strategy_exits (
@@ -85,7 +85,7 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                 if not math.isfinite(row["entry_ask"]):
                     event = (entry, "invalid_entry")
                 elif entry.date() < now.date():
-                    cap = entry.replace(hour=15,minute=55) if row['protocol']==CONTEXT_VWAP_PROTOCOL else entry.replace(hour=16,minute=0)
+                    cap = entry.replace(hour=15,minute=55) if row['protocol'] in CONTEXT_VWAP_PROTOCOLS.values() else entry.replace(hour=16,minute=0)
                     event = (cap, "missed_session")
                 else:
                     ticker = row["ticker"]
@@ -111,7 +111,7 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                 if row["status"] != "pending_quote":
                     continue
             decision, now = et(row["decision_at"]), et(clock())
-            quote_deadline = decision + timedelta(minutes=1 if row['protocol']==CONTEXT_VWAP_PROTOCOL else 5)
+            quote_deadline = decision + timedelta(minutes=1 if row['protocol'] in CONTEXT_VWAP_PROTOCOLS.values() else 5)
             if now > quote_deadline:
                 with get_conn() as conn:
                     conn.execute(f"""UPDATE {table} SET status='missing_quote'

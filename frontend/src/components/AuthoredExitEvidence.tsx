@@ -28,7 +28,7 @@ export function AuthoredExitEvidence({ evidence }: { evidence: StrategyTickerRes
       <p>Sell one at +30%; exit the other at +100%, the range middle, or 3:55 PM. Sampled quotes can miss brief price touches.</p>
     </div>}
     {evidence.protocol === "ema_structural_2_06r_completed15m_rth_close_corrected_v1" && <p>15-minute exits · Corrected 4:00 PM close</p>}
-    {evidence.protocol === "context_vwap_ker_prior_high_5m_vwap_1555_v1" && <p>Earlier high · 5-minute close below VWAP · 3:55 PM cutoff</p>}
+    {["context_vwap_ker_prior_high_5m_vwap_1555_v1", "context_vwap_displacement_prior_high_5m_vwap_1555_v1"].includes(evidence.protocol) && <p>Earlier high · 5-minute close below VWAP · 3:55 PM cutoff</p>}
     <p>{evidence.collecting} open tests · {evidence.pending_quote} awaiting exit price · {evidence.missing_quote + evidence.unmeasurable} missing usable data</p>
     {Object.entries(evidence.reasons).filter(([reason]) => reasons[reason]).map(([reason, count]) => <span key={reason} className="mr-2">{reasons[reason]}: {count}</span>)}
     {evidence.option_results > 0 && <p>Average {money(evidence.average_one_contract_pnl)} · Typical {money(evidence.median_one_contract_pnl)} · After-cost P&amp;L {money(evidence.net_one_contract_pnl)}</p>}

@@ -89,3 +89,9 @@ test("KER identifies its stock-triggered exits without implying fixed option pro
   assert.match(html,/3:55 PM cutoff/);
   assert.doesNotMatch(html,/2R target|Two-contract split/);
 });
+
+test("Displacement displays its own structural protocol", () => {
+  const html=render({...empty,protocol:"context_vwap_displacement_prior_high_5m_vwap_1555_v1"});
+  assert.match(html,/Earlier high · 5-minute close below VWAP · 3:55 PM cutoff/);
+  assert.doesNotMatch(html,/Two-contract split/);
+});

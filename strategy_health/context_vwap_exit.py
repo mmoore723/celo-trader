@@ -1,26 +1,42 @@
 """Measured context VWAP exits; never order routing or synthetic option prices."""
 from datetime import timedelta
+from functools import lru_cache
+import hashlib
+import inspect
 import math
 
-from strategies.context_strategy_observers import VWAP_KER10_LONG
+from strategies.context_strategy_observers import VWAP_KER10_LONG, VWAP_DISPLACEMENT_LONG
+from trading import vwap_displacement_exit as displacement_source
 from strategy_health.context_orb_exit import engine_hash
 from strategy_health.impulse_exit import et
 
 STRATEGY_ID = VWAP_KER10_LONG
 PROTOCOL = 'context_vwap_ker_prior_high_5m_vwap_1555_v1'
+DISPLACEMENT_STRATEGY_ID = VWAP_DISPLACEMENT_LONG
+DISPLACEMENT_PROTOCOL = 'context_vwap_displacement_prior_high_5m_vwap_1555_v1'
+PROTOCOLS = {STRATEGY_ID:PROTOCOL, DISPLACEMENT_STRATEGY_ID:DISPLACEMENT_PROTOCOL}
+
+
+@lru_cache(maxsize=1)
+def displacement_exit_hash():
+    return hashlib.sha256(inspect.getsource(displacement_source).encode()).hexdigest()
 
 
 def metadata(strategy_id):
-    if strategy_id != STRATEGY_ID:
+    if strategy_id not in PROTOCOLS:
         return {}
-    return {'authored_exit_protocol':PROTOCOL, 'authored_exit_state':{
+    state = {
         'engine_hash':engine_hash(), 'strategy_id':strategy_id,
-        'policy':'prior_high_1m_session_vwap_5m_1555_v1'}}
+        'policy':'prior_high_1m_session_vwap_5m_1555_v1'}
+    if strategy_id == DISPLACEMENT_STRATEGY_ID:
+        state['execution_exit_hash'] = displacement_exit_hash()
+    return {'authored_exit_protocol':PROTOCOLS[strategy_id], 'authored_exit_state':state}
 
 
-def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now):
+def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strategy_id=STRATEGY_ID):
     entry, now = et(entry_at), et(now)
-    if meta.get('authored_exit_state') != metadata(STRATEGY_ID)['authored_exit_state']:
+    expected = metadata(strategy_id)
+    if not expected or meta.get('authored_exit_state') != expected['authored_exit_state']:
         return entry,'missing_exit_state'
     opening, cap = entry.replace(hour=9,minute=30), entry.replace(hour=15,minute=55)
     if entry.minute%5 or entry.second or entry.microsecond or not opening<=entry<cap:
