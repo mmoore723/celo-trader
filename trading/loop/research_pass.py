@@ -1,5 +1,6 @@
 """Order-free watchlist collection and the existing prospective observers."""
 import logging
+from inspect import getattr_static
 from time import monotonic
 from types import SimpleNamespace
 
@@ -30,13 +31,16 @@ logger = logging.getLogger("celo_trader.research")
 
 def market_readers(alpaca, tradier):
     """Expose only named reads; neither object can submit/cancel/manage orders."""
+    option_reads = {name: getattr(tradier, name) for name in (
+        "get_option_quote", "get_expirations", "get_option_chain",
+    )}
+    if callable(getattr_static(tradier, "get_research_option_chain", None)):
+        option_reads["get_research_option_chain"] = tradier.get_research_option_chain
     return (
         SimpleNamespace(**{name: getattr(alpaca, name) for name in (
             "get_session_bars", "get_bars", "get_latest_quote", "is_market_open",
         )}),
-        SimpleNamespace(**{name: getattr(tradier, name) for name in (
-            "get_option_quote", "get_expirations", "get_option_chain",
-        )}),
+        SimpleNamespace(**option_reads),
     )
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from inspect import getattr_static
 from typing import Any
 
 from trading.state import _now_et
@@ -162,7 +163,10 @@ def select_research_contract(
     ticker = str(ticker or "").strip().upper()
     direction = str(direction or "").strip().lower()
     profile = research_contract_profile(strategy_id)
-    research_reader = getattr(type(tradier), "get_research_option_chain", None)
+    # Workers expose bound reads on a SimpleNamespace instance, not its type.
+    # Static lookup also avoids treating auto-created mock/proxy attributes as
+    # an explicitly supplied capability.
+    research_reader = getattr_static(tradier, "get_research_option_chain", None)
     chain_reader = (tradier.get_research_option_chain if callable(research_reader)
                     else tradier.get_option_chain)
     info: dict[str, Any] = {

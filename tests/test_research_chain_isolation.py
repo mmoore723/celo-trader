@@ -1,10 +1,14 @@
 """Research's declared screen must not inherit hidden order-entry gates."""
 from datetime import datetime
+from contextlib import ExitStack
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from broker.tradier_chain import TradierChainMixin
 from trading.research_contract_selection import select_research_contract
+from trading.loop.research_pass import market_readers
+from trading.entry.candidate_observation import observe_candidate_contract
 
 
 def option(symbol='TEST_C', **changes):
@@ -28,6 +32,34 @@ class Client(TradierChainMixin):
 
 
 class ResearchChainIsolationTests(unittest.TestCase):
+    def test_background_worker_wrapper_preserves_research_reader(self):
+        _, reader = market_readers(Mock(), Client([option()]))
+        self.assertTrue(callable(getattr(reader,'get_research_option_chain',None)))
+        with patch('trading.research_contract_selection._now_et',return_value=datetime(2026,9,10,14)):
+            chosen,info=select_research_contract(reader,'TEST','bullish',100,'V2_SPY_AFTERNOON_FVG')
+        self.assertEqual('TEST_C',chosen['symbol'])
+        self.assertEqual('research_quote_validity_v1',info['chain_screen'])
+        for name in ('place_option_order','cancel_order','_get','_post','api_key'):
+            self.assertFalse(hasattr(reader,name))
+
+    def test_worker_candidate_records_new_chain_provenance_and_quote(self):
+        _, reader=market_readers(Mock(),Client([option()]))
+        signal=SimpleNamespace(strategy_id='V2_TREND_CONT',direction='bullish',
+                               meta={'shadow_candidate_id':'test-play'})
+        with ExitStack() as stack:
+            stack.enter_context(patch('trading.research_contract_selection._now_et',return_value=datetime(2026,9,10,14)))
+            stack.enter_context(patch('trading.entry.candidate_observation.record_router_candidate'))
+            stack.enter_context(patch('trading.entry.candidate_observation.record_candidate_contract_alternative'))
+            snapshot=stack.enter_context(patch('trading.entry.candidate_observation.snapshot_candidate_plan'))
+            quote=stack.enter_context(patch('trading.entry.candidate_observation.record_candidate_option_quote'))
+            observe_candidate_contract(ticker='TEST',signal=signal,underlying_price=100,
+                tradier=reader,balance=0,risk=Mock(),settings={},research_only=True)
+        quote.assert_called_once()
+        self.assertEqual('TEST_C',quote.call_args.kwargs['contract_symbol'])
+        preview=snapshot.call_args.args[0]['contract_preview']
+        self.assertEqual('research_quote_validity_v1',preview['chain_screen'])
+        self.assertFalse(preview['upstream_chain_liquidity_filtered'])
+
     def test_research_keeps_declared_eligible_contract_execution_rejects(self):
         client = Client([option()])
         self.assertEqual([], client.get_option_chain('TEST', '2026-09-11'))
