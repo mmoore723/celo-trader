@@ -8,6 +8,7 @@ from database.helpers import _now_et
 from strategy_health.option_profit_protection import PROTOCOL_BY_STRATEGY, RECOVERY_PROTOCOL, VERSION, initialize, advance
 from strategy_health.recovery_profit_protection import freeze, observe_target, can_arm
 from strategy_health.impulse_exit import et
+from database.reference_contract_tests import load as load_reference_tests, TABLE as REFERENCE_TABLE
 
 logger = logging.getLogger('celo_trader.research')
 CREATE_TABLE = '''CREATE TABLE IF NOT EXISTS research_option_profit_tests (
@@ -43,13 +44,18 @@ def capture(*, account, quote_lookup, bars_lookup=None, stopped=lambda: False, c
             JOIN shadow_candidates s ON s.candidate_id=e.candidate_id
             WHERE e.active=1 AND COALESCE(s.broker_account_id,'')=?''', (account or '',))
                 if PROTOCOL_BY_STRATEGY.get(r['strategy_id']) == r['protocol']]
+        for row in rows:
+            row['_table'] = 'research_option_profit_tests'
+        rows.extend(dict(r, _table=REFERENCE_TABLE)
+                    for r in load_reference_tests(conn, account, active_only=True).values())
     quotes, frames = {}, {}
     for row in rows:
         if stopped():
             return
         try:
             before = json.loads(row['state_json'])
-            args = dict(entry_at=row['entry_quote_at'], ask=row['entry_ask'], contract=row['contract_symbol'])
+            args = dict(entry_at=row['entry_quote_at'], ask=row['entry_ask'], contract=row['contract_symbol'],
+                        minutes=row.get('minutes', 30))
             state = before
             recovery = row['protocol'] == RECOVERY_PROTOCOL
             if recovery and state['trail']['status'] == 'collecting' and not state.get('target_detected_at'):
@@ -81,9 +87,14 @@ def capture(*, account, quote_lookup, bars_lookup=None, stopped=lambda: False, c
             if encoded != row['state_json'] or not active:
                 with get_conn() as conn:
                     # A stale/concurrent poll cannot overwrite a latched decision.
-                    conn.execute('''UPDATE research_option_profit_tests SET state_json=?,active=?
-                        WHERE candidate_id=? AND protocol=? AND state_json=?''',
-                        (encoded, active, row['candidate_id'], row['protocol'], row['state_json']))
+                    # Table identifiers are module constants, never external input.
+                    table = row['_table']
+                    extra = ' AND profile_version=?' if table == REFERENCE_TABLE else ''
+                    values = (encoded, active, row['candidate_id'], row['protocol'], row['state_json'])
+                    if extra:
+                        values += (row['profile_version'],)
+                    conn.execute(f'''UPDATE {table} SET state_json=?,active=?
+                        WHERE candidate_id=? AND protocol=? AND state_json=?''' + extra, values)
         except Exception:
             logger.warning('Profit-protection capture failed candidate=%s', row['candidate_id'], exc_info=True)
 

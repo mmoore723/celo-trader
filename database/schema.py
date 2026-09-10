@@ -474,6 +474,9 @@ def _init_db_at(db_path: Path) -> None:
         from database.option_profit_protection import CREATE_TABLE as PROFIT_TABLE, CREATE_INDEX as PROFIT_INDEX
         conn.execute(PROFIT_TABLE)
         conn.execute(PROFIT_INDEX)
+        from database.reference_contract_tests import CREATE_TABLE as REFERENCE_TABLE, CREATE_INDEX as REFERENCE_INDEX
+        conn.execute(REFERENCE_TABLE)
+        conn.execute(REFERENCE_INDEX)
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)

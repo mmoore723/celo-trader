@@ -16,6 +16,7 @@ from strategy_health.exit_measurement import exit_measurement
 from strategy_health.authored_exit_summary import load_authored_exits, authored_summary
 from strategy_health.exit_protocols import PROTOCOLS
 from database.option_profit_protection import load as load_profit_tests
+from database.reference_contract_tests import load as load_reference_tests, summary as reference_summary
 from strategy_health.option_profit_protection import summary as profit_test_summary, PROTOCOL_BY_STRATEGY
 from strategy_health.ticker_qualification import DEFAULT_POLICY
 from trading.tested_strategy_research import (
@@ -543,6 +544,7 @@ def build_research_matrix(days: int = 90) -> dict:
     with get_conn() as conn:
         authored_exits = load_authored_exits(conn, account_id, cutoff)
         profit_tests = load_profit_tests(conn, account_id, cutoff)
+        reference_tests = load_reference_tests(conn, account_id, cutoff)
         rows = conn.execute(
             """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
                       s.direction,s.metadata_json,
@@ -673,6 +675,12 @@ def build_research_matrix(days: int = 90) -> dict:
                 timely_samples, strategy_id, ticker,
             )
             samples = _distinct_samples(rule_samples, exit_minutes)
+            # Deduplicate inside each experiment's cohort. A paper candidate
+            # with the same trigger must not hide its separate research test.
+            profit_samples = _distinct_samples(
+                [row for row in rule_samples if row['candidate_id'] in profit_tests], exit_minutes)
+            reference_samples = _distinct_samples(
+                [row for row in rule_samples if row['candidate_id'] in reference_tests], exit_minutes)
             selection_reasons = _contract_selection_reasons(samples)
             exit_summaries = []
             current_results: list[tuple[str, float]] = []
@@ -735,7 +743,8 @@ def build_research_matrix(days: int = 90) -> dict:
             )
             pairs.append({
                 "ticker": ticker,
-                "profit_protection_comparison": profit_test_summary(samples, profit_tests, strategy_id) if strategy_id in PROTOCOL_BY_STRATEGY else None,
+                "reference_contract_test": reference_summary(reference_samples, reference_tests, strategy_id),
+                "profit_protection_comparison": profit_test_summary(profit_samples, profit_tests, strategy_id) if strategy_id in PROTOCOL_BY_STRATEGY else None,
                 "authored_exit_evidence": authored_summary(samples, authored_exits, PROTOCOLS[strategy_id]) if strategy_id in PROTOCOLS else None,
                 "status": status,
                 "explanation": explanation,

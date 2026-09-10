@@ -61,6 +61,15 @@ def observe_candidate_contract(
     if not candidate_id or price <= 0:
         return
 
+    if research_only:
+        from trading.entry.reference_contract_observation import observe as observe_reference
+        try:
+            observe_reference(candidate_id=candidate_id, strategy_id=strategy_id, ticker=ticker,
+                              direction=direction, price=price, meta=meta, tradier=tradier,
+                              selection_cache=selection_cache)
+        except Exception:
+            logger.warning('Reference contract observation failed for %s; main research continues', ticker, exc_info=True)
+
     reviewed = uses_v2_orb_execution_profile(strategy_id)
     research_profile = research_contract_profile(strategy_id) if research_only else None
     maximum = (

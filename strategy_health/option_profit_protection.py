@@ -22,12 +22,13 @@ def metadata(strategy_id):
     return {'profit_protection_protocol': protocol} if protocol else {}
 
 
-def initialize(entry_at, ask, bid):
+def initialize(entry_at, ask, bid, *, minutes=30):
     entry = et(entry_at)
     valid = (all(isinstance(v, (float, int)) and math.isfinite(v) for v in (ask, bid))
              and 0 <= bid <= ask and ask > 0
              and entry.replace(hour=9, minute=30, second=0, microsecond=0) <= entry
-             and entry + timedelta(minutes=30) <= entry.replace(hour=15, minute=55, second=0, microsecond=0))
+             and minutes in {30, 90}
+             and entry + timedelta(minutes=minutes) <= entry.replace(hour=15, minute=55, second=0, microsecond=0))
     status = 'collecting' if valid else 'invalid_entry'
     return dict(control={'status': status}, trail={'status': status},
                 spread=max(.01, ask-bid) if valid else None,
@@ -35,7 +36,7 @@ def initialize(entry_at, ask, bid):
                 high_bid=None, stop=None)
 
 
-def advance(state, *, entry_at, ask, contract, now, quote=None, allow_arm=True):
+def advance(state, *, entry_at, ask, contract, now, quote=None, allow_arm=True, minutes=30):
     """Causal state transition: test prior stop; price only a later exchange bid.
 
     Both calls and puts are long options: a higher premium is favorable.
@@ -45,14 +46,16 @@ def advance(state, *, entry_at, ask, contract, now, quote=None, allow_arm=True):
     """
     out = deepcopy(state)
     now, entry = et(now), et(entry_at)
-    cap = entry + timedelta(minutes=30)
+    if minutes not in {30, 90}:
+        raise ValueError('Unsupported frozen exit horizon')
+    cap = entry + timedelta(minutes=minutes)
     for name in ('control', 'trail'):
         leg = out[name]
         if leg['status'] == 'collecting':
             if name == 'trail' and (min(now, cap)-et(out['last_received_at'])).total_seconds() > MAX_GAP_SECONDS:
                 leg.update(status='missing_path', reason='quote_gap_over_120s')
             elif now >= cap:
-                leg.update(status='pending_quote', decision_at=cap.isoformat(), reason='fixed_30m')
+                leg.update(status='pending_quote', decision_at=cap.isoformat(), reason=f'fixed_{minutes}m')
         if leg['status'] == 'pending_quote' and now > et(leg['decision_at'])+timedelta(seconds=60):
             leg['status'] = 'missing_quote'
     if quote is None or now <= entry:

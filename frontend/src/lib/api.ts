@@ -166,6 +166,13 @@ export interface StrategyTickerResearchPair {
   leading_contract_test: ResearchContractTest | null;
   research_contract_profile: string | null;
   tradable: boolean;
+  reference_contract_test?: {
+    profile_version: string; minutes: number; tracked: number; selected: number;
+    first_test_at: string | null; option_results: number; result_days: number;
+    control: {profit_factor: number | "infinite" | null; net_pnl: number | null; maximum_drawdown: number | null};
+    statuses: Record<string, number>; selection_reasons: Record<string, number>;
+    profit_protection: StrategyTickerResearchPair["profit_protection_comparison"];
+  } | null;
   profit_protection_comparison?: {
     target_reached?: number;
     protocol: string; tracked: number; paired_results: number; paired_days: number; unpaired: number;
