@@ -27,13 +27,13 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
     Five minutes are allowed for delayed bars before closing that evidence gap.
     """
     entry, now = et(entry_at), et(now)
-    if timeframe_minutes not in {5, 15}:
+    if timeframe_minutes not in {1, 5, 15}:
         return entry, "invalid_entry"
     interval = timedelta(minutes=timeframe_minutes)
     if (entry.minute % timeframe_minutes or entry.second or entry.microsecond
             or not entry.replace(hour=9, minute=30) <= entry < entry.replace(hour=16, minute=0)):
         return entry, "invalid_entry"
-    if not entry <= et(entry_quote_at) < entry + timedelta(minutes=5):
+    if not entry <= et(entry_quote_at) < entry + timedelta(minutes=min(timeframe_minutes, 5)):
         return entry, "late_entry_quote"
     try:
         stop, target = float(stop), float(target)

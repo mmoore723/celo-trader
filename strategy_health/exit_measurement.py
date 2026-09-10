@@ -28,7 +28,7 @@ _AUTHORED_EXITS = {
     "CTX_VWAP_PULLBACK_KER10_LONG": "Exit at the prior high or when a completed 5-minute candle closes below VWAP.",
     "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": "Exit at the frozen prior high, a completed 5-minute close below VWAP, or 3:55 PM.",
     "CTX_1H_SQUEEZE_MACD_LONG": "Exit at +150% option profit or when an hourly candle closes back inside the 20-SMA.",
-    "V2_AFTERNOON_COMPRESSION_BREAKOUT": "Exit at the signal's structural stop or 2R target.",
+    "V2_AFTERNOON_COMPRESSION_BREAKOUT": "Check the original stop and 2R target at each 1-minute close. This intraday test ends at 4:00 PM.",
     "V2_AFTERNOON_REVERSAL": "Check the original stop and 2R target at each 5-minute close; exit by market close.",
     "V2_EMA_PULLBACK_RTH": "Check the original stop and 2.06R target at each 15-minute close. Corrected session exit: 4:00 PM.",
     "V2_FAIR_VALUE_GAP": "Check the original stop and 2R target at each 5-minute close. This intraday test ends by market close.",

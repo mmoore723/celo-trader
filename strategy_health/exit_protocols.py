@@ -1,7 +1,7 @@
 """Explicit registry of implemented observation protocols, never order routes."""
 from strategy_health import impulse_exit, supertrend_exit, momentum_exit, gap_fill_exit, trend_exit, vwap_exit
 from strategy_health import afternoon_exit, fvg_exit, midday_exit, orb_exit, turtle_exit, reversion_exit
-from strategy_health import ema_exit, rsi_macd_exit
+from strategy_health import ema_exit, rsi_macd_exit, compression_exit
 
 PROTOCOLS = {
     impulse_exit.STRATEGY_ID: impulse_exit.PROTOCOL,
@@ -18,6 +18,7 @@ PROTOCOLS = {
     reversion_exit.STRATEGY_ID: reversion_exit.PROTOCOL,
     ema_exit.STRATEGY_ID: ema_exit.PROTOCOL,
     rsi_macd_exit.STRATEGY_ID: rsi_macd_exit.PROTOCOL,
+    compression_exit.STRATEGY_ID: compression_exit.PROTOCOL,
 }
 SHORT_TRAIL_PROTOCOLS = {
     module.PROTOCOL: (module.STRATEGY_ID, module.LOW_WATER_PROTOCOL)
@@ -56,6 +57,8 @@ def candidate_metadata(strategy_id, strategy):
         result["authored_exit_state"] = ema_exit.entry_state(strategy)
     if strategy_id == rsi_macd_exit.STRATEGY_ID:
         result["authored_exit_state"] = rsi_macd_exit.entry_state(strategy)
+    if strategy_id == compression_exit.STRATEGY_ID:
+        result["authored_exit_state"] = compression_exit.entry_state(strategy)
     return result
 
 
@@ -95,6 +98,9 @@ def first_exit(protocol, frame, *, entry_at, entry_quote_at, direction, meta, no
     if protocol == rsi_macd_exit.PROTOCOL:
         return rsi_macd_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),
                                         stop=meta["underlying_stop"], target=meta["underlying_target"])
+    if protocol == compression_exit.PROTOCOL:
+        return compression_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),
+                                           stop=meta["underlying_stop"], target=meta["underlying_target"])
     if protocol in {momentum_exit.PROTOCOL, momentum_exit.LOW_WATER_PROTOCOL}:
         return momentum_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),
                                         stop=meta["underlying_stop"], target=meta["underlying_target"],
