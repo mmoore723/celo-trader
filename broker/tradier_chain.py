@@ -10,11 +10,17 @@ into TradierClient in broker/tradier_client.py.
 import logging
 from typing import Optional
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from config import MIN_OPEN_INTEREST, MAX_BID_ASK_SPREAD
 from broker.tradier_market import _quote_age_seconds
 
 logger = logging.getLogger("celo_trader.broker")
+
+
+def _market_date() -> date:
+    """Use the market's date, which can differ from the EC2 UTC date."""
+    return datetime.now(ZoneInfo("America/New_York")).date()
 
 
 class TradierChainMixin:
@@ -129,10 +135,20 @@ class TradierChainMixin:
 
     # ── Expirations ───────────────────────────────────────────────────────────
 
-    def get_expirations(self, symbol: str) -> list[str]:
-        """Return expiry dates 7–21 days out."""
+    def get_expirations(
+        self, symbol: str, *, minimum_dte: int = 7,
+        maximum_dte: int = 21, limit: int = 3,
+    ) -> list[str]:
+        """Return expirations inside an explicit market-date DTE window.
+
+        The defaults preserve the reviewed order path. Research supplies its
+        own declared window, including 0–7 DTE and 3–5 DTE studies.
+        """
         if not getattr(self, "api_key", ""):
             return []
+        minimum_dte = max(0, int(minimum_dte))
+        maximum_dte = max(minimum_dte, int(maximum_dte))
+        limit = max(1, int(limit))
         try:
             resp = self._get("/markets/options/expirations", {
                 "symbol": symbol, "includeAllRoots": "true", "strikes": "false",
@@ -140,14 +156,14 @@ class TradierChainMixin:
             dates = resp.get("expirations", {}).get("date", [])
             if isinstance(dates, str):
                 dates = [dates]
-            today = date.today()
+            today = _market_date()
             result = []
             for d in dates:
                 dt = date.fromisoformat(d)
                 days_out = (dt - today).days
-                if 7 <= days_out <= 21:
+                if minimum_dte <= days_out <= maximum_dte:
                     result.append(d)
-            return result[:3]
+            return result[:limit]
         except Exception as e:
             logger.error("get_expirations(%s) failed: %s", symbol, e)
             return []

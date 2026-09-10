@@ -12,8 +12,10 @@ class _Tradier:
     def __init__(self, expirations, chains):
         self.expirations = expirations
         self.chains = chains
+        self.expiration_kwargs = None
 
-    def get_expirations(self, _ticker):
+    def get_expirations(self, _ticker, **kwargs):
+        self.expiration_kwargs = kwargs
         return self.expirations
 
     def get_option_chain(self, _ticker, expiry, _option_type):
@@ -46,6 +48,9 @@ class ResearchContractSelectionTests(unittest.TestCase):
         self.assertIn("target_150_250", policies)
         self.assertIn("closest_otm_150_1000", policies)
         self.assertEqual(1000.0, info["research_profile"]["maximum_contract_dollars"])
+        self.assertEqual({
+            "minimum_dte": 0, "maximum_dte": 7, "limit": 8,
+        }, tradier.expiration_kwargs)
 
     def test_squeeze_enforces_three_to_five_dte(self):
         profile = research_contract_profile("CTX_1H_SQUEEZE_MACD_LONG")
@@ -63,6 +68,9 @@ class ResearchContractSelectionTests(unittest.TestCase):
                 tradier, "QQQ", "bullish", 700.0, "CTX_1H_SQUEEZE_MACD_LONG",
             )
         self.assertEqual("QQQ_3D", selected["symbol"])
+        self.assertEqual({
+            "minimum_dte": 3, "maximum_dte": 5, "limit": 8,
+        }, tradier.expiration_kwargs)
 
     def test_research_selector_accepts_any_collected_ticker_without_order_authority(self):
         tradier = _Tradier(["2026-09-04"], {

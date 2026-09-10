@@ -62,6 +62,18 @@ large winners were cut early. The later sample had only nine outcomes and a
 negative median. Any second exit family is exploratory because that holdout has
 now been inspected; it must earn promotion on fresh data after July 31, 2026.
 
+## Cross-queue data repair
+
+The first VWAP Pullback diagnosis exposed a catalog-wide option-collection
+defect. Research profiles declare 0–7 DTE contracts, and the squeeze declares
+3–5 DTE, but the shared Tradier expiration reader returned only 7–21 DTE.
+Consequently, ordinary research could see only the single overlap at exactly
+7 DTE, while the squeeze's intended window was impossible. The repair passes
+each research profile's explicit DTE window to the market-data client and keeps
+the reviewed paper/live default at 7–21 DTE. It also calculates DTE from the
+New York market date rather than the EC2 server's UTC date. Historical rows are
+not rewritten; future setups will show whether quote coverage improves.
+
 ## Loop rules
 
 1. Use current production aggregates to pick the highest-information target.

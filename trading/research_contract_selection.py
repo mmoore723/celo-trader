@@ -183,7 +183,12 @@ def select_research_contract(
         return None, info
     option_type = "call" if direction == "bullish" else "put"
     try:
-        expirations = tradier.get_expirations(ticker)
+        expirations = tradier.get_expirations(
+            ticker,
+            minimum_dte=profile.minimum_dte,
+            maximum_dte=profile.maximum_dte,
+            limit=8,
+        )
     except Exception:
         info["reason"] = "api_error"
         return None, info
