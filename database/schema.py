@@ -471,6 +471,9 @@ def _init_db_at(db_path: Path) -> None:
         from database.research_exit_variants import CREATE_TABLE as VARIANT_TABLE, CREATE_INDEX as VARIANT_INDEX
         conn.execute(VARIANT_TABLE)
         conn.execute(VARIANT_INDEX)
+        from database.option_profit_protection import CREATE_TABLE as PROFIT_TABLE, CREATE_INDEX as PROFIT_INDEX
+        conn.execute(PROFIT_TABLE)
+        conn.execute(PROFIT_INDEX)
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)

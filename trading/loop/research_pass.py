@@ -1,17 +1,19 @@
 """Order-free watchlist collection and the existing prospective observers."""
 import logging
+from time import monotonic
 from types import SimpleNamespace
 
 import pandas as pd
 
 from auth.context import get_current_user_id
 from config.strategy_catalog import (
-    enabled_observation_strategy_ids, enabled_reviewed_strategy_ids,
+    enabled_observation_strategy_ids,
     reviewed_execution_strategy_ids,
 )
 from database import load_scanner_candles, record_scanner_candles
 from database.option_quotes import capture_due_candidate_option_quotes
 from database.research_exits import capture_authored_exits
+from database.option_profit_protection import capture as capture_profit_protection
 from shadow_ledger import mark_candidate_observed_only
 from signals import bars_to_df
 from strategy_router import route_signals
@@ -47,11 +49,10 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
     record_scanner_candles(ticker, current, broker_account_id=account)
     if not settings.get("shadow_ledger_enabled", True):
         return
-    enabled = enabled_reviewed_strategy_ids(settings, ticker=ticker)
     observed = enabled_observation_strategy_ids(settings, ticker=ticker)
-    # Every reviewed execution rule keeps researching the rest of the scanner
-    # universe. Trading scope and research scope must never be the same list.
-    observed |= reviewed_execution_strategy_ids() - enabled
+    # Native trading pairs also need the separate, uncapped research path.
+    # All IDs stay observation-only here; the router receives no order IDs.
+    observed |= reviewed_execution_strategy_ids()
     tested_ids = enabled_tested_research_ids(settings)
     if observed or tested_ids:
         frame = current
@@ -118,6 +119,20 @@ def run_research_pass(readers, snapshot, state, stopped):
     alpaca, tradier = readers
     if stopped():
         return
+    def profit_checkpoint(force=False):
+        if not snapshot['settings'].get('shadow_ledger_enabled', True) or stopped():
+            return
+        now = monotonic()
+        if not force and now-state.get('profit_checkpoint_at', -float('inf')) < 30:
+            return
+        state['profit_checkpoint_at'] = now
+        try:
+            capture_profit_protection(account=snapshot['settings'].get('active_broker_account_id'),
+                                      quote_lookup=tradier.get_option_quote, stopped=stopped, clock=_now_et)
+        except Exception:
+            logger.warning('Profit-protection checkpoint failed; research continues', exc_info=True)
+
+    profit_checkpoint(force=True)
     # Pending exits have priority over the expensive all-ticker signal replay.
     # Include the close so 15:55 candles can decide at 16:00, without new entries.
     if snapshot["settings"].get("shadow_ledger_enabled", True):
@@ -138,10 +153,12 @@ def run_research_pass(readers, snapshot, state, stopped):
     for ticker in snapshot["tickers"]:
         if stopped():
             break
+        profit_checkpoint()
         try:
             observe_ticker(alpaca, tradier, ticker, snapshot["settings"], state,
                            snapshot["risk"], snapshot["balance"], stopped)
         except Exception:
             logger.warning("Research scan failed for %s; continuing other tickers", ticker, exc_info=True)
+    profit_checkpoint()
     if not stopped():
         maybe_observe(alpaca, tradier)

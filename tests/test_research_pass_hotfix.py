@@ -15,6 +15,7 @@ from tests.test_scan_timing_hotfix import settings
 class ResearchPassTests(unittest.TestCase):
     def setUp(self):
         self.exits = patch("trading.loop.research_pass.capture_authored_exits").start()
+        self.profit = patch("trading.loop.research_pass.capture_profit_protection").start()
         self.addCleanup(patch.stopall)
 
     def test_pending_exit_sweep_runs_after_close_without_new_signal_scans(self):
@@ -23,6 +24,7 @@ class ResearchPassTests(unittest.TestCase):
         with patch("trading.loop.research_pass.observe_ticker") as observer:
             run_research_pass((market, Mock()), {"settings": {}, "tickers": ["META"]}, {}, lambda: False)
         self.exits.assert_called_once()
+        self.profit.assert_called_once()
         observer.assert_not_called()
 
     def test_market_readers_have_no_order_or_account_mutation_capability(self):
@@ -30,6 +32,14 @@ class ResearchPassTests(unittest.TestCase):
         for reader in readers:
             for forbidden in ("place_option_order", "cancel_order", "_post", "_delete", "get_account"):
                 self.assertFalse(hasattr(reader, forbidden))
+
+    def test_profit_quotes_checkpoint_between_tickers_without_skipping_scans(self):
+        with patch('trading.loop.research_pass.monotonic', side_effect=[0, 10, 35, 40]), patch(
+            'trading.loop.research_pass.observe_ticker',
+        ) as observe, patch('trading.loop.research_pass.maybe_observe'):
+            run_research_pass((Mock(), Mock()), dict(settings={},tickers=['SPY','META'],risk=Mock(),balance=4000), {}, lambda:False)
+        self.assertEqual(2,self.profit.call_count)
+        self.assertEqual(['SPY','META'],[call.args[2] for call in observe.call_args_list])
 
     def test_all_watchlist_names_archive_when_entry_strategies_are_disabled(self):
         market = Mock()
@@ -75,7 +85,7 @@ class ResearchPassTests(unittest.TestCase):
             observe_ticker(market, Mock(), "TSLA", settings(), {}, Mock(), 4000, lambda: False)
         args = route.call_args.kwargs
         self.assertEqual(set(), args["enabled_strategies"])
-        self.assertNotIn("V2_TSLA_TWO_LEG_TREND_PULLBACK", args["observation_only_strategies"])
+        self.assertIn("V2_TSLA_TWO_LEG_TREND_PULLBACK", args["observation_only_strategies"])
         self.assertIn("V2_SPY_TREND_CONT", args["observation_only_strategies"])
         self.assertTrue(args["observation_scope"].startswith("research_worker:"))
 

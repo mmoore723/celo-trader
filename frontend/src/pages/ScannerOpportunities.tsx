@@ -4,6 +4,7 @@ import { SearchX } from "lucide-react";
 import { api, type ScannerOpportunity, type StrategyResearchMatrix, type StrategyTickerResearchPair } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 import { AuthoredExitEvidence } from "../components/AuthoredExitEvidence";
+import { ProfitProtectionComparison } from "../components/ProfitProtectionComparison";
 import { collapseOpportunityEpisodes, opportunityDecisionTitle, opportunityLifecycle, opportunityReason } from "../lib/opportunitySemantics.js";
 import { numericProfitFactor, profitFactorText, researchActionLabel, researchPairVisible, researchProfitFactorText, sortResearchPairs } from "../lib/researchPairView.js";
 
@@ -80,6 +81,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
       </div>
     </div>
     {pair.authored_exit_evidence && <div className="px-3 pb-2 text-xs"><AuthoredExitEvidence evidence={pair.authored_exit_evidence} /></div>}
+    {pair.profit_protection_comparison && <div className="px-3 pb-2 text-xs"><ProfitProtectionComparison comparison={pair.profit_protection_comparison} /></div>}
     <details className="px-3 pb-3 text-xs">
       <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>Evidence and test plan</summary>
       <div className="grid gap-2 mt-3 sm:grid-cols-2 lg:grid-cols-4" style={{ color: "var(--ink-muted)" }}>
