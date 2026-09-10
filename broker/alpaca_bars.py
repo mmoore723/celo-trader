@@ -32,11 +32,13 @@ class AlpacaBarsMixin:
         self, symbol: str, timeframe: str, limit: int = 100
     ) -> tuple[list[dict], bool]:
         """
-        Fetch OHLCV bars.
+        Fetch up to limit newest OHLCV bars, returned oldest-to-newest.
         Returns (bars, is_error) — caller can distinguish empty-market from API failure.
         is_error=True means the API call failed; is_error=False means success (may be empty).
         """
         import datetime as _dt
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            return [], True
         tf_map = {"5Min": "5Min", "15Min": "15Min", "60Min": "1Hour", "1Hour": "1Hour",
                   "1Day": "1Day", "Day": "1Day", "1D": "1Day"}
         tf  = tf_map.get(timeframe, timeframe)
@@ -44,9 +46,13 @@ class AlpacaBarsMixin:
 
         # For daily bars Alpaca only returns the current partial bar without a start date
         # Explicitly request 6 months back to get full historical daily data
-        params = {"timeframe": tf, "limit": limit, "adjustment": "split", "feed": "iex"}
+        # Fetch newest first: an ascending limit selects an old prefix of
+        # the padded window, potentially omitting weeks immediately before
+        # today. Indicators still receive chronological bars below.
+        params = {"timeframe": tf, "limit": min(limit, 10000),
+                  "adjustment": "split", "feed": "iex", "sort": "desc"}
         if tf == "1Day":
-            start = (_dt.datetime.utcnow() - _dt.timedelta(days=180)).strftime("%Y-%m-%d")
+            start = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=180)).strftime("%Y-%m-%d")
             params["start"] = start
         else:
             # FIX 2026-06-20: intraday timeframes (5Min/15Min/1Hour) had NO start
@@ -63,7 +69,7 @@ class AlpacaBarsMixin:
             # Pad 1.6x for weekends/holidays, plus a flat 5-day floor so small
             # `limit` requests still get a sane minimum lookback window.
             _calendar_days_back = max(5, int(_trading_days_needed * 1.6) + 3)
-            start = (_dt.datetime.utcnow() - _dt.timedelta(days=_calendar_days_back)).strftime("%Y-%m-%d")
+            start = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=_calendar_days_back)).strftime("%Y-%m-%d")
             params["start"] = start
 
         try:
@@ -77,17 +83,28 @@ class AlpacaBarsMixin:
             # before "today" instead of reaching it. Loop until no token is
             # left or we've collected `limit` bars; 20-page hard cap so a
             # pagination bug on Alpaca's end can't spin this forever.
-            bars: list[dict] = []
+            by_time: dict[_dt.datetime, dict] = {}
+            seen_tokens: set[str] = set()
             page_params = dict(params)
             for _ in range(20):
                 resp = self._get(url, page_params)
                 # FIX 2026-06-20: resp.get("bars", []) only applies the [] default when
                 # the "bars" KEY IS MISSING. Alpaca can return the key present with a
-                bars.extend(resp.get("bars") or [])
+                for bar in resp.get("bars") or []:
+                    stamp = _dt.datetime.fromisoformat(bar["t"].replace("Z", "+00:00"))
+                    if stamp.tzinfo is None:
+                        raise ValueError("Bar timestamp has no timezone")
+                    by_time.setdefault(stamp.astimezone(_dt.timezone.utc), bar)
                 _token = resp.get("next_page_token")
-                if not _token or len(bars) >= limit:
+                if not _token or len(by_time) >= limit:
                     break
+                if _token in seen_tokens:
+                    raise ValueError("Repeated historical bar page token")
+                seen_tokens.add(_token)
                 page_params = dict(params, page_token=_token)
+            else:
+                raise ValueError("Historical bar pagination limit reached")
+            bars = [by_time[stamp] for stamp in sorted(by_time)[-limit:]]
             logger.debug("Got %d bars for %s %s", len(bars), symbol, timeframe)
             return bars, False          # success — possibly empty list
         except _AlpacaCircuitOpenError:
