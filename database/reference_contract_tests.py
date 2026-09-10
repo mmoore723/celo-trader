@@ -6,7 +6,7 @@ from config.strategy_catalog import REVIEWED_STRATEGIES
 from database.connection import get_conn
 from strategy_health.impulse_exit import et
 from strategy_health.option_profit_protection import (
-    PROTOCOL_BY_STRATEGY, RECOVERY_PROTOCOL, initialize, summary as profit_summary,
+    PROTOCOL_BY_STRATEGY, RECOVERY_PROTOCOL, ORB_STRATEGY_ID, initialize, summary as profit_summary,
 )
 from strategy_health.recovery_profit_protection import freeze
 
@@ -75,9 +75,14 @@ def load(conn, account, cutoff=None, *, active_only=False):
     result = {}
     for row in rows:
         sid = row['strategy_id']
+        allowed_protocols = {PROTOCOL_BY_STRATEGY.get(sid, f"reference_fixed_{row['minutes']}m_v1")}
+        # Pre-trail ORB controls remain visible and finish on their original
+        # protocol. Never turn their historical path into a new trail sample.
+        if sid == ORB_STRATEGY_ID:
+            allowed_protocols.add('reference_fixed_90m_v1')
         if (sid not in STRATEGIES or (row['strategy_version'], row['minutes']) != STRATEGIES[sid]
                 or REVIEWED_STRATEGIES[sid].version != row['strategy_version']
-                or row['protocol'] != PROTOCOL_BY_STRATEGY.get(sid, f"reference_fixed_{row['minutes']}m_v1")):
+                or row['protocol'] not in allowed_protocols):
             continue
         result[row['candidate_id']] = dict(row, state=json.loads(row['state_json']))
     return result

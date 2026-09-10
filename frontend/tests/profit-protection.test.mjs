@@ -52,3 +52,13 @@ test("reference exit comparison cannot be mislabeled as the generic cohort",()=>
   assert.match(html,/7–21-day options/);
   assert.doesNotMatch(html,/0–7-day options/);
 });
+test("ORB comparison labels its actual 90-minute control in both cohorts",()=>{
+  const comparison={...empty,minutes:90,protocol:"orb_option_3spread_arm_2spread_trail_90m_v1",
+    paired_results:1,control:{profit_factor:.8,net_pnl:-10},trail:{profit_factor:1.6,net_pnl:20},
+    average_improvement:30,median_improvement:30};
+  for(const html of [render(comparison),renderReference({...reference,profit_protection:comparison})]){
+    assert.match(html,/90-minute exit PF/);assert.match(html,/Both exit by 90 minutes/);
+    assert.doesNotMatch(html,/30-minute|by 30 minutes/);
+    assert.match(html,/trading rules stay unchanged/);
+  }
+});

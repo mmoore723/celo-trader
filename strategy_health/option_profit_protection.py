@@ -11,7 +11,12 @@ PROTOCOL = 'option_bid_3spread_arm_2spread_trail_30m_v1'
 VERSION = '2.1.0'
 RECOVERY_STRATEGY_ID = 'V2_FAILED_OR_BREAK_VWAP_REVERSION'
 RECOVERY_PROTOCOL = 'recovery_vwap_then_option_3spread_2spread_30m_v1'
-PROTOCOL_BY_STRATEGY = {STRATEGY_ID: PROTOCOL, RECOVERY_STRATEGY_ID: RECOVERY_PROTOCOL}
+ORB_STRATEGY_ID = 'V2_ORB_PULLBACK'
+ORB_PROTOCOL = 'orb_option_3spread_arm_2spread_trail_90m_v1'
+PROTOCOL_BY_STRATEGY = {STRATEGY_ID: PROTOCOL, RECOVERY_STRATEGY_ID: RECOVERY_PROTOCOL,
+                        ORB_STRATEGY_ID: ORB_PROTOCOL}
+VERSION_BY_STRATEGY = {STRATEGY_ID: VERSION, RECOVERY_STRATEGY_ID: VERSION, ORB_STRATEGY_ID: '2.0.0'}
+MINUTES_BY_STRATEGY = {STRATEGY_ID: 30, RECOVERY_STRATEGY_ID: 30, ORB_STRATEGY_ID: 90}
 # Frozen before forward outcomes: $0.65/side, $0.01/side slippage, 100 shares.
 ROUND_TRIP_PRICE_COST = .033
 MAX_GAP_SECONDS = 120
@@ -113,7 +118,7 @@ def summary(samples, rows, strategy_id=STRATEGY_ID):
             trails.append(b)
             differences.append(round(pb-pa, 2))
             days.add(et(row['entry_quote_at']).date().isoformat())
-    return dict(protocol=protocol, tracked=len(selected), paired_results=len(controls),
+    return dict(protocol=protocol, minutes=MINUTES_BY_STRATEGY[strategy_id], tracked=len(selected), paired_results=len(controls),
                 target_reached=sum(bool(r['state'].get('target_detected_at')) for r in selected),
                 paired_days=len(days), unpaired=len(selected)-len(controls), statuses=statuses,
                 control=totals(controls), trail=totals(trails),

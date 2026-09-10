@@ -70,7 +70,8 @@ class ReferenceTests(unittest.TestCase):
         self.assertIsNone(self.rows('b')['other']['state']['stop'])
 
     def test_90_minute_control_does_not_exit_at_30_or_poll_between(self):
-        self.seed(); self.reference(sid='V2_ORB_PULLBACK')
+        sid='V2_TSLA_TWO_LEG_TREND_PULLBACK'
+        self.seed(); self.reference(sid=sid)
         self.step(1801)
         self.lookup.assert_not_called()
         self.assertEqual('collecting',self.rows()['one']['state']['control']['status'])
@@ -79,7 +80,7 @@ class ReferenceTests(unittest.TestCase):
         self.assertEqual('priced',row['state']['control']['status'])
         self.assertEqual('fixed_90m',row['state']['control']['reason'])
         self.assertEqual('not_tested',row['state']['trail']['status'])
-        result=summary([{'candidate_id':'one'}],self.rows(),'V2_ORB_PULLBACK')
+        result=summary([{'candidate_id':'one'}],self.rows(),sid)
         self.assertEqual(1,result['option_results']);self.assertEqual(6.7,result['control']['net_pnl'])
         self.assertIsNone(result['profit_protection'])
         self.step(5500);self.lookup.assert_called_once()

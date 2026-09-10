@@ -174,6 +174,7 @@ export interface StrategyTickerResearchPair {
     profit_protection: StrategyTickerResearchPair["profit_protection_comparison"];
   } | null;
   profit_protection_comparison?: {
+    minutes?: number;
     target_reached?: number;
     protocol: string; tracked: number; paired_results: number; paired_days: number; unpaired: number;
     statuses: Record<string, number>;

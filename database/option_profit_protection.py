@@ -5,7 +5,7 @@ import logging
 
 from database.connection import get_conn
 from database.helpers import _now_et
-from strategy_health.option_profit_protection import PROTOCOL_BY_STRATEGY, RECOVERY_PROTOCOL, VERSION, initialize, advance
+from strategy_health.option_profit_protection import PROTOCOL_BY_STRATEGY, RECOVERY_PROTOCOL, VERSION_BY_STRATEGY, MINUTES_BY_STRATEGY, initialize, advance
 from strategy_health.recovery_profit_protection import freeze, observe_target, can_arm
 from strategy_health.impulse_exit import et
 from database.reference_contract_tests import load as load_reference_tests, TABLE as REFERENCE_TABLE
@@ -33,9 +33,9 @@ def capture(*, account, quote_lookup, bars_lookup=None, stopped=lambda: False, c
             AND q.ask>0 AND q.bid>=0 AND q.bid<=q.ask
             AND json_valid(s.metadata_json) AND json_extract(s.metadata_json,'$.profit_protection_protocol')=?
             AND json_extract(s.metadata_json,'$.strategy_version')=?''',
-                (strategy_id, account or '', (et(clock())-timedelta(days=2)).date().isoformat(), protocol, VERSION)).fetchall()
+                (strategy_id, account or '', (et(clock())-timedelta(days=2)).date().isoformat(), protocol, VERSION_BY_STRATEGY[strategy_id])).fetchall()
             for row in new:
-                state = initialize(row['observed_at'], row['ask'], row['bid'])
+                state = initialize(row['observed_at'], row['ask'], row['bid'], minutes=MINUTES_BY_STRATEGY[strategy_id])
                 if protocol == RECOVERY_PROTOCOL:
                     state = freeze(state, json.loads(row['metadata_json']), row['direction'])
                 conn.execute('INSERT OR IGNORE INTO research_option_profit_tests VALUES (?,?,?,?,?,?,1)',
@@ -46,6 +46,7 @@ def capture(*, account, quote_lookup, bars_lookup=None, stopped=lambda: False, c
                 if PROTOCOL_BY_STRATEGY.get(r['strategy_id']) == r['protocol']]
         for row in rows:
             row['_table'] = 'research_option_profit_tests'
+            row['minutes'] = MINUTES_BY_STRATEGY[row['strategy_id']]
         rows.extend(dict(r, _table=REFERENCE_TABLE)
                     for r in load_reference_tests(conn, account, active_only=True).values())
     quotes, frames = {}, {}
