@@ -466,6 +466,9 @@ def _init_db_at(db_path: Path) -> None:
         from database.research_exits import CREATE_TABLE, CREATE_INDEX
         conn.execute(CREATE_TABLE)
         conn.execute(CREATE_INDEX)
+        from database.research_exit_variants import CREATE_TABLE as VARIANT_TABLE, CREATE_INDEX as VARIANT_INDEX
+        conn.execute(VARIANT_TABLE)
+        conn.execute(VARIANT_INDEX)
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)

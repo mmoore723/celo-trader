@@ -1,9 +1,10 @@
 """Explicit registry of implemented observation protocols, never order routes."""
-from strategy_health import impulse_exit, supertrend_exit
+from strategy_health import impulse_exit, supertrend_exit, momentum_exit
 
 PROTOCOLS = {
     impulse_exit.STRATEGY_ID: impulse_exit.PROTOCOL,
     supertrend_exit.STRATEGY_ID: supertrend_exit.PROTOCOL,
+    momentum_exit.STRATEGY_ID: momentum_exit.PROTOCOL,
 }
 
 
@@ -14,6 +15,8 @@ def candidate_metadata(strategy_id, strategy):
     result = {"authored_exit_protocol": protocol}
     if strategy_id == supertrend_exit.STRATEGY_ID:
         result["authored_exit_state"] = supertrend_exit.entry_state(strategy)
+    if strategy_id == momentum_exit.STRATEGY_ID:
+        result["authored_exit_state"] = momentum_exit.entry_state(strategy)
     return result
 
 
@@ -23,4 +26,8 @@ def first_exit(protocol, frame, *, entry_at, entry_quote_at, direction, meta, no
         return impulse_exit.first_exit(frame, **common, stop=meta["underlying_stop"], target=meta["underlying_target"])
     if protocol == supertrend_exit.PROTOCOL:
         return supertrend_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"))
+    if protocol in {momentum_exit.PROTOCOL, momentum_exit.LOW_WATER_PROTOCOL}:
+        return momentum_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),
+                                        stop=meta["underlying_stop"], target=meta["underlying_target"],
+                                        short_low_water=protocol == momentum_exit.LOW_WATER_PROTOCOL)
     raise ValueError("Unknown authored exit protocol")

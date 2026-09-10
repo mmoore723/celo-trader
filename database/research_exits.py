@@ -10,6 +10,7 @@ from database.connection import get_conn
 from database.helpers import _now_et
 from strategy_health.impulse_exit import et, executable_bid
 from strategy_health.exit_protocols import PROTOCOLS, first_exit
+from database.research_exit_variants import pending_variants
 
 logger = logging.getLogger("celo_trader.research")
 CREATE_TABLE = """CREATE TABLE IF NOT EXISTS research_strategy_exits (
@@ -21,7 +22,7 @@ CREATE_TABLE = """CREATE TABLE IF NOT EXISTS research_strategy_exits (
 )"""
 CREATE_INDEX = "CREATE INDEX IF NOT EXISTS idx_research_exits_pending ON research_strategy_exits(status)"
 EXIT_REASONS = {"underlying_stop", "underlying_2r_target", "time_cap_120m",
-                "session_flatten", "end_of_available_session", "opposite_flip"}
+                "session_flatten", "end_of_available_session", "opposite_flip", "atr_trailing_stop", "time_cap_75bars"}
 
 
 def pending_exits(account, now):
@@ -39,12 +40,13 @@ def pending_exits(account, now):
             AND json_extract(s.metadata_json,'$.authored_exit_protocol')=?""",
                 (protocol, strategy_id, account or '', (et(now)-timedelta(days=2)).date().isoformat(), protocol))
         placeholders = ','.join('?' for _ in PROTOCOLS)
-        return [dict(row) for row in conn.execute(f"""SELECT e.*,s.ticker,s.trigger_bar,
+        originals = [dict(row, evidence_table="research_strategy_exits") for row in conn.execute(f"""SELECT e.*,s.ticker,s.trigger_bar,
             s.direction,s.metadata_json FROM research_strategy_exits e
             JOIN shadow_candidates s ON s.candidate_id=e.candidate_id
             WHERE e.protocol IN ({placeholders}) AND e.status IN ('collecting','pending_quote')
             AND COALESCE(s.broker_account_id,'')=? ORDER BY s.trigger_bar""",
             (*PROTOCOLS.values(), account or ''))]
+        return originals + pending_variants(conn, account, (et(now)-timedelta(days=2)).date().isoformat())
 
 
 def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda: False, clock=_now_et):
@@ -56,6 +58,10 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
         if stopped():
             break
         try:
+            table = row["evidence_table"]
+            if table not in {"research_strategy_exits", "research_strategy_exit_variants"}:
+                raise ValueError("Unknown evidence table")
+            identity = (row["candidate_id"], row["protocol"])
             now = et(clock())
             if row["status"] == "collecting":
                 meta = json.loads(row["metadata_json"])
@@ -79,19 +85,19 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                 decision, reason = event
                 status = "pending_quote" if reason in EXIT_REASONS else "unmeasurable"
                 with get_conn() as conn:
-                    conn.execute("""UPDATE research_strategy_exits SET status=?,decision_at=?,
-                        reason=?,detected_at=? WHERE candidate_id=? AND status='collecting'""",
-                        (status, decision.isoformat(), reason, et(clock()).isoformat(), row["candidate_id"]))
+                    conn.execute(f"""UPDATE {table} SET status=?,decision_at=?,
+                        reason=?,detected_at=? WHERE candidate_id=? AND protocol=? AND status='collecting'""",
+                        (status, decision.isoformat(), reason, et(clock()).isoformat(), *identity))
                     # A concurrent observer cannot replace the first latched decision.
-                    row = dict(conn.execute("SELECT * FROM research_strategy_exits WHERE candidate_id=?",
-                                            (row["candidate_id"],)).fetchone())
+                    row = dict(conn.execute(f"SELECT * FROM {table} WHERE candidate_id=? AND protocol=?",
+                                            identity).fetchone())
                 if row["status"] != "pending_quote":
                     continue
             decision, now = et(row["decision_at"]), et(clock())
             if now > decision + timedelta(minutes=5):
                 with get_conn() as conn:
-                    conn.execute("""UPDATE research_strategy_exits SET status='missing_quote'
-                        WHERE candidate_id=? AND status='pending_quote'""", (row["candidate_id"],))
+                    conn.execute(f"""UPDATE {table} SET status='missing_quote'
+                        WHERE candidate_id=? AND protocol=? AND status='pending_quote'""", identity)
                 continue
             symbol = row["contract_symbol"]
             if symbol not in quotes:
@@ -101,8 +107,8 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
             priced = executable_bid(quote, contract=symbol, decision_at=decision, received_at=received)
             if priced is not None:
                 with get_conn() as conn:
-                    conn.execute("""UPDATE research_strategy_exits SET status='priced',bid=?,bid_at=?,
-                        received_at=? WHERE candidate_id=? AND status='pending_quote'""",
-                        (*priced, et(received).isoformat(), row["candidate_id"]))
+                    conn.execute(f"""UPDATE {table} SET status='priced',bid=?,bid_at=?,
+                        received_at=? WHERE candidate_id=? AND protocol=? AND status='pending_quote'""",
+                        (*priced, et(received).isoformat(), *identity))
         except Exception:
             logger.warning("Authored exit capture failed candidate=%s; continuing", row["candidate_id"], exc_info=True)

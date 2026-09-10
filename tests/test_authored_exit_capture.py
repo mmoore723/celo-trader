@@ -151,6 +151,19 @@ class AuthoredExitCaptureTests(unittest.TestCase):
         self.assertEqual("missing_indicator_state", self.rows()[0]["reason"])
         self.quote.assert_not_called()
 
+    def test_momentum_observation_prices_actual_bid_after_first_stop_minute(self):
+        from strategy_health.momentum_exit import STRATEGY_ID as momentum_id, PROTOCOL as momentum_protocol
+        from tests.test_momentum_exit_measurement import seed
+        self.seed("momentum", strategy_id=momentum_id, protocol=momentum_protocol, state=seed())
+        self.capture()
+        row = self.rows()[0]
+        self.assertEqual("atr_trailing_stop", row["reason"])
+        self.assertEqual("2026-09-10T10:11:00", row["decision_at"])
+        self.assertEqual("priced", row["status"])
+        self.assertEqual(1.2, row["bid"])
+        self.assertEqual(0, authored_summary([row], {"momentum": row})["option_results"])
+        self.assertEqual(1, authored_summary([row], {"momentum": row}, momentum_protocol)["option_results"])
+
     def test_production_matrix_exposes_authored_sample_separately_from_timer(self):
         from strategy_health.research_matrix import build_research_matrix
         self.seed()

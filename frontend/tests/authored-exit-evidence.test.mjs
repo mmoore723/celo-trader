@@ -5,11 +5,15 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
-const source = readFileSync(new URL("../src/components/AuthoredExitEvidence.tsx", import.meta.url), "utf8");
-let compiled = ts.transpileModule(source, {compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext}}).outputText;
-compiled = compiled.replaceAll(JSON.stringify("react/jsx-runtime"), JSON.stringify(import.meta.resolve("react/jsx-runtime")));
-compiled = compiled.replace(JSON.stringify("../lib/researchPairView.js"), JSON.stringify(new URL("../src/lib/researchPairView.js", import.meta.url).href));
-const {AuthoredExitEvidence} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+function compile(name, dependencies = {}) {
+  const source = readFileSync(new URL(`../src/components/${name}.tsx`, import.meta.url), "utf8");
+  let compiled = ts.transpileModule(source, {compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext}}).outputText;
+  compiled = compiled.replaceAll(JSON.stringify("react/jsx-runtime"), JSON.stringify(import.meta.resolve("react/jsx-runtime")));
+  compiled = compiled.replace(JSON.stringify("../lib/researchPairView.js"), JSON.stringify(new URL("../src/lib/researchPairView.js", import.meta.url).href));
+  for (const [path, url] of Object.entries(dependencies)) compiled = compiled.replace(JSON.stringify(path), JSON.stringify(url));
+  return `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`;
+}
+const {AuthoredExitEvidence} = await import(compile("AuthoredExitEvidence", {"./ShortTrailComparison": compile("ShortTrailComparison")}));
 const empty = {option_results: 0, option_result_days: 0, profit_factor: null, collecting: 0,
   pending_quote: 0, missing_quote: 0, unmeasurable: 0, reasons: {}};
 const render = evidence => renderToStaticMarkup(createElement(AuthoredExitEvidence, {evidence}));
@@ -30,4 +34,13 @@ test("actual exit evidence displays its own after-cost sample and PF", () => {
   assert.match(html, /Actual exit PF: 1.60/);
   assert.match(html, /2 results · 2 result days/);
   assert.match(html, /After-cost P&amp;L \$24.00/);
+});
+
+test("paired trail experiment appears alongside, not instead of, original evidence", () => {
+  const html = render({...empty, short_trail_comparison: {
+    paired_results: 0, paired_days: 0, unpaired: 1, tracked: 1,
+  }});
+  assert.match(html, /Actual exit PF: —/);
+  assert.match(html, /Short trail test/);
+  assert.match(html, /No matched results yet/);
 });

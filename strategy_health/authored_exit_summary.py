@@ -13,11 +13,23 @@ def load_authored_exits(conn, account, cutoff):
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='research_strategy_exits'").fetchone():
         return {}
     placeholders = ','.join('?' for _ in PROTOCOLS)
-    return {row["candidate_id"]: dict(row) for row in conn.execute(f"""
+    exits = {row["candidate_id"]: dict(row) for row in conn.execute(f"""
         SELECT e.* FROM research_strategy_exits e JOIN shadow_candidates s
         ON s.candidate_id=e.candidate_id WHERE e.protocol IN ({placeholders}) AND s.observed_at>=?
         AND COALESCE(s.broker_account_id,'')=? ORDER BY s.observed_at,s.candidate_id
         """, (*PROTOCOLS.values(), cutoff, account or ''))}
+    from database.research_exit_variants import attach_variants
+    attach_variants(conn, exits, account, cutoff)
+    return exits
+
+
+def net_profit(row):
+    if row.get("status") != "priced":
+        return None
+    ask, bid = row.get("entry_ask"), row.get("bid")
+    if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (ask, bid)) or ask <= 0 or bid < 0:
+        return None
+    return round((max(0, bid - .01) - (ask + .01))*100 - 2*COMMISSION_PER_CONTRACT, 2)
 
 
 def authored_summary(samples, exits, protocol=PROTOCOL):
@@ -25,13 +37,11 @@ def authored_summary(samples, exits, protocol=PROTOCOL):
                 if s["candidate_id"] in exits and exits[s["candidate_id"]]["protocol"] == protocol]
     profits, days, closed_batches = [], set(), Counter()
     for row in selected:
-        if row["status"] != "priced":
-            continue
-        ask, bid = row["entry_ask"], row["bid"]
-        if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (ask, bid)) or ask <= 0 or bid < 0:
+        profit = net_profit(row)
+        if profit is None:
             continue
         # Same conservative costs as timer comparisons; losses include zero bids.
-        profits.append(round((max(0, bid - .01) - (ask + .01))*100 - 2*COMMISSION_PER_CONTRACT, 2))
+        profits.append(profit)
         closed_batches[row["decision_at"]] += profits[-1]
         days.add(et(row["decision_at"]).date().isoformat())
     gains, losses = sum(p for p in profits if p > 0), -sum(p for p in profits if p < 0)
@@ -41,7 +51,7 @@ def authored_summary(samples, exits, protocol=PROTOCOL):
         peak = max(peak, running)
         drawdown = max(drawdown, peak-running)
     counts = Counter(r["status"] for r in selected)
-    return {
+    result = {
         "protocol": protocol, "tracked": len(selected), "option_results": len(profits),
         "option_result_days": len(days),
         "profit_factor": round(gains/losses, 2) if losses else ("infinite" if gains else None),
@@ -56,3 +66,8 @@ def authored_summary(samples, exits, protocol=PROTOCOL):
             "candidate_id", "contract_symbol", "status", "reason", "decision_at", "entry_ask", "bid", "bid_at",
         )} for r in selected[-5:]],
     }
+    from strategy_health.exit_comparison import low_water_comparison
+    from strategy_health.momentum_exit import PROTOCOL as MOMENTUM_PROTOCOL
+    if protocol == MOMENTUM_PROTOCOL:
+        result["short_trail_comparison"] = low_water_comparison(selected)
+    return result
