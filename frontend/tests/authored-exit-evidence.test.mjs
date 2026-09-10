@@ -80,3 +80,12 @@ test("ORB separates one-contract runner from whole two-contract partial sales", 
   assert.match(html, /Sampled quotes can miss brief price touches/);
   assert.doesNotMatch(render(empty), /Two-contract split/);
 });
+
+test("KER identifies its stock-triggered exits without implying fixed option profits", () => {
+  const html=render({...empty, protocol:"context_vwap_ker_prior_high_5m_vwap_1555_v1",
+    reasons:{prior_high_target:1,five_minute_close_below_vwap:2}});
+  assert.match(html,/Earlier high reached: 1/);
+  assert.match(html,/5-minute close below VWAP: 2/);
+  assert.match(html,/3:55 PM cutoff/);
+  assert.doesNotMatch(html,/2R target|Two-contract split/);
+});

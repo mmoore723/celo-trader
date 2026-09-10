@@ -11,6 +11,7 @@ from database.helpers import _now_et
 from strategy_health.impulse_exit import et, executable_bid
 from strategy_health.exit_protocols import PROTOCOLS, first_exit
 from database.research_exit_variants import pending_variants
+from strategy_health.context_vwap_exit import PROTOCOL as CONTEXT_VWAP_PROTOCOL
 
 logger = logging.getLogger("celo_trader.research")
 CREATE_TABLE = """CREATE TABLE IF NOT EXISTS research_strategy_exits (
@@ -22,7 +23,8 @@ CREATE_TABLE = """CREATE TABLE IF NOT EXISTS research_strategy_exits (
 )"""
 CREATE_INDEX = "CREATE INDEX IF NOT EXISTS idx_research_exits_pending ON research_strategy_exits(status)"
 EXIT_REASONS = {"underlying_stop", "underlying_2r_target", "underlying_1_5r_target", "underlying_2_06r_target", "underlying_vwap_target", "time_cap_120m",
-                "session_flatten", "end_of_available_session", "opposite_flip", "atr_trailing_stop", "time_cap_75bars"}
+                "session_flatten", "end_of_available_session", "opposite_flip", "atr_trailing_stop", "time_cap_75bars",
+                "prior_high_target", "five_minute_close_below_vwap", "eod_1555_cap"}
 
 
 def pending_exits(account, now):
@@ -83,7 +85,8 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                 if not math.isfinite(row["entry_ask"]):
                     event = (entry, "invalid_entry")
                 elif entry.date() < now.date():
-                    event = (entry.replace(hour=16, minute=0), "missed_session")
+                    cap = entry.replace(hour=15,minute=55) if row['protocol']==CONTEXT_VWAP_PROTOCOL else entry.replace(hour=16,minute=0)
+                    event = (cap, "missed_session")
                 else:
                     ticker = row["ticker"]
                     if ticker not in frames:
@@ -108,13 +111,16 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                 if row["status"] != "pending_quote":
                     continue
             decision, now = et(row["decision_at"]), et(clock())
-            if now > decision + timedelta(minutes=5):
+            quote_deadline = decision + timedelta(minutes=1 if row['protocol']==CONTEXT_VWAP_PROTOCOL else 5)
+            if now > quote_deadline:
                 with get_conn() as conn:
                     conn.execute(f"""UPDATE {table} SET status='missing_quote'
                         WHERE candidate_id=? AND protocol=? AND status='pending_quote'""", identity)
                 continue
             symbol = row["contract_symbol"]
             quote, received = cached_quote(symbol)
+            if et(received)>quote_deadline:
+                continue
             priced = executable_bid(quote, contract=symbol, decision_at=decision, received_at=received)
             if priced is not None:
                 with get_conn() as conn:

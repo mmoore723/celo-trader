@@ -3,8 +3,10 @@ from strategy_health import impulse_exit, supertrend_exit, momentum_exit, gap_fi
 from strategy_health import afternoon_exit, fvg_exit, midday_exit, orb_exit, turtle_exit, reversion_exit
 from strategy_health import ema_exit, rsi_macd_exit, compression_exit, range_sweep_exit
 from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
+from strategy_health import context_vwap_exit
 
 PROTOCOLS = {
+    context_vwap_exit.STRATEGY_ID: context_vwap_exit.PROTOCOL,
     **PREMIUM_PROTOCOLS,
     impulse_exit.STRATEGY_ID: impulse_exit.PROTOCOL,
     supertrend_exit.STRATEGY_ID: supertrend_exit.PROTOCOL,
@@ -69,6 +71,8 @@ def candidate_metadata(strategy_id, strategy):
 
 def first_exit(protocol, frame, *, entry_at, entry_quote_at, direction, meta, now):
     common = dict(entry_at=entry_at, entry_quote_at=entry_quote_at, direction=direction, now=now)
+    if protocol == context_vwap_exit.PROTOCOL:
+        return context_vwap_exit.first_exit(frame, **common, meta=meta)
     if protocol == impulse_exit.PROTOCOL:
         return impulse_exit.first_exit(frame, **common, stop=meta["underlying_stop"], target=meta["underlying_target"])
     if protocol == supertrend_exit.PROTOCOL:

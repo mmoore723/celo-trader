@@ -13,6 +13,8 @@ const reasons: Record<string, string> = {
   missing_exit_state: "Missing matching exit rules",
   or_midpoint_close: "Closed through opening-range middle", eod_1555_cap: "3:55 PM exit",
   premium_target_100_pct: "Option reached +100%",
+  prior_high_target: "Earlier high reached", five_minute_close_below_vwap: "5-minute close below VWAP",
+  invalid_direction: "Direction does not match the strategy",
   missing_indicator_state: "Missing matching indicator state", entry_after_session_cutoff: "Entry outside test hours",
 };
 
@@ -26,6 +28,7 @@ export function AuthoredExitEvidence({ evidence }: { evidence: StrategyTickerRes
       <p>Sell one at +30%; exit the other at +100%, the range middle, or 3:55 PM. Sampled quotes can miss brief price touches.</p>
     </div>}
     {evidence.protocol === "ema_structural_2_06r_completed15m_rth_close_corrected_v1" && <p>15-minute exits · Corrected 4:00 PM close</p>}
+    {evidence.protocol === "context_vwap_ker_prior_high_5m_vwap_1555_v1" && <p>Earlier high · 5-minute close below VWAP · 3:55 PM cutoff</p>}
     <p>{evidence.collecting} open tests · {evidence.pending_quote} awaiting exit price · {evidence.missing_quote + evidence.unmeasurable} missing usable data</p>
     {Object.entries(evidence.reasons).filter(([reason]) => reasons[reason]).map(([reason, count]) => <span key={reason} className="mr-2">{reasons[reason]}: {count}</span>)}
     {evidence.option_results > 0 && <p>Average {money(evidence.average_one_contract_pnl)} · Typical {money(evidence.median_one_contract_pnl)} · After-cost P&amp;L {money(evidence.net_one_contract_pnl)}</p>}
