@@ -14,7 +14,7 @@ class _FakeTradier:
         self._chains = chains
         self._expirations = list(chains)
 
-    def get_expirations(self, _ticker: str) -> list[str]:
+    def get_expirations(self, _ticker: str, **_window) -> list[str]:
         return self._expirations
 
     def get_option_chain(self, _ticker: str, expiry: str, _option_type: str) -> list[dict]:

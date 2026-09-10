@@ -355,7 +355,15 @@ def select_reviewed_v2_contract(
 
     option_type = "call" if direction == "bullish" else "put"
     try:
-        expirations = tradier.get_expirations(ticker)
+        # Request the declared window BEFORE the broker filters its response.
+        # Its 7–21 DTE default silently removed Displacement's 0–6 DTE options.
+        # That rule ranks the entire same-week set by distance from $2, so its
+        # limit covers all eight possible calendar-date expirations. Other
+        # reviewed rules keep their existing three-expiration universe.
+        expirations = tradier.get_expirations(
+            ticker, minimum_dte=profile.minimum_dte, maximum_dte=profile.maximum_dte,
+            limit=8 if profile.primary_policy == "reviewed_target_150_250" else 3,
+        )
     except Exception as exc:
         logger.warning("V2 paper get_expirations(%s) raised: %s", ticker, exc)
         info["reason"] = "api_error"

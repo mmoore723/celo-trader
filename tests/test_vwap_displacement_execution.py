@@ -8,6 +8,7 @@ import pandas as pd
 
 from trading.entry.contract import select_reviewed_v2_contract
 from trading.vwap_displacement_exit import evaluate_vwap_displacement_exit
+from broker.tradier_chain import TradierChainMixin
 
 
 STRATEGY_ID = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
@@ -17,11 +18,21 @@ class _FakeTradier:
     def __init__(self, chains: dict[str, list[dict]]) -> None:
         self.chains = chains
 
-    def get_expirations(self, _ticker: str) -> list[str]:
+    def get_expirations(self, _ticker: str, **_window) -> list[str]:
         return list(self.chains)
 
     def get_option_chain(self, _ticker: str, expiry: str, _option_type: str) -> list[dict]:
         return self.chains[expiry]
+
+
+class _WindowedTradier(TradierChainMixin, _FakeTradier):
+    """Keep the REAL broker expiration filter; mock only its HTTP response."""
+    api_key = 'test-only-not-a-secret'
+    get_option_chain = _FakeTradier.get_option_chain
+
+    def _get(self, endpoint, params):
+        assert endpoint == '/markets/options/expirations'
+        return {'expirations': {'date': list(self.chains)}}
 
 
 def _frame(rows: list[tuple[str, float, float, float, float]]) -> pd.DataFrame:
@@ -29,6 +40,50 @@ def _frame(rows: list[tuple[str, float, float, float, float]]) -> pd.DataFrame:
 
 
 class VwapDisplacementContractTests(unittest.TestCase):
+    def test_other_reviewed_rules_keep_seven_to_twenty_one_days_and_three_expirations(self):
+        now=datetime(2026,9,10,11)
+        broker=_WindowedTradier({
+            (now.date()+timedelta(days=i)).isoformat():[dict(symbol=f'DTE_{i}',strike=101,bid=1.96,ask=2.0)]
+            for i in (1,7,8,9,14,22)
+        })
+        for sid in ('V2_ORB_PULLBACK','V2_SPY_TREND_CONT','V2_SPY_AFTERNOON_FVG',
+                    'V2_FAILED_OR_BREAK_VWAP_REVERSION','V2_TSLA_TWO_LEG_TREND_PULLBACK'):
+            with self.subTest(strategy=sid), patch('trading.entry.contract._now_et',return_value=now), patch('broker.tradier_chain._market_date',return_value=now.date()):
+                contract,info=select_reviewed_v2_contract(broker,'TSLA','bullish',100,500,strategy_id=sid)
+            self.assertEqual('DTE_7',contract['symbol']);self.assertEqual(3,info['eligible_contract_count'])
+
+    def test_expiration_fix_does_not_bypass_spread_or_user_budget(self):
+        now=datetime(2026,9,10,11)
+        broker=_WindowedTradier({'2026-09-11':[dict(symbol='ONE_DAY',strike=101,bid=1.96,ask=2.0)]})
+        with patch('trading.entry.contract._now_et',return_value=now), patch('broker.tradier_chain._market_date',return_value=now.date()):
+            contract,info=select_reviewed_v2_contract(broker,'TSLA','bullish',100,199,strategy_id=STRATEGY_ID)
+            self.assertIsNone(contract);self.assertEqual('over_budget',info['reason'])
+            broker.chains['2026-09-11'][0]['bid']=1.0
+            contract,info=select_reviewed_v2_contract(broker,'TSLA','bullish',100,500,strategy_id=STRATEGY_ID)
+            self.assertIsNone(contract);self.assertEqual('illiquid',info['reason'])
+
+    def test_real_broker_expiration_filter_honors_displacement_window(self):
+        now = datetime(2026, 9, 10, 11)
+        broker = _WindowedTradier({
+            '2026-09-11': [{'symbol': 'QUALIFYING_1D', 'strike': 101, 'bid': 1.96, 'ask': 2.0}],
+            '2026-09-18': [{'symbol': 'OUTSIDE_8D', 'strike': 101, 'bid': 1.96, 'ask': 2.0}],
+        })
+        with patch('trading.entry.contract._now_et', return_value=now), patch('broker.tradier_chain._market_date', return_value=now.date()):
+            contract, info = select_reviewed_v2_contract(broker, 'TSLA', 'bullish', 100, 500, strategy_id=STRATEGY_ID)
+        self.assertIsNotNone(contract, info)
+        self.assertEqual('QUALIFYING_1D', contract['symbol'])
+
+    def test_all_same_week_expirations_are_considered_not_only_first_three(self):
+        now = datetime(2026, 9, 10, 11)
+        broker = _WindowedTradier({
+            (now.date()+timedelta(days=i)).isoformat(): [dict(symbol=f'DTE_{i}',strike=101,bid=ask-.04,ask=ask)]
+            for i, ask in ((0,1.7),(1,1.8),(2,1.9),(4,2.0),(7,2.2),(8,2.0))
+        })
+        with patch('trading.entry.contract._now_et', return_value=now), patch('broker.tradier_chain._market_date', return_value=now.date()):
+            contract, info = select_reviewed_v2_contract(broker,'AMZN','bullish',100,500,strategy_id=STRATEGY_ID)
+        self.assertEqual('DTE_4',contract['symbol'])
+        self.assertEqual(5,info['eligible_contract_count'])
+
     def test_selector_uses_paid_zero_to_seven_dte_two_dollar_profile(self) -> None:
         now = datetime.fromisoformat("2026-09-03T12:00:00-04:00")
         expiries = {

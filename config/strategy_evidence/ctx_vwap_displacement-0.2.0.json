@@ -10,7 +10,7 @@
   "runtime_policy_sources": [
     {
       "path": "trading/entry/contract.py",
-      "sha256": "689776426ebdfebd2dad44f365dec87df6d37100f92eda39ff3796543ff28a17"
+      "sha256": "dad85869d9e598c0551bbd097079e4c25833ee592e6245ad114d9eddc0c923c5"
     },
     {
       "path": "trading/vwap_displacement_exit.py",
@@ -19,6 +19,16 @@
     {
       "path": "trading/v2_orb_paper_exit.py",
       "sha256": "2abfe6b3139760f8b42a3480631e4ccad90f1af794209ea8a652fce02ae449a4"
+    }
+  ],
+  "runtime_corrections": [
+    {
+      "date": "2026-09-10",
+      "file": "trading/entry/contract.py",
+      "correction": "Request the already-declared 0-7 DTE window from the broker, with up to eight date expirations. The previous implicit 7-21 DTE broker default removed 0-6 DTE choices before this selector could compare their asks.",
+      "previous_source_sha256": "689776426ebdfebd2dad44f365dec87df6d37100f92eda39ff3796543ff28a17",
+      "verification": "Integration tests retain TradierChainMixin.get_expirations and mock only its HTTP response. Before the correction, the one-day-contract test returned no contract and the closest-$2 test incorrectly chose seven days instead of four. Both pass after correction. The other five reviewed rules retain 7-21 DTE and three expirations; budget and spread gates remain enforced.",
+      "history": "No paid-test metrics, strategy version, saved switch, or paper-only restriction changed. Active admin account audit before deployment found no Displacement paper trades and no candidates since September 5. This bug is not evidence of why no raw setup appeared, and its repair does not demonstrate profitability."
     }
   ],
   "market_data": {
