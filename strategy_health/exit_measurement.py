@@ -35,7 +35,7 @@ _AUTHORED_EXITS = {
     "V2_GAP_FILL_RTH": "Track the 2-ATR stop on 1-minute candles; tighten after each 5-minute close. No fixed target; exit by session close.",
     "V2_MIDDAY_BREAKDOWN": "Check the original stop and 2R target at each 5-minute close; exit by market close.",
     "V2_OPENING_MOMENTUM_RTH_EXPLORATORY": "Track the 2-ATR stop on 1-minute candles; tighten after each 5-minute close. No fixed target; exit by session close.",
-    "V2_ORB_CONFIRMED_BREAKOUT": "Exit at the opening-range structural stop or 1.5R target.",
+    "V2_ORB_CONFIRMED_BREAKOUT": "Check the original stop and 1.5R target at each 5-minute close; exit by market close.",
     "V2_IMPULSE_ANCHORED_VWAP_PULLBACK": "Exit on a completed 5-minute candle at the structural stop, 2R target, or hold/session limit.",
     "V2_RANGE_SWEEP_RECLAIM": "Exit at the failed-sweep structural stop or the strategy target.",
     "V2_SPY_ORB_RSI_MACD_SHORT": "Exit at the signal's structural stop or target.",

@@ -50,3 +50,10 @@ test("missing reviewed exit rules are visible without a made-up PF", () => {
   assert.match(html, /Missing matching exit rules: 1/);
   assert.match(html, /Actual exit PF: —/);
 });
+
+test("the actual target ratio is displayed without mixing 1.5R and 2R", () => {
+  const html = render({...empty, reasons: {underlying_1_5r_target: 3}});
+  assert.match(html, /1.5R target reached: 3/);
+  assert.doesNotMatch(html, /2R target reached/);
+  assert.match(render({...empty, reasons: {underlying_2r_target: 2}}), /2R target reached: 2/);
+});

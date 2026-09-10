@@ -4,6 +4,7 @@ import { ShortTrailComparison } from "./ShortTrailComparison";
 
 const money = (value: number | null) => value == null ? "—" : `$${value.toFixed(2)}`;
 const reasons: Record<string, string> = {
+  underlying_1_5r_target: "1.5R target reached", underlying_2r_target: "2R target reached",
   missing_bars: "Missing candles", invalid_bars: "Invalid candles", duplicate_bars: "Repeated candles",
   late_entry_quote: "Late entry price", invalid_entry: "Invalid entry", invalid_levels: "Invalid exit levels",
   missed_session: "Session was not captured",
