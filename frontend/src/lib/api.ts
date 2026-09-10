@@ -173,6 +173,10 @@ export interface StrategyTickerResearchPair {
     average_one_contract_pnl: number | null; median_one_contract_pnl: number | null;
     collecting: number; pending_quote: number; missing_quote: number; unmeasurable: number;
     reasons: Record<string, number>;
+    partial_exit_comparison?: {
+      results: number; partial_sales: number; quotes_observed: number;
+      net_two_contract_pnl: number | null; profit_factor: number | "infinite" | null;
+    };
     short_trail_comparison?: {
       tracked: number; paired_results: number; paired_days: number; unpaired: number;
       original: { profit_factor: number | "infinite" | null; net_pnl: number | null; maximum_drawdown: number | null };

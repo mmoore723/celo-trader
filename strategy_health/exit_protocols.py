@@ -2,8 +2,10 @@
 from strategy_health import impulse_exit, supertrend_exit, momentum_exit, gap_fill_exit, trend_exit, vwap_exit
 from strategy_health import afternoon_exit, fvg_exit, midday_exit, orb_exit, turtle_exit, reversion_exit
 from strategy_health import ema_exit, rsi_macd_exit, compression_exit, range_sweep_exit
+from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
 
 PROTOCOLS = {
+    **PREMIUM_PROTOCOLS,
     impulse_exit.STRATEGY_ID: impulse_exit.PROTOCOL,
     supertrend_exit.STRATEGY_ID: supertrend_exit.PROTOCOL,
     momentum_exit.STRATEGY_ID: momentum_exit.PROTOCOL,

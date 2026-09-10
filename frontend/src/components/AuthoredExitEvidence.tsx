@@ -11,6 +11,8 @@ const reasons: Record<string, string> = {
   late_entry_quote: "Late entry price", invalid_entry: "Invalid entry", invalid_levels: "Invalid exit levels",
   missed_session: "Session was not captured",
   missing_exit_state: "Missing matching exit rules",
+  or_midpoint_close: "Closed through opening-range middle", eod_1555_cap: "3:55 PM exit",
+  premium_target_100_pct: "Option reached +100%",
   missing_indicator_state: "Missing matching indicator state", entry_after_session_cutoff: "Entry outside test hours",
 };
 
@@ -18,6 +20,11 @@ export function AuthoredExitEvidence({ evidence }: { evidence: StrategyTickerRes
   if (!evidence) return null;
   return <div className="sm:col-span-2 rounded-lg border p-2" style={{ borderColor: "var(--border)" }}>
     <b>Actual exit PF: {researchProfitFactorText(evidence.profit_factor, evidence.option_results)}</b> · {evidence.option_results} results · {evidence.option_result_days} result days
+    {evidence.partial_exit_comparison && <div>
+      <p>One-contract runner above · Two-contract split below</p>
+      <p>Split PF: {researchProfitFactorText(evidence.partial_exit_comparison.profit_factor, evidence.partial_exit_comparison.results)} · After-cost P&amp;L {money(evidence.partial_exit_comparison.net_two_contract_pnl)} · {evidence.partial_exit_comparison.partial_sales} partial sales</p>
+      <p>Sell one at +30%; exit the other at +100%, the range middle, or 3:55 PM. Sampled quotes can miss brief price touches.</p>
+    </div>}
     {evidence.protocol === "ema_structural_2_06r_completed15m_rth_close_corrected_v1" && <p>15-minute exits · Corrected 4:00 PM close</p>}
     <p>{evidence.collecting} open tests · {evidence.pending_quote} awaiting exit price · {evidence.missing_quote + evidence.unmeasurable} missing usable data</p>
     {Object.entries(evidence.reasons).filter(([reason]) => reasons[reason]).map(([reason, count]) => <span key={reason} className="mr-2">{reasons[reason]}: {count}</span>)}

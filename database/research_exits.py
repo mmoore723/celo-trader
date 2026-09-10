@@ -54,6 +54,12 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
     if stopped():
         return
     frames, quotes = {}, {}
+    def cached_quote(symbol):
+        if symbol not in quotes:
+            quotes[symbol] = (None, clock())
+            quotes[symbol] = (quote_lookup(symbol), clock())
+        return quotes[symbol]
+
     for row in pending_exits(account, clock()):
         if stopped():
             break
@@ -63,6 +69,14 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                 raise ValueError("Unknown evidence table")
             identity = (row["candidate_id"], row["protocol"])
             now = et(clock())
+            from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
+            if row['protocol'] in PREMIUM_PROTOCOLS.values():
+                from database.research_premium_exits import capture
+                ticker=row['ticker']
+                if ticker not in frames:
+                    frames[ticker]=bars_lookup(ticker)
+                capture(row, frames[ticker] if frames[ticker] is not None else pd.DataFrame(), cached_quote, clock)
+                continue
             if row["status"] == "collecting":
                 meta = json.loads(row["metadata_json"])
                 entry = et(row["trigger_bar"])
@@ -100,10 +114,7 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                         WHERE candidate_id=? AND protocol=? AND status='pending_quote'""", identity)
                 continue
             symbol = row["contract_symbol"]
-            if symbol not in quotes:
-                quotes[symbol] = (None, clock())
-                quotes[symbol] = (quote_lookup(symbol), clock())
-            quote, received = quotes[symbol]
+            quote, received = cached_quote(symbol)
             priced = executable_bid(quote, contract=symbol, decision_at=decision, received_at=received)
             if priced is not None:
                 with get_conn() as conn:

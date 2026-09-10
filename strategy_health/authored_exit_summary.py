@@ -20,6 +20,8 @@ def load_authored_exits(conn, account, cutoff):
         """, (*PROTOCOLS.values(), cutoff, account or ''))}
     from database.research_exit_variants import attach_variants
     attach_variants(conn, exits, account, cutoff)
+    from database.research_premium_exits import attach_paths
+    attach_paths(conn, exits, account, cutoff)
     return exits
 
 
@@ -70,4 +72,8 @@ def authored_summary(samples, exits, protocol=PROTOCOL):
     from strategy_health.exit_protocols import SHORT_TRAIL_PROTOCOLS
     if protocol in SHORT_TRAIL_PROTOCOLS:
         result["short_trail_comparison"] = low_water_comparison(selected, protocol)
+    from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
+    if protocol in PREMIUM_PROTOCOLS.values():
+        from strategy_health.premium_exit_summary import partial_summary
+        result['partial_exit_comparison'] = partial_summary(selected)
     return result

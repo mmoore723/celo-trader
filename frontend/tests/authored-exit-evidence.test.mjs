@@ -70,3 +70,13 @@ test("EMA evidence identifies its session-close correction and exact target", ()
   assert.match(html, /2.06R target reached: 2/);
   assert.doesNotMatch(render(empty), /Corrected 4:00 PM/);
 });
+
+test("ORB separates one-contract runner from whole two-contract partial sales", () => {
+  const html = render({...empty, partial_exit_comparison: {results: 1, partial_sales: 1,
+    quotes_observed: 2, net_two_contract_pnl: 253.4, profit_factor: "infinite"}});
+  assert.match(html, /One-contract runner above/);
+  assert.match(html, /Two-contract split below/);
+  assert.match(html, /\$253.40/);
+  assert.match(html, /Sampled quotes can miss brief price touches/);
+  assert.doesNotMatch(render(empty), /Two-contract split/);
+});

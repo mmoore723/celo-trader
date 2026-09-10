@@ -43,6 +43,9 @@ def observe_candidate_contract(
     research_only: bool = False,
 ) -> None:
     """Record a raw candidate and, when possible, its display-only contract."""
+    if research_only and isinstance(getattr(signal, 'meta', None), dict):
+        from strategy_health.context_orb_exit import metadata
+        signal.meta.update(metadata(str(getattr(signal, 'strategy_id', ''))))
     record_router_candidate(ticker, signal, underlying_price)
     meta = getattr(signal, "meta", None)
     candidate_id = meta.get("shadow_candidate_id") if isinstance(meta, dict) else None
