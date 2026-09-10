@@ -44,3 +44,9 @@ test("paired trail experiment appears alongside, not instead of, original eviden
   assert.match(html, /Short trail test/);
   assert.match(html, /No matched results yet/);
 });
+
+test("missing reviewed exit rules are visible without a made-up PF", () => {
+  const html = render({...empty, unmeasurable: 1, reasons: {missing_exit_state: 1}});
+  assert.match(html, /Missing matching exit rules: 1/);
+  assert.match(html, /Actual exit PF: —/);
+});

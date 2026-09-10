@@ -19,7 +19,8 @@ def et(value):
     return datetime.fromisoformat(_to_et_isoformat(value))
 
 
-def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now):
+def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
+               max_hold_bars=24, time_cap_reason="time_cap_120m"):
     """Return (decision time, reason), or None while still observing.
 
     Missing input is explicitly unmeasurable, not a made-up stop or a win.
@@ -31,8 +32,12 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now)
         return entry, "invalid_entry"
     if not entry <= et(entry_quote_at) < entry + timedelta(minutes=5):
         return entry, "late_entry_quote"
+    try:
+        stop, target = float(stop), float(target)
+    except (TypeError, ValueError, OverflowError):
+        return entry, "invalid_levels"
     if (direction not in {"bullish", "bearish"}
-            or not all(math.isfinite(float(v)) and float(v) > 0 for v in (stop, target))
+            or not all(math.isfinite(v) and v > 0 for v in (stop, target))
             or (direction == "bullish" and stop >= target)
             or (direction == "bearish" and stop <= target)):
         return entry, "invalid_levels"
@@ -43,14 +48,17 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now)
             return entry, "duplicate_bars"
         rows[stamp] = row
     bar_start = entry + timedelta(minutes=5)
-    deadline = min(entry + timedelta(minutes=125), entry.replace(hour=16, minute=0))
+    deadline = min(entry + timedelta(minutes=5*(max_hold_bars+1)), entry.replace(hour=16, minute=0))
     while bar_start + timedelta(minutes=5) <= min(now, deadline):
         decision = bar_start + timedelta(minutes=5)
         bucket = [rows.get(bar_start + timedelta(minutes=i)) for i in range(5)]
         if any(row is None for row in bucket):
             return (decision, "missing_bars") if now > decision + timedelta(minutes=5) else None
         for row in bucket:
-            values = [float(row[k]) for k in ("open", "high", "low", "close")]
+            try:
+                values = [float(row[k]) for k in ("open", "high", "low", "close")]
+            except (TypeError, ValueError, KeyError, OverflowError):
+                return decision, "invalid_bars"
             o, h, low, c = values
             if not all(math.isfinite(v) and v > 0 for v in values) or not low <= min(o, c) <= max(o, c) <= h:
                 return decision, "invalid_bars"
@@ -64,7 +72,7 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now)
         if decision.hour == 16:
             return decision, "session_flatten"
         if decision >= deadline:
-            return decision, "time_cap_120m"
+            return decision, time_cap_reason
         bar_start = decision
     if now >= deadline and bar_start >= deadline:
         return deadline, "end_of_available_session"

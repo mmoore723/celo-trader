@@ -39,7 +39,7 @@ _AUTHORED_EXITS = {
     "V2_IMPULSE_ANCHORED_VWAP_PULLBACK": "Exit on a completed 5-minute candle at the structural stop, 2R target, or hold/session limit.",
     "V2_RANGE_SWEEP_RECLAIM": "Exit at the failed-sweep structural stop or the strategy target.",
     "V2_SPY_ORB_RSI_MACD_SHORT": "Exit at the signal's structural stop or target.",
-    "V2_TREND_CONT": "Exit at the signal's structural stop or target.",
+    "V2_TREND_CONT": "Exit on a completed 5-minute candle at the original stop, 2R target, or hold/session limit.",
     "V2_TURTLE_SOUP_RTH": "Exit at the failed-auction structural stop or target.",
     "V2_VWAP_PULLBACK": "Exit at the signal's structural stop or target.",
     "V2_VWAP_REVERSION_RTH": "Exit at the 4-ATR stop or session VWAP target.",

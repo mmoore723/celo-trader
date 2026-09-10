@@ -7,6 +7,7 @@ const reasons: Record<string, string> = {
   missing_bars: "Missing candles", invalid_bars: "Invalid candles", duplicate_bars: "Repeated candles",
   late_entry_quote: "Late entry price", invalid_entry: "Invalid entry", invalid_levels: "Invalid exit levels",
   missed_session: "Session was not captured",
+  missing_exit_state: "Missing matching exit rules",
   missing_indicator_state: "Missing matching indicator state", entry_after_session_cutoff: "Entry outside test hours",
 };
 
