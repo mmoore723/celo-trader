@@ -6,6 +6,7 @@ their real exit. The other strategies define a stop/target, trail, flip, or
 structural exit that still needs a separate causal option quote.
 """
 from __future__ import annotations
+from strategy_health.exit_protocols import PROTOCOLS
 
 
 _EXACT_TIMED_EXITS = frozenset({
@@ -42,7 +43,7 @@ _AUTHORED_EXITS = {
     "V2_TURTLE_SOUP_RTH": "Exit at the failed-auction structural stop or target.",
     "V2_VWAP_PULLBACK": "Exit at the signal's structural stop or target.",
     "V2_VWAP_REVERSION_RTH": "Exit at the 4-ATR stop or session VWAP target.",
-    "TV_SUPERTREND_REVERSAL_V4": "Exit or reverse on the next opposite SuperTrend flip.",
+    "TV_SUPERTREND_REVERSAL_V4": "Exit on the next opposite SuperTrend flip, or at the session close.",
 }
 
 
@@ -58,5 +59,5 @@ def exit_measurement(strategy_id: object, minutes: int) -> dict[str, object]:
             normalized, "Exit at the stop or target defined by the strategy.",
         ),
         "authored_exit_collected": faithful,
-        "authored_collector_enabled": normalized == "V2_IMPULSE_ANCHORED_VWAP_PULLBACK",
+        "authored_collector_enabled": normalized in PROTOCOLS,
     }

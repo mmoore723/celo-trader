@@ -19,6 +19,7 @@ from research.engine.strategies import (
     TurtleSoupRTH, VWAPPullback, VWAPReversionRTH, RangeSweepReclaim, RangeSweepReclaimConfig,
 )
 from strategies.base import Signal
+from strategy_health.exit_protocols import candidate_metadata
 
 logger = logging.getLogger("celo_trader.research")
 
@@ -215,8 +216,7 @@ def evaluate_tested_research(
                 "underlying_target": candidate.target,
                 "exit_plan": f"same-contract bid after {spec.exit_minutes} minutes",
                 "observation_only": True,
-                **({"authored_exit_protocol": "impulse_structural_2r_completed5m_v1"}
-                   if spec.strategy_id == "V2_IMPULSE_ANCHORED_VWAP_PULLBACK" else {}),
+                **candidate_metadata(spec.strategy_id, strategy),
             },
         ))
     return results

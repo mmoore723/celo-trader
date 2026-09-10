@@ -5,21 +5,24 @@ from statistics import median
 
 from config.market_constants import COMMISSION_PER_CONTRACT
 from strategy_health.impulse_exit import PROTOCOL, et
+from strategy_health.exit_protocols import PROTOCOLS
 
 
 def load_authored_exits(conn, account, cutoff):
     # Older read-only archive fixtures may predate this additive migration.
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='research_strategy_exits'").fetchone():
         return {}
-    return {row["candidate_id"]: dict(row) for row in conn.execute("""
+    placeholders = ','.join('?' for _ in PROTOCOLS)
+    return {row["candidate_id"]: dict(row) for row in conn.execute(f"""
         SELECT e.* FROM research_strategy_exits e JOIN shadow_candidates s
-        ON s.candidate_id=e.candidate_id WHERE e.protocol=? AND s.observed_at>=?
+        ON s.candidate_id=e.candidate_id WHERE e.protocol IN ({placeholders}) AND s.observed_at>=?
         AND COALESCE(s.broker_account_id,'')=? ORDER BY s.observed_at,s.candidate_id
-        """, (PROTOCOL, cutoff, account or ''))}
+        """, (*PROTOCOLS.values(), cutoff, account or ''))}
 
 
-def authored_summary(samples, exits):
-    selected = [exits[s["candidate_id"]] for s in samples if s["candidate_id"] in exits]
+def authored_summary(samples, exits, protocol=PROTOCOL):
+    selected = [exits[s["candidate_id"]] for s in samples
+                if s["candidate_id"] in exits and exits[s["candidate_id"]]["protocol"] == protocol]
     profits, days, closed_batches = [], set(), Counter()
     for row in selected:
         if row["status"] != "priced":
@@ -39,7 +42,7 @@ def authored_summary(samples, exits):
         drawdown = max(drawdown, peak-running)
     counts = Counter(r["status"] for r in selected)
     return {
-        "protocol": PROTOCOL, "tracked": len(selected), "option_results": len(profits),
+        "protocol": protocol, "tracked": len(selected), "option_results": len(profits),
         "option_result_days": len(days),
         "profit_factor": round(gains/losses, 2) if losses else ("infinite" if gains else None),
         "net_one_contract_pnl": round(sum(profits), 2) if profits else None,

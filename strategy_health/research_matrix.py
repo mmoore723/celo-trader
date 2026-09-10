@@ -14,7 +14,7 @@ from config.strategy_catalog import (
 from strategy_health.candidate_evidence import candidate_signal_is_timely
 from strategy_health.exit_measurement import exit_measurement
 from strategy_health.authored_exit_summary import load_authored_exits, authored_summary
-from strategy_health.impulse_exit import STRATEGY_ID as IMPULSE_ID
+from strategy_health.exit_protocols import PROTOCOLS
 from strategy_health.ticker_qualification import DEFAULT_POLICY
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
@@ -732,7 +732,7 @@ def build_research_matrix(days: int = 90) -> dict:
             )
             pairs.append({
                 "ticker": ticker,
-                "authored_exit_evidence": authored_summary(samples, authored_exits) if strategy_id == IMPULSE_ID else None,
+                "authored_exit_evidence": authored_summary(samples, authored_exits, PROTOCOLS[strategy_id]) if strategy_id in PROTOCOLS else None,
                 "status": status,
                 "explanation": explanation,
                 "first_data_date": min(evidence_days.get(ticker, []), default=None),

@@ -38,12 +38,12 @@ class AuthoredExitCaptureTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def seed(self, name="one", account="a", protocol=PROTOCOL, source="tradier_research_contract_v1"):
+    def seed(self, name="one", account="a", protocol=PROTOCOL, source="tradier_research_contract_v1", strategy_id=STRATEGY_ID, state=None):
         with self.connect() as conn:
             conn.execute("""INSERT INTO shadow_candidates
                 (candidate_id,observed_at,trigger_bar,ticker,strategy_id,direction,confidence,broker_account_id,metadata_json)
                 VALUES (?,'2026-09-10T10:05:01','2026-09-10T10:05','META',?,'bullish',.7,?,?)""",
-                (name, STRATEGY_ID, account, json.dumps(dict(authored_exit_protocol=protocol,
+                (name, strategy_id, account, json.dumps(dict(authored_exit_protocol=protocol, authored_exit_state=state,
                  underlying_stop=98, underlying_target=104, strategy_version="research.1"))))
             conn.execute("""INSERT INTO candidate_option_quote_observations
                 (candidate_id,observed_at,observation_kind,contract_symbol,ask,bid,source)
@@ -126,6 +126,30 @@ class AuthoredExitCaptureTests(unittest.TestCase):
         before = self.rows()
         _init_db_at(self.path)
         self.assertEqual(before, self.rows())
+
+    def test_supertrend_and_impulse_share_capture_without_mixing_protocol_results(self):
+        from strategy_health.supertrend_exit import STRATEGY_ID as super_id, PROTOCOL as super_protocol
+        from tests.test_supertrend_exit_measurement import seed
+        self.seed()
+        self.seed("super", strategy_id=super_id, protocol=super_protocol, state=seed())
+        self.frame.loc[5:9, ["low", "close"]] = [96, 97]
+        self.capture()
+        exits = {r["candidate_id"]: r for r in self.rows()}
+        self.assertEqual("underlying_stop", exits["one"]["reason"])
+        self.assertEqual("opposite_flip", exits["super"]["reason"])
+        self.assertEqual("priced", exits["super"]["status"])
+        self.assertEqual(1, self.quote.call_count)
+        samples = [{"candidate_id": name} for name in exits]
+        self.assertEqual(1, authored_summary(samples, exits)["option_results"])
+        self.assertEqual(1, authored_summary(samples, exits, super_protocol)["option_results"])
+
+    def test_supertrend_missing_state_never_falls_back_to_dummy_stop(self):
+        from strategy_health.supertrend_exit import STRATEGY_ID as super_id, PROTOCOL as super_protocol
+        self.seed("super", strategy_id=super_id, protocol=super_protocol)
+        self.capture()
+        self.assertEqual("unmeasurable", self.rows()[0]["status"])
+        self.assertEqual("missing_indicator_state", self.rows()[0]["reason"])
+        self.quote.assert_not_called()
 
     def test_production_matrix_exposes_authored_sample_separately_from_timer(self):
         from strategy_health.research_matrix import build_research_matrix
