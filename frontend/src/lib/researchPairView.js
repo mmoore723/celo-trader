@@ -44,9 +44,10 @@ export function numericProfitFactor(value) {
 }
 
 export function researchPairVisible(pair, filter) {
+  const measured = pair.option_results > 0 || (pair.authored_exit_evidence?.option_results ?? 0) > 0;
   if (filter === "all") return true;
-  if (filter === "results") return pair.option_results > 0;
-  if (filter === "no_option") return pair.option_results === 0 && pair.setups > 0;
+  if (filter === "results") return measured;
+  if (filter === "no_option") return !measured && pair.setups > 0;
   if (filter === "no_setup") return pair.setups === 0;
   if (filter === "attention") return ["entry_tuning", "price_data", "contract_selection", "unstable", "early_loss", "entry", "exit", "contract_exit"].includes(pair.diagnosis);
   if (filter === "passing") return pair.option_results > 0 && numericProfitFactor(pair.profit_factor) >= 1.5;

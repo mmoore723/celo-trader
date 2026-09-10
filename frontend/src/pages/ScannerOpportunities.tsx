@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { SearchX } from "lucide-react";
 import { api, type ScannerOpportunity, type StrategyResearchMatrix, type StrategyTickerResearchPair } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
+import { AuthoredExitEvidence } from "../components/AuthoredExitEvidence";
 import { collapseOpportunityEpisodes, opportunityDecisionTitle, opportunityLifecycle, opportunityReason } from "../lib/opportunitySemantics.js";
 import { numericProfitFactor, profitFactorText, researchActionLabel, researchPairVisible, researchProfitFactorText, sortResearchPairs } from "../lib/researchPairView.js";
 
@@ -78,6 +79,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
         <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{plan?.test ?? pair.next_action}</p>
       </div>
     </div>
+    {pair.authored_exit_evidence && <div className="px-3 pb-2 text-xs"><AuthoredExitEvidence evidence={pair.authored_exit_evidence} /></div>}
     <details className="px-3 pb-3 text-xs">
       <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>Evidence and test plan</summary>
       <div className="grid gap-2 mt-3 sm:grid-cols-2 lg:grid-cols-4" style={{ color: "var(--ink-muted)" }}>
@@ -85,7 +87,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
         <p><b>Usable option prices:</b> {pair.quote_coverage_pct == null ? "—" : `${pair.quote_coverage_pct}%`}</p>
         <p><b>Stock moved correctly:</b> {pair.direction_accuracy == null ? "—" : `${pair.direction_accuracy}% of ${pair.direction_results}`}</p>
         <p><b>Measured:</b> {exitMeasurement.authored_exit_collected ? `${exitMeasurement.timed_minutes}-minute strategy exit` : `${exitMeasurement.timed_minutes}-minute check`}</p>
-        {!exitMeasurement.authored_exit_collected && <p className="sm:col-span-2"><b>Real exit:</b> {exitMeasurement.authored_exit} · Not measured yet</p>}
+        {!exitMeasurement.authored_exit_collected && <p className="sm:col-span-2"><b>Real exit:</b> {exitMeasurement.authored_exit} · {exitMeasurement.authored_collector_enabled ? "Tracking new research plays" : "Not measured yet"}</p>}
         {pair.option_results > 0 && <p><b>Average result:</b> {money(pair.average_one_contract_pnl)}</p>}
         {pair.option_results > 0 && <p><b>Typical result:</b> {money(pair.median_one_contract_pnl)}</p>}
         {pair.option_results > 0 && <p><b>Largest running drop:</b> {money(pair.maximum_drawdown_one_contract)}</p>}
@@ -123,8 +125,8 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
   }, [allRows, selected, tickerSearch]);
   const researchPairs = useMemo(() => sortResearchPairs(scopedRows.filter(row => researchPairVisible(row.pair, researchFilter))), [scopedRows, researchFilter]);
   const allPairs = useMemo(() => scopedRows.map(row => row.pair), [scopedRows]);
-  const measuredPairs = useMemo(() => allPairs.filter(pair => pair.option_results > 0), [allPairs]);
-  const setupWithoutOption = useMemo(() => allPairs.filter(pair => pair.option_results === 0 && pair.setups > 0), [allPairs]);
+  const measuredPairs = useMemo(() => allPairs.filter(pair => researchPairVisible(pair, "results")), [allPairs]);
+  const setupWithoutOption = useMemo(() => allPairs.filter(pair => researchPairVisible(pair, "no_option")), [allPairs]);
   const noSetupPairs = useMemo(() => allPairs.filter(pair => pair.setups === 0), [allPairs]);
   const passingNow = useMemo(() => measuredPairs.filter(pair => numericProfitFactor(pair.profit_factor) >= (matrix?.target_profit_factor ?? 1.5)), [matrix?.target_profit_factor, measuredPairs]);
   const needsWork = useMemo(() => allPairs.filter(pair => researchPairVisible(pair, "attention")), [allPairs]);

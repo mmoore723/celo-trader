@@ -13,6 +13,18 @@ from tests.test_scan_timing_hotfix import settings
 
 
 class ResearchPassTests(unittest.TestCase):
+    def setUp(self):
+        self.exits = patch("trading.loop.research_pass.capture_authored_exits").start()
+        self.addCleanup(patch.stopall)
+
+    def test_pending_exit_sweep_runs_after_close_without_new_signal_scans(self):
+        market = Mock()
+        market.is_market_open.return_value = False
+        with patch("trading.loop.research_pass.observe_ticker") as observer:
+            run_research_pass((market, Mock()), {"settings": {}, "tickers": ["META"]}, {}, lambda: False)
+        self.exits.assert_called_once()
+        observer.assert_not_called()
+
     def test_market_readers_have_no_order_or_account_mutation_capability(self):
         readers = market_readers(Mock(), Mock())
         for reader in readers:

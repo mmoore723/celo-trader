@@ -166,6 +166,13 @@ export interface StrategyTickerResearchPair {
   leading_contract_test: ResearchContractTest | null;
   research_contract_profile: string | null;
   tradable: boolean;
+  authored_exit_evidence?: {
+    tracked: number; option_results: number; option_result_days: number;
+    profit_factor: number | "infinite" | null; net_one_contract_pnl: number | null;
+    average_one_contract_pnl: number | null; median_one_contract_pnl: number | null;
+    collecting: number; pending_quote: number; missing_quote: number; unmeasurable: number;
+    reasons: Record<string, number>;
+  } | null;
 }
 export interface StrategyResearchMatrix {
   days: number;
@@ -216,6 +223,7 @@ export interface StrategyResearchMatrix {
       timed_minutes: number;
       authored_exit: string;
       authored_exit_collected: boolean;
+      authored_collector_enabled?: boolean;
     };
     pairs: StrategyTickerResearchPair[];
   }[];

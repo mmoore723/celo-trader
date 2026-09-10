@@ -463,6 +463,9 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_SIGNAL_JOURNAL)
         conn.execute(_CREATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_SHADOW_CANDIDATES)
+        from database.research_exits import CREATE_TABLE, CREATE_INDEX
+        conn.execute(CREATE_TABLE)
+        conn.execute(CREATE_INDEX)
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)

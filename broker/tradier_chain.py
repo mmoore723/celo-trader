@@ -117,6 +117,7 @@ class TradierChainMixin:
             ask = float(quotes.get("ask", 0) or 0)
             return {
                 "symbol": option_symbol,
+                "source_symbol": quotes.get("symbol"),
                 "bid":    bid,
                 "ask":    ask,
                 "mid":    round((bid + ask) / 2, 4),

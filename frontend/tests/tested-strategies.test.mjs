@@ -32,11 +32,11 @@ const fixture = {
     "reports/legacy.json": {title: "Legacy test", purpose: "No strategy ID", decision: "", status: "saved_study"},
   },
 };
-function render(data, researchIds = []) {
+function render(data, researchIds = [], researchMatrix) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   if (data) client.setQueryData(["tested-strategies", researchIds], data);
   const html = renderToStaticMarkup(createElement(QueryClientProvider, {client},
-    createElement(TestedStrategies, {researchIds, onResearchIdsChange: () => {}})));
+    createElement(TestedStrategies, {researchIds, researchMatrix, onResearchIdsChange: () => {}})));
   client.clear();
   return html;
 }
@@ -66,9 +66,21 @@ test("working research strategies use the same accessible toggle-card pattern", 
   assert.match(html, /Opening Momentum/);
   assert.match(html, /role="switch"/);
   assert.match(html, /aria-checked="true"/);
-  assert.match(html, /Current PF/);
+  assert.match(html, /Check PF/);
   assert.match(html, /0 option results/);
   assert.doesNotMatch(html, /Research only · Testing every collected ticker/);
   assert.doesNotMatch(html, /research\.1/);
   assert.doesNotMatch(html, /type="checkbox"/);
+});
+
+test("settings distinguishes timer comparison from an actual strategy exit", () => {
+  const strategy_id = "V2_IMPULSE_ANCHORED_VWAP_PULLBACK";
+  const data = {...fixture, runtime_research: [{strategy_id, display_name: "Impulse Anchored VWAP"}]};
+  const html = render(data, [strategy_id], {strategies: [{
+    strategy_id, exit_measurement: {pf_label: "120-min check PF"},
+    current_evidence: {profit_factor: 0.5, option_results: 2},
+  }]});
+  assert.match(html, /120-min check PF 0.50/);
+  assert.match(html, /2 option results/);
+  assert.doesNotMatch(html, /Current PF/);
 });

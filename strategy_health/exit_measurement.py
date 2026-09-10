@@ -35,7 +35,7 @@ _AUTHORED_EXITS = {
     "V2_MIDDAY_BREAKDOWN": "Exit at the signal's structural stop or target.",
     "V2_OPENING_MOMENTUM_RTH_EXPLORATORY": "Exit with the strategy's 2-ATR trailing stop; there is no fixed profit target.",
     "V2_ORB_CONFIRMED_BREAKOUT": "Exit at the opening-range structural stop or 1.5R target.",
-    "V2_IMPULSE_ANCHORED_VWAP_PULLBACK": "Exit at the signal's structural stop or 2R target.",
+    "V2_IMPULSE_ANCHORED_VWAP_PULLBACK": "Exit on a completed 5-minute candle at the structural stop, 2R target, or hold/session limit.",
     "V2_RANGE_SWEEP_RECLAIM": "Exit at the failed-sweep structural stop or the strategy target.",
     "V2_SPY_ORB_RSI_MACD_SHORT": "Exit at the signal's structural stop or target.",
     "V2_TREND_CONT": "Exit at the signal's structural stop or target.",
@@ -58,4 +58,5 @@ def exit_measurement(strategy_id: object, minutes: int) -> dict[str, object]:
             normalized, "Exit at the stop or target defined by the strategy.",
         ),
         "authored_exit_collected": faithful,
+        "authored_collector_enabled": normalized == "V2_IMPULSE_ANCHORED_VWAP_PULLBACK",
     }

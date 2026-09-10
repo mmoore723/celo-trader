@@ -15,6 +15,13 @@ test("the normal results view shows only priced results", () => {
   assert.equal(researchPairVisible(pair({ setups: 3, option_results: 1 }), "results"), true);
 });
 
+test("a priced actual exit is visible before any timer result arrives", () => {
+  const actual = pair({setups: 1, authored_exit_evidence: {option_results: 1}});
+  assert.equal(researchPairVisible(actual, "results"), true);
+  assert.equal(researchPairVisible(actual, "no_option"), false);
+  assert.equal(researchPairVisible(actual, "passing"), false);
+});
+
 test("needs-attention shows only a pair with an actionable diagnosis", () => {
   assert.equal(researchPairVisible(pair({ diagnosis: "entry" }), "attention"), true);
   assert.equal(researchPairVisible(pair({ diagnosis: "more_data" }), "attention"), false);

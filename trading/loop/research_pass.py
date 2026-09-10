@@ -11,6 +11,7 @@ from config.strategy_catalog import (
 )
 from database import load_scanner_candles, record_scanner_candles
 from database.option_quotes import capture_due_candidate_option_quotes
+from database.research_exits import capture_authored_exits
 from shadow_ledger import mark_candidate_observed_only
 from signals import bars_to_df
 from strategy_router import route_signals
@@ -114,6 +115,23 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
 
 def run_research_pass(readers, snapshot, state, stopped):
     alpaca, tradier = readers
+    if stopped():
+        return
+    # Pending exits have priority over the expensive all-ticker signal replay.
+    # Include the close so 15:55 candles can decide at 16:00, without new entries.
+    if snapshot["settings"].get("shadow_ledger_enabled", True):
+        def exit_bars(ticker):
+            bars, error, _ = alpaca.get_session_bars(ticker, "1Min")
+            return bars_to_df(bars) if bars and not error else pd.DataFrame()
+
+        try:
+            capture_authored_exits(
+                account=snapshot["settings"].get("active_broker_account_id"),
+                bars_lookup=exit_bars, quote_lookup=tradier.get_option_quote,
+                stopped=stopped, clock=_now_et,
+            )
+        except Exception:
+            logger.warning("Authored exit pass failed; research continues", exc_info=True)
     if stopped() or not alpaca.is_market_open():
         return
     for ticker in snapshot["tickers"]:

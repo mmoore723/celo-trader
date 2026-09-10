@@ -29,7 +29,8 @@ export function TestedStrategies({
   return <div className="mt-1 grid gap-3 lg:grid-cols-2" id="tested-strategy-library">
     {runtime.map((strategy) => {
         const enabled = researchIds.includes(strategy.strategy_id);
-        const evidence = researchMatrix?.strategies.find(item => item.strategy_id === strategy.strategy_id)?.current_evidence;
+        const matrixStrategy = researchMatrix?.strategies.find(item => item.strategy_id === strategy.strategy_id);
+        const evidence = matrixStrategy?.current_evidence;
         return <StrategyToggleCard
           key={strategy.strategy_id}
           separated={false}
@@ -38,7 +39,7 @@ export function TestedStrategies({
           onChange={value => toggle(strategy.strategy_id, value)}
         >
           {enabled ? <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            Current PF {factorText(evidence?.profit_factor)} · {evidence?.option_results ?? 0} option results
+            {matrixStrategy?.exit_measurement.pf_label ?? "Check PF"} {factorText(evidence?.profit_factor)} · {evidence?.option_results ?? 0} option results
           </p> : <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>Paused</p>}
         </StrategyToggleCard>;
       })}
