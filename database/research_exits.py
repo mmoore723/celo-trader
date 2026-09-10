@@ -12,6 +12,7 @@ from strategy_health.impulse_exit import et, executable_bid
 from strategy_health.exit_protocols import PROTOCOLS, first_exit
 from database.research_exit_variants import pending_variants
 from strategy_health.context_vwap_exit import PROTOCOLS as CONTEXT_VWAP_PROTOCOLS
+from strategy_health.squeeze_exit import PROTOCOL as SQUEEZE_PROTOCOL
 
 logger = logging.getLogger("celo_trader.research")
 CREATE_TABLE = """CREATE TABLE IF NOT EXISTS research_strategy_exits (
@@ -72,7 +73,7 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
             identity = (row["candidate_id"], row["protocol"])
             now = et(clock())
             from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
-            if row['protocol'] in PREMIUM_PROTOCOLS.values():
+            if row['protocol'] in PREMIUM_PROTOCOLS.values() or row['protocol']==SQUEEZE_PROTOCOL:
                 from database.research_premium_exits import capture
                 ticker=row['ticker']
                 if ticker not in frames:

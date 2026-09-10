@@ -95,3 +95,13 @@ test("Displacement displays its own structural protocol", () => {
   assert.match(html,/Earlier high · 5-minute close below VWAP · 3:55 PM cutoff/);
   assert.doesNotMatch(html,/Two-contract split/);
 });
+
+test("Squeeze shows frozen hourly level and sampled +150% exit without partials", () => {
+  const html=render({...empty,protocol:"squeeze_frozen_sma20_hourly_premium150_1555_v1",
+    reasons:{hourly_close_below_entry_sma20:1,premium_target_150_pct:2}});
+  assert.match(html,/Option reached \+150%: 2/);
+  assert.match(html,/Hourly close below entry SMA20: 1/);
+  assert.match(html,/Test cutoff 3:55 PM/);
+  assert.match(html,/Sampled quotes can miss brief price touches/);
+  assert.doesNotMatch(html,/Two-contract split/);
+});

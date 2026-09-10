@@ -4,8 +4,10 @@ from strategy_health import afternoon_exit, fvg_exit, midday_exit, orb_exit, tur
 from strategy_health import ema_exit, rsi_macd_exit, compression_exit, range_sweep_exit
 from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
 from strategy_health import context_vwap_exit
+from strategy_health import squeeze_exit
 
 PROTOCOLS = {
+    squeeze_exit.STRATEGY_ID: squeeze_exit.PROTOCOL,
     **context_vwap_exit.PROTOCOLS,
     **PREMIUM_PROTOCOLS,
     impulse_exit.STRATEGY_ID: impulse_exit.PROTOCOL,

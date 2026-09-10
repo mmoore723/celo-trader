@@ -5,6 +5,7 @@ import math
 
 from database.connection import get_conn
 from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS, first_exit
+from strategy_health import squeeze_exit
 from strategy_health.impulse_exit import et, executable_bid
 
 CREATE_TABLE = '''CREATE TABLE IF NOT EXISTS research_premium_exit_paths (
@@ -18,10 +19,12 @@ def capture(row, frame, get_quote, clock):
     """Latch midpoint before quote I/O; retain runner and two-contract evidence."""
     identity=(row['candidate_id'],row['protocol'])
     now=et(clock())
+    is_squeeze=row['protocol']==squeeze_exit.PROTOCOL
     if row['status']=='collecting':
-        event=first_exit(frame,entry_at=row['trigger_bar'],entry_quote_at=row['entry_quote_at'],
-                         direction=row['direction'],meta=json.loads(row['metadata_json']),now=now,
-                         strategy_id=next(key for key,value in PREMIUM_PROTOCOLS.items() if value==row['protocol']))
+        args=dict(entry_at=row['trigger_bar'],entry_quote_at=row['entry_quote_at'],
+                  direction=row['direction'],meta=json.loads(row['metadata_json']),now=now)
+        event=(squeeze_exit.first_exit(frame,**args) if is_squeeze else first_exit(frame,**args,
+               strategy_id=next(key for key,value in PREMIUM_PROTOCOLS.items() if value==row['protocol'])))
         if et(row['trigger_bar']).date()<now.date():
             event=(et(row['trigger_bar']).replace(hour=15,minute=55),'missed_session')
         if not math.isfinite(row['entry_ask']) or row['entry_ask']<=0:
@@ -30,7 +33,7 @@ def capture(row, frame, get_quote, clock):
             decision,reason=event
             if reason=='waiting_for_bars':
                 return
-            status='pending_quote' if reason in {'or_midpoint_close','eod_1555_cap'} else 'unmeasurable'
+            status='pending_quote' if reason in {'or_midpoint_close','eod_1555_cap','hourly_close_below_entry_sma20'} else 'unmeasurable'
             with get_conn() as conn:
                 conn.execute('''UPDATE research_strategy_exits SET status=?,decision_at=?,reason=?,detected_at=?
                     WHERE candidate_id=? AND protocol=? AND status='collecting' ''',
@@ -59,14 +62,14 @@ def capture(row, frame, get_quote, clock):
             return
         conn.execute('UPDATE research_premium_exit_paths SET quote_count=quote_count+1,last_bid_at=? WHERE candidate_id=?',(stamp,identity[0]))
         # No profit-target credit at or after a previously known structural exit.
-        if not pending and bid+1e-9>=row['entry_ask']*1.30:
+        if not is_squeeze and not pending and bid+1e-9>=row['entry_ask']*1.30:
             conn.execute('UPDATE research_premium_exit_paths SET partial_bid=?,partial_at=? WHERE candidate_id=? AND partial_bid IS NULL',(bid,stamp,identity[0]))
-        target=not pending and bid+1e-9>=row['entry_ask']*2
+        target=not pending and bid+1e-9>=row['entry_ask']*(2.5 if is_squeeze else 2)
         if target or pending:
             conn.execute('''UPDATE research_strategy_exits SET status='priced',bid=?,bid_at=?,received_at=?,
                 decision_at=COALESCE(decision_at,?),reason=COALESCE(reason,?),detected_at=COALESCE(detected_at,?)
                 WHERE candidate_id=? AND protocol=? AND status IN ('collecting','pending_quote')''',
-                (bid,stamp,et(received).isoformat(),stamp,'premium_target_100_pct',now.isoformat(),*identity))
+                (bid,stamp,et(received).isoformat(),stamp,'premium_target_150_pct' if is_squeeze else 'premium_target_100_pct',now.isoformat(),*identity))
 
 
 def attach_paths(conn, exits, account, cutoff):
