@@ -29,7 +29,7 @@ _AUTHORED_EXITS = {
     "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": "Exit at the frozen prior high, a completed 5-minute close below VWAP, or 3:55 PM.",
     "CTX_1H_SQUEEZE_MACD_LONG": "Exit at +150% option profit or when an hourly candle closes back inside the 20-SMA.",
     "V2_AFTERNOON_COMPRESSION_BREAKOUT": "Exit at the signal's structural stop or 2R target.",
-    "V2_AFTERNOON_REVERSAL": "Exit at the signal's structural stop or target.",
+    "V2_AFTERNOON_REVERSAL": "Check the original stop and 2R target at each 5-minute close; exit by market close.",
     "V2_EMA_PULLBACK_RTH": "Exit at the signal's structural stop or 2.06R target.",
     "V2_FAIR_VALUE_GAP": "Exit at the signal's structural stop or target.",
     "V2_GAP_FILL_RTH": "Track the 2-ATR stop on 1-minute candles; tighten after each 5-minute close. No fixed target; exit by session close.",
