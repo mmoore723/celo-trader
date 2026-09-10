@@ -162,6 +162,9 @@ def select_research_contract(
     ticker = str(ticker or "").strip().upper()
     direction = str(direction or "").strip().lower()
     profile = research_contract_profile(strategy_id)
+    research_reader = getattr(type(tradier), "get_research_option_chain", None)
+    chain_reader = (tradier.get_research_option_chain if callable(research_reader)
+                    else tradier.get_option_chain)
     info: dict[str, Any] = {
         "reason": "no_chain_data",
         "selection_model": profile.version,
@@ -176,7 +179,9 @@ def select_research_contract(
             "maximum_contract_dollars": RESEARCH_MAX_CONTRACT_DOLLARS,
             "basis": profile.basis,
         },
-        "upstream_chain_liquidity_filtered": True,
+        "upstream_chain_liquidity_filtered": not callable(research_reader),
+        "chain_screen": ("research_quote_validity_v1" if callable(research_reader)
+                         else "legacy_execution_filters"),
     }
     if direction not in {"bullish", "bearish"} or current_price <= 0:
         info["reason"] = "invalid_selection_input"
@@ -210,7 +215,7 @@ def select_research_contract(
         if not profile.minimum_dte <= dte <= profile.maximum_dte:
             continue
         try:
-            chain = tradier.get_option_chain(ticker, str(expiry), option_type)
+            chain = chain_reader(ticker, str(expiry), option_type)
         except Exception:
             continue
         if not chain:

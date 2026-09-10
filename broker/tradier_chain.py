@@ -8,6 +8,7 @@ into TradierClient in broker/tradier_client.py.
 """
 
 import logging
+import math
 from typing import Optional
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
@@ -30,6 +31,7 @@ class TradierChainMixin:
         symbol: str,
         expiration: str,
         option_type: str = "call",
+        *, research_only: bool = False,
     ) -> list[dict]:
         """
         Full chain fetch — used for contract selection at trade entry only.
@@ -69,11 +71,23 @@ class TradierChainMixin:
                 bid = opt.get("bid", 0) or 0
                 ask = opt.get("ask", 0) or 0
                 oi  = opt.get("open_interest", 0) or 0
+                if research_only:
+                    # Research applies its declared percentage spread/premium
+                    # policy downstream, not the account's execution filters.
+                    try:
+                        bid, ask, oi = float(bid), float(ask), float(oi)
+                        strike = float(opt.get("strike") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if (not all(math.isfinite(v) for v in (bid, ask, oi, strike))
+                            or bid <= 0 or ask < bid or strike <= 0
+                            or not opt.get("symbol")):
+                        continue
                 if ask == 0:
                     continue
-                if (ask - bid) > MAX_BID_ASK_SPREAD:
+                if not research_only and (ask - bid) > MAX_BID_ASK_SPREAD:
                     continue
-                if oi < MIN_OPEN_INTEREST:
+                if not research_only and oi < MIN_OPEN_INTEREST:
                     continue
                 filtered.append({
                     "symbol":        opt.get("symbol"),
@@ -91,6 +105,15 @@ class TradierChainMixin:
         except Exception as e:
             logger.error("get_option_chain(%s) failed: %s", symbol, e)
             return []
+
+    def get_research_option_chain(self, symbol: str, expiration: str,
+                                  option_type: str = "call") -> list[dict]:
+        """Read valid quotes for order-free research's own contract screen.
+
+        No execution caller uses this path. Low open interest is retained as
+        evidence, not a claim of fillability; crossed/empty quotes are excluded.
+        """
+        return self.get_option_chain(symbol, expiration, option_type, research_only=True)
 
     # ── FIX M7: Single-contract quote (for position pricing) ─────────────────
 
