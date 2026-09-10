@@ -85,7 +85,9 @@ class ResearchPassTests(unittest.TestCase):
             "t": "2026-09-04T14:24:00Z", "o": 100, "h": 101,
             "l": 99, "c": 100.5, "v": 1000,
         }], False, True)
-        market.get_bars.return_value = ([], False)
+        market.get_bars.return_value = ([{
+            't':'2026-09-03T14:20:00Z','o':100,'h':101,'l':99,'c':100.5,'v':1000,
+        }], False)
         signal = Signal(
             strategy_id="V2_TREND_CONT", direction="bullish", confidence=0.7,
             rvol=0.0, trigger_bar=pd.Timestamp("2026-09-04T10:25:00"),
@@ -103,7 +105,7 @@ class ResearchPassTests(unittest.TestCase):
             ))
             stack.enter_context(patch("trading.loop.research_pass.evaluate_injected_setups", return_value=([], {}, None)))
             stack.enter_context(patch("trading.loop.research_pass.route_signals", return_value=[]))
-            stack.enter_context(patch("trading.loop.research_pass.evaluate_tested_research", return_value=[signal]))
+            tested = stack.enter_context(patch("trading.loop.research_pass.evaluate_tested_research", return_value=[signal]))
             observe = stack.enter_context(patch("trading.loop.research_pass.observe_candidate_contract"))
             marked = stack.enter_context(patch("trading.loop.research_pass.mark_candidate_observed_only"))
             observe_ticker(market, Mock(), "AAPL", research_settings, {}, Mock(), 4000, lambda: False)
@@ -111,6 +113,8 @@ class ResearchPassTests(unittest.TestCase):
         self.assertEqual("AAPL", observe.call_args.kwargs["ticker"])
         self.assertIs(signal, observe.call_args.kwargs["signal"])
         self.assertTrue(observe.call_args.kwargs["research_only"])
+        self.assertEqual(1,len(tested.call_args.kwargs['history_5m']))
+        market.get_bars.assert_called_once_with('AAPL','5Min',limit=1500)
         marked.assert_called_once_with(signal)
 
     def test_authorized_ticker_research_uses_separate_dedupe_scope(self):

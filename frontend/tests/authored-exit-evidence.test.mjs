@@ -63,3 +63,10 @@ test("the frozen entry VWAP target is not labeled as a fixed R multiple", () => 
   assert.match(html, /Entry VWAP target reached: 4/);
   assert.doesNotMatch(html, /1.5R target|2R target/);
 });
+
+test("EMA evidence identifies its session-close correction and exact target", () => {
+  const html = render({...empty, protocol: "ema_structural_2_06r_completed15m_rth_close_corrected_v1", reasons: {underlying_2_06r_target: 2}});
+  assert.match(html, /15-minute exits · Corrected 4:00 PM close/);
+  assert.match(html, /2.06R target reached: 2/);
+  assert.doesNotMatch(render(empty), /Corrected 4:00 PM/);
+});

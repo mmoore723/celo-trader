@@ -20,14 +20,17 @@ def et(value):
 
 
 def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
-               max_hold_bars=24, time_cap_reason="time_cap_120m"):
+               max_hold_bars=24, time_cap_reason="time_cap_120m", timeframe_minutes=5):
     """Return (decision time, reason), or None while still observing.
 
     Missing input is explicitly unmeasurable, not a made-up stop or a win.
     Five minutes are allowed for delayed bars before closing that evidence gap.
     """
     entry, now = et(entry_at), et(now)
-    if (entry.minute % 5 or entry.second or entry.microsecond
+    if timeframe_minutes not in {5, 15}:
+        return entry, "invalid_entry"
+    interval = timedelta(minutes=timeframe_minutes)
+    if (entry.minute % timeframe_minutes or entry.second or entry.microsecond
             or not entry.replace(hour=9, minute=30) <= entry < entry.replace(hour=16, minute=0)):
         return entry, "invalid_entry"
     if not entry <= et(entry_quote_at) < entry + timedelta(minutes=5):
@@ -47,11 +50,11 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
         if stamp in rows:
             return entry, "duplicate_bars"
         rows[stamp] = row
-    bar_start = entry + timedelta(minutes=5)
-    deadline = min(entry + timedelta(minutes=5*(max_hold_bars+1)), entry.replace(hour=16, minute=0))
-    while bar_start + timedelta(minutes=5) <= min(now, deadline):
-        decision = bar_start + timedelta(minutes=5)
-        bucket = [rows.get(bar_start + timedelta(minutes=i)) for i in range(5)]
+    bar_start = entry + interval
+    deadline = min(entry + interval*(max_hold_bars+1), entry.replace(hour=16, minute=0))
+    while bar_start + interval <= min(now, deadline):
+        decision = bar_start + interval
+        bucket = [rows.get(bar_start + timedelta(minutes=i)) for i in range(timeframe_minutes)]
         if any(row is None for row in bucket):
             return (decision, "missing_bars") if now > decision + timedelta(minutes=5) else None
         for row in bucket:

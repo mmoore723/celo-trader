@@ -56,6 +56,7 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
     if observed or tested_ids:
         frame = current
         history, error = alpaca.get_bars(ticker, "5Min", limit=1500)
+        history_5m = bars_to_df(history) if history and not error else None
         if stopped():
             return
         if history and not error:
@@ -98,7 +99,7 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
         if tested_frame.empty:
             tested_frame = current
         for signal in evaluate_tested_research(
-            tested_frame, ticker, tested_ids, scope=observation_scope, now=_now_et(),
+            tested_frame, ticker, tested_ids, scope=observation_scope, now=_now_et(), history_5m=history_5m,
         ):
             record(ticker, signal, float(current["close"].iloc[-1]))
             mark_candidate_observed_only(signal)

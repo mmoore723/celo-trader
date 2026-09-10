@@ -55,7 +55,7 @@ _SPECS = (
     TestedResearchStrategy("V2_AFTERNOON_REVERSAL", "Afternoon Reversal", AfternoonReversal),
     TestedResearchStrategy(
         "V2_EMA_PULLBACK_RTH", "EMA Pullback", EMAPullbackRTH,
-        timeframe_minutes=15,
+        timeframe_minutes=15, version="research.2",
     ),
     TestedResearchStrategy("V2_FAIR_VALUE_GAP", "Fair Value Gap", FairValueGap),
     TestedResearchStrategy("V2_GAP_FILL_RTH", "Gap Fill", GapFillRTH),
@@ -170,7 +170,7 @@ def _latest_candidate(strategy: object, bars: tuple[ResearchBar, ...]):
 
 def evaluate_tested_research(
     frame: pd.DataFrame, ticker: str, strategy_ids: Iterable[str], *,
-    scope: str, now: object | None = None,
+    scope: str, now: object | None = None, history_5m: pd.DataFrame | None = None,
 ) -> list[Signal]:
     results: list[Signal] = []
     bars_by_timeframe: dict[int, tuple[ResearchBar, ...]] = {}
@@ -183,6 +183,9 @@ def evaluate_tested_research(
                 frame, now, spec.timeframe_minutes,
             )
         bars = bars_by_timeframe[spec.timeframe_minutes]
+        if spec.strategy_id == "V2_EMA_PULLBACK_RTH":
+            from trading.research_ema_history import with_ema_history
+            bars = with_ema_history(bars, history_5m, now)
         if not bars:
             continue
         try:
@@ -216,6 +219,8 @@ def evaluate_tested_research(
                 "underlying_target": candidate.target,
                 "exit_plan": f"same-contract bid after {spec.exit_minutes} minutes",
                 "observation_only": True,
+                **({"history_policy": "complete_15m_collected_preferred_fetched5m_gaps_v1"}
+                   if spec.strategy_id == "V2_EMA_PULLBACK_RTH" else {}),
                 **candidate_metadata(spec.strategy_id, strategy),
             },
         ))

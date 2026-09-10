@@ -167,6 +167,7 @@ export interface StrategyTickerResearchPair {
   research_contract_profile: string | null;
   tradable: boolean;
   authored_exit_evidence?: {
+    protocol: string;
     tracked: number; option_results: number; option_result_days: number;
     profit_factor: number | "infinite" | null; net_one_contract_pnl: number | null;
     average_one_contract_pnl: number | null; median_one_contract_pnl: number | null;

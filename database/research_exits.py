@@ -21,7 +21,7 @@ CREATE_TABLE = """CREATE TABLE IF NOT EXISTS research_strategy_exits (
     detected_at TEXT, bid REAL, bid_at TEXT, received_at TEXT
 )"""
 CREATE_INDEX = "CREATE INDEX IF NOT EXISTS idx_research_exits_pending ON research_strategy_exits(status)"
-EXIT_REASONS = {"underlying_stop", "underlying_2r_target", "underlying_1_5r_target", "underlying_vwap_target", "time_cap_120m",
+EXIT_REASONS = {"underlying_stop", "underlying_2r_target", "underlying_1_5r_target", "underlying_2_06r_target", "underlying_vwap_target", "time_cap_120m",
                 "session_flatten", "end_of_available_session", "opposite_flip", "atr_trailing_stop", "time_cap_75bars"}
 
 
