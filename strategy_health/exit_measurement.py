@@ -7,6 +7,7 @@ structural exit that still needs a separate causal option quote.
 """
 from __future__ import annotations
 from strategy_health.exit_protocols import PROTOCOLS
+from config.strategy_catalog import REVIEWED_STRATEGIES
 
 
 _EXACT_TIMED_EXITS = frozenset({
@@ -50,7 +51,9 @@ _AUTHORED_EXITS = {
 def exit_measurement(strategy_id: object, minutes: int) -> dict[str, object]:
     """Return a compact, UI-safe description of the measured exit."""
     normalized = str(strategy_id or "").strip().upper()
-    faithful = normalized in _EXACT_TIMED_EXITS
+    rule = REVIEWED_STRATEGIES.get(normalized)
+    faithful = (normalized in _EXACT_TIMED_EXITS and rule is not None
+                and rule.exit_minutes == int(minutes))
     return {
         "kind": "strategy_exit" if faithful else "timed_comparison",
         "pf_label": f"{minutes}-min PF" if faithful else f"{minutes}-min check PF",

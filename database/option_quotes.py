@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
 
 from database.connection import get_conn
-from database.helpers import _to_et_isoformat
+from database.helpers import _to_et_isoformat, _to_et_datetime
 
 logger = logging.getLogger("celo_trader.database")
 
@@ -232,6 +232,7 @@ def capture_due_candidate_option_quotes(
     The supplied callback only reads a quote. This function has no broker
     order method and its table has no quantity/order fields by design.
     """
+    observed_at = _to_et_datetime(observed_at)
     horizons = tuple(
         (f"mark_{minutes}m", minutes) for minutes in CANDIDATE_MARK_HORIZONS
     )
@@ -245,14 +246,14 @@ def capture_due_candidate_option_quotes(
     try:
         with get_conn() as conn:
             rows = conn.execute(
-                """SELECT s.candidate_id, s.observed_at, q.contract_symbol
+                """SELECT s.candidate_id, q.observed_at, q.contract_symbol
                    FROM shadow_candidates s
                    JOIN candidate_option_quote_observations q
                      ON q.candidate_id = s.candidate_id
                    WHERE """ + " AND ".join(clauses), tuple(params),
             ).fetchall()
             for row in rows:
-                started = datetime.fromisoformat(str(row["observed_at"]))
+                started = _to_et_datetime(str(row["observed_at"]))
                 for kind, minutes in horizons:
                     due_at = started + timedelta(minutes=minutes)
                     if observed_at < due_at:
@@ -277,7 +278,7 @@ def capture_due_candidate_option_quotes(
         # so these rows can never be mistaken for an order or trade.
         with get_conn() as conn:
             alt_rows = conn.execute(
-                """SELECT DISTINCT a.candidate_id, s.observed_at, a.contract_symbol,
+                """SELECT DISTINCT a.candidate_id, a.observed_at, a.contract_symbol,
                                   a.policy_json
                    FROM candidate_contract_alternatives a
                    JOIN shadow_candidates s ON s.candidate_id = a.candidate_id
@@ -287,7 +288,7 @@ def capture_due_candidate_option_quotes(
                 tuple([ticker.upper(), observed_at.date().isoformat()] + ([broker_account_id] if broker_account_id else [])),
             ).fetchall()
         for row in alt_rows:
-            started = datetime.fromisoformat(str(row["observed_at"]))
+            started = _to_et_datetime(str(row["observed_at"]))
             for kind, minutes in horizons:
                 due_at = started + timedelta(minutes=minutes)
                 if observed_at < due_at:
