@@ -28,7 +28,7 @@ class EmaExitCaptureTests(unittest.TestCase):
             conn.execute("UPDATE candidate_option_quote_observations SET observed_at='2026-09-10T10:00:03' WHERE candidate_id=?",(name,))
             if changes.get('strategy_id',ema_exit.STRATEGY_ID)==ema_exit.STRATEGY_ID:
                 meta=json.loads(conn.execute('SELECT metadata_json FROM shadow_candidates WHERE candidate_id=?',(name,)).fetchone()[0])
-                meta['strategy_version']='research.2'
+                meta['strategy_version']='research.3'
                 conn.execute('UPDATE shadow_candidates SET metadata_json=? WHERE candidate_id=?',(json.dumps(meta),name))
 
     def test_forty_overlapping_plays_price_once_and_survive_restart(self):
@@ -55,6 +55,27 @@ class EmaExitCaptureTests(unittest.TestCase):
         self.assertEqual(('unmeasurable','missing_exit_state'),
                          (self.f.rows()[0]['status'],self.f.rows()[0]['reason']))
         self.f.quote.assert_not_called()
+
+    def test_native_fifteen_minute_capture_is_separate_from_legacy_and_other_strategies(self):
+        import pandas as pd
+        from unittest.mock import Mock
+        from trading.research_ema_history import NATIVE_POLICY
+        for i in range(40):
+            self.seed('native'+str(i))
+        self.seed('legacy')
+        with self.f.connect() as conn:
+            for row in conn.execute("SELECT candidate_id,metadata_json FROM shadow_candidates WHERE candidate_id LIKE 'native%'").fetchall():
+                meta=json.loads(row['metadata_json']); meta['history_policy']=NATIVE_POLICY
+                conn.execute('UPDATE shadow_candidates SET metadata_json=? WHERE candidate_id=?',
+                             (json.dumps(meta),row['candidate_id']))
+        frame=pd.DataFrame([dict(time=datetime(2026,9,10,10,15),open=100,high=101,low=97,close=100)])
+        frame.attrs['source_minutes']=15
+        lookup=Mock(return_value=frame)
+        self.f.capture(ema_bars_lookup=lookup)
+        self.assertTrue(all(r['status']=='priced' for r in self.f.rows()))
+        self.assertEqual(41,len(self.f.rows()))
+        lookup.assert_called_once_with('META')
+        self.f.quote.assert_called_once_with('XYZ')
 
     def test_completed_target_prices_as_2_06r_not_2r(self):
         self.seed()

@@ -20,14 +20,14 @@ def et(value):
 
 
 def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
-               max_hold_bars=24, time_cap_reason="time_cap_120m", timeframe_minutes=5):
+               max_hold_bars=24, time_cap_reason="time_cap_120m", timeframe_minutes=5, source_minutes=1):
     """Return (decision time, reason), or None while still observing.
 
     Missing input is explicitly unmeasurable, not a made-up stop or a win.
     Five minutes are allowed for delayed bars before closing that evidence gap.
     """
     entry, now = et(entry_at), et(now)
-    if timeframe_minutes not in {1, 5, 15}:
+    if timeframe_minutes not in {1, 5, 15} or source_minutes not in {1,timeframe_minutes}:
         return entry, "invalid_entry"
     interval = timedelta(minutes=timeframe_minutes)
     if (entry.minute % timeframe_minutes or entry.second or entry.microsecond
@@ -54,7 +54,7 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
     deadline = min(entry + interval*(max_hold_bars+1), entry.replace(hour=16, minute=0))
     while bar_start + interval <= min(now, deadline):
         decision = bar_start + interval
-        bucket = [rows.get(bar_start + timedelta(minutes=i)) for i in range(timeframe_minutes)]
+        bucket = [rows.get(bar_start + timedelta(minutes=i)) for i in range(0,timeframe_minutes,source_minutes)]
         if any(row is None for row in bucket):
             return (decision, "missing_bars") if now > decision + timedelta(minutes=5) else None
         for row in bucket:

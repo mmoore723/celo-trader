@@ -103,8 +103,17 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
         )
         if tested_frame.empty:
             tested_frame = current
+        native_15m=None
+        if 'V2_EMA_PULLBACK_RTH' in tested_ids:
+            from trading.research_ema_history import native_ema_history
+            native_15m=native_ema_history(alpaca,ticker,state,_now_et(),account,
+                archive=lambda f: record_scanner_candles(ticker,f,broker_account_id=account,
+                                                       timeframe='15Min',source='alpaca_iex_native15'))
+        if stopped():
+            return
         for signal in evaluate_tested_research(
             tested_frame, ticker, tested_ids, scope=observation_scope, now=_now_et(), history_5m=history_5m,
+            history_15m=native_15m,
         ):
             record(ticker, signal, float(current["close"].iloc[-1]))
             mark_candidate_observed_only(signal)
@@ -149,11 +158,21 @@ def run_research_pass(readers, snapshot, state, stopped):
             bars, error, _ = alpaca.get_session_bars(ticker, "1Min")
             return bars_to_df(bars) if bars and not error else pd.DataFrame()
 
+        def ema_exit_bars(ticker):
+            from trading.research_ema_history import native_ema_history
+            account=snapshot['settings'].get('active_broker_account_id')
+            frame=native_ema_history(alpaca,ticker,state,_now_et(),account,
+                archive=lambda f: record_scanner_candles(ticker,f,broker_account_id=account,
+                                                       timeframe='15Min',source='alpaca_iex_native15')).copy()
+            frame.attrs['source_minutes']=15
+            return frame
+
         try:
             capture_authored_exits(
                 account=snapshot["settings"].get("active_broker_account_id"),
                 bars_lookup=exit_bars, quote_lookup=tradier.get_option_quote,
                 stopped=stopped, clock=_now_et,
+                ema_bars_lookup=ema_exit_bars,
             )
         except Exception:
             logger.warning("Authored exit pass failed; research continues", exc_info=True)

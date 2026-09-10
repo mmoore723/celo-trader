@@ -52,7 +52,7 @@ def pending_exits(account, now):
         return originals + pending_variants(conn, account, (et(now)-timedelta(days=2)).date().isoformat())
 
 
-def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda: False, clock=_now_et):
+def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda: False, clock=_now_et, ema_bars_lookup=None):
     """Read-only broker callbacks; persist the first trigger before quote I/O."""
     if stopped():
         return
@@ -90,10 +90,15 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                     event = (cap, "missed_session")
                 else:
                     ticker = row["ticker"]
-                    if ticker not in frames:
-                        frames[ticker] = None
-                        frames[ticker] = bars_lookup(ticker)
-                    frame = frames[ticker]
+                    from strategy_health.ema_exit import PROTOCOL as EMA_PROTOCOL
+                    from trading.research_ema_history import NATIVE_POLICY
+                    use_native=(row['protocol']==EMA_PROTOCOL and meta.get('history_policy')==NATIVE_POLICY
+                                and ema_bars_lookup is not None)
+                    frame_key=(ticker,'native15') if use_native else ticker
+                    if frame_key not in frames:
+                        frames[frame_key] = None
+                        frames[frame_key] = ema_bars_lookup(ticker) if use_native else bars_lookup(ticker)
+                    frame = frames[frame_key]
                     event = first_exit(
                         row["protocol"], frame if frame is not None else pd.DataFrame(), entry_at=entry,
                         entry_quote_at=row["entry_quote_at"], meta=meta, direction=row["direction"], now=clock(),

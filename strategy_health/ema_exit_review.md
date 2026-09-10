@@ -1,5 +1,31 @@
 # EMA Pullback exit evidence — September 10, 2026
 
+## Provider-native sparse-ticker correction (research.3)
+
+Read-only production check found NVS had 193 collected minute bars but no
+complete 15-minute constituent group. The same configured IEX provider
+returned 474 genuine regular-session 15-minute candles. SPY/META now had
+469/487 usable candles after the shared recent-history fix, so their warmup
+was no longer blocked. NVS required a native-timeframe path, not shorter EMAs.
+
+EMA research.3 can use actual provider-native 15-minute OHLCV, preferring
+complete collected candles on overlap. Only the newest completed current
+interval may emit; stale, duplicate, invalid and future bars cannot invent a
+signal. Source 33/165/365, risk floor and 2.06R target are unchanged. Earlier
+version evidence stays separate. No order routes or account switches change.
+
+Native reads use a user/account/ticker-scoped cache, bounded to 128 tickers
+and 500 candles each. A complete interval is reused until the next boundary;
+delayed/failed responses may retry after 60 seconds. Only actual completed
+current-day native bars are upserted as 15Min with explicit IEX-native source;
+there are no synthetic minute rows or historical archive copies.
+
+New native-policy candidates also use native 15-minute exit bars, skip the
+entry interval, wait for completion, and keep original stop/target ordering.
+Old candidates and other strategies retain their original data path. Forty
+overlapping native plays can be priced with one cached frame and shared quote.
+This fixes measurement availability; it does not establish profitable results.
+
 ## Reproduced defect and scoped correction
 
 The runtime strategy uses 15-minute bars. The frozen standalone runner uses

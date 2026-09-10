@@ -27,7 +27,7 @@ class ResearchEmaHistoryTests(unittest.TestCase):
         self.assertEqual([],evaluate(None))
         results=evaluate(five_minute_frame(self.bars[:-1]))
         self.assertEqual(1,len(results))
-        self.assertEqual('research.2',results[0].meta['strategy_version'])
+        self.assertEqual('research.3',results[0].meta['strategy_version'])
         self.assertEqual('complete_15m_collected_preferred_fetched5m_gaps_v1',results[0].meta['history_policy'])
         self.assertEqual(365,results[0].meta['authored_exit_state']['config']['trend_ema'])
         self.assertEqual(pd.Timestamp(self.now),results[0].trigger_bar)

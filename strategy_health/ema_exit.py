@@ -33,7 +33,8 @@ def entry_state(strategy):
 def first_exit(frame, *, seed, **kwargs):
     if seed != entry_state(EMAPullbackRTH()):
         return et(kwargs['entry_at']),'missing_exit_state'
-    event=structural_exit(frame,**kwargs,max_hold_bars=75,time_cap_reason='time_cap_75bars',timeframe_minutes=15)
+    event=structural_exit(frame,**kwargs,max_hold_bars=75,time_cap_reason='time_cap_75bars',timeframe_minutes=15,
+                         source_minutes=frame.attrs.get('source_minutes',1))
     if event and event[1]=='underlying_2r_target':
         return event[0],'underlying_2_06r_target'
     return event
