@@ -385,7 +385,7 @@ export function Settings() {
             <strong>{strategy.backtest?.forward_evidence_start ? `Results since ${evidenceDate(strategy.backtest.forward_evidence_start)}` : `Current v${strategy.version} results`}:</strong> {pairProof}
           </p>
         ) : <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
-          <strong>Current PF {matrixStrategy?.current_evidence.profit_factor === "infinite" ? "∞" : typeof matrixStrategy?.current_evidence.profit_factor === "number" ? matrixStrategy.current_evidence.profit_factor.toFixed(2) : "—"}</strong> · {matrixStrategy?.current_evidence.option_results ?? 0} option results across all collected tickers
+          <strong>{matrixStrategy?.exit_measurement?.pf_label ?? "Current PF"} {matrixStrategy?.current_evidence.profit_factor === "infinite" ? "∞" : typeof matrixStrategy?.current_evidence.profit_factor === "number" ? matrixStrategy.current_evidence.profit_factor.toFixed(2) : "—"}</strong> · {matrixStrategy?.current_evidence.option_results ?? 0} option results across all collected tickers
         </p>}
         <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
           <summary className="cursor-pointer">Test dates and proof</summary>

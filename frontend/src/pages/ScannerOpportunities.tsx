@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SearchX } from "lucide-react";
-import { api, type ScannerOpportunity, type StrategyTickerResearchPair } from "../lib/api";
+import { api, type ScannerOpportunity, type StrategyResearchMatrix, type StrategyTickerResearchPair } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 import { collapseOpportunityEpisodes, opportunityDecisionTitle, opportunityLifecycle, opportunityReason } from "../lib/opportunitySemantics.js";
 import { numericProfitFactor, profitFactorText, researchActionLabel, researchPairVisible, researchProfitFactorText, sortResearchPairs } from "../lib/researchPairView.js";
@@ -41,7 +41,9 @@ const STATUS: Record<StrategyTickerResearchPair["status"], { label: string; colo
   no_setups: { label: "No setups yet", color: "var(--ink-muted)" },
 };
 
-function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinutes }: { pair: StrategyTickerResearchPair; strategyName: string; strategyVersion: string; backtest: { profit_factor?: number | "infinite" | "no fills"; trades?: number; scope?: string; historical_test_through?: string }; exitMinutes: number }) {
+type ExitMeasurement = StrategyResearchMatrix["strategies"][number]["exit_measurement"];
+
+function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasurement }: { pair: StrategyTickerResearchPair; strategyName: string; strategyVersion: string; backtest: { profit_factor?: number | "infinite" | "no fills"; trades?: number; scope?: string; historical_test_through?: string }; exitMeasurement: ExitMeasurement }) {
   const status = STATUS[pair.status];
   const resultState = pair.option_results > 0
     ? status.label
@@ -62,7 +64,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
       </div>
       <div>
         <div className="grid grid-cols-4 gap-2 text-center">
-          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Test PF</span><strong title={pair.profit_factor === "infinite" ? "There are wins but no gross losses yet, so a numeric PF cannot be calculated." : undefined}>{researchProfitFactorText(pair.profit_factor, pair.option_results)}</strong></div>
+          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>{exitMeasurement.pf_label}</span><strong title={pair.profit_factor === "infinite" ? "There are wins but no gross losses yet, so a numeric PF cannot be calculated." : undefined}>{researchProfitFactorText(pair.profit_factor, pair.option_results)}</strong></div>
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Results</span><strong>{pair.option_results}</strong></div>
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Wins</span><strong>{pair.win_rate_pct == null ? "—" : `${pair.win_rate_pct}%`}</strong></div>
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>P&amp;L</span><strong style={{ color: pair.option_results === 0 ? "var(--ink-muted)" : pair.net_one_contract_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>{pair.option_results === 0 ? "—" : money(pair.net_one_contract_pnl)}</strong></div>
@@ -82,7 +84,8 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
         <p><b>Research plays:</b> {pair.setups} across {pair.market_days} data days</p>
         <p><b>Usable option prices:</b> {pair.quote_coverage_pct == null ? "—" : `${pair.quote_coverage_pct}%`}</p>
         <p><b>Stock moved correctly:</b> {pair.direction_accuracy == null ? "—" : `${pair.direction_accuracy}% of ${pair.direction_results}`}</p>
-        <p><b>Compared exit:</b> {exitMinutes} minutes</p>
+        <p><b>Measured:</b> {exitMeasurement.authored_exit_collected ? `${exitMeasurement.timed_minutes}-minute strategy exit` : `${exitMeasurement.timed_minutes}-minute check`}</p>
+        {!exitMeasurement.authored_exit_collected && <p className="sm:col-span-2"><b>Real exit:</b> {exitMeasurement.authored_exit} · Not measured yet</p>}
         {pair.option_results > 0 && <p><b>Average result:</b> {money(pair.average_one_contract_pnl)}</p>}
         {pair.option_results > 0 && <p><b>Typical result:</b> {money(pair.median_one_contract_pnl)}</p>}
         {pair.option_results > 0 && <p><b>Largest running drop:</b> {money(pair.maximum_drawdown_one_contract)}</p>}
@@ -163,7 +166,7 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
           {tickerSearch.trim() && <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface-raised))", color: "var(--ink-muted)" }}><strong style={{ color: "var(--ink)" }}>{tickerSearch.trim().toUpperCase()}</strong> · {rawTriggers} raw trigger{rawTriggers === 1 ? "" : "s"} → {researchPlays} distinct research play{researchPlays === 1 ? "" : "s"} → {measuredPairs.reduce((sum, pair) => sum + pair.option_results, 0)} priced result{measuredPairs.reduce((sum, pair) => sum + pair.option_results, 0) === 1 ? "" : "s"}</div>}
           <p className="text-xs" style={{ color: "var(--ink-muted)" }}>PF compares total wins with total losses. A win-only sample says “No losses yet” until a loss gives PF a denominator.</p>
         </div>
-        <div className="space-y-6">{groupedResearchPairs.map(group => <section key={group.key} className="space-y-2"><div className="flex flex-wrap items-baseline gap-2"><h2 className="text-base font-semibold">{group.title}</h2><span className="badge">{group.rows.length}</span><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{group.note}</p></div>{group.rows.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} strategyVersion={strategy.version} backtest={strategy.backtest} exitMinutes={strategy.exit_minutes} />)}</section>)}</div>
+        <div className="space-y-6">{groupedResearchPairs.map(group => <section key={group.key} className="space-y-2"><div className="flex flex-wrap items-baseline gap-2"><h2 className="text-base font-semibold">{group.title}</h2><span className="badge">{group.rows.length}</span><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{group.note}</p></div>{group.rows.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} strategyVersion={strategy.version} backtest={strategy.backtest} exitMeasurement={strategy.exit_measurement} />)}</section>)}</div>
         {!researchPairs.length && <div className="card p-8 text-center">No strategy–ticker pairs match these filters yet.</div>}
         <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How the proof works</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same exact trigger counts once; every distinct trigger is tested even when several research plays overlap. A recommendation requires PF 1.5+, at least 20 priced results, at least 8 result days, and passing results on the latest test dates.</p></details>
       </> : <div className="card p-8 text-center">No research results are available yet.</div>}

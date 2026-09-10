@@ -210,6 +210,13 @@ export interface StrategyResearchMatrix {
     research_enabled: boolean;
     trading_tickers: string[];
     exit_minutes: number;
+    exit_measurement: {
+      kind: "strategy_exit" | "timed_comparison";
+      pf_label: string;
+      timed_minutes: number;
+      authored_exit: string;
+      authored_exit_collected: boolean;
+    };
     pairs: StrategyTickerResearchPair[];
   }[];
 }

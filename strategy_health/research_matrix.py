@@ -12,6 +12,7 @@ from config.strategy_catalog import (
     reviewed_strategy_ids,
 )
 from strategy_health.candidate_evidence import candidate_signal_is_timely
+from strategy_health.exit_measurement import exit_measurement
 from strategy_health.ticker_qualification import DEFAULT_POLICY
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
@@ -797,6 +798,7 @@ def build_research_matrix(days: int = 90) -> dict:
             },
             "trading_tickers": sorted(rule.tickers) if rule and not rule.observation_only else [],
             "exit_minutes": exit_minutes,
+            "exit_measurement": exit_measurement(strategy_id, exit_minutes),
             "pairs": sorted(pairs, key=lambda pair: (priority[pair["status"]], pair["ticker"])),
         })
     scan_meta = (_read_daily_universe().get("scan_meta") or {})
