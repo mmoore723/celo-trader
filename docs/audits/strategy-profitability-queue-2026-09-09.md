@@ -9,6 +9,12 @@ a PF 1.5+ strategy+ticker recommendation with sufficient evidence or a precise
 next experiment. Research continues collecting every distinct trigger. Nothing
 in this queue grants a paper/live rule change.
 
+This is a continuous catalog loop, not a single-strategy task. Finishing or
+improving one strategy does not complete the goal: record its disposition,
+advance to the next numbered strategy, and keep iterating until all 26 rows have
+been investigated and verified. After row 26, rerank unresolved rows using the
+new evidence and begin the next pass instead of stopping.
+
 ## Production baseline
 
 - Data window: August 11–September 9, 2026 (21 market days)
@@ -26,7 +32,7 @@ can make PF or average P&L look better while the typical trade loses.
 
 | Priority | Strategy | Current priced evidence | Stage / next action |
 |---:|---|---:|---|
-| 1 | VWAP Pullback (`V2_VWAP_PULLBACK`) | 90 · PF 0.10 · -$3,140.00 | Diagnose entry vs exit by ticker; SPY and QQQ first |
+| 1 | VWAP Pullback (`V2_VWAP_PULLBACK`) | 90 · PF 0.10 · -$3,140.00 | Preserve the intended 5-minute runtime; diagnose SPY/QQQ entry context without reusing rejected RSI/MACD filters |
 | 2 | Trend Continuation (`V2_TREND_CONT`) | 50 · PF 0.06 · -$2,544.00 | Diagnose direction/entry gates; compare exits only where direction works |
 | 3 | Turtle Soup Reversal (`V2_TURTLE_SOUP_RTH`) | 22 · PF 0.98 · -$7.60 | Preserve pair differences; validate AAPL, repair SPY separately |
 | 4 | SPY Trend Continuation (`V2_SPY_TREND_CONT`) | 10 · PF 0.13 · -$230.00 | Reconcile forward rule with paid PF 1.75 evidence |
@@ -74,6 +80,25 @@ the reviewed paper/live default at 7–21 DTE. It also calculates DTE from the
 New York market date rather than the EC2 server's UTC date. Historical rows are
 not rewritten; future setups will show whether quote coverage improves.
 
+## Queue row 1: VWAP Pullback fidelity check
+
+The current prospective `V2_VWAP_PULLBACK` rule is intentionally evaluated on
+completed five-minute candles. That cadence existed when the all-ticker runner
+was introduced and remained the default when per-strategy cadence support was
+added. A separate paid SPY archive study labeled with the same strategy ID used
+one-minute candles, so its results are not interchangeable with the current
+five-minute `research.1` evidence and must not be presented as validation of the
+live research rule.
+
+That paid one-minute study already tested the unfiltered rule, RSI(14),
+MACD(12,26,9), their combination, and broad time-of-day/side contexts. None
+passed the chronological gate: the May-June portion had negative mean and
+median returns even though July improved. Those filters will not be recycled as
+a new repair. Row 1 continues with the current five-minute rule and a separately
+predeclared entry-context diagnosis; contract and exit assumptions stay fixed
+while entry quality is isolated. The 90-minute prospective results remain the
+authoritative current baseline.
+
 ## Loop rules
 
 1. Use current production aggregates to pick the highest-information target.
@@ -87,3 +112,6 @@ not rewritten; future setups will show whether quote coverage improves.
 6. Update this queue after every completed experiment and continue to the next
    strategy. Never disable a strategy or alter paper/live execution without a
    separately reviewed, explicitly approved promotion.
+7. A successful result on one row is a checkpoint, not the goal's completion
+   condition. Complete the full 1-through-26 pass, then loop back through every
+   unresolved row in evidence-priority order.
