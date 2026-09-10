@@ -41,7 +41,7 @@ _AUTHORED_EXITS = {
     "V2_SPY_ORB_RSI_MACD_SHORT": "Exit at the signal's structural stop or target.",
     "V2_TREND_CONT": "Exit on a completed 5-minute candle at the original stop, 2R target, or hold/session limit.",
     "V2_TURTLE_SOUP_RTH": "Exit at the failed-auction structural stop or target.",
-    "V2_VWAP_PULLBACK": "Exit at the signal's structural stop or target.",
+    "V2_VWAP_PULLBACK": "Check the original stop and 2R target at each 5-minute close. This intraday test ends by market close.",
     "V2_VWAP_REVERSION_RTH": "Exit at the 4-ATR stop or session VWAP target.",
     "TV_SUPERTREND_REVERSAL_V4": "Exit on the next opposite SuperTrend flip, or at the session close.",
 }

@@ -1,5 +1,5 @@
 """Explicit registry of implemented observation protocols, never order routes."""
-from strategy_health import impulse_exit, supertrend_exit, momentum_exit, gap_fill_exit, trend_exit
+from strategy_health import impulse_exit, supertrend_exit, momentum_exit, gap_fill_exit, trend_exit, vwap_exit
 
 PROTOCOLS = {
     impulse_exit.STRATEGY_ID: impulse_exit.PROTOCOL,
@@ -7,6 +7,7 @@ PROTOCOLS = {
     momentum_exit.STRATEGY_ID: momentum_exit.PROTOCOL,
     gap_fill_exit.STRATEGY_ID: gap_fill_exit.PROTOCOL,
     trend_exit.STRATEGY_ID: trend_exit.PROTOCOL,
+    vwap_exit.STRATEGY_ID: vwap_exit.PROTOCOL,
 }
 SHORT_TRAIL_PROTOCOLS = {
     module.PROTOCOL: (module.STRATEGY_ID, module.LOW_WATER_PROTOCOL)
@@ -27,6 +28,8 @@ def candidate_metadata(strategy_id, strategy):
         result["authored_exit_state"] = gap_fill_exit.entry_state(strategy)
     if strategy_id == trend_exit.STRATEGY_ID:
         result["authored_exit_state"] = trend_exit.entry_state(strategy)
+    if strategy_id == vwap_exit.STRATEGY_ID:
+        result["authored_exit_state"] = vwap_exit.entry_state(strategy)
     return result
 
 
@@ -39,6 +42,9 @@ def first_exit(protocol, frame, *, entry_at, entry_quote_at, direction, meta, no
     if protocol == trend_exit.PROTOCOL:
         return trend_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),
                                      stop=meta["underlying_stop"], target=meta["underlying_target"])
+    if protocol == vwap_exit.PROTOCOL:
+        return vwap_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),
+                                    stop=meta["underlying_stop"], target=meta["underlying_target"])
     if protocol in {momentum_exit.PROTOCOL, momentum_exit.LOW_WATER_PROTOCOL}:
         return momentum_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),
                                         stop=meta["underlying_stop"], target=meta["underlying_target"],
