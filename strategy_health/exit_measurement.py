@@ -32,7 +32,7 @@ _AUTHORED_EXITS = {
     "V2_AFTERNOON_REVERSAL": "Exit at the signal's structural stop or target.",
     "V2_EMA_PULLBACK_RTH": "Exit at the signal's structural stop or 2.06R target.",
     "V2_FAIR_VALUE_GAP": "Exit at the signal's structural stop or target.",
-    "V2_GAP_FILL_RTH": "Exit with the strategy's 2-ATR trailing stop; there is no fixed profit target.",
+    "V2_GAP_FILL_RTH": "Track the 2-ATR stop on 1-minute candles; tighten after each 5-minute close. No fixed target; exit by session close.",
     "V2_MIDDAY_BREAKDOWN": "Exit at the signal's structural stop or target.",
     "V2_OPENING_MOMENTUM_RTH_EXPLORATORY": "Track the 2-ATR stop on 1-minute candles; tighten after each 5-minute close. No fixed target; exit by session close.",
     "V2_ORB_CONFIRMED_BREAKOUT": "Exit at the opening-range structural stop or 1.5R target.",

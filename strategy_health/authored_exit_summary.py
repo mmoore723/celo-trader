@@ -67,7 +67,7 @@ def authored_summary(samples, exits, protocol=PROTOCOL):
         )} for r in selected[-5:]],
     }
     from strategy_health.exit_comparison import low_water_comparison
-    from strategy_health.momentum_exit import PROTOCOL as MOMENTUM_PROTOCOL
-    if protocol == MOMENTUM_PROTOCOL:
-        result["short_trail_comparison"] = low_water_comparison(selected)
+    from strategy_health.exit_protocols import SHORT_TRAIL_PROTOCOLS
+    if protocol in SHORT_TRAIL_PROTOCOLS:
+        result["short_trail_comparison"] = low_water_comparison(selected, protocol)
     return result

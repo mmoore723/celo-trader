@@ -30,9 +30,9 @@ def engine_hash():
     return hashlib.sha256(source.encode()).hexdigest()
 
 
-def entry_state(strategy):
+def entry_state(strategy, *, fingerprint=None):
     return {
-        "engine_hash": engine_hash(), "atr_period": strategy.config.atr_bars,
+        "engine_hash": fingerprint or engine_hash(), "atr_period": strategy.config.atr_bars,
         "trail_multiple": strategy.config.atr_trail_multiple,
         "history": [[et(b.timestamp).isoformat(), b.open, b.high, b.low, b.close]
                     for b in strategy._history[-15:]],
@@ -46,37 +46,38 @@ def valid_bar(stamp, values):
     return Bar(et(stamp), o, high, low, close)
 
 
-def restored(seed, entry):
+def restored(seed, entry, *, engine_factory=OpeningMomentumRTH, fingerprint=None):
     try:
-        if seed["engine_hash"] != engine_hash() or seed["atr_period"] != 14 or seed["trail_multiple"] != 2:
+        if seed["engine_hash"] != (fingerprint or engine_hash()) or seed["atr_period"] != 14 or seed["trail_multiple"] != 2:
             return None
         bars = [valid_bar(row[0], row[1:]) for row in seed["history"]]
         if len(bars) != 15 or bars[-1].timestamp + timedelta(minutes=5) != entry:
             return None
         if any(a.timestamp >= b.timestamp for a, b in zip(bars, bars[1:])):
             return None
-        engine = OpeningMomentumRTH()
+        engine = engine_factory()
         engine._history = bars
         return engine
     except (TypeError, ValueError, KeyError, AttributeError, IndexError):
         return None
 
 
-def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, stop, target, now, short_low_water=False):
+def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, stop, target, now,
+               short_low_water=False, restore_engine=None, strategy_id=STRATEGY_ID):
     entry, now = et(entry_at), et(now)
     if (direction not in {"bullish", "bearish"} or entry.minute % 5 or entry.second or entry.microsecond
             or not entry.replace(hour=9, minute=30) <= entry < entry.replace(hour=16, minute=0)):
         return entry, "invalid_entry"
     if not entry <= et(entry_quote_at) < entry + timedelta(minutes=5):
         return entry, "late_entry_quote"
-    engine = restored(seed, entry)
+    engine = (restore_engine or restored)(seed, entry)
     if engine is None:
         return entry, "missing_indicator_state"
     try:
         side = Side.LONG if direction == "bullish" else Side.SHORT
         if not all(math.isfinite(float(v)) for v in (stop, target)):
             raise ValueError("Invalid levels")
-        signal = Signal(STRATEGY_ID, side, entry-timedelta(minutes=5), engine._history[-1].close,
+        signal = Signal(strategy_id, side, entry-timedelta(minutes=5), engine._history[-1].close,
                         stop, target, {"no_profit_target": True})
     except (TypeError, ValueError):
         return entry, "invalid_levels"
