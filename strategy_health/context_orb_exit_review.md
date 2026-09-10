@@ -37,3 +37,16 @@ Acceptance covers long/short close-only invalidation, targets/partial arithmetic
 integer quantities, stale/wrong quotes, gaps, late entry, restart/isolation,
 overlapping candidates sharing quotes, additive migration and UI separation.
 No claim that the strategy is profitable or ready to promote.
+
+## ATR10 registration — September 10, 2026
+
+The saved replay assigns ATR10 the same premium partial/midpoint/15:55 policy.
+The unchanged entry source requires ten prior daily contexts, prior range
+strictly below ATR10, a completed one-minute upside opening-range breakout
+and volume above 1.5 times its preceding twenty bars. It is long only.
+ATR10 gets a separate protocol and strategy-bound proof; existing NR7 proof
+and pending records remain unchanged. Short or borrowed-proof ATR10 records
+are unmeasurable, not fictional trades. The cross-ticker adapter preserves
+actual ticker candles and account scope. No entry, execution or toggle changed.
+The complete premium capture regression suite runs for both strategies,
+including overlapping plays, price gaps, losses, restart and account isolation.

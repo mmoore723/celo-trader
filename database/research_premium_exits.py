@@ -4,7 +4,7 @@ import json
 import math
 
 from database.connection import get_conn
-from strategy_health.context_orb_exit import first_exit
+from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS, first_exit
 from strategy_health.impulse_exit import et, executable_bid
 
 CREATE_TABLE = '''CREATE TABLE IF NOT EXISTS research_premium_exit_paths (
@@ -20,7 +20,8 @@ def capture(row, frame, get_quote, clock):
     now=et(clock())
     if row['status']=='collecting':
         event=first_exit(frame,entry_at=row['trigger_bar'],entry_quote_at=row['entry_quote_at'],
-                         direction=row['direction'],meta=json.loads(row['metadata_json']),now=now)
+                         direction=row['direction'],meta=json.loads(row['metadata_json']),now=now,
+                         strategy_id=next(key for key,value in PREMIUM_PROTOCOLS.items() if value==row['protocol']))
         if et(row['trigger_bar']).date()<now.date():
             event=(et(row['trigger_bar']).replace(hour=15,minute=55),'missed_session')
         if not math.isfinite(row['entry_ask']) or row['entry_ask']<=0:

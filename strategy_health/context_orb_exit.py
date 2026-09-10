@@ -11,6 +11,9 @@ from strategy_health.impulse_exit import et
 STRATEGY_ID = source.ORB_NR7_INSIDE
 PROTOCOL = 'context_orb_nr7_premium_partials_midpoint_1555_v1'
 PREMIUM_PROTOCOLS = {STRATEGY_ID: PROTOCOL}
+ATR10_STRATEGY_ID = source.ORB_ATR10_LONG
+ATR10_PROTOCOL = 'context_orb_atr10_premium_partials_midpoint_1555_v1'
+PREMIUM_PROTOCOLS[ATR10_STRATEGY_ID] = ATR10_PROTOCOL
 
 
 @lru_cache(maxsize=1)
@@ -21,14 +24,20 @@ def engine_hash():
 def metadata(strategy_id):
     if strategy_id not in PREMIUM_PROTOCOLS:
         return {}
-    return {'authored_exit_protocol':PREMIUM_PROTOCOLS[strategy_id],
-            'authored_exit_state':{'engine_hash':engine_hash(), 'policy':'midpoint_close_1555_30_100_v1'}}
+    state = {'engine_hash':engine_hash(), 'policy':'midpoint_close_1555_30_100_v1'}
+    # Preserve existing NR7 records; ATR10 proof cannot be borrowed from NR7.
+    if strategy_id == ATR10_STRATEGY_ID:
+        state['strategy_id'] = strategy_id
+    return {'authored_exit_protocol':PREMIUM_PROTOCOLS[strategy_id], 'authored_exit_state':state}
 
 
-def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now):
+def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strategy_id=STRATEGY_ID):
     entry, now = et(entry_at), et(now)
-    if meta.get('authored_exit_state') != metadata(STRATEGY_ID)['authored_exit_state']:
+    expected = metadata(strategy_id)
+    if not expected or meta.get('authored_exit_state') != expected['authored_exit_state']:
         return entry, 'missing_exit_state'
+    if strategy_id == ATR10_STRATEGY_ID and direction != 'bullish':
+        return entry, 'invalid_direction'
     cap = entry.replace(hour=15,minute=55)
     if entry.second or entry.microsecond or not entry.replace(hour=9,minute=30)<=entry<cap:
         return entry,'invalid_entry'
