@@ -115,3 +115,15 @@ authoritative current baseline.
 7. A successful result on one row is a checkpoint, not the goal's completion
    condition. Complete the full 1-through-26 pass, then loop back through every
    unresolved row in evidence-priority order.
+
+## Catalog-wide evidence gate correction
+
+The shared research matrix previously exposed PF, win rate, and net P&L but did
+not calculate the mean trade, median trade, or chronological running drawdown.
+It could therefore label a pair "working" when a few large winners lifted PF
+above 1.5 while the typical trade still lost. The corrected gate requires a
+positive median in addition to PF and the existing result/day/chronological
+checks. Every ticker pair and every recorded exit/contract comparison now
+reports average one-contract P&L, typical one-contract P&L, and the pair's
+largest running drop. A high-PF pair with a non-positive median is sent to a
+fixed-entry/fixed-contract dynamic-exit experiment instead of being recommended.

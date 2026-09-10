@@ -37,6 +37,40 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual(0, summary["option_results"])
         self.assertEqual(1, summary["mistimed_quotes_ignored"])
 
+    def test_exit_summary_reports_mean_median_and_running_drawdown(self):
+        rows = []
+        for index, exit_bid in enumerate((3.03, 1.83, 2.53), start=1):
+            rows.append({
+                "observed_at": f"2026-09-0{index}T10:00:00-04:00",
+                "entry_ask": 2.0,
+                "bid_30": exit_bid,
+                "entry_quote_at": f"2026-09-0{index}T10:00:00-04:00",
+                "mark_30_at": f"2026-09-0{index}T10:30:00-04:00",
+            })
+        summary, _ = _exit_summary(rows, 30)
+        self.assertEqual(3, summary["option_results"])
+        self.assertEqual(43.03, summary["average_one_contract_pnl"])
+        self.assertEqual(49.7, summary["median_one_contract_pnl"])
+        self.assertEqual(20.3, summary["maximum_drawdown_one_contract"])
+
+    def test_high_pf_with_losing_typical_trade_is_not_called_working(self):
+        status, explanation = research_status(
+            results=20, days=8, sessions=20, factor=2.5, median_pnl=-5.0,
+        )
+        self.assertEqual("needs_tuning", status)
+        self.assertIn("typical trade", explanation)
+
+    def test_skewed_profitable_pair_gets_dynamic_exit_experiment(self):
+        plans = _improvement_tests(
+            setups=20, sessions=20, option_results=20, option_result_days=8,
+            direction_results=20, direction_accuracy=65.0, factor=2.5,
+            median_pnl=-5.0, exit_minutes=90,
+            exit_summaries=[{"minutes": 90, "option_results": 20, "profit_factor": 2.5}],
+            contract_tests=[],
+        )
+        self.assertEqual("Reduce reliance on a few big wins", plans[0]["title"])
+        self.assertIn("dynamic exit", plans[0]["test"])
+
     def test_matrix_applies_current_rule_without_counting_old_unknown_rows(self):
         samples = [
             {"direction": "bullish", "metadata_json": '{"strategy_version":"2.1.0","pa_consecutive_higher_lows": true}'},

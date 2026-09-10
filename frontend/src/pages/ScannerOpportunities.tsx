@@ -83,6 +83,9 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMinute
         <p><b>Usable option prices:</b> {pair.quote_coverage_pct == null ? "—" : `${pair.quote_coverage_pct}%`}</p>
         <p><b>Stock moved correctly:</b> {pair.direction_accuracy == null ? "—" : `${pair.direction_accuracy}% of ${pair.direction_results}`}</p>
         <p><b>Compared exit:</b> {exitMinutes} minutes</p>
+        {pair.option_results > 0 && <p><b>Average result:</b> {money(pair.average_one_contract_pnl)}</p>}
+        {pair.option_results > 0 && <p><b>Typical result:</b> {money(pair.median_one_contract_pnl)}</p>}
+        {pair.option_results > 0 && <p><b>Largest running drop:</b> {money(pair.maximum_drawdown_one_contract)}</p>}
         {pair.rule_rejected > 0 && <p><b>Filtered by current rule:</b> {pair.rule_rejected}</p>}
         {pair.previous_version_rows > 0 && <p><b>Earlier-version setups kept separate:</b> {pair.previous_version_rows}</p>}
         {pair.rule_unscored > 0 && <p><b>Current-version setups missing proof:</b> {pair.rule_unscored}</p>}

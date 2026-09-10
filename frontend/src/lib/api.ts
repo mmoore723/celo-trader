@@ -104,6 +104,9 @@ export interface ResearchContractTest {
   win_rate_pct: number | null;
   profit_factor: number | "infinite" | null;
   net_one_contract_pnl: number;
+  average_one_contract_pnl: number | null;
+  median_one_contract_pnl: number | null;
+  maximum_drawdown_one_contract: number | null;
   mistimed_quotes_ignored: number;
   older_profit_factor: number | "infinite" | null;
   newer_profit_factor: number | "infinite" | null;
@@ -129,6 +132,9 @@ export interface StrategyTickerResearchPair {
   win_rate_pct: number | null;
   profit_factor: number | "infinite" | null;
   net_one_contract_pnl: number;
+  average_one_contract_pnl: number | null;
+  median_one_contract_pnl: number | null;
+  maximum_drawdown_one_contract: number | null;
   direction_results: number;
   direction_accuracy: number | null;
   quote_coverage_pct: number | null;
@@ -151,6 +157,9 @@ export interface StrategyTickerResearchPair {
     win_rate_pct: number | null;
     profit_factor: number | "infinite" | null;
     net_one_contract_pnl: number;
+    average_one_contract_pnl: number | null;
+    median_one_contract_pnl: number | null;
+    maximum_drawdown_one_contract: number | null;
     mistimed_quotes_ignored: number;
   }[];
   contract_tests: ResearchContractTest[];
@@ -194,6 +203,9 @@ export interface StrategyResearchMatrix {
       option_results: number;
       option_result_days: number;
       net_one_contract_pnl: number;
+      average_one_contract_pnl: number | null;
+      median_one_contract_pnl: number | null;
+      maximum_drawdown_one_contract: number | null;
     };
     research_enabled: boolean;
     trading_tickers: string[];

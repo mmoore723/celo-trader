@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import json
+from statistics import median
 
 from config.market_constants import COMMISSION_PER_CONTRACT
 from config.strategy_catalog import (
@@ -78,6 +79,26 @@ def _factor(profits: list[float]) -> float | str | None:
     if losses == 0:
         return "infinite" if wins > 0 else None
     return round(wins / losses, 2)
+
+
+def _distribution_summary(profits: list[float]) -> dict[str, float | None]:
+    """Describe both the typical result and path risk without hiding skew."""
+    if not profits:
+        return {
+            "average_one_contract_pnl": None,
+            "median_one_contract_pnl": None,
+            "maximum_drawdown_one_contract": None,
+        }
+    equity = peak = maximum_drawdown = 0.0
+    for profit in profits:
+        equity += profit
+        peak = max(peak, equity)
+        maximum_drawdown = max(maximum_drawdown, peak - equity)
+    return {
+        "average_one_contract_pnl": round(sum(profits) / len(profits), 2),
+        "median_one_contract_pnl": round(float(median(profits)), 2),
+        "maximum_drawdown_one_contract": round(maximum_drawdown, 2),
+    }
 
 
 def _numeric_factor(value: object) -> float:
@@ -177,6 +198,7 @@ def _exit_summary(samples: list, exit_minutes: int) -> tuple[dict, list[tuple[st
         "win_rate_pct": round(wins / len(profits) * 100, 1) if profits else None,
         "profit_factor": _factor(profits),
         "net_one_contract_pnl": round(sum(profits), 2),
+        **_distribution_summary(profits),
         "mistimed_quotes_ignored": sum(result[1] == "mistimed_quote" for _, result in measured),
     }, dated_profits)
 
@@ -219,6 +241,7 @@ def _contract_policy_summaries(
         status, explanation = research_status(
             results=summary["option_results"], days=result_days,
             sessions=sessions, factor=summary["profit_factor"],
+            median_pnl=summary["median_one_contract_pnl"],
             older_factor=older, newer_factor=newer,
             comparison_split_date=comparison_split_date,
         )
@@ -234,6 +257,9 @@ def _contract_policy_summaries(
             "win_rate_pct": summary["win_rate_pct"],
             "profit_factor": summary["profit_factor"],
             "net_one_contract_pnl": summary["net_one_contract_pnl"],
+            "average_one_contract_pnl": summary["average_one_contract_pnl"],
+            "median_one_contract_pnl": summary["median_one_contract_pnl"],
+            "maximum_drawdown_one_contract": summary["maximum_drawdown_one_contract"],
             "mistimed_quotes_ignored": summary["mistimed_quotes_ignored"],
             "older_profit_factor": older,
             "newer_profit_factor": newer,
@@ -309,11 +335,14 @@ def _chronological_split_date(dated_profits: list[tuple[str, float]]) -> str | N
 
 def research_status(
     *, results: int, days: int, sessions: int, factor: object,
+    median_pnl: float | None = None,
     older_factor: object = None, newer_factor: object = None,
     comparison_split_date: str | None = None,
 ) -> tuple[str, str]:
     numeric = _numeric_factor(factor)
     if results >= 20 and days >= 8 and numeric >= 1.5:
+        if median_pnl is not None and median_pnl <= 0:
+            return "needs_tuning", "PF is above 1.5, but the typical trade does not make money."
         if newer_factor is not None and _numeric_factor(newer_factor) < 1.5:
             boundary = comparison_split_date or "the comparison date"
             return "needs_tuning", f"It passed before {boundary} but fell below 1.5 from {boundary}."
@@ -325,6 +354,8 @@ def research_status(
     if results >= 3 and numeric < 1.0:
         return "losing_so_far", "The first results are losing. Do not promote this pair yet."
     if results >= 5 and numeric >= 1.5:
+        if median_pnl is not None and median_pnl <= 0:
+            return "needs_tuning", "PF is above 1.5, but the typical trade does not make money."
         return "promising", "PF is above 1.5, but there are not enough results yet."
     if results:
         return "collecting", "More results are needed before judging it."
@@ -388,6 +419,7 @@ def _improvement_tests(
     *, setups: int, sessions: int, option_results: int, option_result_days: int,
     direction_results: int, direction_accuracy: float | None, factor: object,
     exit_minutes: int, exit_summaries: list[dict], contract_tests: list[dict],
+    median_pnl: float | None = None,
     selection_reasons: dict[str, int] | None = None,
 ) -> list[dict]:
     """Turn measured weaknesses into specific next experiments, never claims."""
@@ -416,6 +448,15 @@ def _improvement_tests(
             "title": "Complete option pricing first",
             "evidence": f"Only {option_results} of {setups} distinct research plays have a usable ask-to-bid result ({coverage * 100:.0f}%).",
             "test": "Repair or extend quote capture for the same contract before judging entry or exit changes.",
+        })
+    if (
+        option_results >= 5 and _numeric_factor(factor) >= 1.5
+        and median_pnl is not None and median_pnl <= 0
+    ):
+        plans.append({
+            "title": "Reduce reliance on a few big wins",
+            "evidence": f"PF is {_factor_label(factor)}, but the typical one-contract result is ${median_pnl:,.2f}.",
+            "test": "Keep the entry and contract fixed. Compare the current timed exit with one causal dynamic exit, then require positive mean and median on future dates.",
         })
     if direction_results >= 5 and direction_accuracy is not None:
         if direction_accuracy < 50:
@@ -640,6 +681,9 @@ def build_research_matrix(days: int = 90) -> dict:
                     "minutes": exit_minutes, "option_results": 0, "wins": 0,
                     "win_rate_pct": None, "profit_factor": None,
                     "net_one_contract_pnl": 0.0,
+                    "average_one_contract_pnl": None,
+                    "median_one_contract_pnl": None,
+                    "maximum_drawdown_one_contract": None,
                     "mistimed_quotes_ignored": 0,
                 }
             strategy_current_results.extend(current_results)
@@ -650,6 +694,7 @@ def build_research_matrix(days: int = 90) -> dict:
             status, explanation = research_status(
                 results=current_summary["option_results"], days=option_result_days,
                 sessions=sessions.get(ticker, 0), factor=factor,
+                median_pnl=current_summary["median_one_contract_pnl"],
                 older_factor=older_factor, newer_factor=newer_factor,
                 comparison_split_date=comparison_split_date,
             )
@@ -675,7 +720,9 @@ def build_research_matrix(days: int = 90) -> dict:
                 option_results=current_summary["option_results"],
                 option_result_days=option_result_days,
                 direction_results=measured, direction_accuracy=direction_accuracy,
-                factor=factor, exit_minutes=exit_minutes,
+                factor=factor,
+                median_pnl=current_summary["median_one_contract_pnl"],
+                exit_minutes=exit_minutes,
                 exit_summaries=exit_summaries, contract_tests=contract_tests,
                 selection_reasons=selection_reasons,
             )
@@ -699,6 +746,9 @@ def build_research_matrix(days: int = 90) -> dict:
                 "win_rate_pct": current_summary["win_rate_pct"],
                 "profit_factor": factor,
                 "net_one_contract_pnl": current_summary["net_one_contract_pnl"],
+                "average_one_contract_pnl": current_summary["average_one_contract_pnl"],
+                "median_one_contract_pnl": current_summary["median_one_contract_pnl"],
+                "maximum_drawdown_one_contract": current_summary["maximum_drawdown_one_contract"],
                 "direction_results": measured,
                 "direction_accuracy": direction_accuracy,
                 "quote_coverage_pct": round(current_summary["option_results"] / len(samples) * 100, 1) if samples else None,
@@ -732,6 +782,18 @@ def build_research_matrix(days: int = 90) -> dict:
                 "net_one_contract_pnl": round(
                     sum(profit for _, profit in strategy_current_results), 2,
                 ),
+                "average_one_contract_pnl": (
+                    round(sum(profit for _, profit in strategy_current_results) / len(strategy_current_results), 2)
+                    if strategy_current_results else None
+                ),
+                "median_one_contract_pnl": (
+                    round(float(median(profit for _, profit in strategy_current_results)), 2)
+                    if strategy_current_results else None
+                ),
+                # Pair rows retain exact chronological order. The aggregate
+                # contains date-only keys from many tickers, so an account-wide
+                # path drawdown would invent an intraday ordering.
+                "maximum_drawdown_one_contract": None,
             },
             "trading_tickers": sorted(rule.tickers) if rule and not rule.observation_only else [],
             "exit_minutes": exit_minutes,
