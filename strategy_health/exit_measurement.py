@@ -42,7 +42,7 @@ _AUTHORED_EXITS = {
     "V2_TREND_CONT": "Exit on a completed 5-minute candle at the original stop, 2R target, or hold/session limit.",
     "V2_TURTLE_SOUP_RTH": "Check the original sweep stop and 1.5R target at each 5-minute close; exit by market close.",
     "V2_VWAP_PULLBACK": "Check the original stop and 2R target at each 5-minute close. This intraday test ends by market close.",
-    "V2_VWAP_REVERSION_RTH": "Exit at the 4-ATR stop or session VWAP target.",
+    "V2_VWAP_REVERSION_RTH": "Check the original 4-ATR stop and entry VWAP target at each 5-minute close; exit by market close.",
     "TV_SUPERTREND_REVERSAL_V4": "Exit on the next opposite SuperTrend flip, or at the session close.",
 }
 

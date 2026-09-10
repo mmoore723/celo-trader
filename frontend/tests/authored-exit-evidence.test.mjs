@@ -57,3 +57,9 @@ test("the actual target ratio is displayed without mixing 1.5R and 2R", () => {
   assert.doesNotMatch(html, /2R target reached/);
   assert.match(render({...empty, reasons: {underlying_2r_target: 2}}), /2R target reached: 2/);
 });
+
+test("the frozen entry VWAP target is not labeled as a fixed R multiple", () => {
+  const html = render({...empty, reasons: {underlying_vwap_target: 4}});
+  assert.match(html, /Entry VWAP target reached: 4/);
+  assert.doesNotMatch(html, /1.5R target|2R target/);
+});
