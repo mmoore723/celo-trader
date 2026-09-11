@@ -434,7 +434,7 @@ export function Settings() {
   }
 
   return (
-    <div className="p-4 max-w-5xl flex flex-col gap-4">
+    <div className="settings-page p-4 flex flex-col gap-4">
       <div role="tablist" aria-label="Settings sections" className="flex gap-2">
         {(["general", "strategies"] as const).map(tab => <button key={tab} role="tab"
           id={`settings-tab-${tab}`} aria-selected={activeTab === tab} aria-controls={`settings-panel-${tab}`}
@@ -449,11 +449,13 @@ export function Settings() {
           className={`btn ${activeTab === tab ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategies"}</button>)}
       </div>
-      <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "flex flex-col gap-4 max-w-2xl" : "hidden"}>
+      <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "settings-card-grid" : "hidden"}>
+      <div className="settings-wide settings-paired-grid">
       {recommendationsFailed ? <div className="card p-4 text-sm" role="alert">Recommendations could not load. <button className="btn btn-ghost" onClick={() => refreshRecommendations()}>Try again</button></div> : recommendationsLoading ? <p role="status" className="text-sm">Checking strategy recommendations…</p> : <StrategyRecommendations
         recommendations={strategyRecommendations?.recommendations ?? []}
         onDecision={decideRecommendation}
       />}
+      </div>
       {/* Trading Mode */}
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Trading mode</h3>
@@ -602,7 +604,7 @@ export function Settings() {
       {/* Display */}
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Display</h3>
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-2">
           <label className="text-sm" style={{ color: "var(--ink)" }}>
             Timezone
             <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
@@ -610,7 +612,7 @@ export function Settings() {
             </span>
           </label>
           <select
-            className="select w-56"
+            className="select w-full min-w-0"
             value={form.display_timezone ?? "America/New_York"}
             onChange={(e) => set("display_timezone", e.target.value)}
           >
@@ -788,14 +790,18 @@ export function Settings() {
 
       {/* API Credentials — two independent panels, see the comment above
           AlpacaCredentialsPanel for why they're structurally separate now */}
+      <section className="settings-wide flex flex-col gap-3" aria-label="API credentials">
       <p className="text-xs font-semibold px-1" style={{ color: "var(--ink-muted)" }}>
         API Credentials — each saves independently
       </p>
-      <AlpacaCredentialsPanel />
-      <TradierCredentialsPanel provider={actualBrokerProvider} paper={actualAccountMode === "paper"} />
+      <div className="settings-paired-grid">
+        <AlpacaCredentialsPanel />
+        <TradierCredentialsPanel provider={actualBrokerProvider} paper={actualAccountMode === "paper"} />
+      </div>
       <p className="text-xs px-1" style={{ color: "var(--ink-muted)" }}>
         Keys are encrypted at rest (AES-128 / Fernet). Never stored in plain text.
       </p>
+      </section>
 
       </div>
       <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
@@ -805,7 +811,7 @@ export function Settings() {
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           On means the strategy may place {actualAccountMode} orders on the tickers listed under “Trades.” Research continues on all other collected tickers.
         </p>
-        <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}</div>
+        <div className="settings-card-grid">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}</div>
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
           New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
         </div>
@@ -828,12 +834,15 @@ export function Settings() {
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} New matches need 20 non-overlapping completed tests and passing profit checks—not a minimum number of days.
         </p>
-        <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
+        <div className="settings-card-grid">
+        {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}
         <TestedStrategies
+          embedded
           researchIds={form.research_strategy_ids ?? []}
           onResearchIdsChange={ids => set("research_strategy_ids", ids)}
           researchMatrix={strategyResearch}
         />
+        </div>
       </section>
       </div>
 

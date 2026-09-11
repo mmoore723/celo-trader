@@ -33,11 +33,11 @@ const fixture = {
     "reports/legacy.json": {title: "Legacy test", purpose: "No strategy ID", decision: "", status: "saved_study"},
   },
 };
-function render(data, researchIds = [], researchMatrix) {
+function render(data, researchIds = [], researchMatrix, embedded = false) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   if (data) client.setQueryData(["tested-strategies", researchIds], data);
   const html = renderToStaticMarkup(createElement(QueryClientProvider, {client},
-    createElement(TestedStrategies, {researchIds, researchMatrix, onResearchIdsChange: () => {}})));
+    createElement(TestedStrategies, {researchIds, researchMatrix, embedded, onResearchIdsChange: () => {}})));
   client.clear();
   return html;
 }
@@ -84,4 +84,12 @@ test("settings headline uses the shared actual strategy-exit evidence", () => {
   assert.match(html, /Strategy-exit PF 0.50/);
   assert.match(html, /2 completed tests/);
   assert.doesNotMatch(html, /Current PF/);
+});
+
+test("embedded tested strategies join the shared grid without a second nested column layout", () => {
+  const data = {...fixture, runtime_research: [{strategy_id: "V2_TREND_CONT", display_name: "Trend"}]};
+  const html = render(data, ["V2_TREND_CONT"], undefined, true);
+  assert.match(html, /class="contents" id="tested-strategy-library"/);
+  assert.match(html, /role="switch"/);
+  assert.doesNotMatch(html, /settings-card-grid/);
 });

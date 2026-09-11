@@ -4,11 +4,12 @@ import { StrategyToggleCard } from "./StrategyToggleCard";
 import { PairEvidence } from "./PairEvidence";
 
 export function TestedStrategies({
-  researchIds, onResearchIdsChange, researchMatrix,
+  researchIds, onResearchIdsChange, researchMatrix, embedded = false,
 }: {
   researchIds: string[];
   onResearchIdsChange: (ids: string[]) => void;
   researchMatrix?: StrategyResearchMatrix;
+  embedded?: boolean;
 }) {
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["tested-strategies", researchIds], queryFn: api.settings.testedStrategies,
@@ -27,7 +28,7 @@ export function TestedStrategies({
 
   const factorText = (value: number | "infinite" | null | undefined) => value === "infinite" ? "∞" : typeof value === "number" ? value.toFixed(2) : "—";
 
-  return <div className="mt-1 grid gap-3 lg:grid-cols-2" id="tested-strategy-library">
+  return <div className={embedded ? "contents" : "settings-card-grid"} id="tested-strategy-library">
     {runtime.map((strategy) => {
         const enabled = researchIds.includes(strategy.strategy_id);
         const matrixStrategy = researchMatrix?.strategies.find(item => item.strategy_id === strategy.strategy_id);

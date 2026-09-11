@@ -52,7 +52,7 @@ test("strategy settings use distinct cards and explicit evidence dates", () => {
   assert.match(settingsSource, /Current research · strategy exits/);
   assert.match(settingsSource, /Tests through/);
   assert.match(settingsSource, /option result/);
-  assert.match(settingsSource, /grid gap-3 lg:grid-cols-2/);
+  assert.match(settingsSource, /settings-card-grid/);
   assert.doesNotMatch(settingsSource, /Past test/);
   assert.doesNotMatch(settingsSource, /May place orders on the tickers above/);
   assert.doesNotMatch(settingsSource, /RESEARCH ONLY · No orders/);
