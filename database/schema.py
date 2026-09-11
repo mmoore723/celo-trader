@@ -404,6 +404,7 @@ CREATE TABLE IF NOT EXISTS underlying_quote_observations (
     ask               REAL    NOT NULL,
     mid               REAL    NOT NULL,
     source            TEXT    NOT NULL DEFAULT 'alpaca',
+    quote_at          TEXT,
     UNIQUE(broker_account_id, ticker, observed_at)
 );
 """
@@ -482,6 +483,9 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
         conn.execute(_CREATE_SCANNER_CANDLE_OBSERVATIONS)
         conn.execute(_CREATE_UNDERLYING_QUOTE_OBSERVATIONS)
+        _underlying_cols = {row[1] for row in conn.execute('PRAGMA table_info(underlying_quote_observations)')}
+        if 'quote_at' not in _underlying_cols:
+            conn.execute('ALTER TABLE underlying_quote_observations ADD COLUMN quote_at TEXT')
         conn.executescript(_CREATE_LEARNING_TABLES)
         _learning_cols = {row[1] for row in conn.execute("PRAGMA table_info(learning_examples)")}
         if "current_episode" not in _learning_cols:

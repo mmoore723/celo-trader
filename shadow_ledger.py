@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import timedelta
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
 
 from database import get_conn, _now_et
 
@@ -89,7 +89,14 @@ def record_router_candidate(ticker: str, signal: object, underlying_price: float
                 meta.setdefault("implementation", rule.implementation)
         except Exception:
             logger.debug("candidate strategy version stamp unavailable", exc_info=True)
-        candidate_id = uuid4().hex
+        # Research retouch repeats across polls/restarts must not create a new
+        # entry quote for the same breakout episode. Native order candidates
+        # keep their existing independent UUIDs and behaviour.
+        repeatable = (meta.get('observation_only') is True
+                      and meta.get('research_emission_policy') == 'fresh_orb_retouch_episodes_v2'
+                      and isinstance(meta.get('research_play_key'),str))
+        candidate_id = (uuid5(NAMESPACE_URL,'celo:research:'+meta['research_play_key']).hex
+                        if repeatable else uuid4().hex)
         observed = _now_et()
         observed_at = observed.isoformat()
         try:
@@ -99,8 +106,8 @@ def record_router_candidate(ticker: str, signal: object, underlying_price: float
         except (TypeError, ValueError):
             entry_price = None
         with get_conn() as conn:
-            conn.execute(
-                """INSERT INTO shadow_candidates
+            cursor = conn.execute(
+                f"""INSERT {'OR IGNORE ' if repeatable else ''}INTO shadow_candidates
                    (candidate_id, observed_at, ticker, strategy_id, direction,
                     confidence, trigger_bar, tier, broker_account_id, metadata_json,
                     underlying_entry_price, outcome_due_at)
@@ -115,6 +122,8 @@ def record_router_candidate(ticker: str, signal: object, underlying_price: float
                     (observed + timedelta(minutes=_OUTCOME_MINUTES)).isoformat() if entry_price else None,
                 ),
             )
+            if repeatable and cursor.rowcount == 0:
+                meta['research_existing_candidate'] = True
         meta["shadow_candidate_id"] = candidate_id
     except Exception:
         logger.warning("shadow candidate write failed (non-fatal)", exc_info=True)
@@ -193,6 +202,8 @@ def mark_candidate_observed_only(signal: object) -> None:
     It has no contract, broker, sizing, or position-management capability.
     """
     meta = getattr(signal, "meta", None)
+    if isinstance(meta,dict) and meta.get('research_existing_candidate'):
+        return
     resolve_candidate_from_context(
         {"strategy_meta": meta if isinstance(meta, dict) else {}},
         "observed_only", "not_approved_for_entry",

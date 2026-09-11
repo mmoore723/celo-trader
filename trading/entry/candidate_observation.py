@@ -56,6 +56,8 @@ def observe_candidate_contract(
         signal.meta.update(squeeze_metadata(str(getattr(signal, 'strategy_id', ''))))
     record_router_candidate(ticker, signal, underlying_price)
     meta = getattr(signal, "meta", None)
+    if isinstance(meta,dict) and meta.get('research_existing_candidate'):
+        return  # Preserve the original entry/contract; never reprice a replay.
     candidate_id = meta.get("shadow_candidate_id") if isinstance(meta, dict) else None
     strategy_id = str(getattr(signal, "strategy_id", "UNKNOWN"))
     direction = str(getattr(signal, "direction", "unknown"))

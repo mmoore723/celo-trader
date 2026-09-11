@@ -30,7 +30,12 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
             price = (ask + bid) / 2 if ask > 0 and bid > 0 else None
             slot = state.setdefault("v2_orb_retouch", {}).setdefault(ticker.upper(), {})
             evaluate = update_orb if ORB in observed and ticker.upper() != "TSLA" else update_one_minute_orb_retouch
-            signal, status = evaluate(slot, frame, ticker=ticker, quote_price=price, now=_now_et())
+            if research_scope is not None:
+                from trading.orb_retouch_research import update
+                signal, status = update(state.setdefault('research_orb',{}),frame,
+                    ticker=ticker,quote=quote,now=_now_et(),scope=research_scope)
+            else:
+                signal, status = evaluate(slot, frame, ticker=ticker, quote_price=price, now=_now_et())
             state["v2_orb_retouch_status"] = statuses[ORB] = status
             if signal is not None:
                 signals.append(signal)

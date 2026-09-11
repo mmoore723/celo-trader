@@ -27,9 +27,9 @@ class OrbProfitTests(unittest.TestCase):
         self.lookup.return_value=quote(bid,seconds)
         self.capture()
 
-    def reference(self,name='one'):
+    def reference(self,name='one',version='2.0.0'):
         with patch('database.reference_contract_tests.get_conn',self.connect):
-            record(candidate_id=name,strategy_id=SID,direction='bearish',meta={'strategy_version':'2.0.0'},
+            record(candidate_id=name,strategy_id=SID,direction='bearish',meta={'strategy_version':version},
                    contract=dict(symbol='XYZ',ask=2,bid=1.96),observed_at=ENTRY,details={'reason':'selected'})
 
     def reference_rows(self):
@@ -111,7 +111,10 @@ class OrbProfitTests(unittest.TestCase):
 
     def test_matrix_exposes_90m_tests_without_replacing_primary_results(self):
         from strategy_health.research_matrix import build_research_matrix
-        self.seed();self.reference()
+        from trading.research_versions import evidence_version
+        version=evidence_version(SID,'2.0.0')
+        self.seed(version=version);self.reference(version=version)
+        self.seed('previous');self.reference('previous')
         self.step(30);self.step(60,2.1);self.step(90,2.08);self.step(5401,1.95)
         settings={'active_broker_account_id':'a','watchlist':['META','NVS']}
         with patch('database.get_conn',self.connect),patch('database._now_et',return_value=ENTRY),patch('config.get_settings',return_value=settings):
@@ -122,4 +125,5 @@ class OrbProfitTests(unittest.TestCase):
         self.assertEqual(90,pair['profit_protection_comparison']['minutes'])
         self.assertEqual(1,pair['profit_protection_comparison']['paired_results'])
         self.assertEqual(1,pair['reference_contract_test']['profit_protection']['paired_results'])
+        self.assertEqual(2,len(self.rows()))  # Existing first-only experiment preserved, not pooled.
         self.assertEqual(0,strategy['current_evidence']['option_results'])
