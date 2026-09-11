@@ -144,6 +144,22 @@ def _contract_selection_reasons(samples: list) -> dict[str, int]:
 def _contract_selection_message(reasons: dict[str, int]) -> tuple[str, str]:
     """Explain a failed research option screen without calling it quote loss."""
     total = sum(reasons.values())
+    if reasons.get('no_expirations_in_window'):
+        count = reasons['no_expirations_in_window']
+        return (
+            f"{count} setup{'s' if count != 1 else ''} found options, but no expiration fit this test's date window.",
+            "Test a separate longer-expiration profile with the same entry and exit. Keep its results separate from the original test.",
+        )
+    if reasons.get('no_listed_expirations'):
+        return (
+            f"{reasons['no_listed_expirations']} setups received no current expiration listings.",
+            "Keep testing the stock setup; verify option availability before starting an option-price experiment.",
+        )
+    if reasons.get('expiration_data_unavailable'):
+        return (
+            f"{reasons['expiration_data_unavailable']} setups could not verify option expiration data.",
+            "Check the recorded lookup status before changing entry, exit, or expiration rules. A failed lookup is not a strategy loss.",
+        )
     if reasons.get("illiquid"):
         return (
             f"{total} setup{'s' if total != 1 else ''} appeared, but the matching options had spreads wider than 8%.",

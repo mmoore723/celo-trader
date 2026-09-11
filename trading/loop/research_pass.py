@@ -36,6 +36,8 @@ def market_readers(alpaca, tradier):
     )}
     if callable(getattr_static(tradier, "get_research_option_chain", None)):
         option_reads["get_research_option_chain"] = tradier.get_research_option_chain
+    if callable(getattr_static(tradier, "get_research_expiration_details", None)):
+        option_reads["get_research_expiration_details"] = tradier.get_research_expiration_details
     return (
         SimpleNamespace(**{name: getattr(alpaca, name) for name in (
             "get_session_bars", "get_bars", "get_latest_quote", "is_market_open",

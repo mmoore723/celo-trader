@@ -1,5 +1,5 @@
 """Research's declared screen must not inherit hidden order-entry gates."""
-from datetime import datetime
+from datetime import date, datetime
 from contextlib import ExitStack
 from types import SimpleNamespace
 import unittest
@@ -25,6 +25,8 @@ class Client(TradierChainMixin):
 
     def _get(self, path, params):
         self.reads += 1
+        if path == '/markets/options/expirations':
+            return {'expirations': {'date': ['2026-09-11']}}
         return {'options': {'option': self.rows}}
 
     def get_expirations(self, ticker, **kwargs):
@@ -32,6 +34,11 @@ class Client(TradierChainMixin):
 
 
 class ResearchChainIsolationTests(unittest.TestCase):
+    def setUp(self):
+        clock = patch('broker.tradier_chain._market_date', return_value=date(2026, 9, 10))
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def test_background_worker_wrapper_preserves_research_reader(self):
         _, reader = market_readers(Mock(), Client([option()]))
         self.assertTrue(callable(getattr(reader,'get_research_option_chain',None)))

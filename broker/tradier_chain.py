@@ -159,6 +159,67 @@ class TradierChainMixin:
 
     # ── Expirations ───────────────────────────────────────────────────────────
 
+    def get_research_expiration_details(
+        self, symbol: str, *, minimum_dte: int = 0,
+        maximum_dte: int = 7, limit: int = 8,
+    ) -> dict:
+        """One research-only listing read with an explicit rejection reason.
+
+        Native get_expirations and its contract window are unchanged. Never
+        infer that no options exist from a failed request or malformed body.
+        """
+        minimum_dte = max(0, int(minimum_dte))
+        maximum_dte = max(minimum_dte, int(maximum_dte))
+        limit = max(1, int(limit))
+        today = _market_date()
+        info = dict(reason='expiration_data_unavailable', expirations=[],
+                    as_of_date=today.isoformat(), minimum_dte=minimum_dte,
+                    maximum_dte=maximum_dte, listed_count=None,
+                    available_dates=[], nearest_expiration=None)
+        if not getattr(self, 'api_key', ''):
+            info['lookup_status'] = 'missing_credentials'
+            return info
+        try:
+            response = self._get('/markets/options/expirations', {
+                'symbol': symbol, 'includeAllRoots': 'true', 'strikes': 'false',
+            })
+        except Exception as exc:
+            # No error text, tokens, URLs, or headers enter candidate metadata.
+            info['lookup_status'] = 'request_failed'
+            status = getattr(getattr(exc, 'response', None), 'status_code', None)
+            if isinstance(status, int):
+                info['http_status'] = status
+            return info
+        listing = response.get('expirations') if isinstance(response, dict) else None
+        if not isinstance(listing, dict) or 'date' not in listing:
+            info['lookup_status'] = 'unusable_response'
+            return info
+        raw = listing['date']
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list):
+            info['lookup_status'] = 'unusable_response'
+            return info
+        dates = []
+        try:
+            for value in raw:
+                parsed = date.fromisoformat(value)
+                if parsed not in dates:
+                    dates.append(parsed)
+        except (TypeError, ValueError):
+            info['lookup_status'] = 'invalid_date'
+            return info
+        future = sorted(d for d in dates if d >= today)
+        eligible = [d.isoformat() for d in dates
+                    if minimum_dte <= (d - today).days <= maximum_dte]
+        info.update(lookup_status='ok', listed_count=len(future),
+                    available_dates=[d.isoformat() for d in future[:32]],
+                    nearest_expiration=future[0].isoformat() if future else None,
+                    expirations=eligible[:limit])
+        info['reason'] = ('selected' if eligible else 'no_expirations_in_window'
+                          if future else 'no_listed_expirations')
+        return info
+
     def get_expirations(
         self, symbol: str, *, minimum_dte: int = 7,
         maximum_dte: int = 21, limit: int = 3,

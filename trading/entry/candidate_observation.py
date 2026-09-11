@@ -128,6 +128,7 @@ def observe_candidate_contract(
         "shadow_contract_leaderboard": (info or {}).get("shadow_contract_leaderboard", []),
         "research_profile": (info or {}).get("research_profile"),
         "chain_screen": (info or {}).get("chain_screen"),
+        "expiration_lookup": (info or {}).get("expiration_lookup"),
         "upstream_chain_liquidity_filtered": (info or {}).get("upstream_chain_liquidity_filtered"),
         "selected_policy": (info or {}).get("selected_policy"),
     }
