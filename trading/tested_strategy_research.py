@@ -1,7 +1,7 @@
 """Run reconstructed, order-free strategy tests on every collected ticker."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import time, timedelta
 import logging
 from typing import Callable, Iterable
@@ -20,6 +20,7 @@ from research.engine.strategies import (
 )
 from strategies.base import Signal
 from strategy_health.exit_protocols import candidate_metadata
+from trading.research_emission import POLICY as EMISSION_POLICY, EXPANDED_IDS, prepare_bar
 
 logger = logging.getLogger("celo_trader.research")
 
@@ -84,6 +85,7 @@ _SPECS = (
     TestedResearchStrategy("V2_VWAP_REVERSION_RTH", "VWAP Reversion", VWAPReversionRTH),
     TestedResearchStrategy("TV_SUPERTREND_REVERSAL_V4", "SuperTrend Reversal", SuperTrendReversal),
 )
+_SPECS = tuple(replace(item, version='research.2') if item.strategy_id in EXPANDED_IDS and item.version == 'research.1' else item for item in _SPECS)
 TESTED_RESEARCH_STRATEGIES = {item.strategy_id: item for item in _SPECS}
 DEFAULT_TESTED_RESEARCH_IDS = tuple(TESTED_RESEARCH_STRATEGIES)
 _emitted: set[tuple[str, str, str, str]] = set()
@@ -154,12 +156,14 @@ def _research_bars(
     return tuple(bars[-500:])
 
 
-def _latest_candidate(strategy: object, bars: tuple[ResearchBar, ...]):
+def _latest_candidate(strategy: object, bars: tuple[ResearchBar, ...], *, research_strategy_id: str | None = None):
     """Replay completed bars once and return only a signal on the newest bar."""
     history: list[ResearchBar] = []
     latest = None
     for bar in bars:
         history.append(bar)
+        if research_strategy_id is not None:
+            prepare_bar(research_strategy_id, strategy)
         candidate = strategy.evaluate(history)
         if candidate is not None:
             latest = candidate
@@ -194,7 +198,7 @@ def evaluate_tested_research(
             continue
         try:
             strategy = spec.factory()
-            candidate = _latest_candidate(strategy, bars)
+            candidate = _latest_candidate(strategy, bars, research_strategy_id=spec.strategy_id)
         except Exception:
             logger.warning("Tested strategy research failed for %s/%s", strategy_id, ticker, exc_info=True)
             continue
@@ -215,6 +219,7 @@ def evaluate_tested_research(
             meta={
                 **dict(candidate.features),
                 "strategy_version": spec.version,
+                "research_emission_policy": EMISSION_POLICY,
                 "implementation": spec.implementation or strategy.__class__.__module__,
                 "research_library": True,
                 "timeframe_minutes": spec.timeframe_minutes,

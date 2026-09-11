@@ -12,6 +12,7 @@ from database.research_exits import capture_authored_exits
 from strategy_health.impulse_exit import STRATEGY_ID, PROTOCOL
 from strategy_health.authored_exit_summary import load_authored_exits, authored_summary
 from tests.test_impulse_exit_measurement import candles
+from trading.tested_strategy_research import strategy_details
 
 
 class AuthoredExitCaptureTests(unittest.TestCase):
@@ -39,12 +40,15 @@ class AuthoredExitCaptureTests(unittest.TestCase):
             conn.close()
 
     def seed(self, name="one", account="a", protocol=PROTOCOL, source="tradier_research_contract_v1", strategy_id=STRATEGY_ID, state=None):
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        spec = strategy_details(strategy_id) or REVIEWED_STRATEGIES[strategy_id]
         with self.connect() as conn:
             conn.execute("""INSERT INTO shadow_candidates
                 (candidate_id,observed_at,trigger_bar,ticker,strategy_id,direction,confidence,broker_account_id,metadata_json)
                 VALUES (?,'2026-09-10T10:05:01','2026-09-10T10:05','META',?,'bullish',.7,?,?)""",
                 (name, strategy_id, account, json.dumps(dict(authored_exit_protocol=protocol, authored_exit_state=state,
-                 underlying_stop=98, underlying_target=104, strategy_version="research.1"))))
+                 underlying_stop=98, underlying_target=104,
+                 strategy_version=spec.version))))
             conn.execute("""INSERT INTO candidate_option_quote_observations
                 (candidate_id,observed_at,observation_kind,contract_symbol,ask,bid,source)
                 VALUES (?,'2026-09-10T10:05:03','entry','XYZ',2,1.9,?)""", (name, source))

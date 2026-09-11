@@ -1,8 +1,10 @@
 from contextlib import contextmanager
 from datetime import datetime
+import json
 import sqlite3
 import unittest
 from unittest.mock import patch
+from trading.tested_strategy_research import strategy_details
 
 from strategy_health.research_matrix import (
     _chronological_factors, _chronological_split_date, _contract_selection_message,
@@ -110,6 +112,16 @@ class ResearchMatrixTests(unittest.TestCase):
             ["first", "overlap", "next"],
             [row["candidate_id"] for row in _distinct_samples(samples, 30)],
         )
+
+    def test_expanded_research_keeps_capped_version_separate(self):
+        sid = "V2_IMPULSE_ANCHORED_VWAP_PULLBACK"
+        samples = [
+            {"direction": "bullish", "metadata_json": json.dumps({"strategy_version": version})}
+            for version in (strategy_details(sid).version, "research.1")
+        ]
+        eligible, rejected, unscored, previous = _current_rule_samples(samples, sid, "META")
+        self.assertEqual([samples[0]], eligible)
+        self.assertEqual((0, 0, 1), (rejected, unscored, previous))
 
     def test_plain_statuses_require_both_results_and_days(self):
         self.assertEqual("working", research_status(results=20, days=8, sessions=30, factor=1.5)[0])
@@ -267,7 +279,7 @@ class ResearchMatrixTests(unittest.TestCase):
             "impulse", "2026-09-03T10:00:00", "AAPL",
             "V2_IMPULSE_ANCHORED_VWAP_PULLBACK", 1, 1.4, "acct",
             "2026-09-03T10:00:00", "bullish",
-            '{"strategy_version":"research.1"}',
+            json.dumps({"strategy_version": strategy_details("V2_IMPULSE_ANCHORED_VWAP_PULLBACK").version}),
         ))
         conn.executemany("INSERT INTO candidate_option_quote_observations VALUES (?,?,?,?,?,?)", [
             ("c1", "entry", 1.9, 2.0, "2026-09-03T10:00:00", "tradier_research_contract_v1"),
