@@ -10,6 +10,16 @@ code=code.replaceAll(JSON.stringify("react/jsx-runtime"),JSON.stringify(import.m
   .replace(JSON.stringify("../lib/researchPairView.js"),JSON.stringify(new URL("../src/lib/researchPairView.js",import.meta.url).href));
 const {ProfitProtectionComparison,ReferenceContractTest}=await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 const render=comparison=>renderToStaticMarkup(createElement(ProfitProtectionComparison,{comparison}));
+test("four exit arms stay compact and missing prices do not become zero profit",()=>{
+  const arms=Object.fromEntries(['original','profit_trail','loss_only','loss_and_trail'].map(k=>[k,{profit_factor:null,net_pnl:null}]));
+  const html=render({paired_results:0,paired_days:0,tracked:2,unpaired:2,statuses:{},
+    initial_loss_comparison:{tracked:2,paired_results:0,unpaired:2,arms,statuses:{loss_only:{missing_quote:1}}}});
+  for(const label of ['Compare four exits','Original','Profit trail','Loss limit','Loss limit + trail','Unusable']) assert.ok(html.includes(label));
+  assert.match(html,/2 of 2 plays not yet matched/);
+  assert.match(html,/not a guaranteed loss cap/);
+  assert.match(html,/Your trading exits have not changed/);
+  assert.doesNotMatch(html,/\$0.00|<details open/);
+});
 const empty={paired_results:0,paired_days:0,tracked:2,unpaired:2,statuses:{missing_path:1,missing_quote:1}};
 test("unpriced tests are visible, not profitable or zero dollar results",()=>{
   const html=render(empty);

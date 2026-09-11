@@ -5,7 +5,8 @@ import logging
 
 from database.connection import get_conn
 from database.helpers import _now_et
-from strategy_health.option_profit_protection import PROTOCOL_BY_STRATEGY, RECOVERY_PROTOCOL, VERSION_BY_STRATEGY, MINUTES_BY_STRATEGY, initialize, advance
+from strategy_health.option_profit_protection import PROTOCOL_BY_STRATEGY, RECOVERY_PROTOCOL, VERSION_BY_STRATEGY, MINUTES_BY_STRATEGY, initialize
+from strategy_health.initial_loss_protection import attach, advance_capture as advance, needs_quotes
 from strategy_health.recovery_profit_protection import freeze, observe_target, can_arm
 from strategy_health.impulse_exit import et
 from database.reference_contract_tests import load as load_reference_tests, TABLE as REFERENCE_TABLE
@@ -36,6 +37,9 @@ def capture(*, account, quote_lookup, bars_lookup=None, stopped=lambda: False, c
                 (strategy_id, account or '', (et(clock())-timedelta(days=2)).date().isoformat(), protocol, VERSION_BY_STRATEGY[strategy_id])).fetchall()
             for row in new:
                 state = initialize(row['observed_at'], row['ask'], row['bid'], minutes=MINUTES_BY_STRATEGY[strategy_id])
+                state = attach(state, strategy_id=strategy_id, meta=json.loads(row['metadata_json']),
+                               entry_at=row['observed_at'], ask=row['ask'], bid=row['bid'],
+                               minutes=MINUTES_BY_STRATEGY[strategy_id])
                 if protocol == RECOVERY_PROTOCOL:
                     state = freeze(state, json.loads(row['metadata_json']), row['direction'])
                 conn.execute('INSERT OR IGNORE INTO research_option_profit_tests VALUES (?,?,?,?,?,?,1)',
@@ -72,7 +76,7 @@ def capture(*, account, quote_lookup, bars_lookup=None, stopped=lambda: False, c
                 state = observe_target(state, frames[ticker], entry_at=row['entry_quote_at'], now=clock())
             state = advance(state, now=clock(), allow_arm=not recovery, **args)
             # Once the trail ends, only the due control needs another quote.
-            if state['trail']['status'] in {'collecting','pending_quote'} or state['control']['status'] == 'pending_quote':
+            if needs_quotes(state) or state['trail']['status'] in {'collecting','pending_quote'} or state['control']['status'] == 'pending_quote':
                 symbol = row['contract_symbol']
                 if symbol not in quotes:
                     quotes[symbol] = (None, clock())  # Do not retry failures for each overlapping play.
@@ -83,7 +87,7 @@ def capture(*, account, quote_lookup, bars_lookup=None, stopped=lambda: False, c
                 quote, received = quotes[symbol]
                 state = advance(state, now=received, quote=quote,
                                 allow_arm=not recovery or can_arm(state,quote,received), **args)
-            active = int(any(state[k]['status'] in {'collecting', 'pending_quote'} for k in ('control', 'trail')))
+            active = int(needs_quotes(state) or any(state[k]['status'] in {'collecting', 'pending_quote'} for k in ('control', 'trail')))
             encoded = json.dumps(state, sort_keys=True)
             if encoded != row['state_json'] or not active:
                 with get_conn() as conn:

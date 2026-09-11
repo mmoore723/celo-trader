@@ -40,6 +40,10 @@ def record(*, candidate_id, strategy_id, direction, meta, contract, observed_at,
     started = et(observed_at).isoformat()
     state = initialize(started, contract['ask'], contract['bid'], minutes=minutes) if contract else dict(
         control={'status': 'no_contract'}, trail={'status': 'not_tested'})
+    if contract:
+        from strategy_health.initial_loss_protection import attach
+        state = attach(state, strategy_id=strategy_id, meta=meta, entry_at=started,
+                       ask=contract['ask'], bid=contract['bid'], minutes=minutes)
     if protocol == RECOVERY_PROTOCOL and contract:
         state = freeze(state, meta, direction)
     if strategy_id not in PROTOCOL_BY_STRATEGY:
@@ -53,6 +57,8 @@ def record(*, candidate_id, strategy_id, direction, meta, contract, observed_at,
             for key in ('control', 'trail'):
                 if state[key]['status'] == 'collecting':
                     state[key] = {'status': 'invalid_entry', 'reason': 'entry_selection_delayed'}
+            # No new experiment may bypass the reference entry timing gate.
+            state.pop('initial_loss_test', None)
         active = int(any(state[k]['status'] == 'collecting' for k in ('control', 'trail')))
         conn.execute('''INSERT OR IGNORE INTO research_reference_contract_tests
             (candidate_id,profile_version,strategy_version,protocol,minutes,contract_symbol,

@@ -175,6 +175,13 @@ export interface StrategyTickerResearchPair {
     profit_protection: StrategyTickerResearchPair["profit_protection_comparison"];
   } | null;
   profit_protection_comparison?: {
+    initial_loss_comparison?: {
+      protocol: string; tracked: number; paired_results: number; unpaired: number;
+      statuses: Record<string, Record<string, number>>;
+      arms: Record<"original" | "profit_trail" | "loss_only" | "loss_and_trail", {
+        profit_factor: number | "infinite" | null; net_pnl: number | null;
+      }>;
+    } | null;
     minutes?: number;
     target_reached?: number;
     protocol: string; tracked: number; paired_results: number; paired_days: number; unpaired: number;

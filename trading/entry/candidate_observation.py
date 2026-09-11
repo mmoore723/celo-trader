@@ -48,6 +48,8 @@ def observe_candidate_contract(
         from strategy_health.context_vwap_exit import metadata as vwap_metadata
         from strategy_health.squeeze_exit import metadata as squeeze_metadata
         from strategy_health.option_profit_protection import metadata as profit_metadata
+        from strategy_health.initial_loss_protection import metadata as loss_metadata
+        signal.meta.update(loss_metadata(str(getattr(signal, 'strategy_id', ''))))
         signal.meta.update(profit_metadata(str(getattr(signal, 'strategy_id', ''))))
         signal.meta.update(metadata(str(getattr(signal, 'strategy_id', ''))))
         signal.meta.update(vwap_metadata(str(getattr(signal, 'strategy_id', ''))))

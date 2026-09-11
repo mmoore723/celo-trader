@@ -107,6 +107,7 @@ def advance(state, *, entry_at, ask, contract, now, quote=None, allow_arm=True, 
 
 
 def summary(samples, rows, strategy_id=STRATEGY_ID):
+    from strategy_health.initial_loss_protection import comparison
     from strategy_health.authored_exit_summary import net_profit
     from strategy_health.exit_comparison import totals
     protocol = PROTOCOL_BY_STRATEGY[strategy_id]
@@ -131,4 +132,5 @@ def summary(samples, rows, strategy_id=STRATEGY_ID):
                 paired_days=len(days), unpaired=len(selected)-len(controls), statuses=statuses,
                 control=totals(controls), trail=totals(trails),
                 average_improvement=round(sum(differences)/len(differences), 2) if differences else None,
-                median_improvement=round(median(differences), 2) if differences else None)
+                median_improvement=round(median(differences), 2) if differences else None,
+                initial_loss_comparison=comparison(selected))

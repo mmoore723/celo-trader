@@ -18,6 +18,21 @@ export function ProfitProtectionComparison({ comparison: c, reference = false }:
       {c.paired_results > 0 && <p>After-cost P&amp;L: {minutes}-minute {money(c.control.net_pnl)} · Trail {money(c.trail.net_pnl)} · Typical change {money(c.median_improvement)}</p>}
       <p>Sampled quotes can miss brief moves. These are modeled research results, not broker fills or permission to trade.</p>
     </details>
+    {c.initial_loss_comparison && <details className="mt-2">
+      <summary className="cursor-pointer font-medium" style={{color: "var(--ink)"}}>Compare four exits · {c.initial_loss_comparison.paired_results} matched plays</summary>
+      <p className="mt-1">Same entries and options. Testing a 20% option-price loss limit—not a guaranteed loss cap.</p>
+      <table className="w-full mt-2 text-left">
+        <thead><tr><th scope="col">Exit</th><th scope="col">PF</th><th scope="col">P&amp;L after costs</th><th scope="col">Unusable</th></tr></thead>
+        <tbody>{([['original', 'Original'], ['profit_trail', 'Profit trail'], ['loss_only', 'Loss limit'], ['loss_and_trail', 'Loss limit + trail']] as const).map(([key, label]) => {
+          const result = c.initial_loss_comparison!.arms[key];
+          const statuses = c.initial_loss_comparison!.statuses[key] ?? {};
+          const unusable = (statuses.missing_quote ?? 0) + (statuses.missing_path ?? 0) + (statuses.invalid_entry ?? 0);
+          return <tr key={key}><th scope="row" className="font-normal py-1">{label}</th><td>{researchProfitFactorText(result.profit_factor, c.initial_loss_comparison!.paired_results)}</td><td>{money(result.net_pnl)}</td><td>{unusable}</td></tr>;
+        })}</tbody>
+      </table>
+      <p>{c.initial_loss_comparison.unpaired} of {c.initial_loss_comparison.tracked} plays not yet matched across all four exits. Missing-price plays stay out of this comparison.</p>
+      <p>Research only. Your trading exits have not changed.</p>
+    </details>}
   </div>;
 }
 

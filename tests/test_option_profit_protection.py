@@ -135,7 +135,10 @@ class PolicyTests(unittest.TestCase):
         for research in (True,False):
             signal=SimpleNamespace(strategy_id=STRATEGY_ID,meta={})
             with patch('trading.entry.candidate_observation.record_router_candidate') as record:
-                record.side_effect=lambda *_: self.assertEqual(research,'profit_protection_protocol' in signal.meta)
+                def check(*_):
+                    self.assertEqual(research,'profit_protection_protocol' in signal.meta)
+                    self.assertEqual(research,'initial_loss_protocol' in signal.meta)
+                record.side_effect=check
                 observe_candidate_contract(ticker='SPY',signal=signal,underlying_price=700,tradier=Mock(),
                     balance=4000,risk=Mock(),settings={},research_only=research)
             record.assert_called_once()
@@ -165,12 +168,12 @@ class CaptureTests(unittest.TestCase):
             with conn: yield conn
         finally: conn.close()
 
-    def seed(self, name='one', account='a', protocol=PROTOCOL, version=VERSION, source='tradier_research_contract_v1'):
+    def seed(self, name='one', account='a', protocol=PROTOCOL, version=VERSION, source='tradier_research_contract_v1', extra_meta=None):
         with self.connect() as conn:
             conn.execute('''INSERT INTO shadow_candidates
                 (candidate_id,observed_at,trigger_bar,ticker,strategy_id,direction,confidence,broker_account_id,metadata_json)
                 VALUES (?,? ,?,'META',?,'bearish',.7,?,?)''',
-                (name,ENTRY.isoformat(),ENTRY.isoformat(),STRATEGY_ID,account,json.dumps(dict(strategy_version=version,profit_protection_protocol=protocol))))
+                (name,ENTRY.isoformat(),ENTRY.isoformat(),STRATEGY_ID,account,json.dumps(dict(strategy_version=version,profit_protection_protocol=protocol,**(extra_meta or {})))))
             conn.execute('''INSERT INTO candidate_option_quote_observations
                 (candidate_id,observed_at,observation_kind,contract_symbol,ask,bid,source) VALUES (?,?,'entry','XYZ',2,1.96,?)''',
                 (name,ENTRY.isoformat(),source))
@@ -233,6 +236,33 @@ class CaptureTests(unittest.TestCase):
         self.seed(); self.capture(); self.now=ENTRY+timedelta(minutes=32); self.capture()
         n=self.lookup.call_count; before=self.rows(); self.capture()
         self.assertEqual(n,self.lookup.call_count); self.assertEqual(before,self.rows())
+        with self.connect() as conn: self.assertEqual({},load(conn,'b','2026-09-10'))
+
+    def test_loss_experiment_new_stamp_all_overlaps_and_account_isolation(self):
+        from strategy_health.initial_loss_protection import metadata, STATE_KEY, outcomes, comparison
+        for i in range(40): self.seed(str(i), extra_meta=metadata(STRATEGY_ID))
+        self.seed('legacy'); self.seed('other', account='b', extra_meta=metadata(STRATEGY_ID))
+        self.capture()
+        self.lookup.assert_called_once_with('XYZ')
+        self.assertNotIn(STATE_KEY, self.rows()['legacy']['state'])
+        self.assertEqual(40, sum(STATE_KEY in r['state'] for r in self.rows().values()))
+        self.now=ENTRY+timedelta(seconds=60); self.lookup.return_value=quote(2.1,60); self.capture()
+        self.now=ENTRY+timedelta(seconds=90); self.lookup.return_value=quote(2.08,90); self.capture()
+        # Profit trail is finished, but loss-only must keep observing before cap.
+        before=self.lookup.call_count
+        self.now=ENTRY+timedelta(seconds=120); self.lookup.return_value=quote(1.59,120); self.capture()
+        self.assertEqual(before+1,self.lookup.call_count)
+        extra=self.rows()['0']['state'][STATE_KEY]
+        self.assertEqual('pending_quote',outcomes(extra)['loss_only']['status'])
+        _init_db_at(self.path)
+        self.now=ENTRY+timedelta(seconds=150); self.lookup.return_value=quote(1.55,150); self.capture()
+        extra=self.rows()['0']['state'][STATE_KEY]
+        self.assertEqual(1.55,outcomes(extra)['loss_only']['bid'])
+        self.now=ENTRY+timedelta(seconds=1801); self.lookup.return_value=quote(2.2,1801); self.capture()
+        result=comparison(list(self.rows().values()))
+        self.assertEqual(40,result['paired_results'])
+        self.assertAlmostEqual(-1932,result['arms']['loss_only']['net_pnl'])
+        before=self.lookup.call_count; self.capture(); self.assertEqual(before,self.lookup.call_count)
         with self.connect() as conn: self.assertEqual({},load(conn,'b','2026-09-10'))
 
     def test_slow_quote_fetch_cannot_price_after_deadline(self):

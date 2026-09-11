@@ -106,6 +106,29 @@ class ReferenceTests(unittest.TestCase):
         self.assertEqual('missing_quote',self.rows()['one']['state']['control']['status'])
         count=self.lookup.call_count;self.step(2000);self.assertEqual(count,self.lookup.call_count)
 
+    def test_reference_loss_test_is_stamped_and_does_not_enroll_legacy_primary(self):
+        from strategy_health.initial_loss_protection import metadata, STATE_KEY
+        self.seed()
+        # Stamp only the separate reference cohort in this fixture.
+        record(candidate_id='one',strategy_id=STRATEGY_ID,direction='bearish',
+               meta={'strategy_version':'2.1.0',**metadata(STRATEGY_ID)},
+               contract=dict(symbol='XYZ',ask=2,bid=1.96),observed_at=ENTRY,details={'reason':'selected'})
+        self.step(30)
+        self.assertIn(STATE_KEY,self.rows()['one']['state'])
+        self.assertNotIn(STATE_KEY,self.generic_rows()['one']['state'])
+        self.lookup.assert_called_once_with('XYZ')
+        self.assertEqual(0,summary([{'candidate_id':'one'}],self.rows(),STRATEGY_ID)
+                         ['profit_protection']['initial_loss_comparison']['paired_results'])
+
+    def test_delayed_reference_selection_cannot_enroll_loss_test(self):
+        from strategy_health.initial_loss_protection import metadata, STATE_KEY
+        self.seed()
+        record(candidate_id='one',strategy_id=STRATEGY_ID,direction='bearish',
+               meta={'strategy_version':'2.1.0',**metadata(STRATEGY_ID)},
+               contract=dict(symbol='XYZ',ask=2,bid=1.96),observed_at=ENTRY+timedelta(seconds=91),
+               details={'reason':'selected'})
+        self.assertNotIn(STATE_KEY,self.rows()['one']['state'])
+
     def test_unavailable_entry_and_version_mismatch_are_not_fake_zero_results(self):
         self.seed()
         args=dict(candidate_id='one',strategy_id=STRATEGY_ID,direction='bearish',contract=None,observed_at=ENTRY,details={'reason':'no_expirations'})
