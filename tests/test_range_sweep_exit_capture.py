@@ -59,8 +59,9 @@ class RangeSweepExitCaptureTests(unittest.TestCase):
         strategy=next(s for s in matrix['strategies'] if s['strategy_id']==module.STRATEGY_ID)
         pair=next(p for p in strategy['pairs'] if p['ticker']=='META')
         self.assertTrue(strategy['exit_measurement']['authored_collector_enabled'])
-        self.assertEqual('30-min check PF',strategy['exit_measurement']['pf_label'])
-        self.assertEqual(0,pair['option_results'])
+        self.assertEqual('Strategy-exit PF',strategy['exit_measurement']['pf_label'])
+        self.assertEqual(1,pair['option_results'])
+        self.assertTrue(all(r['option_results'] == 0 for r in pair['exit_comparison']))
         evidence=pair['authored_exit_evidence']
         self.assertEqual(1,evidence['option_results'])
         self.assertEqual(module.PROTOCOL,evidence['protocol'])

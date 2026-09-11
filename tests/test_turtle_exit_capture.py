@@ -63,8 +63,9 @@ class TurtleExitCaptureTests(unittest.TestCase):
         strategy = next(s for s in matrix['strategies'] if s['strategy_id']==turtle_exit.STRATEGY_ID)
         pair = next(p for p in strategy['pairs'] if p['ticker']=='META')
         self.assertTrue(strategy['exit_measurement']['authored_collector_enabled'])
-        self.assertEqual('90-min check PF',strategy['exit_measurement']['pf_label'])
-        self.assertEqual(0,pair['option_results'])
+        self.assertEqual('Strategy-exit PF',strategy['exit_measurement']['pf_label'])
+        self.assertEqual(1,pair['option_results'])
+        self.assertTrue(all(r['option_results'] == 0 for r in pair['exit_comparison']))
         self.assertEqual(1,pair['authored_exit_evidence']['option_results'])
 
     def test_1_5r_target_is_priced_and_2r_protocol_reason_is_unchanged(self):

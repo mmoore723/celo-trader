@@ -113,6 +113,7 @@ export interface ResearchContractTest {
   comparison_split_date?: string | null;
 }
 export interface StrategyTickerResearchPair {
+  recommendation?: PairRecommendationEvidence;
   ticker: string;
   status: "working" | "promising" | "losing_so_far" | "needs_tuning" | "not_working" | "collecting" | "no_setups";
   explanation: string;
@@ -208,6 +209,8 @@ export interface StrategyResearchMatrix {
   collection_started_on: string | null;
   collected_market_days: number;
   recommendation_policy: {
+    minimum_completed_trades: number;
+    review_recent_trades: number;
     minimum_market_days: number;
     minimum_result_days: number;
     target_profit_factor: number;
@@ -1037,6 +1040,14 @@ export interface StrategySettingChange {
 }
 
 export interface StrategyTickerRecommendation {
+  kind: "new_match" | "review_active";
+  fingerprint: string;
+  can_enable: boolean;
+  blocker: string | null;
+  profit_factor: number | "infinite" | null;
+  completed_trades: number;
+  net_pnl: number;
+  evidence: PairRecommendationEvidence;
   strategy_id: string;
   ticker: string;
   strategy_version: string;
@@ -1057,6 +1068,14 @@ export interface StrategyTickerRecommendation {
 }
 
 // ── Chart annotations (bot-drawn overlays) ────────────────────────────────────
+export interface PairRecommendationEvidence {
+  qualified: boolean; review_active: boolean; promising: boolean;
+  completed_trades: number; independent_trades: number; overlapping_trades: number;
+  remaining_trades: number; reasons: string[]; fingerprint: string;
+  first_test_at: string | null; last_test_at: string | null;
+  training: { profit_factor: number | "infinite" | null };
+  validation: { profit_factor: number | "infinite" | null };
+}
 // Emitted by strategy_router.py when a signal or veto fires.
 // Frontend polls GET /api/bot/annotations/{ticker} every 5 s.
 export interface NewsArticle {
@@ -1265,6 +1284,9 @@ export const api = {
     testedStrategies: () => request<TestedStrategyInventory>("/api/settings/strategies/tested"),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
     recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),
+    decidePair: (item: StrategyTickerRecommendation, decision: "enable" | "keep_off" | "research_only" | "keep_trading") =>
+      request<{ok: boolean}>(`/api/settings/strategies/recommendations/${encodeURIComponent(item.strategy_id)}/${encodeURIComponent(item.ticker)}`,
+        {method: "POST", body: JSON.stringify({decision, fingerprint: item.fingerprint})}),
     setRecommendation: (strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") =>
       request<{ok: boolean; recommendations: StrategyTickerRecommendation[]}>(
         `/api/settings/strategies/recommendations/${encodeURIComponent(strategyId)}/${encodeURIComponent(ticker)}`,

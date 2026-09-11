@@ -34,28 +34,31 @@ def get_strategy_setting_history(limit: int = 50) -> dict:
 
 class StrategyConsentPayload(BaseModel):
     decision: str
+    fingerprint: str | None = None
 
 
 @router.get("/strategies/recommendations")
 def get_strategy_recommendations() -> dict:
     from config import get_settings
-    from config.strategy_ticker_recommendations import public_recommendations
-    return {"recommendations": public_recommendations(get_settings())}
+    from strategy_health.pair_recommendations import recommendations
+    from strategy_health.research_matrix import build_research_matrix
+    return recommendations(build_research_matrix(), get_settings())
 
 
 @router.post("/strategies/recommendations/{strategy_id}/{ticker}")
 def set_strategy_recommendation_consent(strategy_id: str, ticker: str, payload: StrategyConsentPayload) -> dict:
     from config import get_settings, save_settings
-    from config.strategy_ticker_recommendations import save_user_consent, public_recommendations
-    if payload.decision not in {"paper_enabled", "live_enabled", "live_pilot", "observing"}:
-        raise HTTPException(400, "Decision must be paper_enabled, live_enabled, or observing")
-    settings = get_settings()
-    try:
-        consents = save_user_consent(settings, strategy_id, ticker, payload.decision)
-    except ValueError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    save_settings({"strategy_ticker_consents": consents})
-    return {"ok": True, "recommendations": public_recommendations(get_settings())}
+    if payload.fingerprint is not None:
+        from strategy_health.pair_recommendations import decide
+        from strategy_health.research_matrix import build_research_matrix
+        try:
+            updates = decide(build_research_matrix(), get_settings(), strategy_id, ticker,
+                             payload.decision, payload.fingerprint)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        save_settings(updates)
+        return {"ok": True}
+    raise HTTPException(409, "Refresh Settings to review the current completed-trade evidence before deciding.")
 
 
 class PublishStrategyRecommendationPayload(BaseModel):

@@ -297,6 +297,7 @@ class ResearchMatrixTests(unittest.TestCase):
             "active_broker_account_id": "acct", "watchlist": ["AAPL"],
             "research_strategy_ids": ["V2_IMPULSE_ANCHORED_VWAP_PULLBACK"],
         }
+        conn.execute("ALTER TABLE candidate_option_quote_observations ADD COLUMN contract_symbol TEXT DEFAULT 'AAPL_TEST'")
         with patch("config.get_settings", return_value=settings), patch(
             "database.get_conn", side_effect=connection,
         ), patch("database._now_et", return_value=datetime(2026, 9, 4, 12, 0)):
@@ -308,12 +309,13 @@ class ResearchMatrixTests(unittest.TestCase):
         self.assertEqual("2026-09-04", row["backtest"]["historical_test_through"])
         self.assertEqual("2026-09-05", row["backtest"]["forward_evidence_start"])
         self.assertEqual("strategy_exit", row["exit_measurement"]["kind"])
-        self.assertEqual("30-min PF", row["exit_measurement"]["pf_label"])
+        self.assertEqual("Strategy-exit PF", row["exit_measurement"]["pf_label"])
         self.assertTrue(row["exit_measurement"]["authored_exit_collected"])
         self.assertEqual("2026-09-03", matrix["collection_started_on"])
         self.assertEqual(1, matrix["collected_market_days"])
-        self.assertEqual(20, matrix["recommendation_policy"]["minimum_market_days"])
-        self.assertEqual(8, matrix["recommendation_policy"]["minimum_result_days"])
+        self.assertEqual(0, matrix["recommendation_policy"]["minimum_market_days"])
+        self.assertEqual(0, matrix["recommendation_policy"]["minimum_result_days"])
+        self.assertEqual(20, matrix["recommendation_policy"]["minimum_completed_trades"])
         pair = next(item for item in row["pairs"] if item["ticker"] == "AAPL")
         self.assertEqual(1, pair["option_results"])
         self.assertEqual(1, pair["option_result_days"])
@@ -339,12 +341,12 @@ class ResearchMatrixTests(unittest.TestCase):
         impulse_pair = next(item for item in impulse["pairs"] if item["ticker"] == "AAPL")
         self.assertEqual(120, impulse["exit_minutes"])
         self.assertEqual("timed_comparison", impulse["exit_measurement"]["kind"])
-        self.assertEqual("120-min check PF", impulse["exit_measurement"]["pf_label"])
+        self.assertEqual("Strategy-exit PF", impulse["exit_measurement"]["pf_label"])
         self.assertFalse(impulse["exit_measurement"]["authored_exit_collected"])
         self.assertIn("2R target", impulse["exit_measurement"]["authored_exit"])
-        self.assertEqual(1, impulse_pair["option_results"])
-        self.assertEqual(100.0, impulse_pair["win_rate_pct"])
-        self.assertGreater(impulse_pair["net_one_contract_pnl"], 0)
+        self.assertEqual(0, impulse_pair["option_results"])
+        self.assertIsNone(impulse_pair["win_rate_pct"])
+        self.assertEqual(0, impulse_pair["net_one_contract_pnl"])
         self.assertEqual(
             1,
             next(
@@ -388,6 +390,7 @@ class ResearchMatrixTests(unittest.TestCase):
             "active_broker_account_id": "acct", "watchlist": ["SPY"],
             "research_strategy_ids": [],
         }
+        conn.execute("ALTER TABLE candidate_option_quote_observations ADD COLUMN contract_symbol TEXT")
         with patch("config.get_settings", return_value=settings), patch(
             "database.get_conn", side_effect=connection,
         ), patch("database._now_et", return_value=datetime(2026, 9, 4, 12, 0)):

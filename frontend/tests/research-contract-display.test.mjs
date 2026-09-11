@@ -16,7 +16,7 @@ test("research results separate no setup from no matching option", () => {
   assert.match(source, /No setup/);
   assert.match(source, /raw trigger/);
   assert.match(source, /distinct research play/);
-  assert.match(source, /several research plays overlap/);
+  assert.match(source, /including overlapping plays/);
   assert.doesNotMatch(source, /`Waiting \(\$\{waiting\}\)`/);
 });
 const settingsSource = readFileSync(
@@ -49,7 +49,7 @@ test("research results distinguish dated tests from the current strategy version
 });
 
 test("strategy settings use distinct cards and explicit evidence dates", () => {
-  assert.match(settingsSource, /Results since/);
+  assert.match(settingsSource, /Current research · strategy exits/);
   assert.match(settingsSource, /Tests through/);
   assert.match(settingsSource, /option result/);
   assert.match(settingsSource, /grid gap-3 lg:grid-cols-2/);
@@ -58,5 +58,5 @@ test("strategy settings use distinct cards and explicit evidence dates", () => {
   assert.doesNotMatch(settingsSource, /RESEARCH ONLY · No orders/);
   assert.doesNotMatch(settingsSource, /Tests every collected ticker; cannot place orders/);
   assert.match(settingsSource, /Data collected since/);
-  assert.match(settingsSource, /days with option results/);
+  assert.match(settingsSource, /20 non-overlapping completed tests/);
 });

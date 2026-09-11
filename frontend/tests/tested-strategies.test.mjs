@@ -22,6 +22,7 @@ for (const name of ["react", "react/jsx-runtime", "@tanstack/react-query"]) {
 }
 compiled = compiled.replace('"../../lib/api"', JSON.stringify(apiStub));
 compiled = compiled.replace('"./StrategyToggleCard"', JSON.stringify(cardStub));
+compiled = compiled.replace('"./PairEvidence"', JSON.stringify('data:text/javascript,export function PairEvidence(){return null}'));
 const { TestedStrategies } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 const fixture = {
   runtime_research: [],
@@ -66,21 +67,21 @@ test("working research strategies use the same accessible toggle-card pattern", 
   assert.match(html, /Opening Momentum/);
   assert.match(html, /role="switch"/);
   assert.match(html, /aria-checked="true"/);
-  assert.match(html, /Check PF/);
-  assert.match(html, /0 option results/);
+  assert.match(html, /Strategy-exit PF/);
+  assert.match(html, /0 completed tests/);
   assert.doesNotMatch(html, /Research only · Testing every collected ticker/);
   assert.doesNotMatch(html, /research\.1/);
   assert.doesNotMatch(html, /type="checkbox"/);
 });
 
-test("settings distinguishes timer comparison from an actual strategy exit", () => {
+test("settings headline uses the shared actual strategy-exit evidence", () => {
   const strategy_id = "V2_IMPULSE_ANCHORED_VWAP_PULLBACK";
   const data = {...fixture, runtime_research: [{strategy_id, display_name: "Impulse Anchored VWAP"}]};
   const html = render(data, [strategy_id], {strategies: [{
-    strategy_id, exit_measurement: {pf_label: "120-min check PF"},
+    strategy_id, exit_measurement: {pf_label: "Strategy-exit PF"},
     current_evidence: {profit_factor: 0.5, option_results: 2},
   }]});
-  assert.match(html, /120-min check PF 0.50/);
-  assert.match(html, /2 option results/);
+  assert.match(html, /Strategy-exit PF 0.50/);
+  assert.match(html, /2 completed tests/);
   assert.doesNotMatch(html, /Current PF/);
 });

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, type StrategyResearchMatrix } from "../../lib/api";
 import { StrategyToggleCard } from "./StrategyToggleCard";
+import { PairEvidence } from "./PairEvidence";
 
 export function TestedStrategies({
   researchIds, onResearchIdsChange, researchMatrix,
@@ -39,8 +40,9 @@ export function TestedStrategies({
           onChange={value => toggle(strategy.strategy_id, value)}
         >
           {enabled ? <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>
-            {matrixStrategy?.exit_measurement.pf_label ?? "Check PF"} {factorText(evidence?.profit_factor)} · {evidence?.option_results ?? 0} option results
+            All tickers · Strategy-exit PF {factorText(evidence?.profit_factor)} · {evidence?.option_results ?? 0} completed tests
           </p> : <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>Paused</p>}
+          <PairEvidence strategy={matrixStrategy} />
         </StrategyToggleCard>;
       })}
   </div>;

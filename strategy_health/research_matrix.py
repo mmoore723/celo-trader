@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import json
+import math
 from statistics import median
 
 from config.market_constants import COMMISSION_PER_CONTRACT
@@ -19,6 +20,8 @@ from database.option_profit_protection import load as load_profit_tests
 from database.reference_contract_tests import load as load_reference_tests, summary as reference_summary
 from strategy_health.option_profit_protection import summary as profit_test_summary, PROTOCOL_BY_STRATEGY
 from strategy_health.ticker_qualification import DEFAULT_POLICY
+from strategy_health.pair_recommendations import POLICY, assess, summarize, timestamp
+from strategy_health.authored_exit_summary import net_profit
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
 )
@@ -226,6 +229,50 @@ def _without_incomparable_quotes(row: object, *, research_pair: bool) -> dict:
     ):
         item[key] = None
     return item
+
+
+def completed_strategy_results(samples, strategy_id, exits, minutes):
+    """Exact current-rule exits only; timer comparisons cannot qualify a stop rule."""
+    results = []
+    for sample in samples:
+        if sample["entry_ask"] is None or int(_row_value(sample, "quote_contracts") or 1) != 1:
+            continue
+        if strategy_id in PROTOCOLS:
+            row = exits.get(sample["candidate_id"], {})
+            if row.get("protocol") != PROTOCOLS[strategy_id]:
+                continue
+            profit = net_profit(row)
+            start, end = row.get("entry_quote_at"), row.get("decision_at")
+            try:
+                if not row.get("bid_at") or not end or not 0 <= (timestamp(row["bid_at"]) - timestamp(end)).total_seconds() <= 300:
+                    continue
+                if row.get("contract_symbol") != _row_value(sample, "entry_contract"):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            # Partial exits must use the complete two-contract plan, normalized
+            # per contract, not just the remaining runner.
+            from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
+            if strategy_id in PREMIUM_PROTOCOLS and profit is not None:
+                path = row.get("premium_path") or {}
+                if not path.get("quote_count"):
+                    continue
+                if path.get("partial_bid") is not None:
+                    first = net_profit({**row, "bid": path["partial_bid"]})
+                    profit = (profit + first) / 2 if first is not None else None
+        elif exit_measurement(strategy_id, minutes)["authored_exit_collected"]:
+            profit = _quote_profit(sample, minutes)
+            start, end = sample["entry_quote_at"], sample[f"mark_{minutes}_at"]
+        else:
+            continue
+        if profit is not None and math.isfinite(profit) and start and end:
+            try:
+                if timestamp(end) <= timestamp(start):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            results.append({"id": sample["candidate_id"], "entry_at": start, "exit_at": end, "pnl": profit})
+    return sorted(results, key=lambda row: (timestamp(row["entry_at"]), row["id"]))
 
 
 def _contract_policy_summaries(
@@ -507,12 +554,11 @@ def _improvement_tests(
                 "test": "Keep the signal and exit unchanged so the contract rule is the only variable.",
             })
     if not plans:
-        remaining = max(0, 8 - option_result_days)
         remaining_results = max(0, 20 - option_results)
         plans.append({
             "title": "Keep collecting unchanged",
             "evidence": f"This pair has {option_results} priced results across the current exact strategy version.",
-            "test": f"Keep the rule fixed while collecting {remaining_results} more priced result{'s' if remaining_results != 1 else ''} and {remaining} more result day{'s' if remaining != 1 else ''}.",
+            "test": f"Keep the rule fixed while collecting {remaining_results} more completed results. Recommendation progress separately counts non-overlapping tests.",
         })
     return plans[:3]
 
@@ -549,6 +595,8 @@ def build_research_matrix(days: int = 90) -> dict:
             """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
                       s.direction,s.metadata_json,
                       s.direction_correct,s.directional_move_pct,
+                      MAX(CASE WHEN q.observation_kind='entry' THEN q.contract_symbol END) AS entry_contract,
+                      COUNT(DISTINCT q.contract_symbol) AS quote_contracts,
                       MAX(CASE WHEN q.observation_kind='entry' THEN q.ask END) AS entry_ask,
                       MAX(CASE WHEN q.observation_kind='entry' THEN q.observed_at END) AS entry_quote_at,
                       MAX(CASE WHEN q.observation_kind='entry' THEN q.source END) AS entry_source,
@@ -649,13 +697,9 @@ def build_research_matrix(days: int = 90) -> dict:
         pairs = []
         strategy_current_results: list[tuple[str, float]] = []
         for ticker in sorted(tickers):
-            trading_enabled = bool(
-                rule and not rule.observation_only
-                and strategy_id in enabled_reviewed_strategy_ids(settings, ticker=ticker)
-                and ticker in rule.tickers
-            )
+            trading_enabled = strategy_id in enabled_reviewed_strategy_ids(settings, ticker=ticker)
             source_samples = grouped.get((strategy_id, ticker), [])
-            research_pair = not trading_enabled
+            research_pair = strategy_id in PROTOCOLS or not (rule and ticker in rule.tickers)
             legacy_option_profiles_ignored = sum(
                 1 for row in source_samples
                 if _row_value(row, "entry_ask") is not None
@@ -701,6 +745,11 @@ def build_research_matrix(days: int = 90) -> dict:
                     "maximum_drawdown_one_contract": None,
                     "mistimed_quotes_ignored": 0,
                 }
+            completed = completed_strategy_results(samples, strategy_id, authored_exits, exit_minutes)
+            recommendation = assess(completed)
+            current_summary = {**current_summary, **summarize(completed),
+                               **_distribution_summary([row['pnl'] for row in completed])}
+            current_results = [(str(row['entry_at'])[:10], row['pnl']) for row in completed]
             strategy_current_results.extend(current_results)
             factor = current_summary["profit_factor"]
             option_result_days = len({day for day, _ in current_results})
@@ -713,6 +762,12 @@ def build_research_matrix(days: int = 90) -> dict:
                 older_factor=older_factor, newer_factor=newer_factor,
                 comparison_split_date=comparison_split_date,
             )
+            if recommendation['qualified']:
+                status, explanation = 'working', 'Passed the completed-trade review checks.'
+            elif recommendation['promising']:
+                status, explanation = 'promising', 'Profitable tests so far; recommendation checks are not complete.'
+            elif status in {'working', 'promising'}:
+                status, explanation = 'collecting', 'More non-overlapping completed tests are needed.'
             correct = sum(1 for row in samples if row["direction_correct"] == 1)
             measured = sum(1 for row in samples if row["direction_correct"] is not None)
             direction_accuracy = round(correct / measured * 100, 1) if measured else None
@@ -743,6 +798,7 @@ def build_research_matrix(days: int = 90) -> dict:
             )
             pairs.append({
                 "ticker": ticker,
+                "recommendation": recommendation,
                 "reference_contract_test": reference_summary(reference_samples, reference_tests, strategy_id),
                 "profit_protection_comparison": profit_test_summary(profit_samples, profit_tests, strategy_id) if strategy_id in PROTOCOL_BY_STRATEGY else None,
                 "authored_exit_evidence": authored_summary(samples, authored_exits, PROTOCOLS[strategy_id]) if strategy_id in PROTOCOLS else None,
@@ -815,7 +871,7 @@ def build_research_matrix(days: int = 90) -> dict:
             },
             "trading_tickers": sorted(rule.tickers) if rule and not rule.observation_only else [],
             "exit_minutes": exit_minutes,
-            "exit_measurement": exit_measurement(strategy_id, exit_minutes),
+            "exit_measurement": {**exit_measurement(strategy_id, exit_minutes), "pf_label": "Strategy-exit PF"},
             "pairs": sorted(pairs, key=lambda pair: (priority[pair["status"]], pair["ticker"])),
         })
     scan_meta = (_read_daily_universe().get("scan_meta") or {})
@@ -824,14 +880,8 @@ def build_research_matrix(days: int = 90) -> dict:
         "target_profit_factor": 1.5,
         "collection_started_on": all_evidence_dates[0] if all_evidence_dates else None,
         "collected_market_days": len(all_evidence_dates),
-        "recommendation_policy": {
-            "minimum_market_days": DEFAULT_POLICY.minimum_observed_sessions,
-            "minimum_result_days": (
-                DEFAULT_POLICY.minimum_inference_days + DEFAULT_POLICY.minimum_holdout_days
-            ),
-            "target_profit_factor": DEFAULT_POLICY.target_profit_factor,
-        },
-        "cost_model": f"saved ask to bid within {QUOTE_WINDOW_GRACE_MINUTES} minutes of the named exit, ${OPTION_SLIPPAGE_PER_SIDE:.2f} adverse slippage per side, ${COMMISSION_PER_CONTRACT:.2f} fee per side",
+        "recommendation_policy": POLICY,
+        "cost_model": f"same-contract entry ask to strategy-exit bid, quotes within {QUOTE_WINDOW_GRACE_MINUTES} minutes of the exit, ${OPTION_SLIPPAGE_PER_SIDE:.2f} adverse slippage per side, ${COMMISSION_PER_CONTRACT:.2f} fee per side; partial-exit plans normalized per contract",
         "account_scoped": bool(account_id),
         "ticker_count": len(tickers),
         "strategy_count": len(strategy_rows),

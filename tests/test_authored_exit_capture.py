@@ -175,6 +175,7 @@ class AuthoredExitCaptureTests(unittest.TestCase):
         strategy = next(s for s in matrix["strategies"] if s["strategy_id"] == STRATEGY_ID)
         pair = next(p for p in strategy["pairs"] if p["ticker"] == "META")
         self.assertTrue(strategy["exit_measurement"]["authored_collector_enabled"])
-        self.assertEqual(0, pair["option_results"])
+        self.assertEqual(1, pair["option_results"])
+        self.assertTrue(all(r['option_results'] == 0 for r in pair['exit_comparison']))
         self.assertEqual(1, pair["authored_exit_evidence"]["option_results"])
         self.assertEqual(-83.3, pair["authored_exit_evidence"]["net_one_contract_pnl"])

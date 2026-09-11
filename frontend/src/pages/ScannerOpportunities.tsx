@@ -51,7 +51,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
     ? status.label
     : pair.setups > 0 ? "Setup found · no option matched"
       : pair.diagnosis === "entry_tuning" ? "Needs entry tuning" : "Building baseline";
-  const progress = Math.min(100, Math.round(Math.min(pair.option_results / 20, pair.option_result_days / 8) * 100));
+  const progress = Math.min(100, Math.round((pair.recommendation?.independent_trades ?? 0) / 20 * 100));
   const plan = pair.improvement_tests?.[0];
   const testedProfitFactor = backtest.profit_factor === "no fills" ? null : backtest.profit_factor ?? null;
   const extraPlans = pair.improvement_tests?.slice(1) ?? [];
@@ -72,7 +72,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>P&amp;L</span><strong style={{ color: pair.option_results === 0 ? "var(--ink-muted)" : pair.net_one_contract_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>{pair.option_results === 0 ? "—" : money(pair.net_one_contract_pnl)}</strong></div>
         </div>
         <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surface-sunken, var(--border))" }} aria-label={`${progress}% of minimum evidence collected`}><div className="h-full rounded-full" style={{ width: `${progress}%`, background: "linear-gradient(90deg, var(--accent), var(--positive))" }} /></div>
-        <p className="text-[11px] mt-1 text-right" style={{ color: "var(--ink-muted)" }}>{progress}% of minimum evidence</p>
+        <p className="text-[11px] mt-1 text-right" style={{ color: "var(--ink-muted)" }}>{pair.recommendation?.independent_trades ?? 0}/20 non-overlapping tests · {pair.recommendation?.qualified ? "Passed checks" : "Still testing"}</p>
       </div>
       <div className="rounded-lg px-3 py-2" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface-raised))", border: "1px solid color-mix(in srgb, var(--accent) 24%, var(--border))" }}>
         <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>Next experiment</span>
@@ -85,6 +85,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
     {pair.reference_contract_test && <div className="px-3 pb-2 text-xs"><ReferenceContractTest test={pair.reference_contract_test} /></div>}
     <details className="px-3 pb-3 text-xs">
       <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>Evidence and test plan</summary>
+      <p className="mt-2">{pair.recommendation?.reasons.join(" · ") || "Completed-trade checks passed."} Overlapping tests remain included in the research results, but do not add independent evidence.</p>
       <div className="grid gap-2 mt-3 sm:grid-cols-2 lg:grid-cols-4" style={{ color: "var(--ink-muted)" }}>
         <p><b>Research plays:</b> {pair.setups} across {pair.market_days} data days</p>
         <p><b>Usable option prices:</b> {pair.quote_coverage_pct == null ? "—" : `${pair.quote_coverage_pct}%`}</p>
@@ -173,7 +174,7 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
         </div>
         <div className="space-y-6">{groupedResearchPairs.map(group => <section key={group.key} className="space-y-2"><div className="flex flex-wrap items-baseline gap-2"><h2 className="text-base font-semibold">{group.title}</h2><span className="badge">{group.rows.length}</span><p className="text-xs" style={{ color: "var(--ink-muted)" }}>{group.note}</p></div>{group.rows.map(({ pair, strategy }) => <ResearchRow key={`${strategy.strategy_id}-${pair.ticker}`} pair={pair} strategyName={strategy.display_name} strategyVersion={strategy.version} backtest={strategy.backtest} exitMeasurement={strategy.exit_measurement} />)}</section>)}</div>
         {!researchPairs.length && <div className="card p-8 text-center">No strategy–ticker pairs match these filters yet.</div>}
-        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How the proof works</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. The same exact trigger counts once; every distinct trigger is tested even when several research plays overlap. A recommendation requires PF 1.5+, at least 20 priced results, at least 8 result days, and passing results on the latest test dates.</p></details>
+        <details className="card p-4 text-xs"><summary className="cursor-pointer font-medium">How the proof works</summary><p className="mt-2" style={{ color: "var(--ink-muted)" }}>{matrix.cost_model}. Every distinct trigger is tested, including overlapping plays. Recommendations use 20 non-overlapping completed tests: first 14 and latest 6 each need PF 1.5+, a positive typical result, and no winner supplying over 35% of gains. No minimum day count. An active pair is flagged when its latest 10 non-overlapping tests have PF below 1 and a net loss. Research results are not broker fills; no trading switch changes automatically.</p></details>
       </> : <div className="card p-8 text-center">No research results are available yet.</div>}
     </>}
   </div>;

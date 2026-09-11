@@ -103,7 +103,8 @@ class ContextOrbExitCaptureTests(unittest.TestCase):
             matrix=build_research_matrix()
         strategy=next(s for s in matrix['strategies'] if s['strategy_id']==module.STRATEGY_ID)
         pair=next(p for p in strategy['pairs'] if p['ticker']=='META')
-        self.assertEqual(0,pair['option_results'])
+        self.assertEqual(1,pair['option_results'])
+        self.assertEqual(196.7,pair['net_one_contract_pnl'])
         self.assertEqual(1,pair['authored_exit_evidence']['option_results'])
         self.assertEqual(393.4,pair['authored_exit_evidence']['partial_exit_comparison']['net_two_contract_pnl'])
 

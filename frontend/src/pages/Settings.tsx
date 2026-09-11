@@ -9,7 +9,9 @@ import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib
 import { loadCredentialDisplay, maskCredentialForDisplay } from "../lib/credentialDisplay.js";
 import { needsTradierSandbox } from "../lib/connectionHealthView.js";
 import { TestedStrategies } from "../components/settings/TestedStrategies";
-import { StrategyRecommendations } from "../components/settings/StrategyRecommendations";
+import { StrategyRecommendations, type PairDecision } from "../components/settings/StrategyRecommendations";
+import type { StrategyTickerRecommendation } from "../lib/api";
+import { PairEvidence } from "../components/settings/PairEvidence";
 import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
 
 const DEFAULT: AppSettings = {
@@ -321,7 +323,7 @@ export function Settings() {
     queryKey: ["strategy-setting-history"],
     queryFn: () => api.settings.strategyHistory(12),
   });
-  const { data: strategyRecommendations } = useQuery({
+  const { data: strategyRecommendations, isPending: recommendationsLoading, isError: recommendationsFailed, refetch: refreshRecommendations } = useQuery({
     queryKey: ["strategy-recommendations"],
     queryFn: api.settings.recommendations,
   });
@@ -332,9 +334,12 @@ export function Settings() {
     enabled: (form.broker_provider ?? "alpaca") === "tradier",
   });
 
-  async function decideRecommendation(strategyId: string, ticker: string, decision: "paper_enabled" | "live_enabled" | "observing") {
-    await api.settings.setRecommendation(strategyId, ticker, decision);
+  async function decideRecommendation(item: StrategyTickerRecommendation, decision: PairDecision) {
+    await api.settings.decidePair(item, decision);
     qc.invalidateQueries({ queryKey: ["strategy-recommendations"] });
+    qc.invalidateQueries({ queryKey: ["strategy-research-matrix"] });
+    qc.invalidateQueries({ queryKey: ["strategy-catalog"] });
+    qc.invalidateQueries({ queryKey: ["settings"] });
   }
 
   useEffect(() => {
@@ -357,7 +362,7 @@ export function Settings() {
     const target = strategy.backtest?.target_profit_factor ?? 1.5;
     const reliableTarget = strategy.backtest?.meets_target && strategy.evidence_grade === "passed_declared_holdout";
     const matrixStrategy = strategyResearch?.strategies.find(item => item.strategy_id === strategy.strategy_id);
-    const currentPairs = (matrixStrategy?.pairs ?? []).filter(pair => strategy.tickers.includes(pair.ticker));
+    const currentPairs = (matrixStrategy?.pairs ?? []).filter(pair => strategy.tickers.includes(pair.ticker) || pair.tradable);
     const pairProof = currentPairs.length
       ? currentPairs.map(pair => {
           const factor = pair.profit_factor === "infinite" ? "∞" : typeof pair.profit_factor === "number" ? pair.profit_factor.toFixed(2) : "—";
@@ -375,18 +380,19 @@ export function Settings() {
           disabled={strategy.integrity_errors.length > 0}
       >
         {!strategy.observation_only && <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: "var(--positive)" }}>
-          CAN TRADE · {strategy.tickers.join(", ")}
+          Trading on · {currentPairs.filter(pair => pair.tradable).map(pair => pair.ticker).join(", ") || "None"}
         </p>}
         <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
           <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Recorded test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}
         </p>
         {!strategy.observation_only ? (
           <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
-            <strong>{strategy.backtest?.forward_evidence_start ? `Results since ${evidenceDate(strategy.backtest.forward_evidence_start)}` : `Current v${strategy.version} results`}:</strong> {pairProof}
+            <strong>Current research · strategy exits:</strong> {pairProof}
           </p>
         ) : <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
           <strong>{matrixStrategy?.exit_measurement?.pf_label ?? "Current PF"} {matrixStrategy?.current_evidence.profit_factor === "infinite" ? "∞" : typeof matrixStrategy?.current_evidence.profit_factor === "number" ? matrixStrategy.current_evidence.profit_factor.toFixed(2) : "—"}</strong> · {matrixStrategy?.current_evidence.option_results ?? 0} option results across all collected tickers
         </p>}
+        <PairEvidence strategy={matrixStrategy} />
         <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
           <summary className="cursor-pointer">Test dates and proof</summary>
           <p className="mt-1">Goal PF {target.toFixed(1)}{!strategy.observation_only ? ` · ${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode} orders only on ${strategy.tickers.join(", ")}.` : ""}</p>
@@ -444,12 +450,10 @@ export function Settings() {
           onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategies"}</button>)}
       </div>
       <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "flex flex-col gap-4 max-w-2xl" : "hidden"}>
-      <StrategyRecommendations
+      {recommendationsFailed ? <div className="card p-4 text-sm" role="alert">Recommendations could not load. <button className="btn btn-ghost" onClick={() => refreshRecommendations()}>Try again</button></div> : recommendationsLoading ? <p role="status" className="text-sm">Checking strategy recommendations…</p> : <StrategyRecommendations
         recommendations={strategyRecommendations?.recommendations ?? []}
         onDecision={decideRecommendation}
-        minimumMarketDays={strategyResearch?.recommendation_policy.minimum_market_days}
-        minimumResultDays={strategyResearch?.recommendation_policy.minimum_result_days}
-      />
+      />}
       {/* Trading Mode */}
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Trading mode</h3>
@@ -822,7 +826,7 @@ export function Settings() {
       <section>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research only</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} A match can be recommended after at least {strategyResearch?.recommendation_policy.minimum_market_days ?? 20} market days for that ticker and {strategyResearch?.recommendation_policy.minimum_result_days ?? 8} days with option results, if its PF and safety checks pass.
+          On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} New matches need 20 non-overlapping completed tests and passing profit checks—not a minimum number of days.
         </p>
         <div className="grid gap-3 lg:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}</div>
         <TestedStrategies
