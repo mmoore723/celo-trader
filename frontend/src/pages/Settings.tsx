@@ -449,13 +449,15 @@ export function Settings() {
           className={`btn ${activeTab === tab ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategies"}</button>)}
       </div>
-      <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "settings-card-grid" : "hidden"}>
-      <div className="settings-wide settings-paired-grid">
+      <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "flex flex-col gap-4" : "hidden"}>
+      <div className="settings-paired-grid">
       {recommendationsFailed ? <div className="card p-4 text-sm" role="alert">Recommendations could not load. <button className="btn btn-ghost" onClick={() => refreshRecommendations()}>Try again</button></div> : recommendationsLoading ? <p role="status" className="text-sm">Checking strategy recommendations…</p> : <StrategyRecommendations
         recommendations={strategyRecommendations?.recommendations ?? []}
         onDecision={decideRecommendation}
       />}
       </div>
+      <div className="settings-paired-grid settings-general-columns">
+      <section className="settings-control-stack" aria-label="Trading preferences">
       {/* Trading Mode */}
       <div className="card p-4">
         <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Trading mode</h3>
@@ -540,6 +542,29 @@ export function Settings() {
         </div>
       </div>
 
+      {/* Keep the short display card in the same stack, not a mostly empty column. */}
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Display</h3>
+        <div className="flex flex-col gap-2">
+          <label className="text-sm" style={{ color: "var(--ink)" }}>
+            Timezone
+            <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+              Used for chart timestamps and log times
+            </span>
+          </label>
+          <select
+            className="select w-full min-w-0"
+            value={form.display_timezone ?? "America/New_York"}
+            onChange={(e) => set("display_timezone", e.target.value)}
+          >
+            {TIMEZONES.map((tz) => (
+              <option key={tz.value} value={tz.value}>{tz.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      </section>
+      <section className="settings-control-stack" aria-label="Trade rules and scanner">
       {/* Plain-language controls that directly change order size or stop trading. */}
       <div className="card p-4">
         <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Trade limits</h3><span className="badge badge-green">USED ON EVERY ORDER</span></div>
@@ -598,28 +623,6 @@ export function Settings() {
               <Toggle label="Allow a new opposite-direction trade after a breakdown" checked={form.flip_trading_enabled} onChange={(v) => set("flip_trading_enabled", v)} />
             </div>
           </details>
-        </div>
-      </div>
-
-      {/* Display */}
-      <div className="card p-4">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Display</h3>
-        <div className="flex flex-col gap-2">
-          <label className="text-sm" style={{ color: "var(--ink)" }}>
-            Timezone
-            <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-              Used for chart timestamps and log times
-            </span>
-          </label>
-          <select
-            className="select w-full min-w-0"
-            value={form.display_timezone ?? "America/New_York"}
-            onChange={(e) => set("display_timezone", e.target.value)}
-          >
-            {TIMEZONES.map((tz) => (
-              <option key={tz.value} value={tz.value}>{tz.label}</option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -787,10 +790,12 @@ export function Settings() {
         />
         <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Separate tickers with commas.</p>
       </div>
+      </section>
+      </div>
 
       {/* API Credentials — two independent panels, see the comment above
           AlpacaCredentialsPanel for why they're structurally separate now */}
-      <section className="settings-wide flex flex-col gap-3" aria-label="API credentials">
+      <section className="flex flex-col gap-3" aria-label="API credentials">
       <p className="text-xs font-semibold px-1" style={{ color: "var(--ink-muted)" }}>
         API Credentials — each saves independently
       </p>
