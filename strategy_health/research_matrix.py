@@ -25,7 +25,7 @@ from strategy_health.authored_exit_summary import net_profit
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
 )
-from trading.context_research_entries import evidence_version
+from trading.research_versions import evidence_version
 from trading.research_contract_selection import (
     RESEARCH_CONTRACT_PROFILE_VERSION, RESEARCH_CONTRACT_SOURCE,
 )

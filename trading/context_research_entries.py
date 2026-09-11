@@ -10,15 +10,12 @@ import pandas as pd
 
 from strategies import context_strategy_observers as source
 from strategies.base import Signal
+from trading.research_versions import evidence_version
 
 POLICY = 'completed_context_entries_v2'
 STRATEGY_IDS = frozenset((source.ORB_NR7_INSIDE, source.ORB_ATR10_LONG,
                          source.VWAP_KER10_LONG, source.VWAP_DISPLACEMENT_LONG))
 _last_trigger = {}
-
-
-def evidence_version(strategy_id, version):
-    return f'{version}.research.2' if strategy_id in STRATEGY_IDS else version
 
 
 def _orb(today, strategy_id, now, history):

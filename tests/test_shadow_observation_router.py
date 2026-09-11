@@ -16,6 +16,22 @@ def _signal(strategy_id: str) -> SimpleNamespace:
 
 
 class ShadowObservationRouterTests(unittest.TestCase):
+    def test_expanded_recovery_cannot_return_an_order_on_native_or_other_ticker(self):
+        sid = 'V2_FAILED_OR_BREAK_VWAP_REVERSION'
+        frame = pd.DataFrame({'close':[100.,101.]})
+        for ticker in ('SPY','META'):
+            observed = []
+            with patch.object(router,'ACTIVE_STRATEGIES',[(sid,lambda *a,**k:self.fail('Native evaluator used'))]), \
+                 patch.object(router,'compute_adx',return_value=30.), \
+                 patch.object(router,'_authorized_for_order',return_value=ticker=='SPY'), \
+                 patch('shadow_ledger.resolve_due_directional_outcomes'), \
+                 patch('trading.failed_range_research.evaluate',return_value=_signal(sid)):
+                result = router.route_signals(frame,ticker,enabled_strategies=set(),
+                    observation_only_strategies={sid},observation_scope='research_worker:a',
+                    prepared_today=frame,quiet=True,candidate_observer=lambda t,s,p:observed.append(t))
+            self.assertEqual([],result)
+            self.assertEqual([ticker],observed)
+
     def test_expanded_context_worker_is_observed_only_on_actual_ticker(self):
         sid = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
         frame = pd.DataFrame({"close": [100.0, 101.0]})

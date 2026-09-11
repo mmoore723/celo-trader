@@ -278,7 +278,11 @@ def route_signals(
     for strategy_id, fn in evaluators:
         try:
             from trading.context_research_entries import STRATEGY_IDS as context_research_ids, evaluate as context_research
-            if (strategy_id in _observation_only and strategy_id in context_research_ids
+            from trading.failed_range_research import STRATEGY_ID as recovery_id, evaluate as recovery_research
+            if (strategy_id in _observation_only and strategy_id == recovery_id
+                    and observation_scope and observation_scope.startswith("research_worker:")):
+                sig = recovery_research(today, ticker=ticker, scope=observation_scope)
+            elif (strategy_id in _observation_only and strategy_id in context_research_ids
                     and observation_scope and observation_scope.startswith("research_worker:")):
                 sig = context_research(today, strategy_id=strategy_id, ticker=ticker, scope=observation_scope)
             elif strategy_id in _observation_only and not _authorized_for_order(strategy_id, ticker):

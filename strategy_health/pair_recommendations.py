@@ -130,6 +130,7 @@ def recommendations(matrix, settings):
             # native scope, research also uses a different contract profile.
             # Do not promise execution until a matching adapter is implemented.
             executable = bool(rule and not rule.observation_only and sid not in errors
+                              and strategy['version'] == rule.version
                               and pair['ticker'] in rule.tickers and sid not in PROTOCOLS)
             live = bool(executable and review_live_promotion(rule, pair["ticker"]).ready)
             switch_on = bool(rule and settings.get(rule.setting_key, False))

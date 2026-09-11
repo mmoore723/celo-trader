@@ -15,6 +15,20 @@ def trades(profits, overlap=False):
 
 
 class PairRecommendationTests(unittest.TestCase):
+    def test_research_entry_version_cannot_enable_a_different_native_rule(self):
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        sid = 'V2_FAILED_OR_BREAK_VWAP_REVERSION'
+        rule = REVIEWED_STRATEGIES[sid]
+        evidence = assess(trades([20,20,-10,20,-10]*4))
+        matrix = {'strategies':[{'strategy_id':sid,'version':'2.1.0.research.2',
+            'display_name':rule.display_name,'pairs':[{'ticker':'SPY','tradable':False,'recommendation':evidence}]}]}
+        settings = {'paper_trading':True,rule.setting_key:True}
+        result = recommendations(matrix,settings)['recommendations']
+        self.assertEqual(1,len(result))
+        self.assertFalse(result[0]['can_enable'])
+        with self.assertRaises(ValueError):
+            decide(matrix,settings,sid,'SPY','enable',evidence['fingerprint'])
+
     def test_twenty_same_day_tests_can_pass_without_day_gate(self):
         result = assess(trades([20, 20, -10, 20, -10] * 4))
         self.assertTrue(result["qualified"])

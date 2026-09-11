@@ -60,6 +60,15 @@ class TargetTests(unittest.TestCase):
 
 
 class RecoveryCaptureTests(unittest.TestCase):
+    def test_expanded_entries_capture_without_dropping_existing_experiments(self):
+        self.recovery('old');self.recovery('new');self.recovery('unknown')
+        with self.connect() as conn:
+            for name,version in [('new','2.1.0.research.2'),('unknown','future')]:
+                conn.execute("UPDATE shadow_candidates SET metadata_json=json_set(metadata_json,'$.strategy_version',?) WHERE candidate_id=?",(version,name))
+        capture(account='a',quote_lookup=self.lookup,bars_lookup=lambda _:bars(),clock=lambda:self.now)
+        self.assertEqual({'old','new'},set(self.rows()))
+        self.lookup.assert_called_once_with('XYZ')
+
     setUp = fixtures.CaptureTests.setUp
     connect = fixtures.CaptureTests.connect
     seed = fixtures.CaptureTests.seed

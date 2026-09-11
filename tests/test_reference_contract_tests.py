@@ -14,6 +14,17 @@ from tests.test_option_profit_protection import ENTRY, quote
 
 
 class ReferenceTests(unittest.TestCase):
+    def test_expanded_recovery_keeps_exact_version_in_reference_cohort(self):
+        self.seed()
+        with self.connect() as conn:
+            conn.execute('UPDATE shadow_candidates SET strategy_id=? WHERE candidate_id=?',(RECOVERY_STRATEGY_ID,'one'))
+        record(candidate_id='one',strategy_id=RECOVERY_STRATEGY_ID,direction='bearish',
+               meta={'strategy_version':'2.1.0.research.2','v2_target':99,'v2_entry_reference':100},
+               contract=dict(symbol='XYZ',ask=2,bid=1.96),observed_at=ENTRY,details={'reason':'selected'})
+        self.assertEqual('2.1.0.research.2',self.rows()['one']['strategy_version'])
+        self.step(30,bars_lookup=lambda _:[])
+        self.assertEqual('collecting',self.rows()['one']['state']['control']['status'])
+
     setUpBase = fixtures.CaptureTests.setUp
     connect = fixtures.CaptureTests.connect
     seed = fixtures.CaptureTests.seed

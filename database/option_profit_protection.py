@@ -10,6 +10,7 @@ from strategy_health.initial_loss_protection import attach, advance_capture as a
 from strategy_health.recovery_profit_protection import freeze, observe_target, can_arm
 from strategy_health.impulse_exit import et
 from database.reference_contract_tests import load as load_reference_tests, TABLE as REFERENCE_TABLE
+from trading.research_versions import capture_versions
 
 logger = logging.getLogger('celo_trader.research')
 CREATE_TABLE = '''CREATE TABLE IF NOT EXISTS research_option_profit_tests (
@@ -26,15 +27,17 @@ def capture(*, account, quote_lookup, bars_lookup=None, stopped=lambda: False, c
         return
     with get_conn() as conn:
         for strategy_id, protocol in PROTOCOL_BY_STRATEGY.items():
-            new = conn.execute('''SELECT s.candidate_id,s.direction,s.metadata_json,q.contract_symbol,q.ask,q.bid,q.observed_at
+            versions = capture_versions(strategy_id, VERSION_BY_STRATEGY[strategy_id])
+            placeholders = ','.join('?' for _ in versions)
+            new = conn.execute(f'''SELECT s.candidate_id,s.direction,s.metadata_json,q.contract_symbol,q.ask,q.bid,q.observed_at
             FROM shadow_candidates s JOIN candidate_option_quote_observations q ON q.candidate_id=s.candidate_id
             LEFT JOIN research_option_profit_tests e ON e.candidate_id=s.candidate_id
             WHERE e.candidate_id IS NULL AND s.strategy_id=? AND COALESCE(s.broker_account_id,'')=?
             AND s.observed_at>=? AND q.observation_kind='entry' AND q.source='tradier_research_contract_v1'
             AND q.ask>0 AND q.bid>=0 AND q.bid<=q.ask
             AND json_valid(s.metadata_json) AND json_extract(s.metadata_json,'$.profit_protection_protocol')=?
-            AND json_extract(s.metadata_json,'$.strategy_version')=?''',
-                (strategy_id, account or '', (et(clock())-timedelta(days=2)).date().isoformat(), protocol, VERSION_BY_STRATEGY[strategy_id])).fetchall()
+            AND json_extract(s.metadata_json,'$.strategy_version') IN ({placeholders})''',
+                (strategy_id, account or '', (et(clock())-timedelta(days=2)).date().isoformat(), protocol, *versions)).fetchall()
             for row in new:
                 state = initialize(row['observed_at'], row['ask'], row['bid'], minutes=MINUTES_BY_STRATEGY[strategy_id])
                 state = attach(state, strategy_id=strategy_id, meta=json.loads(row['metadata_json']),

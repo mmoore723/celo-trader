@@ -9,6 +9,7 @@ from strategy_health.impulse_exit import et, executable_bid
 from trading.entry.contract import reviewed_contract_profile, select_reviewed_v2_contract
 from trading.research_contract_selection import RESEARCH_MAX_CONTRACT_DOLLARS
 from trading.state import _now_et
+from trading.research_versions import capture_versions
 
 logger = logging.getLogger('celo_trader.research')
 
@@ -24,7 +25,7 @@ def observe(*, candidate_id, strategy_id, ticker, direction, price, meta, tradie
     if strategy_id not in STRATEGIES:
         return
     rule = REVIEWED_STRATEGIES[strategy_id]
-    if str(meta.get('strategy_version') or '') != rule.version:
+    if str(meta.get('strategy_version') or '') not in capture_versions(strategy_id,rule.version):
         return
     profile = reviewed_contract_profile(strategy_id, ticker)
     key = (PROFILE, profile, ticker.upper(), direction, round(price, 4))

@@ -9,6 +9,7 @@ from strategy_health.option_profit_protection import (
     PROTOCOL_BY_STRATEGY, RECOVERY_PROTOCOL, ORB_STRATEGY_ID, initialize, summary as profit_summary,
 )
 from strategy_health.recovery_profit_protection import freeze
+from trading.research_versions import capture_versions
 
 PROFILE = 'reviewed_contract_reference_v1'
 # Freeze current versions/horizons, so future edits cannot inherit this proof.
@@ -34,8 +35,9 @@ CREATE_INDEX = 'CREATE INDEX IF NOT EXISTS idx_reference_contract_active ON rese
 
 def record(*, candidate_id, strategy_id, direction, meta, contract, observed_at, details):
     version, minutes = STRATEGIES[strategy_id]
-    if meta.get('strategy_version') != version or REVIEWED_STRATEGIES[strategy_id].version != version:
+    if meta.get('strategy_version') not in capture_versions(strategy_id,version) or REVIEWED_STRATEGIES[strategy_id].version != version:
         return
+    version = meta['strategy_version']
     protocol = PROTOCOL_BY_STRATEGY.get(strategy_id, f'reference_fixed_{minutes}m_v1')
     started = et(observed_at).isoformat()
     state = initialize(started, contract['ask'], contract['bid'], minutes=minutes) if contract else dict(
@@ -86,8 +88,9 @@ def load(conn, account, cutoff=None, *, active_only=False):
         # protocol. Never turn their historical path into a new trail sample.
         if sid == ORB_STRATEGY_ID:
             allowed_protocols.add('reference_fixed_90m_v1')
-        if (sid not in STRATEGIES or (row['strategy_version'], row['minutes']) != STRATEGIES[sid]
-                or REVIEWED_STRATEGIES[sid].version != row['strategy_version']
+        if (sid not in STRATEGIES or row['minutes'] != STRATEGIES[sid][1]
+                or row['strategy_version'] not in capture_versions(sid,STRATEGIES[sid][0])
+                or REVIEWED_STRATEGIES[sid].version != STRATEGIES[sid][0]
                 or row['protocol'] not in allowed_protocols):
             continue
         result[row['candidate_id']] = dict(row, state=json.loads(row['state_json']))
