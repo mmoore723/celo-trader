@@ -478,6 +478,9 @@ def _init_db_at(db_path: Path) -> None:
         from database.reference_contract_tests import CREATE_TABLE as REFERENCE_TABLE, CREATE_INDEX as REFERENCE_INDEX
         conn.execute(REFERENCE_TABLE)
         conn.execute(REFERENCE_INDEX)
+        from database.expiration_study import CREATE_TABLE as EXPIRATION_TABLE, CREATE_INDEX as EXPIRATION_INDEX
+        conn.execute(EXPIRATION_TABLE)
+        conn.execute(EXPIRATION_INDEX)
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)

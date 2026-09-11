@@ -25,6 +25,7 @@ from trading.state import _now_et
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, evaluate_tested_research,
 )
+from trading.expiration_study import SharedReads, observe as observe_expiration_study, capture as capture_expiration_study
 
 logger = logging.getLogger("celo_trader.research")
 
@@ -82,6 +83,7 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
         if stopped():
             return
         cache = {}
+        study_reads = SharedReads(tradier, _now_et)
 
         def record(symbol, signal, price):
             if not stopped():
@@ -90,6 +92,11 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
                     tradier=tradier, balance=balance, risk=risk, settings=settings,
                     selection_cache=cache, research_only=True,
                 )
+                try:
+                    observe_expiration_study(signal=signal, ticker=symbol, price=price, reader=study_reads,
+                                             settings=settings, clock=_now_et, stopped=stopped)
+                except Exception:
+                    logger.warning('Longer-expiration observation failed for %s; primary research preserved', symbol, exc_info=True)
 
         # Never call _tick or return these signals to the trading loop.
         returned = route_signals(
@@ -139,6 +146,14 @@ def run_research_pass(readers, snapshot, state, stopped):
         bars, error, _ = alpaca.get_session_bars(ticker, '1Min')
         return bars_to_df(bars) if bars and not error else pd.DataFrame()
 
+    study_ready = False
+    def study_checkpoint():
+        try:
+            capture_expiration_study(market=alpaca, options=tradier, settings=snapshot['settings'],
+                                     worker_state=state, stopped=stopped, clock=_now_et)
+        except Exception:
+            logger.warning('Longer-expiration exit capture failed; primary research preserved', exc_info=True)
+
     def profit_checkpoint(force=False):
         if not snapshot['settings'].get('shadow_ledger_enabled', True) or stopped():
             return
@@ -152,6 +167,8 @@ def run_research_pass(readers, snapshot, state, stopped):
                                       stopped=stopped, clock=_now_et)
         except Exception:
             logger.warning('Profit-protection checkpoint failed; research continues', exc_info=True)
+        if study_ready:
+            study_checkpoint()
 
     profit_checkpoint(force=True)
     # Pending exits have priority over the expensive all-ticker signal replay.
@@ -179,6 +196,8 @@ def run_research_pass(readers, snapshot, state, stopped):
             )
         except Exception:
             logger.warning("Authored exit pass failed; research continues", exc_info=True)
+        study_ready = True
+        study_checkpoint()
     if stopped() or not alpaca.is_market_open():
         return
     for ticker in snapshot["tickers"]:

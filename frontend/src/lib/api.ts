@@ -167,6 +167,16 @@ export interface StrategyTickerResearchPair {
   leading_contract_test: ResearchContractTest | null;
   research_contract_profile: string | null;
   tradable: boolean;
+  expiration_study?: {
+    profile_version: string; recommendation_eligible: false;
+    setups: number; selected_contracts: number; rejected_identity: number;
+    first_setup_at: string | null; last_setup_at: string | null;
+    statuses: Record<string, number>; selection_reasons: Record<string, number>;
+    completed: ExpirationStudyMetrics; non_overlapping: ExpirationStudyMetrics;
+    matched: ExpirationStudyComparison; matched_non_overlapping: ExpirationStudyComparison;
+    longer_only: ExpirationStudyMetrics; longer_only_non_overlapping: ExpirationStudyMetrics;
+    primary_incomplete: number;
+  } | null;
   reference_contract_test?: {
     profile_version: string; minutes: number; tracked: number; selected: number;
     first_test_at: string | null; option_results: number; result_days: number;
@@ -209,6 +219,16 @@ export interface StrategyTickerResearchPair {
       statuses: Record<string, number>;
     };
   } | null;
+}
+export interface ExpirationStudyMetrics {
+  option_results: number; profit_factor: number | "infinite" | null;
+  net_one_contract_pnl: number | null; average_one_contract_pnl: number | null;
+  median_one_contract_pnl: number | null; maximum_drawdown_one_contract: number | null;
+}
+export interface ExpirationStudyComparison {
+  results: number; primary: ExpirationStudyMetrics; longer: ExpirationStudyMetrics;
+  improved: number; worsened: number; unchanged: number;
+  average_change: number | null; median_change: number | null;
 }
 export interface StrategyResearchMatrix {
   days: number;

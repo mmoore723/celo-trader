@@ -18,6 +18,8 @@ from strategy_health.authored_exit_summary import load_authored_exits, authored_
 from strategy_health.exit_protocols import PROTOCOLS
 from database.option_profit_protection import load as load_profit_tests
 from database.reference_contract_tests import load as load_reference_tests, summary as reference_summary
+from database.expiration_study import load as load_expiration_studies
+from strategy_health.expiration_study_summary import summary as expiration_study_summary
 from strategy_health.option_profit_protection import summary as profit_test_summary, PROTOCOL_BY_STRATEGY
 from strategy_health.ticker_qualification import DEFAULT_POLICY
 from strategy_health.pair_recommendations import POLICY, assess, summarize, timestamp
@@ -609,6 +611,7 @@ def build_research_matrix(days: int = 90) -> dict:
         authored_exits = load_authored_exits(conn, account_id, cutoff)
         profit_tests = load_profit_tests(conn, account_id, cutoff)
         reference_tests = load_reference_tests(conn, account_id, cutoff)
+        expiration_studies = {row['candidate_id']: row for row in load_expiration_studies(conn, account=account_id, cutoff=cutoff)}
         rows = conn.execute(
             """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
                       s.direction,s.metadata_json,
@@ -743,6 +746,8 @@ def build_research_matrix(days: int = 90) -> dict:
                 [row for row in rule_samples if row['candidate_id'] in profit_tests], exit_minutes)
             reference_samples = _distinct_samples(
                 [row for row in rule_samples if row['candidate_id'] in reference_tests], exit_minutes)
+            expiration_samples = _distinct_samples(
+                [row for row in rule_samples if row['candidate_id'] in expiration_studies], exit_minutes)
             selection_reasons = _contract_selection_reasons(samples)
             exit_summaries = []
             current_results: list[tuple[str, float]] = []
@@ -818,6 +823,8 @@ def build_research_matrix(days: int = 90) -> dict:
                 "ticker": ticker,
                 "recommendation": recommendation,
                 "reference_contract_test": reference_summary(reference_samples, reference_tests, strategy_id),
+                "expiration_study": expiration_study_summary(expiration_samples, expiration_studies, strategy_id,
+                    completed_strategy_results(expiration_samples, strategy_id, authored_exits, exit_minutes)),
                 "profit_protection_comparison": profit_test_summary(profit_samples, profit_tests, strategy_id) if strategy_id in PROTOCOL_BY_STRATEGY else None,
                 "authored_exit_evidence": authored_summary(samples, authored_exits, PROTOCOLS[strategy_id]) if strategy_id in PROTOCOLS else None,
                 "status": status,

@@ -4,6 +4,7 @@ import { SearchX } from "lucide-react";
 import { api, type ScannerOpportunity, type StrategyResearchMatrix, type StrategyTickerResearchPair } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 import { AuthoredExitEvidence } from "../components/AuthoredExitEvidence";
+import { ExpirationStudy } from "../components/ExpirationStudy";
 import { ProfitProtectionComparison, ReferenceContractTest } from "../components/ProfitProtectionComparison";
 import { collapseOpportunityEpisodes, opportunityDecisionTitle, opportunityLifecycle, opportunityReason } from "../lib/opportunitySemantics.js";
 import { numericProfitFactor, profitFactorText, researchActionLabel, researchPairVisible, researchProfitFactorText, sortResearchPairs } from "../lib/researchPairView.js";
@@ -85,6 +86,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
     {pair.reference_contract_test && <div className="px-3 pb-2 text-xs"><ReferenceContractTest test={pair.reference_contract_test} /></div>}
     <details className="px-3 pb-3 text-xs">
       <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>Evidence and test plan</summary>
+      {pair.expiration_study && <div className="mt-2"><ExpirationStudy study={pair.expiration_study} /></div>}
       <p className="mt-2">{pair.recommendation?.reasons.join(" · ") || "Completed-trade checks passed."} Overlapping tests remain included in the research results, but do not add independent evidence.</p>
       <div className="grid gap-2 mt-3 sm:grid-cols-2 lg:grid-cols-4" style={{ color: "var(--ink-muted)" }}>
         <p><b>Research plays:</b> {pair.setups} across {pair.market_days} data days</p>
