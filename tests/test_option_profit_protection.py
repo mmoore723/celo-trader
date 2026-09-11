@@ -50,6 +50,35 @@ class PolicyTests(unittest.TestCase):
         s = self.step(s, 60, q=q)
         self.assertAlmostEqual(2.12, s['stop'])
 
+    def test_trigger_snapshot_keeps_crossing_separate_from_later_fill(self):
+        s = self.step(initialize(ENTRY, 2, 1.96), 30, 2.20)
+        before = json.loads(json.dumps(s))
+        s = self.step(s, 60, q=quote(2.10, 50))
+        trigger = s['trail']['trigger']
+        self.assertAlmostEqual(2.12, trigger['stop'])
+        self.assertEqual(2.1, trigger['bid'])
+        self.assertAlmostEqual(2.14, trigger['ask'])
+        self.assertEqual('2026-09-10T10:00:50', trigger['bid_at'])
+        self.assertEqual('2026-09-10T10:01:00', trigger['received_at'])
+        self.assertEqual(before['last_received_at'], trigger['previous_received_at'])
+        self.assertNotIn('trigger', before['trail'])
+        self.assertNotIn('bid', s['trail'])
+        s = self.step(json.loads(json.dumps(s)), 90, 2.08)
+        self.assertEqual(trigger, s['trail']['trigger'])
+        self.assertEqual(2.08, s['trail']['bid'])
+        self.assertEqual('collecting', s['control']['status'])
+        self.assertNotIn('trigger', s['control'])
+
+    def test_trigger_snapshot_is_bounded_and_retained_if_fill_is_missing(self):
+        s = self.step(initialize(ENTRY, 2, 1.96), 30, 2.2)
+        s = self.step(s, 60, 2.1)
+        trigger = s['trail']['trigger'].copy()
+        s = self.step(s, 121)
+        self.assertEqual('missing_quote', s['trail']['status'])
+        self.assertEqual(trigger, s['trail']['trigger'])
+        self.assertLess(len(json.dumps(trigger)), 600)
+        self.assertNotIn('bid', s['trail'])
+
     def test_unprofitable_path_cannot_create_profit_trail(self):
         s = initialize(ENTRY, 2, 1.96)
         for second in range(60, 1800, 60):
@@ -165,6 +194,20 @@ class CaptureTests(unittest.TestCase):
         self.seed(); self.capture(stopped=lambda:True); self.assertEqual({},self.rows())
         self.capture(); before=self.rows(); _init_db_at(self.path)
         self.capture(); self.assertEqual(before,self.rows())
+
+    def test_trigger_snapshot_persists_through_database_reload(self):
+        self.seed(); self.capture()
+        self.now=ENTRY+timedelta(seconds=60)
+        self.lookup.return_value=quote(2.1,50); self.capture()
+        trigger=self.rows()['one']['state']['trail']['trigger']
+        self.assertEqual(2.1,trigger['bid'])
+        _init_db_at(self.path)
+        self.now=ENTRY+timedelta(seconds=90)
+        self.lookup.return_value=quote(2.08,90); self.capture()
+        leg=self.rows()['one']['state']['trail']
+        self.assertEqual(trigger,leg['trigger'])
+        self.assertEqual(2.08,leg['bid'])
+        self.assertEqual(3,self.lookup.call_count)
 
     def test_failure_no_quote_storm_and_eventual_expiration(self):
         self.seed(); self.seed('two'); self.lookup.side_effect=RuntimeError('offline')

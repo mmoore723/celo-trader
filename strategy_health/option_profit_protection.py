@@ -89,7 +89,15 @@ def advance(state, *, entry_at, ask, contract, now, quote=None, allow_arm=True, 
         return out  # Pre-objective premium peaks cannot arm a later runner.
     previous_stop = out['stop']
     if previous_stop is not None and bid <= previous_stop:
-        out['trail'].update(status='pending_quote', decision_at=now.isoformat(), reason='option_profit_trail')
+        # One immutable diagnostic snapshot, not an extra quote request or fill.
+        # Keep the crossing quote separate from the later executable quote so
+        # research can distinguish detection overshoot from post-decision drift.
+        out['trail'].update(status='pending_quote', decision_at=now.isoformat(), reason='option_profit_trail',
+                            trigger=dict(evidence_version=1, bid=bid, ask=float(quote['ask']),
+                                         bid_at=stamp, ask_at=ask_priced[1], received_at=now.isoformat(),
+                                         stop=previous_stop, high_bid=out['high_bid'],
+                                         previous_bid_at=state['last_bid_at'],
+                                         previous_received_at=state['last_received_at']))
         return out  # Triggering quote cannot also fill this decision.
     out['high_bid'] = max(out['high_bid'] or bid, bid)
     if out['high_bid'] >= ask + ROUND_TRIP_PRICE_COST + 3*out['spread']:
