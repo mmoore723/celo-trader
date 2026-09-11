@@ -12,7 +12,9 @@ ORB = "V2_ORB_PULLBACK"
 TWO_LEG = "V2_TSLA_TWO_LEG_TREND_PULLBACK"
 
 
-def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, settings):
+def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, settings, *, research_scope=None):
+    if research_scope is not None and (not research_scope.startswith('research_worker:') or enabled):
+        raise ValueError('Expanded research cannot run in an order-enabled pass')
     signals, statuses, quote = [], {}, None
     if ORB in enabled | observed:
         try:
@@ -39,7 +41,12 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
         try:
             slot = state.setdefault("v2_tsla_two_leg_trend_pullback", {}).setdefault(ticker.upper(), {})
             evaluate = update_two_leg if TWO_LEG in observed and ticker.upper() != "TSLA" else update_two_leg_trend_pullback
-            signal, status = evaluate(slot, frame, ticker=ticker, now=_now_et())
+            if research_scope is not None:
+                from trading.two_leg_research import update
+                signal, status = update(state.setdefault('research_two_leg',{}),frame,
+                    ticker=ticker,now=_now_et(),scope=research_scope)
+            else:
+                signal, status = evaluate(slot, frame, ticker=ticker, now=_now_et())
             state["v2_tsla_two_leg_trend_pullback_status"] = statuses[TWO_LEG] = status
             if signal is not None:
                 signals.append(signal)

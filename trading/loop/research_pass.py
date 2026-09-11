@@ -69,8 +69,13 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
             prior = prior[prior["time"] < current["time"].min()]
             if not prior.empty:
                 frame = pd.concat([prior, current], ignore_index=True).sort_values("time").reset_index(drop=True)
+        observation_scope = (
+            f"research_worker:{get_current_user_id()}:{account}:"
+            f"{settings.get('paper_trading', True)}"
+        )
         injected, _, _ = evaluate_injected_setups(
             state, current, ticker, set(), observed, alpaca, settings,
+            research_scope=observation_scope,
         )
         if stopped():
             return
@@ -85,10 +90,6 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
                 )
 
         # Never call _tick or return these signals to the trading loop.
-        observation_scope = (
-            f"research_worker:{get_current_user_id()}:{account}:"
-            f"{settings.get('paper_trading', True)}"
-        )
         returned = route_signals(
             frame, ticker, enabled_strategies=set(), quiet=True,
             candidate_observer=record, observation_only_strategies=observed,
