@@ -110,6 +110,7 @@ def recommendations(matrix, settings):
     """Use the exact account/version/contract/exit evidence displayed in Research."""
     from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_strategy_integrity_errors
     from config.strategy_live_promotion import review_live_promotion
+    from strategy_health.exit_protocols import PROTOCOLS
     paper = bool(settings.get("paper_trading", True))
     decisions = settings.get("strategy_pair_review_decisions", {}) or {}
     result = []
@@ -125,7 +126,11 @@ def recommendations(matrix, settings):
             key = f"{consent_scope(settings, sid, pair['ticker'])}:{kind}"
             if decisions.get(key) == evidence.get("fingerprint"):
                 continue
-            executable = bool(rule and not rule.observation_only and sid not in errors)
+            # Existing order evaluators have hard ticker guards. Outside the
+            # native scope, research also uses a different contract profile.
+            # Do not promise execution until a matching adapter is implemented.
+            executable = bool(rule and not rule.observation_only and sid not in errors
+                              and pair['ticker'] in rule.tickers and sid not in PROTOCOLS)
             live = bool(executable and review_live_promotion(rule, pair["ticker"]).ready)
             switch_on = bool(rule and settings.get(rule.setting_key, False))
             can_enable = executable and switch_on and (paper or live)

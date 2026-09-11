@@ -90,24 +90,26 @@ class PairRecommendationTests(unittest.TestCase):
         self.assertEqual([], completed_strategy_results([sample], sid, {"a": {**exit_row, "contract_symbol": "OTHER"}}, 90))
         self.assertEqual([], completed_strategy_results([sample], sid, {"a": {**exit_row, "bid_at": "2026-09-10T14:36:00Z"}}, 90))
 
-    def test_explicit_approval_reaches_scanner_and_only_the_selected_account(self):
+    def test_explicit_reapproval_is_only_for_matching_native_execution_and_account(self):
         from config.strategy_catalog import REVIEWED_STRATEGIES, enabled_reviewed_strategy_ids
         from config.strategy_ticker_recommendations import approved_dynamic_tickers
         sid = "V2_SPY_TREND_CONT"
         rule = REVIEWED_STRATEGIES[sid]
         evidence = assess(trades([20, 20, -10, 20, -10] * 4))
         matrix = {"strategies": [{"strategy_id": sid, "version": rule.version, "display_name": rule.display_name,
-                  "pairs": [{"ticker": "META", "tradable": False, "recommendation": evidence}]}]}
+                  "pairs": [{"ticker": "SPY", "tradable": False, "recommendation": evidence}]}]}
         settings = {"paper_trading": True, "active_broker_account_id": "one", rule.setting_key: True}
         with patch("config.strategy_catalog.reviewed_strategy_integrity_errors", return_value={}):
-            updates = decide(matrix, settings, sid, "META", "enable", evidence["fingerprint"])
+            updates = decide(matrix, settings, sid, "SPY", "enable", evidence["fingerprint"])
             self.assertNotIn(rule.setting_key, updates)
             approved = {**settings, **updates}
-            self.assertIn(sid, enabled_reviewed_strategy_ids(approved, ticker="META"))
-            self.assertIn("META", approved_dynamic_tickers(approved, [sid]))
-            self.assertNotIn(sid, enabled_reviewed_strategy_ids({**approved, "active_broker_account_id": "two"}, ticker="META"))
-            self.assertNotIn(sid, enabled_reviewed_strategy_ids({**approved, rule.setting_key: False}, ticker="META"))
+            self.assertIn(sid, enabled_reviewed_strategy_ids(approved, ticker="SPY"))
+            self.assertIn("SPY", approved_dynamic_tickers(approved, [sid]))
+            self.assertNotIn(sid, enabled_reviewed_strategy_ids({**approved, rule.setting_key: False}, ticker="SPY"))
             self.assertNotIn(sid, enabled_reviewed_strategy_ids(approved, ticker="AAPL"))
+            matrix['strategies'][0]['pairs'][0]['ticker'] = 'META'
+            with self.assertRaisesRegex(ValueError, 'order-entry and exit route'):
+                decide(matrix, settings, sid, 'META', 'enable', evidence['fingerprint'])
 
 
 if __name__ == "__main__":
