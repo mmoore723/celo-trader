@@ -26,8 +26,8 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
       return <section key={kind} className="card p-4">
         <h3 className="text-sm font-semibold">{review ? "Review active strategies" : "New strategy matches"}</h3>
         <p className="text-xs mt-1 mb-3" style={{color: "var(--ink-muted)"}}>{review
-          ? "Recent research suggests a trading pair needs attention. Nothing turns off automatically."
-          : "A strategy and ticker passed the test checks. You decide whether to allow trading."}</p>
+          ? "Pairs appear here when recent tests weaken. Nothing turns off automatically."
+          : "Pairs appear here after passing the test checks. You decide whether to allow trading."}</p>
         {!rows.length && <p className="text-xs" style={{color: "var(--ink-muted)"}}>{review ? "No active pairs meet the review trigger." : "No new pairs have passed all checks yet."}</p>}
         {rows.map(item => <article key={`${item.strategy_id}:${item.ticker}`} className="rounded-lg border p-3 mt-2" style={{borderColor: "var(--border)"}}>
           <strong className="text-sm">{item.ticker} · {item.display_name}</strong>
