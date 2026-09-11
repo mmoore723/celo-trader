@@ -26,6 +26,13 @@ def get_tested_strategy_inventory() -> dict:
     return tested_strategy_inventory(get_settings())
 
 
+@router.get("/strategies/closed-trades")
+def get_closed_strategy_trades() -> dict:
+    """Current-account journal results; never enables or qualifies a strategy."""
+    from strategy_health.closed_trade_evidence import build_closed_trade_evidence
+    return build_closed_trade_evidence()
+
+
 @router.get("/strategies/history")
 def get_strategy_setting_history(limit: int = 50) -> dict:
     from database import get_strategy_setting_changes

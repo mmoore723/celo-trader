@@ -61,7 +61,7 @@ def _sample_time(row: object) -> datetime:
     return _parse_time(raw)
 
 
-def _distinct_samples(samples: list, _hold_minutes: int) -> list:
+def _distinct_samples(samples: list, _hold_minutes: int, *, preferred_source: str | None = None) -> list:
     """Keep every distinct research play; collapse exact restart duplicates.
 
     Research may model many overlapping hypothetical positions.  Paper/live
@@ -70,7 +70,13 @@ def _distinct_samples(samples: list, _hold_minutes: int) -> list:
     """
     accepted = []
     seen_triggers: set[tuple[str, str]] = set()
-    for row in sorted(samples, key=_sample_time):
+    # A native order preview and an all-setups research candidate can share
+    # a trigger. Select the intended cohort before deduplication, never by
+    # which one later wins or obtains a complete exit quote.
+    for row in sorted(samples, key=lambda row: (
+        _sample_time(row),
+        preferred_source is not None and _row_value(row, "entry_source") != preferred_source,
+    )):
         trigger = str(row["trigger_bar"] or "").strip()
         dedupe_key = (
             str(row["direction"] or "").lower(),
@@ -720,7 +726,10 @@ def build_research_matrix(days: int = 90) -> dict:
         for ticker in sorted(tickers):
             trading_enabled = strategy_id in enabled_reviewed_strategy_ids(settings, ticker=ticker)
             source_samples = grouped.get((strategy_id, ticker), [])
-            research_pair = strategy_id in PROTOCOLS or not (rule and ticker in rule.tickers)
+            # This page summarizes the all-setups research contract policy on
+            # EVERY ticker. Native order previews belong to a separate cohort;
+            # ticker authorization cannot choose which research prices count.
+            research_pair = True
             legacy_option_profiles_ignored = sum(
                 1 for row in source_samples
                 if _row_value(row, "entry_ask") is not None
@@ -739,7 +748,7 @@ def build_research_matrix(days: int = 90) -> dict:
             rule_samples, rule_rejected, rule_unscored, previous_version_rows = _current_rule_samples(
                 timely_samples, strategy_id, ticker,
             )
-            samples = _distinct_samples(rule_samples, exit_minutes)
+            samples = _distinct_samples(rule_samples, exit_minutes, preferred_source=RESEARCH_CONTRACT_SOURCE)
             # Deduplicate inside each experiment's cohort. A paper candidate
             # with the same trigger must not hide its separate research test.
             profit_samples = _distinct_samples(
@@ -753,7 +762,7 @@ def build_research_matrix(days: int = 90) -> dict:
             current_results: list[tuple[str, float]] = []
             current_summary = None
             for window in EXIT_WINDOWS:
-                window_samples = _distinct_samples(rule_samples, window)
+                window_samples = _distinct_samples(rule_samples, window, preferred_source=RESEARCH_CONTRACT_SOURCE)
                 summary, results = _exit_summary(window_samples, window)
                 exit_summaries.append(summary)
                 if window == exit_minutes:

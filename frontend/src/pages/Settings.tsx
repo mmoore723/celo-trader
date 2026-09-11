@@ -12,6 +12,7 @@ import { TestedStrategies } from "../components/settings/TestedStrategies";
 import { StrategyRecommendations, type PairDecision } from "../components/settings/StrategyRecommendations";
 import type { StrategyTickerRecommendation } from "../lib/api";
 import { PairEvidence } from "../components/settings/PairEvidence";
+import { ClosedTradeEvidence } from "../components/settings/ClosedTradeEvidence";
 import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
 
 const DEFAULT: AppSettings = {
@@ -314,6 +315,12 @@ export function Settings() {
   // the user may still discard.
   const actualAccountMode = (data?.paper_trading ?? form.paper_trading) ? "paper" : "live";
   const actualBrokerProvider = data?.broker_provider ?? form.broker_provider ?? "alpaca";
+  const { data: closedTradeEvidence, isPending: closedTradesLoading, isError: closedTradesFailed } = useQuery({
+    queryKey: ["settings-closed-trades", actualAccountMode, actualBrokerProvider],
+    queryFn: api.settings.closedStrategyTrades,
+    enabled: Boolean(data),
+    refetchInterval: 60_000,
+  });
   const { data: strategyResearch } = useQuery({
     queryKey: ["strategy-research-matrix"],
     queryFn: () => api.strategyHealth.researchMatrix(90),
@@ -382,6 +389,8 @@ export function Settings() {
         {!strategy.observation_only && <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: "var(--positive)" }}>
           Trading on · {currentPairs.filter(pair => pair.tradable).map(pair => pair.ticker).join(", ") || "None"}
         </p>}
+        {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
+          strategyId={strategy.strategy_id} failed={closedTradesFailed} loading={closedTradesLoading} />}
         <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
           <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Recorded test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}
         </p>

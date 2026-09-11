@@ -1011,6 +1011,19 @@ export interface TestedStrategyInventory {
   unavailable?: boolean;
 }
 
+export interface ClosedTradeEvidence {
+  available: boolean;
+  account_mode: "paper" | "live";
+  source: "trade_journal";
+  pnl_basis: "recorded_realized_pnl";
+  strategies: {strategy_id: string; version: string; pairs: {
+    ticker: string; version: string; completed_trades: number;
+    profit_factor: number | "infinite" | null; realized_pnl: number | null;
+    first_entry_date: string | null; last_exit_date: string | null;
+    wins: number; exclusions: Record<string, number>;
+  }[]}[];
+}
+
 export interface ReviewedStrategyCatalogEntry {
   strategy_id: string;
   display_name: string;
@@ -1308,6 +1321,7 @@ export const api = {
     brokerReadiness: (paper = true) => request<BrokerReadiness>(`/api/settings/broker-readiness?paper=${paper}`),
     connectionHealth: () => request<BrokerConnectionHealth>("/api/settings/connection-health"),
     strategies: () => request<{strategies: ReviewedStrategyCatalogEntry[]}>("/api/settings/strategies"),
+    closedStrategyTrades: () => request<ClosedTradeEvidence>("/api/settings/strategies/closed-trades"),
     testedStrategies: () => request<TestedStrategyInventory>("/api/settings/strategies/tested"),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
     recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),
