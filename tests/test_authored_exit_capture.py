@@ -13,6 +13,7 @@ from strategy_health.impulse_exit import STRATEGY_ID, PROTOCOL
 from strategy_health.authored_exit_summary import load_authored_exits, authored_summary
 from tests.test_impulse_exit_measurement import candles
 from trading.tested_strategy_research import strategy_details
+from trading.context_research_entries import evidence_version
 
 
 class AuthoredExitCaptureTests(unittest.TestCase):
@@ -48,7 +49,7 @@ class AuthoredExitCaptureTests(unittest.TestCase):
                 VALUES (?,'2026-09-10T10:05:01','2026-09-10T10:05','META',?,'bullish',.7,?,?)""",
                 (name, strategy_id, account, json.dumps(dict(authored_exit_protocol=protocol, authored_exit_state=state,
                  underlying_stop=98, underlying_target=104,
-                 strategy_version=spec.version))))
+                 strategy_version=evidence_version(strategy_id, spec.version)))))
             conn.execute("""INSERT INTO candidate_option_quote_observations
                 (candidate_id,observed_at,observation_kind,contract_symbol,ask,bid,source)
                 VALUES (?,'2026-09-10T10:05:03','entry','XYZ',2,1.9,?)""", (name, source))

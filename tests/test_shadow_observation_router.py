@@ -16,6 +16,23 @@ def _signal(strategy_id: str) -> SimpleNamespace:
 
 
 class ShadowObservationRouterTests(unittest.TestCase):
+    def test_expanded_context_worker_is_observed_only_on_actual_ticker(self):
+        sid = "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG"
+        frame = pd.DataFrame({"close": [100.0, 101.0]})
+        observed = []
+        with patch.object(router, "ACTIVE_STRATEGIES", [(sid, lambda *a, **k: self.fail("Reviewed order evaluator used"))]), \
+             patch.object(router, "compute_adx", return_value=30.0), \
+             patch.object(router, "_authorized_for_order", return_value=False), \
+             patch("shadow_ledger.resolve_due_directional_outcomes"), \
+             patch("trading.context_research_entries.evaluate", return_value=_signal(sid)) as research:
+            returned = router.route_signals(frame, "META", enabled_strategies=set(),
+                observation_only_strategies={sid}, observation_scope="research_worker:account-a",
+                prepared_today=frame, quiet=True,
+                candidate_observer=lambda ticker, signal, price: observed.append((ticker, signal.strategy_id)))
+        self.assertEqual([], returned)
+        self.assertEqual([("META", sid)], observed)
+        self.assertEqual("META", research.call_args.kwargs["ticker"])
+
     def test_candidate_link_survives_a_gate_that_copies_the_signal(self) -> None:
         frame = pd.DataFrame({"close": [100.0, 101.0]})
         original = _signal("V2_SPY_AFTERNOON_FVG")

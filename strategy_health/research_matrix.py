@@ -25,6 +25,7 @@ from strategy_health.authored_exit_summary import net_profit
 from trading.tested_strategy_research import (
     enabled_tested_research_ids, strategy_details,
 )
+from trading.context_research_entries import evidence_version
 from trading.research_contract_selection import (
     RESEARCH_CONTRACT_PROFILE_VERSION, RESEARCH_CONTRACT_SOURCE,
 )
@@ -341,6 +342,7 @@ def _current_rule_samples(
     reviewed = REVIEWED_STRATEGIES.get(strategy_id)
     runtime = strategy_details(strategy_id)
     current_version = reviewed.version if reviewed else (runtime.version if runtime else None)
+    current_version = evidence_version(strategy_id, current_version)
     for row in samples:
         try:
             metadata = json.loads(str(_row_value(row, "metadata_json") or "{}"))
@@ -846,7 +848,8 @@ def build_research_matrix(days: int = 90) -> dict:
         strategy_rows.append({
             "strategy_id": strategy_id,
             "display_name": display_name,
-            "version": rule.version if rule else runtime.version,
+            "version": evidence_version(
+                strategy_id, rule.version if rule else runtime.version),
             "backtest": _backtest_display(rule) if rule else {},
             "research_enabled": True,
             "current_evidence": {

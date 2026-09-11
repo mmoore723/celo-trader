@@ -277,7 +277,11 @@ def route_signals(
                 pass
     for strategy_id, fn in evaluators:
         try:
-            if strategy_id in _observation_only and not _authorized_for_order(strategy_id, ticker):
+            from trading.context_research_entries import STRATEGY_IDS as context_research_ids, evaluate as context_research
+            if (strategy_id in _observation_only and strategy_id in context_research_ids
+                    and observation_scope and observation_scope.startswith("research_worker:")):
+                sig = context_research(today, strategy_id=strategy_id, ticker=ticker, scope=observation_scope)
+            elif strategy_id in _observation_only and not _authorized_for_order(strategy_id, ticker):
                 from auth.context import get_current_user_id
                 from trading.cross_ticker_shadow import evaluate_bar_strategy
                 sig = evaluate_bar_strategy(

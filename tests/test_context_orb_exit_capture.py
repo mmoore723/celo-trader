@@ -8,6 +8,7 @@ from strategy_health.authored_exit_summary import load_authored_exits, authored_
 from tests import test_authored_exit_capture as fixtures
 from tests.test_context_orb_exit_measurement import meta
 from tests.test_impulse_exit_measurement import candles
+from trading.context_research_entries import evidence_version
 
 
 class ContextOrbExitCaptureTests(unittest.TestCase):
@@ -29,7 +30,7 @@ class ContextOrbExitCaptureTests(unittest.TestCase):
         self.f.seed(name,**{**args,**changes})
         with self.f.connect() as conn:
             saved=json.loads(conn.execute('SELECT metadata_json FROM shadow_candidates WHERE candidate_id=?',(name,)).fetchone()[0])
-            saved.update(or_midpoint=98,strategy_version='0.1.0')
+            saved.update(or_midpoint=98,strategy_version=evidence_version(args['strategy_id'],'0.1.0'))
             conn.execute('UPDATE shadow_candidates SET metadata_json=? WHERE candidate_id=?',(json.dumps(saved),name))
 
     def summary(self):

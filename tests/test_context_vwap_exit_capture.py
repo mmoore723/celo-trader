@@ -6,6 +6,7 @@ from unittest.mock import patch
 from tests import test_authored_exit_capture as fixtures
 from tests.test_context_vwap_exit import meta, session
 from strategy_health import context_vwap_exit as exits
+from trading.context_research_entries import evidence_version
 from strategy_health.authored_exit_summary import load_authored_exits, authored_summary
 
 
@@ -26,7 +27,7 @@ class ContextVwapCaptureTests(unittest.TestCase):
                                   state=exits.metadata(self.strategy_id)['authored_exit_state']),**changes})
         with self.f.connect() as conn:
             data=json.loads(conn.execute('SELECT metadata_json FROM shadow_candidates WHERE candidate_id=?',(name,)).fetchone()[0])
-            data.update(previous_high=104,strategy_version=self.version)
+            data.update(previous_high=104,strategy_version=evidence_version(self.strategy_id,self.version))
             conn.execute('UPDATE shadow_candidates SET metadata_json=? WHERE candidate_id=?',(json.dumps(data),name))
 
     def test_actual_quote_and_costs_are_separate_from_timer_results(self):
