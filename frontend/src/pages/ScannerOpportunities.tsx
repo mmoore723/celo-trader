@@ -35,7 +35,7 @@ function DecisionCard({ entry }: { entry: ScannerOpportunity }) {
 
 const STATUS: Record<StrategyTickerResearchPair["status"], { label: string; color: string }> = {
   working: { label: "Working", color: "var(--positive)" },
-  promising: { label: "Looks promising", color: "var(--accent)" },
+  promising: { label: "Looks promising", color: "var(--positive)" },
   losing_so_far: { label: "Losing so far", color: "var(--negative)" },
   needs_tuning: { label: "Needs tuning", color: "var(--warning)" },
   not_working: { label: "Not working", color: "var(--negative)" },

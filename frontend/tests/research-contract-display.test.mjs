@@ -23,6 +23,12 @@ const settingsSource = readFileSync(
   new URL("../src/pages/Settings.tsx", import.meta.url), "utf8",
 );
 
+test("promising research is green but remains distinct from working or enabled", () => {
+  assert.match(source, /promising: \{ label: "Looks promising", color: "var\(--positive\)" \}/);
+  assert.match(source, /working: \{ label: "Working", color: "var\(--positive\)" \}/);
+  assert.match(source, /pair\.tradable \? "TRADING ON" : "TESTING"/);
+});
+
 test("research results expose strategy-ticker contract policy evidence", () => {
   assert.match(source, /Next experiment/);
   assert.match(source, /Evidence and test plan/);
