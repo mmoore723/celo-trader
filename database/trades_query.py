@@ -10,6 +10,7 @@ import logging
 from typing import Optional
 
 from database.connection import get_conn, _conn_for_mode
+from database.events import log_event
 
 logger = logging.getLogger("celo_trader.database")
 
@@ -54,7 +55,16 @@ def get_open_trades(broker_account_id: str | None = None) -> list[dict]:
     logic, so they shouldn't trip a "DATA INTEGRITY" alert or be counted
     against the 2-position cap.
     """
-    from config import MAX_CONCURRENT_POSITIONS
+    from config import MAX_CONCURRENT_POSITIONS, get_settings
+    # This is a diagnostic, not an entry gate. Invalid settings or failed
+    # logging must never hide an existing position from its exit manager.
+    try:
+        position_limit = int(get_settings().get("max_concurrent_positions", MAX_CONCURRENT_POSITIONS))
+        if position_limit < 1:
+            raise ValueError("Invalid configured position limit")
+    except Exception:
+        logger.exception("Position-limit diagnostic unavailable; using default for warning only")
+        position_limit = MAX_CONCURRENT_POSITIONS
     broker_account_id = _effective_account_id(broker_account_id)
     with get_conn() as conn:
         if broker_account_id:
@@ -67,14 +77,17 @@ def get_open_trades(broker_account_id: str | None = None) -> list[dict]:
                 "SELECT * FROM trades WHERE status = 'open' ORDER BY entry_time DESC"
             ).fetchall()
     _bot_managed = [r for r in rows if r["strategy_id"] != "RECOVERED_UNTRACKED"]
-    if len(_bot_managed) > MAX_CONCURRENT_POSITIONS:
+    if len(_bot_managed) > position_limit:
         logger.error(
             "DATA INTEGRITY: %d open trades found (expected max %d). Trade IDs: %s.",
-            len(_bot_managed), MAX_CONCURRENT_POSITIONS, [r["id"] for r in _bot_managed],
+            len(_bot_managed), position_limit, [r["id"] for r in _bot_managed],
         )
-        log_event("CRITICAL", "database",
-                  f"More open trades ({len(_bot_managed)}) than the {MAX_CONCURRENT_POSITIONS}-position "
-                  f"limit allows: {[r['id'] for r in _bot_managed]}")
+        try:
+            log_event("CRITICAL", "database",
+                      f"More open trades ({len(_bot_managed)}) than the {position_limit}-position "
+                      f"limit allows: {[r['id'] for r in _bot_managed]}")
+        except Exception:
+            logger.exception("Could not persist position-count warning; returning all open trades")
     return [dict(r) for r in rows]
 
 
