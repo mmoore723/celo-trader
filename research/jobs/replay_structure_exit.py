@@ -19,12 +19,12 @@ from research.jobs.structure_exit_candidate import ExitState, MarketContext, PRO
 from research.jobs.replay_two_leg_initial_loss import at, number, leg, replay, compare
 
 
-def run_entry(entry, retained, market):
+def run_entry(entry, retained, market, state_type=ExitState):
     verified = replay(entry, retained['snapshots'])
     d = 1 if entry['direction'] == 'bullish' else -1
     if entry['direction'] not in ('bullish','bearish'):
         raise ValueError('Unknown direction')
-    state = ExitState(d, entry['stock_reference'], entry['entry_context']['v2_stop'],
+    state = state_type(d, entry['stock_reference'], entry['entry_context']['v2_stop'],
                       entry['entry_ask'], at(entry['entry_time']), 90)
     path = [q for q in verified['snapshots'] if at(q['time']) > state.entry_time]
     cap = state.entry_time+timedelta(minutes=90)
