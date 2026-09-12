@@ -10,6 +10,67 @@ def trade(id, start='10:00', end='11:00', entry=1, exit=1, qty=1, day='2026-09-0
             'strategy_id': 'V2_SPY_TREND_CONT'}
 
 class PortfolioTests(unittest.TestCase):
+    def routed(self, rows, **kwargs):
+        return replay(rows, [], SETTINGS, corrected=False, ticker_routing=True, **kwargs)
+
+    def test_ticker_routing_requires_identity_instead_of_guessing_strategy_name(self):
+        with self.assertRaisesRegex(ValueError, 'explicit ticker'):
+            self.routed([trade(1)])
+
+    def test_different_contracts_and_strategies_cannot_stack_same_ticker(self):
+        rows = [{**trade(1), 'ticker': 'SPY', 'contract_symbol': 'SPY260918C00760000'},
+                {**trade(2), 'ticker': ' spy ', 'contract_symbol': 'SPY260918P00750000',
+                 'strategy_id': 'V2_SPY_AFTERNOON_FVG'}]
+        result = self.routed(rows)
+        self.assertEqual('ticker_already_open', result['decisions'][1]['reason'])
+        self.assertEqual(1, result['max_open'])
+
+    def test_different_tickers_can_overlap(self):
+        result = self.routed([{**trade(1), 'ticker': 'SPY'}, {**trade(2), 'ticker': 'TSLA'}])
+        self.assertEqual(2, result['max_open'])
+
+    def test_win_blocks_before_but_not_at_ten_minute_boundary(self):
+        rows = [{**trade(1, end='10:30', exit=1.1), 'ticker': 'SPY'},
+                {**trade(2, start='10:30', end='10:35'), 'ticker': 'SPY'},
+                {**trade(3, start='10:39', end='10:45'), 'ticker': 'SPY'},
+                {**trade(4, start='10:40', end='11:00'), 'ticker': 'SPY'}]
+        result = self.routed(rows)
+        self.assertEqual(['enter', 'skip', 'skip', 'enter'], [d['action'] for d in result['decisions']])
+        self.assertEqual(['ticker_post_win_cooldown'] * 2,
+                         [d['reason'] for d in result['decisions'] if d['action'] == 'skip'])
+
+    def test_paper_journal_win_still_cools_when_modeled_costs_make_it_a_loss(self):
+        rows = [{**trade(1, end='10:30', exit=1.01), 'ticker': 'SPY'},
+                {**trade(2, start='10:31'), 'ticker': 'SPY'}]
+        paper = self.routed(rows, fee_per_side=1.65)
+        self.assertLess(paper['closed'][0]['pnl'], 0)
+        self.assertEqual(1, paper['closed'][0]['routing_pnl'])
+        self.assertEqual('ticker_post_win_cooldown', paper['decisions'][1]['reason'])
+        live = self.routed(rows, fee_per_side=1.65, routing_paper=False)
+        self.assertLess(live['closed'][0]['routing_pnl'], 0)
+        self.assertEqual('enter', live['decisions'][1]['action'])
+
+    def test_loss_or_breakeven_does_not_create_win_cooldown(self):
+        for price in (1, .99):
+            rows = [{**trade(1, end='10:30', exit=price), 'ticker': 'SPY'},
+                    {**trade(2, start='10:30'), 'ticker': 'SPY'}]
+            self.assertEqual(2, len(self.routed(rows)['closed']))
+
+    def test_stressed_fills_not_unstressed_outcome_determine_win(self):
+        rows = [{**trade(1, end='10:30', exit=1.01), 'ticker': 'SPY'},
+                {**trade(2, start='10:31'), 'ticker': 'SPY'}]
+        self.assertEqual(2, len(self.routed(rows, friction_per_side=.01)['closed']))
+
+    def test_ticker_cooldown_does_not_block_another_underlying(self):
+        rows = [{**trade(1, end='10:30', exit=1.1), 'ticker': 'SPY'},
+                {**trade(2, start='10:31'), 'ticker': 'TSLA'}]
+        self.assertEqual(2, len(self.routed(rows)['closed']))
+
+    def test_daily_reset_clears_previous_day_win_timer(self):
+        rows = [{**trade(1, start='23:50', end='23:59', exit=1.1), 'ticker': 'SPY'},
+                {**trade(2, start='00:01', end='00:15', day='2026-09-09'), 'ticker': 'SPY'}]
+        self.assertEqual(2, len(self.routed(rows)['closed']))
+
     def test_costs_and_no_premium_as_drawdown(self):
         r = replay([trade(1)], [], SETTINGS, corrected=False)
         self.assertAlmostEqual(4998.7, r['ending_equity'])

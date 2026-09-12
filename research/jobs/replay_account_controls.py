@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from auth.context import set_current_user
 from config.research_snapshot import research_settings_snapshot
+from config import COMMISSION_PER_CONTRACT
 from risk.manager import RiskManager
 from risk.entry_capacity import available_entry_quantity
 
@@ -33,7 +34,7 @@ def next_business_day(day):
 
 def replay(trades, quotes, settings, *, initial=5000, corrected=True,
            settled_only=True, fee_per_side=.65, friction_per_side=0,
-           settlement_sessions=None):
+           settlement_sessions=None, ticker_routing=False, routing_paper=True):
     """Fees/friction are modeled, not billed fees. No leveraged buying power.
 
     Without explicit settlement sessions, skips weekends only. An explicit
@@ -42,9 +43,17 @@ def replay(trades, quotes, settings, *, initial=5000, corrected=True,
     Unsettled receipts remain equity, not spending power. Entries with a contract
     identity use the production capacity gate. Fills remain instantaneous and
     hypothetical, not a simulation of order latency or account margin rules.
+    ticker_routing requires explicit ticker identities and reproduces the
+    production one-open-ticker and 10-minute profitable-close gates. The
+    cooldown uses journal P&L (gross for paper, configured commission for live),
+    not the extra cost assumptions used to stress the research account.
+    This does not reconstruct scheduler state or historical entry eligibility.
     """
     if len({t['id'] for t in trades}) != len(trades):
         raise ValueError('Duplicate trades')
+    if ticker_routing and any(not isinstance(t.get('ticker'), str) or
+                             not t['ticker'].strip() for t in trades):
+        raise ValueError('Ticker routing requires an explicit ticker on every trade')
     cash = D(initial)
     fee, friction = D(fee_per_side), D(friction_per_side)
     if cash <= 0 or min(fee, friction) < 0:
@@ -77,6 +86,7 @@ def replay(trades, quotes, settings, *, initial=5000, corrected=True,
         events.append((timestamp(q['observed_at']), 0, q['trade_id'], 'mark', q))
     events.sort(key=lambda e: e[:3])
     opened, pending, decisions, closed, daily = {}, [], [], [], {}
+    win_cooldowns = {}
     day = None
     day_open = peak = cash
     realized = D(0)
@@ -99,6 +109,7 @@ def replay(trades, quotes, settings, *, initial=5000, corrected=True,
                 if day is not None:
                     daily[str(day)] = float(equity() - day_open)
                 day = now.date()
+                win_cooldowns.clear()
                 available = [(date, amount) for date, amount in pending if date <= day]
                 cash += sum((amount for _, amount in available), D(0))
                 pending = [(date, amount) for date, amount in pending if date > day]
@@ -114,7 +125,14 @@ def replay(trades, quotes, settings, *, initial=5000, corrected=True,
                 else:
                     cash += proceeds
                 realized += pnl
-                closed.append({'id': tid, 'quantity': p['qty'], 'pnl': float(pnl), 'exit': now.isoformat()})
+                journal_pnl = (max(D(0), D(item['exit_price']) - friction) - p['ask']) * 100 * p['qty']
+                if not routing_paper:
+                    journal_pnl -= D(COMMISSION_PER_CONTRACT) * 2 * p['qty']
+                if ticker_routing and journal_pnl > 0:
+                    win_cooldowns[p['ticker']] = now + timedelta(minutes=10)
+                closed.append({'id': tid, 'quantity': p['qty'], 'pnl': float(pnl),
+                               'routing_pnl': float(journal_pnl), 'ticker': p['ticker'],
+                               'exit': now.isoformat()})
             current = equity()
             hard = min(current - day_open, realized) <= -day_open * D(settings['daily_loss_hard_cap_pct']) / 100
             soft = realized <= -day_open * D(settings['max_daily_loss_pct'])
@@ -139,8 +157,13 @@ def replay(trades, quotes, settings, *, initial=5000, corrected=True,
                 if item.get('entry_size') is not None:
                     qty = min(qty, int(D(item['entry_size']).to_integral_value(rounding=ROUND_FLOOR)))
                 reason = None
+                ticker = item.get('ticker', '').strip().upper()
                 if halt_until and now < halt_until:
                     reason = 'daily_loss_halt'
+                elif ticker_routing and any(p['ticker'] == ticker for p in opened.values()):
+                    reason = 'ticker_already_open'
+                elif ticker_routing and now < win_cooldowns.get(ticker, now):
+                    reason = 'ticker_post_win_cooldown'
                 elif item.get('contract_symbol') and any(
                         p.get('contract_symbol') == item['contract_symbol'] for p in opened.values()):
                     reason = 'contract_already_open_or_pending'
@@ -169,7 +192,7 @@ def replay(trades, quotes, settings, *, initial=5000, corrected=True,
                 else:
                     debit = (ask * 100 + fee) * qty
                     cash -= debit
-                    opened[tid] = {'qty': qty, 'debit': debit,
+                    opened[tid] = {'qty': qty, 'debit': debit, 'ask': ask, 'ticker': ticker,
                                    'mark': max(D(0), D(item.get('entry_bid', item['entry_price'])) - friction),
                                    'marked_at': now, 'contract_symbol': item.get('contract_symbol')}
                     decisions.append({'id': tid, 'action': 'enter', 'quantity': qty, 'debit': float(debit)})
@@ -198,5 +221,7 @@ def replay(trades, quotes, settings, *, initial=5000, corrected=True,
             'stale_mark_uses_at_entry': stale_marks, 'unresolved_emergency_exits': sorted(unresolved_halts),
             'performance_valid_without_emergency_repricing': not unresolved_halts,
             'open_at_end': len(opened), 'corrected_sizing': corrected,
+            'ticker_routing': ticker_routing, 'routing_paper': routing_paper,
+            'win_cooldown_minutes': 10 if ticker_routing else None,
             'settlement_model': 'next_supplied_session' if sessions is not None else 'weekdays_only',
             'settled_only': settled_only, 'fee_per_side': fee_per_side, 'friction_per_side': friction_per_side}

@@ -19,6 +19,7 @@ from pathlib import Path
 import re
 
 from research.jobs.replay_account_controls import replay
+from config import COMMISSION_PER_CONTRACT
 
 FILES = {
     'V2_SPY_TREND_CONT': 'spy_trend_corrected_clock_baseline_2026-09-11.json',
@@ -134,16 +135,51 @@ def summarize(rows):
     return result
 
 
+def verify_ticker_routing(trades, result):
+    """Check accepted intervals and journal-profit cooldowns from source fills."""
+    source = {t['id']: t for t in trades}
+    decisions = {d['id']: d for d in result['decisions']}
+    if len(decisions) != len(result['decisions']) or set(decisions) != set(source):
+        raise ValueError('Routing decision cohort changed')
+    accepted = []
+    friction = D(str(result['friction_per_side']))
+    for trade in sorted(trades, key=lambda t: (clock(t['entry_time']), t['id'])):
+        start = clock(trade['entry_time'])
+        same = [t for t in accepted if t['ticker'] == trade['ticker']]
+        open_same = any(clock(t['exit_time']) > start for t in same)
+        cooling = False
+        for prior in same:
+            end = clock(prior['exit_time'])
+            gain = max(D(0), D(str(prior['exit_price'])) - friction) - D(str(prior['entry_price'])) - friction
+            journal_gain = gain * 100 - (D(0) if result['routing_paper'] else D(str(COMMISSION_PER_CONTRACT)) * 2)
+            if journal_gain > 0 and end.date() == start.date() and end <= start < end + timedelta(minutes=10):
+                cooling = True
+        expected = 'ticker_already_open' if open_same else ('ticker_post_win_cooldown' if cooling else None)
+        decision = decisions[trade['id']]
+        if decision['action'] == 'enter':
+            if expected:
+                raise ValueError('Accepted entry violates ticker routing')
+            accepted.append(trade)
+        elif decision['action'] != 'skip':
+            raise ValueError('Unknown routing action')
+        elif decision['reason'] != 'daily_loss_halt' and (
+                expected or decision['reason'] in {'ticker_already_open', 'ticker_post_win_cooldown'}):
+            if decision['reason'] != expected:
+                raise ValueError('Incorrect ticker routing rejection')
+    if {t['id'] for t in accepted} != {c['id'] for c in result['closed']}:
+        raise ValueError('Accepted and closed cohorts differ')
+
+
 def portfolio(rows, settings, sessions):
     results = {}
     for leg in ('control', 'candidate'):
         trades, quotes, source = [], [], {}
         for row in rows:
-            if not row['independent'] or row[leg]['status'] != 'priced':
+            if row[leg]['status'] != 'priced':
                 continue
             fill, path, tid = row[leg], row[leg + '_path'], row['id']
             source[tid] = path
-            trades.append(dict(id=tid, strategy_id=row['strategy_id'], contract_symbol=fill['contract'],
+            trades.append(dict(id=tid, ticker='SPY', strategy_id=row['strategy_id'], contract_symbol=fill['contract'],
                                entry_time=fill['entry_time'], exit_time=fill['exit_time'],
                                entry_price=fill['entry_ask'], entry_bid=fill['entry_bid'],
                                exit_price=fill['exit_bid'], entry_size=path[0]['ask_size'], contracts=1))
@@ -152,8 +188,11 @@ def portfolio(rows, settings, sessions):
             # $1.65 each side reproduces the fixed $3.30 baseline total cost.
             with contextlib.redirect_stdout(io.StringIO()) as warnings:
                 r = replay(trades, quotes, settings, fee_per_side=1.65,
-                           friction_per_side=friction, settlement_sessions=sessions)
+                           friction_per_side=friction, settlement_sessions=sessions,
+                           ticker_routing=True, routing_paper=settings['paper_trading'])
             r['sizing_warning_lines'] = len(warnings.getvalue().splitlines())
+            verify_ticker_routing(trades, r)
+            r['independent_ticker_routing_check_pass'] = True
             r['insufficient_exit_depth'] = [c['id'] for c in r['closed']
                                            if D(source[c['id']][-1]['bid_size']) < c['quantity']]
             r['hypothetical_fill_checks_pass'] = (not r['insufficient_exit_depth'] and
@@ -195,7 +234,7 @@ def main():
         raise ValueError('Settings snapshot not verified')
     with args.bars.open() as src:
         sessions = sorted({clock(row['timestamp']).date().isoformat() for row in csv.DictReader(src)})
-    output = dict(protocol='spy_affordability_independent_verification_account_v1',
+    output = dict(protocol='spy_affordability_independent_verification_account_v2_ticker_routing',
                   input_sha256={str(path): sha(path) for path in (args.input, args.settings, args.bars, Path(__file__),
                     Path(__file__).with_name('replay_account_controls.py'))},
                   verified_entries=len(originals), summary=summarize(data['rows']),
@@ -203,7 +242,9 @@ def main():
                   limitations=[
                     'Fixed initial ask cap; contract selection is not rerun with evolving equity',
                     'Only three enabled SPY strategies, not all six or all historical signals',
-                    'Account cohort retains original within-strategy non-overlap filter',
+                    'All retained opportunities reach account routing; no prior within-strategy non-overlap filter',
+                    'One open position per ticker and 10-minute journal-profit cooldown modeled; research signals unrestricted',
+                    'Not full entry-engine parity: scheduler, stateful signal evaluation and other entry gates not replayed',
                     'Ties between strategies use stable strategy ID order, not a verified scheduler order',
                     'Next observed stock session is a conservative settlement model, not broker cash verification',
                     'Current settings, not historical configuration revisions',
