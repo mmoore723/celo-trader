@@ -50,6 +50,15 @@ class TradierExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no usable account balances"):
             client.get_account()
 
+    def test_explicit_zero_option_buying_power_never_falls_back_to_cash(self):
+        client = _TradierExecutionClient()
+        for value in (0, "0", None):
+            with self.subTest(value=value):
+                client.responses["/accounts/VA000001/balances"] = {
+                    "balances": {"total_equity": 5000, "total_cash": 5000,
+                                 "option_buying_power": value}}
+                self.assertEqual(0, client.get_account()["options_buying_power"])
+
     def test_single_position_object_is_normalized(self):
         client = _TradierExecutionClient()
         client.responses["/accounts/VA000001/positions"] = {

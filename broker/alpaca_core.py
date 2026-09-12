@@ -187,6 +187,8 @@ class AlpacaCoreMixin:
             # FIX 2026-06-15: this key was missing entirely, so every caller's
             # `acct.get("options_buying_power", 0)` silently fell back to its
             "options_buying_power": float(data.get("options_buying_power", 0)),
+            "trading_blocked": bool(data.get("trading_blocked", False)),
+            "account_blocked": bool(data.get("account_blocked", False)),
         }
 
     def is_market_open(self) -> bool:

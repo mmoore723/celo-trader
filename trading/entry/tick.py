@@ -1887,6 +1887,25 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         _skip_log(ticker, "zero_contracts", strategy=strategy_id,
                   detail="No whole contract fits the final entry risk budget")
         return
+    # Final broker truth includes recovered positions and working orders,
+    # not just the earlier bot-only journal count. Exits run before this gate.
+    from risk.entry_capacity import check_broker_entry_capacity
+    from config import COMMISSION_PER_CONTRACT
+    try:
+        n_contracts, _capacity_reason = check_broker_entry_capacity(
+            alpaca, _risk, symbol=contract['symbol'], strategy_id=strategy_id,
+            requested_quantity=n_contracts,
+            limit_price=max(eff_entry, _order_mid, _order_ask or 0),
+            max_positions=_max_positions, commission_per_contract=COMMISSION_PER_CONTRACT)
+    except Exception as _capacity_error:
+        _skip_log(ticker, "account_capacity_unavailable", strategy=strategy_id,
+                  detail=f"Broker capacity could not be verified ({type(_capacity_error).__name__}); retry next cycle")
+        return
+    if n_contracts < 1:
+        _skip_log(ticker, _capacity_reason, strategy=strategy_id,
+                  detail="No account capacity for a new entry; existing positions still managed")
+        return
+    _US['last_eval_contracts'] = n_contracts
     _candidate_id = None
     _strategy_context = dict(_top.meta) if isinstance(_top.meta, dict) else {}
     _strategy_context.pop("shadow_candidate_id", None)

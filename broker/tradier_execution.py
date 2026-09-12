@@ -73,8 +73,8 @@ class TradierExecutionMixin:
             ),
             "cash": float(balances.get("total_cash") or 0),
             "options_buying_power": float(
-                balances.get("option_buying_power")
-                or balances.get("total_cash")
+                (balances.get("option_buying_power")
+                 if "option_buying_power" in balances else balances.get("total_cash"))
                 or 0
             ),
         }
