@@ -87,6 +87,11 @@ class GuardTests(unittest.TestCase):
         self.assertFalse(self.risk.can_trade(4500, False)[0])
         self.lock.assert_called_once_with()
 
+    def test_existing_soft_lock_still_detects_hard_breach(self):
+        with patch('risk.guard.check_kill_lock', return_value=(True, 'soft halt')):
+            self.assertFalse(self.risk.can_trade(4400, False)[0])
+        self.lock.assert_called_once_with()
+
     def test_zero_equity_still_requests_close(self):
         self.assertFalse(self.risk.can_trade(0, False)[0])
         self.lock.assert_called_once_with()
@@ -158,6 +163,13 @@ class PersistentHaltTests(unittest.TestCase):
     def test_repeated_request_does_not_extend_freeze(self):
         first = kill_lock.set_kill_lock()
         self.assertEqual(first, kill_lock.set_kill_lock())
+
+    def test_soft_to_hard_upgrade_once(self):
+        first = kill_lock.set_kill_lock(until=datetime.utcnow()+timedelta(hours=1), reason='daily_loss_soft_cap')
+        hard = kill_lock.set_kill_lock(hours=24)
+        self.assertGreater(hard, first)
+        self.assertEqual(hard, kill_lock.set_kill_lock(hours=24))
+        self.assertTrue(kill_lock.flatten_pending())
 
     def test_user_account_and_mode_isolation(self):
         kill_lock.set_kill_lock()

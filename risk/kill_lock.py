@@ -49,6 +49,12 @@ def set_kill_lock(hours: float | None = None, *, until: datetime | None = None,
     if expires.tzinfo is not None:
         expires = expires.astimezone(timezone.utc).replace(tzinfo=None)
     if existing and (existing.get("flatten_pending") or now < datetime.fromisoformat(existing["locked_until_utc"])):
+        if existing.get("reason") == "daily_loss_soft_cap" and reason == "daily_loss_hard_cap":
+            expires = max(expires, datetime.fromisoformat(existing["locked_until_utc"]))
+            existing.update(reason=reason, locked_until_utc=expires.isoformat(),
+                            hard_escalated_at_utc=now.isoformat(), flatten_pending=True)
+            atomic_write_json(path, existing)
+            return expires
         return datetime.fromisoformat(existing["locked_until_utc"])
     atomic_write_json(path, {"locked_until_utc": expires.isoformat(), "set_at_utc": now.isoformat(),
                              "reason": reason, "flatten_pending": True})

@@ -29,8 +29,6 @@ class GuardMixin:
             self._unpersisted_loss_halt = None
             return unpersisted["reason"]
         locked, reason = check_kill_lock()
-        if locked:
-            return reason
         settings = get_settings()
         day_start = float(get_user_state().get("day_start_balance") or 0)
         hard_fraction = float(settings.get("daily_loss_hard_cap_pct", DAILY_LOSS_HARD_CAP_PCT * 100)) / 100
@@ -45,6 +43,10 @@ class GuardMixin:
         equity_change = account_balance - day_start
         hard = realized <= -day_start * hard_fraction or equity_change <= -day_start * hard_fraction
         soft = realized <= -day_start * soft_fraction
+        # Keep checking a pending soft halt: losses during an unconfirmed
+        # close can cross the hard limit and require the longer freeze.
+        if locked and not hard:
+            return reason
         if not hard and not soft:
             return None
         reason = (f"Daily loss limit — equity down ${max(0, -equity_change):.2f}; "
