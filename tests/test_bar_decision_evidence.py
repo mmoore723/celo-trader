@@ -15,7 +15,7 @@ import pandas as pd
 from tests.test_context_strategy_observers import _vwap_displacement_frame
 from tests.test_spy_failed_range_recovery_v2 import _frame
 from trading.diagnostics import bar_evidence as evidence, orb_evidence as storage
-from trading.diagnostics.bar_replay import report, verify_record
+from trading.diagnostics.bar_replay import report, verify_record, read_frame_rows
 from strategies.market_structure import Side
 
 TREND, FVG, RECOVERY, DISPLACEMENT = tuple(evidence.SPECS)
@@ -103,8 +103,8 @@ class BarEvidenceTests(unittest.TestCase):
             self.assertIsNone(self.capture(DISPLACEMENT, frame, now, ticker=ticker))
         self.assertEqual(len(self.verify()), 4)
         with closing(sqlite3.connect(self.path)) as conn:
-            # All four evaluations share a single frame and one history chunk.
-            self.assertEqual(conn.execute('SELECT count(*) FROM input_blobs').fetchone()[0], 2)
+            # Shared frame manifest, current rows and one history chunk.
+            self.assertEqual(conn.execute('SELECT count(*) FROM input_blobs').fetchone()[0], 3)
 
     def test_fvg_actual_signal_reproduces(self):
         frame = five_minute_frame([(100., 100.2, 99.8, 100.)]*46 +
@@ -127,9 +127,10 @@ class BarEvidenceTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         from trading.diagnostics.orb_replay import unpack_record
         inputs = unpack_record(self.blob(records[0]['input_digest']), records[0]['input_digest'])
-        self.assertEqual(len(inputs['data']), 580)
-        self.assertEqual(inputs['data'][0][0], frame.iloc[0]['time'])
-        self.assertEqual(inputs['data'][-1][0], frame.iloc[-1]['time'])
+        rows = read_frame_rows(inputs, self.blob)
+        self.assertEqual(len(rows), 580)
+        self.assertEqual(rows[0][0], frame.iloc[0]['time'])
+        self.assertEqual(rows[-1][0], frame.iloc[-1]['time'])
 
     def test_full_extended_session_limit_and_overflow(self):
         # The adapter requests at most 1,000 rows for the 04:00-20:00 session.
@@ -142,11 +143,33 @@ class BarEvidenceTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         from trading.diagnostics.orb_replay import unpack_record
         inputs = unpack_record(self.blob(records[0]['input_digest']), records[0]['input_digest'])
-        self.assertEqual(len(inputs['data']), 1000)
+        self.assertEqual(len(read_frame_rows(inputs, self.blob)), 1000)
         self.assertEqual(storage.MAX_DATABASE_BYTES, 64*1024*1024)
         self.assertEqual(storage.MAX_PAYLOAD_BYTES, 256*1024)
         overflow = pd.concat([frame, frame.iloc[-1:]], ignore_index=True)
         self.assertIsNone(self.recorder.begin(FVG, overflow, 'SPY', fn))
+
+    def test_forming_candle_reuses_exact_completed_frame_chunks(self):
+        frame = pd.DataFrame(dict(time=pd.date_range('2026-08-10 04:00', periods=580, freq='min'),
+                                  open=100., high=100.2, low=99.8, close=100., volume=100., rvol=1.4))
+        self.capture(FVG, frame, '2026-08-10 13:40')
+        from trading.diagnostics.orb_replay import unpack_record
+        first = self.verify()[0]
+        before_inputs = unpack_record(self.blob(first['input_digest']), first['input_digest'])
+        self.assertEqual(len(before_inputs['data_chunks']), 5)
+        with closing(sqlite3.connect(self.path)) as conn:
+            before = {r[0] for r in conn.execute('SELECT digest FROM input_blobs')}
+        frame.loc[579, 'close'] = 100.05
+        self.capture(FVG, frame, '2026-08-10 13:40')
+        second = self.verify()[1]
+        after_inputs = unpack_record(self.blob(second['input_digest']), second['input_digest'])
+        self.assertEqual(before_inputs['data_chunks'][:-1], after_inputs['data_chunks'][:-1])
+        self.assertNotEqual(before_inputs['data_chunks'][-1], after_inputs['data_chunks'][-1])
+        rows = read_frame_rows(after_inputs, self.blob)
+        self.assertEqual(rows, frame[list(storage.COLUMNS)].values.tolist())
+        with closing(sqlite3.connect(self.path)) as conn:
+            after = {r[0] for r in conn.execute('SELECT digest FROM input_blobs')}
+        self.assertEqual(len(after-before), 2)  # Changed tail and its manifest only.
 
     def test_trend_breakout_state_reproduces_and_foreign_user_is_excluded(self):
         frame = five_minute_frame([(100+i*.1,100.2+i*.1,99.8+i*.1,100+i*.1) for i in range(24)]

@@ -30,6 +30,7 @@ SPECS = {
 }
 MAX_HISTORY_ROWS = 20000
 MAX_STATE_ITEMS = 2048
+FRAME_CHUNK_ROWS = 128
 
 
 def clock():
@@ -80,8 +81,9 @@ class Recorder:
             if len(frame) > storage.MAX_ROWS or frame.columns.duplicated().any():
                 raise ValueError('input_budget')
             columns = [c for c in storage.COLUMNS if c in frame.columns]
+            rows = deepcopy(frame[columns].values.tolist())
             inputs = dict(columns=columns, dtypes=[str(frame[c].dtype) for c in columns],
-                          data=deepcopy(frame[columns].values.tolist()), history=[])
+                          row_count=len(rows), data_chunks=[], history=[])
             blobs = {}
             def remember(value):
                 raw = storage.canonical(value)
@@ -90,6 +92,10 @@ class Recorder:
                 digest = hashlib.sha256(raw).hexdigest()
                 blobs[digest] = raw
                 return digest
+            # A forming candle changes every poll. Keep completed prefixes
+            # shared instead of storing the whole session again at each tick.
+            inputs['data_chunks'] = [remember(rows[i:i+FRAME_CHUNK_ROWS])
+                                     for i in range(0, len(rows), FRAME_CHUNK_ROWS)]
             if strategy_id.startswith('CTX_'):
                 history = frame.attrs.get('multi_session_bars')
                 if history is not None and not isinstance(history, tuple):

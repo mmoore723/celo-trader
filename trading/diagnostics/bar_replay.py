@@ -14,8 +14,8 @@ from types import FunctionType
 
 import pandas as pd
 
-from trading.diagnostics.bar_evidence import PROTOCOL, SPECS, MAX_HISTORY_ROWS, scoped_state, source_hashes
-from trading.diagnostics.orb_evidence import canonical
+from trading.diagnostics.bar_evidence import PROTOCOL, SPECS, MAX_HISTORY_ROWS, FRAME_CHUNK_ROWS, scoped_state, source_hashes
+from trading.diagnostics.orb_evidence import canonical, MAX_ROWS
 from trading.diagnostics.orb_replay import unpack_record
 from strategies.market_structure import Side
 from strategies.spy_trend_continuation_v2 import _complete_five_minute_bars
@@ -67,6 +67,32 @@ def isolated_evaluate(record, frame):
                 state_after=scoped_state(namespace, spec[3], REPLAY_OWNER, record['ticker']))
 
 
+def read_frame_rows(inputs, read_blob):
+    """Restore exact row order under a fixed budget; never trim or fill data.
+
+    Legacy inline inputs remain readable in their recorded source environment.
+    This does not bypass verify_record's source/pandas identity checks.
+    """
+    if 'data' in inputs:
+        if 'data_chunks' in inputs or not isinstance(inputs['data'], list) or len(inputs['data']) > MAX_ROWS:
+            raise ValueError('Invalid inline frame or mixed formats')
+        return inputs['data']
+    refs = inputs.get('data_chunks')
+    count = inputs.get('row_count')
+    if (not isinstance(refs, list) or len(refs) > (MAX_ROWS + FRAME_CHUNK_ROWS - 1) // FRAME_CHUNK_ROWS
+            or type(count) is not int or not 0 <= count <= MAX_ROWS):
+        raise ValueError('Frame reference budget')
+    rows = []
+    for ref in refs:
+        chunk = unpack_record(read_blob(ref), ref)
+        if not isinstance(chunk, list) or not 0 < len(chunk) <= FRAME_CHUNK_ROWS or len(rows)+len(chunk) > MAX_ROWS:
+            raise ValueError('Frame row budget')
+        rows.extend(chunk)
+    if len(rows) != count:
+        raise ValueError('Frame row count mismatch')
+    return rows
+
+
 def verify_record(packed, digest, read_blob):
     record = unpack_record(packed, digest)
     spec = SPECS.get(record['strategy_id'])
@@ -83,7 +109,7 @@ def verify_record(packed, digest, read_blob):
     inputs = unpack_record(read_blob(record['input_digest']), record['input_digest'])
     if len(inputs['history']) > (MAX_HISTORY_ROWS + 127) // 128:
         raise ValueError('History reference budget')
-    frame = pd.DataFrame(inputs['data'], columns=inputs['columns'])
+    frame = pd.DataFrame(read_frame_rows(inputs, read_blob), columns=inputs['columns'])
     for column, dtype in zip(inputs['columns'], inputs['dtypes'], strict=True):
         frame[column] = frame[column].astype(dtype)
     history = []
