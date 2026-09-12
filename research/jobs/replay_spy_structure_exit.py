@@ -17,7 +17,7 @@ from research.jobs.structure_exit_candidate import ExitState, MarketContext, PRO
 from research.jobs.replay_two_leg_initial_loss import at, number, leg, usable, compare
 
 
-def evaluate_pair(entry, retained, market):
+def evaluate_pair(entry, retained, market, state_type=ExitState):
     if entry['direction'] not in ('bullish','bearish'):
         raise ValueError('Unknown direction')
     start = at(entry['entry_time'])
@@ -42,7 +42,7 @@ def evaluate_pair(entry, retained, market):
     control['net'] = str((number(control['bid'])-number(entry['entry_ask']))*100-number('3.30'))
     if abs(number(control['net'])-number(entry['net_pnl_one_contract']))>number('.000002'):
         raise ValueError('Original control costs differ')
-    state = ExitState(1 if entry['direction']=='bullish' else -1,entry['stock_reference'],
+    state = state_type(1 if entry['direction']=='bullish' else -1,entry['stock_reference'],
                       entry['signal_meta']['v2_stop'],entry['entry_ask'],start,30)
     previous, variant, trace = start,None,[]
     for q in path:
@@ -82,7 +82,12 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('baseline','retained','manifest','bars','output'):
         p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--candidate',choices=('original','alignment'),default='original')
     args=p.parse_args()
+    state_type, experiment_protocol = ExitState, PROTOCOL
+    if args.candidate=='alignment':
+        from research.jobs.structure_alignment_candidate import AlignmentExitState, PROTOCOL as ALIGNMENT_PROTOCOL
+        state_type, experiment_protocol = AlignmentExitState, ALIGNMENT_PROTOCOL
     if args.output.exists():
         raise ValueError('Output already exists')
     raw=args.baseline.read_bytes();baseline=json.loads(raw)
@@ -104,12 +109,14 @@ def main():
     market=MarketContext(data.bars)
     rows=[]
     for entry in entries:
-        row=evaluate_pair(entry,paths[entry['candidate_id']],market)
+        row=evaluate_pair(entry,paths[entry['candidate_id']],market,state_type=state_type)
         rows.append(row)
         print(f'{len(rows)}/{len(entries)} {row["candidate_id"]}: {row["variant"]["status"]}',flush=True)
     files=[Path(__file__),Path(__file__).with_name('structure_exit_candidate.py'),
            Path(__file__).with_name('replay_two_leg_initial_loss.py')]
-    result=dict(protocol=PROTOCOL,complete=True,baseline_sha256=hashlib.sha256(raw).hexdigest(),
+    if args.candidate=='alignment':
+        files.append(Path(__file__).with_name('structure_alignment_candidate.py'))
+    result=dict(protocol=experiment_protocol,complete=True,baseline_sha256=hashlib.sha256(raw).hexdigest(),
                 retained_sha256=hashlib.sha256(retained_raw).hexdigest(),bars_sha256=data.sha256,
                 code_sha256={x.name:hashlib.sha256(x.read_bytes()).hexdigest() for x in files},
                 all_activity=compare(rows),independent=compare([r for r in rows if r['independent']]),
