@@ -82,6 +82,7 @@ def route_signals(
     preserve_reviewed_paid_rules: bool = False,
     observation_scope: str | None = None,
     evaluation_observer=None,
+    decision_recorder=None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -128,6 +129,14 @@ def route_signals(
                 evaluation_observer(str(strategy_id), str(status), phase)
             except Exception:
                 logger.debug('Evaluation coverage observer failed', exc_info=True)
+
+    def capture(method, *args, **kwargs):
+        if decision_recorder is not None and not quiet:
+            try:
+                return getattr(decision_recorder, method)(*args, **kwargs)
+            except Exception:
+                logger.debug('Exact decision recorder failed', exc_info=True)
+        return None
 
     def done(result, reason):
         returned = {signal.strategy_id for signal in result}
@@ -321,7 +330,15 @@ def route_signals(
                 # dedupe state (including when its switch changes mid-pass).
                 sig = fn(today, ticker=ticker, execution_scope=observation_scope)
             else:
-                sig = fn(today, ticker=ticker)
+                ticket = capture('begin', strategy_id, today, ticker, fn) if (
+                    strategy_id in (enabled_strategies or ()) and _authorized_for_order(strategy_id, ticker)
+                ) else None
+                try:
+                    sig = fn(today, ticker=ticker)
+                except Exception as exc:
+                    capture('finish', ticket, None, error=type(exc).__name__)
+                    raise
+                capture('finish', ticket, sig)
             _evaluated = True
             observe(strategy_id, 'signal_returned' if sig is not None else 'no_signal_returned')
             if sig is not None:

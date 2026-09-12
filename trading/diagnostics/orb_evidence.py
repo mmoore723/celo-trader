@@ -106,12 +106,19 @@ def begin(state, frame, *, now, price, quote, settings):
         return None
 
 
-def append(payload, path, *, table='evaluations'):
+def append(payload, path, *, table='evaluations', blobs=None):
     """Store one independently compressed record, no pruning or unbounded WAL."""
     # Separate protocols share one physical database and its existing 64 MiB
     # cap. Never interpolate a caller-selected arbitrary SQL identifier.
-    if table not in {'evaluations', 'two_leg_evaluations'}:
+    if table not in {'evaluations', 'two_leg_evaluations', 'bar_evaluations'}:
         raise ValueError('unsupported_evidence_table')
+    if blobs and table != 'bar_evaluations':
+        raise ValueError('unsupported_evidence_blobs')
+    prepared = {}
+    for digest, data in (blobs or {}).items():
+        if len(data) > MAX_PAYLOAD_BYTES or hashlib.sha256(data).hexdigest() != digest:
+            raise ValueError('invalid_input_blob')
+        prepared[digest] = zlib.compress(data)
     raw = canonical(payload)
     if len(raw) > MAX_PAYLOAD_BYTES:
         raise ValueError('payload_budget')
@@ -135,12 +142,18 @@ def append(payload, path, *, table='evaluations'):
                 id INTEGER PRIMARY KEY, recorded_at TEXT NOT NULL,
                 account_digest TEXT NOT NULL, paper INTEGER NOT NULL,
                 payload_sha256 TEXT NOT NULL, payload BLOB NOT NULL)''')
+            new_blobs = {}
+            if prepared:
+                conn.execute('CREATE TABLE IF NOT EXISTS input_blobs (digest TEXT PRIMARY KEY, payload BLOB NOT NULL)')
+                new_blobs = {digest: data for digest, data in prepared.items()
+                             if conn.execute('SELECT 1 FROM input_blobs WHERE digest=?', (digest,)).fetchone() is None}
             used = conn.execute('PRAGMA page_count').fetchone()[0] * page_size
             # Reserve transaction overhead as well as the compressed row.
-            if used + len(packed) + 1024 * 1024 > MAX_DATABASE_BYTES:
+            if used + len(packed) + sum(map(len, new_blobs.values())) + 1024 * 1024 > MAX_DATABASE_BYTES:
                 raise ValueError('storage_budget_reached')
             if not isinstance(payload['paper'], bool):
                 raise ValueError('unknown_trading_mode')
+            conn.executemany('INSERT INTO input_blobs(digest,payload) VALUES (?,?)', new_blobs.items()) if new_blobs else None
             conn.execute(f'INSERT INTO {table}(recorded_at,account_digest,paper,payload_sha256,payload) VALUES (?,?,?,?,?)',
                          (datetime.now().astimezone().isoformat(), payload['account_digest'], int(payload['paper']),
                           hashlib.sha256(raw).hexdigest(), packed))

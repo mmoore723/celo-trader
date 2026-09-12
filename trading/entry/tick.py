@@ -810,7 +810,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         _US, _df_today_1m, ticker, _enabled, _observation_only_strategies, alpaca, settings,
     )
 
-    from trading.diagnostics import native_coverage
+    from trading.diagnostics import native_coverage, bar_evidence
     _coverage = native_coverage.begin(ticker, _enabled, _setup_statuses, df5,
                                       settings=settings, now=_now_et())
     try:
@@ -821,7 +821,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
                                   observation_resolver=_observation_resolver,
                                   injected_signals=_injected_signals,
                                   preserve_reviewed_paid_rules=True,
-                                  evaluation_observer=_coverage.observe if _coverage else None)
+                                  evaluation_observer=_coverage.observe if _coverage else None,
+                                  decision_recorder=bar_evidence.Recorder(settings))
     except Exception as _route_error:
         if _coverage:
             _coverage.finish([], error=type(_route_error).__name__)
