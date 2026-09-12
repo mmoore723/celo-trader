@@ -26,7 +26,11 @@ from config.paths import get_user_data_dir
 PROTOCOL = 'native_tsla_orb_evaluation_v1'
 MAX_DATABASE_BYTES = 64 * 1024 * 1024
 MAX_PAYLOAD_BYTES = 256 * 1024
-MAX_ROWS = 512
+# get_session_bars requests up to 1,000 rows for the 04:00-20:00 extended
+# session (normally 960 one-minute bars). Preserve the evaluator's complete
+# input, including premarket context; never truncate it to fit diagnostics.
+# The independent 256 KiB payload and shared 64 MiB database caps still apply.
+MAX_ROWS = 1000
 COLUMNS = ('time', 'open', 'high', 'low', 'close', 'volume', 'rvol')
 _lock = threading.Lock()
 _warned = set()

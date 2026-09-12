@@ -114,6 +114,40 @@ class BarEvidenceTests(unittest.TestCase):
         self.assertIsNone(self.capture(FVG, frame, '2026-08-10 13:40'))
         self.assertEqual(len(self.verify()), 2)
 
+    def test_extended_session_afternoon_signal_is_captured_without_trimming(self):
+        regular = five_minute_frame([(100., 100.2, 99.8, 100.)]*46 +
+            [(104.,104.2,103.8,104.), (104.,107.,104.,106.5),
+             (107.,107.4,106.8,107.1), (107.1,107.2,106.7,107.)])
+        premarket = pd.DataFrame(dict(time=pd.date_range('2026-08-10 04:00', periods=330, freq='min'),
+                                      open=100., high=100.2, low=99.8, close=100., volume=100., rvol=1.4))
+        frame = pd.concat([premarket, regular], ignore_index=True)
+        self.assertEqual(len(frame), 580)
+        self.assertIsNotNone(self.capture(FVG, frame, '2026-08-10 13:40'))
+        records = self.verify()
+        self.assertEqual(len(records), 1)
+        from trading.diagnostics.orb_replay import unpack_record
+        inputs = unpack_record(self.blob(records[0]['input_digest']), records[0]['input_digest'])
+        self.assertEqual(len(inputs['data']), 580)
+        self.assertEqual(inputs['data'][0][0], frame.iloc[0]['time'])
+        self.assertEqual(inputs['data'][-1][0], frame.iloc[-1]['time'])
+
+    def test_full_extended_session_limit_and_overflow(self):
+        # The adapter requests at most 1,000 rows for the 04:00-20:00 session.
+        frame = pd.DataFrame(dict(time=pd.date_range('2026-08-10 04:00', periods=1000, freq='min'),
+                                  open=100., high=100.2, low=99.8, close=100., volume=100., rvol=1.4))
+        fn = importlib.import_module(evidence.SPECS[FVG][0]).evaluate
+        self.assertIsNotNone(self.recorder.begin(FVG, frame, 'SPY', fn))
+        self.capture(FVG, frame, '2026-08-10 20:40')
+        records = self.verify()
+        self.assertEqual(len(records), 1)
+        from trading.diagnostics.orb_replay import unpack_record
+        inputs = unpack_record(self.blob(records[0]['input_digest']), records[0]['input_digest'])
+        self.assertEqual(len(inputs['data']), 1000)
+        self.assertEqual(storage.MAX_DATABASE_BYTES, 64*1024*1024)
+        self.assertEqual(storage.MAX_PAYLOAD_BYTES, 256*1024)
+        overflow = pd.concat([frame, frame.iloc[-1:]], ignore_index=True)
+        self.assertIsNone(self.recorder.begin(FVG, overflow, 'SPY', fn))
+
     def test_trend_breakout_state_reproduces_and_foreign_user_is_excluded(self):
         frame = five_minute_frame([(100+i*.1,100.2+i*.1,99.8+i*.1,100+i*.1) for i in range(24)]
                                  + [(102.4,104.5,102.2,104.3)])
