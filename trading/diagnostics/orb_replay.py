@@ -20,14 +20,18 @@ from trading.diagnostics.orb_evidence import (
 from trading.orb_retouch_execution import update_one_minute_orb_retouch
 
 
-def verify_record(packed, expected_hash):
+def unpack_record(packed, expected_hash):
     inflater = zlib.decompressobj()
     raw = inflater.decompress(packed, MAX_PAYLOAD_BYTES + 1)
     if len(raw) > MAX_PAYLOAD_BYTES or not inflater.eof or inflater.unused_data:
         raise ValueError('Invalid or oversized evidence payload')
     if hashlib.sha256(raw).hexdigest() != expected_hash:
         raise ValueError('Evidence hash mismatch')
-    record = decode(json.loads(raw))
+    return decode(json.loads(raw))
+
+
+def verify_record(packed, expected_hash):
+    record = unpack_record(packed, expected_hash)
     if record['protocol'] != PROTOCOL or record['scope'] != 'enabled_native_execution' or record['ticker'] != 'TSLA':
         raise ValueError('Not native enabled TSLA ORB evidence')
     if record['sources'] != source_hashes() or record['pandas_version'] != pd.__version__:

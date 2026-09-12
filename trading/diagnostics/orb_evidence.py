@@ -106,8 +106,12 @@ def begin(state, frame, *, now, price, quote, settings):
         return None
 
 
-def append(payload, path):
+def append(payload, path, *, table='evaluations'):
     """Store one independently compressed record, no pruning or unbounded WAL."""
+    # Separate protocols share one physical database and its existing 64 MiB
+    # cap. Never interpolate a caller-selected arbitrary SQL identifier.
+    if table not in {'evaluations', 'two_leg_evaluations'}:
+        raise ValueError('unsupported_evidence_table')
     raw = canonical(payload)
     if len(raw) > MAX_PAYLOAD_BYTES:
         raise ValueError('payload_budget')
@@ -127,7 +131,7 @@ def append(payload, path):
             conn.execute('PRAGMA synchronous=FULL')
             page_size = conn.execute('PRAGMA page_size').fetchone()[0]
             conn.execute(f'PRAGMA max_page_count={MAX_DATABASE_BYTES // page_size}')
-            conn.execute('''CREATE TABLE IF NOT EXISTS evaluations (
+            conn.execute(f'''CREATE TABLE IF NOT EXISTS {table} (
                 id INTEGER PRIMARY KEY, recorded_at TEXT NOT NULL,
                 account_digest TEXT NOT NULL, paper INTEGER NOT NULL,
                 payload_sha256 TEXT NOT NULL, payload BLOB NOT NULL)''')
@@ -137,7 +141,7 @@ def append(payload, path):
                 raise ValueError('storage_budget_reached')
             if not isinstance(payload['paper'], bool):
                 raise ValueError('unknown_trading_mode')
-            conn.execute('INSERT INTO evaluations(recorded_at,account_digest,paper,payload_sha256,payload) VALUES (?,?,?,?,?)',
+            conn.execute(f'INSERT INTO {table}(recorded_at,account_digest,paper,payload_sha256,payload) VALUES (?,?,?,?,?)',
                          (datetime.now().astimezone().isoformat(), payload['account_digest'], int(payload['paper']),
                           hashlib.sha256(raw).hexdigest(), packed))
             conn.commit()
