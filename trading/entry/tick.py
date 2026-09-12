@@ -1110,7 +1110,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             _preview_max_entry = _risk.slippage_adjusted_entry(_preview_ask)
             # Size against the hard ceiling even though the order may begin at
             # a better price. A later reprice must not exceed approved risk.
-            _preview_contracts = _risk.calculate_contracts(_preview_max_entry, balance)
+            _preview_contracts = _risk.calculate_contracts(_preview_max_entry, balance, strategy_id=strategy_id)
             if _signal_tier == "opportunity" and _preview_contracts > 1:
                 _preview_contracts = max(1, _preview_contracts // 2)
             # Mirror the same notional ceiling later used by the order path.
@@ -1122,7 +1122,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             _preview_notional_cap = balance * _preview_notional_pct
             _preview_contracts = min(
                 _preview_contracts,
-                max(1, int(_preview_notional_cap // max(_preview_ask * 100, 0.01))),
+                max(0, int(_preview_notional_cap // max(_preview_ask * 100, 0.01))),
             )
             _preview.update({
                 "symbol": _preview_contract.get("symbol"),
@@ -1532,13 +1532,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             "last_eval_strike": _US["last_eval_strike"],
             "last_eval_contract_symbol": _US["last_eval_contract_symbol"],
             "risk_budget_usd": round(balance * _risk.effective_risk_pct(balance), 2),
-            "max_affordable_premium": _risk.max_affordable_premium(balance),
+            "max_affordable_premium": _risk.max_affordable_premium(balance, strategy_id=strategy_id),
         })
     except Exception:
         pass   # non-critical — next full tick write will catch up regardless
 
     # ── ORB 1% risk sizing (uses slippage-adjusted price) ─────────────────────
-    n_contracts = _risk.calculate_contracts(eff_entry, balance)
+    n_contracts = _risk.calculate_contracts(eff_entry, balance, strategy_id=strategy_id)
 
     # Opportunity signals are a paper-only research cohort. They retain every
     # existing liquidity/R:R/risk check but cannot use more than half of the
@@ -1554,15 +1554,14 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         # Spell out the RISK vs PRICE distinction so this isn't confused with the
         # max_position_dollars / "over_budget" cost cap above. SIZING_ZERO fires
         _risk_pct          = _risk.effective_risk_pct(balance)
-        _risk_per_contract = eff_entry * _risk.ORB_STOP_PCT * 100
+        _risk_per_contract = eff_entry * _risk.entry_risk_fraction(strategy_id) * 100
         _risk_budget       = balance * _risk_pct
         log_event("INFO", "bar_eval",
                   f"🔴 [{ticker}] Contract premium ${ask_price:.2f} (${eff_entry:.2f} w/ 5% "
-                  f"slippage) — if the 30% stop hits, 1 contract would lose "
+                  f"slippage) — the sizing model budgets 1 contract at "
                   f"${_risk_per_contract:.2f}, but your risk budget is only "
                   f"${_risk_budget:.2f} ({_risk_pct*100:.0f}% of ${balance:.2f}). "
-                  f"Need a bigger risk budget (raise risk_per_trade or grow the "
-                  f"account) or a cheaper-premium contract.")
+                  f"Skipping: no whole contract fits the existing risk budget.")
         _skip_log(ticker, "zero_contracts", strategy=strategy_id, confidence=_top.confidence, direction=direction, tier=_signal_tier,
                  detail=f"1 contract risks ${_risk_per_contract:.0f}, budget is ${_risk_budget:.0f}")
         return
@@ -1580,7 +1579,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     else:
         _notional_pct = 0.20          # conservative (1%)
     _notional_cap   = balance * _notional_pct
-    _max_affordable = max(1, int(_notional_cap // (ask_price * 100)))
+    _max_affordable = max(0, int(_notional_cap // (ask_price * 100)))
     if n_contracts > _max_affordable:
         logger.info(
             "Sizing clamp for %s: risk model wanted %d contracts ($%.0f total), "
@@ -1878,6 +1877,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     _order_mid, _order_ask = entry_limit_prices(
         ask=ask_price, midpoint=_c_mid, v2_paper_pilot=_v2_paid_parity,
     )
+    # No later AI size adjustment or limit-step price may exceed the risk
+    # quantity approved at the worst executable/planning price.
+    _final_ceiling = _risk.calculate_contracts(
+        max(eff_entry, _order_mid, _order_ask or 0), balance, strategy_id=strategy_id,
+    )
+    n_contracts = min(n_contracts, _final_ceiling)
+    if n_contracts < 1:
+        _skip_log(ticker, "zero_contracts", strategy=strategy_id,
+                  detail="No whole contract fits the final entry risk budget")
+        return
     _candidate_id = None
     _strategy_context = dict(_top.meta) if isinstance(_top.meta, dict) else {}
     _strategy_context.pop("shadow_candidate_id", None)

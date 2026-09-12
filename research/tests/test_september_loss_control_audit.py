@@ -1,4 +1,7 @@
-"""Research audit of existing risk behavior; no orders, network or DB writes."""
+"""Audit regression fixtures, updated after the approved execution-risk repair.
+
+The original findings on production 30dd69f remain in SEPTEMBER_REPAIR_DECISION.md.
+"""
 from contextlib import ExitStack
 from datetime import datetime
 import unittest
@@ -30,21 +33,18 @@ class LossControlAuditTests(unittest.TestCase):
         self.assertIn('equity down', result[1])
         self.assertTrue(risk.daily_limit_hit)
         kill.assert_called_once()
-        # No DailyLossLimitReached exception: outer exception-only flatten
-        # handler cannot be reached through this return value by itself.
+        # The revised loop services the persisted close request on return too.
 
     def test_existing_lock_returns_denial_without_creating_another_lock(self):
         risk, kill = self.guard_environment(locked=True)
         self.assertEqual((False,'fixture lock'), risk.can_trade(4900,False))
         kill.assert_not_called()
 
-    def test_current_balance_realized_threshold_differs_from_day_open(self):
+    def test_current_balance_no_longer_changes_day_open_threshold(self):
         risk, kill = self.guard_environment(realized=-460)
         allowed, _ = risk.can_trade(4540,False)
-        self.assertFalse(allowed)
-        kill.assert_called_once()
-        # Realized branch uses current4540*10%=454, not day-open500.
-        # This is a diagnostic of existing behavior, not a new loss limit.
+        self.assertTrue(allowed)
+        kill.assert_not_called()
 
     def test_below_threshold_can_trade_when_other_guards_pass(self):
         risk, kill = self.guard_environment(realized=-100)
@@ -77,6 +77,7 @@ class LossControlAuditTests(unittest.TestCase):
         trade = {'id':1,'contract_symbol':'FIXTURE','entry_price':2}
         broker, market = Mock(), Mock()
         broker.get_positions.side_effect=[[{'qty':1}], [{'qty':1}]]
+        broker.get_open_orders.return_value=[]
         broker.close_all_positions.return_value=True
         market.get_option_quote.return_value={'bid':1.5}
         with patch('broker.recovery.reconcile_orders',return_value=set()), \
@@ -96,21 +97,21 @@ class LossControlAuditTests(unittest.TestCase):
         self.assertEqual([{'id':1}],state['open_trades'])
         self.assertIn('one',state['positions'])
 
-    def test_minimum_contract_can_exceed_nominal_one_percent_risk(self):
+    def test_minimum_contract_cannot_exceed_nominal_one_percent_risk(self):
         risk=RiskManager(5000)
         risk.effective_risk_pct=Mock(return_value=.01)
         with patch('risk.sizing.get_settings',return_value={'growth_mode':False}):
             quantity=risk.calculate_contracts(8.50,5000)
-        self.assertEqual(quantity,1)
-        self.assertGreater(quantity*8.50*100*risk.ORB_STOP_PCT,5000*.01)
+        self.assertEqual(quantity,0)
+        self.assertLessEqual(quantity*8.50*100*risk.ORB_STOP_PCT,5000*.01)
 
-    def test_bootstrap_minimum_two_can_override_low_risk_setting(self):
+    def test_bootstrap_minimum_cannot_override_low_risk_setting(self):
         risk=RiskManager(4000)
         risk.effective_risk_pct=Mock(return_value=.01)
         with patch('risk.sizing.get_settings',return_value={'growth_mode':True}):
             quantity=risk.calculate_contracts(8.50,4000)
-        self.assertEqual(quantity,2)
-        self.assertGreater(quantity*8.50*100*risk.ORB_STOP_PCT,4000*.01)
+        self.assertEqual(quantity,0)
+        self.assertLessEqual(quantity*8.50*100*risk.ORB_STOP_PCT,4000*.01)
 
 
 if __name__ == '__main__':

@@ -175,7 +175,7 @@ class ExecutionSafetyTests(unittest.TestCase):
         [],
     ])
     def test_panic_closes_local_trade_only_through_confirmed_fill_path(self, _trades, close_position):
-        broker = SimpleNamespace(get_positions=Mock(return_value=[]))
+        broker = SimpleNamespace(get_positions=Mock(return_value=[]), get_open_orders=Mock(return_value=[]))
         market = SimpleNamespace(get_option_quote=Mock(return_value={"bid": 0.9, "mid": 0.95}))
         self.assertTrue(_flatten_with_confirmed_fills(broker, market, reason="panic"))
         close_position.assert_called_once()

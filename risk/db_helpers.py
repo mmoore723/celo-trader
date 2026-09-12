@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 from database import get_conn
@@ -25,7 +26,16 @@ def get_todays_realized_pnl() -> float:
     # CRITICAL FIX 2026-07-15: removed "AND paper = 0". The DB file is already
     # mode-separated (trades_paper.db vs trades_live.db), so in paper mode every
     # (Confirmed 2026-07-15: -34% single-day loss with no halt.)
-    today = date.today().isoformat()
+    from config import get_settings
+    start = datetime.now(ZoneInfo("America/New_York")).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    account_id = get_settings().get("active_broker_account_id")
+    if not account_id:
+        raise RuntimeError("Account identity required to verify today's realized P&L")
+    scope = " AND broker_account_id = ?" if account_id else ""
+    params = [start.isoformat(), end.isoformat()]
+    if account_id:
+        params.append(account_id)
     try:
         with db_mutex:
             with get_conn() as conn:
@@ -34,14 +44,15 @@ def get_todays_realized_pnl() -> float:
                     SELECT COALESCE(SUM(realized_pnl), 0.0)
                     FROM trades
                     WHERE status = 'closed'
-                      AND date(exit_time) = ?
-                    """,
-                    (today,),
+                      AND julianday(exit_time) >= julianday(?)
+                      AND julianday(exit_time) < julianday(?)
+                    """ + scope,
+                    params,
                 ).fetchone()
             return float(row[0]) if row else 0.0
     except Exception as e:
         logger.error("get_todays_realized_pnl failed: %s", e)
-        return 0.0
+        raise RuntimeError("Cannot verify today's realized P&L; entries blocked") from e
 
 
 def persist_peak_price(trade_id: int, peak_price: float) -> None:

@@ -20,6 +20,7 @@ order-of-operations this loop depends on.
 
 import json
 import logging
+import math
 import time
 from datetime import timedelta
 
@@ -43,7 +44,8 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     from scanner import get_watchlist, run_scan, is_scan_window
     from trading.entry import _tick
     from trading.diagnostics import _check_ghost_positions
-    from trading.controls import _panic_close_all_positions
+    from trading.controls.panic import service_daily_loss_halt
+    from risk.kill_lock import flatten_pending
 
     # This user's own state dict — see trading/state.py::get_user_state.
     # FIX: this function used to ALSO mirror every write into the global
@@ -115,8 +117,8 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     try:
         acct    = alpaca.get_account()
         balance = float(acct.get("equity", 0)) if acct else 0
-        if balance <= 0:
-            raise RuntimeError(f"{_broker_provider.title()} returned no positive account equity")
+        if not acct or "equity" not in acct or not math.isfinite(balance):
+            raise RuntimeError(f"{_broker_provider.title()} returned no valid account equity")
         else:
             from config import save_settings as _save_start
             _save_start({"last_known_balance": round(balance, 2)})
@@ -321,6 +323,8 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
 
             from broker.recovery import reconcile_orders
             _pending_execution = reconcile_orders(alpaca)
+            if not _maintenance.get("maintenance_mode", False):
+                service_daily_loss_halt(alpaca, tradier, user_id=user_id)
 
             # ── After-hours deep sleep: 5:00 PM – 8:00 AM ET ─────────────────
             # No scan, no tick, no API calls. Wakes at 8:00 AM on the next
@@ -329,7 +333,12 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
             _hm_ah     = _now_et_ah.hour * 60 + _now_et_ah.minute
             _AFTER_HOURS = _hm_ah >= 17 * 60 or _hm_ah < 8 * 60
 
-            if _AFTER_HOURS:
+            if _AFTER_HOURS and flatten_pending():
+                # Keep recovery alive without repeatedly running overnight scans.
+                _stop.wait(timeout=30)
+                continue
+
+            if _AFTER_HOURS and not flatten_pending():
                 # Compute next 8:00 AM ET, skipping weekends.
                 _wake = _now_et_ah.replace(hour=8, minute=0, second=0, microsecond=0)
                 if _now_et_ah >= _wake:
@@ -415,10 +424,11 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
             # ── Refresh account balance + recompute session P&L ─────────────
             # Balance is fetched from Alpaca once per batch cycle (every ~60s)
             # so the dashboard always shows current equity.
+            _balance_valid = False
             try:
                 _acct_tick = alpaca.get_account()
                 _bal_tick  = float(_acct_tick.get("equity", 0)) if _acct_tick else 0
-                if _bal_tick > 0:
+                if _acct_tick and "equity" in _acct_tick and math.isfinite(_bal_tick):
                     _US["account_balance"] = _bal_tick
                     _today_key_tick = f"day_start_{_now_et().date().isoformat()}"
                     _saved_dsb_tick = get_settings().get(_today_key_tick)
@@ -440,6 +450,7 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                             _now_et().date().isoformat(), _dsb, _dsb_source,
                         )
                     _save_bal(_balance_update)
+                    _balance_valid = True
             except Exception as _bal_err:
                 logger.debug("Balance refresh failed (non-fatal): %s", _bal_err)
 
@@ -459,20 +470,22 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                 })
                 if _submitted:
                     _US["research_submitted_minute"] = _research_minute
-            run_execution_batch(_wl_batch, _scan_settings, _stop, _tick, alpaca, tradier)
+            from trading.loop.daily_loss import run_guarded_execution
+            run_guarded_execution(
+                risk=get_user_risk(), balance=_US.get("account_balance", 0),
+                balance_valid=_balance_valid,
+                collection_only=bool(_maintenance.get("maintenance_mode", False)),
+                broker=alpaca, market=tradier, user_id=user_id,
+                execute=lambda: run_execution_batch(_wl_batch, _scan_settings, _stop, _tick, alpaca, tradier),
+            )
 
         except DailyLossLimitReached as e:
             _US["status"] = "kill_locked"
-            send_alert("DAILY LOSS LIMIT — KILL LOCK ACTIVE", str(e))
             try:
-                _panic_close_all_positions(alpaca, tradier, user_id=user_id)
+                service_daily_loss_halt(alpaca, tradier, user_id=user_id)
             except Exception as _ce:
                 logger.error("Panic close on kill lock failed: %s", _ce)
-            logger.warning("kill_lock_sleep: trading halted for 24h")
-            for _ in range(288):   # 288 × 5 min = 24 h
-                # _stop_event.wait() returns immediately when Stop Bot is pressed
-                if _stop.wait(timeout=300):
-                    break
+            logger.warning("Daily-loss entries halted; close confirmations retry on subsequent cycles")
         except KeyboardInterrupt:
             break
         except Exception as e:
@@ -508,7 +521,9 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
                 int(e.split(":")[0]) * 60 + int(e.split(":")[1])
                 for s, e in _windows
             )
-            if _in_window:
+            if _US.get("daily_loss_close_pending"):
+                _stop.wait(timeout=10)
+            elif _in_window:
                 from trading.loop.scan_schedule import seconds_until_scan
                 _stop.wait(timeout=seconds_until_scan(_now_et_sl))
             else:
