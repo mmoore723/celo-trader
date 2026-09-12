@@ -6,6 +6,7 @@ from trading.cross_ticker_shadow import update_orb, update_two_leg
 from trading.orb_retouch_execution import update_one_minute_orb_retouch
 from trading.two_leg_trend_pullback_execution import update_two_leg_trend_pullback
 from trading.state import _now_et
+from trading.diagnostics import orb_evidence
 
 logger = logging.getLogger("celo_trader.trading_logic")
 ORB = "V2_ORB_PULLBACK"
@@ -35,7 +36,17 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
                 signal, status = update(state.setdefault('research_orb',{}),frame,
                     ticker=ticker,quote=quote,now=_now_et(),scope=research_scope)
             else:
-                signal, status = evaluate(slot, frame, ticker=ticker, quote_price=price, now=_now_et())
+                decision_now = _now_et()
+                evidence = None
+                if ORB in enabled and ticker.upper() == 'TSLA':
+                    evidence = orb_evidence.begin(slot, frame, now=decision_now,
+                        price=price, quote=quote, settings=settings)
+                try:
+                    signal, status = evaluate(slot, frame, ticker=ticker, quote_price=price, now=decision_now)
+                except Exception as exc:
+                    orb_evidence.finish(evidence, slot, None, 'evaluation_error', error=type(exc).__name__)
+                    raise
+                orb_evidence.finish(evidence, slot, signal, status)
             state["v2_orb_retouch_status"] = statuses[ORB] = status
             if signal is not None:
                 signals.append(signal)
