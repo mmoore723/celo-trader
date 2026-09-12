@@ -810,15 +810,27 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         _US, _df_today_1m, ticker, _enabled, _observation_only_strategies, alpaca, settings,
     )
 
-    _signals = route_signals(df5, ticker, enabled_strategies=_enabled,
-                              alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
-                              candidate_observer=_candidate_observer,
-                              observation_only_strategies=_observation_only_strategies,
-                              observation_resolver=_observation_resolver,
-                              injected_signals=_injected_signals,
-                              preserve_reviewed_paid_rules=True)
+    from trading.diagnostics import native_coverage
+    _coverage = native_coverage.begin(ticker, _enabled, _setup_statuses, df5,
+                                      settings=settings, now=_now_et())
+    try:
+        _signals = route_signals(df5, ticker, enabled_strategies=_enabled,
+                                  alpaca=alpaca, mtf_cache=_US.setdefault("mtf_1h_cache", {}),
+                                  candidate_observer=_candidate_observer,
+                                  observation_only_strategies=_observation_only_strategies,
+                                  observation_resolver=_observation_resolver,
+                                  injected_signals=_injected_signals,
+                                  preserve_reviewed_paid_rules=True,
+                                  evaluation_observer=_coverage.observe if _coverage else None)
+    except Exception as _route_error:
+        if _coverage:
+            _coverage.finish([], error=type(_route_error).__name__)
+        raise
+    if _coverage:
+        _coverage.finish(_signals)
     from trading.diagnostics.strategy_scan import log_strategy_scan
-    log_strategy_scan(_US, ticker, _enabled, _setup_statuses, _signals, _now_et())
+    log_strategy_scan(_US, ticker, _enabled, _setup_statuses, _signals, _now_et(),
+                      coverage=_coverage.payload if _coverage else None)
     # Main-tier setups remain immediate.  Opportunity setups are paper-only
     # candidates collected and ranked over a causal 15-minute window.
     if _opportunity_enabled:

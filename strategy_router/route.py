@@ -81,6 +81,7 @@ def route_signals(
     injected_signals: "list[Signal] | None" = None,
     preserve_reviewed_paid_rules: bool = False,
     observation_scope: str | None = None,
+    evaluation_observer=None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -119,8 +120,23 @@ def route_signals(
     Returns:
         list[Signal] sorted by confidence descending (may be empty).
     """
+    def observe(strategy_id, status, phase='evaluation'):
+        # Diagnostics get strings, never mutable signals, frames or state.
+        # Quiet research replays must not populate execution coverage.
+        if evaluation_observer is not None and not quiet and strategy_id in (enabled_strategies or ()):
+            try:
+                evaluation_observer(str(strategy_id), str(status), phase)
+            except Exception:
+                logger.debug('Evaluation coverage observer failed', exc_info=True)
+
+    def done(result, reason):
+        returned = {signal.strategy_id for signal in result}
+        for sid in enabled_strategies or ():
+            observe(sid, 'returned' if sid in returned else reason, 'routing')
+        return result
+
     if df.empty or len(df) < 2:
-        return []
+        return done([], 'insufficient_input')
     # ``None`` explicitly means a caller wants the router's full research
     # universe. An empty set is the production safety state: no strategy has
     # earned promotion, so avoid even building indicators or emitting signals.
@@ -159,7 +175,7 @@ def route_signals(
     if _order_strategies is not None:
         _observation_only -= _order_strategies
     if _order_strategies is not None and not _order_strategies and not _observation_only:
-        return []
+        return done([], 'no_order_or_observation_strategies')
 
     # Live dotted lookup on the package namespace — see module docstring for
     # why this can't be a plain module-level global in this file.
@@ -178,11 +194,11 @@ def route_signals(
                 "route_signals blocked by kill lock",
                 extra={"event": "kill_lock_blocked", "reason": _kill_reason, "ticker": ticker},
             )
-            return []
+            return done([], 'kill_lock')
 
     today = prepared_today if prepared_today is not None else _build_indicator_frame(df)
     if today.empty:
-        return []
+        return done([], 'empty_indicator_frame')
 
     _underlying_price = None
     try:
@@ -211,6 +227,10 @@ def route_signals(
         if (_selected_strategies is None or sid in _selected_strategies)
         and (_authorized_for_order(sid, ticker) or sid in _observation_only)
     ]
+    _selected_evaluator_ids = {sid for sid, _ in evaluators}
+    for sid, _ in _all_evaluators:
+        if sid in (_order_strategies or ()) and sid not in _selected_evaluator_ids:
+            observe(sid, 'not_evaluated_ticker_scope')
 
     # ── ADX trend-strength gate — skip breakout strategies in chop (< 25) ────
     # Fail-open: if ADX can't be computed (thin data), no strategies are gated.
@@ -226,6 +246,9 @@ def route_signals(
             and (_order_strategies is None or sid in _order_strategies)
         ]
         if _gated:
+            for sid in _gated:
+                if sid not in _observation_only:
+                    observe(sid, 'not_evaluated_adx_gate')
             evaluators = [
                 (sid, fn) for sid, fn in evaluators
                 if sid in _observation_only or sid not in _gated
@@ -239,7 +262,7 @@ def route_signals(
                 except Exception:
                     pass
     if not evaluators and not injected_signals:
-        return []
+        return done([], 'no_eligible_evaluators_or_injected_signals')
 
     # Some strategies need one additional live input that a completed OHLCV
     # bar cannot express (the V2 ORB's actual quote-level retouch).  Those
@@ -276,6 +299,7 @@ def route_signals(
             except Exception:
                 pass
     for strategy_id, fn in evaluators:
+        _evaluated = False
         try:
             from trading.context_research_entries import STRATEGY_IDS as context_research_ids, evaluate as context_research
             from trading.failed_range_research import STRATEGY_ID as recovery_id, evaluate as recovery_research
@@ -298,6 +322,8 @@ def route_signals(
                 sig = fn(today, ticker=ticker, execution_scope=observation_scope)
             else:
                 sig = fn(today, ticker=ticker)
+            _evaluated = True
+            observe(strategy_id, 'signal_returned' if sig is not None else 'no_signal_returned')
             if sig is not None:
                 if candidate_observer is not None:
                     try:
@@ -335,10 +361,12 @@ def route_signals(
                     },
                 )
         except Exception as exc:
+            observe(strategy_id, 'post_evaluation_error' if _evaluated else 'evaluation_error',
+                    'routing' if _evaluated else 'evaluation')
             logger.warning("Strategy %s raised: %s", strategy_id, exc, exc_info=True)
 
     if not signals:
-        return []
+        return done([], 'no_order_signal')
 
     # A reviewed paid-data signal has its complete decision rule tested as one
     # unit. In either account mode, do not substitute this legacy router's
@@ -349,7 +377,7 @@ def route_signals(
             and all(uses_reviewed_paid_execution_profile(signal.strategy_id) for signal in signals)):
         _restore_candidates(signals, candidate_ids)
         signals.sort(key=lambda signal: signal.confidence, reverse=True)
-        return signals
+        return done(signals, 'not_returned')
 
     # ── Sequential quality-gate pipeline (see router_gates.py) ───────────────
     # `quiet` (added 2026-07-21 for the 1-min backtest integration) is threaded
@@ -378,9 +406,9 @@ def route_signals(
     _restore_candidates(signals, candidate_ids)
 
     if _gates.check_conflict_veto(signals, today, ticker, _CONFLICT_VETO_BAND, quiet=quiet):
-        return []
+        return done([], 'conflict_veto')
     if _gates.check_volume_roc_veto(signals, today, ticker, quiet=quiet):
-        return []
+        return done([], 'volume_roc_veto')
 
     if signals and not quiet:
         logger.info(
@@ -388,4 +416,4 @@ def route_signals(
             len(signals), ticker, signals[0].strategy_id, signals[0].confidence * 100,
         )
 
-    return signals
+    return done(signals, 'not_returned_after_gates')
