@@ -90,6 +90,12 @@ class TradierChainMixin:
                 if not research_only and oi < MIN_OPEN_INTEREST:
                     continue
                 filtered.append({
+                    # Evidence-only fields. Existing execution values and filters
+                    # below are intentionally unchanged, including legacy delta.
+                    "evidence": {key: opt.get(key) for key in (
+                        "bid_date", "ask_date", "bidsize", "asksize", "volume",
+                        "open_interest", "contract_size", "greeks",
+                    )},
                     "symbol":        opt.get("symbol"),
                     "strike":        opt.get("strike"),
                     "bid":           bid,
@@ -114,6 +120,36 @@ class TradierChainMixin:
         evidence, not a claim of fillability; crossed/empty quotes are excluded.
         """
         return self.get_option_chain(symbol, expiration, option_type, research_only=True)
+
+    def get_research_option_quotes(self, symbols: list[str]) -> dict:
+        """Bounded read-only batch, preserving raw timestamps, sizes and Greeks.
+
+        Missing symbols stay missing. Do not manufacture zeros or scale sizes
+        into hypothetical fills. This method is exposed only to research.
+        """
+        symbols = sorted(set(symbols))
+        if not symbols or len(symbols) > 100:
+            raise ValueError("research_quote_batch_budget")
+        if not getattr(self, "api_key", ""):
+            return {}
+        response = self._get("/markets/quotes", {
+            "symbols": ",".join(symbols), "greeks": "true", "includeLotSize": "true",
+        })
+        received = datetime.now(timezone.utc).isoformat()
+        rows = (response.get("quotes") or {}).get("quote") or []
+        if isinstance(rows, dict):
+            rows = [rows]
+        result = {}
+        for row in rows:
+            if row.get("symbol") not in symbols:
+                continue
+            result[row["symbol"]] = {
+                **{key: row.get(key) for key in (
+                    "symbol", "bid", "ask", "bid_date", "ask_date", "bidsize",
+                    "asksize", "volume", "open_interest", "greeks", "contract_size",
+                )}, "quote_received_at": received,
+            }
+        return result
 
     # ── FIX M7: Single-contract quote (for position pricing) ─────────────────
 

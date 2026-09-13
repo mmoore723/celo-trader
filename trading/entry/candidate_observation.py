@@ -87,6 +87,7 @@ def observe_candidate_contract(
         reviewed, ticker.upper(), direction.lower(), round(price, 4), round(maximum, 2),
     )
     cached = selection_cache.get(cache_key) if selection_cache is not None else None
+    evidence_trace = None
     if cached is not None:
         cached_contract, cached_info = cached
         contract = dict(cached_contract) if cached_contract else None
@@ -98,8 +99,10 @@ def observe_candidate_contract(
                     tradier, ticker, direction, price, strategy_id,
                 )
             elif reviewed:
+                from trading.diagnostics.contract_evidence import TraceReader
+                evidence_trace = TraceReader(tradier)
                 contract, info = select_reviewed_v2_contract(
-                    tradier, ticker, direction, price, maximum, for_display=True,
+                    evidence_trace, ticker, direction, price, maximum, for_display=True,
                     strategy_id=strategy_id,
                 )
             else:
@@ -113,6 +116,16 @@ def observe_candidate_contract(
             selection_cache[cache_key] = (
                 dict(contract) if contract else None, dict(info or {}),
             )
+
+    if evidence_trace is not None:
+        try:
+            from trading.diagnostics.contract_evidence import record
+            record(trace=evidence_trace, settings=settings, candidate_id=candidate_id,
+                   strategy_id=strategy_id, ticker=ticker, version=meta.get('strategy_version'),
+                   direction=direction, price=price, maximum=maximum, contract=contract,
+                   info=info, cohort='execution_preview', trigger=getattr(signal, 'trigger_bar', None))
+        except Exception:
+            logger.warning('Contract evidence unavailable; candidate and trading unchanged', exc_info=True)
 
     preview: dict[str, Any] = {
         "status": "selected" if contract else "not_selected",

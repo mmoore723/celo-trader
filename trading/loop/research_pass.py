@@ -39,6 +39,8 @@ def market_readers(alpaca, tradier):
         option_reads["get_research_option_chain"] = tradier.get_research_option_chain
     if callable(getattr_static(tradier, "get_research_expiration_details", None)):
         option_reads["get_research_expiration_details"] = tradier.get_research_expiration_details
+    if callable(getattr_static(tradier, "get_research_option_quotes", None)):
+        option_reads["get_research_option_quotes"] = tradier.get_research_option_quotes
     return (
         SimpleNamespace(**{name: getattr(alpaca, name) for name in (
             "get_session_bars", "get_bars", "get_latest_quote", "is_market_open",
@@ -92,6 +94,12 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
                     tradier=tradier, balance=balance, risk=risk, settings=settings,
                     selection_cache=cache, research_only=True,
                 )
+                try:
+                    from trading.diagnostics.contract_evidence import observe_research
+                    observe_research(signal=signal, ticker=symbol, price=price, reader=tradier,
+                                     settings=settings, stopped=stopped)
+                except Exception:
+                    logger.warning('Contract comparison capture failed; primary research preserved', exc_info=True)
                 try:
                     observe_expiration_study(signal=signal, ticker=symbol, price=price, reader=study_reads,
                                              settings=settings, clock=_now_et, stopped=stopped)
@@ -161,6 +169,8 @@ def run_research_pass(readers, snapshot, state, stopped):
         if not force and now-state.get('profit_checkpoint_at', -float('inf')) < 30:
             return
         state['profit_checkpoint_at'] = now
+        from trading.diagnostics.contract_evidence import safe_capture
+        safe_capture(reader=tradier, settings=snapshot['settings'], stopped=stopped)
         try:
             capture_profit_protection(account=snapshot['settings'].get('active_broker_account_id'),
                                       quote_lookup=tradier.get_option_quote, bars_lookup=profit_bars,
