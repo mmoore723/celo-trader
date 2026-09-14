@@ -581,18 +581,19 @@ export function Settings() {
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-4 pt-2">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Position size
-              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>{form.risk_auto ? "Automatic for the current balance" : `${form.risk_pct}% risk per setup`}</span>
+              Trade risk budget
+              <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>{form.risk_auto ? `Automatic: ${form.risk_pct}% for the current balance` : `Your choice: ${form.risk_pct}% of the account per trade`}</span>
             </label>
             <button type="button" className={`btn ${form.risk_auto ? "btn-primary" : "btn-ghost"}`} onClick={() => set("risk_auto", !form.risk_auto)}>{form.risk_auto ? "Automatic" : "Manual"}</button>
           </div>
 
           {!form.risk_auto && <div className="flex items-center justify-between gap-4 pl-3">
-            <label className="text-xs" style={{ color: "var(--ink-muted)" }}>Risk per setup</label><div className="flex items-center gap-1"><input
+            <label htmlFor="trade-risk-percent" className="text-xs" style={{ color: "var(--ink-muted)" }}>Risk per trade</label><div className="flex items-center gap-1"><input
+              id="trade-risk-percent"
               type="number"
               step="0.1"
               min="0.1"
-              max="5"
+              max="100"
               value={form.risk_pct}
               disabled={form.risk_auto}
               onChange={(e) => {
@@ -601,6 +602,7 @@ export function Settings() {
               className="input w-20"
             /><span className="text-sm">%</span></div>
           </div>}
+          <p className="text-xs" style={{ color: "var(--ink-muted)" }}>For strategies without a premium stop, the full option cost uses this budget. This is a sizing limit, not an automatic exit.</p>
 
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>

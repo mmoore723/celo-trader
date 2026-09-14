@@ -6,6 +6,8 @@ Split out of the old single config.py (2026-08-01, file-size cleanup); no
 logic changed, only relocated.
 """
 
+import math
+
 STARTING_CAPITAL = 5000.0
 
 # ── Concurrent position limit ─────────────────────────────────────────────────
@@ -55,7 +57,7 @@ def get_risk_tier(balance: float) -> float:
     Return the effective risk % for a given account balance.
 
     Manual override (highest priority):
-      If 'risk_per_trade' is set in user_settings.json (0 < val <= 0.25),
+      If 'risk_per_trade' is set in user_settings.json (0 < val <= 1),
       that value is returned immediately — balance and growth_mode are ignored.
       The Settings page saves risk_pct (e.g. 10) and converts to risk_per_trade
       (0.10) on POST so both keys are always in sync.
@@ -75,16 +77,17 @@ def get_risk_tier(balance: float) -> float:
     settings = get_settings()
 
     # ── Manual override: risk_per_trade (decimal) written by settings POST ────
-    # Accepts any value in (0, 0.25] — previously the hard-coded set {0.01, 0.03,
-    # 0.05} silently ignored any other value (including 0.10 for 10%).
+    # Manual risk is the user's choice, not an automatic-tier ceiling.
+    # Reject invalid saved values instead of silently switching to another risk.
     _override = settings.get("risk_per_trade")
     if _override is not None:
         try:
             _override_f = float(_override)
-            if 0 < _override_f <= 0.25:   # sanity cap at 25%
+            if not isinstance(_override, bool) and math.isfinite(_override_f) and 0 < _override_f <= 1:
                 return _override_f
         except (TypeError, ValueError):
-            pass  # fall through to automatic tier logic
+            pass
+        raise ValueError("Manual risk must be greater than 0% and at most 100%; update Settings")
 
     # ── Automatic tier logic ──────────────────────────────────────────────────
     if not settings.get("growth_mode", False):

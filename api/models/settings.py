@@ -5,14 +5,14 @@ Split out of the old single api/models.py (2026-08-01, file-size cleanup);
 no logic changed, only relocated.
 """
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Settings(BaseModel):
     broker_provider: str = "alpaca"
     paper_trading: bool = True
     display_timezone: str = "America/New_York"
-    risk_pct: float
+    risk_pct: float = Field(gt=0, le=100, allow_inf_nan=False)
     # True means the balance-based risk ladder is active.  `risk_pct` then
     # reports the currently effective tier rather than creating an override.
     risk_auto: bool = True
@@ -67,7 +67,7 @@ class Settings(BaseModel):
     min_entry_grade: str = "C"           # "A+" | "A" | "B" | "C" | "Watch" — cutoff
                                           # below which entries are blocked. Default
                                           # "C" blocks only the "Watch" grade.
-    max_position_dollars_pct: float = 15.0  # 2026-07-24: was hardcoded, no UI at all.
+    max_position_dollars_pct: float = Field(default=15.0, gt=0, le=100, allow_inf_nan=False)
                                           # This is what actually caps how much the
                                           # bot will spend on one contract's premium
                                           # (balance × this% ) — separate from risk_pct,

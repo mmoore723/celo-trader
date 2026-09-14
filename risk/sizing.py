@@ -45,7 +45,7 @@ class SizingMixin:
             if not _bootstrap_warn_shown:
                 _bootstrap_warn_shown = True
                 _warn_msg = (
-                    "WARNING: HIGH RISK MODE ENABLED: 5% RISK PER TRADE — "
+                    f"WARNING: HIGH RISK MODE ENABLED: {risk_pct:.1%} RISK PER TRADE: "
                     f"balance=${bal:,.2f} risk_budget=${bal * risk_pct:,.2f}"
                 )
                 logger.warning(_warn_msg)
@@ -84,6 +84,19 @@ class SizingMixin:
         from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
         return 1.0 if uses_v2_orb_execution_profile(strategy_id) else self.ORB_STOP_PCT
 
+    def effective_notional_pct(self, balance: float, risk_pct: float | None = None) -> float:
+        """Manual sizing uses the visible premium cap, never a hidden tier cap."""
+        settings = get_settings()
+        if settings.get("risk_per_trade") is not None:
+            cap = float(settings.get("max_position_dollars_pct", 15)) / 100
+            if not math.isfinite(cap) or not 0 < cap <= 1:
+                raise ValueError("Maximum contract cost must be greater than 0% and at most 100%")
+            return cap
+        if bool(settings.get("growth_mode", False)) and balance < GROWTH_RISK_BOUNDARY_BOOT:
+            return .45
+        rate = self.effective_risk_pct(balance) if risk_pct is None else risk_pct
+        return .30 if rate > CONSERVATIVE_RISK_PCT else .20
+
     def calculate_contracts(self, option_ask: float, account_balance: Optional[float] = None,
                             *, strategy_id: str | None = None) -> int:
         """
@@ -112,17 +125,14 @@ class SizingMixin:
         _s = get_settings()
         _in_bootstrap = bool(_s.get("growth_mode", False)) and balance < GROWTH_RISK_BOUNDARY_BOOT
 
-        if _in_bootstrap:
-            max_notional_pct = 0.45
-        elif risk_pct > CONSERVATIVE_RISK_PCT:
-            max_notional_pct = 0.30
-        else:
-            max_notional_pct = 0.20
+        max_notional_pct = self.effective_notional_pct(balance, risk_pct)
         max_notional = balance * max_notional_pct
 
         contracts = min(contracts, int(max_notional / (option_ask * 100)))
 
-        if _in_bootstrap:
+        if _s.get("risk_per_trade") is not None:
+            _tier_label = "Manual_user_setting"
+        elif _in_bootstrap:
             _tier_label = "Tier4_bootstrap"
         elif risk_pct >= GROWTH_MODE_RISK_PCT:
             _tier_label = "Tier3_3pct"
@@ -170,9 +180,7 @@ class SizingMixin:
         risk_budget = bal * risk_pct
         if not math.isfinite(risk_pct) or not 0 < risk_pct <= 1:
             return 0.0
-        settings = get_settings()
-        bootstrap = bool(settings.get("growth_mode", False)) and bal < GROWTH_RISK_BOUNDARY_BOOT
-        notional_pct = .45 if bootstrap else (.30 if risk_pct > CONSERVATIVE_RISK_PCT else .20)
+        notional_pct = self.effective_notional_pct(bal, risk_pct)
         premium = min(risk_budget / self.entry_risk_fraction(strategy_id), bal * notional_pct)
         # Round down: a rounded-up quote can exceed the budget by one cent.
         return math.floor(premium / (1.0 + self.SLIPPAGE_PCT)) / 100

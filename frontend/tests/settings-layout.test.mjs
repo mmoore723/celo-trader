@@ -5,6 +5,14 @@ import {readFileSync} from "node:fs";
 const source = readFileSync(new URL('../src/pages/Settings.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
 
+test('Manual risk is visible and accepts the same 100-percent ceiling as the API', () => {
+  assert.match(source, /Trade risk budget/);
+  assert.match(source, /Automatic: \$\{form.risk_pct\}%/);
+  assert.match(source, /Your choice: \$\{form.risk_pct\}%/);
+  assert.match(source, /id="trade-risk-percent"[\s\S]*?max="100"[\s\S]*?value=\{form.risk_pct\}/);
+  assert.match(source, /full option cost uses this budget/);
+});
+
 test('Settings uses available page width and one/two/three content-width columns', () => {
   assert.doesNotMatch(source, /max-w-(2xl|5xl)/);
   assert.match(css, /\.settings-page[^}]*container-type: inline-size/);

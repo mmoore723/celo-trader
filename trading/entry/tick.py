@@ -1127,11 +1127,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             if _signal_tier == "opportunity" and _preview_contracts > 1:
                 _preview_contracts = max(1, _preview_contracts // 2)
             # Mirror the same notional ceiling later used by the order path.
-            _preview_growth = bool(settings.get("growth_mode", False)) and balance < float(
-                settings.get("growth_risk_boundary_boot", 5000.0)
-            )
-            _preview_risk_pct = _risk.effective_risk_pct(balance)
-            _preview_notional_pct = .45 if _preview_growth else (.30 if _preview_risk_pct > .01 else .20)
+            _preview_notional_pct = _risk.effective_notional_pct(balance)
             _preview_notional_cap = balance * _preview_notional_pct
             _preview_contracts = min(
                 _preview_contracts,
@@ -1579,18 +1575,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
                  detail=f"1 contract risks ${_risk_per_contract:.0f}, budget is ${_risk_budget:.0f}")
         return
 
-    # ── Total-position-cost cap (tier-aware notional cap) ─────────────────────
-    # calculate_contracts() already has a built-in notional cap (45%/30%/20% of
-    # balance). The old secondary clamp used max_spend (15% of balance = $267 on
-    _in_bs_clamp = bool(settings.get("growth_mode", False)) and \
-                   balance < float(settings.get("growth_risk_boundary_boot", 5000.0))
-    _eff_rp_clamp = _risk.effective_risk_pct(balance)
-    if _in_bs_clamp:
-        _notional_pct = 0.45          # bootstrap: matches calculate_contracts()
-    elif _eff_rp_clamp > 0.01:        # growth / mid tier (> 1%)
-        _notional_pct = 0.30
-    else:
-        _notional_pct = 0.20          # conservative (1%)
+    # Use the same user-controlled cap as sizing and affordability. Manual
+    # settings must not be overwritten by a second, hidden tier calculation.
+    _notional_pct = _risk.effective_notional_pct(balance)
     _notional_cap   = balance * _notional_pct
     _max_affordable = max(0, int(_notional_cap // (ask_price * 100)))
     if n_contracts > _max_affordable:
@@ -2437,6 +2424,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     # Determine risk tier label for this trade
     _active_risk_pct = _risk.effective_risk_pct(balance)
     _tier_label = (
+        "Manual_user_setting" if settings.get("risk_per_trade") is not None else
         "Tier4_5pct" if _active_risk_pct >= BOOTSTRAP_RISK_PCT else
         "Tier3_3pct" if _active_risk_pct >= _GMT_TL else
         "Tier2_2pct" if _active_risk_pct >= _MTT_TL else
