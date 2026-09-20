@@ -14,6 +14,7 @@ import type { StrategyTickerRecommendation } from "../lib/api";
 import { PairEvidence } from "../components/settings/PairEvidence";
 import { ClosedTradeEvidence } from "../components/settings/ClosedTradeEvidence";
 import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
+import { StrategyExitNotice } from "../components/settings/StrategyExitNotice";
 
 const DEFAULT: AppSettings = {
   broker_provider: "alpaca",
@@ -58,7 +59,7 @@ const DEFAULT: AppSettings = {
   min_grade_filter_enabled: false,  // added 2026-07-24 — off by default
   min_entry_grade: "C",
   max_position_dollars_pct: 15,  // added 2026-07-24 — was hardcoded, no UI
-  simplified_exit_mode: true,        // added 2026-07-22 — 3-rule exit, on by default (see research note in-form)
+  simplified_exit_mode: true, // Read-only compatibility value, never an exit selector.
   mtf_confirmation_enabled: true,
 };
 
@@ -644,18 +645,15 @@ export function Settings() {
         <div className="flex flex-col gap-5 mt-4">
         <section className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
         <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--ink)" }}>Contract filters</h3>
-        {form.simplified_exit_mode && (
-          <p className="text-xs mb-3" style={{ color: "var(--warning)" }}>
-            Simplified Exit is active: positions use a hard stop, underlying Chandelier exit, and time cap.
-            Stage-1 partial-profit settings apply only when Simplified Exit is off.
-          </p>
-        )}
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          Legacy profit-target and premium-stop defaults do not override a reviewed strategy&apos;s exit rule.
+        </p>
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Stage-1 target (% gain)
+              Legacy profit target (% gain)
               <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-                Used only with Simplified Exit off: sell 50% once the option gains this much (default 50%)
+                Used by the legacy partial-exit engine only, not reviewed strategy exits.
               </span>
             </label>
             <input
@@ -667,9 +665,9 @@ export function Settings() {
           </div>
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
-              Stop-loss (% loss)
+              Legacy premium stop (% loss)
               <span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
-                Exit if option premium falls this much from entry (default 20%)
+                Used by legacy exit engines only. Not a guaranteed loss limit or a reviewed-strategy exit.
               </span>
             </label>
             <input
@@ -739,23 +737,7 @@ export function Settings() {
         </div>
       </section>
 
-      {/* Exit engine — controls how an OPEN position gets closed */}
-      <section className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
-        <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Exit engine</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          Controls how the bot closes a position once it's already open.
-          Only one exit engine ever runs at a time.
-        </p>
-        <Toggle
-          label="Simplified exit (hard stop / 3.0x chandelier trail / time cap)"
-          checked={form.simplified_exit_mode ?? true}
-          onChange={(v) => set("simplified_exit_mode", v)}
-        />
-        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-          On (default): the 3-rule exit that beat the full 9-condition engine
-          on realized R:R in backtesting. Off: falls back to the full engine.
-        </p>
-      </section>
+      <StrategyExitNotice />
 
       {/* Entry confirmation — controls whether a trade gets taken at all */}
       <section className="rounded-lg p-3" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>

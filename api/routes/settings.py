@@ -148,6 +148,17 @@ def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
     from config import get_settings, save_settings
     current = get_settings()
     data = payload.model_dump()
+    # Removing a dashboard switch must also prevent stale clients/API callers
+    # from changing it. Never reset the stored value or silently change exits.
+    current_exit_mode = bool(current.get("simplified_exit_mode", True))
+    if ("simplified_exit_mode" in payload.model_fields_set
+            and payload.simplified_exit_mode != current_exit_mode):
+        raise HTTPException(
+            409,
+            "Exit engines cannot be changed in Settings. Strategy exits follow "
+            "their tested version. Refresh Settings and save your other changes.",
+        )
+    data.pop("simplified_exit_mode", None)
     target_provider = str(data.get("broker_provider") or "alpaca").lower()
     if target_provider not in {"alpaca", "tradier"}:
         raise HTTPException(400, "Broker provider must be Alpaca or Tradier")
@@ -275,7 +286,7 @@ def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
     except Exception:
         pass  # bot may not be running — non-fatal
 
-    return payload
+    return payload.model_copy(update={"simplified_exit_mode": current_exit_mode})
 
 
 # ── API credentials ───────────────────────────────────────────────────────────

@@ -75,10 +75,9 @@ class Settings(BaseModel):
                                           # sizing, not the affordability cap. See the
                                           # BABA 10:02am incident, 2026-07-24: a valid
                                           # 77%-confidence signal got blocked here.
-    simplified_exit_mode: bool = True   # 2026-07-22: 3-rule exit (hard stop /
-                                          # 3.0x chandelier trail / time cap) vs
-                                          # the full 9+-condition engine. See
-                                          # ab_test_exit_complexity.py.
+    # Compatibility readback only. Settings cannot switch exit engines;
+    # reviewed strategies retain their versioned exit policy.
+    simplified_exit_mode: bool = True
     mtf_confirmation_enabled: bool = True   # 2026-07-23: live 1Hour bias gate,
                                           # see trading/mtf_live_gate.py. Flipped
                                           # to ON by default 2026-07-31 per
