@@ -132,6 +132,20 @@ def _log_bar_thinking(df1m: "pd.DataFrame", df5: "pd.DataFrame", ticker: str) ->
             _sign     = "+" if _pnl_usd >= 0 else ""
             _pnl_emoji = "🟢" if _pnl_usd >= 0 else "🔴"
 
+            # Reviewed timers/structure bypass the generic stop/stage engine.
+            # Do not describe calculated reference levels as active protection.
+            from trading.diagnostics.exit_policy import reviewed_exit_description
+            _reviewed_description = reviewed_exit_description(_ticker_trade, _pos_state, _now_et())
+            if _reviewed_description is not None:
+                log_event(
+                    "INFO", "bar_eval",
+                    f"{_pnl_emoji} [{ticker}] {bar_t} POSITION LIVE | "
+                    f"{_opt_type} @ ${_entry_px:.2f} x {_n_contracts}ct ({_strategy}) | "
+                    f"Stock ${close:.2f} | Option ${_cur_opt:.2f} | "
+                    f"P&L {_pnl_pct:+.1f}% (${_pnl_usd:+.2f}) | {_reviewed_description}",
+                )
+                return
+
             # Stop levels
             _stop_px      = round(_entry_px * (1.0 - _stop_pct), 2)
             _cushion      = round(_cur_opt - _stop_px, 2)

@@ -544,12 +544,16 @@ def _manage_open_position(
             _vwap_desc  = ""
             if ps.get("vwap_breached_bars", 0) >= _VWAP_BREACH_BARS:
                 _vwap_desc = f" ⚠️ VWAP breach {ps['vwap_breached_bars']}bar — trend_dead={trend_dead}."
+            from trading.diagnostics.exit_policy import reviewed_exit_description
+            _policy_desc = reviewed_exit_description(trade, ps, now_et)
+            if _policy_desc is None:
+                _policy_desc = f"Stop {_stop_desc}. {_stage_desc}.{_vwap_desc}"
             log_event(
                 "INFO", "position_update",
                 f"🟡 [{trade['contract_symbol']}] Holding — "
                 f"option @ ${current_price:.2f} (entry ${entry_price:.2f}, peak ${ps['peak_price']:.2f}). "
                 f"P&L {'+' if _pnl_now >= 0 else ''}${_pnl_now:.2f} ({_pnl_pct:+.1f}%). "
-                f"Stop {_stop_desc}. {_stage_desc}.{_vwap_desc}"
+                f"{_policy_desc}"
             )
 
         _vwap_breached_any = (
