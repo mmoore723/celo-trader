@@ -8,7 +8,8 @@ const source = readFileSync(
 
 test("research results can be narrowed to one ticker", () => {
   assert.match(source, /type="search" placeholder="META"/);
-  assert.match(source, /row\.pair\.ticker\.includes\(wantedTicker\)/);
+  assert.match(source, /setDebouncedTicker\(tickerSearch\.trim\(\)\.toUpperCase\(\)\)/);
+  assert.match(source, /ticker: debouncedTicker/);
 });
 
 test("research results separate no setup from no matching option", () => {

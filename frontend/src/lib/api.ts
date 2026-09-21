@@ -133,6 +133,8 @@ export interface StrategyTickerResearchPair {
   win_rate_pct: number | null;
   profit_factor: number | "infinite" | null;
   net_one_contract_pnl: number;
+  gross_profit: number;
+  gross_loss: number;
   average_one_contract_pnl: number | null;
   median_one_contract_pnl: number | null;
   maximum_drawdown_one_contract: number | null;
@@ -232,6 +234,8 @@ export interface ExpirationStudyComparison {
 }
 export interface StrategyResearchMatrix {
   days: number;
+  start_date?: string;
+  end_date?: string;
   target_profit_factor: number;
   collection_started_on: string | null;
   collected_market_days: number;
@@ -285,6 +289,28 @@ export interface StrategyResearchMatrix {
     };
     pairs: StrategyTickerResearchPair[];
   }[];
+}
+export interface ResearchResultsPage extends StrategyResearchMatrix {
+  result_counts: Record<"results" | "no_option" | "no_setup" | "attention" | "passing" | "all", number>;
+  pagination: { page: number; page_size: number; total: number; has_more: boolean };
+  available_tickers: string[];
+  available_strategies: { strategy_id: string; display_name: string }[];
+}
+export interface ResearchAnalyticsRow {
+  total_triggers: number; priced_tests: number; wins: number;
+  win_rate_pct: number | null; profit_factor: number | "infinite" | null;
+  net_pnl: number; gross_profit: number; gross_loss: number;
+}
+export interface ResearchStrategyAnalytics extends ResearchAnalyticsRow {
+  strategy_id: string; strategy_name: string; status: "at_goal" | "needs_work" | "testing";
+}
+export interface ResearchTickerAnalytics extends ResearchAnalyticsRow { ticker: string }
+export interface ResearchAnalytics {
+  start_date: string; end_date: string; target_profit_factor: number;
+  summary: ResearchAnalyticsRow & { completed_tests: number; active_tests: number };
+  strategies: ResearchStrategyAnalytics[]; tickers: ResearchTickerAnalytics[];
+  top_tickers: ResearchTickerAnalytics[]; bottom_tickers: ResearchTickerAnalytics[];
+  available_tickers: string[];
 }
 export interface DailyEvidenceScorecard {
   date: string; mode: "paper" | "live"; account_scoped: boolean;
@@ -1373,6 +1399,19 @@ export const api = {
     ),
     candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
     researchMatrix: (days = 90) => request<StrategyResearchMatrix>(`/api/strategy-health/research-matrix?days=${days}`),
+    researchResults: (opts: { startDate: string; endDate: string; page?: number; pageSize?: number; ticker?: string; strategyId?: string; filter?: string }) => {
+      const params = new URLSearchParams({ start_date: opts.startDate, end_date: opts.endDate, page: String(opts.page ?? 1), page_size: String(opts.pageSize ?? 24) });
+      if (opts.ticker) params.set("ticker", opts.ticker);
+      if (opts.strategyId && opts.strategyId !== "all") params.set("strategy_id", opts.strategyId);
+      if (opts.filter) params.set("result_filter", opts.filter);
+      return request<ResearchResultsPage>(`/api/strategy-health/research-results?${params}`);
+    },
+    researchAnalytics: (opts: { startDate: string; endDate: string; tickers?: string[]; statuses?: string[] }) => {
+      const params = new URLSearchParams({ start_date: opts.startDate, end_date: opts.endDate });
+      if (opts.tickers?.length) params.set("tickers", opts.tickers.join(","));
+      if (opts.statuses?.length) params.set("statuses", opts.statuses.join(","));
+      return request<ResearchAnalytics>(`/api/strategy-health/research-analytics?${params}`);
+    },
     qqqOpeningResearch: () => request<PaperResearchScorecard>("/api/strategy-health/paper-research/qqq-opening"),
     paidTslaV2Orb: () => request<PaidResearchEvidence>("/api/strategy-health/research/paid-tsla-v2-orb"),
     paidTslaTrendProgress: () => request<PaidTrendResearchProgress>("/api/strategy-health/research/paid-tsla-trend-progress"),

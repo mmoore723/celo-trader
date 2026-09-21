@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import json
 import math
 from statistics import median
@@ -595,7 +595,9 @@ def _factor_label(value: object) -> str:
     return f"{float(value):.2f}" if isinstance(value, (int, float)) else "—"
 
 
-def build_research_matrix(days: int = 90) -> dict:
+def build_research_matrix(
+    days: int = 90, *, start_date: str | None = None, end_date: str | None = None,
+) -> dict:
     from config import get_settings
     from database import get_conn, _now_et
     from scanner.state_io import _read_daily_universe
@@ -603,7 +605,18 @@ def build_research_matrix(days: int = 90) -> dict:
     days = max(1, min(int(days), 365))
     settings = get_settings()
     account_id = settings.get("active_broker_account_id") or None
-    cutoff = (_now_et() - timedelta(days=days)).isoformat()
+    now_et = _now_et()
+    try:
+        start = date.fromisoformat(start_date) if start_date else (now_et - timedelta(days=days)).date()
+        end = date.fromisoformat(end_date) if end_date else now_et.date()
+    except ValueError as exc:
+        raise ValueError("Research dates must use YYYY-MM-DD.") from exc
+    if start > end:
+        raise ValueError("Research start date must not be after end date.")
+    if (end - start).days > 365:
+        raise ValueError("Research date range cannot exceed 365 days.")
+    cutoff = datetime.combine(start, time.min, tzinfo=now_et.tzinfo).isoformat()
+    end_exclusive = datetime.combine(end + timedelta(days=1), time.min, tzinfo=now_et.tzinfo).isoformat()
     candidate_account = (
         "s.broker_account_id = ?" if account_id
         else "(s.broker_account_id IS NULL OR s.broker_account_id = '')"
@@ -612,7 +625,7 @@ def build_research_matrix(days: int = 90) -> dict:
         "broker_account_id = ?" if account_id
         else "(broker_account_id IS NULL OR broker_account_id = '')"
     )
-    params: tuple[object, ...] = (cutoff, account_id) if account_id else (cutoff,)
+    params: tuple[object, ...] = (cutoff, end_exclusive, account_id) if account_id else (cutoff, end_exclusive)
     with get_conn() as conn:
         authored_exits = load_authored_exits(conn, account_id, cutoff)
         profit_tests = load_profit_tests(conn, account_id, cutoff)
@@ -637,7 +650,7 @@ def build_research_matrix(days: int = 90) -> dict:
                       MAX(CASE WHEN q.observation_kind='mark_120m' THEN q.observed_at END) AS mark_120_at
                FROM shadow_candidates s
                LEFT JOIN candidate_option_quote_observations q ON q.candidate_id=s.candidate_id
-               WHERE s.observed_at >= ? AND """ + candidate_account +
+               WHERE s.observed_at >= ? AND s.observed_at < ? AND """ + candidate_account +
             " GROUP BY s.candidate_id ORDER BY s.observed_at",
             params,
         ).fetchall()
@@ -658,15 +671,15 @@ def build_research_matrix(days: int = 90) -> dict:
                       MAX(CASE WHEN a.observation_kind='mark_120m' THEN a.observed_at END) AS mark_120_at
                FROM shadow_candidates s
                JOIN candidate_contract_alternatives a ON a.candidate_id=s.candidate_id
-               WHERE s.observed_at >= ? AND """ + candidate_account +
+               WHERE s.observed_at >= ? AND s.observed_at < ? AND """ + candidate_account +
             " GROUP BY s.candidate_id,a.contract_symbol "
             "HAVING entry_source = ? ORDER BY s.observed_at",
             params + (RESEARCH_CONTRACT_SOURCE,),
         ).fetchall()
-        candle_params: tuple[object, ...] = (cutoff[:10], account_id) if account_id else (cutoff[:10],)
+        candle_params: tuple[object, ...] = (cutoff[:10], end_exclusive[:10], account_id) if account_id else (cutoff[:10], end_exclusive[:10])
         exposure = conn.execute(
             "SELECT ticker,substr(bar_time,1,10) AS evidence_day "
-            "FROM scanner_candle_observations WHERE bar_time >= ? AND "
+            "FROM scanner_candle_observations WHERE bar_time >= ? AND bar_time < ? AND "
             + candle_account + " GROUP BY ticker,evidence_day",
             candle_params,
         ).fetchall()
@@ -781,6 +794,9 @@ def build_research_matrix(days: int = 90) -> dict:
             recommendation = assess(completed)
             current_summary = {**current_summary, **summarize(completed),
                                **_distribution_summary([row['pnl'] for row in completed])}
+            completed_profits = [float(row['pnl']) for row in completed]
+            current_summary["gross_profit"] = round(sum(value for value in completed_profits if value > 0), 2)
+            current_summary["gross_loss"] = round(abs(sum(value for value in completed_profits if value < 0)), 2)
             current_results = [(str(row['entry_at'])[:10], row['pnl']) for row in completed]
             strategy_current_results.extend(current_results)
             factor = current_summary["profit_factor"]
@@ -854,6 +870,8 @@ def build_research_matrix(days: int = 90) -> dict:
                 "win_rate_pct": current_summary["win_rate_pct"],
                 "profit_factor": factor,
                 "net_one_contract_pnl": current_summary["net_one_contract_pnl"],
+                "gross_profit": current_summary["gross_profit"],
+                "gross_loss": current_summary["gross_loss"],
                 "average_one_contract_pnl": current_summary["average_one_contract_pnl"],
                 "median_one_contract_pnl": current_summary["median_one_contract_pnl"],
                 "maximum_drawdown_one_contract": current_summary["maximum_drawdown_one_contract"],
@@ -911,7 +929,9 @@ def build_research_matrix(days: int = 90) -> dict:
         })
     scan_meta = (_read_daily_universe().get("scan_meta") or {})
     return {
-        "days": days,
+        "days": (end - start).days + 1,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
         "target_profit_factor": 1.5,
         "collection_started_on": all_evidence_dates[0] if all_evidence_dates else None,
         "collected_market_days": len(all_evidence_dates),

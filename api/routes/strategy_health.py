@@ -17,6 +17,11 @@ router = APIRouter(prefix="/api/strategy-health", tags=["strategy-health"])
 logger = logging.getLogger("celo_trader.api.strategy_health")
 
 
+def _research_snapshot(days: int, start_date: str | None, end_date: str | None) -> dict:
+    from api.research_snapshot import research_snapshot
+    return research_snapshot(days, start_date=start_date, end_date=end_date)
+
+
 @router.get("/scorecard")
 def get_scorecard(days: int = 30) -> dict:
     """Read-only strategy evidence scorecard; no allocation decisions here."""
@@ -134,10 +139,48 @@ def get_candidate_scorecard(days: int = 30) -> dict:
 
 
 @router.get("/research-matrix")
-def get_research_matrix(days: int = 90) -> dict:
+def get_research_matrix(days: int = 90, start_date: str | None = None, end_date: str | None = None) -> dict:
     """Simple strategy-by-ticker results; this endpoint cannot place orders."""
-    from api.research_snapshot import research_snapshot
-    return research_snapshot(days)
+    try:
+        return _research_snapshot(days, start_date, end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/research-results")
+def get_research_results(
+    days: int = 90, start_date: str | None = None, end_date: str | None = None,
+    page: int = 1, page_size: int = 24, ticker: str = "", strategy_id: str = "",
+    result_filter: str = "results",
+) -> dict:
+    from strategy_health.research_analytics import build_results_page
+
+    try:
+        matrix = _research_snapshot(days, start_date, end_date)
+        return build_results_page(
+            matrix, page=max(1, page), page_size=max(1, min(page_size, 60)),
+            ticker=ticker, strategy_id=strategy_id, result_filter=result_filter,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/research-analytics")
+def get_research_analytics(
+    days: int = 90, start_date: str | None = None, end_date: str | None = None,
+    tickers: str = "", statuses: str = "",
+) -> dict:
+    from strategy_health.research_analytics import build_analytics
+
+    try:
+        matrix = _research_snapshot(days, start_date, end_date)
+        return build_analytics(
+            matrix,
+            tickers={item.strip().upper() for item in tickers.split(",") if item.strip()},
+            statuses={item.strip() for item in statuses.split(",") if item.strip()},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/paper-research/qqq-opening")

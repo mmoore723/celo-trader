@@ -13,14 +13,14 @@ TTL_SECONDS = 60
 BUILD_WAIT_SECONDS = 45
 
 
-def research_snapshot(days=90):
+def research_snapshot(days=90, *, start_date=None, end_date=None):
     from auth.context import get_current_user_id
     from config import get_db_path, get_settings
     from strategy_health.research_matrix import build_research_matrix
 
     days = max(1, min(int(days), 365))
     settings_digest = sha256(json.dumps(get_settings(), sort_keys=True, default=str).encode()).hexdigest()
-    key = (get_current_user_id(), str(get_db_path()), settings_digest, days)
+    key = (get_current_user_id(), str(get_db_path()), settings_digest, days, start_date, end_date)
 
     def cached():
         with _guard:
@@ -38,7 +38,8 @@ def research_snapshot(days=90):
     try:
         result = cached()
         if result is None:
-            result = build_research_matrix(days)
+            result = (build_research_matrix(days, start_date=start_date, end_date=end_date)
+                      if start_date is not None or end_date is not None else build_research_matrix(days))
             with _guard:
                 _cache[key] = (monotonic(), result)
                 _cache.move_to_end(key)
