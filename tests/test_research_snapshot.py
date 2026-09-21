@@ -81,6 +81,13 @@ class SnapshotTests(unittest.TestCase):
             module.research_snapshot()
         self.assertEqual(self.build.call_count, 2)
 
+    def test_date_filters_have_separate_cache_keys(self):
+        module.research_snapshot(start_date='2026-09-14', end_date='2026-09-18')
+        module.research_snapshot(start_date='2026-09-14', end_date='2026-09-18')
+        self.build.assert_called_once_with(90, start_date='2026-09-14', end_date='2026-09-18')
+        module.research_snapshot(start_date='2026-09-15', end_date='2026-09-18')
+        self.assertEqual(self.build.call_count, 2)
+
 
 if __name__ == '__main__':
     unittest.main()
