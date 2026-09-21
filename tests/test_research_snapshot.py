@@ -1,4 +1,6 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from unittest.mock import patch
 from fastapi import HTTPException
 from api import research_snapshot as module
@@ -36,15 +38,34 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(self.build.call_count, 3)
         self.assertEqual(len(module._cache), 2)
 
-    def test_concurrent_build_rejected(self):
+    def test_stuck_build_wait_is_bounded(self):
         module._build.acquire()
         try:
-            with self.assertRaises(HTTPException) as ctx:
-                module.research_snapshot()
+            with patch.object(module, 'BUILD_WAIT_SECONDS', .01):
+                with self.assertRaises(HTTPException) as ctx:
+                    module.research_snapshot()
             self.assertEqual(ctx.exception.status_code, 503)
             self.build.assert_not_called()
         finally:
             module._build.release()
+
+    def test_concurrent_cold_requests_share_one_build(self):
+        started, finish = Event(), Event()
+        def build(days):
+            started.set()
+            self.assertTrue(finish.wait(2))
+            return {'strategies': [1]}
+        self.build.side_effect = build
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            first = pool.submit(module.research_snapshot)
+            self.assertTrue(started.wait(2))
+            second = pool.submit(module.research_snapshot)
+            third = pool.submit(module.research_snapshot)
+            finish.set()
+            result = first.result(timeout=2)
+            self.assertIs(second.result(timeout=2), result)
+            self.assertIs(third.result(timeout=2), result)
+        self.build.assert_called_once_with(90)
 
     def test_failure_releases_build_lock(self):
         self.build.side_effect = ValueError('failure')

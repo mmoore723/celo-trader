@@ -10,6 +10,7 @@ _cache = OrderedDict()
 _guard = Lock()
 _build = Lock()
 TTL_SECONDS = 60
+BUILD_WAIT_SECONDS = 45
 
 
 def research_snapshot(days=90):
@@ -31,7 +32,7 @@ def research_snapshot(days=90):
     result = cached()
     if result is not None:
         return result
-    if not _build.acquire(blocking=False):
+    if not _build.acquire(timeout=BUILD_WAIT_SECONDS):
         raise HTTPException(status_code=503, detail='Research results are refreshing. Retry shortly.',
                             headers={'Retry-After': '5'})
     try:
