@@ -305,12 +305,23 @@ export interface ResearchStrategyAnalytics extends ResearchAnalyticsRow {
   strategy_id: string; strategy_name: string; status: "at_goal" | "needs_work" | "testing";
 }
 export interface ResearchTickerAnalytics extends ResearchAnalyticsRow { ticker: string }
+export interface ResearchPairAnalytics extends ResearchAnalyticsRow {
+  ticker: string; strategy_id: string; strategy_name: string; version: string | null;
+  status: "at_goal" | "needs_work" | "collecting";
+  distinct_plays: number; completed_tests: number; independent_tests: number; target_tests: number;
+  typical_profit: number | null; active_tests: number; tracked_tests: number;
+  missing_candles: number; late_entry_prices: number; missing_quotes: number; pending_quotes: number;
+  target_2r_hits: number | null; health_available: boolean;
+}
 export interface ResearchAnalytics {
   start_date: string; end_date: string; target_profit_factor: number;
   summary: ResearchAnalyticsRow & { completed_tests: number; active_tests: number };
   strategies: ResearchStrategyAnalytics[]; tickers: ResearchTickerAnalytics[];
   top_tickers: ResearchTickerAnalytics[]; bottom_tickers: ResearchTickerAnalytics[];
   available_tickers: string[];
+  pairs: ResearchPairAnalytics[];
+  pipeline: { raw_triggers: number; distinct_plays: number; priced_results: number; completed_tests: number };
+  data_quality: { tracked_tests: number; affected_tests: number; affected_pct: number | null; covered_pairs: number; total_pairs: number };
 }
 export interface DailyEvidenceScorecard {
   date: string; mode: "paper" | "live"; account_scoped: boolean;

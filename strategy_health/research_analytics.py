@@ -55,8 +55,37 @@ def build_analytics(matrix: dict, *, tickers: set[str] | None = None, statuses: 
     strategy_rows = []
     ticker_pairs: dict[str, list[dict]] = {}
     selected_pairs = []
+    pair_rows = []
     for strategy in matrix["strategies"]:
-        pairs = [pair for pair in strategy["pairs"] if _matches(pair, tickers=tickers, statuses=statuses, target=target)]
+        pairs = []
+        for pair in strategy["pairs"]:
+            factor = pair.get("profit_factor")
+            state = "at_goal" if factor == "infinite" or isinstance(factor, (int, float)) and factor >= target else "needs_work" if isinstance(factor, (int, float)) and factor < 1 else "collecting"
+            if tickers and pair["ticker"] not in tickers or statuses and state not in statuses:
+                continue
+            pairs.append(pair)
+            evidence = pair.get("authored_exit_evidence") or {}
+            reasons = evidence.get("reasons") or {}
+            recommendation = pair.get("recommendation") or {}
+            missing = int(reasons.get("missing_bars", 0))
+            late = int(reasons.get("late_entry_quote", 0))
+            pair_rows.append({
+                "ticker": pair["ticker"], "strategy_id": strategy["strategy_id"],
+                "strategy_name": strategy["display_name"], "version": strategy.get("version"),
+                **_totals([pair]), "status": state,
+                "distinct_plays": int(pair.get("setups") or 0),
+                "completed_tests": int(recommendation.get("completed_trades", pair.get("option_results") or 0)),
+                "independent_tests": int(recommendation.get("independent_trades") or 0),
+                "target_tests": 20,
+                "typical_profit": pair.get("median_one_contract_pnl"),
+                "active_tests": int(evidence.get("collecting") or 0),
+                "tracked_tests": int(evidence.get("tracked") or 0),
+                "missing_candles": missing, "late_entry_prices": late,
+                "missing_quotes": int(evidence.get("missing_quote") or 0),
+                "pending_quotes": int(evidence.get("pending_quote") or 0),
+                "target_2r_hits": int(reasons.get("underlying_2r_target", 0)) if evidence else None,
+                "health_available": bool(evidence),
+            })
         if not pairs:
             continue
         selected_pairs.extend(pairs)
@@ -79,7 +108,21 @@ def build_analytics(matrix: dict, *, tickers: set[str] | None = None, statuses: 
         "summary": {
             **summary,
             "completed_tests": summary["priced_tests"],
-            "active_tests": sum(1 for pair in selected_pairs if _status(pair, target) == "collecting"),
+            "active_tests": sum(row["active_tests"] for row in pair_rows),
+        },
+        "pairs": sorted(pair_rows, key=lambda row: (-(inf if row["profit_factor"] == "infinite" else float(row["profit_factor"]) if row["profit_factor"] is not None else -1), row["ticker"], row["strategy_id"])),
+        "pipeline": {
+            "raw_triggers": summary["total_triggers"],
+            "distinct_plays": sum(row["distinct_plays"] for row in pair_rows),
+            "priced_results": summary["priced_tests"],
+            "completed_tests": sum(row["completed_tests"] for row in pair_rows),
+        },
+        "data_quality": {
+            "tracked_tests": sum(row["tracked_tests"] for row in pair_rows),
+            "affected_tests": sum(row["missing_candles"] + row["late_entry_prices"] for row in pair_rows),
+            "affected_pct": round(100 * sum(row["missing_candles"] + row["late_entry_prices"] for row in pair_rows) / sum(row["tracked_tests"] for row in pair_rows), 1) if sum(row["tracked_tests"] for row in pair_rows) else None,
+            "covered_pairs": sum(row["health_available"] for row in pair_rows),
+            "total_pairs": len(pair_rows),
         },
         "strategies": sorted(strategy_rows, key=lambda row: (-((inf if row["profit_factor"] == "infinite" else row["profit_factor"]) or 0), -row["net_pnl"], row["strategy_name"])),
         "tickers": ranked,

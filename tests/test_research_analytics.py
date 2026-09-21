@@ -45,6 +45,44 @@ class ResearchAnalyticsTest(unittest.TestCase):
         self.assertEqual(result["result_counts"]["attention"], 1)
         self.assertEqual(len(result["available_strategies"]), 2)
 
+    def test_pair_progress_and_health_use_recorded_counts(self):
+        original = self.matrix["strategies"][0]["pairs"][0]
+        original.update({"recommendation": {"completed_trades": 3, "independent_trades": 2},
+                         "median_one_contract_pnl": 12.5,
+                         "authored_exit_evidence": {"tracked": 10, "collecting": 4,
+                             "missing_quote": 1, "pending_quote": 1,
+                             "reasons": {"missing_bars": 2, "late_entry_quote": 1,
+                                         "underlying_2r_target": 2}}})
+        result = build_analytics(self.matrix)
+        row = next(row for row in result["pairs"] if row["ticker"] == "META")
+        self.assertEqual(row["independent_tests"], 2)
+        self.assertEqual(row["target_tests"], 20)
+        self.assertEqual(row["typical_profit"], 12.5)
+        self.assertEqual(row["target_2r_hits"], 2)
+        self.assertEqual(result["summary"]["active_tests"], 4)
+        self.assertEqual(result["data_quality"]["affected_pct"], 30)
+        self.assertEqual(result["data_quality"]["covered_pairs"], 1)
+        self.assertEqual(result["pipeline"], {"raw_triggers": 12, "distinct_plays": 9,
+                                              "priced_results": 6, "completed_tests": 6})
+
+    def test_analytics_status_does_not_change_results_status(self):
+        pair_row = self.matrix["strategies"][0]["pairs"][0]
+        pair_row.update({"profit_factor": 1.2, "diagnosis": "price_data"})
+        result = build_analytics(self.matrix, statuses={"collecting"})
+        self.assertEqual([row["ticker"] for row in result["pairs"]], ["META"])
+        self.assertEqual(build_results_page(self.matrix, page=1, page_size=10)["result_counts"]["attention"], 2)
+
+    def test_unique_tickers_and_empty_unknown_health(self):
+        self.matrix["strategies"][1]["pairs"].append(pair("META", 1, 1, 5, 0, 5))
+        result = build_analytics(self.matrix)
+        self.assertEqual(len(result["tickers"]), 3)
+        self.assertEqual(result["tickers"][0]["net_pnl"], 65)
+        self.assertIsNone(result["data_quality"]["affected_pct"])
+        self.assertIsNone(result["pairs"][0]["target_2r_hits"])
+        empty = build_analytics(self.matrix, tickers={"NONE"})
+        self.assertEqual(empty["pairs"], [])
+        self.assertIsNone(empty["summary"]["profit_factor"])
+
 
 if __name__ == "__main__":
     unittest.main()
