@@ -48,8 +48,8 @@ class StrategyConsentPayload(BaseModel):
 def get_strategy_recommendations() -> dict:
     from config import get_settings
     from strategy_health.pair_recommendations import recommendations
-    from strategy_health.research_matrix import build_research_matrix
-    return recommendations(build_research_matrix(), get_settings())
+    from api.research_snapshot import research_snapshot
+    return recommendations(research_snapshot(), get_settings())
 
 
 @router.post("/strategies/recommendations/{strategy_id}/{ticker}")

@@ -136,8 +136,8 @@ def get_candidate_scorecard(days: int = 30) -> dict:
 @router.get("/research-matrix")
 def get_research_matrix(days: int = 90) -> dict:
     """Simple strategy-by-ticker results; this endpoint cannot place orders."""
-    from strategy_health.research_matrix import build_research_matrix
-    return build_research_matrix(days)
+    from api.research_snapshot import research_snapshot
+    return research_snapshot(days)
 
 
 @router.get("/paper-research/qqq-opening")
