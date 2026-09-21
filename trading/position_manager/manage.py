@@ -584,6 +584,13 @@ def _manage_open_position(
         )
         if _reviewed_exit is not None:
             should_exit, reason = _reviewed_exit
+            if not should_exit:
+                from trading.tsla_giveback_exit import evaluate_tsla_giveback
+                _giveback_exit = evaluate_tsla_giveback(
+                    trade, entry_time, now_et, quote,
+                )
+                if _giveback_exit is not None:
+                    should_exit, reason = _giveback_exit
         elif _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
             from trading.simplified_exit_live import evaluate_simplified_live_exit
             should_exit, reason = evaluate_simplified_live_exit(

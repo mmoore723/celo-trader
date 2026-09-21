@@ -66,13 +66,15 @@ def _close_position(
         "hard_stop", "initial_atr_stop", "structural_stop", "panic",
         "kill_lock", "daily_loss", "session_hard_cutoff",
     ))
+    from trading.tsla_giveback_exit import use_giveback_market_order
+    _giveback_market = use_giveback_market_order(trade, reason, paper)
     fill = alpaca.place_option_order(
         symbol          = trade["contract_symbol"],
         qty             = trade["contracts"],
         side            = "sell",
-        order_type      = "limit",
-        limit_price     = exit_price,
-        step_to_price   = bid_price,
+        order_type      = "market" if _giveback_market else "limit",
+        limit_price     = None if _giveback_market else exit_price,
+        step_to_price   = None if _giveback_market else bid_price,
         allow_market_fallback = _urgent_exit,
         position_intent = "sell_to_close",
         # The strategy has already selected bid or midpoint-then-bid from
