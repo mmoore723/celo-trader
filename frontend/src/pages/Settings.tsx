@@ -367,6 +367,7 @@ export function Settings() {
 
   function strategyControl(strategy: ReviewedStrategyCatalogEntry) {
     const switchEnabled = Boolean(form[strategy.setting_key]);
+    const tradingTickers = switchEnabled ? (strategy.trading_tickers ?? []) : [];
     const pf = strategy.backtest?.profit_factor;
     const pfLabel = typeof pf === "number" ? pf.toFixed(2) : (pf || "not recorded");
     const target = strategy.backtest?.target_profit_factor ?? 1.5;
@@ -390,8 +391,8 @@ export function Settings() {
           disabled={strategy.integrity_errors.length > 0}
       >
         <StrategyIdentity id={strategy.strategy_id} version={strategy.version}
-          tickers={strategy.observation_only ? [] : currentPairs.filter(pair => pair.tradable).map(pair => pair.ticker)}
-          label={strategy.observation_only ? "Research · All collected tickers" : currentPairs.some(pair => pair.tradable) ? "Trading on" : "No tickers enabled"} />
+          tickers={strategy.observation_only ? [] : tradingTickers}
+          label={strategy.observation_only ? "Research · All collected tickers" : tradingTickers.length ? "Trading on" : "No tickers enabled"} />
         {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
           strategyId={strategy.strategy_id} failed={closedTradesFailed} loading={closedTradesLoading} />}
         <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>

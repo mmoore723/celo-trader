@@ -23,7 +23,7 @@ class ReviewedPaidExecutionProfileTests(unittest.TestCase):
         self.assertTrue(uses_reviewed_paid_execution_profile("V2_TSLA_TWO_LEG_TREND_PULLBACK"))
         self.assertTrue(uses_reviewed_paid_execution_profile("V2_SPY_AFTERNOON_FVG"))
         self.assertTrue(uses_reviewed_paid_execution_profile("V2_FAILED_OR_BREAK_VWAP_REVERSION"))
-        self.assertFalse(uses_reviewed_paid_execution_profile("V2_TREND_CONT"))
+        self.assertTrue(uses_reviewed_paid_execution_profile("V2_TREND_CONT"))
         self.assertFalse(uses_reviewed_paid_execution_profile("V2_SPY_AFTERNOON_REVERSAL"))
         self.assertFalse(uses_reviewed_paid_execution_profile("MID_BRK"))
 

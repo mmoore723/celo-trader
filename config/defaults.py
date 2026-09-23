@@ -104,7 +104,8 @@ _DEFAULTS = {
     # before a reviewed rule can enter in either paper or live mode; this list
     # only prevents a browser from enabling an unrelated strategy by sending
     # an arbitrary ID.
-    "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION", "V2_TSLA_TWO_LEG_TREND_PULLBACK"],
+    "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION", "V2_TSLA_TWO_LEG_TREND_PULLBACK", "V2_TREND_CONT"],
+    "strategy_trend_cont_research_v1_enabled": False,
     "strategy_orb_pullback_v2_enabled": True,
     # Passed the separately held-back SPY option-quote data at the reviewed
     # 30-minute same-contract exit. Enable it for new accounts just as the

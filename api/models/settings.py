@@ -27,6 +27,7 @@ class Settings(BaseModel):
     # Only strategies promoted through real-quote backtesting are exposed.
     strategy_orb_pullback_v2_enabled: bool = True
     strategy_spy_trend_cont_v2_enabled: bool = True
+    strategy_trend_cont_research_v1_enabled: bool = False
     strategy_spy_afternoon_fvg_v2_enabled: bool = True
     strategy_spy_failed_range_recovery_v2_enabled: bool = True
     strategy_tsla_two_leg_trend_pullback_v2_enabled: bool = True

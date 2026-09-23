@@ -5,6 +5,12 @@ import {readFileSync} from "node:fs";
 const source = readFileSync(new URL('../src/pages/Settings.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
 
+test('Approved ticker badges come from the execution catalog without waiting for research refresh', () => {
+  assert.match(source, /strategy\.trading_tickers \?\? \[\]/);
+  assert.match(source, /tickers=\{strategy\.observation_only \? \[\] : tradingTickers\}/);
+  assert.match(source, /\["strategy-catalog"\]/);
+});
+
 test('Manual risk is visible and accepts the same 100-percent ceiling as the API', () => {
   assert.match(source, /Trade risk budget/);
   assert.match(source, /Automatic: \$\{form.risk_pct\}%/);

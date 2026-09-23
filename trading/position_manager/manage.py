@@ -127,6 +127,10 @@ def _evaluate_reviewed_strategy_exit(
     from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 
     strategy_id = str(trade.get("strategy_id") or "").strip().upper()
+    if strategy_id == "V2_TREND_CONT":
+        from trading.trend_continuation_research_exit import evaluate_exit
+
+        return evaluate_exit(trade, entry_time, now_et, one_minute_bars)
     if not uses_v2_orb_execution_profile(strategy_id):
         return None
     if strategy_id == "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG":

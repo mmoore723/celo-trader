@@ -54,9 +54,29 @@ class ReviewedStrategy:
     # Structural exits still need enough session left for their first
     # completed decision bar. Zero means there is no extra entry cutoff.
     minimum_session_minutes: int = 0
+    recommendation_tickers: frozenset[str] = frozenset()
+    authored_exit_order_route: bool = False
 
 
 REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
+    "V2_TREND_CONT": ReviewedStrategy(
+        strategy_id="V2_TREND_CONT",
+        display_name="Trend Continuation",
+        version="research.1",
+        tickers=frozenset(),
+        recommendation_tickers=frozenset({"SPY", "QQQ"}),
+        setting_key="strategy_trend_cont_research_v1_enabled",
+        signal_source="bar_close",
+        implementation="strategies.trend_continuation_research_v1.evaluate",
+        exit_minutes=None,
+        minimum_session_minutes=5,
+        paper_only=False,
+        status="paper_candidate",
+        evidence_grade="promising_underpowered",
+        evidence_artifact="config/strategy_evidence/v2_trend_cont-research.1.json",
+        evidence="Sequential research qualification passed for exact ticker pairs; the same execution route serves paper and live orders with explicit per-pair approval.",
+        authored_exit_order_route=True,
+    ),
     "V2_ORB_PULLBACK": ReviewedStrategy(
         strategy_id="V2_ORB_PULLBACK",
         display_name="TSLA Opening-Range Pullback",
@@ -332,11 +352,16 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
     rows = []
     for strategy_id, rule in REVIEWED_STRATEGIES.items():
         promotion = review_live_promotion(rule)
+        from config.strategy_ticker_recommendations import is_user_authorized_ticker
+        approved_tickers = sorted(ticker for ticker in rule.recommendation_tickers
+                                  if is_user_authorized_ticker(strategy_id, ticker, settings))
         rows.append({
             "strategy_id": rule.strategy_id,
             "display_name": rule.display_name,
             "version": rule.version,
-            "tickers": sorted(rule.tickers),
+            "tickers": sorted(rule.tickers | set(approved_tickers)),
+            "trading_tickers": sorted(ticker for ticker in (rule.tickers | set(approved_tickers))
+                                      if strategy_id in enabled_reviewed_strategy_ids(settings, ticker=ticker)),
             "setting_key": rule.setting_key,
             "signal_source": rule.signal_source,
             "implementation": rule.implementation,
@@ -445,6 +470,8 @@ def reviewed_exit_summary(strategy_id: object, *, verb: str = "exit") -> str:
     rule = REVIEWED_STRATEGIES.get(str(strategy_id or "").strip().upper())
     if rule is None:
         return "No reviewed exit policy is registered."
+    if rule.strategy_id == "V2_TREND_CONT":
+        return "Exit at the frozen underlying stop or 2R target after a completed 5-minute candle, with the tested 75-bar time cap and session close backstop."
     if verb == "measure":
         minutes = reviewed_research_exit_minutes(rule.strategy_id)
         return f"Hold the same selected contract for {minutes} minutes, then measure the executable bid."

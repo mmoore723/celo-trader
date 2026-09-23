@@ -38,7 +38,7 @@ class V2OrbPaperContractTests(unittest.TestCase):
         self.assertTrue(uses_v2_orb_execution_profile("V2_SPY_AFTERNOON_FVG"))
         self.assertTrue(uses_v2_orb_execution_profile("V2_TSLA_TWO_LEG_TREND_PULLBACK"))
         self.assertFalse(uses_v2_orb_execution_profile("MID_BRK"))
-        self.assertFalse(uses_v2_orb_execution_profile("V2_TREND_CONT"))
+        self.assertTrue(uses_v2_orb_execution_profile("V2_TREND_CONT"))
         self.assertFalse(uses_v2_orb_execution_profile(None))
 
     def test_selects_nearest_expiry_then_nearest_otm_contract(self) -> None:

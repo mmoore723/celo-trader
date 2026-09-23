@@ -1,0 +1,64 @@
+{
+  "strategy_id": "V2_TREND_CONT",
+  "strategy_version": "research.1",
+  "status": "paper_candidate",
+  "evidence_grade": "promising_underpowered",
+  "ticker_scope": [],
+  "recommendation_ticker_scope": [
+    "QQQ",
+    "SPY"
+  ],
+  "implementation": "strategies.trend_continuation_research_v1.evaluate",
+  "implementation_sha256_at_review": "cece88213a089cadfd42709e9257f4ddd02941d6011109944e1c3c504b4c5fcc",
+  "runtime_policy_sources": [
+    {
+      "path": "research/engine/strategies/trend_continuation.py",
+      "sha256": "0a8bcdcd0598511bfbf1e4195b48432277d43e5338703161cc0b36df0ddb38f5"
+    },
+    {
+      "path": "research/engine/simulator.py",
+      "sha256": "263a5051cd9707a0a886bec0cbefa8b13c9150defd69107cdb9b25c41f9d243c"
+    },
+    {
+      "path": "trading/tested_strategy_research.py",
+      "sha256": "073cb9dbcf94e6192fb654033f7caeaf91ce3c5256913820e7c24fd3bbe6886e"
+    },
+    {
+      "path": "trading/research_contract_selection.py",
+      "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+    },
+    {
+      "path": "strategy_health/trend_exit.py",
+      "sha256": "6e72a41b370077f6091ad70ee58e96a79c70ad98e26881be642f47bfaf52cfb5"
+    },
+    {
+      "path": "strategy_health/impulse_exit.py",
+      "sha256": "03477412226d5ceafb7233c1c3fe659349634a447cb5d684675fd9bb6448bd61"
+    },
+    {
+      "path": "trading/trend_continuation_research_exit.py",
+      "sha256": "49d10dea55feb083c1342105becdf35f463ee15d57ecb23f7f760039d69940a7"
+    },
+    {
+      "path": "trading/entry/tick.py",
+      "sha256": "3c9d5bbd8ac8d6ffa8223e3b6312f80c09dd606b42bb3afc6df705c5d0d5275a"
+    },
+    {
+      "path": "trading/position_manager/manage.py",
+      "sha256": "7400ada60e5b52e9cc946f31aa23a095f126db8e4a65f3e383b4d60a775b29af"
+    },
+    {
+      "path": "trading/entry/contract.py",
+      "sha256": "144c718f8328b22914252934950f9c2bfc1eacb9fac83ebcf4da9454b285d282"
+    }
+  ],
+  "evidence_summary": "The settings recommendation is generated separately for each ticker from 20 non-overlapping completed research tests. First 14 and latest 6 must each have PF at least 1.5, median after-cost P&L must be positive, and no winner may supply more than 35% of gains.",
+  "execution_scope": "shared_paper_and_live_route_per_pair_user_approval",
+  "source_reports": [
+    "strategy_health/pair_recommendations.py",
+    "tests/test_trend_exit_measurement.py",
+    "tests/test_trend_research_execution.py"
+  ],
+  "decision": "Execution parity route only. Each ticker still needs current completed-test qualification and explicit user consent. No profitability promotion is implied.",
+  "execution_session_close": "16:00 America/New_York for this exact SPY/QQQ research version; other strategies retain their existing cutoff"
+}

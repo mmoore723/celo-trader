@@ -1013,6 +1013,7 @@ export interface AppSettings {
                                        // can't be backtested (live "as-of-now" fetch), watch in signal-only first
   strategy_orb_pullback_v2_enabled?: boolean; // reviewed opening-range pullback strategy
   strategy_spy_trend_cont_v2_enabled?: boolean; // reviewed SPY paid-quote Trend Continuation strategy
+  strategy_trend_cont_research_v1_enabled?: boolean;
   strategy_spy_afternoon_fvg_v2_enabled?: boolean; // reviewed SPY paid-quote afternoon FVG strategy
   strategy_spy_failed_range_recovery_v2_enabled?: boolean; // reviewed SPY failed-range recovery
   strategy_tsla_two_leg_trend_pullback_v2_enabled?: boolean; // reviewed TSLA VWAP/EMA two-leg strategy
@@ -1067,6 +1068,7 @@ export interface ReviewedStrategyCatalogEntry {
   version: string;
   tickers: string[];
   setting_key: keyof AppSettings;
+  trading_tickers?: string[];
   signal_source: "bar_close" | "live_retouch" | "one_minute_state";
   implementation: string;
   exit_minutes: number | null;

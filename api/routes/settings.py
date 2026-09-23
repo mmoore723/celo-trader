@@ -49,7 +49,11 @@ def get_strategy_recommendations() -> dict:
     from config import get_settings
     from strategy_health.pair_recommendations import recommendations
     from api.research_snapshot import research_snapshot
-    return recommendations(research_snapshot(), get_settings())
+    from api.recommendation_snapshot import remember
+    matrix, settings = research_snapshot(), get_settings()
+    result = recommendations(matrix, settings)
+    remember(matrix, settings)
+    return result
 
 
 @router.post("/strategies/recommendations/{strategy_id}/{ticker}")
@@ -57,9 +61,10 @@ def set_strategy_recommendation_consent(strategy_id: str, ticker: str, payload: 
     from config import get_settings, save_settings
     if payload.fingerprint is not None:
         from strategy_health.pair_recommendations import decide
-        from strategy_health.research_matrix import build_research_matrix
+        from api.recommendation_snapshot import for_decision
         try:
-            updates = decide(build_research_matrix(), get_settings(), strategy_id, ticker,
+            settings = get_settings()
+            updates = decide(for_decision(settings), settings, strategy_id, ticker,
                              payload.decision, payload.fingerprint)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
@@ -114,6 +119,7 @@ def get_settings_endpoint() -> Settings:
         validated_strategy_ids=list(s.get("validated_strategy_ids", [])),
         strategy_orb_pullback_v2_enabled=bool(s.get("strategy_orb_pullback_v2_enabled", True)),
         strategy_spy_trend_cont_v2_enabled=bool(s.get("strategy_spy_trend_cont_v2_enabled", True)),
+        strategy_trend_cont_research_v1_enabled=bool(s.get("strategy_trend_cont_research_v1_enabled", False)),
         strategy_spy_afternoon_fvg_v2_enabled=bool(s.get("strategy_spy_afternoon_fvg_v2_enabled", True)),
         strategy_spy_failed_range_recovery_v2_enabled=bool(s.get("strategy_spy_failed_range_recovery_v2_enabled", True)),
         strategy_tsla_two_leg_trend_pullback_v2_enabled=bool(s.get("strategy_tsla_two_leg_trend_pullback_v2_enabled", True)),

@@ -220,6 +220,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     _state_path = get_bot_state_path()
 
     if not market_open:
+        if not collection_only and not _is_weekend and 16 * 60 <= _hm_local < 20 * 60:
+            from trading.trend_continuation_research_exit import uses_tested_session_close
+            for _session_trade in get_open_trades():
+                if uses_tested_session_close(_session_trade):
+                    _manage_open_position(alpaca, tradier, _session_trade,
+                                          float(_US.get("account_balance") or get_settings().get("last_known_balance", STARTING_CAPITAL)))
         # Broker/calendar truth is authoritative. Never turn a False into
         # True from wall-clock time: holidays and emergency closures occur
         # during ordinary weekday session hours.
@@ -392,9 +398,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     _now_minutes    = _et_now_cut.hour * 60 + _et_now_cut.minute
     if _now_minutes >= _cutoff_minutes and not collection_only:
         try:
+            from trading.trend_continuation_research_exit import uses_tested_session_close
+            _cutoff_trades = get_open_trades()
+            _tested_session_contracts = {
+                t.get("contract_symbol") for t in _cutoff_trades if uses_tested_session_close(t)
+            }
             # Cancel any pending/working orders first to avoid orphaned fills
             _pending = alpaca.get_open_orders() or []
             for _ord in _pending:
+                if _ord.get("symbol") in _tested_session_contracts and _ord.get("side") == "sell":
+                    continue
                 try:
                     alpaca.cancel_order(_ord.get("id", ""))
                     logger.info("session_cutoff_cancel_order id=%s", _ord.get("id"))
@@ -415,9 +428,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             # automatically — not from a stop, not from a time cap, not even
             # at end of day — leaving it open indefinitely until someone
             # manually clicked "Close" in the Trade Journal.
-            _cutoff_trades = get_open_trades()
             for _ct in _cutoff_trades:
                 try:
+                    if uses_tested_session_close(_ct):
+                        _manage_open_position(alpaca, tradier, _ct, balance)
+                        continue
                     _cq  = tradier.get_option_quote(_ct.get("contract_symbol", ""))
                     _cx  = _cq.get("mid", _ct.get("entry_price", 0)) if _cq else _ct.get("entry_price", 0)
                     _cbid = float(_cq.get("bid") or _cx) if _cq else None

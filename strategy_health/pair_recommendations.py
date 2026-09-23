@@ -33,6 +33,10 @@ def timestamp(value):
 
 
 def consent_scope(settings, sid, ticker):
+    from config.strategy_catalog import REVIEWED_STRATEGIES
+    rule = REVIEWED_STRATEGIES.get(sid)
+    if rule and rule.authored_exit_order_route:
+        return f"shared:{sid}:{ticker}"
     mode = "paper" if settings.get("paper_trading", True) else "live"
     return f"{mode}:{settings.get('active_broker_account_id') or ''}:{sid}:{ticker}"
 
@@ -131,11 +135,13 @@ def recommendations(matrix, settings):
             # Do not promise execution until a matching adapter is implemented.
             executable = bool(rule and not rule.observation_only and sid not in errors
                               and strategy['version'] == rule.version
-                              and not pair.get('research_contract_profile')
-                              and pair['ticker'] in rule.tickers and sid not in PROTOCOLS)
-            live = bool(executable and review_live_promotion(rule, pair["ticker"]).ready)
+                              and (not pair.get('research_contract_profile')
+                                   or (rule.authored_exit_order_route and pair.get('research_contract_profile') == 'research_contracts_v1'))
+                              and pair['ticker'] in (rule.tickers | rule.recommendation_tickers)
+                              and (sid not in PROTOCOLS or rule.authored_exit_order_route))
+            live = bool(executable and (rule.authored_exit_order_route or review_live_promotion(rule, pair["ticker"]).ready))
             switch_on = bool(rule and settings.get(rule.setting_key, False))
-            can_enable = executable and switch_on and (paper or live)
+            can_enable = executable and (switch_on or rule.authored_exit_order_route) and (paper or live)
             metrics = evidence["recent"] if kind == "review_active" else {**evidence["validation"], "option_results": evidence["independent_trades"]}
             result.append({
                 "strategy_id": sid, "ticker": pair["ticker"], "strategy_version": strategy["version"],
@@ -144,7 +150,7 @@ def recommendations(matrix, settings):
                 "profit_factor": metrics["profit_factor"], "completed_trades": metrics["option_results"],
                 "net_pnl": metrics["net_one_contract_pnl"],
                 "account_mode": "paper" if paper else "live", "can_enable": can_enable,
-                "blocker": None if can_enable else "Research passed; the matching order-entry and exit route still needs implementation and review." if not executable else "The strategy's trading switch is off. This recommendation will not switch on other tickers." if not switch_on else "Research passed; live execution review is still required.",
+                "blocker": None if can_enable else "Research passed; the matching order-entry and exit route still needs implementation and review." if not executable else "Turn on the strategy switch before adding this ticker." if not switch_on and not rule.authored_exit_order_route else "Research passed; live execution review is still required.",
             })
     return {"recommendations": result, "policy": POLICY, "evaluated_strategies": len(matrix["strategies"])}
 
@@ -168,6 +174,10 @@ def decide(matrix, settings, sid, ticker, decision, fingerprint):
         pauses[mode_key] = decision == "research_only"
         updates["strategy_pair_pauses"] = pauses
     if decision == "enable":
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        rule = REVIEWED_STRATEGIES[sid]
+        if rule.authored_exit_order_route:
+            updates[rule.setting_key] = True
         approvals = dict(settings.get("strategy_pair_approvals") or {})
         approvals[mode_key] = {"strategy_version": item["strategy_version"], "user_approved": True,
                                "strategy_id": sid, "ticker": ticker,

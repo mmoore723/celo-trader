@@ -61,6 +61,8 @@ def reviewed_contract_profile(
     """
     normalized = str(strategy_id or "").strip().upper()
     normalized_ticker = str(ticker or "").strip().upper()
+    if normalized == "V2_TREND_CONT":
+        return ReviewedContractProfile("research_contracts_v1", 0, 7, 1.50, 10.00, 0.08, "closest_otm_150_1000")
     if normalized == VWAP_DISPLACEMENT_STRATEGY_ID:
         return ReviewedContractProfile(
             selection_model="ctx_vwap_displacement_paid_target_150_250_v1",
@@ -323,6 +325,14 @@ def select_reviewed_v2_contract(
     mode so later promotion cannot silently change the selected contract.
     """
     ticker = ticker.strip().upper()
+    if str(strategy_id or "").strip().upper() == "V2_TREND_CONT":
+        from trading.research_contract_selection import select_research_contract
+        if ticker not in {"SPY", "QQQ"} or max_spend <= 0:
+            return None, {"reason": "invalid_selection_input"}
+        selected, detail = select_research_contract(tradier, ticker, direction, current_price, strategy_id)
+        if selected and float(selected["ask"]) * 100 > max_spend:
+            return None, {**detail, "reason": "over_budget", "cheapest_cost": float(selected["ask"]) * 100}
+        return selected, detail
     profile = reviewed_contract_profile(strategy_id, ticker)
     info: dict = {
         "reason": "no_chain_data",

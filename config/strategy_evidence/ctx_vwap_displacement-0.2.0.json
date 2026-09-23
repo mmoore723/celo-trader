@@ -4,13 +4,16 @@
   "strategy_version": "0.2.0",
   "status": "paper_candidate",
   "evidence_grade": "promising_underpowered",
-  "ticker_scope": ["AMZN", "TSLA"],
+  "ticker_scope": [
+    "AMZN",
+    "TSLA"
+  ],
   "implementation": "strategies.context_strategy_observers",
   "implementation_sha256_at_review": "9b4c36afa8f65ea5841f520fd9a18238802b77681f80ccc583ed5439f98327ff",
   "runtime_policy_sources": [
     {
       "path": "trading/entry/contract.py",
-      "sha256": "dad85869d9e598c0551bbd097079e4c25833ee592e6245ad114d9eddc0c923c5"
+      "sha256": "144c718f8328b22914252934950f9c2bfc1eacb9fac83ebcf4da9454b285d282"
     },
     {
       "path": "trading/vwap_displacement_exit.py",
@@ -48,8 +51,16 @@
     "missing_structure_safety_minutes": 90
   },
   "production_signal_replay": {
-    "TSLA": {"saved_signals": 5, "exact_matches": 5, "mismatches": 0},
-    "AMZN": {"saved_signals": 1, "exact_matches": 1, "mismatches": 0}
+    "TSLA": {
+      "saved_signals": 5,
+      "exact_matches": 5,
+      "mismatches": 0
+    },
+    "AMZN": {
+      "saved_signals": 1,
+      "exact_matches": 1,
+      "mismatches": 0
+    }
   },
   "fixed_90m_comparison": {
     "trades": 5,
@@ -59,13 +70,43 @@
     "warning": "The previously deployed fixed exit is below the 1.50 goal and was not the strategy's tested structural exit."
   },
   "historical_structural_exit_diagnostic": {
-    "all": {"trades": 6, "wins": 4, "net_pnl_one_contract": 227.2, "profit_factor": 7.2077},
-    "selection": {"trades": 4, "wins": 3, "net_pnl_one_contract": 183.8, "profit_factor": 9.2422},
-    "validation": {"trades": 1, "wins": 1, "net_pnl_one_contract": 57.7, "profit_factor": "no_losses"},
-    "later": {"trades": 1, "wins": 0, "net_pnl_one_contract": -14.3, "profit_factor": 0.0},
+    "all": {
+      "trades": 6,
+      "wins": 4,
+      "net_pnl_one_contract": 227.2,
+      "profit_factor": 7.2077
+    },
+    "selection": {
+      "trades": 4,
+      "wins": 3,
+      "net_pnl_one_contract": 183.8,
+      "profit_factor": 9.2422
+    },
+    "validation": {
+      "trades": 1,
+      "wins": 1,
+      "net_pnl_one_contract": 57.7,
+      "profit_factor": "no_losses"
+    },
+    "later": {
+      "trades": 1,
+      "wins": 0,
+      "net_pnl_one_contract": -14.3,
+      "profit_factor": 0
+    },
     "by_ticker": {
-      "TSLA": {"trades": 5, "wins": 3, "net_pnl_one_contract": 175.5, "profit_factor": 5.7951},
-      "AMZN": {"trades": 1, "wins": 1, "net_pnl_one_contract": 51.7, "profit_factor": "no_losses"}
+      "TSLA": {
+        "trades": 5,
+        "wins": 3,
+        "net_pnl_one_contract": 175.5,
+        "profit_factor": 5.7951
+      },
+      "AMZN": {
+        "trades": 1,
+        "wins": 1,
+        "net_pnl_one_contract": 51.7,
+        "profit_factor": "no_losses"
+      }
     },
     "warning": "Six outcomes are far too few to prove stable profitability. The latest chronological period contains one loss and no win."
   },

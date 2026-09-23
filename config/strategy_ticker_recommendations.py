@@ -224,6 +224,8 @@ def is_user_authorized_ticker(strategy_id: object, ticker: object, settings: dic
         return False
     grant = (settings.get("strategy_pair_approvals") or {}).get(key) or {}
     if grant.get("strategy_version") == rule.version and grant.get("user_approved") is True:
+        if rule.authored_exit_order_route:
+            return symbol in rule.recommendation_tickers and grant.get("strategy_id") == sid and grant.get("ticker") == symbol
         if mode == "paper":
             return not rule.observation_only
         from config.strategy_live_promotion import review_live_promotion
@@ -258,7 +260,7 @@ def is_live_enabled_pair(strategy_id: object, ticker: object, settings: dict) ->
         bool(settings.get("paper_trading", True))
         or not rule
         or sid in reviewed_strategy_integrity_errors()
-        or not review_live_promotion(rule, symbol).ready
+        or (not rule.authored_exit_order_route and not review_live_promotion(rule, symbol).ready)
     ):
         return False
     from strategy_health.pair_recommendations import consent_scope
@@ -267,6 +269,8 @@ def is_live_enabled_pair(strategy_id: object, ticker: object, settings: dict) ->
         return False
     grant = (settings.get("strategy_pair_approvals") or {}).get(scope) or {}
     if grant.get("strategy_version") == rule.version and grant.get("user_approved") is True:
+        if rule.authored_exit_order_route:
+            return symbol in rule.recommendation_tickers and grant.get("strategy_id") == sid and grant.get("ticker") == symbol
         return not rule.observation_only
     recommendation = published_recommendation(sid, symbol)
     return bool(
