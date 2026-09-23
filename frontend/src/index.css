@@ -120,6 +120,13 @@ html, body, #root {
 
 /* ── Stat chip ──────────────────────────────────────────────────────────── */
 .stat-positive { color: var(--positive); }
+
+.strategy-scope-trading { --scope-ink: #166534; --scope-bg: #dcfce7; --scope-edge: #15803d; }
+.strategy-scope-research { --scope-ink: #6b21a8; --scope-bg: #f3e8ff; --scope-edge: #9333ea; }
+.dark .strategy-scope-trading { --scope-ink: #86efac; --scope-bg: #143322; --scope-edge: #4ade80; }
+.dark .strategy-scope-research { --scope-ink: #d8b4fe; --scope-bg: #302040; --scope-edge: #c084fc; }
+.strategy-scope-badge { color: var(--scope-ink); background: var(--scope-bg); }
+.pair-evidence-row { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--scope-edge); }
 .stat-negative { color: var(--negative); }
 
 /* ── Mono numbers ───────────────────────────────────────────────────────── */

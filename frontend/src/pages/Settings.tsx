@@ -391,6 +391,7 @@ export function Settings() {
           disabled={strategy.integrity_errors.length > 0}
       >
         <StrategyIdentity id={strategy.strategy_id} version={strategy.version}
+          activity={tradingTickers.length ? "trading" : "research"}
           tickers={strategy.observation_only ? [] : tradingTickers}
           label={strategy.observation_only ? "Research · All collected tickers" : tradingTickers.length ? "Trading on" : "No tickers enabled"} />
         {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
@@ -405,7 +406,7 @@ export function Settings() {
         ) : <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
           <strong>{matrixStrategy?.exit_measurement?.pf_label ?? "Current PF"} {matrixStrategy?.current_evidence.profit_factor === "infinite" ? "∞" : typeof matrixStrategy?.current_evidence.profit_factor === "number" ? matrixStrategy.current_evidence.profit_factor.toFixed(2) : "—"}</strong> · {matrixStrategy?.current_evidence.option_results ?? 0} option results across all collected tickers
         </p>}
-        <PairEvidence strategy={matrixStrategy} />
+        <PairEvidence strategy={matrixStrategy} tradingTickers={tradingTickers} />
         <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
           <summary className="cursor-pointer">Test dates and proof</summary>
           <p className="mt-1">Goal PF {target.toFixed(1)}{!strategy.observation_only ? ` · ${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode} orders only on ${strategy.tickers.join(", ")}.` : ""}</p>

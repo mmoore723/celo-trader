@@ -45,8 +45,8 @@ export function TestedStrategies({
           {enabled ? <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>
             All tickers · Strategy-exit PF {factorText(evidence?.profit_factor)} · {evidence?.option_results ?? 0} completed tests
           </p> : <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>Paused</p>}
-          <StrategyIdentity id={strategy.strategy_id} version={matrixStrategy?.version} tickers={[]} label="Research · All collected tickers" />
-          <PairEvidence strategy={matrixStrategy} />
+          <StrategyIdentity id={strategy.strategy_id} version={matrixStrategy?.version} tickers={[]} label="Research · All collected tickers" activity="research" />
+          <PairEvidence strategy={matrixStrategy} tradingTickers={[]} />
         </StrategyToggleCard>;
       })}
   </div>;
