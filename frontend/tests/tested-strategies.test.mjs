@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ts from "typescript";
+import { resolveStrategyIdentity } from "./strategy-identity-loader.mjs";
 
 const source = readFileSync(new URL("../src/components/settings/TestedStrategies.tsx", import.meta.url), "utf8");
 const cardSource = readFileSync(new URL("../src/components/settings/StrategyToggleCard.tsx", import.meta.url), "utf8");
@@ -23,7 +24,7 @@ for (const name of ["react", "react/jsx-runtime", "@tanstack/react-query"]) {
 compiled = compiled.replace('"../../lib/api"', JSON.stringify(apiStub));
 compiled = compiled.replace('"./StrategyToggleCard"', JSON.stringify(cardStub));
 compiled = compiled.replace('"./PairEvidence"', JSON.stringify('data:text/javascript,export function PairEvidence(){return null}'));
-const { TestedStrategies } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+const { TestedStrategies } = await import(`data:text/javascript;base64,${Buffer.from(resolveStrategyIdentity(compiled)).toString("base64")}`);
 const fixture = {
   runtime_research: [],
   strategies: [{strategy_id: "OLD_VWAP", display_name: "VWAP pullback", tickers: ["TSLA"], reports: ["reports/test.json"], report_count: 1}],

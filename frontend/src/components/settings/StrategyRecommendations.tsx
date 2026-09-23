@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { StrategyTickerRecommendation } from "../../lib/api";
+import { strategyName } from "../../lib/strategyIdentity.js";
+import { StrategyIdentity } from "./StrategyIdentity";
 
 export type PairDecision = "enable" | "keep_off" | "research_only" | "keep_trading";
 const pf = (value: number | "infinite" | null) => value === "infinite" ? "No losses yet" : value == null ? "—" : value.toFixed(2);
@@ -11,8 +13,8 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function decide(item: StrategyTickerRecommendation, action: PairDecision) {
-    if (action === "enable" && !window.confirm(`Allow ${item.display_name} to place ${item.account_mode} orders on ${item.ticker}?`)) return;
-    if (action === "research_only" && !window.confirm(`Stop new ${item.account_mode} entries for ${item.display_name} on ${item.ticker}? Research and existing-position management continue.`)) return;
+    if (action === "enable" && !window.confirm(`Allow ${strategyName(item.display_name)} to place ${item.account_mode} orders on ${item.ticker}?`)) return;
+    if (action === "research_only" && !window.confirm(`Stop new ${item.account_mode} entries for ${strategyName(item.display_name)} on ${item.ticker}? Research and existing-position management continue.`)) return;
     setBusy(true); setError("");
     try { await onDecision(item, action); }
     catch (err) { setError(err instanceof Error ? err.message : "Could not save your choice. Try again."); }
@@ -30,11 +32,12 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
           : "Pairs appear here after passing the test checks. You decide whether to allow trading."}</p>
         {!rows.length && <p className="text-xs" style={{color: "var(--ink-muted)"}}>{review ? "No active pairs meet the review trigger." : "No new pairs have passed all checks yet."}</p>}
         {rows.map(item => <article key={`${item.strategy_id}:${item.ticker}`} className="rounded-lg border p-3 mt-2" style={{borderColor: "var(--border)"}}>
-          <strong className="text-sm">{item.ticker} · {item.display_name}</strong>
+          <strong className="text-sm">{strategyName(item.display_name)}</strong>
+          <StrategyIdentity id={item.strategy_id} version={item.strategy_version} tickers={[item.ticker]} label={review ? "Review ticker" : "Suggested ticker"} />
           <p className="text-xs mt-1" style={{color: review ? "var(--negative)" : "var(--positive)"}}>{review
             ? `Latest ${item.completed_trades} non-overlapping tests: PF ${pf(item.profit_factor)} · $${item.net_pnl.toFixed(2)} after costs`
             : `First 14 PF ${pf(item.evidence.training.profit_factor)} · Latest 6 PF ${pf(item.evidence.validation.profit_factor)}`}</p>
-          <p className="text-xs mt-1" style={{color: "var(--ink-muted)"}}>Research results—not broker fills. v{item.strategy_version}</p>
+          <p className="text-xs mt-1" style={{color: "var(--ink-muted)"}}>Research results, not broker fills.</p>
           {item.blocker && !review && <p className="text-xs mt-2" style={{color: "var(--warning)"}}>{item.blocker}</p>}
           <div className="flex flex-wrap gap-2 mt-3">
             {review ? <><button disabled={busy} className="btn btn-primary" onClick={() => decide(item, "research_only")}>Move to research only</button><button disabled={busy} className="btn btn-ghost" onClick={() => decide(item, "keep_trading")}>Keep trading</button></>

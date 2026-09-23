@@ -4,11 +4,12 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
+import { resolveStrategyIdentity } from "./strategy-identity-loader.mjs";
 
 const source = readFileSync(new URL("../src/components/research/ResearchAnalyticsView.tsx", import.meta.url), "utf8");
 let code = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext } }).outputText;
 for (const name of ["react/jsx-runtime", "react"]) code = code.replaceAll(JSON.stringify(name), JSON.stringify(import.meta.resolve(name)));
-const { ResearchAnalyticsView } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+const { ResearchAnalyticsView } = await import(`data:text/javascript;base64,${Buffer.from(resolveStrategyIdentity(code)).toString("base64")}`);
 const data = { summary: { profit_factor: null, win_rate_pct: null, net_pnl: 0, active_tests: 0 }, pipeline: { raw_triggers: 0, distinct_plays: 0, priced_results: 0, completed_tests: 0 }, data_quality: { tracked_tests: 0, affected_tests: 0, affected_pct: null, covered_pairs: 0, total_pairs: 0 }, pairs: [], tickers: [] };
 const render = value => renderToStaticMarkup(createElement(ResearchAnalyticsView, { data: value }));
 

@@ -4,10 +4,11 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
+import { resolveStrategyIdentity } from "./strategy-identity-loader.mjs";
 const source = readFileSync(new URL("../src/components/settings/StrategyRecommendations.tsx", import.meta.url), "utf8");
 let compiled = ts.transpileModule(source, {compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext}}).outputText;
 for (const name of ["react", "react/jsx-runtime"]) compiled = compiled.replaceAll(JSON.stringify(name), JSON.stringify(import.meta.resolve(name)));
-const {StrategyRecommendations} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+const {StrategyRecommendations} = await import(`data:text/javascript;base64,${Buffer.from(resolveStrategyIdentity(compiled)).toString("base64")}`);
 const render = recommendations => renderToStaticMarkup(createElement(StrategyRecommendations, {recommendations, onDecision: async () => {}}));
 const fixture = {strategy_id: "TEST", ticker: "META", strategy_version: "1", display_name: "VWAP", account_mode: "paper", fingerprint: "f", profit_factor: .7, completed_trades: 10, net_pnl: -30,
   evidence: {training: {profit_factor: 2}, validation: {profit_factor: 1.7}}};

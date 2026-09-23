@@ -15,6 +15,8 @@ import { PairEvidence } from "../components/settings/PairEvidence";
 import { ClosedTradeEvidence } from "../components/settings/ClosedTradeEvidence";
 import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
 import { StrategyExitNotice } from "../components/settings/StrategyExitNotice";
+import { StrategyIdentity } from "../components/settings/StrategyIdentity";
+import { strategyName } from "../lib/strategyIdentity.js";
 
 const DEFAULT: AppSettings = {
   broker_provider: "alpaca",
@@ -382,14 +384,14 @@ export function Settings() {
       <StrategyToggleCard
         key={strategy.strategy_id}
         separated={false}
-          label={`${strategy.display_name} · v${strategy.version}`}
+          label={strategyName(strategy.display_name)}
           checked={switchEnabled}
           onChange={(v) => set(strategy.setting_key, v)}
           disabled={strategy.integrity_errors.length > 0}
       >
-        {!strategy.observation_only && <p className="text-xs pb-1 -mt-1 font-semibold" style={{ color: "var(--positive)" }}>
-          Trading on · {currentPairs.filter(pair => pair.tradable).map(pair => pair.ticker).join(", ") || "None"}
-        </p>}
+        <StrategyIdentity id={strategy.strategy_id} version={strategy.version}
+          tickers={strategy.observation_only ? [] : currentPairs.filter(pair => pair.tradable).map(pair => pair.ticker)}
+          label={strategy.observation_only ? "Research · All collected tickers" : currentPairs.some(pair => pair.tradable) ? "Trading on" : "No tickers enabled"} />
         {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
           strategyId={strategy.strategy_id} failed={closedTradesFailed} loading={closedTradesLoading} />}
         <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>

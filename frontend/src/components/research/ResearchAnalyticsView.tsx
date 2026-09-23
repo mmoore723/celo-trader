@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { strategyName } from "../../lib/strategyIdentity.js";
 import type { ResearchAnalytics, ResearchAnalyticsRow, ResearchPairAnalytics } from "../../lib/api";
 
 const pfText = (value: ResearchAnalyticsRow["profit_factor"]) => value === "infinite" ? "No losses yet" : value == null ? "Not priced" : value.toFixed(2);
@@ -36,7 +37,7 @@ export function ResearchAnalyticsView({ data }: { data: ResearchAnalytics }) {
       <div className="flex flex-wrap justify-between items-center gap-3"><div><h2 className="font-semibold">Pair progress and performance</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>Sorted by strategy-exit PF. Progress counts non-overlapping completed tests toward 20. Typical profit is the median after costs.</p></div><label className="text-sm flex gap-2 items-center"><input type="checkbox" checked={minTen} onChange={event => { setMinTen(event.target.checked); setPage(1); }} />Minimum 10 priced tests</label></div>
       <div className="flex flex-wrap gap-4 text-xs mt-3">{Object.entries(labels).map(([status, label]) => <span key={status} style={{ color: color(status as ResearchPairAnalytics["status"]) }}>{label}: {status === "at_goal" ? "PF >= 1.5" : status === "needs_work" ? "PF < 1.0" : "PF 1.0 to <1.5 or not priced"}</span>)}</div>
       <div className="overflow-x-auto mt-4"><table className="table w-full text-sm"><thead><tr>{["Ticker / strategy", "Version", "Non-overlapping / target", "Completed / priced", "Win rate", "Strategy exit PF", "Typical profit", "After-cost P&L", "Data health / 2R"].map(label => <th key={label} className="text-left whitespace-nowrap">{label}</th>)}</tr></thead><tbody>{visible.map(row => <tr key={`${row.strategy_id}:${row.ticker}`}>
-        <td><strong>{row.ticker}</strong><span className="block text-xs">{row.strategy_name}</span><span className="text-xs" style={{ color: color(row.status) }}>{labels[row.status]}</span></td>
+        <td><strong>{row.ticker}</strong><span className="block text-xs">{strategyName(row.strategy_name)}</span><span className="text-xs" style={{ color: color(row.status) }}>{labels[row.status]}</span></td>
         <td className="text-xs whitespace-nowrap">{row.version || "Not recorded"}</td>
         <td className="min-w-40"><span>{row.independent_tests} / {row.target_tests}</span><progress className="block w-full h-2 mt-1" aria-label={`${row.ticker} ${row.strategy_name} test progress`} value={Math.min(row.independent_tests, row.target_tests)} max={row.target_tests} style={{ accentColor: color(row.status) }} /></td>
         <td>{row.completed_tests} / {row.priced_tests}</td>
