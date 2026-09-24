@@ -14,6 +14,7 @@ _build = Lock()
 TTL_SECONDS = 60
 BUILD_WAIT_SECONDS = 45
 DISPLAY_MAX_AGE_SECONDS = 300
+MAX_SNAPSHOTS = 6
 
 
 def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=False):
@@ -49,7 +50,7 @@ def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=Fa
         with _guard:
             _cache[key] = entry
             _cache.move_to_end(key)
-            while len(_cache) > 2:
+            while len(_cache) > MAX_SNAPSHOTS:
                 _cache.popitem(last=False)
         return entry
 

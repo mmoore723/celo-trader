@@ -55,7 +55,11 @@ class SnapshotTests(unittest.TestCase):
         with patch('config.get_settings', return_value={'paper_trading': False}):
             module.research_snapshot()
         self.assertEqual(self.build.call_count, 3)
-        self.assertEqual(len(module._cache), 2)
+        self.assertEqual(len(module._cache), 3)
+        for index in range(module.MAX_SNAPSHOTS):
+            with patch('auth.context.get_current_user_id', return_value=f'user-{index}'):
+                module.research_snapshot()
+        self.assertEqual(len(module._cache), module.MAX_SNAPSHOTS)
 
     def test_stuck_build_wait_is_bounded(self):
         module._build.acquire()

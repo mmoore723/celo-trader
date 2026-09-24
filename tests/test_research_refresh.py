@@ -17,7 +17,7 @@ class ResearchRefreshTests(unittest.TestCase):
         from api import research_snapshot as snapshots
         from auth.context import set_current_user
         snapshots._cache.clear()
-        users = [{'user_id': 'one', 'username': 'one', 'is_admin': False}]
+        users = [{'user_id': uid, 'username': uid, 'is_admin': False} for uid in ['one', 'two', 'three']]
         try:
             with patch.dict('sys.modules', {'auth.users': SimpleNamespace(list_users=lambda: users)}), \
                  patch('config.get_db_path', return_value=Path('/test/paper.db')), \
@@ -30,7 +30,8 @@ class ResearchRefreshTests(unittest.TestCase):
                 result = snapshots.research_snapshot(90, start_date='2026-06-27', end_date='2026-09-24', allow_stale=True)
                 self.assertEqual(result['strategies'], [])
                 self.assertFalse(result['snapshot']['refreshing'])
-                build.assert_called_once_with(90, start_date='2026-06-27', end_date='2026-09-24')
+                self.assertEqual(build.call_count, 3)
+                build.assert_called_with(90, start_date='2026-06-27', end_date='2026-09-24')
         finally:
             snapshots._cache.clear()
             set_current_user('system', 'system', False)
