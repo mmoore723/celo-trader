@@ -306,8 +306,9 @@ def _contract_policy_summaries(
 ) -> list[dict]:
     """Score each current research contract policy without mixing policies."""
     summaries: list[dict] = []
-    for (row_strategy, row_ticker, policy), raw_samples in grouped.items():
-        if row_strategy != strategy_id or row_ticker != ticker:
+    for policy in CONTRACT_POLICY_LABELS:
+        raw_samples = grouped.get((strategy_id, ticker, policy))
+        if not raw_samples:
             continue
         timely = [row for row in raw_samples if candidate_signal_is_timely(row)]
         current, _, _, _ = _current_rule_samples(timely, strategy_id, ticker)
@@ -630,7 +631,7 @@ def build_research_matrix(
         authored_exits = load_authored_exits(conn, account_id, cutoff)
         profit_tests = load_profit_tests(conn, account_id, cutoff)
         reference_tests = load_reference_tests(conn, account_id, cutoff)
-        expiration_studies = {row['candidate_id']: row for row in load_expiration_studies(conn, account=account_id, cutoff=cutoff)}
+        expiration_studies = {row['candidate_id']: row for row in load_expiration_studies(conn, account=account_id, cutoff=cutoff, summary_only=True)}
         rows = conn.execute(
             """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
                       s.direction,s.metadata_json,
@@ -656,7 +657,7 @@ def build_research_matrix(
         ).fetchall()
         alternative_rows = conn.execute(
             """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
-                      s.direction,s.metadata_json,a.contract_symbol,
+                      s.direction,a.contract_symbol,
                       MAX(CASE WHEN a.observation_kind='entry' THEN a.ask END) AS entry_ask,
                       MAX(CASE WHEN a.observation_kind='entry' THEN a.observed_at END) AS entry_quote_at,
                       MAX(CASE WHEN a.observation_kind='entry' THEN a.policy_json END) AS policy_json,
@@ -708,8 +709,10 @@ def build_research_matrix(
     grouped: dict[tuple[str, str], list] = defaultdict(list)
     for row in rows:
         grouped[(str(row["strategy_id"]).upper(), str(row["ticker"]).upper())].append(row)
+    metadata_by_candidate = {row['candidate_id']: row['metadata_json'] for row in rows}
     alternative_grouped: dict[tuple[str, str, str], list] = defaultdict(list)
     for row in alternative_rows:
+        row = dict(row, metadata_json=metadata_by_candidate[row['candidate_id']])
         try:
             policies = json.loads(str(row["policy_json"] or "[]"))
         except (TypeError, ValueError, json.JSONDecodeError):
@@ -725,6 +728,10 @@ def build_research_matrix(
                     normalized_policy,
                 )].append(row)
 
+    enabled_by_ticker = {
+        ticker: enabled_reviewed_strategy_ids(settings, ticker=ticker)
+        for ticker in tickers
+    }
     strategy_rows = []
     for strategy_id in strategy_ids:
         rule = REVIEWED_STRATEGIES.get(strategy_id)
@@ -737,7 +744,7 @@ def build_research_matrix(
         pairs = []
         strategy_current_results: list[tuple[str, float]] = []
         for ticker in sorted(tickers):
-            trading_enabled = strategy_id in enabled_reviewed_strategy_ids(settings, ticker=ticker)
+            trading_enabled = strategy_id in enabled_by_ticker[ticker]
             source_samples = grouped.get((strategy_id, ticker), [])
             # This page summarizes the all-setups research contract policy on
             # EVERY ticker. Native order previews belong to a separate cohort;

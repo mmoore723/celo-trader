@@ -47,15 +47,22 @@ def record(conn, *, account, candidate_id, selection):
     return bool(result.rowcount)
 
 
-def load(conn, *, account, active_only=False, cutoff=None):
+def load(conn, *, account, active_only=False, cutoff=None, summary_only=False):
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (TABLE,)).fetchone():
         return []
-    rows = conn.execute('''SELECT e.*,s.ticker FROM research_expiration_comparisons e
+    columns = ("e.candidate_id,s.ticker,json_remove(e.state_json,'$.meta') AS state_json,"
+               "json_object('reason',json_extract(e.selection_json,'$.reason')) AS selection_json"
+               if summary_only else 'e.*,s.ticker')
+    rows = conn.execute('SELECT ' + columns + ''' FROM research_expiration_comparisons e
         JOIN shadow_candidates s ON s.candidate_id=e.candidate_id
         WHERE e.profile_version=? AND COALESCE(s.broker_account_id,'')=?'''
         + (' AND e.active=1' if active_only else '')
         + (' AND s.observed_at>=?' if cutoff else '') + ' ORDER BY s.observed_at,s.candidate_id',
         (PROFILE, account or '') + ((cutoff,) if cutoff else ()))
+    if summary_only:
+        return [dict(candidate_id=row['candidate_id'], ticker=row['ticker'],
+                     state=json.loads(row['state_json']), selection=json.loads(row['selection_json']))
+                for row in rows]
     return [dict(row, state=json.loads(row['state_json']), selection=json.loads(row['selection_json'])) for row in rows]
 
 

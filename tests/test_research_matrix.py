@@ -4,6 +4,7 @@ import json
 import sqlite3
 import unittest
 from unittest.mock import patch
+from config.strategy_catalog import enabled_reviewed_strategy_ids
 from trading.tested_strategy_research import strategy_details
 
 from strategy_health.research_matrix import (
@@ -312,8 +313,13 @@ class ResearchMatrixTests(unittest.TestCase):
         conn.execute("ALTER TABLE candidate_option_quote_observations ADD COLUMN contract_symbol TEXT DEFAULT 'AAPL_TEST'")
         with patch("config.get_settings", return_value=settings), patch(
             "database.get_conn", side_effect=connection,
-        ), patch("database._now_et", return_value=datetime(2026, 9, 4, 12, 0)):
+        ), patch("database._now_et", return_value=datetime(2026, 9, 4, 12, 0)), patch(
+            'strategy_health.research_matrix.enabled_reviewed_strategy_ids',
+            wraps=enabled_reviewed_strategy_ids,
+        ) as enabled_lookup:
             matrix = build_research_matrix(90)
+        tickers = {pair['ticker'] for strategy in matrix['strategies'] for pair in strategy['pairs']}
+        self.assertEqual(enabled_lookup.call_count, len(tickers))
         row = next(item for item in matrix["strategies"] if item["strategy_id"] == "V2_SPY_AFTERNOON_FVG")
         self.assertEqual("2.1.0", row["version"])
         self.assertEqual(19, row["backtest"]["trades"])
