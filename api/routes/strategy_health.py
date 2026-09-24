@@ -17,9 +17,9 @@ router = APIRouter(prefix="/api/strategy-health", tags=["strategy-health"])
 logger = logging.getLogger("celo_trader.api.strategy_health")
 
 
-def _research_snapshot(days: int, start_date: str | None, end_date: str | None) -> dict:
+def _research_snapshot(days: int, start_date: str | None, end_date: str | None, *, allow_stale=False) -> dict:
     from api.research_snapshot import research_snapshot
-    return research_snapshot(days, start_date=start_date, end_date=end_date)
+    return research_snapshot(days, start_date=start_date, end_date=end_date, allow_stale=allow_stale)
 
 
 @router.get("/scorecard")
@@ -156,7 +156,7 @@ def get_research_results(
     from strategy_health.research_analytics import build_results_page
 
     try:
-        matrix = _research_snapshot(days, start_date, end_date)
+        matrix = _research_snapshot(days, start_date, end_date, allow_stale=True)
         return build_results_page(
             matrix, page=max(1, page), page_size=max(1, min(page_size, 60)),
             ticker=ticker, strategy_id=strategy_id, result_filter=result_filter,
@@ -173,7 +173,7 @@ def get_research_analytics(
     from strategy_health.research_analytics import build_analytics
 
     try:
-        matrix = _research_snapshot(days, start_date, end_date)
+        matrix = _research_snapshot(days, start_date, end_date, allow_stale=True)
         return build_analytics(
             matrix,
             tickers={item.strip().upper() for item in tickers.split(",") if item.strip()},

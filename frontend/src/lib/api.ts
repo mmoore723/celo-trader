@@ -291,6 +291,7 @@ export interface StrategyResearchMatrix {
   }[];
 }
 export interface ResearchResultsPage extends StrategyResearchMatrix {
+  snapshot?: { updated_at: number; refreshing: boolean };
   result_counts: Record<"results" | "no_option" | "no_setup" | "attention" | "passing" | "all", number>;
   pagination: { page: number; page_size: number; total: number; has_more: boolean };
   available_tickers: string[];
@@ -314,6 +315,7 @@ export interface ResearchPairAnalytics extends ResearchAnalyticsRow {
   target_2r_hits: number | null; health_available: boolean;
 }
 export interface ResearchAnalytics {
+  snapshot?: { updated_at: number; refreshing: boolean };
   start_date: string; end_date: string; target_profit_factor: number;
   summary: ResearchAnalyticsRow & { completed_tests: number; active_tests: number };
   strategies: ResearchStrategyAnalytics[]; tickers: ResearchTickerAnalytics[];
@@ -1412,18 +1414,18 @@ export const api = {
     ),
     candidateScorecard: (days = 30) => request<CandidateScorecard>(`/api/strategy-health/candidate-scorecard?days=${days}`),
     researchMatrix: (days = 90) => request<StrategyResearchMatrix>(`/api/strategy-health/research-matrix?days=${days}`),
-    researchResults: (opts: { startDate: string; endDate: string; page?: number; pageSize?: number; ticker?: string; strategyId?: string; filter?: string }) => {
+    researchResults: (opts: { startDate: string; endDate: string; page?: number; pageSize?: number; ticker?: string; strategyId?: string; filter?: string }, signal?: AbortSignal) => {
       const params = new URLSearchParams({ start_date: opts.startDate, end_date: opts.endDate, page: String(opts.page ?? 1), page_size: String(opts.pageSize ?? 24) });
       if (opts.ticker) params.set("ticker", opts.ticker);
       if (opts.strategyId && opts.strategyId !== "all") params.set("strategy_id", opts.strategyId);
       if (opts.filter) params.set("result_filter", opts.filter);
-      return request<ResearchResultsPage>(`/api/strategy-health/research-results?${params}`);
+      return request<ResearchResultsPage>(`/api/strategy-health/research-results?${params}`, { signal });
     },
-    researchAnalytics: (opts: { startDate: string; endDate: string; tickers?: string[]; statuses?: string[] }) => {
+    researchAnalytics: (opts: { startDate: string; endDate: string; tickers?: string[]; statuses?: string[] }, signal?: AbortSignal) => {
       const params = new URLSearchParams({ start_date: opts.startDate, end_date: opts.endDate });
       if (opts.tickers?.length) params.set("tickers", opts.tickers.join(","));
       if (opts.statuses?.length) params.set("statuses", opts.statuses.join(","));
-      return request<ResearchAnalytics>(`/api/strategy-health/research-analytics?${params}`);
+      return request<ResearchAnalytics>(`/api/strategy-health/research-analytics?${params}`, { signal });
     },
     qqqOpeningResearch: () => request<PaperResearchScorecard>("/api/strategy-health/paper-research/qqq-opening"),
     paidTslaV2Orb: () => request<PaidResearchEvidence>("/api/strategy-health/research/paid-tsla-v2-orb"),

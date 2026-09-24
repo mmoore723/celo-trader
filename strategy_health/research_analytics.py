@@ -102,6 +102,7 @@ def build_analytics(matrix: dict, *, tickers: set[str] | None = None, statuses: 
     ranked = sorted(ticker_rows, key=lambda row: (row["net_pnl"], row["win_rate_pct"] or -1), reverse=True)
     summary = _totals(selected_pairs)
     return {
+        "snapshot": matrix.get("snapshot"),
         "start_date": matrix.get("start_date"),
         "end_date": matrix.get("end_date"),
         "target_profit_factor": target,

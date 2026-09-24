@@ -107,6 +107,64 @@ class SnapshotTests(unittest.TestCase):
         module.research_snapshot(start_date='2026-09-15', end_date='2026-09-18')
         self.assertEqual(self.build.call_count, 2)
 
+    def test_display_returns_stale_without_waiting_and_keeps_request_context(self):
+        from auth.context import _user_id_var
+        module.research_snapshot()
+        key = next(iter(module._cache))
+        entry = module._cache[key]
+        module._cache[key] = (module.monotonic() - 61, entry[1], entry[2])
+        started, finish = Event(), Event()
+        users = []
+        def build(days):
+            users.append(_user_id_var.get())
+            started.set()
+            self.assertTrue(finish.wait(2))
+            return {'strategies': [1]}
+        self.build.side_effect = build
+        token = _user_id_var.set('captured-user')
+        try:
+            result = module.research_snapshot(allow_stale=True)
+            self.assertTrue(started.wait(2))
+            self.assertTrue(result['snapshot']['refreshing'])
+            self.assertEqual(result['strategies'], [])
+            self.assertEqual(module.research_snapshot(allow_stale=True)['strategies'], [])
+            self.assertEqual(self.build.call_count, 2)
+            self.assertEqual(users, ['captured-user'])
+        finally:
+            finish.set()
+            _user_id_var.reset(token)
+            self.assertTrue(module._build.acquire(timeout=2))
+            module._build.release()
+        result = module.research_snapshot(allow_stale=True)
+        self.assertFalse(result['snapshot']['refreshing'])
+        self.assertEqual(result['strategies'], [1])
+
+    def test_display_staleness_is_bounded(self):
+        module.research_snapshot()
+        key = next(iter(module._cache))
+        entry = module._cache[key]
+        module._cache[key] = (module.monotonic() - 301, entry[1], entry[2])
+        self.build.return_value = {'strategies': [2]}
+        result = module.research_snapshot(allow_stale=True)
+        self.assertEqual(result['strategies'], [2])
+        self.assertFalse(result['snapshot']['refreshing'])
+
+    def test_strict_caller_never_receives_stale_display_snapshot(self):
+        module.research_snapshot(allow_stale=True)
+        key = next(iter(module._cache))
+        entry = module._cache[key]
+        module._cache[key] = (module.monotonic() - 61, entry[1], entry[2])
+        self.build.return_value = {'strategies': [3]}
+        self.assertEqual(module.research_snapshot(), {'strategies': [3]})
+
+    def test_display_does_not_serve_another_user_snapshot(self):
+        module.research_snapshot(allow_stale=True)
+        self.build.return_value = {'strategies': ['other']}
+        with patch('auth.context.get_current_user_id', return_value='other'):
+            result = module.research_snapshot(allow_stale=True)
+        self.assertEqual(result['strategies'], ['other'])
+        self.assertEqual(self.build.call_count, 2)
+
 
 if __name__ == '__main__':
     unittest.main()

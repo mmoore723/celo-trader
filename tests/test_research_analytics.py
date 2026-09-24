@@ -38,6 +38,11 @@ class ResearchAnalyticsTest(unittest.TestCase):
         self.assertEqual(result["summary"]["priced_tests"], 3)
         self.assertEqual([row["ticker"] for row in result["tickers"]], ["META"])
 
+    def test_both_display_endpoints_preserve_snapshot_freshness(self):
+        self.matrix['snapshot'] = {'updated_at': 123, 'refreshing': True}
+        for result in (build_analytics(self.matrix), build_results_page(self.matrix, page=1, page_size=24)):
+            self.assertEqual(result['snapshot'], self.matrix['snapshot'])
+
     def test_results_are_paginated_after_server_filters(self):
         result = build_results_page(self.matrix, page=1, page_size=1, ticker="", result_filter="results")
         self.assertEqual(result["pagination"], {"page": 1, "page_size": 1, "total": 3, "has_more": True})
