@@ -19,7 +19,9 @@ def research_snapshot(days=90, *, start_date=None, end_date=None):
     from strategy_health.research_matrix import build_research_matrix
 
     days = max(1, min(int(days), 365))
-    settings_digest = sha256(json.dumps(get_settings(), sort_keys=True, default=str).encode()).hexdigest()
+    settings = dict(get_settings())
+    settings.pop("last_known_balance", None)
+    settings_digest = sha256(json.dumps(settings, sort_keys=True, default=str).encode()).hexdigest()
     key = (get_current_user_id(), str(get_db_path()), settings_digest, days, start_date, end_date)
 
     def cached():

@@ -133,7 +133,7 @@ export function ScannerOpportunities({ view = "decisions", embedded = false }: {
   const [analyticsStatuses, setAnalyticsStatuses] = useState<AnalyticsStatus[]>([]);
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedTicker(tickerSearch.trim().toUpperCase()), 300); return () => window.clearTimeout(timer); }, [tickerSearch]);
 
-  const { data, isLoading, error } = useQuery({ queryKey: ["scanner-opportunities", date], queryFn: () => api.signals.opportunities({ date, limit: 1000 }), refetchInterval: 15_000 });
+  const { data, isLoading, error } = useQuery({ queryKey: ["scanner-opportunities", date], queryFn: () => api.signals.opportunities({ date, limit: 1000 }), enabled: view === "decisions", refetchInterval: 15_000 });
   const resultsQuery = useInfiniteQuery({
     queryKey: ["strategy-research-results", startDate, endDate, selected, debouncedTicker, researchFilter],
     queryFn: ({ pageParam }) => api.strategyHealth.researchResults({ startDate, endDate, page: pageParam, pageSize: 24, ticker: debouncedTicker, strategyId: selected, filter: researchFilter }),

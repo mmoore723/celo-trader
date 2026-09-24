@@ -29,6 +29,25 @@ class SnapshotTests(unittest.TestCase):
         self.assertIs(module.research_snapshot(), module.research_snapshot())
         self.build.assert_called_once_with(90)
 
+    def test_balance_updates_do_not_rebuild_or_mutate_settings(self):
+        settings = {'paper_trading': True, 'last_known_balance': 3500}
+        with patch('config.get_settings', return_value=settings):
+            first = module.research_snapshot()
+            settings['last_known_balance'] = 3510
+            self.assertIs(module.research_snapshot(), first)
+        self.assertEqual(settings['last_known_balance'], 3510)
+        self.build.assert_called_once_with(90)
+
+    def test_account_and_approval_changes_still_rebuild(self):
+        settings = {'paper_trading': True, 'active_broker_account_id': 'one'}
+        with patch('config.get_settings', return_value=settings):
+            module.research_snapshot()
+            settings['active_broker_account_id'] = 'two'
+            module.research_snapshot()
+            settings['strategy_pair_approvals'] = {'SPY': {'user_approved': True}}
+            module.research_snapshot()
+        self.assertEqual(self.build.call_count, 3)
+
     def test_user_and_settings_isolation_and_bound(self):
         module.research_snapshot()
         with patch('auth.context.get_current_user_id', return_value='other'):
