@@ -24,9 +24,10 @@ const settingsSource = readFileSync(
   new URL("../src/pages/Settings.tsx", import.meta.url), "utf8",
 );
 
-test("promising research is green but remains distinct from working or enabled", () => {
-  assert.match(source, /promising: \{ label: "Looks promising", color: "var\(--positive\)" \}/);
-  assert.match(source, /working: \{ label: "Working", color: "var\(--positive\)" \}/);
+test("green research status requires qualification and remains separate from trading", () => {
+  assert.match(source, /pair\.recommendation\?\.qualified/);
+  assert.match(source, /label: "Research qualified", color: "var\(--positive\)"/);
+  assert.match(source, /label: "Not yet qualified", color: "var\(--warning\)"/);
   assert.match(source, /pair\.tradable \? "TRADING ON" : "TESTING"/);
 });
 
@@ -40,7 +41,8 @@ test("research results expose strategy-ticker contract policy evidence", () => {
 
 test("research results distinguish dated tests from the current strategy version", () => {
   assert.match(source, /Tests through/);
-  assert.match(source, /exitMeasurement\.pf_label/);
+  assert.match(source, /All-results PF/);
+  assert.match(source, /QualificationEvidence evidence=\{pair\.recommendation\}/);
   assert.match(source, /Real exit:/);
   assert.match(source, /Not measured yet/);
   assert.match(source, /No losses yet/);

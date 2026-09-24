@@ -8,6 +8,7 @@ import { AuthoredExitEvidence } from "../components/AuthoredExitEvidence";
 import { ExpirationStudy } from "../components/ExpirationStudy";
 import { ProfitProtectionComparison, ReferenceContractTest } from "../components/ProfitProtectionComparison";
 import { ResearchAnalyticsView } from "../components/research/ResearchAnalyticsView";
+import { QualificationEvidence } from "../components/research/QualificationEvidence";
 import { ResearchFilters, type AnalyticsStatus } from "../components/research/ResearchFilters";
 import { collapseOpportunityEpisodes, opportunityDecisionTitle, opportunityLifecycle, opportunityReason } from "../lib/opportunitySemantics.js";
 import { profitFactorText, researchActionLabel, researchPairVisible, researchProfitFactorText, sortResearchPairs } from "../lib/researchPairView.js";
@@ -38,25 +39,16 @@ function DecisionCard({ entry }: { entry: ScannerOpportunity }) {
   </article>;
 }
 
-const STATUS: Record<StrategyTickerResearchPair["status"], { label: string; color: string }> = {
-  working: { label: "Working", color: "var(--positive)" },
-  promising: { label: "Looks promising", color: "var(--positive)" },
-  losing_so_far: { label: "Losing so far", color: "var(--negative)" },
-  needs_tuning: { label: "Needs tuning", color: "var(--warning)" },
-  not_working: { label: "Not working", color: "var(--negative)" },
-  collecting: { label: "Collecting results", color: "var(--ink-muted)" },
-  no_setups: { label: "No setups yet", color: "var(--ink-muted)" },
-};
-
 type ExitMeasurement = StrategyResearchMatrix["strategies"][number]["exit_measurement"];
 
 function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasurement }: { pair: StrategyTickerResearchPair; strategyName: string; strategyVersion: string; backtest: { profit_factor?: number | "infinite" | "no fills"; trades?: number; scope?: string; historical_test_through?: string }; exitMeasurement: ExitMeasurement }) {
-  const status = STATUS[pair.status];
+  const status = pair.recommendation?.qualified
+    ? { label: "Research qualified", color: "var(--positive)" }
+    : { label: "Not yet qualified", color: "var(--warning)" };
   const resultState = pair.option_results > 0
     ? status.label
     : pair.setups > 0 ? "Setup found · no option matched"
       : pair.diagnosis === "entry_tuning" ? "Needs entry tuning" : "Building baseline";
-  const progress = Math.min(100, Math.round((pair.recommendation?.independent_trades ?? 0) / 20 * 100));
   const plan = pair.improvement_tests?.[0];
   const testedProfitFactor = backtest.profit_factor === "no fills" ? null : backtest.profit_factor ?? null;
   const extraPlans = pair.improvement_tests?.slice(1) ?? [];
@@ -71,13 +63,12 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
       </div>
       <div>
         <div className="grid grid-cols-4 gap-2 text-center">
-          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>{exitMeasurement.pf_label}</span><strong title={pair.profit_factor === "infinite" ? "There are wins but no gross losses yet, so a numeric PF cannot be calculated." : undefined}>{researchProfitFactorText(pair.profit_factor, pair.option_results)}</strong></div>
-          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Results</span><strong>{pair.option_results}</strong></div>
+          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>All-results PF</span><strong title={pair.profit_factor === "infinite" ? "There are wins but no gross losses yet, so a numeric PF cannot be calculated." : undefined}>{researchProfitFactorText(pair.profit_factor, pair.option_results)}</strong></div>
+          <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Priced tests</span><strong>{pair.option_results}</strong></div>
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>Wins</span><strong>{pair.win_rate_pct == null ? "—" : `${pair.win_rate_pct}%`}</strong></div>
           <div><span className="text-[11px] block" style={{ color: "var(--ink-muted)" }}>P&amp;L</span><strong style={{ color: pair.option_results === 0 ? "var(--ink-muted)" : pair.net_one_contract_pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>{pair.option_results === 0 ? "—" : money(pair.net_one_contract_pnl)}</strong></div>
         </div>
-        <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surface-sunken, var(--border))" }} aria-label={`${progress}% of minimum evidence collected`}><div className="h-full rounded-full" style={{ width: `${progress}%`, background: "linear-gradient(90deg, var(--accent), var(--positive))" }} /></div>
-        <p className="text-[11px] mt-1 text-right" style={{ color: "var(--ink-muted)" }}>{pair.recommendation?.independent_trades ?? 0}/20 non-overlapping tests · {pair.recommendation?.qualified ? "Passed checks" : "Still testing"}</p>
+        <QualificationEvidence evidence={pair.recommendation} />
       </div>
       <div className="rounded-lg px-3 py-2" style={{ background: "color-mix(in srgb, var(--accent) 7%, var(--surface-raised))", border: "1px solid color-mix(in srgb, var(--accent) 24%, var(--border))" }}>
         <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>Next experiment</span>
@@ -91,7 +82,7 @@ function ResearchRow({ pair, strategyName, strategyVersion, backtest, exitMeasur
     <details className="px-3 pb-3 text-xs">
       <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>Evidence and test plan</summary>
       {pair.expiration_study && <div className="mt-2"><ExpirationStudy study={pair.expiration_study} /></div>}
-      <p className="mt-2">{pair.recommendation?.reasons.join(" · ") || "Completed-trade checks passed."} Overlapping tests remain included in the research results, but do not add independent evidence.</p>
+      <p className="mt-2">Overlapping tests remain included in the research results, but do not add independent evidence.</p>
       <div className="grid gap-2 mt-3 sm:grid-cols-2 lg:grid-cols-4" style={{ color: "var(--ink-muted)" }}>
         <p><b>Research plays:</b> {pair.setups} across {pair.market_days} data days</p>
         <p><b>Usable option prices:</b> {pair.quote_coverage_pct == null ? "—" : `${pair.quote_coverage_pct}%`}</p>
