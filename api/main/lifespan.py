@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 _learning_stop = threading.Event()
+_research_stop = threading.Event()
 
 
 def _refresh_learning_curation_once() -> None:
@@ -164,12 +165,17 @@ async def _lifespan(app: FastAPI):
     _auto_start_bot_if_needed()
     _learning_stop.clear()
     threading.Thread(target=_learning_curation_worker, daemon=True, name="learning-curator").start()
+    from api.research_refresh import run as refresh_research
+    _research_stop.clear()
+    threading.Thread(target=refresh_research, args=(_research_stop,), daemon=True,
+                     name="research-refresh").start()
     try:
         yield
     finally:
         import logging
         from trading.state import request_graceful_shutdown
         _learning_stop.set()
+        _research_stop.set()
 
         still_running = request_graceful_shutdown(timeout=15.0)
         if still_running:
