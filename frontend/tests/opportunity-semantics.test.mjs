@@ -25,6 +25,13 @@ test("contract progress is distinguished from a completed entry", () => {
   assert.equal(lifecycleCopy({ outcome: "entered" }).badge, "ENTERED");
 });
 
+test("past entry cards show closed rather than implying an open position", () => {
+  assert.equal(lifecycleCopy({ lifecycle: "entered", trade: { status: "CLOSED" } }).badge, "CLOSED");
+  assert.equal(lifecycleCopy({ lifecycle: "entered", trade: { exit_time: "2026-10-12T14:30:00" } }).badge, "CLOSED");
+  assert.equal(lifecycleCopy({ lifecycle: "entered", trade: { status: "OPEN" } }).badge, "OPEN");
+  assert.equal(lifecycleCopy({ lifecycle: "entered" }).title, "Past Entry");
+});
+
 test("live preview collapses repeated detections from one episode", () => {
   const rows = [
     { id: "3", episode_id: "episode-b", outcome: "pending", plan_status: "contract_selected" },

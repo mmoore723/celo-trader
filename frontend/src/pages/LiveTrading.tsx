@@ -8,7 +8,8 @@ import { Link } from "react-router-dom";
 import { ChevronDown, Newspaper, RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
-import { api, type Trade, type ChartAnnotation, type NewsArticle } from "../lib/api";
+import { api, type Trade, type ChartAnnotation, type NewsArticle, type ScannerOpportunity } from "../lib/api";
+import { setupDrawings } from "../lib/setupDrawings";
 import { dedupeLatestEpisodes, lifecycleCopy, opportunityLifecycle } from "../lib/opportunitySemantics.js";
 import { openingRangeForBars } from "../lib/chartSession.js";
 import { newYorkDateKey } from "../lib/marketSession.js";
@@ -133,10 +134,9 @@ export function LiveTrading() {
   const [tf,              setTf]              = useState("1Min");
   const [period,          setPeriod]          = useState<Period>("1D");
   const [showVwap,        setShowVwap]        = useState(true);
-  const [showVwapBands,   setShowVwapBands]   = useState(true);
   const [showOR,          setShowOR]          = useState(true);
   const [showSwings,      setShowSwings]      = useState(false);
-  const [showPositionCard,setShowPositionCard]= useState(true);
+  const [selectedSetup, setSelectedSetup] = useState<ScannerOpportunity | undefined>();
   const [drawingEnabled,  setDrawingEnabled]  = useState(false);
   const [clearDrawingsToken, setClearDrawingsToken] = useState(0);
   // Board is the current per-ticker view (trading/watching/blocked).
@@ -337,14 +337,15 @@ export function LiveTrading() {
   );
   const openTickerTrade   = tickerTrades.find((t: Trade) => !t.exit_time);
   const displayedTrade    = optionChart.selected ?? openTickerTrade;
-  const positionLevels    = displayedTrade ? {
-    entry:     displayedTrade.entry_price  ?? undefined,
-    stop:      displayedTrade.stop_price   ?? undefined,
-    target:    displayedTrade.target_price ?? undefined,
-    trail:     (displayedTrade as any).trail_price ?? undefined,
-    direction: (displayedTrade.direction === "short" ? "short" : "long") as "long" | "short",
-    contracts: displayedTrade.contracts    ?? undefined,
-  } : undefined;
+  const chartSetup = selectedSetup?.ticker === ticker
+    ? (scannerOpportunityPreview.find(row => row.id === selectedSetup.id) ?? selectedSetup)
+    : scannerOpportunityPreview.find(row => row.ticker === ticker);
+  const setupLevels = setupDrawings(chartSetup);
+  const setupTrade = chartSetup?.trade?.id != null
+    ? tickerTrades.find(row => row.id === chartSetup.trade!.id) : undefined;
+  const chartAnnotations = chartSetup
+    ? [...(setupTrade?.annotations ?? []), ...setupLevels]
+    : [...annotations, ...(displayedTrade?.annotations ?? [])];
 
   // A selected position is a focused teaching view: show exactly 20 complete
   // one-minute stock candles before its buy minute through 20 after its close.
@@ -644,10 +645,8 @@ export function LiveTrading() {
             <div className="flex gap-1 ml-1 border-l pl-3" style={{ borderColor: "var(--border)" }}>
               {([
                 ["VWAP",   showVwap,        setShowVwap],
-                ["Bands",  showVwapBands,   setShowVwapBands],
                 ["OR",     showOR,          setShowOR],
                 ["Structure", showSwings,   setShowSwings],
-                ["Pos",    showPositionCard,setShowPositionCard],
               ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
                 <button key={label}
                   className={`btn btn-sm ${val ? "btn-primary" : "btn-ghost"}`}
@@ -684,24 +683,30 @@ export function LiveTrading() {
               Native lightweight-charts pan/zoom/timeframe switching (no
               custom wheel/resize workarounds), real shaded zones, and the
               "Watch this setup" boomerang jump-to-time with narration. */}
+          {chartSetup && <div className="px-3 py-2 text-xs border-t">
+            <b>Recorded setup: {chartSetup.ticker} · {chartSetup.strategy_id.replace(/^V2_/, "").replaceAll("_", " ")}</b>
+            <p>{chartSetup.entry_plan?.trigger || chartSetup.reason_detail || "Recorded setup evidence"}</p>
+            <p>{setupLevels.length ? "Lines show the price levels saved when this setup was evaluated. Click a setup card to change drawings." : "No price levels were saved for this setup. No pattern or resistance levels have been invented."}</p>
+            {setupLevels.filter(row => row.type === "hline").map(row => <span key={row.id} className="inline-block mr-3">{row.label}: ${row.price!.toFixed(2)}</span>)}
+          </div>}
           <BoomerangReplay
             ref={chartReplayRef}
             mode="live"
             resetKey={`${ticker}|${tf}|${effectivePeriod}`}
             bars={chartBars}
-            trades={optionChart.selected ? [optionChart.selected] : tickerTrades}
+            trades={chartSetup ? (setupTrade ? [setupTrade] : []) : optionChart.selected ? [optionChart.selected] : tickerTrades}
             showVwap={showVwap}
-            showVwapBands={showVwapBands}
+            showVwapBands={false}
             showOR={showOR}
             showSwings={showSwings}
             drawingEnabled={drawingEnabled}
             clearDrawingsToken={clearDrawingsToken}
-            showPositionCard={showPositionCard}
+            showPositionCard={false}
             showRsi
             showMacd
             orHigh={safeOrHigh}
             orLow={safeOrLow}
-            positionLevels={positionLevels}
+            positionLevels={undefined}
             currentOptionPrice={
               displayedTrade
                 ? (displayedTrade.exit_price
@@ -711,7 +716,7 @@ export function LiveTrading() {
             }
             ticker={ticker}
             height={500}
-            annotations={annotations}
+            annotations={chartAnnotations}
             narrationEvents={narrationEvents}
           />
           </div>}
@@ -727,8 +732,8 @@ export function LiveTrading() {
                style={{ borderColor: "var(--border)" }}>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider"
-                    style={{ color: "var(--ink-muted)" }}>Next trade</span>
-              <p className="text-[10px] text-ink-faint">Setups that advanced far enough to act on or review.</p>
+                    style={{ color: "var(--ink-muted)" }}>Setups and recent trades</span>
+              <p className="text-[10px] text-ink-faint">Past entries are not open positions. Click a card to see its recorded chart levels.</p>
             </div>
             <Link to="/journal?tab=decisions" className="text-[10px] font-medium" style={{ color: "var(--accent)" }}>Open Journal → Bot Decisions</Link>
           </div>
@@ -742,14 +747,15 @@ export function LiveTrading() {
             ) : (
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{scannerOpportunityPreview.map((opportunity: any) => {
                 const lifecycle = opportunityLifecycle(opportunity);
-                const lifecycleText = lifecycleCopy(opportunity);
+                const linked = todayTradesRaw.find((row: Trade) => row.id === opportunity.trade?.id);
+                const lifecycleText = lifecycleCopy(linked ? { ...opportunity, trade: linked } : opportunity);
                 const isEntered = lifecycle === "entered";
                 // Scanner candidates use the same "bullish" / "bearish"
                 // vocabulary as the entry router.  Do not silently call a
                 // bullish setup a put because a different page uses long/short.
                 const isBullish = ["bullish", "long"].includes((opportunity.direction ?? "").toLowerCase());
                 const contract = opportunity.contract ?? {};
-                const trade = opportunity.trade ?? {};
+                const trade = linked ?? opportunity.trade ?? {};
                 const optionType = contract.option_type ?? trade.option_type ?? (isBullish ? "call" : "put");
                 const strike = contract.strike ?? trade.strike;
                 const expiry = contract.expiry ?? trade.expiry;
@@ -775,7 +781,7 @@ export function LiveTrading() {
                       background: "var(--surface)", padding: "10px 11px", boxShadow: "var(--shadow-sm)",
                     }}
                     title={`Open ${opportunity.ticker} on the chart`}
-                    onClick={() => setTicker(opportunity.ticker)}>
+                    onClick={() => { setSelectedSetup(opportunity); setTicker(opportunity.ticker); setChartExpanded(true); optionChart.setView("stock"); setTf("1Min"); setPeriod("1D"); stockChartWasOpened.current = true; }}>
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div>
                         <div className="text-[11px] font-bold" style={{ color: accent }}>
@@ -794,6 +800,7 @@ export function LiveTrading() {
                     </div>
                     <div className="text-[10px] leading-relaxed" style={{ color: "var(--ink)" }}>
                       <div><b>Symbol:</b> {opportunity.ticker} &nbsp; <b>Strategy:</b> {strategyName}</div>
+                      {lifecycleText.badge === "CLOSED" && <div><b>Closed P&amp;L:</b> <PnlBadge value={trade.pnl ?? undefined} />{trade.exit_reason && <span> · Exit: {trade.exit_reason === "research_missing_bars" ? "required market candles were missing" : trade.exit_reason}</span>}</div>}
                       <div><b>Position:</b> {String(optionType).toUpperCase()}{strike != null ? ` $${Number(strike).toFixed(0)}` : ""}</div>
                       {expiry && <div><b>Expiration:</b> {fmtExp(expiry)}</div>}
                       {(quantity != null || estimatedEntry != null) && (

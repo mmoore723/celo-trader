@@ -15,12 +15,16 @@ export function isOperationalOpportunity(entry) {
 
 export function lifecycleCopy(entry) {
   const lifecycle = opportunityLifecycle(entry);
+  if (lifecycle === "entered" && (entry?.trade?.exit_time || String(entry?.trade?.status).toLowerCase() === "closed"))
+    return { title: "Trade Closed", badge: "CLOSED", detail: "This is a past entry. The position has closed." };
+  if (lifecycle === "entered" && String(entry?.trade?.status).toLowerCase() === "open")
+    return { title: "Open Position", badge: "OPEN", detail: "The linked trade is still open." };
   const copies = {
     watching: { title: "Setup Developing", badge: "WATCHING", detail: "The chart pattern is not complete yet." },
     pricing: { title: "Checking Contract", badge: "PRICING", detail: "The setup reached option liquidity and affordability checks." },
     ready: { title: "Trade Ready", badge: "READY", detail: "A contract was selected; the bot is waiting for the recorded entry trigger." },
     stopped: { title: "Setup Stopped", badge: "STOPPED", detail: "A recorded rule prevented this setup from entering." },
-    entered: { title: "New Trade Idea", badge: "ENTERED", detail: "The bot entered and linked the actual trade record." },
+    entered: { title: "Past Entry", badge: "ENTERED", detail: "An entry was recorded. This does not mean the position is still open." },
     research: { title: "Research Observation", badge: "RESEARCH", detail: "This observation was never authorized to place an order." },
   };
   return copies[lifecycle] ?? copies.watching;

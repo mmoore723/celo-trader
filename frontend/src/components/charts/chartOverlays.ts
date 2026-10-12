@@ -291,7 +291,11 @@ export class OverlayManager {
     // ── Bot annotations (hline / zone) ───────────────────────────────────────
     for (const ann of input.annotations) {
       if (ann.type === "hline" && ann.price != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: ann.price, color: ann.color, lineWidth: 1, lineStyle: LineStyle.Dashed, title: ann.label }) });
-      else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) zoneSpecs.push({ id: `ann_${ann.id}`, fromTime: firstT, toTime: lastT, low: ann.price_low, high: ann.price_high, color: ann.color + "22" });
+      else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) {
+        const start = toEpochTime(ann.ts);
+        if (Number.isFinite(Number(start)) && Number(start) <= Number(lastT))
+          zoneSpecs.push({ id: `ann_${ann.id}`, fromTime: Math.max(Number(firstT), Number(start)) as Time, toTime: lastT, low: ann.price_low, high: ann.price_high, color: ann.color + "22" });
+      }
     }
 
     this.zoneMgr.sync(zoneSpecs);
