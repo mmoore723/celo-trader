@@ -10,6 +10,7 @@ import { BoomerangReplay, type BoomerangReplayHandle } from "../components/chart
 import { useBotStore } from "../store/bot";
 import { api, type Trade, type ChartAnnotation, type NewsArticle, type ScannerOpportunity } from "../lib/api";
 import { setupDrawings } from "../lib/setupDrawings";
+import { stockPositionDrawings } from "../lib/stockPositionDrawings";
 import { dedupeLatestEpisodes, lifecycleCopy, opportunityLifecycle } from "../lib/opportunitySemantics.js";
 import { openingRangeForBars } from "../lib/chartSession.js";
 import { newYorkDateKey } from "../lib/marketSession.js";
@@ -337,26 +338,39 @@ export function LiveTrading() {
   );
   const openTickerTrade   = tickerTrades.find((t: Trade) => !t.exit_time);
   const displayedTrade    = optionChart.selected ?? openTickerTrade;
+  const { data: selectedTradeSetups } = useQuery({
+    queryKey: ["stock-position-setup", displayedTrade?.mode, displayedTrade?.id, ticker],
+    queryFn: () => api.signals.opportunities({ feed: "operational", ticker,
+      date: displayedTrade?.entry_time?.slice(0, 10), outcome: "entered", limit: 100 }),
+    enabled: chartExpanded && optionChart.view === "stock" && !!displayedTrade,
+    staleTime: 60_000, retry: false,
+  });
+  const matchedTradeSetup = (selectedTradeSetups?.entries ?? scannerOpportunityData?.entries ?? [])
+    .find(row => row.ticker === ticker && row.trade?.id === displayedTrade?.id);
   const chartSetup = selectedSetup?.ticker === ticker
     ? (scannerOpportunityPreview.find(row => row.id === selectedSetup.id) ?? selectedSetup)
-    : scannerOpportunityPreview.find(row => row.ticker === ticker);
+    : matchedTradeSetup
+      ?? scannerOpportunityPreview.find(row => row.ticker === ticker);
   const setupLevels = setupDrawings(chartSetup);
   const setupTrade = chartSetup?.trade?.id != null
     ? tickerTrades.find(row => row.id === chartSetup.trade!.id) : undefined;
-  const chartAnnotations = chartSetup
+  const stockPositionLevels = stockPositionDrawings(displayedTrade, matchedTradeSetup);
+  const chartAnnotations = [...(chartSetup
     ? [...(setupTrade?.annotations ?? []), ...setupLevels]
-    : [...annotations, ...(displayedTrade?.annotations ?? [])];
+    : [...annotations, ...(displayedTrade?.annotations ?? [])]), ...stockPositionLevels];
 
   // A selected position is a focused teaching view: show exactly 20 complete
   // one-minute stock candles before its buy minute through 20 after its close.
   useEffect(() => {
     const selected = optionChart.selected;
-    if (optionChart.view !== "stock" || tf !== "1Min" || !selected?.entry_time || chartBars.length === 0) return;
+    if (optionChart.view !== "stock" || tf !== "1Min" || !selected?.entry_time || chartBars.length === 0 || !chartReplayRef.current) return;
+    const entry = Date.parse(selected.entry_time);
+    if (entry < Date.parse(chartBars[0].time) || entry > Date.parse(chartBars.at(-1)!.time) + 60_000) return;
     const key = `${selected.mode}:${selected.id}:${selected.entry_time}:${selected.exit_time ?? "open"}`;
     if (lastFramedPosition.current === key) return;
     lastFramedPosition.current = key;
     chartReplayRef.current?.showTradeWindow(selected.entry_time, selected.exit_time);
-  }, [optionChart.selected, optionChart.view, tf, chartBars.length]);
+  }, [optionChart.selected, optionChart.view, tf, chartBars]);
 
   // Narration for the boomerang replay's caption strip — reuses the same
   // trade-events endpoint the trade drawer already uses, scoped to whichever
@@ -688,6 +702,10 @@ export function LiveTrading() {
             <p>{chartSetup.entry_plan?.trigger || chartSetup.reason_detail || "Recorded setup evidence"}</p>
             <p>{setupLevels.length ? "Lines show the price levels saved when this setup was evaluated. Click a setup card to change drawings." : "No price levels were saved for this setup. No pattern or resistance levels have been invented."}</p>
             {setupLevels.filter(row => row.type === "hline").map(row => <span key={row.id} className="inline-block mr-3">{row.label}: ${row.price!.toFixed(2)}</span>)}
+          </div>}
+          {displayedTrade && <div className="px-3 py-2 text-xs text-ink-muted">
+            Stock-price risk/reward references for trade #{displayedTrade.id}. Option premium paid: ${displayedTrade.entry_price.toFixed(2)} x 100 x {displayedTrade.contracts} contracts.
+            {stockPositionLevels.filter(row => row.type === "zone").length < 2 ? " Some stock entry/stop/target levels were not recorded; missing boxes are not invented." : " Stock moves are not option-dollar P&L."}
           </div>}
           <BoomerangReplay
             ref={chartReplayRef}

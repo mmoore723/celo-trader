@@ -39,7 +39,7 @@ export function OptionPositionView({ data }: { data: OptionChartData }) {
 export function OptionPositionChart({ trade }: { trade: Trade }) {
   const { user } = useAuth();
   const mode = trade.mode === "live" ? "live" : "paper";
-  const [interval, setInterval] = useState<"daily" | "1min">("daily");
+  const [interval, setInterval] = useState<"daily" | "1min">("1min");
   const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["option-chart", user?.user_id ?? user?.email, mode, trade.id, interval, trade.exit_time, trade.status, trade.contracts],
     queryFn: () => api.trades.optionChart(trade.id, mode, interval),

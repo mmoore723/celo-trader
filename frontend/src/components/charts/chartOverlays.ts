@@ -293,8 +293,11 @@ export class OverlayManager {
       if (ann.type === "hline" && ann.price != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: ann.price, color: ann.color, lineWidth: 1, lineStyle: LineStyle.Dashed, title: ann.label }) });
       else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) {
         const start = toEpochTime(ann.ts);
-        if (Number.isFinite(Number(start)) && Number(start) <= Number(lastT))
-          zoneSpecs.push({ id: `ann_${ann.id}`, fromTime: Math.max(Number(firstT), Number(start)) as Time, toTime: lastT, low: ann.price_low, high: ann.price_high, color: ann.color + "22" });
+        const finish = ann.end_ts ? toEpochTime(ann.end_ts) : lastT;
+        const from = Math.max(Number(firstT), Number(start));
+        const to = Math.min(Number(lastT), Number(finish));
+        if (Number.isFinite(from) && Number.isFinite(to) && to > from)
+          zoneSpecs.push({ id: `ann_${ann.id}`, fromTime: from as Time, toTime: to as Time, low: ann.price_low, high: ann.price_high, color: ann.color + "22" });
       }
     }
 

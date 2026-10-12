@@ -1190,6 +1190,7 @@ export interface ChartAnnotation {
   price?: number;           // hline + marker
   price_low?: number;       // zone bottom
   price_high?: number;      // zone top
+  end_ts?: string;          // bounded trade overlay ends at the recorded exit
 }
 
 export interface PerformanceStats {

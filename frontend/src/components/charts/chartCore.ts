@@ -131,15 +131,19 @@ export function useChartCore(
     chart.timeScale().subscribeVisibleTimeRangeChange(syncHandler);
 
     let disposed = false;
+    let previousWidth = mainEl.current.clientWidth;
     const ro = new ResizeObserver(() => {
       // ResizeObserver callbacks already queued by the browser may run after
       // React has started unmounting this chart. Never call into a removed
       // lightweight-charts canvas.
       if (disposed || !mainEl.current) return;
       const w = mainEl.current.clientWidth;
+      if (w <= 0) { previousWidth = 0; return; }
       chart.applyOptions({ width: w });
       rsiChart?.applyOptions({ width: w });
       macdChart?.applyOptions({ width: w });
+      if (previousWidth <= 0) chart.timeScale().fitContent();
+      previousWidth = w;
     });
     ro.observe(mainEl.current);
 
@@ -227,7 +231,7 @@ export function useChartCore(
     }
 
     const viewportKey = opts.viewportKey ?? "default";
-    if (lastFittedViewportKey.current !== viewportKey) {
+    if (lastFittedViewportKey.current !== viewportKey && (mainEl.current?.clientWidth ?? 0) > 0) {
       lastFittedViewportKey.current = viewportKey;
       r.chart?.timeScale().fitContent();
     }
