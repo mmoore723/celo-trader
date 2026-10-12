@@ -1327,8 +1327,8 @@ export const api = {
     annotations:   (ticker: string) => request<ChartAnnotation[]>(`/api/bot/annotations/${ticker}`),
   },
   trades: {
-    optionChart: (id: number, mode: "paper" | "live") =>
-      request<OptionChartData>(`/api/trades/${id}/option-chart?mode=${mode}`),
+    optionChart: (id: number, mode: "paper" | "live", interval: "1min" | "daily" = "1min") =>
+      request<OptionChartData>(`/api/trades/${id}/option-chart?mode=${mode}&interval=${interval}`),
     list:          (mode="paper", status="all", date?: string) => request<TradeListResponse>(
       `/api/trades?mode=${mode}&status=${status}${date ? `&date=${encodeURIComponent(date)}` : ""}`
     ),

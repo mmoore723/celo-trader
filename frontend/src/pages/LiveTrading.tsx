@@ -609,7 +609,7 @@ export function LiveTrading() {
                 {t.strike} {t.option_type} · {t.expiry} · {t.exit_time ? "Closed" : "Open"}
               </option>)}</select>}
           </div>}
-          {optionChart.selected && <div hidden={optionChart.view !== "option"}>
+          {optionChart.selected && optionChart.view === "option" && <div>
             <OptionPositionChart key={`${optionChart.selected.mode}:${optionChart.selected.id}`} trade={optionChart.selected} />
           </div>}
           {(optionChart.view === "stock" || stockChartWasOpened.current) && <div hidden={optionChart.view !== "stock"}>

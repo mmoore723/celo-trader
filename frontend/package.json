@@ -16,6 +16,7 @@
     "klinecharts": "^9.8.12",
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.21.0",
+    "plotly.js-finance-dist-min": "^4.1.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.0",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
+    "@types/plotly.js": "^3.0.15",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",

@@ -53,13 +53,10 @@ test("quote gaps are not interpolated as continuous prices", () => {
   assert.deepEqual(quoteSegments(quotes), [quotes.slice(0, 2), quotes.slice(2)]);
 });
 
-test("position view uses the standard candle chart with a non-distorting position overlay", () => {
-  assert.match(optionPlot, /import \{ TradeChart \} from "\.\/TradeChart"/);
-  assert.match(optionPlot, /bars=\{bars\}/);
-  assert.match(optionPlot, /trades=\{\[chartTrade\]\}/);
-  assert.match(optionPlot, /positionLevelsOnCandleScale/);
-  assert.match(optionPlot, /minuteTimelineStart=/);
-  assert.match(optionPlot, /minuteTimelineEnd=/);
+test("option view lazy loads Plotly while stock chart and trade selection remain intact", () => {
+  assert.match(optionPlot, /import\("plotly.js-finance-dist-min"\)/);
+  assert.match(optionPlot, /optionPositionFigure\(data/);
+  assert.match(optionPlot, /plotly.purge\(element\)/);
   assert.doesNotMatch(optionPlot, /<svg/);
   assert.match(tradeChart, /positionLevelsOnCandleScale/);
   assert.match(overlays, /position_reward/);

@@ -174,6 +174,18 @@ class OptionChartTests(unittest.TestCase):
                     requested_start, requested_end = market.get_option_bars.call_args.args[1:3]
                     self.assertEqual(datetime(2026, 9, 4, 13, 40, tzinfo=timezone.utc), requested_start)
                     self.assertEqual(response.json()["window_end"], requested_end.timestamp())
+            with patch("api.option_chart_market.daily_option_candles", return_value=[{
+                "time": 1788494400, "open": 4, "high": 5, "low": 3, "close": 4.5, "volume": 12,
+            }]) as daily:
+                market.get_option_bars.reset_mock()
+                response = get("/api/trades/1/option-chart?interval=daily")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["candle_source"], "tradier_history_daily")
+                self.assertEqual(response.json()["interval"], "daily")
+                daily.assert_called_once()
+                self.assertEqual(daily.call_args.args[1], "TEST_OPTION")
+                market.get_option_bars.assert_not_called()
+            self.assertEqual(get("/api/trades/1/option-chart?interval=invalid").status_code, 422)
             self.assertEqual(get("/api/trades/1/option-chart?mode=wrong").status_code, 422)
             self.assertEqual(get("/api/trades/0/option-chart").status_code, 422)
             self.assertEqual(get("/api/trades/999/option-chart").status_code, 404)
