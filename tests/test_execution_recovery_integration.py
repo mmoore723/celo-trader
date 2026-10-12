@@ -108,6 +108,45 @@ class RecoveryIntegrationTests(unittest.TestCase):
                 client._post("https://paper-api.alpaca.markets/v2/orders", {"client_order_id": "test"})
         self.assertEqual(1, post.call_count)
 
+    def test_atr10_partial_recovery_finishes_exact_half_then_keeps_runner(self):
+        from database.execution_recovery import connect
+        from trading.research_order_exit import partial_remaining, ATR10
+        from trading.recovery_state import restore_stage1
+        context = self.context()
+        context['entry_record']['strategy_id'] = ATR10
+        context['entry_record']['strategy_context_json'] = json.dumps({
+            'strategy_version': '0.1.0.research.2', 'research_order_route': 'exact_research_v1'})
+        self.next_qty = '6'
+        entry = self.client.place_option_order(fixtures.SYMBOL, 6, 'buy', limit_price=1.6,
+                    position_intent='buy_to_open', order_context=context)
+        parent = entry['accounted_trade_id']
+        self.next_status, self.next_qty, self.next_price = 'canceled', '1', '2.08'
+        self.client.place_option_order(fixtures.SYMBOL, 3, 'sell', limit_price=2.08,
+            position_intent='sell_to_close', order_context={'trade_id': parent, 'expected_contracts': 6,
+            'exit_reason': 'stage1_research_atr10_profit_take'})
+        with patch('database.get_conn', side_effect=lambda: connect(self.path)):
+            trade = next(row for row in self.rows() if row['status'] == 'open')
+            self.assertEqual(5, trade['contracts'])
+            self.assertEqual(2, partial_remaining(trade))
+            state = {'exit_pending_reason': 'stage1_research_atr10'}
+            restore_stage1(trade, state)
+            self.assertFalse(state['stage1_done'])
+            restarted = self.make_client()
+            reconcile_orders(restarted)
+            self.next_status, self.next_qty = 'filled', '2'
+            restarted.place_option_order(fixtures.SYMBOL, 2, 'sell', limit_price=2.08,
+                position_intent='sell_to_close', order_context={'trade_id': parent, 'expected_contracts': 5,
+                'exit_reason': 'stage1_research_atr10_profit_take'})
+            trade = next(row for row in self.rows() if row['status'] == 'open')
+            self.assertEqual(3, trade['contracts'])
+            self.assertEqual(0, partial_remaining(trade))
+            restore_stage1(trade, state)
+            self.assertTrue(state['stage1_done'])
+            self.assertNotIn('exit_pending_reason', state)
+            before = self.rows()
+            reconcile_orders(self.make_client())
+            self.assertEqual(before, self.rows())
+
     def test_partial_exit_database_failure_keeps_parent_and_pnl_unchanged(self):
         self.enter()
         trade = self.rows()[0]

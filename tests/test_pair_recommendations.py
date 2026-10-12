@@ -25,7 +25,8 @@ class PairRecommendationTests(unittest.TestCase):
         settings = {'paper_trading':True,rule.setting_key:True}
         result = recommendations(matrix,settings)['recommendations']
         self.assertEqual(1,len(result))
-        self.assertFalse(result[0]['can_enable'])
+        self.assertTrue(result[0]['can_enable'])
+        self.assertEqual('RESEARCH_FAILED_RANGE_V2', result[0]['strategy_id'])
         with self.assertRaises(ValueError):
             decide(matrix,settings,sid,'SPY','enable',evidence['fingerprint'])
 
@@ -67,8 +68,10 @@ class PairRecommendationTests(unittest.TestCase):
                     for sid, spec in TESTED_RESEARCH_STRATEGIES.items()]}
         result = recommendations(matrix, {"paper_trading": True})
         self.assertEqual(16, len(result["recommendations"]))
-        self.assertTrue(all(not r["can_enable"] and r["blocker"] for r in result["recommendations"]))
-        first = result["recommendations"][0]
+        from config.research_order_specs import SPECS
+        for row in result['recommendations']:
+            self.assertEqual(row['strategy_id'] in SPECS, row['can_enable'])
+        first = next(row for row in result["recommendations"] if not row['can_enable'])
         with self.assertRaises(ValueError):
             decide(matrix, {}, first["strategy_id"], "META", "enable", evidence["fingerprint"])
 

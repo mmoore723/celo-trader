@@ -1017,6 +1017,13 @@ export interface AppSettings {
   strategy_orb_pullback_v2_enabled?: boolean; // reviewed opening-range pullback strategy
   strategy_spy_trend_cont_v2_enabled?: boolean; // reviewed SPY paid-quote Trend Continuation strategy
   strategy_trend_cont_research_v1_enabled?: boolean;
+  enable_v2_afternoon_compression_breakout?: boolean;
+  enable_v2_gap_fill_rth?: boolean;
+  enable_v2_afternoon_reversal?: boolean;
+  enable_v2_spy_orb_rsi_macd_short?: boolean;
+  enable_v2_impulse_anchored_vwap_pullback?: boolean;
+  enable_research_ctx_orb_atr10_v2?: boolean;
+  enable_research_failed_range_v2?: boolean;
   strategy_spy_afternoon_fvg_v2_enabled?: boolean; // reviewed SPY paid-quote afternoon FVG strategy
   strategy_spy_failed_range_recovery_v2_enabled?: boolean; // reviewed SPY failed-range recovery
   strategy_tsla_two_leg_trend_pullback_v2_enabled?: boolean; // reviewed TSLA VWAP/EMA two-leg strategy
@@ -1066,6 +1073,7 @@ export interface ClosedTradeEvidence {
 }
 
 export interface ReviewedStrategyCatalogEntry {
+  research_source_strategy_id?: string;
   automatic_pauses?: { ticker: string; profit_factor: number; completed_trades: number }[];
   strategy_id: string;
   display_name: string;

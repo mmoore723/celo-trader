@@ -1898,6 +1898,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         max(eff_entry, _order_mid, _order_ask or 0), balance, strategy_id=strategy_id,
     )
     n_contracts = min(n_contracts, _final_ceiling)
+    if strategy_id == 'RESEARCH_CTX_ORB_ATR10_V2':
+        n_contracts -= n_contracts % 2
     if n_contracts < 1:
         _skip_log(ticker, "zero_contracts", strategy=strategy_id,
                   detail="No whole contract fits the final entry risk budget")
@@ -1916,6 +1918,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         _skip_log(ticker, "account_capacity_unavailable", strategy=strategy_id,
                   detail=f"Broker capacity could not be verified ({type(_capacity_error).__name__}); retry next cycle")
         return
+    if strategy_id == 'RESEARCH_CTX_ORB_ATR10_V2':
+        n_contracts -= n_contracts % 2
     if n_contracts < 1:
         _skip_log(ticker, _capacity_reason, strategy=strategy_id,
                   detail="No account capacity for a new entry; existing positions still managed")

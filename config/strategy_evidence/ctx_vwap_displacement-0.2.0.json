@@ -13,7 +13,7 @@
   "runtime_policy_sources": [
     {
       "path": "trading/entry/contract.py",
-      "sha256": "144c718f8328b22914252934950f9c2bfc1eacb9fac83ebcf4da9454b285d282"
+      "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
     },
     {
       "path": "trading/vwap_displacement_exit.py",

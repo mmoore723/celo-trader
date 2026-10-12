@@ -225,10 +225,14 @@ def is_user_authorized_ticker(strategy_id: object, ticker: object, settings: dic
         return False
     if (settings.get("strategy_pair_pauses") or {}).get(key) is True:
         return False
+    from config.admin_strategy_overrides import active
+    if active(settings, sid, symbol):
+        return True
     grant = (settings.get("strategy_pair_approvals") or {}).get(key) or {}
     if grant.get("strategy_version") == rule.version and grant.get("user_approved") is True:
         if rule.authored_exit_order_route:
-            return symbol in rule.recommendation_tickers and grant.get("strategy_id") == sid and grant.get("ticker") == symbol
+            from config.admin_strategy_overrides import allowed_ticker
+            return allowed_ticker(sid, symbol, rule) and grant.get("strategy_id") == sid and grant.get("ticker") == symbol
         if mode == "paper":
             return not rule.observation_only
         from config.strategy_live_promotion import review_live_promotion
@@ -256,6 +260,7 @@ def is_live_enabled_pair(strategy_id: object, ticker: object, settings: dict) ->
     """Return true only for a fully reviewed, user-approved dynamic live pair."""
     from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_strategy_integrity_errors
     from config.strategy_live_promotion import review_live_promotion
+    from config.admin_strategy_overrides import active
 
     sid, symbol = str(strategy_id or "").strip().upper(), str(ticker or "").strip().upper()
     rule = REVIEWED_STRATEGIES.get(sid)
@@ -263,7 +268,8 @@ def is_live_enabled_pair(strategy_id: object, ticker: object, settings: dict) ->
         bool(settings.get("paper_trading", True))
         or not rule
         or sid in reviewed_strategy_integrity_errors()
-        or (not rule.authored_exit_order_route and not review_live_promotion(rule, symbol).ready)
+        or (not rule.authored_exit_order_route and not review_live_promotion(rule, symbol).ready
+            and not active(settings, sid, symbol))
     ):
         return False
     from strategy_health.pair_recommendations import consent_scope
@@ -273,10 +279,14 @@ def is_live_enabled_pair(strategy_id: object, ticker: object, settings: dict) ->
         return False
     if (settings.get("strategy_pair_pauses") or {}).get(scope) is True:
         return False
+    from config.admin_strategy_overrides import active
+    if active(settings, sid, symbol):
+        return True
     grant = (settings.get("strategy_pair_approvals") or {}).get(scope) or {}
     if grant.get("strategy_version") == rule.version and grant.get("user_approved") is True:
         if rule.authored_exit_order_route:
-            return symbol in rule.recommendation_tickers and grant.get("strategy_id") == sid and grant.get("ticker") == symbol
+            from config.admin_strategy_overrides import allowed_ticker
+            return allowed_ticker(sid, symbol, rule) and grant.get("strategy_id") == sid and grant.get("ticker") == symbol
         return not rule.observation_only
     recommendation = published_recommendation(sid, symbol)
     return bool(
@@ -292,6 +302,9 @@ def has_user_live_enabled(strategy_id: object, settings: dict) -> bool:
     sid = str(strategy_id or "").strip().upper()
     if bool(settings.get("paper_trading", True)):
         return False
+    from config.admin_strategy_overrides import tickers
+    if any(is_live_enabled_pair(sid, ticker, settings) for ticker in tickers(settings, sid)):
+        return True
     if any(grant.get("strategy_id") == sid and is_live_enabled_pair(sid, grant.get("ticker"), settings)
            for grant in (settings.get("strategy_pair_approvals") or {}).values()):
         return True
@@ -306,6 +319,10 @@ def approved_dynamic_tickers(settings: dict, enabled_strategy_ids: object = ()) 
     """Return extra tickers this account explicitly enabled in its current mode."""
     enabled = {str(value or "").strip().upper() for value in (enabled_strategy_ids or ())}
     tickers: set[str] = set()
+    for grant in (settings.get('admin_strategy_overrides') or {}).values():
+        sid, ticker = grant.get('strategy_id'), grant.get('ticker')
+        if sid and ticker and (not enabled or sid in enabled) and is_user_authorized_ticker(sid, ticker, settings):
+            tickers.add(ticker)
     for grant in (settings.get("strategy_pair_approvals") or {}).values():
         sid, ticker = grant.get("strategy_id"), grant.get("ticker")
         if sid and ticker and (not enabled or sid in enabled) and is_user_authorized_ticker(sid, ticker, settings):

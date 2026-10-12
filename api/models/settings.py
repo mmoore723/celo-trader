@@ -28,6 +28,13 @@ class Settings(BaseModel):
     strategy_orb_pullback_v2_enabled: bool = True
     strategy_spy_trend_cont_v2_enabled: bool = True
     strategy_trend_cont_research_v1_enabled: bool = False
+    enable_v2_afternoon_compression_breakout: bool = False
+    enable_v2_gap_fill_rth: bool = False
+    enable_v2_afternoon_reversal: bool = False
+    enable_v2_spy_orb_rsi_macd_short: bool = False
+    enable_v2_impulse_anchored_vwap_pullback: bool = False
+    enable_research_ctx_orb_atr10_v2: bool = False
+    enable_research_failed_range_v2: bool = False
     strategy_spy_afternoon_fvg_v2_enabled: bool = True
     strategy_spy_failed_range_recovery_v2_enabled: bool = True
     strategy_tsla_two_leg_trend_pullback_v2_enabled: bool = True

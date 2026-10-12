@@ -243,6 +243,22 @@ REVIEWED_STRATEGIES: dict[str, ReviewedStrategy] = {
 }
 
 
+from config.research_order_specs import SPECS as _RESEARCH_ORDERS, setting_key as _research_setting
+
+for _sid, _spec in _RESEARCH_ORDERS.items():
+    REVIEWED_STRATEGIES[_sid] = ReviewedStrategy(
+        strategy_id=_sid, display_name=_spec.name, version=_spec.version,
+        tickers=frozenset(), recommendation_tickers=frozenset(),
+        setting_key=_research_setting(_sid), signal_source='bar_close',
+        implementation='strategies.research_orders', exit_minutes=None,
+        research_exit_minutes=_spec.reference_minutes, minimum_session_minutes=_spec.timeframe,
+        paper_only=False, status='paper_candidate', evidence_grade='promising_underpowered',
+        evidence_artifact=f'config/strategy_evidence/{_sid.lower()}-orders.json',
+        evidence='Exact research rules connected to broker execution. Admin approval is not a profitability claim.',
+        authored_exit_order_route=True,
+    )
+
+
 def _backtest_display(rule: ReviewedStrategy) -> dict:
     """Return compact, pre-reviewed metrics for the Settings control.
 
@@ -353,19 +369,23 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
     for strategy_id, rule in REVIEWED_STRATEGIES.items():
         promotion = review_live_promotion(rule)
         from config.strategy_ticker_recommendations import is_user_authorized_ticker
-        approved_tickers = sorted(ticker for ticker in rule.recommendation_tickers
+        from config.admin_strategy_overrides import tickers as override_tickers
+        pair_grants = {grant.get('ticker') for grant in (settings.get('strategy_pair_approvals') or {}).values()
+                       if grant.get('strategy_id') == strategy_id and grant.get('ticker')}
+        approved_tickers = sorted(ticker for ticker in rule.recommendation_tickers | set(override_tickers(settings, strategy_id)) | pair_grants
                                   if is_user_authorized_ticker(strategy_id, ticker, settings))
         from strategy_health.closed_trade_guard import scope
         automatic_pauses = settings.get('strategy_closed_trade_pauses') or {}
         rows.append({
             "strategy_id": rule.strategy_id,
+            "research_source_strategy_id": _RESEARCH_ORDERS[strategy_id].source if strategy_id in _RESEARCH_ORDERS else strategy_id,
             "display_name": rule.display_name,
             "version": rule.version,
             "tickers": sorted(rule.tickers | set(approved_tickers)),
             "trading_tickers": sorted(ticker for ticker in (rule.tickers | set(approved_tickers))
                                       if strategy_id in enabled_reviewed_strategy_ids(settings, ticker=ticker)),
             "automatic_pauses": [{"ticker": ticker, **automatic_pauses[scope(settings, strategy_id, ticker, rule.version)]}
-                                 for ticker in sorted(rule.tickers | rule.recommendation_tickers)
+                                 for ticker in sorted(rule.tickers | rule.recommendation_tickers | set(override_tickers(settings, strategy_id)) | pair_grants)
                                  if scope(settings, strategy_id, ticker, rule.version) in automatic_pauses],
             "setting_key": rule.setting_key,
             "signal_source": rule.signal_source,
@@ -475,6 +495,9 @@ def reviewed_exit_summary(strategy_id: object, *, verb: str = "exit") -> str:
     rule = REVIEWED_STRATEGIES.get(str(strategy_id or "").strip().upper())
     if rule is None:
         return "No reviewed exit policy is registered."
+    if rule.strategy_id in _RESEARCH_ORDERS:
+        from strategy_health.exit_measurement import exit_measurement
+        return exit_measurement(rule.strategy_id, rule.research_exit_minutes)['authored_exit']
     if rule.strategy_id == "V2_TREND_CONT":
         return "Exit at the frozen underlying stop or 2R target after a completed 5-minute candle, with the tested 75-bar time cap and session close backstop."
     if verb == "measure":

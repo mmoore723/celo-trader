@@ -701,9 +701,11 @@ def build_research_matrix(
     tickers |= {str(row["ticker"]).upper() for row in rows}
     catalog_ids = {
         strategy_id for strategy_id in reviewed_strategy_ids()
-        if not REVIEWED_STRATEGIES[strategy_id].observation_only
-        or bool(settings.get(REVIEWED_STRATEGIES[strategy_id].setting_key, False))
+        if (not REVIEWED_STRATEGIES[strategy_id].observation_only
+            or bool(settings.get(REVIEWED_STRATEGIES[strategy_id].setting_key, False)))
     }
+    from config.research_order_specs import SPECS as order_specs, execution_id
+    catalog_ids -= {sid for sid, spec in order_specs.items() if sid != spec.source}
     runtime_ids = enabled_tested_research_ids(settings)
     strategy_ids = sorted(catalog_ids | runtime_ids)
     grouped: dict[tuple[str, str], list] = defaultdict(list)
@@ -743,7 +745,8 @@ def build_research_matrix(
         pairs = []
         strategy_current_results: list[tuple[str, float]] = []
         for ticker in sorted(tickers):
-            trading_enabled = strategy_id in enabled_by_ticker[ticker]
+            research_version = evidence_version(strategy_id, rule.version if rule else runtime.version)
+            trading_enabled = execution_id(strategy_id, research_version) in enabled_by_ticker[ticker]
             source_samples = grouped.get((strategy_id, ticker), [])
             # This page summarizes the all-setups research contract policy on
             # EVERY ticker. Native order previews belong to a separate cohort;

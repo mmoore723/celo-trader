@@ -20,7 +20,8 @@ class ExitMeasurementTests(unittest.TestCase):
         self.assertIn("opposite SuperTrend flip", result["authored_exit"])
 
     def test_every_catalog_strategy_has_an_explicit_exit_description(self):
-        catalog = set(REVIEWED_STRATEGIES) | set(TESTED_RESEARCH_STRATEGIES)
+        from config.research_order_specs import SPECS
+        catalog = {SPECS[sid].source if sid in SPECS else sid for sid in set(REVIEWED_STRATEGIES) | set(TESTED_RESEARCH_STRATEGIES)}
         self.assertEqual(26, len(catalog))
         for strategy_id in catalog:
             result = exit_measurement(strategy_id, 90)

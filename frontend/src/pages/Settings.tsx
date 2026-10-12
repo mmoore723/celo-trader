@@ -12,6 +12,7 @@ import { TestedStrategies } from "../components/settings/TestedStrategies";
 import { StrategyRecommendations, type PairDecision } from "../components/settings/StrategyRecommendations";
 import type { StrategyTickerRecommendation } from "../lib/api";
 import { PairEvidence } from "../components/settings/PairEvidence";
+import { AdminStrategyControls } from "../components/settings/AdminStrategyControls";
 import { ClosedTradeEvidence } from "../components/settings/ClosedTradeEvidence";
 import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
 import { StrategyExitNotice } from "../components/settings/StrategyExitNotice";
@@ -372,7 +373,7 @@ export function Settings() {
     const pfLabel = typeof pf === "number" ? pf.toFixed(2) : (pf || "not recorded");
     const target = strategy.backtest?.target_profit_factor ?? 1.5;
     const reliableTarget = strategy.backtest?.meets_target && strategy.evidence_grade === "passed_declared_holdout";
-    const matrixStrategy = strategyResearch?.strategies.find(item => item.strategy_id === strategy.strategy_id);
+    const matrixStrategy = strategyResearch?.strategies.find(item => item.strategy_id === (strategy.research_source_strategy_id ?? strategy.strategy_id) && item.version === strategy.version);
     const currentPairs = (matrixStrategy?.pairs ?? []).filter(pair => strategy.tickers.includes(pair.ticker) || pair.tradable);
     const pairProof = currentPairs.length
       ? currentPairs.map(pair => {
@@ -808,6 +809,7 @@ export function Settings() {
 
       </div>
       <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
+      <AdminStrategyControls />
       {/* Strategies */}
       <section>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Can place orders</h3>

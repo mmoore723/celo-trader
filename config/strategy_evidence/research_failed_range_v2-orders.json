@@ -1,0 +1,71 @@
+{
+  "strategy_id": "RESEARCH_FAILED_RANGE_V2",
+  "strategy_version": "2.1.0.research.2",
+  "status": "paper_candidate",
+  "evidence_grade": "promising_underpowered",
+  "ticker_scope": [],
+  "implementation": "strategies.research_orders",
+  "implementation_sha256_at_review": "f0850b53ee613b7d4dc6c82e2aeb0a260d5297ccbc64fa80ba1fca8fa7c7d6fc",
+  "runtime_policy_sources": [
+    {
+      "path": "config/research_order_specs.py",
+      "sha256": "d18b2755395cb68dab0ccfeb867f088cb67872f343a88aff331480f501bbe29f"
+    },
+    {
+      "path": "config/admin_strategy_overrides.py",
+      "sha256": "d4950afa288861ab89797068b78a6c95a840403b62f760a641b160e45f27c33b"
+    },
+    {
+      "path": "strategies/research_orders.py",
+      "sha256": "f0850b53ee613b7d4dc6c82e2aeb0a260d5297ccbc64fa80ba1fca8fa7c7d6fc"
+    },
+    {
+      "path": "trading/research_order_exit.py",
+      "sha256": "2f593a0c83239d7051a839959f45f74fdf501e064cd28b65c0fc0e757d47aaab"
+    },
+    {
+      "path": "trading/tested_strategy_research.py",
+      "sha256": "073cb9dbcf94e6192fb654033f7caeaf91ce3c5256913820e7c24fd3bbe6886e"
+    },
+    {
+      "path": "trading/failed_range_research.py",
+      "sha256": "32fd813b6baac70310ce7ee6b829615253733cb33299d95c4a56d154c971ed1b"
+    },
+    {
+      "path": "trading/context_research_entries.py",
+      "sha256": "785ab9f71f5998879207c3d60620f0a93f0b185bab627659963bbe394c9a9215"
+    },
+    {
+      "path": "trading/research_contract_selection.py",
+      "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+    },
+    {
+      "path": "trading/entry/contract.py",
+      "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+    },
+    {
+      "path": "trading/entry/tick.py",
+      "sha256": "1c42b1cd987fd20b5f2eff51a0f40d3b6970254626b87ae3736712081913b229"
+    },
+    {
+      "path": "trading/position_manager/manage.py",
+      "sha256": "1fd1cb5adda980352bc0284aff0f821e5f73a4b79cb4030a4c30a6fcafa27c1e"
+    },
+    {
+      "path": "trading/recovery_state.py",
+      "sha256": "2d38c3ef352c81c1ee417daee0f45fd2deda1273d58c9b06c951c0e390d9d167"
+    },
+    {
+      "path": "trading/trend_continuation_research_exit.py",
+      "sha256": "a0cce27a4599a91b1d3a8a5afb8fe31ad51766ca48e6e937d5be8f7806f0ba53"
+    },
+    {
+      "path": "strategy_health/exit_protocols.py",
+      "sha256": "51ceb01d86d39fae85ea19afe2bef59ba9daf697deafac008d18b926f4fa556d"
+    }
+  ],
+  "evidence_summary": "Exact research execution implementation. Admin approval does not assert profitability qualification.",
+  "source_reports": ["tests/test_research_order_execution.py"],
+  "decision": "Exact research route with explicit per-pair consent or admin override. No profit guarantee.",
+  "display_metrics": {}
+}

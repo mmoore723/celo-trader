@@ -61,8 +61,13 @@ def reviewed_contract_profile(
     """
     normalized = str(strategy_id or "").strip().upper()
     normalized_ticker = str(ticker or "").strip().upper()
-    if normalized == "V2_TREND_CONT":
-        return ReviewedContractProfile("research_contracts_v1", 0, 7, 1.50, 10.00, 0.08, "closest_otm_150_1000")
+    from config.research_order_specs import SPECS
+    if normalized == "V2_TREND_CONT" or normalized in SPECS:
+        from trading.research_contract_selection import research_contract_profile
+        profile = research_contract_profile(SPECS[normalized].source if normalized in SPECS else normalized)
+        return ReviewedContractProfile(profile.version, profile.minimum_dte, profile.maximum_dte,
+                                       profile.minimum_premium, profile.maximum_premium,
+                                       profile.maximum_spread_pct, profile.primary_policy)
     if normalized == VWAP_DISPLACEMENT_STRATEGY_ID:
         return ReviewedContractProfile(
             selection_model="ctx_vwap_displacement_paid_target_150_250_v1",
@@ -325,11 +330,13 @@ def select_reviewed_v2_contract(
     mode so later promotion cannot silently change the selected contract.
     """
     ticker = ticker.strip().upper()
-    if str(strategy_id or "").strip().upper() == "V2_TREND_CONT":
+    from config.research_order_specs import SPECS
+    sid = str(strategy_id or '').strip().upper()
+    if sid == "V2_TREND_CONT" or sid in SPECS:
         from trading.research_contract_selection import select_research_contract
-        if ticker not in {"SPY", "QQQ"} or max_spend <= 0:
+        if (sid == 'V2_TREND_CONT' and ticker not in {"SPY", "QQQ"}) or max_spend <= 0:
             return None, {"reason": "invalid_selection_input"}
-        selected, detail = select_research_contract(tradier, ticker, direction, current_price, strategy_id)
+        selected, detail = select_research_contract(tradier, ticker, direction, current_price, SPECS[sid].source if sid in SPECS else strategy_id)
         if selected and float(selected["ask"]) * 100 > max_spend:
             return None, {**detail, "reason": "over_budget", "cheapest_cost": float(selected["ask"]) * 100}
         return selected, detail

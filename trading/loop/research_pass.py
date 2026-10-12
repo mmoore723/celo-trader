@@ -62,6 +62,8 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
     # Native trading pairs also need the separate, uncapped research path.
     # All IDs stay observation-only here; the router receives no order IDs.
     observed |= reviewed_execution_strategy_ids()
+    from config.research_order_specs import SPECS
+    observed -= set(SPECS)
     tested_ids = enabled_tested_research_ids(settings)
     if observed or tested_ids:
         frame = current

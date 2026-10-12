@@ -119,8 +119,10 @@ def recommendations(matrix, settings):
     decisions = settings.get("strategy_pair_review_decisions", {}) or {}
     result = []
     errors = reviewed_strategy_integrity_errors()
+    from config.research_order_specs import execution_id
+    from config.admin_strategy_overrides import allowed_ticker
     for strategy in matrix["strategies"]:
-        sid = strategy["strategy_id"]
+        sid = execution_id(strategy["strategy_id"], strategy['version'])
         rule = REVIEWED_STRATEGIES.get(sid)
         for pair in strategy["pairs"]:
             evidence = pair.get("recommendation") or {}
@@ -142,7 +144,7 @@ def recommendations(matrix, settings):
                               and strategy['version'] == rule.version
                               and (not pair.get('research_contract_profile')
                                    or (rule.authored_exit_order_route and pair.get('research_contract_profile') == 'research_contracts_v1'))
-                              and pair['ticker'] in (rule.tickers | rule.recommendation_tickers)
+                              and allowed_ticker(sid, pair['ticker'], rule)
                               and (sid not in PROTOCOLS or rule.authored_exit_order_route))
             live = bool(executable and (rule.authored_exit_order_route or review_live_promotion(rule, pair["ticker"]).ready))
             switch_on = bool(rule and settings.get(rule.setting_key, False))

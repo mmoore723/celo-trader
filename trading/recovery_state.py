@@ -3,6 +3,14 @@ from database import get_conn
 
 
 def restore_stage1(trade, position_state):
+    if trade.get('strategy_id') == 'RESEARCH_CTX_ORB_ATR10_V2':
+        from trading.research_order_exit import partial_remaining
+        remaining = partial_remaining(trade)
+        position_state['stage1_done'] = remaining == 0
+        if remaining == 0 and position_state.get('exit_pending_reason') == 'stage1_research_atr10':
+            position_state.pop('exit_pending_reason', None)
+            position_state.pop('exit_pending_since', None)
+        return
     if position_state.get("stage1_done"):
         return
     with get_conn() as conn:

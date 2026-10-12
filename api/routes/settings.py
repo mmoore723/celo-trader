@@ -44,6 +44,41 @@ class StrategyConsentPayload(BaseModel):
     fingerprint: str | None = None
 
 
+class AdminStrategyOverridePayload(BaseModel):
+    strategy_id: str
+    ticker: str
+    strategy_version: str
+    enabled: bool
+
+
+@router.get('/strategies/admin-controls')
+def get_admin_strategy_controls(request: Request) -> dict:
+    if not getattr(request.state, 'is_admin', False):
+        return {'can_override': False, 'strategies': []}
+    from config import get_settings
+    from config.strategy_catalog import public_strategy_catalog
+    from config.research_order_specs import SPECS
+    return {'can_override': True, 'strategies': [row for row in public_strategy_catalog(get_settings())
+            if row['strategy_id'] in SPECS or not row['observation_only']]}
+
+
+@router.post('/strategies/admin-override')
+def set_admin_strategy_override(payload: AdminStrategyOverridePayload, request: Request) -> dict:
+    if not getattr(request.state, 'is_admin', False):
+        raise HTTPException(403, 'Admin access required')
+    from config import get_settings, get_user_data_dir, save_settings
+    from config.atomic_files import _lock_for
+    from config.admin_strategy_overrides import updates
+    try:
+        with _lock_for(get_user_data_dir() / 'settings.json'):
+            changes = updates(get_settings(), payload.strategy_id, payload.ticker,
+                              payload.strategy_version, payload.enabled, request.state.user_id)
+            save_settings(changes)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {'ok': True, 'enabled': payload.enabled}
+
+
 @router.get("/strategies/recommendations")
 def get_strategy_recommendations() -> dict:
     from config import get_settings
@@ -73,7 +108,8 @@ def set_strategy_recommendation_consent(strategy_id: str, ticker: str, payload: 
         from config.atomic_files import _lock_for
         sid, symbol = strategy_id.strip().upper(), ticker.strip().upper()
         rule = REVIEWED_STRATEGIES.get(sid)
-        if not rule or symbol not in rule.tickers | rule.recommendation_tickers:
+        from config.admin_strategy_overrides import allowed_ticker
+        if not rule or not allowed_ticker(sid, symbol, rule):
             raise HTTPException(400, 'Unknown strategy and ticker pair')
         with _lock_for(get_user_data_dir() / 'settings.json'):
             settings = get_settings()
@@ -117,6 +153,7 @@ def publish_strategy_recommendation_endpoint(payload: PublishStrategyRecommendat
 
 @router.get("", response_model=Settings)
 def get_settings_endpoint() -> Settings:
+    from config.research_order_specs import SPECS, setting_key
     from config import get_settings, get_risk_tier, MAX_CONCURRENT_POSITIONS, STARTING_CAPITAL
     from trading.tested_strategy_research import enabled_tested_research_ids
     s = get_settings()
@@ -128,6 +165,7 @@ def get_settings_endpoint() -> Settings:
     except (TypeError, ValueError):
         _risk_auto, _risk_pct = True, get_risk_tier(STARTING_CAPITAL) * 100
     return Settings(
+        **{setting_key(sid): bool(s.get(setting_key(sid), False)) for sid in SPECS},
         broker_provider=str(s.get("broker_provider") or "alpaca"),
         paper_trading=bool(s.get("paper_trading", True)),
         display_timezone=str(s.get("display_timezone") or "America/New_York"),
@@ -176,6 +214,10 @@ def save_settings_endpoint(payload: Settings, request: Request) -> Settings:
     from config import get_settings, save_settings
     current = get_settings()
     data = payload.model_dump()
+    from config.research_order_specs import SPECS, setting_key
+    for sid in SPECS:
+        if setting_key(sid) not in payload.model_fields_set:
+            data.pop(setting_key(sid), None)
     # Removing a dashboard switch must also prevent stale clients/API callers
     # from changing it. Never reset the stored value or silently change exits.
     current_exit_mode = bool(current.get("simplified_exit_mode", True))

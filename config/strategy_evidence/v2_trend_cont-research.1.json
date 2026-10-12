@@ -37,19 +37,19 @@
     },
     {
       "path": "trading/trend_continuation_research_exit.py",
-      "sha256": "49d10dea55feb083c1342105becdf35f463ee15d57ecb23f7f760039d69940a7"
+      "sha256": "a0cce27a4599a91b1d3a8a5afb8fe31ad51766ca48e6e937d5be8f7806f0ba53"
     },
     {
       "path": "trading/entry/tick.py",
-      "sha256": "3c9d5bbd8ac8d6ffa8223e3b6312f80c09dd606b42bb3afc6df705c5d0d5275a"
+      "sha256": "1c42b1cd987fd20b5f2eff51a0f40d3b6970254626b87ae3736712081913b229"
     },
     {
       "path": "trading/position_manager/manage.py",
-      "sha256": "7400ada60e5b52e9cc946f31aa23a095f126db8e4a65f3e383b4d60a775b29af"
+      "sha256": "1fd1cb5adda980352bc0284aff0f821e5f73a4b79cb4030a4c30a6fcafa27c1e"
     },
     {
       "path": "trading/entry/contract.py",
-      "sha256": "144c718f8328b22914252934950f9c2bfc1eacb9fac83ebcf4da9454b285d282"
+      "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
     }
   ],
   "evidence_summary": "The settings recommendation is generated separately for each ticker from 20 non-overlapping completed research tests. First 14 and latest 6 must each have PF at least 1.5, median after-cost P&L must be positive, and no winner may supply more than 35% of gains.",

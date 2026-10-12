@@ -51,6 +51,9 @@ _AUTHORED_EXITS = {
 def exit_measurement(strategy_id: object, minutes: int) -> dict[str, object]:
     """Return a compact, UI-safe description of the measured exit."""
     normalized = str(strategy_id or "").strip().upper()
+    from config.research_order_specs import SPECS
+    if normalized in SPECS:
+        normalized = SPECS[normalized].source
     rule = REVIEWED_STRATEGIES.get(normalized)
     faithful = (normalized in _EXACT_TIMED_EXITS and rule is not None
                 and rule.exit_minutes == int(minutes))

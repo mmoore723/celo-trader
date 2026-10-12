@@ -13,6 +13,9 @@ STRATEGY_ID = "V2_TREND_CONT"
 
 
 def uses_tested_session_close(trade: dict) -> bool:
+    from trading.research_order_exit import uses_session_close
+    if uses_session_close(trade):
+        return True
     if trade.get("strategy_id") != STRATEGY_ID or trade.get("ticker") not in {"SPY", "QQQ"}:
         return False
     try:

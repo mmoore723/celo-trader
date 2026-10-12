@@ -106,6 +106,13 @@ _DEFAULTS = {
     # an arbitrary ID.
     "validated_strategy_ids": ["V2_ORB_PULLBACK", "V2_SPY_TREND_CONT", "V2_SPY_AFTERNOON_FVG", "V2_FAILED_OR_BREAK_VWAP_REVERSION", "V2_TSLA_TWO_LEG_TREND_PULLBACK", "V2_TREND_CONT"],
     "strategy_trend_cont_research_v1_enabled": False,
+    "enable_v2_afternoon_compression_breakout": False,
+    "enable_v2_gap_fill_rth": False,
+    "enable_v2_afternoon_reversal": False,
+    "enable_v2_spy_orb_rsi_macd_short": False,
+    "enable_v2_impulse_anchored_vwap_pullback": False,
+    "enable_research_ctx_orb_atr10_v2": False,
+    "enable_research_failed_range_v2": False,
     "strategy_orb_pullback_v2_enabled": True,
     # Passed the separately held-back SPY option-quote data at the reviewed
     # 30-minute same-contract exit. Enable it for new accounts just as the

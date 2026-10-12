@@ -43,7 +43,9 @@ class StudyExitTests(unittest.TestCase):
     def test_all_26_are_covered_and_only_five_are_authored_timers(self):
         from trading.tested_strategy_research import TESTED_RESEARCH_STRATEGIES
         from config.strategy_catalog import REVIEWED_STRATEGIES
-        self.assertEqual(set(TESTED_RESEARCH_STRATEGIES)|set(REVIEWED_STRATEGIES), set(exits.PROTOCOL_BY_STRATEGY))
+        from config.research_order_specs import SPECS
+        source_ids = {SPECS[sid].source if sid in SPECS else sid for sid in set(TESTED_RESEARCH_STRATEGIES)|set(REVIEWED_STRATEGIES)}
+        self.assertEqual(source_ids, set(exits.PROTOCOL_BY_STRATEGY))
         self.assertEqual(26,len(exits.PROTOCOL_BY_STRATEGY))
         self.assertEqual(5,len(exits.TIMED))
 
