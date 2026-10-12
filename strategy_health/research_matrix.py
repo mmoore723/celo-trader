@@ -657,7 +657,7 @@ def build_research_matrix(
         ).fetchall()
         alternative_rows = conn.execute(
             """SELECT s.candidate_id,s.observed_at,s.trigger_bar,s.ticker,s.strategy_id,
-                      s.direction,a.contract_symbol,
+                      s.direction,s.metadata_json,a.contract_symbol,
                       MAX(CASE WHEN a.observation_kind='entry' THEN a.ask END) AS entry_ask,
                       MAX(CASE WHEN a.observation_kind='entry' THEN a.observed_at END) AS entry_quote_at,
                       MAX(CASE WHEN a.observation_kind='entry' THEN a.policy_json END) AS policy_json,
@@ -709,10 +709,9 @@ def build_research_matrix(
     grouped: dict[tuple[str, str], list] = defaultdict(list)
     for row in rows:
         grouped[(str(row["strategy_id"]).upper(), str(row["ticker"]).upper())].append(row)
-    metadata_by_candidate = {row['candidate_id']: row['metadata_json'] for row in rows}
     alternative_grouped: dict[tuple[str, str, str], list] = defaultdict(list)
     for row in alternative_rows:
-        row = dict(row, metadata_json=metadata_by_candidate[row['candidate_id']])
+        row = dict(row)
         try:
             policies = json.loads(str(row["policy_json"] or "[]"))
         except (TypeError, ValueError, json.JSONDecodeError):

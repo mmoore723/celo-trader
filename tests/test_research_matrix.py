@@ -16,6 +16,30 @@ from strategy_health.research_matrix import (
 
 
 class ResearchMatrixTests(unittest.TestCase):
+    def test_alternative_inserted_after_primary_read_has_its_own_metadata(self):
+        original_connect = sqlite3.connect
+
+        class ConcurrentConnection(sqlite3.Connection):
+            def execute(self, sql, parameters=()):
+                if "JOIN candidate_contract_alternatives a" in sql:
+                    super().execute(
+                        "INSERT INTO shadow_candidates SELECT 'arrived-later', observed_at, "
+                        "ticker, strategy_id, direction_correct, directional_move_pct, "
+                        "broker_account_id, trigger_bar, direction, metadata_json "
+                        "FROM shadow_candidates WHERE candidate_id='c1'"
+                    )
+                    super().execute(
+                        "INSERT INTO candidate_contract_alternatives SELECT 'arrived-later', "
+                        "contract_symbol, observation_kind, bid, ask, observed_at, '[]', source "
+                        "FROM candidate_contract_alternatives WHERE candidate_id='c1'"
+                    )
+                return super().execute(sql, parameters)
+
+        with patch("sqlite3.connect", side_effect=lambda *a, **kw: original_connect(
+            *a, factory=ConcurrentConnection, **kw
+        )):
+            self.test_matrix_reads_only_the_active_account_and_real_option_marks()
+
     def test_profit_factor_uses_wins_over_absolute_losses(self):
         self.assertEqual(2.0, _factor([100, 50, -75]))
         self.assertEqual("infinite", _factor([10, 5]))
