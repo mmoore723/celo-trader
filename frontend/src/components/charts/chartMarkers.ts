@@ -9,7 +9,7 @@ import type { ISeriesApi, ISeriesMarkersPluginApi, SeriesMarker, Time } from "li
 import type { OverlayInputs } from "./chartOverlays";
 import type { ChartPalette } from "./palette";
 import { detectSwings, classifyStructure } from "./marketStructure";
-import { gradeBar } from "./executionGrade";
+import { gradeBeforeEntry } from "./executionGrade";
 import { toEpochTime } from "./zoneBands";
 
 /**
@@ -36,8 +36,10 @@ export function buildAndApplyMarkers(
 
   for (const t of input.trades) {
     if (t.entry_time) {
-      const grade = input.showExecutionGrade ? gradeBar(input.bars.find((b) => b.time <= t.entry_time!) ?? input.bars[0]) : null;
-      markers.push({ time: toEpochTime(t.entry_time), position: "belowBar", color: P.up, shape: "arrowUp", text: grade ? `BUY (${grade.grade})` : "BUY", size: 2 });
+      const grade = input.showExecutionGrade ? gradeBeforeEntry(input.bars, t.entry_time) : null;
+      const option = t.option_type?.toUpperCase();
+      const buy = option === "CALL" || option === "PUT" ? `BUY ${option}` : "BUY";
+      markers.push({ time: toEpochTime(t.entry_time), position: "belowBar", color: P.up, shape: "arrowUp", text: grade ? `${buy} · prior candle: ${grade.grade}` : buy, size: 2 });
     }
     if (t.exit_time) markers.push({ time: toEpochTime(t.exit_time), position: "aboveBar", color: P.down, shape: "arrowDown", text: t.exit_reason ?? "SELL", size: 2 });
   }

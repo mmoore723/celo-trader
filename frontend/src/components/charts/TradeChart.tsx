@@ -185,6 +185,7 @@ export function TradeChart({
 
   return (
     <div className="flex flex-col w-full" onWheel={(e) => e.stopPropagation()}>
+      {showExecutionGrade && trades.length > 0 && <p className="text-xs text-muted px-2 py-1">Candle grade describes the completed candle before entry, not the strategy signal or chance of profit.</p>}
       <div className="relative w-full" style={{ height }}>
         <div className="absolute top-2 left-3 z-10" style={{ pointerEvents: "none" }}>
           {ticker && <span className="text-sm font-mono font-bold" style={{ color: "var(--ink)" }}>{ticker}</span>}

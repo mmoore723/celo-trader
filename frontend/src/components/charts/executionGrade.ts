@@ -29,11 +29,13 @@ export interface ExecutionGrade {
 }
 
 export function gradeBar(bar: Bar): ExecutionGrade | null {
+  if (![bar.open, bar.high, bar.low, bar.close, bar.atr, bar.rvol].every(Number.isFinite)
+      || !(bar.atr! > 0) || !(bar.rvol! >= 0)) return null;
   const range = bar.high - bar.low;
   if (range <= 0) return null;
 
   const bodyRatio = Math.min(1, Math.abs(bar.close - bar.open) / range);
-  const displacement = bar.atr && bar.atr > 0 ? range / bar.atr : 1;
+  const displacement = range / bar.atr!;
   const rvol = bar.rvol ?? null;
 
   // Simple, explainable point system — not a black box.
@@ -51,4 +53,16 @@ export function gradeBar(bar: Bar): ExecutionGrade | null {
   if (rvol != null) parts.push(`${rvol.toFixed(1)}x volume`);
 
   return { grade, bodyRatio, displacement, rvol, label: parts.join(" · ") };
+}
+
+export function gradeBeforeEntry(bars: Bar[], entryTime: string): ExecutionGrade | null {
+  const entry = Date.parse(entryTime);
+  if (!Number.isFinite(entry)) return null;
+  const ordered = bars.map(bar => ({ bar, time: Date.parse(bar.time) }))
+    .filter(row => Number.isFinite(row.time)).sort((a, b) => a.time - b.time);
+  const intervals = ordered.slice(1).map((row, index) => row.time - ordered[index].time).filter(n => n > 0);
+  if (!intervals.length) return null;
+  const interval = Math.min(...intervals);
+  const row = ordered.findLast(row => row.time + interval <= entry && entry - row.time - interval < interval);
+  return row ? gradeBar(row.bar) : null;
 }
