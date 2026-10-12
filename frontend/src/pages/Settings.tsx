@@ -396,6 +396,7 @@ export function Settings() {
           label={strategy.observation_only ? "Research · All collected tickers" : tradingTickers.length ? "Trading on" : "No tickers enabled"} />
         {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
           strategyId={strategy.strategy_id} failed={closedTradesFailed} loading={closedTradesLoading} />}
+        {strategy.automatic_pauses?.map(pause => <p key={pause.ticker} className="text-xs pb-2" style={{ color: "var(--warning)" }}>{pause.ticker}: automatically moved to research only. Closed-trade PF {pause.profit_factor.toFixed(2)} across {pause.completed_trades} trades. Existing positions keep their exits.</p>)}
         <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
           <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Recorded test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}
         </p>
@@ -813,7 +814,7 @@ export function Settings() {
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           On means the strategy may place {actualAccountMode} orders on the tickers listed under “Trades.” Research continues on all other collected tickers.
         </p>
-        <div className="settings-card-grid">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only).map(strategyControl)}</div>
+        <div className="settings-card-grid">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only && Boolean(form[strategy.setting_key]) && (strategy.trading_tickers?.length ?? 0) > 0).map(strategyControl)}</div>
         <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
           New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
         </div>
@@ -837,7 +838,7 @@ export function Settings() {
           On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} New matches need 20 non-overlapping completed tests and passing profit checks—not a minimum number of days.
         </p>
         <div className="settings-card-grid">
-        {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only).map(strategyControl)}
+        {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only || !form[strategy.setting_key] || !(strategy.trading_tickers?.length)).map(strategyControl)}
         <TestedStrategies
           embedded
           researchIds={form.research_strategy_ids ?? []}

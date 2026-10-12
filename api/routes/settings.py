@@ -49,16 +49,38 @@ def get_strategy_recommendations() -> dict:
     from config import get_settings
     from strategy_health.pair_recommendations import recommendations
     from api.research_snapshot import research_snapshot
-    from api.recommendation_snapshot import remember
-    matrix, settings = research_snapshot(), get_settings()
+    from api.recommendation_snapshot import remember, for_decision
+    from database import _now_et
+    from datetime import timedelta
+    settings = get_settings()
+    try:
+        matrix = for_decision(settings)
+    except HTTPException:
+        today = _now_et().date()
+        matrix = research_snapshot(90, start_date=(today - timedelta(days=89)).isoformat(), end_date=today.isoformat())
+        remember(matrix, settings)
     result = recommendations(matrix, settings)
-    remember(matrix, settings)
     return result
 
 
 @router.post("/strategies/recommendations/{strategy_id}/{ticker}")
 def set_strategy_recommendation_consent(strategy_id: str, ticker: str, payload: StrategyConsentPayload) -> dict:
     from config import get_settings, save_settings
+    if payload.decision == 'research_only':
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        from strategy_health.pair_recommendations import consent_scope
+        from config import get_user_data_dir
+        from config.atomic_files import _lock_for
+        sid, symbol = strategy_id.strip().upper(), ticker.strip().upper()
+        rule = REVIEWED_STRATEGIES.get(sid)
+        if not rule or symbol not in rule.tickers | rule.recommendation_tickers:
+            raise HTTPException(400, 'Unknown strategy and ticker pair')
+        with _lock_for(get_user_data_dir() / 'settings.json'):
+            settings = get_settings()
+            pauses = dict(settings.get('strategy_pair_pauses') or {})
+            pauses[consent_scope(settings, sid, symbol)] = True
+            save_settings({'strategy_pair_pauses': pauses})
+        return {'ok': True}
     if payload.fingerprint is not None:
         from strategy_health.pair_recommendations import decide
         from api.recommendation_snapshot import for_decision

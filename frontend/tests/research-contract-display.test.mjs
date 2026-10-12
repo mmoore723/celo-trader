@@ -13,7 +13,7 @@ test("research results can be narrowed to one ticker", () => {
 });
 
 test("research results separate no setup from no matching option", () => {
-  assert.match(source, /Setup, no option/);
+  assert.match(source, /Signals without priced results/);
   assert.match(source, /No setup/);
   assert.match(source, /raw trigger/);
   assert.match(source, /distinct research play/);

@@ -378,6 +378,15 @@ def get_options_chain(ticker: str) -> list[OptionsChainRow]:
 
 @router.get("/premarket")
 def get_premarket_report(tickers: str = Query("")) -> list[dict]:
+    from api.daily_brief import read_report
+    rows = read_report()
+    if tickers:
+        selected = {ticker.strip().upper() for ticker in tickers.split(',')}
+        rows = [row for row in rows if row['ticker'] in selected]
+    return rows
+
+
+def build_premarket_report(tickers: str = "") -> list[dict]:
     """
     Rich premarket analysis for the user's watchlist + scanner-found tickers.
 

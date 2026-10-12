@@ -432,7 +432,7 @@ export function DailyBrief() {
   });
 
   // Rich premarket endpoint — includes ALL watchlist tickers with live Alpaca + yfinance data
-  const { data: premarket = [], isLoading: pmLoading } = useQuery<PremarketTicker[]>({
+  const { data: premarket = [], isLoading: pmLoading, error: briefError } = useQuery<PremarketTicker[]>({
     queryKey: ["premarket"],
     queryFn:  () => api.market.premarket(),
     refetchInterval: 60_000,
@@ -544,6 +544,8 @@ export function DailyBrief() {
       {/* ── Pre-Market Tab ── */}
       {briefTab === "premarket" && (
         <>
+          {briefError && <p role="status" className="card p-3 text-sm">{briefError.message}</p>}
+          {premarket[0]?.prepared_at && <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Saved daily report prepared {new Date(premarket[0].prepared_at).toLocaleString()}. Opening this tab does not run a new analysis.</p>}
           <div className="card overflow-hidden">
             <div className="px-4 py-3 border-b flex items-start justify-between gap-3" style={{ borderColor: "var(--border)" }}>
               <div>

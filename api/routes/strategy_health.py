@@ -142,7 +142,11 @@ def get_candidate_scorecard(days: int = 30) -> dict:
 def get_research_matrix(days: int = 90, start_date: str | None = None, end_date: str | None = None) -> dict:
     """Simple strategy-by-ticker results; this endpoint cannot place orders."""
     try:
-        return _research_snapshot(days, start_date, end_date)
+        if days == 90 and start_date is None and end_date is None:
+            from database import _now_et
+            today = _now_et().date()
+            start_date, end_date = (today - timedelta(days=89)).isoformat(), today.isoformat()
+        return _research_snapshot(days, start_date, end_date, allow_stale=True)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

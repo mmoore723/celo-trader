@@ -27,6 +27,24 @@ PASSWORD = "StrongAudit1!"
 
 
 class AuthSecurityRemediationTests(unittest.TestCase):
+    def test_fresh_login_restores_terms_from_server_not_browser_cache(self):
+        from api.routes.auth import _issue_session
+        from fastapi import Response
+        user = {'user_id': 'one', 'username': 'one', 'is_admin': False, 'session_version': 1}
+        with patch('api.routes.auth.jwt_secret', return_value='test-only-signing-secret-at-least-32-characters'):
+            for version, expected in [(None, False), ('outdated', False), (users.CURRENT_TERMS_VERSION, True)]:
+                result = _issue_session(Response(), {**user, 'terms_version': version}, False)
+                self.assertEqual(expected, result['terms_accepted'])
+                self.assertEqual('one', result['user_id'])
+
+    def test_password_authentication_returns_persisted_terms_version(self):
+        users.get_db().close()
+        admin = users.authenticate('admin', PASSWORD)
+        self.assertIsNone(admin['terms_version'])
+        self.assertTrue(users.accept_terms(admin['user_id']))
+        signed_in_again = users.authenticate('admin', PASSWORD)
+        self.assertEqual(users.CURRENT_TERMS_VERSION, signed_in_again['terms_version'])
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)

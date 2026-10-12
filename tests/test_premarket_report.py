@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from api.routes.market import _rank_premarket_results, get_premarket_report
+from api.routes.market import _rank_premarket_results, build_premarket_report
 from trading.state import _now_et
 
 
@@ -69,7 +69,7 @@ class PremarketReportTests(unittest.TestCase):
              patch("config.get_settings", return_value={"watchlist": ["SPY"], "paper_trading": True}), \
              patch.dict("sys.modules", {"yfinance": fake_yfinance}), \
              patch("broker.get_clients", return_value=(_Alpaca(), object())):
-            report = get_premarket_report("")
+            report = build_premarket_report("")
 
         self.assertEqual(1, len(report))
         row = report[0]

@@ -40,6 +40,7 @@ class RegisterRequest(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _issue_session(response: Response, user: dict, stay: bool) -> dict:
+    from auth.users import CURRENT_TERMS_VERSION
     duration = SESSION_LONG if stay else SESSION_SHORT
     now      = datetime.now(timezone.utc)
     payload  = {
@@ -57,7 +58,8 @@ def _issue_session(response: Response, user: dict, stay: bool) -> dict:
         max_age=int(duration.total_seconds()), path="/",
     )
     return {"ok": True, "user_id": user["user_id"], "username": user["username"],
-            "is_admin": user["is_admin"]}
+            "is_admin": user["is_admin"],
+            "terms_accepted": user.get("terms_version") == CURRENT_TERMS_VERSION}
 
 
 def decode_session(token: str) -> dict:

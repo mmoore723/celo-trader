@@ -355,6 +355,8 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
         from config.strategy_ticker_recommendations import is_user_authorized_ticker
         approved_tickers = sorted(ticker for ticker in rule.recommendation_tickers
                                   if is_user_authorized_ticker(strategy_id, ticker, settings))
+        from strategy_health.closed_trade_guard import scope
+        automatic_pauses = settings.get('strategy_closed_trade_pauses') or {}
         rows.append({
             "strategy_id": rule.strategy_id,
             "display_name": rule.display_name,
@@ -362,6 +364,9 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
             "tickers": sorted(rule.tickers | set(approved_tickers)),
             "trading_tickers": sorted(ticker for ticker in (rule.tickers | set(approved_tickers))
                                       if strategy_id in enabled_reviewed_strategy_ids(settings, ticker=ticker)),
+            "automatic_pauses": [{"ticker": ticker, **automatic_pauses[scope(settings, strategy_id, ticker, rule.version)]}
+                                 for ticker in sorted(rule.tickers | rule.recommendation_tickers)
+                                 if scope(settings, strategy_id, ticker, rule.version) in automatic_pauses],
             "setting_key": rule.setting_key,
             "signal_source": rule.signal_source,
             "implementation": rule.implementation,

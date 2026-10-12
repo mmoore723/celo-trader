@@ -49,6 +49,7 @@ def summarize(rows, version):
     from zoneinfo import ZoneInfo
     et = ZoneInfo('America/New_York')
     return dict(version=version, completed_trades=len(completed), profit_factor=factor,
+                gross_profit=gains, gross_loss=losses,
                 realized_pnl=round(sum(profits), 2) if profits else None,
                 wins=sum(p > 0 for p in profits), exclusions=dict(excluded),
                 first_entry_date=min(r[0] for r in completed).astimezone(et).date().isoformat() if completed else None,

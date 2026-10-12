@@ -13,6 +13,8 @@ from fastapi import FastAPI
 
 _learning_stop = threading.Event()
 _research_stop = threading.Event()
+_strategy_guard_stop = threading.Event()
+_brief_stop = threading.Event()
 
 
 def _refresh_learning_curation_once() -> None:
@@ -163,6 +165,14 @@ def _auto_start_bot_if_needed() -> None:
 async def _lifespan(app: FastAPI):
     """Auto-resume on boot and coordinate loop shutdown on service exit."""
     _auto_start_bot_if_needed()
+    from api.daily_brief import run as prepare_brief
+    _brief_stop.clear()
+    threading.Thread(target=prepare_brief, args=(_brief_stop,), daemon=True,
+                     name="daily-brief").start()
+    from api.strategy_guard import run as guard_strategies
+    _strategy_guard_stop.clear()
+    threading.Thread(target=guard_strategies, args=(_strategy_guard_stop,), daemon=True,
+                     name="strategy-guard").start()
     _learning_stop.clear()
     threading.Thread(target=_learning_curation_worker, daemon=True, name="learning-curator").start()
     from api.research_refresh import run as refresh_research
@@ -176,6 +186,8 @@ async def _lifespan(app: FastAPI):
         from trading.state import request_graceful_shutdown
         _learning_stop.set()
         _research_stop.set()
+        _strategy_guard_stop.set()
+        _brief_stop.set()
 
         still_running = request_graceful_shutdown(timeout=15.0)
         if still_running:

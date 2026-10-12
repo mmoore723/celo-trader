@@ -220,6 +220,9 @@ def is_user_authorized_ticker(strategy_id: object, ticker: object, settings: dic
     mode = "paper" if bool(settings.get("paper_trading", True)) else "live"
     from strategy_health.pair_recommendations import consent_scope
     key = consent_scope(settings, sid, symbol)
+    from strategy_health.closed_trade_guard import is_paused
+    if is_paused(settings, sid, symbol, rule.version):
+        return False
     if (settings.get("strategy_pair_pauses") or {}).get(key) is True:
         return False
     grant = (settings.get("strategy_pair_approvals") or {}).get(key) or {}
@@ -265,6 +268,9 @@ def is_live_enabled_pair(strategy_id: object, ticker: object, settings: dict) ->
         return False
     from strategy_health.pair_recommendations import consent_scope
     scope = consent_scope(settings, sid, symbol)
+    from strategy_health.closed_trade_guard import is_paused
+    if is_paused(settings, sid, symbol, rule.version):
+        return False
     if (settings.get("strategy_pair_pauses") or {}).get(scope) is True:
         return False
     grant = (settings.get("strategy_pair_approvals") or {}).get(scope) or {}

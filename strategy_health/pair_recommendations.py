@@ -124,6 +124,11 @@ def recommendations(matrix, settings):
         rule = REVIEWED_STRATEGIES.get(sid)
         for pair in strategy["pairs"]:
             evidence = pair.get("recommendation") or {}
+            from strategy_health.closed_trade_guard import is_paused
+            paused = (settings.get('strategy_pair_pauses') or {}).get(consent_scope(settings, sid, pair['ticker'])) is True
+            paused = paused or bool(rule and is_paused(settings, sid, pair['ticker'], rule.version))
+            if pair['tradable'] and paused:
+                continue
             kind = "review_active" if pair["tradable"] and evidence.get("review_active") else "new_match" if not pair["tradable"] and evidence.get("qualified") else None
             if kind is None:
                 continue
@@ -142,6 +147,9 @@ def recommendations(matrix, settings):
             live = bool(executable and (rule.authored_exit_order_route or review_live_promotion(rule, pair["ticker"]).ready))
             switch_on = bool(rule and settings.get(rule.setting_key, False))
             can_enable = executable and (switch_on or rule.authored_exit_order_route) and (paper or live)
+            from strategy_health.closed_trade_guard import is_paused
+            automatic_pause = bool(rule and is_paused(settings, sid, pair['ticker'], rule.version))
+            can_enable = can_enable and not automatic_pause
             metrics = evidence["recent"] if kind == "review_active" else {**evidence["validation"], "option_results": evidence["independent_trades"]}
             result.append({
                 "strategy_id": sid, "ticker": pair["ticker"], "strategy_version": strategy["version"],
@@ -150,7 +158,7 @@ def recommendations(matrix, settings):
                 "profit_factor": metrics["profit_factor"], "completed_trades": metrics["option_results"],
                 "net_pnl": metrics["net_one_contract_pnl"],
                 "account_mode": "paper" if paper else "live", "can_enable": can_enable,
-                "blocker": None if can_enable else "Research passed; the matching order-entry and exit route still needs implementation and review." if not executable else "Turn on the strategy switch before adding this ticker." if not switch_on and not rule.authored_exit_order_route else "Research passed; live execution review is still required.",
+                "blocker": "Automatically moved to research only: actual closed-trade PF fell below 1 for this account and version." if automatic_pause else None if can_enable else "Research passed; the matching order-entry and exit route still needs implementation and review." if not executable else "Turn on the strategy switch before adding this ticker." if not switch_on and not rule.authored_exit_order_route else "Research passed; live execution review is still required.",
             })
     return {"recommendations": result, "policy": POLICY, "evaluated_strategies": len(matrix["strategies"])}
 

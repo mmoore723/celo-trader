@@ -14,7 +14,6 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
   const [error, setError] = useState("");
   async function decide(item: StrategyTickerRecommendation, action: PairDecision) {
     if (action === "enable" && !window.confirm(`Allow ${strategyName(item.display_name)} to place ${item.account_mode} orders on ${item.ticker}?`)) return;
-    if (action === "research_only" && !window.confirm(`Stop new ${item.account_mode} entries for ${strategyName(item.display_name)} on ${item.ticker}? Research and existing-position management continue.`)) return;
     setBusy(true); setError("");
     try { await onDecision(item, action); }
     catch (err) { setError(err instanceof Error ? err.message : "Could not save your choice. Try again."); }
@@ -28,7 +27,7 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
       return <section key={kind} className="card p-4">
         <h3 className="text-sm font-semibold">{review ? "Review active strategies" : "New strategy matches"}</h3>
         <p className="text-xs mt-1 mb-3" style={{color: "var(--ink-muted)"}}>{review
-          ? "Pairs appear here when recent tests weaken. Nothing turns off automatically."
+          ? "Review weaker research results here. Actual closed-trade PF below 1 automatically stops new entries for that account and pair. Open positions keep their exits."
           : "Pairs appear here after passing the test checks. You decide whether to allow trading."}</p>
         {!rows.length && <p className="text-xs" style={{color: "var(--ink-muted)"}}>{review ? "No active pairs meet the review trigger." : "No new pairs have passed all checks yet."}</p>}
         {rows.map(item => <article key={`${item.strategy_id}:${item.ticker}`} className="rounded-lg border p-3 mt-2" style={{borderColor: "var(--border)"}}>

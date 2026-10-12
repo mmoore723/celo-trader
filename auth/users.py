@@ -235,7 +235,8 @@ def authenticate(username: str, password: str) -> Optional[dict]:
     except Exception:
         return None
     return {"user_id": row["id"], "username": row["username"],
-            "is_admin": bool(row["is_admin"]), "session_version": int(row["session_version"])}
+            "is_admin": bool(row["is_admin"]), "session_version": int(row["session_version"]),
+            "terms_version": row["terms_version"]}
 
 
 def get_user(user_id: str) -> Optional[dict]:

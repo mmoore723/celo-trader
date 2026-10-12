@@ -12,6 +12,18 @@ import strategy_health.research_matrix
 
 
 class ResearchRefreshTests(unittest.TestCase):
+    def test_prepares_recommendations_without_opening_settings(self):
+        from api import recommendation_snapshot
+        users = [{'user_id': 'one', 'username': 'one', 'is_admin': False}]
+        settings = {'paper_trading': True}
+        with patch.dict('sys.modules', {'auth.users': SimpleNamespace(list_users=lambda: users)}), \
+             patch('config.get_db_path', return_value=Mock(is_file=lambda: True)), \
+             patch('config.get_settings', return_value=settings), \
+             patch('api.research_snapshot.research_snapshot', return_value={'strategies': []}), \
+             patch.object(recommendation_snapshot, 'remember') as remember:
+            research_refresh.refresh_once(Event())
+            remember.assert_called_once_with({'strategies': []}, settings)
+
     def test_first_page_request_reuses_automatically_prepared_snapshot(self):
         from pathlib import Path
         from api import research_snapshot as snapshots

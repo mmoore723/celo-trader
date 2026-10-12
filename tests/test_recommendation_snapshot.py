@@ -8,6 +8,17 @@ from tests.test_trend_research_execution import matrix, SID, RULE
 
 
 class RecommendationSnapshotTests(unittest.TestCase):
+    def test_move_to_research_only_does_not_require_unexpired_research_offer(self):
+        with patch('config.get_settings', return_value={'paper_trading': True}), \
+             patch('config.get_user_data_dir', return_value=__import__('pathlib').Path('/tmp/celo-test-user')), \
+             patch('config.save_settings') as save, \
+             patch('api.recommendation_snapshot.for_decision', side_effect=AssertionError('No offer needed to stop entries')):
+            self.assertEqual({'ok': True}, set_strategy_recommendation_consent(
+                SID, 'SPY', StrategyConsentPayload(decision='research_only', fingerprint='expired')))
+            self.assertEqual({'strategy_pair_pauses': {f'shared:{SID}:SPY': True}}, save.call_args.args[0])
+            with self.assertRaises(HTTPException):
+                set_strategy_recommendation_consent('UNKNOWN', 'SPY', StrategyConsentPayload(decision='research_only'))
+
     def setUp(self):
         snapshot._offers.clear()
 

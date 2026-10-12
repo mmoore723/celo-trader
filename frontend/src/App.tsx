@@ -69,9 +69,12 @@ function AppShell() {
     const dismissedKey = `celo_setup_done_${user?.user_id ?? "admin"}`;
     if (localStorage.getItem(dismissedKey)) return; // already seen
     fetch("/api/settings/credentials", { credentials: "include" })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Could not check saved credentials");
+        return r.json();
+      })
       .then((d) => {
-        const empty = !d.alpaca_key && !d.tradier_token;
+        const empty = d.has_alpaca === false && d.has_tradier === false && d.has_tradier_market === false;
         if (empty) setShowSetup(true);
       })
       .catch(() => {});

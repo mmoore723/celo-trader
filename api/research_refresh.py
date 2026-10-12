@@ -10,6 +10,8 @@ def refresh_once(stop):
     from config import get_db_path
     from database import _now_et
     from api.research_snapshot import research_snapshot
+    from api.recommendation_snapshot import remember
+    from config import get_settings
 
     try:
         for user in list_users():
@@ -20,8 +22,10 @@ def refresh_once(stop):
                 if not get_db_path().is_file():
                     continue
                 today = _now_et().date()
-                research_snapshot(90, start_date=(today - timedelta(days=89)).isoformat(),
-                                  end_date=today.isoformat())
+                matrix = research_snapshot(90, start_date=(today - timedelta(days=89)).isoformat(),
+                                           end_date=today.isoformat())
+                if matrix and 'strategies' in matrix:
+                    remember(matrix, get_settings())
             except Exception:
                 logging.getLogger(__name__).exception('Research refresh failed for user %s', user['user_id'])
     finally:

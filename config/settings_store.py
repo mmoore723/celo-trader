@@ -9,7 +9,7 @@ logic changed, only relocated.
 import json
 import logging
 
-from config.atomic_files import atomic_write_json, atomic_write_text
+from config.atomic_files import atomic_write_json, atomic_write_text, _lock_for
 
 from config.paths import (
     get_user_data_dir, _get_user_id, SETTINGS_PATH, BASE_DIR,
@@ -89,11 +89,12 @@ def save_settings(updates: dict, user_id: str | None = None) -> None:
     if current_snapshot(uid) is not None:
         raise RuntimeError("Read-only research cannot change account settings")
     _path   = get_user_data_dir(uid) / "settings.json"
-    current = get_settings(user_id=uid)
-    current.update(updates)
-    for key in _RETIRED_STRATEGY_SETTING_KEYS:
-        current.pop(key, None)
-    atomic_write_json(_path, current)
+    with _lock_for(_path):
+        current = get_settings(user_id=uid)
+        current.update(updates)
+        for key in _RETIRED_STRATEGY_SETTING_KEYS:
+            current.pop(key, None)
+        atomic_write_json(_path, current)
 
 
 def get_maintenance_state() -> dict:

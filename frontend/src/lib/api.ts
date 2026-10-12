@@ -963,6 +963,7 @@ export interface ScannerResult {
 }
 
 export interface PremarketTicker {
+  prepared_at?: string;
   ticker: string;
   price: number;
   prev_close: number;
@@ -1065,6 +1066,7 @@ export interface ClosedTradeEvidence {
 }
 
 export interface ReviewedStrategyCatalogEntry {
+  automatic_pauses?: { ticker: string; profit_factor: number; completed_trades: number }[];
   strategy_id: string;
   display_name: string;
   version: string;
