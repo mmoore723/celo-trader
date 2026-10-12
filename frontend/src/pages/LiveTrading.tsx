@@ -694,7 +694,7 @@ export function LiveTrading() {
             mode="live"
             resetKey={`${ticker}|${tf}|${effectivePeriod}`}
             bars={chartBars}
-            trades={chartSetup ? (setupTrade ? [setupTrade] : []) : optionChart.selected ? [optionChart.selected] : tickerTrades}
+            trades={tickerTrades}
             showVwap={showVwap}
             showVwapBands={false}
             showOR={showOR}

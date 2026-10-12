@@ -28,3 +28,11 @@ test("live chart removes Bands and Pos and connects setup cards to drawings", as
   assert.match(live, /setSelectedSetup\(opportunity\)/);
   assert.match(live, /annotations=\{chartAnnotations\}/);
 });
+
+test("a blocked or unlinked setup cannot hide actual entry and exit markers", async () => {
+  const live = await readFile(new URL("../src/pages/LiveTrading.tsx", import.meta.url), "utf8");
+  const chart = live.slice(live.indexOf("<BoomerangReplay"), live.indexOf("narrationEvents={narrationEvents}"));
+  assert.match(chart, /trades=\{tickerTrades\}/);
+  assert.doesNotMatch(chart, /trades=\{chartSetup/);
+  assert.match(chart, /annotations=\{chartAnnotations\}/);
+});

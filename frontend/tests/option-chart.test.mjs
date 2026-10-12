@@ -77,6 +77,6 @@ test("position view uses the standard candle chart with a non-distorting positio
   assert.match(liveTrading, /"True one-minute stock candles with the option position overlaid\."/);
   assert.match(liveTrading, /"Option trades" : "1-minute stock"/);
   assert.match(liveTrading, /showTradeWindow\(selected\.entry_time, selected\.exit_time\)/);
-  assert.match(liveTrading, /trades=\{chartSetup \? \(setupTrade \? \[setupTrade\] : \[\]\) : optionChart\.selected \? \[optionChart\.selected\] : tickerTrades\}/);
+  assert.match(liveTrading, /trades=\{tickerTrades\}/);
   assert.match(replay, /showTradeWindow: \(entryTime: string, exitTime\?: string\) => void/);
 });
