@@ -33,9 +33,9 @@ def get_conn():
     _active_path = get_db_path()
     conn = sqlite3.connect(str(_active_path), detect_types=sqlite3.PARSE_DECLTYPES)
     conn.row_factory = sqlite3.Row   # rows behave like dicts
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
     try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
         yield conn
         conn.commit()
     except Exception:
@@ -69,9 +69,9 @@ def _conn_for_mode(mode: str, user_id: str | None = None):
     _init_db_at(_path)
     conn = sqlite3.connect(str(_path), detect_types=sqlite3.PARSE_DECLTYPES)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
     try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
         yield conn
         conn.commit()
     except Exception:
@@ -79,4 +79,3 @@ def _conn_for_mode(mode: str, user_id: str | None = None):
         raise
     finally:
         conn.close()
-

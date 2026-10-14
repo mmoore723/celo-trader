@@ -8,6 +8,7 @@ logic changed, only relocated.
 """
 
 import logging
+import sqlite3
 from typing import Optional
 
 from database.connection import get_conn
@@ -29,11 +30,14 @@ def log_event(level: str, component: str, message: str) -> None:
     The dual-write here fixes that without changing any call sites.
     """
     # 1. Persist to SQLite
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO system_events (ts, level, component, message) VALUES (?, ?, ?, ?)",
-            (_now_et().isoformat(), level, component, message),
-        )
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO system_events (ts, level, component, message) VALUES (?, ?, ?, ?)",
+                (_now_et().isoformat(), level, component, message),
+            )
+    except sqlite3.Error:
+        logger.exception('System event database write failed; retaining event in application log')
 
     # 2. Mirror to bot.log so WebSocket → THINKING panel can display it.
     # Use component as the logger name (e.g. "celo_trader.bar_eval") so the
@@ -135,5 +139,3 @@ def get_ai_reasoning_entry(entry_id: int) -> Optional[dict]:
             "SELECT * FROM ai_reasoning_log WHERE id = ?", (entry_id,)
         ).fetchone()
         return dict(row) if row else None
-
-
