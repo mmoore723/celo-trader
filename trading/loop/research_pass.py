@@ -42,7 +42,8 @@ def market_readers(alpaca, tradier):
     if callable(getattr_static(tradier, "get_research_option_quotes", None)):
         option_reads["get_research_option_quotes"] = tradier.get_research_option_quotes
     return (
-        SimpleNamespace(**{name: getattr(alpaca, name) for name in (
+        SimpleNamespace(premarket_calendar=lambda params: alpaca._get(f"{alpaca.base}/v2/calendar", params),
+                        **{name: getattr(alpaca, name) for name in (
             "get_session_bars", "get_bars", "get_latest_quote", "is_market_open",
         )}),
         SimpleNamespace(**option_reads),
@@ -93,6 +94,9 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
 
         def record(symbol, signal, price):
             if not stopped():
+                from scanner.premarket_eligibility import screen_signal
+                if "premarket_screen" not in (signal.meta or {}):
+                    screen_signal(alpaca, symbol, signal, now=_now_et())
                 observe_candidate_contract(
                     ticker=symbol, signal=signal, underlying_price=price,
                     tradier=tradier, balance=balance, risk=risk, settings=settings,

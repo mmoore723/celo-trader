@@ -160,7 +160,7 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
         # pullback strategies can be valid on smaller opening moves.
         _gap_min = _MIN_GAP_PCT_ETF if ticker in _ETF_SET else _MIN_GAP_PCT
         discovery_floor = min(_gap_min, 0.25 if ticker in _ETF_SET else 0.50)
-        if abs_gap < discovery_floor and ticker not in _user_pins and ticker not in ANCHOR_TICKERS:
+        if scan_phase != "premarket" and abs_gap < discovery_floor and ticker not in _user_pins and ticker not in ANCHOR_TICKERS:
             continue
 
         candidates.append({
@@ -252,6 +252,10 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
                     continue
                 rvol = evidence["rvol"]
                 rvol_ok = True
+                if evidence.get("premarket_close", 0) > 0 and c["prev_close"] > 0:
+                    c["gap_pct"] = (evidence["premarket_close"] / c["prev_close"] - 1) * 100
+                    c["abs_gap"] = abs(c["gap_pct"])
+                    c["gap_dir"] = "up" if c["gap_pct"] >= 0 else "down"
             elif elapsed_min >= 5:
                 rvol_ok = rvol >= _rvol_min
             else:

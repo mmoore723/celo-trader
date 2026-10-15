@@ -83,6 +83,7 @@ def route_signals(
     observation_scope: str | None = None,
     evaluation_observer=None,
     decision_recorder=None,
+    premarket_screen=None,
 ) -> list[Signal]:
     """
     Evaluate all strategy modules against the current bar data.
@@ -139,10 +140,25 @@ def route_signals(
         return None
 
     def done(result, reason):
+        def priority(signal):
+            return bool((signal.meta or {}).get('premarket_screen', {}).get('priority'))
+        for confidence in {signal.confidence for signal in result if priority(signal)}:
+            positions = [index for index, signal in enumerate(result) if signal.confidence == confidence]
+            ranked = sorted((result[index] for index in positions), key=priority, reverse=True)
+            for index, signal in zip(positions, ranked):
+                result[index] = signal
         returned = {signal.strategy_id for signal in result}
         for sid in enabled_strategies or ():
             observe(sid, 'returned' if sid in returned else reason, 'routing')
         return result
+
+    def eligible(signal):
+        if premarket_screen is not None:
+            return premarket_screen(ticker, signal)
+        if alpaca is not None and not quiet:
+            from scanner.premarket_eligibility import screen_signal
+            return screen_signal(alpaca, ticker, signal)
+        return True
 
     if df.empty or len(df) < 2:
         return done([], 'insufficient_input')
@@ -288,6 +304,7 @@ def route_signals(
         if not _authorized_for_order(strategy_id, ticker) and strategy_id not in _observation_only:
             logger.warning("Discarding out-of-scope injected strategy %s for %s", strategy_id, ticker)
             continue
+        screen_passed = eligible(sig)
         if candidate_observer is not None:
             try:
                 candidate_observer(ticker, sig, _underlying_price)
@@ -300,6 +317,9 @@ def route_signals(
                     observation_resolver(sig)
                 except Exception:
                     logger.warning("candidate observation resolve failed (non-fatal)", exc_info=True)
+            continue
+        if not screen_passed:
+            observe(strategy_id, 'premarket_screen_rejected', 'routing')
             continue
         signals.append(sig)
         if not quiet:
@@ -342,6 +362,7 @@ def route_signals(
             _evaluated = True
             observe(strategy_id, 'signal_returned' if sig is not None else 'no_signal_returned')
             if sig is not None:
+                screen_passed = eligible(sig)
                 if candidate_observer is not None:
                     try:
                         candidate_observer(ticker, sig, _underlying_price)
@@ -356,6 +377,9 @@ def route_signals(
                             logger.warning("candidate observation resolve failed (non-fatal)", exc_info=True)
                     # Do not annotate, gate, rank, select a contract, or
                     # return an observation-only candidate to the entry loop.
+                    continue
+                if not screen_passed:
+                    observe(strategy_id, 'premarket_screen_rejected', 'routing')
                     continue
                 signals.append(sig)
                 # Annotations are live-dashboard side effects.  Suppress

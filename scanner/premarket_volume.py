@@ -45,10 +45,13 @@ def matched_premarket_rvol(alpaca, symbols, now, *, tradier=None):
     if cutoff <= time(4) or not symbols:
         return {}
     start_date = now.date() - timedelta(days=HISTORY_DAYS - 1)
-    calendar = alpaca._get(f"{alpaca.base}/v2/calendar", {
+    params = {
         "start": start_date.isoformat(),
         "end": now.date().isoformat(),
-    })
+    }
+    calendar_reader = getattr(alpaca, "premarket_calendar", None)
+    calendar = (calendar_reader(params) if callable(calendar_reader)
+                else alpaca._get(f"{alpaca.base}/v2/calendar", params))
     prior = sorted({datetime.fromisoformat(row["date"]).date()
                     for row in calendar
                     if start_date.isoformat() <= row["date"] < now.date().isoformat()})
@@ -76,7 +79,8 @@ def matched_premarket_rvol(alpaca, symbols, now, *, tradier=None):
                 stamp = datetime.fromisoformat(str(row["time"]).replace("Z", "+00:00"))
                 if stamp.tzinfo is None:
                     stamp = stamp.replace(tzinfo=ET)
-                bars.append({"t": stamp.isoformat(), "v": row["volume"]})
+                bars.append({"t": stamp.isoformat(), "v": row["volume"],
+                             **{k: row.get(k) for k in ("open", "high", "low", "close")}})
             values = [window_volume(bars, session, cutoff) for session in prior + [now.date()]]
         except Exception as ex:
             logger.warning("Consolidated premarket RVOL unavailable for %s: %s", symbol, ex)
@@ -96,4 +100,24 @@ def matched_premarket_rvol(alpaca, symbols, now, *, tradier=None):
             "premarket_window": f"04:00-{cutoff:%H:%M} America/New_York",
             "premarket_volume_feed": "tradier_consolidated",
         }
+        end = datetime.combine(now.date(), cutoff, ET)
+        current = sorted((bar for bar in bars
+                          if datetime.combine(now.date(), time(4), ET)
+                          <= datetime.fromisoformat(bar["t"])
+                          and datetime.fromisoformat(bar["t"]) + timedelta(minutes=1) <= end),
+                         key=lambda bar: bar["t"])
+        try:
+            prices_valid = bool(current) and all(
+                all(bar.get(k) is not None and math.isfinite(float(bar[k])) and float(bar[k]) > 0
+                    for k in ("high", "low", "close"))
+                and float(bar["low"]) <= float(bar["close"]) <= float(bar["high"])
+                for bar in current)
+        except (TypeError, ValueError, OverflowError):
+            prices_valid = False
+        if prices_valid:
+            results[symbol].update(
+                premarket_close=float(current[-1]["close"]),
+                premarket_high=max(float(bar["high"]) for bar in current),
+                premarket_low=min(float(bar["low"]) for bar in current),
+            )
     return results
