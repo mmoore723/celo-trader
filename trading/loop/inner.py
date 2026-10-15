@@ -172,7 +172,7 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
     # FIX: was `_em._risk = RiskManager(...)` — a module-level global on
     # trading.entry shared by every user's thread (see trading/state.py's
     # get_user_risk/set_user_risk docstring for the full explanation).
-    set_user_risk(RiskManager(account_balance=balance), user_id)
+    set_user_risk(RiskManager(account_balance=balance, equity_reader=alpaca.get_account), user_id)
     logger.info("bot_started", extra={"event": "bot_started", "account_balance": round(balance, 2)})
     log_event("INFO", "trading_logic", f"🟢 Bot started [{user_id}]. Account balance: ${balance:.2f}")
     _US["running"] = True

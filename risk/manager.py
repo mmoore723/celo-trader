@@ -34,8 +34,9 @@ logger = logging.getLogger("celo_trader.risk")
 
 class RiskManager(SizingMixin, RRMixin, StructuralMixin, TargetMixin, ExitsMixin, GuardMixin):
 
-    def __init__(self, account_balance: float = STARTING_CAPITAL):
+    def __init__(self, account_balance: float = STARTING_CAPITAL, *, equity_reader=None):
         self.account_balance = account_balance
+        self.equity_reader = equity_reader
         self.daily_limit_hit = False
         self._last_check_date = date.today()
 

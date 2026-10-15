@@ -41,8 +41,24 @@ class GuardMixin:
         if not math.isfinite(realized):
             raise ValueError("Daily realized P&L is unavailable")
         equity_change = account_balance - day_start
-        hard = realized <= -day_start * hard_fraction or equity_change <= -day_start * hard_fraction
+        realized_hard = realized <= -day_start * hard_fraction
         soft = realized <= -day_start * soft_fraction
+        reader = getattr(self, "equity_reader", None)
+        if (not locked and not realized_hard and not soft
+                and equity_change <= -day_start * hard_fraction and callable(reader)):
+            first_equity = account_balance
+            try:
+                refreshed = reader()
+                confirmed = float(refreshed["equity"])
+                if not math.isfinite(confirmed) or confirmed < 0:
+                    raise ValueError("Invalid confirmation equity")
+                account_balance = confirmed
+                equity_change = confirmed - day_start
+                logger.warning("Daily equity breach rechecked: first=%.2f confirmed=%.2f day_open=%.2f",
+                               first_equity, confirmed, day_start)
+            except Exception:
+                logger.exception("Equity breach confirmation unavailable; retaining original loss protection")
+        hard = realized_hard or equity_change <= -day_start * hard_fraction
         # Keep checking a pending soft halt: losses during an unconfirmed
         # close can cross the hard limit and require the longer freeze.
         if locked and not hard:
