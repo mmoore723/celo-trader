@@ -9,7 +9,7 @@ import { resolveStrategyIdentity } from "./strategy-identity-loader.mjs";
 
 const source = readFileSync(new URL("../src/components/settings/TestedStrategies.tsx", import.meta.url), "utf8");
 const cardSource = readFileSync(new URL("../src/components/settings/StrategyToggleCard.tsx", import.meta.url), "utf8");
-const apiStub = "data:text/javascript," + encodeURIComponent("export const api = {settings:{testedStrategies:()=>Promise.resolve({})}};");
+const apiStub = "data:text/javascript," + encodeURIComponent("export const api = {settings:{testedStrategies:()=>Promise.resolve({}),strategyRemovals:()=>Promise.resolve({})}};");
 let cardCompiled = ts.transpileModule(cardSource, { compilerOptions: {
   jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext,
 } }).outputText;
@@ -24,6 +24,13 @@ for (const name of ["react", "react/jsx-runtime", "@tanstack/react-query"]) {
 compiled = compiled.replace('"../../lib/api"', JSON.stringify(apiStub));
 compiled = compiled.replace('"./StrategyToggleCard"', JSON.stringify(cardStub));
 compiled = compiled.replace('"./PairEvidence"', JSON.stringify('data:text/javascript,export function PairEvidence(){return null}'));
+let removalCompiled = ts.transpileModule(readFileSync(new URL("../src/components/settings/StrategyRemoval.tsx", import.meta.url), "utf8"), {compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext}}).outputText;
+for (const name of ["react", "react/jsx-runtime", "@tanstack/react-query"]) {
+  removalCompiled = removalCompiled.replaceAll(JSON.stringify(name), JSON.stringify(import.meta.resolve(name)));
+}
+removalCompiled = removalCompiled.replace('"../../lib/api"', JSON.stringify(apiStub));
+const { RemovedStrategies } = await import(`data:text/javascript;base64,${Buffer.from(removalCompiled).toString("base64")}`);
+compiled = compiled.replace('"./StrategyRemoval"', JSON.stringify(`data:text/javascript;base64,${Buffer.from(removalCompiled).toString("base64")}`));
 const { TestedStrategies } = await import(`data:text/javascript;base64,${Buffer.from(resolveStrategyIdentity(compiled)).toString("base64")}`);
 const fixture = {
   runtime_research: [],
@@ -46,6 +53,34 @@ function render(data, researchIds = [], researchMatrix, embedded = false) {
 test("developer research archives are not shown as user controls", () => {
   const html = render(fixture);
   assert.doesNotMatch(html, /Saved research archive|VWAP pullback|Legacy test|Saved test only/);
+});
+
+test("removed versions disappear from active research cards and remaining cards have removal control", () => {
+  const html = render({...fixture, runtime_research: [
+    {strategy_id: "V2_TREND_CONT", display_name: "Trend Continuation", version: "research.1", removed: true},
+    {strategy_id: "V2_EMA_PULLBACK_RTH", display_name: "EMA Pullback", version: "research.3"},
+  ]});
+  assert.doesNotMatch(html, /Trend Continuation/);
+  assert.match(html, /EMA Pullback/);
+  assert.match(html, /Remove strategy/);
+});
+
+test("retired archive is collapsed and available only with server admin authority", () => {
+  for (const can_restore of [false, true]) {
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    client.setQueryData(["strategy-removals"], {can_restore, strategies: [{strategy_id: "V2_TREND_CONT", version: "research.1", display_name: "Trend Continuation", removed: true}]});
+    const html = renderToStaticMarkup(createElement(QueryClientProvider, {client}, createElement(RemovedStrategies)));
+    if (can_restore) {
+      assert.match(html, /Retired strategy archive/);
+      assert.match(html, /Restore strategy/);
+      assert.doesNotMatch(html, /<details[^>]* open/);
+    } else assert.equal(html, "");
+    client.clear();
+  }
+  const settings = readFileSync(new URL("../src/pages/Settings.tsx", import.meta.url), "utf8");
+  const admin = readFileSync(new URL("../src/pages/Admin.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(settings, /<RemovedStrategies/);
+  assert.match(admin, /<RemovedStrategies/);
 });
 
 test("loading and failed library are not reported as zero tested strategies", () => {

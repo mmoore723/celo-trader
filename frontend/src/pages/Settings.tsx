@@ -18,6 +18,7 @@ import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggl
 import { StrategyExitNotice } from "../components/settings/StrategyExitNotice";
 import { StrategyIdentity } from "../components/settings/StrategyIdentity";
 import { strategyName } from "../lib/strategyIdentity.js";
+import { StrategyRemoval, ResearchTargetTickers } from "../components/settings/StrategyRemoval";
 
 const DEFAULT: AppSettings = {
   broker_provider: "alpaca",
@@ -367,6 +368,7 @@ export function Settings() {
   }
 
   function strategyControl(strategy: ReviewedStrategyCatalogEntry) {
+    if (strategy.removed) return null;
     const switchEnabled = Boolean(form[strategy.setting_key]);
     const tradingTickers = switchEnabled ? (strategy.trading_tickers ?? []) : [];
     const pf = strategy.backtest?.profit_factor;
@@ -396,6 +398,7 @@ export function Settings() {
           activity={tradingTickers.length ? "trading" : "research"}
           tickers={strategy.observation_only ? [] : tradingTickers}
           label={strategy.observation_only ? "Research · All collected tickers" : tradingTickers.length ? "Trading on" : "No tickers enabled"} />
+        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Research scope: all collected watchlist tickers. Trading tickers are separate.</p>
         {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
           strategyId={strategy.strategy_id} failed={closedTradesFailed} loading={closedTradesLoading} />}
         {strategy.automatic_pauses?.map(pause => <p key={pause.ticker} className="text-xs pb-2" style={{ color: "var(--warning)" }}>{pause.ticker}: automatically moved to research only. Closed-trade PF {pause.profit_factor.toFixed(2)} across {pause.completed_trades} trades. Existing positions keep their exits.</p>)}
@@ -424,6 +427,7 @@ export function Settings() {
             Disabled because its code no longer matches the reviewed evidence.
           </p>
         )}
+        <StrategyRemoval id={strategy.strategy_id} version={strategy.version} name={strategy.display_name} />
       </StrategyToggleCard>
     );
   }
@@ -814,6 +818,7 @@ export function Settings() {
       </div>
       <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
       <AdminStrategyControls />
+      <ResearchTargetTickers />
       <section aria-label="Automatically paused strategies" className="card p-4" style={{ border: "2px solid var(--warning)" }}>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Automatically paused</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>Automatic pause requires at least 20 closed trades and PF below 1 for each ticker/version in this account mode. Pauses block new entries, not exits. PF and counts below were recorded at the pause.</p>

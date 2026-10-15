@@ -4,6 +4,7 @@ import { StrategyToggleCard } from "./StrategyToggleCard";
 import { PairEvidence } from "./PairEvidence";
 import { strategyName } from "../../lib/strategyIdentity.js";
 import { StrategyIdentity } from "./StrategyIdentity";
+import { StrategyRemoval } from "./StrategyRemoval";
 
 export function TestedStrategies({
   researchIds, onResearchIdsChange, researchMatrix, embedded = false,
@@ -31,7 +32,7 @@ export function TestedStrategies({
   const factorText = (value: number | "infinite" | null | undefined) => value === "infinite" ? "∞" : typeof value === "number" ? value.toFixed(2) : "—";
 
   return <div className={embedded ? "contents" : "settings-card-grid"} id="tested-strategy-library">
-    {runtime.map((strategy) => {
+    {runtime.filter(strategy => !strategy.removed).map((strategy) => {
         const enabled = researchIds.includes(strategy.strategy_id);
         const matrixStrategy = researchMatrix?.strategies.find(item => item.strategy_id === strategy.strategy_id);
         const evidence = matrixStrategy?.current_evidence;
@@ -47,6 +48,7 @@ export function TestedStrategies({
           </p> : <p className="text-xs pb-2 -mt-1" style={{ color: "var(--ink-muted)" }}>Paused</p>}
           <StrategyIdentity id={strategy.strategy_id} version={matrixStrategy?.version} tickers={[]} label="Research · All collected tickers" activity="research" />
           <PairEvidence strategy={matrixStrategy} tradingTickers={[]} />
+          <StrategyRemoval id={strategy.strategy_id} version={strategy.version} name={strategy.display_name} />
         </StrategyToggleCard>;
       })}
   </div>;

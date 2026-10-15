@@ -123,6 +123,9 @@ def recommendations(matrix, settings):
     from config.admin_strategy_overrides import allowed_ticker
     for strategy in matrix["strategies"]:
         sid = execution_id(strategy["strategy_id"], strategy['version'])
+        from config.strategy_retirement import is_retired
+        if is_retired(settings, sid, strategy['version']):
+            continue
         rule = REVIEWED_STRATEGIES.get(sid)
         for pair in strategy["pairs"]:
             evidence = pair.get("recommendation") or {}

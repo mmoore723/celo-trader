@@ -802,6 +802,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             _observation_only_strategies |= (
                 reviewed_execution_strategy_ids() - _enabled
             )
+        from config.strategy_retirement import active_ids
+        _observation_only_strategies = active_ids(settings, _observation_only_strategies)
         if _observation_only_strategies:
             _observation_resolver = mark_candidate_observed_only
         # Price every raw candidate, not only the one which wins same-tick
@@ -2098,6 +2100,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         _durable_annotations = snapshot_annotations(ticker)
     except Exception:
         _durable_annotations = None
+    from config.strategy_retirement import active_ids
+    if strategy_id not in active_ids(get_settings(), {strategy_id}):
+        return
     order = alpaca.place_option_order(
         symbol          = contract["symbol"],
         qty             = n_contracts,

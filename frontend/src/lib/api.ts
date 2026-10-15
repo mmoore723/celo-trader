@@ -1051,7 +1051,7 @@ export interface BrokerReadiness {
 
 export interface TestedStrategyInventory {
   strategies: {strategy_id: string; display_name: string; tickers: string[]; reports: string[]; report_count: number; research_supported?: boolean; research_enabled?: boolean}[];
-  runtime_research?: {strategy_id: string; display_name: string; version: string; exit_minutes: number; timeframe_minutes: number; enabled: boolean; research_scope: "all_collected_tickers"}[];
+  runtime_research?: {strategy_id: string; display_name: string; version: string; removed?: boolean; exit_minutes: number; timeframe_minutes: number; enabled: boolean; research_scope: "all_collected_tickers"}[];
   reports_scanned: number;
   other_studies: string[];
   report_details: Record<string, {title: string; purpose: string; decision: string; status: string}>;
@@ -1073,6 +1073,7 @@ export interface ClosedTradeEvidence {
 }
 
 export interface ReviewedStrategyCatalogEntry {
+  removed?: boolean;
   research_source_strategy_id?: string;
   automatic_pauses?: { ticker: string; profit_factor: number; completed_trades: number }[];
   strategy_id: string;
@@ -1375,6 +1376,8 @@ export const api = {
     strategies: () => request<{strategies: ReviewedStrategyCatalogEntry[]}>("/api/settings/strategies"),
     closedStrategyTrades: () => request<ClosedTradeEvidence>("/api/settings/strategies/closed-trades"),
     testedStrategies: () => request<TestedStrategyInventory>("/api/settings/strategies/tested"),
+    strategyRemovals: () => request<{can_restore: boolean; research_tickers: string[]; universe_source: string; strategies: {strategy_id: string; version: string; display_name: string; removed: boolean}[]}>("/api/settings/strategies/removal"),
+    removeStrategy: (strategy_id: string, version: string, removed: boolean) => request<{ok: boolean}>("/api/settings/strategies/removal", {method: "POST", body: JSON.stringify({strategy_id, version, removed})}),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
     recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),
     decidePair: (item: StrategyTickerRecommendation, decision: "enable" | "keep_off" | "research_only" | "keep_trading") =>

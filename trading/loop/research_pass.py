@@ -64,6 +64,8 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
     observed |= reviewed_execution_strategy_ids()
     from config.research_order_specs import SPECS
     observed -= set(SPECS)
+    from config.strategy_retirement import active_ids
+    observed = active_ids(settings, observed)
     tested_ids = enabled_tested_research_ids(settings)
     if observed or tested_ids:
         frame = current

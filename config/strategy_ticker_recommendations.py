@@ -217,6 +217,9 @@ def is_user_authorized_ticker(strategy_id: object, ticker: object, settings: dic
     rule = REVIEWED_STRATEGIES.get(sid)
     if not rule or sid in reviewed_strategy_integrity_errors():
         return False
+    from config.strategy_retirement import is_retired
+    if is_retired(settings, sid, rule.version):
+        return False
     mode = "paper" if bool(settings.get("paper_trading", True)) else "live"
     from strategy_health.pair_recommendations import consent_scope
     key = consent_scope(settings, sid, symbol)

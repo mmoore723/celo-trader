@@ -7,6 +7,7 @@ import { UserPlus, Link2, Trash2, RefreshCw, KeyRound, AlertTriangle, CheckCircl
 import { useAuth } from "../contexts/AuthContext";
 import { PasswordChecklist, isPasswordValid } from "../components/PasswordChecklist";
 import { api } from "../lib/api";
+import { RemovedStrategies } from "../components/settings/StrategyRemoval";
 
 interface User {
   user_id:    string;
@@ -243,6 +244,7 @@ export function Admin() {
         </button>
       </div>
 
+      <RemovedStrategies />
       <section className="card px-3 py-2" aria-label="Machine learning readiness">
         {rankerError ? <p className="text-xs" style={{ color: "var(--negative)" }}>ML readiness unavailable</p> : ranker ? (() => {
           const required = ranker.required ?? 1000;

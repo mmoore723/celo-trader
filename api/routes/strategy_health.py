@@ -19,7 +19,12 @@ logger = logging.getLogger("celo_trader.api.strategy_health")
 
 def _research_snapshot(days: int, start_date: str | None, end_date: str | None, *, allow_stale=False) -> dict:
     from api.research_snapshot import research_snapshot
-    return research_snapshot(days, start_date=start_date, end_date=end_date, allow_stale=allow_stale)
+    from config import get_settings
+    from config.strategy_retirement import is_retired
+    matrix = research_snapshot(days, start_date=start_date, end_date=end_date, allow_stale=allow_stale)
+    settings = get_settings()
+    return {**matrix, 'strategies': [row for row in matrix['strategies']
+            if not is_retired(settings, row['strategy_id'], row.get('version'))]}
 
 
 @router.get("/scorecard")

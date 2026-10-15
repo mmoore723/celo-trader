@@ -11,19 +11,59 @@ from api.models import Settings
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
+class StrategyRemovalPayload(BaseModel):
+    strategy_id: str
+    version: str
+    removed: bool
+
+
+@router.get('/strategies/removal')
+def get_strategy_removals(request: Request):
+    from config import get_settings
+    from config.strategy_retirement import inventory
+    from trading.state import get_user_state
+    from trading.loop.scan_schedule import scan_universe
+    settings = get_settings()
+    watchlist = get_user_state().get('scan_watchlist')
+    return {'can_restore': bool(getattr(request.state, 'is_admin', False)),
+            'strategies': [row for row in inventory(settings) if row['removed']] if getattr(request.state, 'is_admin', False) else [],
+            'research_tickers': scan_universe(watchlist or ['SPY', 'QQQ'], settings),
+            'universe_source': 'current_scanner' if watchlist else 'startup_fallback'}
+
+
+@router.post('/strategies/removal')
+def set_strategy_removal(payload: StrategyRemovalPayload, request: Request):
+    if not payload.removed and not getattr(request.state, 'is_admin', False):
+        raise HTTPException(403, 'Only an admin can restore retired strategies')
+    from config import get_settings, get_user_data_dir, save_settings
+    from config.atomic_files import _lock_for
+    from config.strategy_retirement import updates
+    try:
+        with _lock_for(get_user_data_dir() / 'settings.json'):
+            save_settings(updates(get_settings(), payload.strategy_id, payload.version, payload.removed))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    from auth.context import get_current_user_id
+    from trading.loop.research_worker import stop_research
+    stop_research(get_current_user_id())
+    return {'ok': True}
+
+
 @router.get("/strategies")
 def get_strategy_catalog_endpoint() -> dict:
     """Expose the same reviewed registry used by order routing."""
     from config import get_settings
     from config.strategy_catalog import public_strategy_catalog
-    return {"strategies": public_strategy_catalog(get_settings())}
+    return {"strategies": [row for row in public_strategy_catalog(get_settings()) if not row['removed']]}
 
 
 @router.get("/strategies/tested")
 def get_tested_strategy_inventory() -> dict:
     from config import get_settings
     from config.strategy_inventory import tested_strategy_inventory
-    return tested_strategy_inventory(get_settings())
+    result = tested_strategy_inventory(get_settings())
+    result['runtime_research'] = [row for row in result.get('runtime_research', []) if not row['removed']]
+    return result
 
 
 @router.get("/strategies/closed-trades")
@@ -59,7 +99,7 @@ def get_admin_strategy_controls(request: Request) -> dict:
     from config.strategy_catalog import public_strategy_catalog
     from config.research_order_specs import SPECS
     return {'can_override': True, 'strategies': [row for row in public_strategy_catalog(get_settings())
-            if row['strategy_id'] in SPECS or not row['observation_only']]}
+            if not row['removed'] and (row['strategy_id'] in SPECS or not row['observation_only'])]}
 
 
 @router.post('/strategies/admin-override')
@@ -188,7 +228,7 @@ def get_settings_endpoint() -> Settings:
         observe_ctx_vwap_ker_enabled=bool(s.get("observe_ctx_vwap_ker_enabled", True)),
         observe_ctx_vwap_displacement_enabled=bool(s.get("observe_ctx_vwap_displacement_enabled", True)),
         observe_ctx_squeeze_macd_enabled=bool(s.get("observe_ctx_squeeze_macd_enabled", True)),
-        research_strategy_ids=sorted(enabled_tested_research_ids(s)),
+        research_strategy_ids=sorted(enabled_tested_research_ids(s, include_removed=True)),
         opportunity_tier_enabled=bool(s.get("opportunity_tier_enabled", False)),
         signal_only_mode=bool(s.get("signal_only_mode", False)),
         # Trade parameters

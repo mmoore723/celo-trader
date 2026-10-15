@@ -362,6 +362,7 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
     The user-specific switch is resolved server-side from ``setting_key``.
     """
     from config.strategy_live_promotion import review_live_promotion
+    from config.strategy_retirement import is_retired
 
     integrity_errors = reviewed_strategy_integrity_errors()
     account_mode = "paper" if bool(settings.get("paper_trading", True)) else "live"
@@ -378,6 +379,7 @@ def public_strategy_catalog(settings: dict) -> list[dict]:
         automatic_pauses = settings.get('strategy_closed_trade_pauses') or {}
         rows.append({
             "strategy_id": rule.strategy_id,
+            "removed": is_retired(settings, strategy_id, rule.version),
             "research_source_strategy_id": _RESEARCH_ORDERS[strategy_id].source if strategy_id in _RESEARCH_ORDERS else strategy_id,
             "display_name": rule.display_name,
             "version": rule.version,
@@ -463,10 +465,12 @@ def enabled_observation_strategy_ids(
     settings: dict, *, ticker: object | None = None,
 ) -> set[str]:
     """Return user-enabled, fail-closed research observers for one ticker."""
+    from config.strategy_retirement import is_retired
     return {
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
         if rule.observation_only
+        and not is_retired(settings, strategy_id, rule.version)
         and strategy_id not in reviewed_strategy_integrity_errors()
         and bool(settings.get(rule.setting_key, False))
     }
@@ -528,6 +532,7 @@ def enabled_reviewed_strategy_ids(
         is_paper_enabled_pair, is_user_authorized_ticker,
     )
     is_paper = bool(settings.get("paper_trading", True)) if paper is None else bool(paper)
+    from config.strategy_retirement import is_retired
 
     def _mode_eligible(strategy_id: str, rule: ReviewedStrategy) -> bool:
         if rule.observation_only:
@@ -551,6 +556,7 @@ def enabled_reviewed_strategy_ids(
         strategy_id
         for strategy_id, rule in REVIEWED_STRATEGIES.items()
         if strategy_id not in reviewed_strategy_integrity_errors()
+        and not is_retired(settings, strategy_id, rule.version)
         and bool(settings.get(rule.setting_key, False))
         and (not normalized_ticker or is_user_authorized_ticker(strategy_id, normalized_ticker, settings))
         and _mode_eligible(strategy_id, rule)

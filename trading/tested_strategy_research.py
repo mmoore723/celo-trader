@@ -91,7 +91,7 @@ DEFAULT_TESTED_RESEARCH_IDS = tuple(TESTED_RESEARCH_STRATEGIES)
 _emitted: set[tuple[str, str, str, str]] = set()
 
 
-def enabled_tested_research_ids(settings: dict) -> set[str]:
+def enabled_tested_research_ids(settings: dict, *, include_removed=False) -> set[str]:
     selected = settings.get("research_strategy_ids", DEFAULT_TESTED_RESEARCH_IDS)
     if not isinstance(selected, (list, tuple, set)):
         selected = DEFAULT_TESTED_RESEARCH_IDS
@@ -100,14 +100,18 @@ def enabled_tested_research_ids(settings: dict) -> set[str]:
     # had every prior default selected. A deliberately paused list is kept.
     if set(_LEGACY_DEFAULT_IDS).issubset(enabled):
         enabled.update(DEFAULT_TESTED_RESEARCH_IDS)
-    return enabled & set(TESTED_RESEARCH_STRATEGIES)
+    from config.strategy_retirement import is_retired
+    return {sid for sid in enabled & set(TESTED_RESEARCH_STRATEGIES)
+            if include_removed or not is_retired(settings, sid, TESTED_RESEARCH_STRATEGIES[sid].version)}
 
 
 def public_tested_research_strategies(settings: dict) -> list[dict]:
+    from config.strategy_retirement import is_retired
     enabled = enabled_tested_research_ids(settings)
     return [
         {
             "strategy_id": item.strategy_id,
+            "removed": is_retired(settings, item.strategy_id, item.version),
             "display_name": item.display_name,
             "version": item.version,
             "exit_minutes": item.exit_minutes,

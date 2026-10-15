@@ -21,7 +21,7 @@
     },
     {
       "path": "trading/tested_strategy_research.py",
-      "sha256": "073cb9dbcf94e6192fb654033f7caeaf91ce3c5256913820e7c24fd3bbe6886e"
+      "sha256": "81a96e0b4860d3d98d15ac530d1d943f332cbe4215c9002e33e7d249be57dd2e"
     },
     {
       "path": "trading/research_contract_selection.py",
@@ -41,7 +41,7 @@
     },
     {
       "path": "trading/entry/tick.py",
-      "sha256": "1c42b1cd987fd20b5f2eff51a0f40d3b6970254626b87ae3736712081913b229"
+      "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
     },
     {
       "path": "trading/position_manager/manage.py",
