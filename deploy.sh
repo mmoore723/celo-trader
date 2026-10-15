@@ -178,6 +178,10 @@ echo "==> Pulling on EC2..."
 REMOTE_PREVIOUS_SHA="$(ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && git rev-parse HEAD")"
 ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && git fetch origin main && git checkout main && git pull --ff-only origin main"
 
+echo "==> Retaining previous release assets for already-open browsers..."
+ssh -i "$EC2_KEY" "$EC2_HOST" \
+  "cd $EC2_DIR && asset_stage=\$(mktemp -d /tmp/celo-assets-retain.XXXXXX) && git archive '$REMOTE_PREVIOUS_SHA' frontend/dist/assets | tar -x -C \"\$asset_stage\" && cp -rn \"\$asset_stage/frontend/dist/assets/.\" frontend/dist/assets/"
+
 echo "==> Installing Python deps on EC2 (full requirements.txt)..."
 # Use the venv pip so all packages land inside the venv that uvicorn runs from.
 # Previously only fastapi/uvicorn were installed, so yfinance and other deps

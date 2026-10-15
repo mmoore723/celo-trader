@@ -8,6 +8,7 @@
  * with no error boundary in place. Wraps the routed page content in App.tsx.
  */
 import { Component, type ReactNode } from "react";
+import { isChunkLoadError, recoverPage } from "../lib/chunkRecovery.js";
 
 interface Props { children: ReactNode; }
 interface State { error: Error | null; }
@@ -32,10 +33,12 @@ export class ErrorBoundary extends Component<Props, State> {
               This page hit an error
             </h2>
             <p style={{ fontSize: 13, color: "var(--ink-muted)", marginBottom: 12 }}>
-              {this.state.error.message || "Unknown error"}
+              {isChunkLoadError(this.state.error)
+                ? "This page could not load its app files. Reload to fetch the current version. Reloading does not restart the trading bot."
+                : this.state.error.message || "Unknown error"}
             </p>
-            <button className="btn btn-ghost" onClick={() => this.setState({ error: null })}>
-              Try again
+            <button className="btn btn-ghost" onClick={() => recoverPage(this.state.error, () => window.location.reload(), () => this.setState({ error: null }))}>
+              {isChunkLoadError(this.state.error) ? "Reload page" : "Try again"}
             </button>
           </div>
         </div>
