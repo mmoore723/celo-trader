@@ -810,6 +810,13 @@ export function Settings() {
       </div>
       <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
       <AdminStrategyControls />
+      <section aria-label="Automatically paused strategies" className="card p-4" style={{ border: "2px solid var(--warning)" }}>
+        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Automatically paused</h3>
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>Automatic pause requires at least 20 closed trades and PF below 1 for each ticker/version in this account mode. Pauses block new entries, not exits. PF and counts below were recorded at the pause.</p>
+        {(strategyCatalog?.strategies ?? []).some(strategy => strategy.automatic_pauses?.length)
+          ? <div className="settings-card-grid">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.automatic_pauses?.length).map(strategyControl)}</div>
+          : <p className="text-sm" style={{ color: "var(--ink-muted)" }}>{strategyCatalog ? "No automatically paused strategies in this account mode." : "Loading pause status..."}</p>}
+      </section>
       {/* Strategies */}
       <section>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Can place orders</h3>
@@ -840,7 +847,7 @@ export function Settings() {
           On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} New matches need 20 non-overlapping completed tests and passing profit checks—not a minimum number of days.
         </p>
         <div className="settings-card-grid">
-        {(strategyCatalog?.strategies ?? []).filter(strategy => strategy.observation_only || !form[strategy.setting_key] || !(strategy.trading_tickers?.length)).map(strategyControl)}
+        {(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.automatic_pauses?.length && (strategy.observation_only || !form[strategy.setting_key] || !(strategy.trading_tickers?.length))).map(strategyControl)}
         <TestedStrategies
           embedded
           researchIds={form.research_strategy_ids ?? []}

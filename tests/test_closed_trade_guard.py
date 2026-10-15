@@ -13,7 +13,7 @@ VERSION = REVIEWED_STRATEGIES[SID].version
 class ClosedTradeGuardTests(unittest.TestCase):
     def test_only_completed_losing_account_pair_version_is_paused(self):
         settings = {'active_broker_account_id': 'acct', 'paper_trading': True, 'risk_per_trade': .38}
-        pair = dict(ticker='SPY', completed_trades=2, gross_profit=30, gross_loss=70, profit_factor=.43, realized_pnl=-40)
+        pair = dict(ticker='SPY', completed_trades=20, gross_profit=30, gross_loss=70, profit_factor=.43, realized_pnl=-40)
         evidence = {'available': True, 'strategies': [{'strategy_id': SID, 'version': VERSION, 'pairs': [pair]}]}
         with tempfile.TemporaryDirectory() as folder, \
              patch('config.get_user_data_dir', return_value=Path(folder)), \
@@ -34,7 +34,7 @@ class ClosedTradeGuardTests(unittest.TestCase):
 
     def test_empty_winning_breakeven_or_invalid_data_cannot_pause(self):
         settings = {'active_broker_account_id': 'acct', 'paper_trading': True}
-        for completed, gains, losses in [(0, 0, 20), (1, 20, 0), (2, 20, 20), (2, float('nan'), 20), (1, None, 20)]:
+        for completed, gains, losses in [(0, 0, 20), (1, 0, 20), (19, 0, 20), (20, 20, 0), (20, 20, 20), (20, float('nan'), 20), (20, None, 20), (None, 0, 20)]:
             pair = dict(ticker='SPY', completed_trades=completed, gross_profit=gains, gross_loss=losses)
             evidence = {'available': True, 'strategies': [{'strategy_id': SID, 'version': VERSION, 'pairs': [pair]}]}
             with tempfile.TemporaryDirectory() as folder, \

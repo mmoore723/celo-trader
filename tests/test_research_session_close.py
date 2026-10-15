@@ -15,6 +15,13 @@ def at(value):
 
 
 class ResearchSessionCloseTests(unittest.TestCase):
+    def test_trend_structure_session_deadline_precedes_missing_bars(self):
+        from trading.trend_continuation_research_exit import evaluate_exit as trend_exit
+        for close in (at('2026-10-14T16:00:00-04:00'), at('2026-11-27T13:00:00-05:00')):
+            self.assertEqual(trend_exit({'strategy_id': 'V2_TREND_CONT'},
+                             close.replace(hour=10), close-timedelta(minutes=5), None,
+                             session_close=close), (True, 'research_session_close'))
+
     def test_aapl_291_exit_fires_before_close_without_bars(self):
         trade = position('V2_GAP_FILL_RTH')
         entry = at('2026-10-14T09:51:00.642337-04:00')

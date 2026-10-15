@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 import pandas as pd
@@ -32,7 +32,14 @@ def evaluate_exit(
     entry_time: datetime | str | None,
     now: datetime,
     one_minute_bars: pd.DataFrame | None,
+    *, session_close: datetime | None = None,
 ) -> tuple[bool, str]:
+    if entry_time is not None:
+        deadline = et(entry_time).replace(hour=15, minute=55, second=0, microsecond=0)
+        if session_close is not None:
+            deadline = min(deadline, et(session_close) - timedelta(minutes=5))
+        if et(now) >= deadline:
+            return True, "research_session_close"
     if entry_time is None or one_minute_bars is None or one_minute_bars.empty:
         return True, "trend_cont_missing_exit_input_safety"
     try:

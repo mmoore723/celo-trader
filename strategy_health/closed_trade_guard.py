@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from math import isfinite
 
+MINIMUM_CLOSED_TRADES = 20
 
 def scope(settings, sid, ticker, version):
     mode = 'paper' if settings.get('paper_trading', True) else 'live'
@@ -36,7 +37,8 @@ def enforce():
                 continue
             for pair in strategy['pairs']:
                 gains, losses = pair.get('gross_profit'), pair.get('gross_loss')
-                if not pair.get('completed_trades') or not isinstance(gains, (int, float)) or not isinstance(losses, (int, float)):
+                completed = pair.get('completed_trades')
+                if not isinstance(completed, int) or completed < MINIMUM_CLOSED_TRADES or not isinstance(gains, (int, float)) or not isinstance(losses, (int, float)):
                     continue
                 if not isfinite(gains) or not isfinite(losses) or not 0 <= gains < losses:
                     continue

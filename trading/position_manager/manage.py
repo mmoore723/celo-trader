@@ -143,7 +143,7 @@ def _evaluate_reviewed_strategy_exit(
     if strategy_id == "V2_TREND_CONT":
         from trading.trend_continuation_research_exit import evaluate_exit
 
-        return evaluate_exit(trade, entry_time, now_et, one_minute_bars)
+        return evaluate_exit(trade, entry_time, now_et, one_minute_bars, session_close=session_close)
     if not uses_v2_orb_execution_profile(strategy_id):
         return None
     if strategy_id == "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG":
@@ -182,7 +182,7 @@ def _manage_open_position(
     try:
         from config.research_order_specs import SPECS
         research_session_close = None
-        if trade.get('strategy_id') in SPECS:
+        if trade.get('strategy_id') in SPECS or trade.get('strategy_id') == 'V2_TREND_CONT':
             from trading.research_session_clock import session_close_if_open
             research_session_close = session_close_if_open(alpaca, _now_et())
             if research_session_close is None:

@@ -85,13 +85,13 @@ class TrendResearchSessionExecutionTests(unittest.TestCase):
         close.assert_not_called()
         broker.cancel_order.assert_not_called()
 
-    def test_frozen_research_exit_holds_at_355_and_exits_at_4(self):
+    def test_production_session_exit_precedes_frozen_research_close(self):
         for paper in (True, False):
             trade = position(paper)
             data = candles('2026-09-23T14:50', 70)
-            self.assertEqual((False, 'hold'), evaluate_exit(trade, '2026-09-23T14:50:01',
+            self.assertEqual((True, 'research_session_close'), evaluate_exit(trade, '2026-09-23T14:50:01',
                 datetime.fromisoformat('2026-09-23T15:55:00-04:00'), data))
-            self.assertEqual((True, 'trend_cont_session_flatten'), evaluate_exit(trade, '2026-09-23T14:50:01',
+            self.assertEqual((True, 'research_session_close'), evaluate_exit(trade, '2026-09-23T14:50:01',
                 datetime.fromisoformat('2026-09-23T16:00:00-04:00'), data))
 
     def test_only_exact_version_and_supported_ticker_use_this_session_close(self):

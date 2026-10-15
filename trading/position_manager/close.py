@@ -34,7 +34,7 @@ def _close_position(
     reference_quote: Optional[dict] = None,
 ) -> None:
     from config.research_order_specs import SPECS
-    if trade.get('strategy_id') in SPECS:
+    if trade.get('strategy_id') in SPECS or trade.get('strategy_id') == 'V2_TREND_CONT':
         from trading.research_session_clock import session_close_if_open
         if session_close_if_open(alpaca, _now_et()) is None:
             return
@@ -73,7 +73,7 @@ def _close_position(
     ))
     from trading.tsla_giveback_exit import use_giveback_market_order
     _giveback_market = use_giveback_market_order(trade, reason, paper)
-    _session_market = trade.get('strategy_id') in SPECS and reason == 'research_session_close'
+    _session_market = (trade.get('strategy_id') in SPECS or trade.get('strategy_id') == 'V2_TREND_CONT') and reason == 'research_session_close'
     _market_exit = _giveback_market or _session_market
     fill = alpaca.place_option_order(
         symbol          = trade["contract_symbol"],

@@ -49,7 +49,7 @@
     },
     {
       "path": "trading/position_manager/manage.py",
-      "sha256": "dd2b9286a7f87c5327285c8bde579a5a6ff48a078f77fa034bd0022911a4af12"
+      "sha256": "6d105acaea891757cf2e143d759bec11ae34de147e72e1ac80f65959e63c4ef6"
     },
     {
       "path": "trading/recovery_state.py",
@@ -57,7 +57,7 @@
     },
     {
       "path": "trading/trend_continuation_research_exit.py",
-      "sha256": "a0cce27a4599a91b1d3a8a5afb8fe31ad51766ca48e6e937d5be8f7806f0ba53"
+      "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
     },
     {
       "path": "strategy_health/exit_protocols.py",
@@ -65,7 +65,7 @@
     },
     {
       "path": "trading/position_manager/close.py",
-      "sha256": "1aa77dbc9598dd6f1ade38b78d608d320fd95ddcde37e4e4993e5d720117351c"
+      "sha256": "ca79e17af252552dd965e1c7fb82f23bd8743e825e683dab3171b8b78f7889f5"
     },
     {
       "path": "trading/research_session_clock.py",
