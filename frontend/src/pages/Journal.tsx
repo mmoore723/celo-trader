@@ -605,7 +605,7 @@ export function Journal() {
 
   const [mode,        setMode]        = useState<"paper" | "live">(defaultMode);
   const [filter,      setFilter]      = useState<"all" | "open" | "closed">("all");
-  const [dateWindow,  setDateWindow]  = useState<DateWindow>("all");
+  const [dateWindow,  setDateWindow]  = useState<DateWindow>("today");
   const [customFrom,  setCustomFrom]  = useState<string>("");
   const [stratFilter, setStratFilter] = useState<string>("all");  // strategy filter
   const [expandedId,  setExpandedId]  = useState<number | null>(null);

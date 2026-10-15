@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { inJournalWindow, journalDate, journalRealizedSummary } from "../src/lib/journalWindow.js";
 
 const now = new Date("2026-10-15T18:00:00Z");
+test("journal defaults to today without restricting status to open trades", () => {
+  const source = readFileSync(new URL("../src/pages/Journal.tsx", import.meta.url), "utf8");
+  assert.match(source, /useState<DateWindow>\("today"\)/);
+  assert.match(source, /useState<"all" \| "open" \| "closed">\("all"\)/);
+});
 const aapl = { id: 291, entry_time: "2026-10-14T09:51:00.642337", exit_time: "2026-10-15T09:30:57.285680", status: "closed", pnl: -150 };
 test("trade 291 closed today remains visible despite yesterday entry", () => {
   assert.equal(inJournalWindow(aapl, "today", "", now), true);
