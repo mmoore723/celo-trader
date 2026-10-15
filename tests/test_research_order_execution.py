@@ -247,6 +247,9 @@ class ResearchOrderExecutionTests(unittest.TestCase):
                          'last_bar_fetch_minute': now.strftime('%Y-%m-%d %H:%M'), 'peak_price': 3, 'min_price': 2,
                          'last_position_narration_minute': now.strftime('%Y-%m-%d %H:%M')}}}
                 broker = Mock()
+                broker.base = 'https://paper-api.alpaca.markets'
+                broker._get.return_value = {'timestamp': now.isoformat(), 'is_open': True,
+                                            'next_close': now.replace(hour=16, minute=0).isoformat()}
                 broker.get_positions.return_value = [{'symbol': 'CONTRACT', 'current_price': 2.65}]
                 broker.get_session_bars.return_value = ([], 'offline', None)
                 broker.get_bars.return_value = ([], 'offline')

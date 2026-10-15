@@ -21,7 +21,7 @@
     },
     {
       "path": "trading/research_order_exit.py",
-      "sha256": "2f593a0c83239d7051a839959f45f74fdf501e064cd28b65c0fc0e757d47aaab"
+      "sha256": "6665bbe99ab878015bf390c2aa0f31f367ab37bed5c2b85c96c6727cdc2d134c"
     },
     {
       "path": "trading/tested_strategy_research.py",
@@ -49,7 +49,7 @@
     },
     {
       "path": "trading/position_manager/manage.py",
-      "sha256": "1fd1cb5adda980352bc0284aff0f821e5f73a4b79cb4030a4c30a6fcafa27c1e"
+      "sha256": "dd2b9286a7f87c5327285c8bde579a5a6ff48a078f77fa034bd0022911a4af12"
     },
     {
       "path": "trading/recovery_state.py",
@@ -62,10 +62,21 @@
     {
       "path": "strategy_health/exit_protocols.py",
       "sha256": "51ceb01d86d39fae85ea19afe2bef59ba9daf697deafac008d18b926f4fa556d"
+    },
+    {
+      "path": "trading/position_manager/close.py",
+      "sha256": "1aa77dbc9598dd6f1ade38b78d608d320fd95ddcde37e4e4993e5d720117351c"
+    },
+    {
+      "path": "trading/research_session_clock.py",
+      "sha256": "9dd69760d50dd92afb1599a7b70610451cf17ea6cda0a2d1badfb6b95e916376"
     }
   ],
   "evidence_summary": "Exact research execution implementation. Admin approval does not assert profitability qualification.",
-  "source_reports": ["tests/test_research_order_execution.py"],
+  "source_reports": [
+    "tests/test_research_order_execution.py"
+  ],
   "decision": "Exact research route with explicit per-pair consent or admin override. No profit guarantee.",
-  "display_metrics": {}
+  "display_metrics": {},
+  "execution_safety_revision": "2026-10-14 broker-clock preclose five-minute liquidation and closed-session retry suppression"
 }

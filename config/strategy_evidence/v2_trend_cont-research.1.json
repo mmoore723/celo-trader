@@ -45,7 +45,7 @@
     },
     {
       "path": "trading/position_manager/manage.py",
-      "sha256": "1fd1cb5adda980352bc0284aff0f821e5f73a4b79cb4030a4c30a6fcafa27c1e"
+      "sha256": "dd2b9286a7f87c5327285c8bde579a5a6ff48a078f77fa034bd0022911a4af12"
     },
     {
       "path": "trading/entry/contract.py",
@@ -60,5 +60,6 @@
     "tests/test_trend_research_execution.py"
   ],
   "decision": "Execution parity route only. Each ticker still needs current completed-test qualification and explicit user consent. No profitability promotion is implied.",
-  "execution_session_close": "16:00 America/New_York for this exact SPY/QQQ research version; other strategies retain their existing cutoff"
+  "execution_session_close": "16:00 America/New_York for this exact SPY/QQQ research version; other strategies retain their existing cutoff",
+  "execution_safety_revision": "2026-10-14 broker-clock preclose five-minute liquidation and closed-session retry suppression"
 }

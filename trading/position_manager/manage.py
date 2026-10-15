@@ -69,6 +69,9 @@ def _resolve_latched_exit(
     `_close_position` removes the position state only after a confirmed fill.
     """
     pending_reason = str(position_state.get("exit_pending_reason") or "").strip()
+    if pending_reason and should_exit and reason == 'research_session_close':
+        position_state['exit_pending_reason'] = reason
+        return True, reason
     if pending_reason == 'stage1_research_atr10' and should_exit and reason.startswith('research_'):
         position_state['exit_pending_reason'] = reason
         return True, reason
@@ -126,6 +129,7 @@ def _evaluate_reviewed_strategy_exit(
     one_minute_bars: pd.DataFrame | None,
     five_minute_bars: pd.DataFrame | None,
     option_quote: dict | None = None,
+    session_close: datetime | None = None,
 ) -> tuple[bool, str] | None:
     """Route a reviewed strategy to the exit policy its evidence declares."""
     from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
@@ -134,7 +138,8 @@ def _evaluate_reviewed_strategy_exit(
     from config.research_order_specs import SPECS
     if strategy_id in SPECS:
         from trading.research_order_exit import evaluate_exit
-        return evaluate_exit(trade, entry_time, now_et, one_minute_bars, option_quote)
+        return evaluate_exit(trade, entry_time, now_et, one_minute_bars, option_quote,
+                             session_close=session_close)
     if strategy_id == "V2_TREND_CONT":
         from trading.trend_continuation_research_exit import evaluate_exit
 
@@ -175,6 +180,13 @@ def _manage_open_position(
     _trade_log = get_user_trade_log()
 
     try:
+        from config.research_order_specs import SPECS
+        research_session_close = None
+        if trade.get('strategy_id') in SPECS:
+            from trading.research_session_clock import session_close_if_open
+            research_session_close = session_close_if_open(alpaca, _now_et())
+            if research_session_close is None:
+                return
         quote = tradier.get_option_quote(trade["contract_symbol"])
         alpaca_positions = alpaca.get_positions()
         alpaca_pos = next(
@@ -594,6 +606,7 @@ def _manage_open_position(
             one_minute_bars=df_under,
             five_minute_bars=df_5m,
             option_quote=quote,
+            session_close=research_session_close,
         )
         if _reviewed_exit is not None:
             should_exit, reason = _reviewed_exit

@@ -26,7 +26,7 @@ def partial_remaining(trade):
     return max(0, max(1, original // 2) - sold)
 
 
-def evaluate_exit(trade, entry_time, now, frame, quote=None):
+def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=None):
     sid = trade.get('strategy_id')
     spec = SPECS[sid]
     try:
@@ -36,7 +36,9 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None):
         if entry_time is None:
             raise ValueError('Missing entry time')
         current, filled = et(now), et(entry_time)
-        cap = filled.replace(hour=15 if sid == ATR10 else 16, minute=55 if sid == ATR10 else 0, second=0, microsecond=0)
+        cap = filled.replace(hour=15, minute=55, second=0, microsecond=0)
+        if session_close is not None:
+            cap = min(cap, et(session_close) - timedelta(minutes=5))
         if current >= cap:
             return True, 'research_session_close'
         if sid == 'RESEARCH_FAILED_RANGE_V2':

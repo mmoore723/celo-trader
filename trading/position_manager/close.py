@@ -33,6 +33,11 @@ def _close_position(
     mtf_notes: Optional[list] = None,
     reference_quote: Optional[dict] = None,
 ) -> None:
+    from config.research_order_specs import SPECS
+    if trade.get('strategy_id') in SPECS:
+        from trading.research_session_clock import session_close_if_open
+        if session_close_if_open(alpaca, _now_et()) is None:
+            return
     _US        = get_user_state()
     _risk      = get_user_risk()
     _trade_log = get_user_trade_log()
@@ -64,17 +69,19 @@ def _close_position(
         logger.info("[PAPER] SELL %s @ $%.4f (%s)", trade["contract_symbol"], exit_price, reason)
     _urgent_exit = any(token in (reason or "").lower() for token in (
         "hard_stop", "initial_atr_stop", "structural_stop", "panic",
-        "kill_lock", "daily_loss", "session_hard_cutoff",
+        "kill_lock", "daily_loss", "session_hard_cutoff", "research_session_close",
     ))
     from trading.tsla_giveback_exit import use_giveback_market_order
     _giveback_market = use_giveback_market_order(trade, reason, paper)
+    _session_market = trade.get('strategy_id') in SPECS and reason == 'research_session_close'
+    _market_exit = _giveback_market or _session_market
     fill = alpaca.place_option_order(
         symbol          = trade["contract_symbol"],
         qty             = trade["contracts"],
         side            = "sell",
-        order_type      = "market" if _giveback_market else "limit",
-        limit_price     = None if _giveback_market else exit_price,
-        step_to_price   = None if _giveback_market else bid_price,
+        order_type      = "market" if _market_exit else "limit",
+        limit_price     = None if _market_exit else exit_price,
+        step_to_price   = None if _market_exit else bid_price,
         allow_market_fallback = _urgent_exit,
         position_intent = "sell_to_close",
         # The strategy has already selected bid or midpoint-then-bid from
