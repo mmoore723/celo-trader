@@ -12,6 +12,7 @@ from scanner.constants import (
 from scanner.helpers import _compute_atr, _et_now
 from scanner.state_io import _write_daily_universe, _write_state
 from scanner.universe import build_collection_universe
+from scanner.premarket_volume import matched_premarket_rvol, MIN_PREMARKET_RVOL
 
 logger = logging.getLogger("celo_trader.scanner")
 
@@ -88,7 +89,7 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
     2. Reduce thousands of symbols to the most active liquid candidates.
     3. Fetch 22 daily bars for each gap survivor.
     4. Filter: avg_daily_vol > 2 M, ATR(14) > $1.
-    5. Compute RVOL vs time-normalized expected volume.
+    5. Reject premarket candidates below matched-window RVOL 1.0.
     6. Score: RVOL × gap_pct × atr_factor × liquidity_bonus.
     7. Return user pins + anchors + the top max_tickers dynamic candidates.
     8. Write results to daily_universe.json + scanner_state.json.
@@ -102,7 +103,7 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
 
     session_open_min = 9 * 60 + 30
     current_min      = et_now.hour * 60 + et_now.minute
-    scan_phase = "premarket" if current_min < session_open_min and not force else "regular"
+    scan_phase = "premarket" if current_min < session_open_min else "regular"
 
     # Minutes elapsed since 9:30 (at least 1 to avoid division by zero)
     elapsed_min = max(1.0, current_min - session_open_min)
@@ -140,7 +141,7 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
     candidates = []
     for ticker, snap in all_snaps.items():
         price      = snap.get("price", 0) or 0
-        prev_close = snap.get("prev_close", 0) or 0
+        prev_close = snap.get("previous_daily_close", snap.get("prev_close", 0)) or 0
         open_price = snap.get("open_price", 0) or 0
         daily_vol  = snap.get("daily_vol", 0) or 0
 
@@ -200,6 +201,15 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
         [c["ticker"] for c in candidates], alpaca=alpaca, lookback_days=22,
     )
 
+    premarket_volume = {}
+    if scan_phase == "premarket":
+        try:
+            premarket_volume = matched_premarket_rvol(
+                alpaca, [c["ticker"] for c in candidates], et_now,
+            )
+        except Exception as ex:
+            logger.warning("Premarket RVOL unavailable; no dynamic candidates qualify: %s", ex)
+
     scored = []
     for c in candidates:
         ticker = c["ticker"]
@@ -237,14 +247,16 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
             # ETFs get a lower RVOL bar — they don't spike like individual stocks
             _rvol_min = _MIN_RVOL_ETF if ticker in _ETF_SET else _MIN_RVOL
             if scan_phase == "premarket":
+                evidence = premarket_volume.get(ticker)
+                if evidence is None or evidence["rvol"] < MIN_PREMARKET_RVOL:
+                    continue
+                rvol = evidence["rvol"]
                 rvol_ok = True
-                rvol = max(0.25, rvol)
             elif elapsed_min >= 5:
                 rvol_ok = rvol >= _rvol_min
             else:
                 rvol_ok = c["daily_vol"] >= one_bar_vol  # early: real volume check
-            # RVOL is a ranking input, not a universal veto. The individual
-            # strategies apply their own entry gates after collection.
+            # Regular-session ranking and strategy entry gates are unchanged.
 
             # Composite score: RVOL (capped) × gap magnitude × ATR × ETF bonus
             rvol_capped = min(rvol, 20.0)   # prevent early-session inflation
@@ -287,6 +299,7 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
 
             scored.append({
                 **c,
+                **(premarket_volume.get(ticker, {}) if scan_phase == "premarket" else {}),
                 "avg_daily_vol": int(avg_daily_vol),
                 "atr_usd":       round(atr_usd, 2),
                 "rvol":          round(rvol, 2),
@@ -331,6 +344,9 @@ def daily_premarket_scan(alpaca, max_tickers: int = 30, force: bool = False) -> 
         "snapshots_received": len(all_snaps),
         "daily_history_screened": len(candidates),
         "research_candidates": len(dynamic_top),
+        "premarket_rvol_min": MIN_PREMARKET_RVOL if scan_phase == "premarket" else None,
+        "premarket_rvol_available": len(premarket_volume),
+        "maximum_gap_pct": None,
     })
     scores_dict = {s["ticker"]: s["score"] for s in scored}
     _write_state(top, scores_dict)

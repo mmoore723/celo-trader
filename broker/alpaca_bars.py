@@ -491,6 +491,7 @@ class AlpacaBarsMixin:
                     result[sym] = {
                         "price":      _price,
                         "prev_close": _prev_close,
+                        "previous_daily_close": float(_prev.get("c") or 0),
                         "change_pct": _chg,
                         "open_price": _open,
                         "gap_pct":    round(_gap_pct, 4),

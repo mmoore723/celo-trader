@@ -9,9 +9,9 @@ logic changed, only relocated.
 from datetime import datetime
 
 def _et_now() -> datetime:
-    """Return current Eastern Time as a naive datetime (UTC−4 approximation)."""
-    from datetime import timedelta
-    return datetime.utcnow() - timedelta(hours=4)
+    """Return naive New York wall time, including daylight-saving transitions."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None)
 
 
 def _hm_in_range(hour: int, minute: int,
@@ -40,5 +40,4 @@ def _compute_atr(bars: list[dict]) -> tuple[float, float]:
     last_close  = float(bars[-1].get("c", 0))
     atr_pct     = atr_dollars / last_close if last_close > 0 else 0.0
     return round(atr_dollars, 4), round(atr_pct, 6)
-
 
