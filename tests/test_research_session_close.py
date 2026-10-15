@@ -15,12 +15,45 @@ def at(value):
 
 
 class ResearchSessionCloseTests(unittest.TestCase):
+    def test_every_reviewed_route_uses_early_close_and_overdue_guard(self):
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        from trading.research_session_clock import uses_broker_session
+        from trading.position_manager.manage import _evaluate_reviewed_strategy_exit
+        close = at('2026-11-27T13:00:00-05:00')
+        for sid in REVIEWED_STRATEGIES:
+            trade = {'strategy_id': sid}
+            self.assertTrue(uses_broker_session(trade))
+            for entry, now in ((close.replace(hour=12), close-timedelta(minutes=5)),
+                               (at('2026-11-25T10:00:00-05:00'), close.replace(hour=9, minute=30))):
+                self.assertEqual(_evaluate_reviewed_strategy_exit(trade, entry, now,
+                                 one_minute_bars=None, five_minute_bars=None, session_close=close),
+                                 (True, 'research_session_close'), sid)
+        self.assertFalse(uses_broker_session({'strategy_id': 'unrecognized'}))
+
     def test_trend_structure_session_deadline_precedes_missing_bars(self):
         from trading.trend_continuation_research_exit import evaluate_exit as trend_exit
         for close in (at('2026-10-14T16:00:00-04:00'), at('2026-11-27T13:00:00-05:00')):
             self.assertEqual(trend_exit({'strategy_id': 'V2_TREND_CONT'},
                              close.replace(hour=10), close-timedelta(minutes=5), None,
                              session_close=close), (True, 'research_session_close'))
+
+    def test_legacy_timer_session_exit_submits_market_close(self):
+        for sid in ('V2_SPY_TREND_CONT', 'V2_ORB_PULLBACK', 'V2_FAILED_OR_BREAK_VWAP_REVERSION',
+                    'V2_TSLA_TWO_LEG_TREND_PULLBACK', 'CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG'):
+            broker = Mock()
+            broker.place_option_order.return_value = None
+            trade = {**position('V2_GAP_FILL_RTH'), 'strategy_id': sid}
+            with patch('trading.research_session_clock.session_close_if_open', return_value=at('2026-11-27T13:00:00-05:00')), \
+                 patch('trading.position_manager.close.get_user_state', return_value={'positions': {101: {}}}), \
+                 patch('trading.position_manager.close.get_user_risk'), \
+                 patch('trading.position_manager.close.get_user_trade_log'), \
+                 patch('config.get_settings', return_value={'paper_trading': True}), \
+                 patch('trading.position_manager.close._snapshot_exit_annotations', return_value={}), \
+                 patch('trading.position_manager.close._reconcile_if_phantom', return_value=True):
+                _close_position(broker, trade, 2, 'research_session_close', bid_price=1.99)
+            order = broker.place_option_order.call_args.kwargs
+            self.assertEqual(order['order_type'], 'market', sid)
+            self.assertEqual(order['position_intent'], 'sell_to_close', sid)
 
     def test_aapl_291_exit_fires_before_close_without_bars(self):
         trade = position('V2_GAP_FILL_RTH')

@@ -135,6 +135,14 @@ def _evaluate_reviewed_strategy_exit(
     from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 
     strategy_id = str(trade.get("strategy_id") or "").strip().upper()
+    if session_close is not None:
+        from datetime import timedelta
+        from strategy_health.impulse_exit import et
+        deadline = et(session_close) - timedelta(minutes=5)
+        if entry_time is not None:
+            deadline = min(deadline, et(entry_time).replace(hour=15, minute=55, second=0, microsecond=0))
+        if et(now_et) >= deadline:
+            return True, 'research_session_close'
     from config.research_order_specs import SPECS
     if strategy_id in SPECS:
         from trading.research_order_exit import evaluate_exit
@@ -182,7 +190,8 @@ def _manage_open_position(
     try:
         from config.research_order_specs import SPECS
         research_session_close = None
-        if trade.get('strategy_id') in SPECS or trade.get('strategy_id') == 'V2_TREND_CONT':
+        from trading.research_session_clock import uses_broker_session
+        if uses_broker_session(trade):
             from trading.research_session_clock import session_close_if_open
             research_session_close = session_close_if_open(alpaca, _now_et())
             if research_session_close is None:

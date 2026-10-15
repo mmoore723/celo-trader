@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from contextlib import ExitStack
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -27,6 +28,8 @@ class RecoveryTests(unittest.TestCase):
         self.settings = {"paper_trading": True, "active_broker_account_id": ACCOUNT}
         self.stack.enter_context(patch("config.get_settings", return_value=self.settings))
         self.stack.enter_context(patch("config.get_db_path", return_value=self.path))
+        self.stack.enter_context(patch("trading.position_manager.close._now_et",
+                                       return_value=datetime.fromisoformat('2026-09-03T14:00:00-04:00')))
         for name in ("broker.alpaca_orders.time.sleep", "broker.alpaca_orders._record_flow",
                      "broker.alpaca_orders.log_event", "broker.common._debounced_log"):
             self.stack.enter_context(patch(name))
@@ -45,6 +48,9 @@ class RecoveryTests(unittest.TestCase):
         return client
 
     def get(self, url, params=None):
+        if url.endswith('/clock'):
+            return {'timestamp': '2026-09-03T14:00:00-04:00', 'is_open': True,
+                    'next_close': '2026-09-03T16:00:00-04:00'}
         if url.endswith("/account"):
             return {"id": "offline-account"}
         if url.endswith("orders:by_client_order_id"):

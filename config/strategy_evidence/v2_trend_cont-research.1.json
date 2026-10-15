@@ -45,7 +45,7 @@
     },
     {
       "path": "trading/position_manager/manage.py",
-      "sha256": "6d105acaea891757cf2e143d759bec11ae34de147e72e1ac80f65959e63c4ef6"
+      "sha256": "92fc8ac80e362a50300f83991f56ef1cdf61852f4fdd0b76d736b2abbc27a3d5"
     },
     {
       "path": "trading/entry/contract.py",

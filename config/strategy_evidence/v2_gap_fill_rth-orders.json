@@ -49,7 +49,7 @@
     },
     {
       "path": "trading/position_manager/manage.py",
-      "sha256": "6d105acaea891757cf2e143d759bec11ae34de147e72e1ac80f65959e63c4ef6"
+      "sha256": "92fc8ac80e362a50300f83991f56ef1cdf61852f4fdd0b76d736b2abbc27a3d5"
     },
     {
       "path": "trading/recovery_state.py",
@@ -65,11 +65,11 @@
     },
     {
       "path": "trading/position_manager/close.py",
-      "sha256": "ca79e17af252552dd965e1c7fb82f23bd8743e825e683dab3171b8b78f7889f5"
+      "sha256": "eee48f96b256de3a353f21374c2f1d5f85833bd104d610c6d9e9cbbf370b96af"
     },
     {
       "path": "trading/research_session_clock.py",
-      "sha256": "9dd69760d50dd92afb1599a7b70610451cf17ea6cda0a2d1badfb6b95e916376"
+      "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
     }
   ],
   "evidence_summary": "Exact research execution implementation. Admin approval does not assert profitability qualification.",

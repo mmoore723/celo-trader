@@ -5,6 +5,10 @@ from zoneinfo import ZoneInfo
 ET = ZoneInfo('America/New_York')
 logger = logging.getLogger('celo_trader.trading_logic')
 
+def uses_broker_session(trade):
+    from config.strategy_catalog import REVIEWED_STRATEGIES
+    return trade.get('strategy_id') in REVIEWED_STRATEGIES
+
 
 def session_close_if_open(client, now):
     now = now.replace(tzinfo=ET) if now.tzinfo is None else now.astimezone(ET)
