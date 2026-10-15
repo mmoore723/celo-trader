@@ -75,8 +75,8 @@ class GivebackTests(unittest.TestCase):
         saved=json.loads(self.conn.execute("SELECT strategy_context_json FROM trades").fetchone()[0])
         self.assertNotIn(STATE_KEY,saved)
 
-    def test_other_strategy_ticker_and_live_excluded(self):
-        for change in ({"paper":0},{"ticker":"SPY"},{"strategy_id":"V2_ORB_PULLBACK"}):
+    def test_other_strategy_ticker_and_unknown_mode_excluded(self):
+        for change in ({"paper":None},{"ticker":"SPY"},{"strategy_id":"V2_ORB_PULLBACK"}):
             with patch("database.get_conn") as db:
                 self.assertIsNone(evaluate_tsla_giveback({**self.trade,**change},self.now-timedelta(minutes=1),self.now,None))
                 db.assert_not_called()
@@ -90,13 +90,31 @@ class GivebackTests(unittest.TestCase):
         start=self.now-timedelta(minutes=90)
         self.assertTrue(evaluate_v2_orb_paper_exit(start,self.now,self.trade["strategy_id"])[0])
 
-    def test_market_close_only_for_approved_paper_signal(self):
+    def test_live_and_paper_have_identical_persisted_exit_decisions(self):
+        results = []
+        for mode in (1, 0):
+            self.conn.execute('UPDATE trades SET paper=?, strategy_context_json=?', (mode, '{"signal":42}'))
+            self.conn.commit()
+            self.trade['paper'] = mode
+            results.append([self.call(10.64), self.call(10.65,1), self.call(11,2),
+                            self.call(10.64,3), self.call(12,4)])
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(results[1][-2:], [(True,EXIT_REASON),(True,EXIT_REASON)])
+
+    def test_trade_mode_mismatch_cannot_update_another_mode(self):
+        self.trade['paper'] = 0
+        self.assertEqual(self.call(11), (False,'hold'))
+        saved=json.loads(self.conn.execute('SELECT strategy_context_json FROM trades').fetchone()[0])
+        self.assertNotIn(STATE_KEY,saved)
+
+    def test_market_close_for_both_modes_without_cross_mode_orders(self):
         from trading.tsla_giveback_exit import use_giveback_market_order
         self.assertTrue(use_giveback_market_order(self.trade,EXIT_REASON,True))
         self.assertFalse(use_giveback_market_order(self.trade,EXIT_REASON,False))
         self.assertFalse(use_giveback_market_order(self.trade,"native_exit_deadline",True))
         self.assertFalse(use_giveback_market_order({**self.trade,"ticker":"SPY"},EXIT_REASON,True))
         self.assertFalse(use_giveback_market_order({**self.trade,"paper":0},EXIT_REASON,True))
+        self.assertTrue(use_giveback_market_order({**self.trade,"paper":0},EXIT_REASON,False))
 
 
 if __name__ == "__main__":

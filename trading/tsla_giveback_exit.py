@@ -8,7 +8,7 @@ EXIT_REASON = "tsla_giveback_65_35"
 
 
 def use_giveback_market_order(trade, reason, paper):
-    return bool(paper and trade.get("paper") in (True, 1)
+    return bool(trade.get("paper") in (True, False, 0, 1) and bool(trade["paper"]) == bool(paper)
                 and str(trade.get("ticker") or "").upper() == "TSLA"
                 and str(trade.get("strategy_id") or "").upper() == "V2_TSLA_TWO_LEG_TREND_PULLBACK"
                 and reason == EXIT_REASON)
@@ -46,7 +46,7 @@ def giveback_exit(state, entry_price, bid, now):
 def evaluate_tsla_giveback(trade, entry_time, now, quote):
     if (str(trade.get("strategy_id") or "").upper() != "V2_TSLA_TWO_LEG_TREND_PULLBACK"
             or str(trade.get("ticker") or "").upper() != "TSLA"
-            or trade.get("paper") not in (True, 1)):
+            or trade.get("paper") not in (True, False, 0, 1)):
         return None
     if entry_time is None or now <= entry_time:
         return False, "hold"
@@ -54,8 +54,8 @@ def evaluate_tsla_giveback(trade, entry_time, now, quote):
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT strategy_context_json FROM trades WHERE id=? AND status='open' AND paper=1 AND broker_account_id IS ?",
-            (trade["id"], trade.get("broker_account_id")),
+            "SELECT strategy_context_json FROM trades WHERE id=? AND status='open' AND paper=? AND broker_account_id IS ?",
+            (trade["id"], int(bool(trade["paper"])), trade.get("broker_account_id")),
         ).fetchone()
         if row is None:
             return False, "hold"
@@ -78,6 +78,6 @@ def evaluate_tsla_giveback(trade, entry_time, now, quote):
         result = giveback_exit(state, trade["entry_price"], bid, now)
         if state != context.get(STATE_KEY):
             context[STATE_KEY] = state
-            conn.execute("UPDATE trades SET strategy_context_json=? WHERE id=? AND broker_account_id IS ?",
-                         (json.dumps(context), trade["id"], trade.get("broker_account_id")))
+            conn.execute("UPDATE trades SET strategy_context_json=? WHERE id=? AND paper=? AND broker_account_id IS ?",
+                         (json.dumps(context), trade["id"], int(bool(trade["paper"])), trade.get("broker_account_id")))
         return result
