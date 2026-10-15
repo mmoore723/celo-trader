@@ -21,6 +21,7 @@ import { Maintenance }     from "./pages/Maintenance";
 import { ApiSetupModal }   from "./components/ApiSetupModal";
 import { ErrorBoundary }   from "./components/ErrorBoundary";
 import { BrokerAlertBanner } from "./components/BrokerAlertBanner";
+import { TradingHaltBanner } from "./components/TradingHaltBanner";
 import { StrategyRecommendationModal } from "./components/StrategyRecommendationModal";
 import { PageLoader } from "./components/PageLoader";
 import { lazy, Suspense, useState, useEffect } from "react";
@@ -105,6 +106,7 @@ function AppShell() {
         }}
       />
       <BrokerAlertBanner />
+      <TradingHaltBanner />
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>

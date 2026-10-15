@@ -6,6 +6,7 @@ import { useBotStore } from "../../store/bot";
 import { useUIStore } from "../../store/ui";
 import { ThemeToggle } from "./ThemeToggle";
 import { formatSignedCurrency } from "../../lib/money.js";
+import { useTradingHalt } from "../../hooks/useTradingHalt";
 
 /** Returns true if the US stock market is currently open (ET 9:30–16:00, Mon–Fri). */
 function isMarketOpen(): boolean {
@@ -32,6 +33,7 @@ function fmt(n: number, prefix = "$") {
 }
 
 export function Topbar() {
+  const halt = useTradingHalt();
   const { status, connected } = useBotStore();
   const { toggleMobileSidebar } = useUIStore();
 
@@ -90,7 +92,7 @@ export function Topbar() {
         <span className={`badge ${mode === "live" ? "badge-red" : "badge-yellow"}`}>
           {mode.toUpperCase()}
         </span>
-        {running ? (
+        {halt.isError ? <span className="badge badge-red">STATUS UNKNOWN</span> : halt.data?.halted ? <span className="badge badge-red">HALTED</span> : running ? (
           <span className="badge badge-green">RUNNING</span>
         ) : marketOpen ? (
           <span className="badge badge-gray">IDLE</span>

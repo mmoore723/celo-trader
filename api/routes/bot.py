@@ -21,6 +21,35 @@ from api.models import BotStatus, BotActionResponse
 router = APIRouter(prefix="/api/bot", tags=["bot"])
 
 
+@router.get("/halt")
+def get_halt(request: Request):
+    _get_uid(request)
+    from risk.halt_controls import halt_status
+    return halt_status()
+
+
+@router.post("/halt/resume", response_model=BotActionResponse)
+def resume_halt(request: Request, payload: dict):
+    uid = _get_uid(request)
+    from broker import get_clients
+    from config import get_settings
+    from risk.db_helpers import get_todays_realized_pnl
+    from risk.halt_controls import resume_after_review, halt_status
+    if payload.get("scope") != halt_status()["scope"]:
+        raise HTTPException(status_code=409, detail="Account or trading mode changed. Refresh the halt status before resuming.")
+    settings = get_settings()
+    today = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    try:
+        broker, _ = get_clients()
+        resume_after_review(broker, day_start=settings.get(f"day_start_{today}"),
+                            settings=settings, realized=get_todays_realized_pnl())
+    except Exception as exc:
+        return BotActionResponse(ok=False, message=str(exc))
+    from database import log_event
+    log_event("INFO", "risk", f"Halt resume completed for user {uid}")
+    return BotActionResponse(ok=True, message="Loss halt cleared. Existing strategy gates and risk limits still apply.")
+
+
 def _read_bot_state(user_id: str) -> dict[str, Any]:
     """
     Read only the explicitly identified user's state file. Requiring the

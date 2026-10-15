@@ -82,6 +82,17 @@ class GuardMixin:
             log_event("CRITICAL", "risk", reason + "; closing positions and blocking entries")
         except Exception:
             logger.exception("Could not log persisted daily-loss halt")
+        if not locked:
+            try:
+                from alerts import send_alert
+                from contextvars import copy_context
+                from threading import Thread
+                context = copy_context()
+                Thread(target=context.run, args=(send_alert, "Trading halted: daily loss limit", reason +
+                       ". New entries are blocked and emergency exits are being confirmed. "
+                       "Open Celo Trader to review the halt and resume controls."), daemon=True).start()
+            except Exception:
+                logger.exception("Could not send daily-loss alert")
         return reason
 
     def can_trade(self, account_balance: float, has_open_position: bool,
