@@ -17,6 +17,8 @@ import { useBotStore } from "../store/bot";
 import { PageLoader } from "../components/PageLoader";
 import { ScannerOpportunities } from "./ScannerOpportunities";
 import { useSearchParams } from "react-router-dom";
+import { inJournalWindow, journalRealizedSummary } from "../lib/journalWindow.js";
+import { formatSignedCurrency } from "../lib/money.js";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -29,8 +31,10 @@ function StatusBadge({ status }: { status: string }) {
 /** Compact time formatter: "06/26 09:45" */
 function fmtTime(iso: string | undefined): string {
   if (!iso) return "—";
-  const d = new Date(iso);
+  const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(iso);
+  const d = new Date(hasOffset ? iso : `${iso}Z`);
   return d.toLocaleString("en-US", {
+    timeZone: hasOffset ? "America/New_York" : "UTC",
     month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hour12: false,
   });
@@ -624,20 +628,7 @@ export function Journal() {
   // ── Client-side date filter ─────────────────────────────────────────────────
   const trades = allTrades.filter((t) => {
     // Date filter
-    if (t.entry_time) {
-      const entry = new Date(t.entry_time);
-      const now   = new Date();
-      if (dateWindow === "today" && entry.toDateString() !== now.toDateString()) return false;
-      if (dateWindow === "week") {
-        const cut = new Date(now); cut.setDate(now.getDate() - 7);
-        if (entry < cut) return false;
-      }
-      if (dateWindow === "month") {
-        const cut = new Date(now); cut.setMonth(now.getMonth() - 1);
-        if (entry < cut) return false;
-      }
-      if (dateWindow === "custom" && customFrom && entry < new Date(customFrom)) return false;
-    }
+    if (!inJournalWindow(t, dateWindow, customFrom)) return false;
     // Strategy filter
     if (stratFilter !== "all" && t.strategy_id !== stratFilter) return false;
     return true;
@@ -653,11 +644,9 @@ export function Journal() {
     if (!live || live.current_option_price == null || t.entry_price == null) return null;
     return (live.current_option_price - t.entry_price) * (t.contracts ?? 0) * 100;
   };
-  const filteredPnl     = trades.reduce((s, t) => s + (tradePnl(t) ?? 0), 0);
-  const filteredWins    = trades.filter((t) => (tradePnl(t) ?? 0) > 0).length;
-  const filteredWinRate = trades.length > 0
-    ? ((filteredWins / trades.length) * 100).toFixed(1)
-    : "0.0";
+  const realizedSummary = journalRealizedSummary(trades);
+  const filteredPnl = realizedSummary.pnl;
+  const filteredWinRate = realizedSummary.winRate === null ? "N/A" : `${realizedSummary.winRate.toFixed(1)}%`;
 
   async function close(id: number) {
     await api.bot.closeTrade(id);
@@ -720,10 +709,11 @@ export function Journal() {
           <div className="num font-semibold">${(botStatus?.account_balance ?? 0).toFixed(2)}</div>
         </div>
         <div className="card px-4 py-3">
-          <div className="text-xs" style={{ color: "var(--ink-muted)" }}>Live Session P&amp;L</div>
+          <div className="text-xs" style={{ color: "var(--ink-muted)" }}>Daily Account Change ({defaultMode})</div>
           <div className="num font-semibold" style={{ color: (botStatus?.session_pnl ?? 0) >= 0 ? posColor : negColor }}>
-            {(botStatus?.session_pnl ?? 0) >= 0 ? "+" : ""}${(botStatus?.session_pnl ?? 0).toFixed(2)}
+            {formatSignedCurrency(botStatus?.session_pnl ?? 0)}
           </div>
+          <div className="text-xs" style={{ color: "var(--ink-muted)" }}>Equity change includes overnight marks and account adjustments.</div>
         </div>
       </div>
       {/* Controls */}
@@ -802,9 +792,9 @@ export function Journal() {
         <div className="flex gap-4 text-sm num" style={{ color: "var(--ink-muted)" }}>
           <span>{trades.length} trades</span>
           <span style={{ color: filteredPnl >= 0 ? posColor : negColor }}>
-            {filteredPnl >= 0 ? "+" : ""}${Math.abs(filteredPnl).toFixed(2)} P&L
+            {formatSignedCurrency(filteredPnl)} realized trade P&amp;L
           </span>
-          <span>Win {filteredWinRate}%</span>
+          <span>Win {filteredWinRate} ({realizedSummary.closed} closed)</span>
           {stratFilter !== "all" && (
             <span style={{ color: "var(--accent)", fontSize: 11 }}>({stratFilter})</span>
           )}
@@ -817,6 +807,9 @@ export function Journal() {
                 : "last 30 days"})
             </span>
           )}
+        </div>
+        <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
+          Dates include trades entered or closed in the selected period (New York time). Realized P&amp;L is entry-to-exit, before fees, for the displayed closed trades; it is not daily account change.
         </div>
       </div>
 
@@ -842,8 +835,8 @@ export function Journal() {
                   <th>P&L</th>
                   <th className="hidden sm:table-cell">Status</th>
                   <th className="hidden lg:table-cell">Exit Reason</th>
-                  <th className="hidden lg:table-cell">Entry Time</th>
-                  <th className="hidden lg:table-cell">Exit Time</th>
+                  <th className="hidden lg:table-cell">Entry Time (ET)</th>
+                  <th className="hidden lg:table-cell">Exit Time (ET)</th>
                   <th></th>
                 </tr>
               </thead>
