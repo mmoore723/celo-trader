@@ -59,7 +59,7 @@ test('status badge text contrast exceeds 4.5 in light and dark themes', () => {
     return values[0]*.2126+values[1]*.7152+values[2]*.0722;
   };
   const matches = [...css.matchAll(/--scope-ink: #(\w{6}); --scope-bg: #(\w{6});/g)];
-  assert.equal(matches.length,4);
+  assert.equal(matches.length,6);
   for (const [,ink,bg] of matches) {
     const a=luminance(ink), b=luminance(bg);
     assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,`${ink} on ${bg}`);

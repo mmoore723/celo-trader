@@ -26,7 +26,7 @@ export function Toggle({
 }
 
 export function StrategyToggleCard({
-  label, checked, onChange, disabled = false, children, separated = false,
+  label, checked, onChange, disabled = false, children, separated = false, activity = "research",
 }: {
   label: string;
   checked: boolean;
@@ -34,12 +34,13 @@ export function StrategyToggleCard({
   disabled?: boolean;
   children: ReactNode;
   separated?: boolean;
+  activity?: "trading" | "research" | "paused";
 }) {
   return <div
-    className={`rounded-lg px-3 ${separated ? "mt-2" : ""}`}
-    style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}
+    className={`strategy-toggle-card strategy-scope-${activity} rounded-lg ${separated ? "mt-2" : ""}`}
   >
     <Toggle label={label} checked={checked} onChange={onChange} disabled={disabled} />
+    <span className="strategy-card-status">{activity === "trading" ? "Trading enabled" : activity === "paused" ? "Auto-paused ticker(s)" : "Research only"}</span>
     {children}
   </div>;
 }

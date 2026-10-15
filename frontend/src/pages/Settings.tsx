@@ -386,6 +386,7 @@ export function Settings() {
       <StrategyToggleCard
         key={strategy.strategy_id}
         separated={false}
+        activity={strategy.automatic_pauses?.length ? "paused" : tradingTickers.length ? "trading" : "research"}
           label={strategyName(strategy.display_name)}
           checked={switchEnabled}
           onChange={(v) => set(strategy.setting_key, v)}
@@ -398,7 +399,9 @@ export function Settings() {
         {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
           strategyId={strategy.strategy_id} failed={closedTradesFailed} loading={closedTradesLoading} />}
         {strategy.automatic_pauses?.map(pause => <p key={pause.ticker} className="text-xs pb-2" style={{ color: "var(--warning)" }}>{pause.ticker}: automatically moved to research only. Closed-trade PF {pause.profit_factor.toFixed(2)} across {pause.completed_trades} trades. Existing positions keep their exits.</p>)}
-        <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
+        <details className="strategy-card-evidence text-xs" style={{ color: "var(--ink-muted)" }}>
+        <summary className="cursor-pointer font-medium">Research results and test evidence</summary>
+        <p className="text-xs pb-1 mt-2" style={{ color: "var(--ink-muted)" }}>
           <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Recorded test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}
         </p>
         {!strategy.observation_only ? (
@@ -414,6 +417,7 @@ export function Settings() {
           <p className="mt-1">Goal PF {target.toFixed(1)}{!strategy.observation_only ? ` · ${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode} orders only on ${strategy.tickers.join(", ")}.` : ""}</p>
           <p className="mt-1">{strategy.backtest?.comparison || strategy.evidence}</p>
           {currentPairs.some(pair => pair.previous_version_rows > 0) && <p className="mt-1">Earlier-version setups remain saved but are not mixed into the current PF.</p>}
+        </details>
         </details>
         {strategy.integrity_errors.length > 0 && (
           <p className="text-xs pb-3" style={{ color: "#f87171" }}>

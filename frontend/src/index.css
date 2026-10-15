@@ -123,8 +123,21 @@ html, body, #root {
 
 .strategy-scope-trading { --scope-ink: #166534; --scope-bg: #dcfce7; --scope-edge: #15803d; }
 .strategy-scope-research { --scope-ink: #6b21a8; --scope-bg: #f3e8ff; --scope-edge: #9333ea; }
+.strategy-scope-paused { --scope-ink: #9a3412; --scope-bg: #ffedd5; --scope-edge: #c2410c; }
 .dark .strategy-scope-trading { --scope-ink: #86efac; --scope-bg: #143322; --scope-edge: #4ade80; }
 .dark .strategy-scope-research { --scope-ink: #d8b4fe; --scope-bg: #302040; --scope-edge: #c084fc; }
+.dark .strategy-scope-paused { --scope-ink: #fed7aa; --scope-bg: #432718; --scope-edge: #fb923c; }
+.strategy-toggle-card { background: var(--scope-bg); border: 1px solid var(--scope-edge); border-left-width: 4px; padding: 0.35rem 0.7rem 0.55rem; }
+.strategy-toggle-card > div:first-child { padding-top: 0.2rem; padding-bottom: 0.2rem; }
+.strategy-card-status { display: block; font-size: 0.7rem; font-weight: 700; color: var(--scope-ink); margin-bottom: 0.3rem; }
+.strategy-card-evidence { border-top: 1px solid var(--scope-edge); padding-top: 0.35rem; margin-top: 0.2rem; }
+#settings-panel-strategies .settings-card-grid { gap: 0.65rem; }
+@container (min-width: 44rem) {
+  #settings-panel-strategies .settings-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (min-width: 62rem) {
+  #settings-panel-strategies .settings-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .strategy-scope-badge { color: var(--scope-ink); background: var(--scope-bg); }
 .pair-evidence-row { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--scope-edge); }
 .stat-negative { color: var(--negative); }
