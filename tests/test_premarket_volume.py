@@ -11,10 +11,9 @@ class Feed:
     base = "broker"
     data = "data"
 
-    def __init__(self, current=100, missing=False, repeated=False):
+    def __init__(self, current=100, missing=False):
         self.current = current
         self.missing = missing
-        self.repeated = repeated
         self.calls = []
 
     def _get(self, url, params):
@@ -22,12 +21,23 @@ class Feed:
         if url.endswith("calendar"):
             dates = [date(2026, 10, 15) - timedelta(days=i) for i in range(1, 40)]
             return [{"date": day.isoformat()} for day in dates if day.weekday() < 5]
-        day = params["start"][:10]
-        volume = self.current if day == "2026-10-15" else 100
-        bars = [{"t": day + "T08:00:00-04:00", "v": volume}]
-        if self.missing and day == "2026-10-14":
-            bars = []
-        return {"bars": {"SPY": bars}, "next_page_token": "repeat" if self.repeated else None}
+        raise AssertionError("Alpaca volume must not be requested")
+
+
+class ConsolidatedFeed:
+    base = "https://api.tradier.com/v1"
+
+    def __init__(self, current=150, missing=False):
+        self.calls = []
+        self.current = current
+        self.missing = missing
+
+    def _get(self, url, params):
+        self.calls.append((url, params))
+        dates = [date(2026, 10, 15) - timedelta(days=i) for i in range(10)]
+        rows = [{"time": f"{day}T08:00:00", "volume": self.current if day.day == 15 else 100}
+                for day in dates if day.weekday() < 5 and not (self.missing and day.day == 14)]
+        return {"series": {"data": rows}}
 
 
 class PremarketVolumeTests(unittest.TestCase):
@@ -44,23 +54,47 @@ class PremarketVolumeTests(unittest.TestCase):
             self.assertEqual(_et_now(), datetime(2026, 12, 15, 8, 30))
             self.assertEqual(clock.now.call_args.args[0], ET)
 
-    def test_same_window_and_twenty_prior_sessions(self):
-        feed = Feed(current=150)
-        result = matched_premarket_rvol(feed, ["SPY"], datetime(2026, 10, 15, 8, 30))["SPY"]
+    def test_same_window_consolidated_ten_calendar_days(self):
+        feed, tradier = Feed(), ConsolidatedFeed()
+        result = matched_premarket_rvol(feed, ["SPY"], datetime(2026, 10, 15, 8, 30), tradier=tradier)["SPY"]
         self.assertEqual(result["rvol"], 1.5)
-        self.assertEqual(result["premarket_history_sessions"], 20)
-        self.assertEqual(len(feed.calls), 22)
-        for _, params in feed.calls[1:]:
-            self.assertTrue(params["start"].endswith("04:00:00-04:00"))
-            self.assertTrue(params["end"].endswith("08:30:00-04:00"))
-            self.assertEqual(params["feed"], "iex")
+        self.assertEqual(result["premarket_history_sessions"], 7)
+        self.assertEqual(result["premarket_history_days"], 10)
+        self.assertEqual(result["premarket_volume_feed"], "tradier_consolidated")
+        self.assertEqual(len(feed.calls), 1)
+        params = tradier.calls[0][1]
+        self.assertEqual(params["start"], "2026-10-06 04:00")
+        self.assertEqual(params["end"], "2026-10-15 08:30")
+        self.assertEqual(params["session_filter"], "all")
 
     def test_missing_history_is_not_zero_or_daily_fallback(self):
-        self.assertEqual(matched_premarket_rvol(Feed(missing=True), ["SPY"], datetime(2026, 10, 15, 8, 30)), {})
+        self.assertEqual(matched_premarket_rvol(Feed(), ["SPY"], datetime(2026, 10, 15, 8, 30), tradier=ConsolidatedFeed(missing=True)), {})
 
-    def test_repeated_pagination_is_rejected(self):
+    def test_sandbox_is_rejected(self):
+        tradier = ConsolidatedFeed()
+        tradier.base = "https://sandbox.tradier.com/v1"
         with self.assertRaises(ValueError):
-            matched_premarket_rvol(Feed(repeated=True), ["SPY"], datetime(2026, 10, 15, 8, 30))
+            matched_premarket_rvol(Feed(), ["SPY"], datetime(2026, 10, 15, 8, 30), tradier=tradier)
+
+    def test_feed_failure_never_falls_back_to_iex(self):
+        tradier = ConsolidatedFeed()
+        with patch.object(tradier, "_get", side_effect=RuntimeError("offline")):
+            self.assertEqual(matched_premarket_rvol(Feed(), ["SPY"], datetime(2026, 10, 15, 8, 30), tradier=tradier), {})
+
+    def test_one_symbol_failure_does_not_discard_other_results(self):
+        tradier = ConsolidatedFeed()
+        response = tradier._get("/markets/timesales", {})
+        with patch.object(tradier, "_get", side_effect=[RuntimeError("offline"), response]), \
+             patch("scanner.premarket_volume.clock.sleep"):
+            results = matched_premarket_rvol(Feed(), ["BAD", "SPY"], datetime(2026, 10, 15, 8, 30), tradier=tradier)
+        self.assertEqual(set(results), {"SPY"})
+
+    def test_production_token_is_selected_without_switching_trading_mode(self):
+        from scanner.premarket_volume import _market_client
+        with patch("config.get_api_keys", return_value={"tradier_market_api_key": "production", "tradier_api_key": "sandbox"}), \
+             patch("broker.tradier_client.TradierClient") as constructor:
+            _market_client()
+        constructor.assert_called_once_with(api_key="production", base_url="https://api.tradier.com/v1")
 
     def test_closed_minutes_only_and_duplicates(self):
         bars = [{"t": f"2026-10-15T{clock}-04:00", "v": volume} for clock, volume in

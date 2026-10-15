@@ -3,10 +3,23 @@
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 import math
+import logging
+import time as clock
 
 ET = ZoneInfo("America/New_York")
-HISTORY_SESSIONS = 20
+HISTORY_DAYS = 10
 MIN_PREMARKET_RVOL = 1.0
+logger = logging.getLogger("celo_trader.scanner")
+
+
+def _market_client():
+    from config import get_api_keys
+    from broker.tradier_client import TradierClient
+    keys = get_api_keys()
+    token = keys.get("tradier_market_api_key") or keys.get("tradier_api_key")
+    if not token:
+        raise ValueError("Tradier production market-data token required")
+    return TradierClient(api_key=token, base_url="https://api.tradier.com/v1")
 
 
 def window_volume(bars, session, cutoff):
@@ -26,57 +39,61 @@ def window_volume(bars, session, cutoff):
     return sum(seen.values()) if seen else None
 
 
-def matched_premarket_rvol(alpaca, symbols, now):
+def matched_premarket_rvol(alpaca, symbols, now, *, tradier=None):
     now = now.replace(tzinfo=ET) if now.tzinfo is None else now.astimezone(ET)
     cutoff = min(now.time().replace(second=0, microsecond=0, tzinfo=None), time(9, 30))
     if cutoff <= time(4) or not symbols:
         return {}
+    start_date = now.date() - timedelta(days=HISTORY_DAYS - 1)
     calendar = alpaca._get(f"{alpaca.base}/v2/calendar", {
-        "start": (now.date() - timedelta(days=60)).isoformat(),
+        "start": start_date.isoformat(),
         "end": now.date().isoformat(),
     })
     prior = sorted({datetime.fromisoformat(row["date"]).date()
-                    for row in calendar if row["date"] < now.date().isoformat()})[-HISTORY_SESSIONS:]
-    if len(prior) != HISTORY_SESSIONS:
+                    for row in calendar
+                    if start_date.isoformat() <= row["date"] < now.date().isoformat()})
+    if not prior:
         return {}
-    volumes = {symbol: [] for symbol in symbols}
-    for session in prior + [now.date()]:
-        params = {
-            "symbols": ",".join(symbols), "timeframe": "1Min", "feed": "iex",
-            "adjustment": "raw", "limit": 10000, "sort": "asc",
-            "start": datetime.combine(session, time(4), ET).isoformat(),
-            "end": datetime.combine(session, cutoff, ET).isoformat(),
-        }
-        collected = {symbol: [] for symbol in symbols}
-        tokens = set()
-        for _ in range(100):
-            payload = alpaca._get(f"{alpaca.data}/v2/stocks/bars", params)
-            for symbol, bars in (payload.get("bars") or {}).items():
-                if symbol in collected:
-                    collected[symbol].extend(bars or [])
-            token = payload.get("next_page_token")
-            if not token:
-                break
-            if token in tokens:
-                raise ValueError("Repeated premarket pagination token")
-            tokens.add(token)
-            params = dict(params, page_token=token)
-        else:
-            raise ValueError("Incomplete premarket pagination")
-        for symbol in symbols:
-            volumes[symbol].append(window_volume(collected[symbol], session, cutoff))
+    client = tradier if tradier is not None else _market_client()
+    if client.base.rstrip("/") != "https://api.tradier.com/v1":
+        raise ValueError("Delayed Tradier sandbox data cannot supply premarket RVOL")
     results = {}
-    for symbol, values in volumes.items():
+    last_request = None
+    for symbol in dict.fromkeys(symbols):
+        if last_request is not None:
+            clock.sleep(max(0.0, 0.65 - (clock.monotonic() - last_request)))
+        last_request = clock.monotonic()
+        try:
+            payload = client._get("/markets/timesales", {
+                "symbol": symbol, "interval": "1min", "session_filter": "all",
+                "start": f"{start_date} 04:00", "end": f"{now.date()} {cutoff:%H:%M}",
+            })
+            series = payload.get("series") or {}
+            raw = series.get("data") or [] if isinstance(series, dict) else []
+            raw = [raw] if isinstance(raw, dict) else raw
+            bars = []
+            for row in raw:
+                stamp = datetime.fromisoformat(str(row["time"]).replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=ET)
+                bars.append({"t": stamp.isoformat(), "v": row["volume"]})
+            values = [window_volume(bars, session, cutoff) for session in prior + [now.date()]]
+        except Exception as ex:
+            logger.warning("Consolidated premarket RVOL unavailable for %s: %s", symbol, ex)
+            continue
         if any(value is None for value in values):
             continue
-        average = sum(values[:-1]) / HISTORY_SESSIONS
+        average = sum(values[:-1]) / len(prior)
         if average <= 0:
             continue
         results[symbol] = {
             "rvol": values[-1] / average,
             "premarket_volume": values[-1], "premarket_average_volume": average,
-            "premarket_history_sessions": HISTORY_SESSIONS,
+            "premarket_history_sessions": len(prior),
+            "premarket_history_days": HISTORY_DAYS,
+            "premarket_history_start": prior[0].isoformat(),
+            "premarket_history_end": prior[-1].isoformat(),
             "premarket_window": f"04:00-{cutoff:%H:%M} America/New_York",
-            "premarket_volume_feed": "iex",
+            "premarket_volume_feed": "tradier_consolidated",
         }
     return results
