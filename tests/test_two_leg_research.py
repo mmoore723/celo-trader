@@ -43,7 +43,8 @@ class TwoLegResearchTests(unittest.TestCase):
             self.assertNotEqual(first.meta['research_episode_anchor'],second.meta['research_episode_anchor'])
             self.assertLess((second.trigger_bar-first.trigger_bar).total_seconds(),90*60)
             native,_=source.update_two_leg_trend_pullback({},later,ticker='TSLA',now=later.iloc[-1]['time']+pd.Timedelta(minutes=1))
-            self.assertIsNone(native)
+            self.assertIsNotNone(native)
+            self.assertEqual(second.trigger_bar, native.trigger_bar)
 
     def test_rejected_reclaim_cannot_be_rescued_but_new_episode_can_pass(self):
         frame=_bars();frame.loc[frame.index[-1],['open','high','low','close']]=[100.85,101.1,100.6,100.9]
@@ -79,7 +80,8 @@ class TwoLegResearchTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 evaluate_injected_setups(state,frame,'TSLA',{TWO_LEG},set(),Mock(),{},research_scope='research_worker:a')
             native,_,_=evaluate_injected_setups({},frame,'TSLA',{TWO_LEG},set(),Mock(),{})
-            self.assertEqual([],native)
+            self.assertEqual(1,len(native))
+            self.assertFalse(native[0].meta.get('observation_only'))
 
     def test_current_proof_is_only_expanded_version(self):
         from strategy_health.research_matrix import _current_rule_samples

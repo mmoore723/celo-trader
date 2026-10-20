@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "strategy_id": "V2_TSLA_TWO_LEG_TREND_PULLBACK",
+  "strategy_version": "2.2.0",
+  "forward_evidence_start": "2026-10-20",
+  "status": "paper_candidate",
+  "evidence_grade": "promising_inconsistent",
+  "ticker_scope": ["TSLA"],
+  "implementation": "trading.two_leg_trend_pullback_execution",
+  "implementation_sha256_at_review": "956cebdf2b82c25bdcc8f8bcf578d458344063f798adba3d1f5bb3d802337dd3",
+  "selected_policy": {
+    "variant": "fresh_directionally_confirmed_reclaim_episodes",
+    "entry_window_et": "10:00-11:30",
+    "session_entry_limit": null,
+    "duplicate_rule": "one emission per completed reclaim bar",
+    "freshness": "only the minute immediately after reclaim close",
+    "order_controls": "existing open-position, cooldown, quantity and risk checks unchanged",
+    "exits": "unchanged"
+  },
+  "predecessor": {
+    "version": "2.1.0",
+    "artifact": "config/strategy_evidence/v2_tsla_two_leg_trend_pullback-2.1.0.json",
+    "warning": "Single-setup historical returns do not validate additional entries. No profitability claim is made for version 2.2.0."
+  },
+  "research_cohort": "2.1.0.research.2",
+  "display_metrics": {
+    "profit_factor": null,
+    "trades": 0,
+    "scope": "TSLA fresh setup reentries",
+    "target_profit_factor": 1.5,
+    "meets_target": false,
+    "note": "User-approved entry frequency change. Forward outcomes required."
+  },
+  "decision": "Remove session entry cap without changing saved switches, exits, risk settings or broker mode.",
+  "source_reports": [
+    "tests/test_two_leg_repeat_entries.py",
+    "tests/test_two_leg_execution.py",
+    "tests/test_two_leg_research.py"
+  ]
+}

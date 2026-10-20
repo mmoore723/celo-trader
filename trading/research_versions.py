@@ -9,10 +9,15 @@ EXPANDED_IDS = frozenset({
 
 
 def evidence_version(strategy_id, version):
+    if strategy_id == 'V2_TSLA_TWO_LEG_TREND_PULLBACK' and version == '2.2.0':
+        return '2.1.0.research.2'
     return f'{version}.research.2' if strategy_id in EXPANDED_IDS else version
 
 
 def capture_versions(strategy_id, reviewed_version):
     # Finish existing experiments as well as new plays; summaries select the
     # exact cohort separately, never pool these versions into current proof.
-    return tuple(sorted({reviewed_version, evidence_version(strategy_id, reviewed_version)}))
+    versions = {reviewed_version, evidence_version(strategy_id, reviewed_version)}
+    if strategy_id == 'V2_TSLA_TWO_LEG_TREND_PULLBACK' and reviewed_version == '2.2.0':
+        versions.add('2.1.0')
+    return tuple(sorted(versions))

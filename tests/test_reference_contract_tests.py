@@ -14,6 +14,19 @@ from tests.test_option_profit_protection import ENTRY, quote
 
 
 class ReferenceTests(unittest.TestCase):
+    def test_two_leg_previous_cohort_keeps_collecting_after_version_change(self):
+        sid = 'V2_TSLA_TWO_LEG_TREND_PULLBACK'
+        self.seed()
+        with self.connect() as conn:
+            conn.execute('UPDATE shadow_candidates SET strategy_id=? WHERE candidate_id=?', (sid, 'one'))
+        record(candidate_id='one', strategy_id=sid, direction='bearish',
+               meta={'strategy_version':'2.1.0'},
+               contract=dict(symbol='XYZ', ask=2, bid=1.96), observed_at=ENTRY,
+               details={'reason':'selected'})
+        self.assertEqual('2.1.0', self.rows()['one']['strategy_version'])
+        self.step(5401, 2.1)
+        self.assertEqual('priced', self.rows()['one']['state']['control']['status'])
+
     def test_expanded_recovery_keeps_exact_version_in_reference_cohort(self):
         self.seed()
         with self.connect() as conn:

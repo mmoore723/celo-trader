@@ -18,7 +18,7 @@ STRATEGIES = {
     'V2_SPY_TREND_CONT': ('2.1.0', 30),
     'V2_SPY_AFTERNOON_FVG': ('2.1.0', 30),
     'V2_FAILED_OR_BREAK_VWAP_REVERSION': ('2.1.0', 30),
-    'V2_TSLA_TWO_LEG_TREND_PULLBACK': ('2.1.0', 90),
+    'V2_TSLA_TWO_LEG_TREND_PULLBACK': ('2.2.0', 90),
 }
 TABLE = 'research_reference_contract_tests'
 CREATE_TABLE = '''CREATE TABLE IF NOT EXISTS research_reference_contract_tests (

@@ -70,11 +70,13 @@ class ClosedTradeEvidenceTests(unittest.TestCase):
           CREATE TABLE shadow_candidates (candidate_id TEXT,broker_account_id TEXT,strategy_id TEXT,ticker TEXT,metadata_json TEXT);
         ''')
         sid = 'V2_TSLA_TWO_LEG_TREND_PULLBACK'
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        version = REVIEWED_STRATEGIES[sid].version
         for i, account, paper, candidate_account, meta in (
-            (1,'acct',1,'acct',json.dumps({'strategy_version':'2.1.0'})),
-            (2,'other',1,'other',json.dumps({'strategy_version':'2.1.0'})),
-            (3,'acct',0,'acct',json.dumps({'strategy_version':'2.1.0'})),
-            (4,'acct',1,'other',json.dumps({'strategy_version':'2.1.0'})),
+            (1,'acct',1,'acct',json.dumps({'strategy_version':version})),
+            (2,'other',1,'other',json.dumps({'strategy_version':version})),
+            (3,'acct',0,'acct',json.dumps({'strategy_version':version})),
+            (4,'acct',1,'other',json.dumps({'strategy_version':version})),
             (5,'acct',1,'acct','invalid json')):
             conn.execute('INSERT INTO trades VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (i,None,sid,'TSLA','closed','2026-09-10T10:00:00','2026-09-10T11:30:00',-230,str(i),account,paper))

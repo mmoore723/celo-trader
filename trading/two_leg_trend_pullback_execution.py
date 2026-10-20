@@ -185,12 +185,8 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                 history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
                             )
                             if not _has_directional_confirmation(context, "bullish"):
-                                # The reviewed study permits one setup per
-                                # session.  Reject this completed reclaim for
-                                # the day instead of searching forward after
-                                # seeing its outcome.
                                 leg = None
-                                return None
+                                continue
                             stop = min(leg.pullback_extreme, current.close - atr)
                             risk = current.close - stop
                             if risk > 0:
@@ -213,12 +209,8 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                     },
                                 )
                                 leg = None
-                                # The study allows one setup per session. If
-                                # this was a historical reclaim before a bot
-                                # restart, do not manufacture a second later
-                                # entry; only the newest completed minute may
-                                # be returned to the live entry loop.
-                                return latest_signal if index == len(today) - 1 else None
+                                if index == len(today) - 1:
+                                    return latest_signal
                 else:
                     leg.impulse_extreme = min(leg.impulse_extreme, current.low)
                     retrace = current.high - leg.impulse_extreme
@@ -236,7 +228,7 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                             )
                             if not _has_directional_confirmation(context, "bearish"):
                                 leg = None
-                                return None
+                                continue
                             stop = max(leg.pullback_extreme, current.close + atr)
                             risk = stop - current.close
                             if risk > 0:
@@ -259,7 +251,8 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                     },
                                 )
                                 leg = None
-                                return latest_signal if index == len(today) - 1 else None
+                                if index == len(today) - 1:
+                                    return latest_signal
         # An invalidated active leg cannot be reinterpreted as a new opposite
         # impulse on that same candle; a later completed candle may start one.
         if leg is None and not had_leg:
@@ -275,9 +268,18 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
 def update_two_leg_trend_pullback(
     state: MutableMapping[str, object], today: pd.DataFrame, *, ticker: str, now: datetime,
 ) -> tuple[Signal | None, str]:
-    """Return one reviewed setup per TSLA session or an explicit wait status."""
+    """Return each fresh completed setup once; order limits remain downstream."""
     if ticker.strip().upper() != TICKER:
         return None, "not_applicable"
+    now = pd.Timestamp(now)
+    now = now.tz_localize("America/New_York") if now.tzinfo is None else now.tz_convert("America/New_York")
+    today = today.copy()
+    if "time" not in today:
+        return None, "waiting_for_completed_1m_bars"
+    stamps = pd.to_datetime(today["time"])
+    stamps = stamps.dt.tz_localize("America/New_York") if stamps.dt.tz is None else stamps.dt.tz_convert("America/New_York")
+    today["time"] = stamps
+    today = today.loc[stamps.dt.date == now.date()]
     bars = _completed_bars(today, now)
     if not bars:
         return None, "waiting_for_completed_1m_bars"
@@ -285,7 +287,7 @@ def update_two_leg_trend_pullback(
     if state.get("key") != key:
         state.clear()
         state["key"] = key
-    if state.get("emitted"):
+    if state.get("emitted_bar") == bars[-1].timestamp.isoformat():
         return None, "already_emitted"
     if _reference_close(list(bars)) is None:
         return None, "waiting_for_0945_reference"
@@ -294,5 +296,8 @@ def update_two_leg_trend_pullback(
     signal = _signal_at_latest_bar(bars)
     if signal is None:
         return None, "waiting_for_impulse_pullback_reclaim"
-    state["emitted"] = True
+    if not signal.trigger_bar + pd.Timedelta(minutes=1) <= now < signal.trigger_bar + pd.Timedelta(minutes=2):
+        return None, "stale_reclaim"
+    state["emitted_bar"] = signal.trigger_bar.isoformat()
+    state.pop("emitted", None)
     return signal, "completed_1m_reclaim"
