@@ -75,6 +75,8 @@ app.include_router(admin.router,    dependencies=_auth)             # admin — 
 app.include_router(ws.router)                                       # WebSocket — no cookie auth
 app.include_router(backtest.router,        dependencies=_auth)
 app.include_router(strategy_health.router, dependencies=_auth)
+from api.routes import weekly_exit_audit
+app.include_router(weekly_exit_audit.router, dependencies=_auth)
 app.include_router(ai_reasoning.router,    dependencies=_auth)
 app.include_router(learning.router,        dependencies=_auth)
 app.include_router(signals.router,         dependencies=_auth)

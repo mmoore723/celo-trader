@@ -994,6 +994,7 @@ export interface PremarketTicker {
 }
 
 export interface AppSettings {
+  active_broker_account_id?: string;
   broker_provider?: "alpaca" | "tradier";
   paper_trading?: boolean;   // true = paper (default), false = live; only toggled via Settings
   risk_pct: number;

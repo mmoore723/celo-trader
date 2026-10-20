@@ -1,4 +1,5 @@
 import { strategyVariant, strategyVersion } from "../../lib/strategyIdentity.js";
+import { WeeklyExitAudit } from "./WeeklyExitAudit";
 
 export function StrategyIdentity({ id, version, tickers, label, activity }: {
   id: string; version?: string; tickers: string[]; label: string;
@@ -15,5 +16,6 @@ export function StrategyIdentity({ id, version, tickers, label, activity }: {
         className="rounded px-2 py-0.5 font-semibold"
         style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--ink)" }}>{ticker}</span>)}
     </div>
+    <WeeklyExitAudit strategyId={id} version={version} />
   </div>;
 }
