@@ -90,5 +90,5 @@ class GapFillExitMeasurementTests(unittest.TestCase):
                 from trading.tested_strategy_research import evaluate_tested_research
                 candidates = evaluate_tested_research(frame(history), 'META', [gap_fill_exit.STRATEGY_ID], scope='gap-parity', now=trade.entry_time)
             self.assertEqual(1, len(candidates))
-            self.assertEqual(gap_fill_exit.PROTOCOL, candidates[0].meta['authored_exit_protocol'])
+            self.assertEqual(gap_fill_exit.LOW_WATER_PROTOCOL, candidates[0].meta['authored_exit_protocol'])
             self.assertEqual(snapshot, candidates[0].meta['authored_exit_state'])

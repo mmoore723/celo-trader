@@ -11,7 +11,7 @@ import pandas as pd
 
 from config.strategy_catalog import REVIEWED_STRATEGIES
 from database.research_exits import EXIT_REASONS
-from strategy_health.exit_protocols import PROTOCOLS, first_exit
+from strategy_health.exit_protocols import PROTOCOLS, SUPPORTED_PROTOCOL_PAIRS, first_exit
 from strategy_health import context_orb_exit, context_vwap_exit, squeeze_exit
 from strategy_health.impulse_exit import et, executable_bid
 from strategy_health.authored_exit_summary import net_profit
@@ -40,13 +40,13 @@ def initialize(*, strategy_id, direction, trigger_bar, meta, selection):
         raise ValueError('No authored exit for this strategy')
     if strategy_id in TIMED and REVIEWED_STRATEGIES[strategy_id].exit_minutes != TIMED[strategy_id]:
         raise ValueError('Reviewed timer changed; new study version required')
-    if strategy_id in PROTOCOLS and meta.get('authored_exit_protocol') != PROTOCOLS[strategy_id]:
+    if strategy_id in PROTOCOLS and (strategy_id, meta.get('authored_exit_protocol')) not in SUPPORTED_PROTOCOL_PAIRS:
         raise ValueError('Candidate does not carry the reviewed authored exit')
     if not meta.get('strategy_version') or direction not in {'bullish', 'bearish'}:
         raise ValueError('Missing strategy version or direction')
     contract = selection.get('contract')
     state = dict(profile_version=PROFILE, strategy_id=strategy_id,
-                 strategy_version=meta['strategy_version'], protocol=PROTOCOL_BY_STRATEGY[strategy_id],
+                 strategy_version=meta['strategy_version'], protocol=meta.get('authored_exit_protocol') if strategy_id in PROTOCOLS else PROTOCOL_BY_STRATEGY[strategy_id],
                  direction=direction, trigger_bar=et(trigger_bar).isoformat(), meta=deepcopy(meta),
                  status='collecting' if contract else 'no_contract', reason=None,
                  premium_path=dict(partial_bid=None, partial_at=None, quote_count=0, last_bid_at=None))
@@ -88,7 +88,8 @@ def advance(state, *, frame=None, now, quote=None):
     if out['status'] not in ACTIVE:
         return out
     sid = out['strategy_id']
-    if out['profile_version'] != PROFILE or PROTOCOL_BY_STRATEGY.get(sid) != out['protocol']:
+    if out['profile_version'] != PROFILE or (PROTOCOL_BY_STRATEGY.get(sid) != out['protocol']
+            and (sid, out['protocol']) not in SUPPORTED_PROTOCOL_PAIRS):
         raise ValueError('Unknown exit/profile identity')
     now = et(now)
     premium = sid in context_orb_exit.PREMIUM_PROTOCOLS or sid == squeeze_exit.STRATEGY_ID

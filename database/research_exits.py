@@ -9,7 +9,7 @@ import pandas as pd
 from database.connection import get_conn
 from database.helpers import _now_et
 from strategy_health.impulse_exit import et, executable_bid
-from strategy_health.exit_protocols import PROTOCOLS, first_exit
+from strategy_health.exit_protocols import SUPPORTED_PROTOCOL_PAIRS, first_exit
 from database.research_exit_variants import pending_variants
 from strategy_health.context_vwap_exit import PROTOCOLS as CONTEXT_VWAP_PROTOCOLS
 from strategy_health.squeeze_exit import PROTOCOL as SQUEEZE_PROTOCOL
@@ -31,7 +31,7 @@ EXIT_REASONS = {"underlying_stop", "underlying_2r_target", "underlying_1_5r_targ
 def pending_exits(account, now):
     """Enroll only newly stamped candidates, never relabel historical tests."""
     with get_conn() as conn:
-        for strategy_id, protocol in PROTOCOLS.items():
+        for strategy_id, protocol in SUPPORTED_PROTOCOL_PAIRS:
             conn.execute("""INSERT OR IGNORE INTO research_strategy_exits
             (candidate_id,protocol,contract_symbol,entry_ask,entry_quote_at)
             SELECT s.candidate_id,?,q.contract_symbol,q.ask,q.observed_at
@@ -42,13 +42,14 @@ def pending_exits(account, now):
             AND q.ask>0 AND json_valid(s.metadata_json)
             AND json_extract(s.metadata_json,'$.authored_exit_protocol')=?""",
                 (protocol, strategy_id, account or '', (et(now)-timedelta(days=2)).date().isoformat(), protocol))
-        placeholders = ','.join('?' for _ in PROTOCOLS)
+        protocols = [protocol for _, protocol in SUPPORTED_PROTOCOL_PAIRS]
+        placeholders = ','.join('?' for _ in protocols)
         originals = [dict(row, evidence_table="research_strategy_exits") for row in conn.execute(f"""SELECT e.*,s.ticker,s.trigger_bar,
             s.direction,s.metadata_json FROM research_strategy_exits e
             JOIN shadow_candidates s ON s.candidate_id=e.candidate_id
             WHERE e.protocol IN ({placeholders}) AND e.status IN ('collecting','pending_quote')
             AND COALESCE(s.broker_account_id,'')=? ORDER BY s.trigger_bar""",
-            (*PROTOCOLS.values(), account or ''))]
+            (*protocols, account or ''))]
         return originals + pending_variants(conn, account, (et(now)-timedelta(days=2)).date().isoformat())
 
 

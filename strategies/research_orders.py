@@ -42,6 +42,11 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
                                        timeframe='1Min', limit=10_000)
         source = pd.concat([history, pd.DataFrame(frame)], ignore_index=True) if not history.empty else frame
         bars = _research_bars(source, cutoff, spec.timeframe)
+        if strategy_id == 'V2_GAP_FILL_RTH':
+            from trading.gap_fill_history import with_history
+            native = load_scanner_candles(symbol, broker_account_id=get_settings().get('active_broker_account_id') or None,
+                                          timeframe='5Min', limit=1500)
+            bars = with_history(bars, native, cutoff)
         if not bars:
             return None
         engine = library.factory()

@@ -106,7 +106,9 @@ class AllProtocolIntegrationTests(unittest.TestCase):
                     self.assertEqual(before, [tuple(r) for r in conn.execute('SELECT * FROM '+table)], (sid, table))
             self.assertEqual('priced', state['status'], (sid, state))
             self.assertIsNotNone(normalized_profit(state), sid)
-            self.assertEqual(PROTOCOL_BY_STRATEGY[sid], state['protocol'])
+            expected_protocol = (json.loads(candidate['metadata_json'])['authored_exit_protocol']
+                                 if special == 'gap_fill' else PROTOCOL_BY_STRATEGY[sid])
+            self.assertEqual(expected_protocol, state['protocol'])
             self.assertEqual(symbol, state['contract_symbol'])
             self.assertTrue(all(call.args == (symbol,) for call in options.get_option_quote.call_args_list))
             if timer:

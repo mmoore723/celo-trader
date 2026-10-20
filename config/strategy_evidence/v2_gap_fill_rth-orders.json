@@ -5,7 +5,7 @@
   "evidence_grade": "promising_underpowered",
   "ticker_scope": [],
   "implementation": "strategies.research_orders",
-  "implementation_sha256_at_review": "f0850b53ee613b7d4dc6c82e2aeb0a260d5297ccbc64fa80ba1fca8fa7c7d6fc",
+  "implementation_sha256_at_review": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089",
   "runtime_policy_sources": [
     {
       "path": "config/research_order_specs.py",
@@ -17,15 +17,15 @@
     },
     {
       "path": "strategies/research_orders.py",
-      "sha256": "f0850b53ee613b7d4dc6c82e2aeb0a260d5297ccbc64fa80ba1fca8fa7c7d6fc"
+      "sha256": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089"
     },
     {
       "path": "trading/research_order_exit.py",
-      "sha256": "6665bbe99ab878015bf390c2aa0f31f367ab37bed5c2b85c96c6727cdc2d134c"
+      "sha256": "a60119c4f1b48083bb412a93ee601f586a3e03c39073f321812a3b9a7df9d68a"
     },
     {
       "path": "trading/tested_strategy_research.py",
-      "sha256": "81a96e0b4860d3d98d15ac530d1d943f332cbe4215c9002e33e7d249be57dd2e"
+      "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
     },
     {
       "path": "trading/failed_range_research.py",
@@ -61,7 +61,7 @@
     },
     {
       "path": "strategy_health/exit_protocols.py",
-      "sha256": "51ceb01d86d39fae85ea19afe2bef59ba9daf697deafac008d18b926f4fa556d"
+      "sha256": "379dcc737acd5053e75f706f62914f277a126405f8c9fd8852ef4049a1717b25"
     },
     {
       "path": "trading/position_manager/close.py",
@@ -70,6 +70,10 @@
     {
       "path": "trading/research_session_clock.py",
       "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+    },
+    {
+      "path": "trading/gap_fill_history.py",
+      "sha256": "136ea3dd39bbacd5d630db3395ae5c58d245750158790ac647c5c7d2c23e1b23"
     }
   ],
   "evidence_summary": "Exact research execution implementation. Admin approval does not assert profitability qualification.",
@@ -78,5 +82,5 @@
   ],
   "decision": "Exact research route with explicit per-pair consent or admin override. No profit guarantee.",
   "display_metrics": {},
-  "execution_safety_revision": "2026-10-14 broker-clock preclose five-minute liquidation and closed-session retry suppression"
+  "execution_safety_revision": "2026-10-19 verified session-close history and prospective short low-water ATR trail"
 }

@@ -13,7 +13,7 @@ PROTOCOLS = {
     impulse_exit.STRATEGY_ID: impulse_exit.PROTOCOL,
     supertrend_exit.STRATEGY_ID: supertrend_exit.PROTOCOL,
     momentum_exit.STRATEGY_ID: momentum_exit.PROTOCOL,
-    gap_fill_exit.STRATEGY_ID: gap_fill_exit.PROTOCOL,
+    gap_fill_exit.STRATEGY_ID: gap_fill_exit.LOW_WATER_PROTOCOL,
     trend_exit.STRATEGY_ID: trend_exit.PROTOCOL,
     vwap_exit.STRATEGY_ID: vwap_exit.PROTOCOL,
     afternoon_exit.STRATEGY_ID: afternoon_exit.PROTOCOL,
@@ -31,6 +31,7 @@ SHORT_TRAIL_PROTOCOLS = {
     module.PROTOCOL: (module.STRATEGY_ID, module.LOW_WATER_PROTOCOL)
     for module in (momentum_exit, gap_fill_exit)
 }
+SUPPORTED_PROTOCOL_PAIRS = (*PROTOCOLS.items(), (gap_fill_exit.STRATEGY_ID, gap_fill_exit.PROTOCOL))
 
 
 def candidate_metadata(strategy_id, strategy):

@@ -108,4 +108,20 @@ class GapFillExitCaptureTests(unittest.TestCase):
         pair = next(p for p in strategy['pairs'] if p['ticker'] == 'META')
         self.assertEqual(0, pair['option_results'])
         self.assertEqual(0, pair['authored_exit_evidence']['option_results'])
-        self.assertEqual(1, pair['authored_exit_evidence']['short_trail_comparison']['tracked'])
+        self.assertEqual(gap_fill_exit.LOW_WATER_PROTOCOL, pair['authored_exit_evidence']['protocol'])
+        self.assertEqual(0, pair['authored_exit_evidence']['tracked'])
+
+    def test_corrected_protocol_collects_without_relabeling_old_results(self):
+        self.seed('old')
+        self.seed('new')
+        with self.f.connect() as conn:
+            raw = conn.execute("SELECT metadata_json FROM shadow_candidates WHERE candidate_id='new'").fetchone()[0]
+            meta = json.loads(raw)
+            meta['authored_exit_protocol'] = gap_fill_exit.LOW_WATER_PROTOCOL
+            conn.execute("UPDATE shadow_candidates SET metadata_json=? WHERE candidate_id='new'", (json.dumps(meta),))
+        self.f.capture()
+        with self.f.connect() as conn:
+            exits = load_authored_exits(conn, 'a', '2026-09-10')
+        self.assertEqual(gap_fill_exit.PROTOCOL, exits['old']['protocol'])
+        self.assertEqual(gap_fill_exit.LOW_WATER_PROTOCOL, exits['new']['protocol'])
+        self.assertEqual('priced', exits['new']['status'])

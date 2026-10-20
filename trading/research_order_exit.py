@@ -54,8 +54,13 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
             event = midpoint_exit(frame, **common, strategy_id=spec.source)
         else:
             protocol = PROTOCOLS[spec.source]
-            if meta.get('authored_exit_protocol') != protocol:
+            recorded_protocol = meta.get('authored_exit_protocol')
+            from strategy_health import gap_fill_exit
+            legacy_gap = sid == gap_fill_exit.STRATEGY_ID and recorded_protocol == gap_fill_exit.PROTOCOL
+            if recorded_protocol != protocol and not legacy_gap:
                 raise ValueError('Wrong exit protocol')
+            if legacy_gap:
+                protocol = recorded_protocol
             event = first_exit(protocol, frame, **common)
         if event:
             stamp, reason = event

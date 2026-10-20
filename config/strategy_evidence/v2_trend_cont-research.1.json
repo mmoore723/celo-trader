@@ -21,7 +21,7 @@
     },
     {
       "path": "trading/tested_strategy_research.py",
-      "sha256": "81a96e0b4860d3d98d15ac530d1d943f332cbe4215c9002e33e7d249be57dd2e"
+      "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
     },
     {
       "path": "trading/research_contract_selection.py",

@@ -5,19 +5,20 @@ from statistics import median
 
 from config.market_constants import COMMISSION_PER_CONTRACT
 from strategy_health.impulse_exit import PROTOCOL, et
-from strategy_health.exit_protocols import PROTOCOLS
+from strategy_health.exit_protocols import SUPPORTED_PROTOCOL_PAIRS
 
 
 def load_authored_exits(conn, account, cutoff):
     # Older read-only archive fixtures may predate this additive migration.
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='research_strategy_exits'").fetchone():
         return {}
-    placeholders = ','.join('?' for _ in PROTOCOLS)
+    protocols = [protocol for _, protocol in SUPPORTED_PROTOCOL_PAIRS]
+    placeholders = ','.join('?' for _ in protocols)
     exits = {row["candidate_id"]: dict(row) for row in conn.execute(f"""
         SELECT e.* FROM research_strategy_exits e JOIN shadow_candidates s
         ON s.candidate_id=e.candidate_id WHERE e.protocol IN ({placeholders}) AND s.observed_at>=?
         AND COALESCE(s.broker_account_id,'')=? ORDER BY s.observed_at,s.candidate_id
-        """, (*PROTOCOLS.values(), cutoff, account or ''))}
+        """, (*protocols, cutoff, account or ''))}
     from database.research_exit_variants import attach_variants
     attach_variants(conn, exits, account, cutoff)
     from database.research_premium_exits import attach_paths

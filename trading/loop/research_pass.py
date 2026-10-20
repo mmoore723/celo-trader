@@ -72,6 +72,18 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
         frame = current
         history, error = alpaca.get_bars(ticker, "5Min", limit=1500)
         history_5m = bars_to_df(history) if history and not error else None
+        if 'V2_GAP_FILL_RTH' in tested_ids and history_5m is not None:
+            from trading.gap_fill_history import completed_history
+            gap_bars = completed_history(history_5m, _now_et())
+            gap_archive = state.setdefault('gap_history_archive', {})
+            gap_key = (account, ticker)
+            last_archived = gap_archive.get(gap_key)
+            if gap_bars and (last_archived is None or gap_bars[-1].timestamp > last_archived):
+                record_scanner_candles(ticker, pd.DataFrame([
+                    dict(time=b.timestamp, open=b.open, high=b.high, low=b.low, close=b.close, volume=b.volume)
+                    for b in gap_bars if last_archived is None or b.timestamp >= last_archived]),
+                    broker_account_id=account, timeframe='5Min', source='alpaca_native5')
+                gap_archive[gap_key] = gap_bars[-1].timestamp
         if stopped():
             return
         if history and not error:

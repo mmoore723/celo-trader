@@ -162,6 +162,10 @@ def _research_bars(
 
 def _latest_candidate(strategy: object, bars: tuple[ResearchBar, ...], *, research_strategy_id: str | None = None):
     """Replay completed bars once and return only a signal on the newest bar."""
+    if research_strategy_id == 'V2_GAP_FILL_RTH':
+        from trading.gap_fill_history import valid_session_context
+        if not valid_session_context(bars):
+            return None
     history: list[ResearchBar] = []
     latest = None
     for bar in bars:
@@ -192,6 +196,9 @@ def evaluate_tested_research(
                 frame, now, spec.timeframe_minutes,
             )
         bars = bars_by_timeframe[spec.timeframe_minutes]
+        if spec.strategy_id == 'V2_GAP_FILL_RTH':
+            from trading.gap_fill_history import with_history
+            bars = with_history(bars, history_5m, now or pd.Timestamp.now(tz='America/New_York'))
         if spec.strategy_id == "V2_EMA_PULLBACK_RTH":
             from trading.research_ema_history import with_ema_history
             bars = with_ema_history(bars, history_5m, now)
