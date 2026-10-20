@@ -10,6 +10,10 @@ class SnapshotTests(unittest.TestCase):
     def setUp(self):
         module._cache.clear()
         self.stack = []
+        for name in ('api.research_display_store.load', 'api.research_display_store.save'):
+            p = patch(name, return_value=None)
+            self.stack.append(p)
+            p.start()
         for name, value in [('auth.context.get_current_user_id', 'admin'),
                             ('config.get_db_path', '/test/paper.db'),
                             ('config.get_settings', {'paper_trading': True})]:
@@ -143,18 +147,21 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse(result['snapshot']['refreshing'])
         self.assertEqual(result['strategies'], [1])
 
-    def test_display_staleness_is_bounded(self):
+    def test_display_serves_dated_snapshot_even_while_builder_is_busy(self):
         module.research_snapshot()
         key = next(iter(module._cache))
         entry = module._cache[key]
         module._cache[key] = (module.monotonic() - 301, entry[1], entry[2])
-        self.build.return_value = {'strategies': [2]}
-        result = module.research_snapshot(allow_stale=True)
-        self.assertEqual(result['strategies'], [2])
-        self.assertFalse(result['snapshot']['refreshing'])
+        module._build.acquire()
+        try:
+            result = module.research_snapshot(allow_stale=True)
+            self.assertEqual(result['strategies'], [])
+            self.assertTrue(result['snapshot']['refreshing'])
+        finally:
+            module._build.release()
 
     def test_strict_caller_never_receives_stale_display_snapshot(self):
-        module.research_snapshot(allow_stale=True)
+        module.research_snapshot()
         key = next(iter(module._cache))
         entry = module._cache[key]
         module._cache[key] = (module.monotonic() - 61, entry[1], entry[2])
@@ -162,12 +169,38 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(module.research_snapshot(), {'strategies': [3]})
 
     def test_display_does_not_serve_another_user_snapshot(self):
-        module.research_snapshot(allow_stale=True)
-        self.build.return_value = {'strategies': ['other']}
-        with patch('auth.context.get_current_user_id', return_value='other'):
-            result = module.research_snapshot(allow_stale=True)
-        self.assertEqual(result['strategies'], ['other'])
-        self.assertEqual(self.build.call_count, 2)
+        module.research_snapshot()
+        module._build.acquire()
+        try:
+            with patch('auth.context.get_current_user_id', return_value='other'):
+                with self.assertRaises(HTTPException):
+                    module.research_snapshot(allow_stale=True)
+            self.assertEqual(self.build.call_count, 1)
+        finally:
+            module._build.release()
+
+    def test_cold_display_returns_without_waiting_for_builder(self):
+        from time import perf_counter
+        module._build.acquire()
+        try:
+            started = perf_counter()
+            with self.assertRaises(HTTPException):
+                module.research_snapshot(allow_stale=True)
+            self.assertLess(perf_counter()-started, .2)
+            self.build.assert_not_called()
+        finally:
+            module._build.release()
+
+    def test_persisted_display_survives_memory_cache_reset(self):
+        module._build.acquire()
+        try:
+            with patch('api.research_display_store.load', return_value=(module.time()-120, {'strategies': ['saved']})):
+                result = module.research_snapshot(allow_stale=True)
+            self.assertEqual(result['strategies'], ['saved'])
+            self.assertTrue(result['snapshot']['refreshing'])
+            self.build.assert_not_called()
+        finally:
+            module._build.release()
 
 
 if __name__ == '__main__':

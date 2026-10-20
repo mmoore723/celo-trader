@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../contexts/AuthContext";
-import { api } from "../../lib/api";
+import type { AppSettings } from "../../lib/api";
 
 type Summary = { id: number; ticker: string; strategy: string; version: string; created: string; status: string; recommendation: string };
 type Metrics = { setting?: string; trades: number; net: number; win_rate: number; profit_factor: number | null; profit_factor_infinite?: boolean; max_drawdown: number; worst_trade: number };
@@ -33,31 +33,50 @@ function Results({ rows }: { rows: Metrics[] }) {
 }
 
 export function WeeklyExitAudit({ strategyId, version }: { strategyId: string; version?: string }) {
-  const { user } = useAuth();
-  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings.get });
-  const scope = `${user?.user_id ?? user?.email}:${settings?.active_broker_account_id}:${settings?.paper_trading}`;
-  const summaries = useQuery({ queryKey: ["weekly-exit-audits", scope],
-    queryFn: () => read<{ audits: Summary[] }>(""), enabled: !!user && !!settings, staleTime: 60000 });
-  const [selected, setSelected] = useState<number | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const detail = useQuery({ queryKey: ["weekly-exit-audit-detail", scope, selected],
-    queryFn: () => read<Audit>(`/${selected}`), enabled: selected !== null, staleTime: 60000 });
-  useEffect(() => { setSelected(null); dialog.current?.close(); }, [scope]);
-  useEffect(() => { if (selected !== null) dialog.current?.showModal(); }, [selected]);
-  const rows = summaries.data?.audits.filter(r => r.strategy === strategyId && r.version === version) ?? [];
-  const other = summaries.data?.audits.filter(r => r.strategy === strategyId && r.version !== version) ?? [];
-  const result = detail.data;
+  const context = useContext(AuditContext);
+  if (!context) return null;
+  const rows = context.audits.filter(r => r.strategy === strategyId && r.version === version);
+  const other = context.audits.filter(r => r.strategy === strategyId && r.version !== version);
   const badge = (row: Summary) => <button key={row.id} type="button" className="btn btn-ghost text-xs my-1"
-    onClick={() => setSelected(row.id)}>
+    onClick={() => context.select(row.id)}>
     Weekly Exit Audit: {new Date(row.created).toLocaleDateString()} - {row.ticker} - {row.status === "INCOMPLETE" ? "Data incomplete" : row.recommendation}
   </button>;
   return <div className="text-xs py-1">
-    {summaries.isError ? <button type="button" onClick={() => summaries.refetch()}>Weekly audit unavailable. Retry</button>
-      : summaries.isPending ? <span>Weekly audit: loading saved status</span>
+    {context.error ? <button type="button" onClick={context.retry}>Weekly audit unavailable. Retry</button>
+      : context.pending ? <span>Weekly audit: loading saved status</span>
       : rows.length ? rows.map(badge) : <span>Weekly Exit Audit: no saved audit for this version</span>}
     {!!other.length && <details><summary>Other code versions ({other.length} separate buckets)</summary>
       {other.map(row => <div key={row.id}><span>{row.version}: </span>{badge(row)}</div>)}</details>}
-    <dialog ref={dialog} onClose={() => setSelected(null)}
+  </div>;
+}
+
+const AuditContext = createContext<{
+  audits: Summary[]; pending: boolean; error: boolean; retry: () => void; select: (id: number) => void;
+} | null>(null);
+
+export function WeeklyExitAuditProvider({ settings, children }: { settings?: AppSettings; children: ReactNode }) {
+  const { user } = useAuth();
+  const scope = `${user?.user_id ?? user?.email}:${settings?.active_broker_account_id}:${settings?.paper_trading}`;
+  const summaries = useQuery({ queryKey: ["weekly-exit-audits", scope],
+    queryFn: () => read<{ audits: Summary[] }>(""), enabled: !!user && !!settings,
+    staleTime: 300000, placeholderData: undefined });
+  const [selected, setSelected] = useState<number | null>(null);
+  useEffect(() => { setSelected(null); }, [scope]);
+  return <AuditContext.Provider value={{ audits: summaries.data?.audits ?? [],
+    pending: summaries.isPending, error: summaries.isError, retry: () => { void summaries.refetch(); }, select: setSelected }}>
+    {children}
+    {selected !== null && <AuditDialog key={`${scope}:${selected}`} scope={scope} selected={selected} onClose={() => setSelected(null)} />}
+  </AuditContext.Provider>;
+}
+
+function AuditDialog({ scope, selected, onClose }: { scope: string; selected: number; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [showGrid, setShowGrid] = useState(false);
+  const detail = useQuery({ queryKey: ["weekly-exit-audit-detail", scope, selected],
+    queryFn: () => read<Audit>(`/${selected}`), staleTime: 300000, placeholderData: undefined });
+  useEffect(() => { const node = dialog.current; node?.showModal(); return () => node?.close(); }, []);
+  const result = detail.data;
+  return <dialog ref={dialog} onClose={onClose}
       aria-label="Weekly exit audit results" className="rounded-xl p-5 w-[min(960px,95vw)] max-h-[90vh] overflow-y-auto"
       style={{ background: "var(--surface)", color: "var(--ink)", border: "1px solid var(--border)" }}>
       <div className="flex justify-between gap-4"><h2 className="font-semibold text-lg">Weekly Exit Audit</h2>
@@ -93,11 +112,10 @@ export function WeeklyExitAudit({ strategyId, version }: { strategyId: string; v
           <details><summary>Data coverage</summary>
             {Object.entries(result.coverage_issues ?? {}).map(([id, issues]) => <p key={id}>Trade {id}: {issues.join(", ")}</p>)}
           </details>
-          <details><summary>All grid results ({result.grid?.length ?? 0} completely priced configurations)</summary>
-            <Results rows={result.grid ?? []} /></details>
+          <details onToggle={event => setShowGrid(event.currentTarget.open)}><summary>All grid results ({result.grid?.length ?? 0} completely priced configurations)</summary>
+            {showGrid && <Results rows={result.grid ?? []} />}</details>
           <h3 className="font-semibold">What I cannot know from this data</h3>
           <ul className="list-disc pl-5">{result.assumptions?.map(text => <li key={text}>{text}</li>)}</ul>
         </div>}
-    </dialog>
-  </div>;
+    </dialog>;
 }

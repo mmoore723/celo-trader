@@ -17,6 +17,7 @@ import { ClosedTradeEvidence } from "../components/settings/ClosedTradeEvidence"
 import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
 import { StrategyExitNotice } from "../components/settings/StrategyExitNotice";
 import { StrategyIdentity } from "../components/settings/StrategyIdentity";
+import { WeeklyExitAuditProvider } from "../components/settings/WeeklyExitAudit";
 import { strategyName } from "../lib/strategyIdentity.js";
 import { StrategyRemoval, ResearchTargetTickers } from "../components/settings/StrategyRemoval";
 
@@ -315,6 +316,7 @@ export function Settings() {
   const { data: strategyCatalog } = useQuery({
     queryKey: ["strategy-catalog"],
     queryFn: api.settings.strategies,
+    enabled: activeTab === "strategies",
   });
   // Evidence belongs to the last saved broker/mode, not an unsaved form choice
   // the user may still discard.
@@ -323,21 +325,27 @@ export function Settings() {
   const { data: closedTradeEvidence, isPending: closedTradesLoading, isError: closedTradesFailed } = useQuery({
     queryKey: ["settings-closed-trades", actualAccountMode, actualBrokerProvider],
     queryFn: api.settings.closedStrategyTrades,
-    enabled: Boolean(data),
+    enabled: Boolean(data) && activeTab === "strategies",
     refetchInterval: 60_000,
   });
   const { data: strategyResearch } = useQuery({
     queryKey: ["strategy-research-matrix"],
     queryFn: () => api.strategyHealth.researchMatrix(90),
+    enabled: activeTab === "strategies",
+    retry: false,
     refetchInterval: 60_000,
   });
   const { data: strategyHistory } = useQuery({
     queryKey: ["strategy-setting-history"],
     queryFn: () => api.settings.strategyHistory(12),
+    enabled: activeTab === "strategies",
   });
   const { data: strategyRecommendations, isPending: recommendationsLoading, isError: recommendationsFailed, refetch: refreshRecommendations } = useQuery({
     queryKey: ["strategy-recommendations"],
     queryFn: api.settings.recommendations,
+    enabled: activeTab === "general",
+    retry: false,
+    refetchInterval: activeTab === "general" ? 60000 : false,
   });
   const { data: brokerReadiness, refetch: refreshBrokerReadiness, isFetching: checkingBroker } = useQuery({
     queryKey: ["broker-readiness", form.paper_trading ?? true],
@@ -458,7 +466,7 @@ export function Settings() {
   }
 
   return (
-    <div className="settings-page p-4 flex flex-col gap-4">
+    <WeeklyExitAuditProvider settings={data}><div className="settings-page p-4 flex flex-col gap-4">
       <div role="tablist" aria-label="Settings sections" className="flex gap-2">
         {(["general", "strategies"] as const).map(tab => <button key={tab} role="tab"
           id={`settings-tab-${tab}`} aria-selected={activeTab === tab} aria-controls={`settings-panel-${tab}`}
@@ -816,7 +824,10 @@ export function Settings() {
       </section>
 
       </div>
-      <div hidden={activeTab !== "strategies"} id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className={activeTab === "strategies" ? "flex flex-col gap-4" : "hidden"}>
+      {activeTab === "strategies" && <div id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-4">
+      {strategyResearch?.snapshot?.refreshing && <p role="status" className="text-xs">
+        Showing saved research from {new Date(strategyResearch.snapshot.updated_at * 1000).toLocaleString()}. Refreshing in the background.
+      </p>}
       <AdminStrategyControls />
       <ResearchTargetTickers />
       <section aria-label="Automatically paused strategies" className="card p-4" style={{ border: "2px solid var(--warning)" }}>
@@ -867,6 +878,7 @@ export function Settings() {
       </section>
       </div>
 
+      }
       {/* Save / Discard */}
       <div className="flex gap-2">
         {hasChanges && (
@@ -887,6 +899,6 @@ export function Settings() {
         </button>
       </div>
       {saveError && <p className="text-xs" style={{ color: "#f87171" }}>{saveError}</p>}
-    </div>
+    </div></WeeklyExitAuditProvider>
   );
 }

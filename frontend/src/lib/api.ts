@@ -233,6 +233,7 @@ export interface ExpirationStudyComparison {
   average_change: number | null; median_change: number | null;
 }
 export interface StrategyResearchMatrix {
+  snapshot?: { updated_at: number; refreshing: boolean };
   days: number;
   start_date?: string;
   end_date?: string;

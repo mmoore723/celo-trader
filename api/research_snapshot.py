@@ -13,7 +13,7 @@ _guard = Lock()
 _build = Lock()
 TTL_SECONDS = 60
 BUILD_WAIT_SECONDS = 45
-DISPLAY_MAX_AGE_SECONDS = 300
+DISPLAY_MAX_AGE_SECONDS = 86400
 MAX_SNAPSHOTS = 6
 
 
@@ -52,13 +52,27 @@ def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=Fa
             _cache.move_to_end(key)
             while len(_cache) > MAX_SNAPSHOTS:
                 _cache.popitem(last=False)
+        try:
+            from api.research_display_store import save
+            save(key, entry[2], result)
+        except Exception:
+            logging.getLogger(__name__).exception("Research display snapshot persistence failed")
         return entry
 
     result = cached()
     if result is not None:
         return response(result)
-    stale = cached(DISPLAY_MAX_AGE_SECONDS) if allow_stale else None
-    if stale is not None:
+    if allow_stale:
+        stale = cached(DISPLAY_MAX_AGE_SECONDS)
+        if stale is None:
+            from api.research_display_store import load
+            stored = load(key)
+            if stored is not None and 0 <= time() - stored[0] < DISPLAY_MAX_AGE_SECONDS:
+                stale = (monotonic() - (time() - stored[0]), stored[1], stored[0])
+                with _guard:
+                    _cache[key] = stale
+                    while len(_cache) > MAX_SNAPSHOTS:
+                        _cache.popitem(last=False)
         if _build.acquire(blocking=False):
             def refresh():
                 try:
@@ -72,7 +86,10 @@ def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=Fa
             except Exception:
                 _build.release()
                 raise
-        return response(stale)
+        if stale is not None:
+            return response(stale)
+        raise HTTPException(status_code=503, detail="Research is preparing its first saved snapshot. Retry shortly.",
+                            headers={"Retry-After": "5"})
     if not _build.acquire(timeout=BUILD_WAIT_SECONDS):
         raise HTTPException(status_code=503, detail='Research results are refreshing. Retry shortly.',
                             headers={'Retry-After': '5'})

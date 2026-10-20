@@ -71,3 +71,15 @@ class RecommendationSnapshotTests(unittest.TestCase):
                 with self.assertRaises(HTTPException):
                     set_strategy_recommendation_consent(SID, 'SPY', StrategyConsentPayload(decision='enable', fingerprint=evidence['fingerprint']))
         save.assert_not_called()
+
+    def test_stale_display_cannot_authorize_a_recommendation(self):
+        data, _ = matrix()
+        data = {**data, "snapshot": {"updated_at": 1, "refreshing": True}}
+        with patch("config.get_settings", return_value={"paper_trading": True}), \
+             patch("api.research_snapshot.research_snapshot", return_value=data) as aggregate, \
+             patch("api.recommendation_snapshot.remember") as remember:
+            with self.assertRaises(HTTPException) as error:
+                get_strategy_recommendations()
+            self.assertEqual(error.exception.status_code, 503)
+            self.assertTrue(aggregate.call_args.kwargs["allow_stale"])
+            remember.assert_not_called()

@@ -132,7 +132,11 @@ def get_strategy_recommendations() -> dict:
         matrix = for_decision(settings)
     except HTTPException:
         today = _now_et().date()
-        matrix = research_snapshot(90, start_date=(today - timedelta(days=89)).isoformat(), end_date=today.isoformat())
+        matrix = research_snapshot(90, start_date=(today - timedelta(days=89)).isoformat(), end_date=today.isoformat(),
+                                   allow_stale=True)
+        if matrix.get("snapshot", {}).get("refreshing"):
+            raise HTTPException(503, "Recommendations are refreshing. Existing trading settings are unchanged.",
+                                headers={"Retry-After": "5"})
         remember(matrix, settings)
     result = recommendations(matrix, settings)
     return result
