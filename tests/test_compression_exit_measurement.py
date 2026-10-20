@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, time
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 import pandas as pd
 
@@ -35,6 +35,37 @@ def frame(bars):
 
 
 class CompressionExitMeasurementTests(unittest.TestCase):
+    def test_289_missing_minutes_retry_real_consolidated_bars(self):
+        data=candles('2026-10-12T14:01',11)
+        for col in ('open','high','low','close'):
+            data[col]=745.7
+        sparse=data.drop(index=[4,9])
+        args=dict(entry_at='2026-10-12T14:01',entry_quote_at='2026-10-12T14:01:50.762278',
+                  stop=747.22,target=741.91,direction='bearish',seed=seed(),now='2026-10-12T14:11:01')
+        self.assertEqual(module.first_exit(sparse,**args)[1],'missing_bars')
+        lookup=Mock(return_value=data)
+        self.assertIsNone(module.first_exit(sparse,**args,repair_lookup=lookup))
+        lookup.assert_called_once()
+        early={**args,'now':'2026-10-12T14:06:00'}
+        early_lookup=Mock(return_value=data)
+        self.assertIsNone(module.first_exit(sparse,**early,repair_lookup=early_lookup))
+        early_lookup.assert_called_once()
+        data.loc[5,'high']=748
+        self.assertEqual(module.first_exit(sparse,**args,repair_lookup=lambda:data),
+                         (datetime(2026,10,12,14,7),'underlying_stop'))
+
+    def test_repair_failure_keeps_safety_exit_and_complete_data_skips_io(self):
+        data=candles('2026-09-10T13:16',164)
+        lookup=Mock(side_effect=TimeoutError())
+        self.assertIsNone(self.detect(data,repair_lookup=lookup))
+        lookup.assert_not_called()
+        sparse=data.drop(index=1)
+        self.assertEqual(self.detect(sparse,now='2026-09-10T13:24',repair_lookup=lookup)[1],'missing_bars')
+        for replacement in (sparse, data.assign(time=data.time-pd.Timedelta(days=1)),
+                            pd.concat([data,data]), data.assign(high=float('nan'))):
+            self.assertEqual(self.detect(sparse,now='2026-09-10T13:24',
+                                        repair_lookup=lambda:replacement)[1],'missing_bars')
+
     def detect(self, data=None, **changes):
         args=dict(entry_at='2026-09-10T13:16',entry_quote_at='2026-09-10T13:16:01',
                   stop=98,target=104,direction='bullish',seed=seed(),now='2026-09-10T13:18')

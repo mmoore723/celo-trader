@@ -21,7 +21,7 @@
     },
     {
       "path": "trading/research_order_exit.py",
-      "sha256": "a60119c4f1b48083bb412a93ee601f586a3e03c39073f321812a3b9a7df9d68a"
+      "sha256": "a2f6b90741fbc823edeebaf0f70e5add107ea368ec9527939b3827b08c9b605c"
     },
     {
       "path": "trading/tested_strategy_research.py",
@@ -49,7 +49,7 @@
     },
     {
       "path": "trading/position_manager/manage.py",
-      "sha256": "aa7c4f21fe85d7cb50997e2325641ba25b55dbab8bbdfa8d55646330da00128a"
+      "sha256": "09c1e93aa099c5fd42f960b6e075f7ef347c40391282bbbc69d0e73fb46e9a40"
     },
     {
       "path": "trading/recovery_state.py",
@@ -61,7 +61,7 @@
     },
     {
       "path": "strategy_health/exit_protocols.py",
-      "sha256": "379dcc737acd5053e75f706f62914f277a126405f8c9fd8852ef4049a1717b25"
+      "sha256": "3b93be8740a32f7362f17049c6109ec7160db19280f53429acd36dfd1a2fe115"
     },
     {
       "path": "trading/position_manager/close.py",
@@ -70,6 +70,18 @@
     {
       "path": "trading/research_session_clock.py",
       "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+    },
+    {
+      "path": "database/research_exits.py",
+      "sha256": "5d03965a95cce78b7b2f5268cc5ffe30fb838be98458df1311e2b46408128cbb"
+    },
+    {
+      "path": "strategy_health/compression_exit.py",
+      "sha256": "37e2978d5bfffef5fd779f8cbb6f7efa2bf356451c4cce6934356723d7bb7dda"
+    },
+    {
+      "path": "trading/loop/research_pass.py",
+      "sha256": "8468342e899d58dec859ee90a3979cbb755d802608ba1d90fc962fe919b962ad"
     }
   ],
   "evidence_summary": "Exact research execution implementation. Admin approval does not assert profitability qualification.",

@@ -26,7 +26,7 @@ def partial_remaining(trade):
     return max(0, max(1, original // 2) - sold)
 
 
-def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=None):
+def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=None, compression_bars_lookup=None):
     sid = trade.get('strategy_id')
     spec = SPECS[sid]
     try:
@@ -61,7 +61,7 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
                 raise ValueError('Wrong exit protocol')
             if legacy_gap:
                 protocol = recorded_protocol
-            event = first_exit(protocol, frame, **common)
+            event = first_exit(protocol, frame, **common, compression_bars_lookup=compression_bars_lookup)
         if event:
             stamp, reason = event
             if reason == 'waiting_for_bars' or et(stamp) > current:

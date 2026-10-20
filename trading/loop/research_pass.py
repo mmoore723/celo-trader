@@ -35,6 +35,8 @@ def market_readers(alpaca, tradier):
     option_reads = {name: getattr(tradier, name) for name in (
         "get_option_quote", "get_expirations", "get_option_chain",
     )}
+    if callable(getattr_static(tradier, 'get_session_bars', None)):
+        option_reads['get_session_bars'] = tradier.get_session_bars
     if callable(getattr_static(tradier, "get_research_option_chain", None)):
         option_reads["get_research_option_chain"] = tradier.get_research_option_chain
     if callable(getattr_static(tradier, "get_research_expiration_details", None)):
@@ -217,12 +219,22 @@ def run_research_pass(readers, snapshot, state, stopped):
             frame.attrs['source_minutes']=15
             return frame
 
+        compression_frames = {}
+        def compression_exit_bars(ticker):
+            if ticker not in compression_frames:
+                compression_frames[ticker] = pd.DataFrame()
+                bars, error, _ = tradier.get_session_bars(ticker, '1Min')
+                if bars and not error:
+                    compression_frames[ticker] = bars_to_df(bars)
+            return compression_frames[ticker]
+
         try:
             capture_authored_exits(
                 account=snapshot["settings"].get("active_broker_account_id"),
                 bars_lookup=exit_bars, quote_lookup=tradier.get_option_quote,
                 stopped=stopped, clock=_now_et,
                 ema_bars_lookup=ema_exit_bars,
+                compression_bars_lookup=compression_exit_bars,
             )
         except Exception:
             logger.warning("Authored exit pass failed; research continues", exc_info=True)

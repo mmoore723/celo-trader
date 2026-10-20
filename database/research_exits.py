@@ -53,7 +53,7 @@ def pending_exits(account, now):
         return originals + pending_variants(conn, account, (et(now)-timedelta(days=2)).date().isoformat())
 
 
-def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda: False, clock=_now_et, ema_bars_lookup=None):
+def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda: False, clock=_now_et, ema_bars_lookup=None, compression_bars_lookup=None):
     """Read-only broker callbacks; persist the first trigger before quote I/O."""
     if stopped():
         return
@@ -103,6 +103,7 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                     event = first_exit(
                         row["protocol"], frame if frame is not None else pd.DataFrame(), entry_at=entry,
                         entry_quote_at=row["entry_quote_at"], meta=meta, direction=row["direction"], now=clock(),
+                        compression_bars_lookup=(lambda: compression_bars_lookup(ticker)) if compression_bars_lookup else None,
                     )
                 if event is None:
                     continue

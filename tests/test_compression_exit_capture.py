@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from strategy_health import compression_exit as module
 from tests import test_authored_exit_capture as fixtures
@@ -7,6 +7,23 @@ from tests.test_compression_exit_measurement import seed
 
 
 class CompressionExitCaptureTests(unittest.TestCase):
+    def test_research_and_order_dispatch_recover_same_missing_candle(self):
+        from trading.research_order_exit import evaluate_exit
+        from tests.test_research_order_execution import position
+        self.seed()
+        complete=self.f.frame.copy()
+        self.f.frame=self.f.frame.drop(index=1)
+        repair=Mock(return_value=complete)
+        self.f.capture(compression_bars_lookup=repair)
+        result=self.f.rows()[0]
+        self.assertEqual((result['status'],result['reason']),('priced','underlying_stop'))
+        repair.assert_called_once_with('META')
+        trade=position(module.STRATEGY_ID,authored_exit_protocol=module.PROTOCOL,
+                       authored_exit_state=seed(),underlying_stop=98,underlying_target=104)
+        self.assertEqual(evaluate_exit(trade,'2026-09-10T10:05:03',self.f.now,self.f.frame,
+                                      compression_bars_lookup=lambda:complete),
+                         (True,'research_underlying_stop'))
+
     def setUp(self):
         self.f=fixtures.AuthoredExitCaptureTests()
         self.f.setUp()

@@ -72,7 +72,7 @@ def candidate_metadata(strategy_id, strategy):
     return result
 
 
-def first_exit(protocol, frame, *, entry_at, entry_quote_at, direction, meta, now):
+def first_exit(protocol, frame, *, entry_at, entry_quote_at, direction, meta, now, compression_bars_lookup=None):
     common = dict(entry_at=entry_at, entry_quote_at=entry_quote_at, direction=direction, now=now)
     if protocol in context_vwap_exit.PROTOCOLS.values():
         strategy_id=next(key for key,value in context_vwap_exit.PROTOCOLS.items() if value==protocol)
@@ -113,6 +113,7 @@ def first_exit(protocol, frame, *, entry_at, entry_quote_at, direction, meta, no
                                         stop=meta["underlying_stop"], target=meta["underlying_target"])
     if protocol == compression_exit.PROTOCOL:
         return compression_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),
+                                           repair_lookup=compression_bars_lookup,
                                            stop=meta["underlying_stop"], target=meta["underlying_target"])
     if protocol == range_sweep_exit.PROTOCOL:
         return range_sweep_exit.first_exit(frame, **common, seed=meta.get("authored_exit_state"),

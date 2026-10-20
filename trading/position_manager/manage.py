@@ -130,6 +130,7 @@ def _evaluate_reviewed_strategy_exit(
     five_minute_bars: pd.DataFrame | None,
     option_quote: dict | None = None,
     session_close: datetime | None = None,
+    compression_bars_lookup=None,
 ) -> tuple[bool, str] | None:
     """Route a reviewed strategy to the exit policy its evidence declares."""
     from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
@@ -147,7 +148,7 @@ def _evaluate_reviewed_strategy_exit(
     if strategy_id in SPECS:
         from trading.research_order_exit import evaluate_exit
         return evaluate_exit(trade, entry_time, now_et, one_minute_bars, option_quote,
-                             session_close=session_close)
+                             session_close=session_close, compression_bars_lookup=compression_bars_lookup)
     if strategy_id == "V2_TREND_CONT":
         from trading.trend_continuation_research_exit import evaluate_exit
 
@@ -623,6 +624,15 @@ def _manage_open_position(
         # does not change strategy authorization or enable live trading.
         from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
         _is_v2_orb = uses_v2_orb_execution_profile(trade.get("strategy_id"))
+        def compression_bars_lookup():
+            if ps.get('compression_repair_minute') != _minute_key:
+                ps['compression_repair_minute'] = _minute_key
+                ps['compression_repair_frame'] = pd.DataFrame()
+                bars, error, _ = tradier.get_session_bars(ticker, '1Min')
+                if bars and not error:
+                    from signals import bars_to_df
+                    ps['compression_repair_frame'] = bars_to_df(bars)
+            return ps.get('compression_repair_frame', pd.DataFrame())
         _reviewed_exit = _evaluate_reviewed_strategy_exit(
             trade,
             entry_time,
@@ -631,6 +641,7 @@ def _manage_open_position(
             five_minute_bars=df_5m,
             option_quote=quote,
             session_close=research_session_close,
+            compression_bars_lookup=compression_bars_lookup,
         )
         if _reviewed_exit is not None:
             should_exit, reason = _reviewed_exit
