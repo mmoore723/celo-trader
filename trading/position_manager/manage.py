@@ -196,6 +196,21 @@ def _manage_open_position(
             research_session_close = session_close_if_open(alpaca, _now_et())
             if research_session_close is None:
                 return
+        if trade.get('strategy_id') == 'RESEARCH_FAILED_RANGE_V2':
+            from trading.research_order_exit import evaluate_exit
+            deadline_now = _now_et()
+            due, deadline_reason = evaluate_exit(
+                trade, trade.get('entry_time'), deadline_now, None,
+                session_close=research_session_close,
+            )
+            if due and deadline_reason in {'research_failed_range_30m', 'research_session_close'}:
+                deadline_state = _US.setdefault('positions', {}).setdefault(trade['id'], {})
+                _resolve_latched_exit(deadline_state, True, deadline_reason, deadline_now)
+                deadline_state['exit_attempts'] = int(deadline_state.get('exit_attempts') or 0) + 1
+                _persist_exit_latch(trade['id'], deadline_state)
+                from trading.position_manager.close import _close_position
+                _close_position(alpaca, trade, float(trade['entry_price']), deadline_reason)
+                return
         quote = tradier.get_option_quote(trade["contract_symbol"])
         alpaca_positions = alpaca.get_positions()
         alpaca_pos = next(
