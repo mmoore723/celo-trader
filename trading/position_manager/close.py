@@ -76,7 +76,10 @@ def _close_position(
     _giveback_market = use_giveback_market_order(trade, reason, paper)
     _session_market = uses_broker_session(trade) and reason in {'research_session_close', 'session_hard_cutoff_355pm'}
     _failed_range_deadline = trade.get('strategy_id') == 'RESEARCH_FAILED_RANGE_V2' and reason == 'research_failed_range_30m'
-    _market_exit = _giveback_market or _session_market or _failed_range_deadline
+    _tsla_pending_exit = trade.get('strategy_id') == 'V2_TSLA_TWO_LEG_TREND_PULLBACK' and bool(
+        _US.get('positions', {}).get(trade['id'], {}).get('exit_pending_reason')
+    )
+    _market_exit = _giveback_market or _session_market or _failed_range_deadline or _tsla_pending_exit
     fill = alpaca.place_option_order(
         symbol          = trade["contract_symbol"],
         qty             = trade["contracts"],
@@ -118,7 +121,7 @@ def _close_position(
                   f"checking the original order and actual remaining quantity next tick.")
         return
 
-    if _failed_range_deadline and not (fill.get('confirmed_fill_price') or fill.get('filled_avg_price')):
+    if (_failed_range_deadline or _tsla_pending_exit) and not (fill.get('confirmed_fill_price') or fill.get('filled_avg_price')):
         return
     fill_price = float(fill.get("confirmed_fill_price") or
                        fill.get("filled_avg_price") or exit_price)
@@ -134,7 +137,7 @@ def _close_position(
                 contract_symbol=trade["contract_symbol"],
                 observation_kind="exit",
                 observed_at=_now_et(),
-                quote=reference_quote or ({} if _failed_range_deadline else {"bid": bid_price, "mid": exit_price}),
+                quote=reference_quote or ({} if _failed_range_deadline or _tsla_pending_exit else {"bid": bid_price, "mid": exit_price}),
                 source=(
                     "tradier_pre_submit_exit_quote"
                     if reference_quote else "exit_order"

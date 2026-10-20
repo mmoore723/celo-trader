@@ -212,6 +212,29 @@ def _manage_open_position(
                 from trading.position_manager.close import _close_position
                 _close_position(alpaca, trade, float(trade['entry_price']), deadline_reason)
                 return
+        if trade.get('strategy_id') == 'V2_TSLA_TWO_LEG_TREND_PULLBACK':
+            from database.helpers import _to_et_datetime
+            from trading.tsla_giveback_exit import evaluate_tsla_giveback
+            deadline_now = _now_et()
+            entry_at = _to_et_datetime(trade['entry_time']) if trade.get('entry_time') else None
+            due, deadline_reason = _evaluate_reviewed_strategy_exit(
+                trade, entry_at, deadline_now, one_minute_bars=None,
+                five_minute_bars=None, session_close=research_session_close,
+            )
+            if not due:
+                pending = evaluate_tsla_giveback(trade, entry_at, deadline_now, None)
+                if pending is not None:
+                    due, deadline_reason = pending
+            deadline_state = _US.setdefault('positions', {}).setdefault(trade['id'], {})
+            due, deadline_reason = _resolve_latched_exit(
+                deadline_state, due, deadline_reason, deadline_now,
+            )
+            if due:
+                deadline_state['exit_attempts'] = int(deadline_state.get('exit_attempts') or 0) + 1
+                _persist_exit_latch(trade['id'], deadline_state)
+                from trading.position_manager.close import _close_position
+                _close_position(alpaca, trade, float(trade['entry_price']), deadline_reason)
+                return
         quote = tradier.get_option_quote(trade["contract_symbol"])
         alpaca_positions = alpaca.get_positions()
         alpaca_pos = next(
