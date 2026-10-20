@@ -31,7 +31,6 @@ ASSUMPTIONS = [
 
 
 def audit(trades):
-    trades = sorted(trades, key=lambda t: clock(t["entry_time"]))
     problems = {}
     required = ("entry_iv", "entry_delta", "entry_gamma", "underlying_path")
     for trade in trades:
@@ -40,6 +39,10 @@ def audit(trades):
             missing += trade["issues"]
         if not trade.get("deadline"):
             missing.append("frozen_exit_deadline")
+        try:
+            clock(trade["entry_time"])
+        except (ValueError, TypeError):
+            missing.append("invalid_entry_timestamp_or_missing_timezone")
         if missing:
             problems[str(trade["id"])] = missing
     result = dict(recommendation="KEEP BASELINE", status="INCOMPLETE",
@@ -47,9 +50,12 @@ def audit(trades):
                   actual_recorded=metrics([t["realized_pnl"] for t in trades if t.get("realized_pnl") is not None]),
                   baseline=None, top10=[], walk_forward=None, noise=None,
                   alternatives=[], assumptions=ASSUMPTIONS, grid_combinations=936)
-    if not trades or any(not t.get("deadline") or t.get("issues") for t in trades):
+    if not trades or any(not t.get("deadline") or t.get("issues") or
+                         "invalid_entry_timestamp_or_missing_timezone" in problems.get(str(t["id"]), [])
+                         for t in trades):
         result["reason"] = "Replay requires complete positions, known versions and frozen exit deadlines."
         return result
+    trades = sorted(trades, key=lambda t: clock(t["entry_time"]))
     configs = list(product(range(25, 151, 5), range(15, 51)))
     returns, rows, failures = {}, [], {}
     for activation, tolerance in configs:

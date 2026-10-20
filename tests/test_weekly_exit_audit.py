@@ -69,6 +69,15 @@ class WeeklyAuditTests(unittest.TestCase):
         high = noise(values, [0]*6, 939)
         self.assertGreater(high["total_noise_threshold"], low["total_noise_threshold"])
 
+    def test_missing_timezone_preserves_coverage_and_recorded_results(self):
+        source = trade()
+        source["entry_time"] = "2026-01-02T15:00:00"
+        result = audit([source])
+        self.assertEqual(result["status"], "INCOMPLETE")
+        self.assertIn("invalid_entry_timestamp_or_missing_timezone", result["coverage_issues"]["1"])
+        self.assertAlmostEqual(result["actual_recorded"]["net"], 16.7)
+        self.assertTrue(result["assumptions"])
+
     def test_store_account_mode_version_isolation(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/"audits.sqlite3"
