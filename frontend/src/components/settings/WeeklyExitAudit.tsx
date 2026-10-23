@@ -22,7 +22,7 @@ async function read<T>(path: string): Promise<T> {
 const money = (value?: number) => value == null ? "Unavailable" : value.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 function Results({ rows }: { rows: Metrics[] }) {
-  return <div className="overflow-x-auto"><table className="w-full text-xs">
+  return <div className="max-w-full overflow-auto max-h-80"><table className="w-full text-xs">
     <thead><tr>{["Setting", "Trades", "Net P&L", "Win %", "PF", "Drawdown", "Worst"].map(h => <th key={h} className="p-2 text-left">{h}</th>)}</tr></thead>
     <tbody>{rows.map((r, i) => <tr key={`${r.setting}-${i}`}>
       <td className="p-2">{r.setting}</td><td>{r.trades}</td><td>{money(r.net)}</td><td>{r.win_rate?.toFixed(2)}</td>
@@ -37,9 +37,9 @@ export function WeeklyExitAudit({ strategyId, version }: { strategyId: string; v
   if (!context) return null;
   const rows = context.audits.filter(r => r.strategy === strategyId && r.version === version);
   const other = context.audits.filter(r => r.strategy === strategyId && r.version !== version);
-  const badge = (row: Summary) => <button key={row.id} type="button" className="btn btn-ghost text-xs my-1"
+  const badge = (row: Summary) => <button key={row.id} type="button" className="btn btn-ghost text-xs my-1 max-w-full whitespace-normal text-left"
     onClick={() => context.select(row.id)}>
-    Weekly Exit Audit: {new Date(row.created).toLocaleDateString()} - {row.ticker} - {row.status === "INCOMPLETE" ? "Data incomplete" : row.recommendation}
+    Exit audit · {row.ticker} · {row.status === "INCOMPLETE" ? "Needs data" : row.recommendation === "PROPOSE CHANGE" ? "Review suggestion" : "Keep baseline"}
   </button>;
   return <div className="text-xs py-1">
     {context.error ? <button type="button" onClick={context.retry}>Weekly audit unavailable. Retry</button>
@@ -77,22 +77,26 @@ function AuditDialog({ scope, selected, onClose }: { scope: string; selected: nu
   useEffect(() => { const node = dialog.current; node?.showModal(); return () => node?.close(); }, []);
   const result = detail.data;
   return <dialog ref={dialog} onClose={onClose}
-      aria-label="Weekly exit audit results" className="rounded-xl p-5 w-[min(960px,95vw)] max-h-[90vh] overflow-y-auto"
+      aria-label="Weekly exit audit results" className="weekly-exit-dialog rounded-xl p-5 w-[min(720px,95vw)] max-h-[85dvh] overflow-auto"
       style={{ background: "var(--surface)", color: "var(--ink)", border: "1px solid var(--border)" }}>
       <div className="flex justify-between gap-4"><h2 className="font-semibold text-lg">Weekly Exit Audit</h2>
         <button type="button" className="btn btn-ghost" onClick={() => dialog.current?.close()}>Close</button></div>
       {detail.isPending ? <p role="status">Loading saved audit...</p> : detail.isError ? <p role="alert">Could not load audit. <button onClick={() => detail.refetch()}>Retry</button></p>
         : result && <div className="space-y-4">
-          <p>{result.ticker} · {result.strategy} · {result.version} · {result.mode} · {result.trade_count} accumulated trades</p>
-          <p><strong>{result.recommendation}</strong> · {result.status}<br />{result.reason}</p>
-          <p>Analysis only. This dialog cannot change an exit or enable trading.</p>
+          <p className="text-sm break-words">{result.ticker} · {result.version} · {result.mode} · {result.trade_count} trades</p>
+          <div className="rounded-lg p-3" style={{ background: "var(--muted)" }}>
+            <strong>{result.status === "INCOMPLETE" ? "Not enough data to compare exits" : result.recommendation === "PROPOSE CHANGE" ? "Review suggested change" : "Keep current exit"}</strong>
+            <p className="text-sm mt-1">{result.reason}</p>
+          </div>
+          <p className="text-xs">Read-only analysis. No trading changes.</p>
           <Results rows={[
             ...(result.actual_recorded ? [{ ...result.actual_recorded, setting: "Recorded journal P&L" }] : []),
             ...(result.baseline ? [{ ...result.baseline, setting: "Hypothetical $65 / 35%" }] : []),
-            ...(result.top10 ?? []),
+            ...(result.top10 ?? []).slice(0, 1),
           ]} />
           {!result.baseline && <p>Baseline replay unavailable. Missing evidence is not treated as zero P&L.</p>}
-          <h3 className="font-semibold">Chronological 70/30 test</h3>
+          <details><summary className="cursor-pointer font-medium">Validation and candidate results</summary>
+          <h3 className="font-semibold mt-3">Chronological 70/30 test</h3>
           {result.walk_forward ? <>
             <p>Training-selected {result.walk_forward.setting}; {result.walk_forward.train_count} train / {result.walk_forward.test_count} test.
               {result.walk_forward.holds_out_of_sample ? " Clears test noise and constraints." : " Does not establish an out-of-sample improvement."}</p>
@@ -109,13 +113,19 @@ function AuditDialog({ scope, selected, onClose }: { scope: string; selected: nu
           <h3 className="font-semibold">Alternative exit research</h3>
           <Results rows={(result.alternatives ?? []).filter(r => r.status !== "INCOMPLETE")} />
           {(result.alternatives ?? []).filter(r => r.status === "INCOMPLETE").map(r => <p key={r.setting}>{r.setting}: insufficient path coverage</p>)}
-          <details><summary>Data coverage</summary>
+          {!!result.top10?.length && <Results rows={result.top10} />}
+          </details>
+          <details><summary className="cursor-pointer font-medium">Missing data ({Object.keys(result.coverage_issues ?? {}).length} trades)</summary>
+            <div className="max-h-60 overflow-auto text-xs break-words">
             {Object.entries(result.coverage_issues ?? {}).map(([id, issues]) => <p key={id}>Trade {id}: {issues.join(", ")}</p>)}
+            </div>
           </details>
           <details onToggle={event => setShowGrid(event.currentTarget.open)}><summary>All grid results ({result.grid?.length ?? 0} completely priced configurations)</summary>
             {showGrid && <Results rows={result.grid ?? []} />}</details>
-          <h3 className="font-semibold">What I cannot know from this data</h3>
+          <details><summary className="cursor-pointer font-medium">Assumptions and limitations</summary>
+          <p className="text-xs break-words">{result.strategy} · {result.version}</p>
           <ul className="list-disc pl-5">{result.assumptions?.map(text => <li key={text}>{text}</li>)}</ul>
+          </details>
         </div>}
     </dialog>;
 }
