@@ -39,12 +39,14 @@ export function opportunityDecisionTitle(entry) {
   return {
     stopped: "Skipped by a safety rule",
     ready: "Ready for entry",
-    pricing: "Checking option price",
+    pricing: "Option preview recorded",
     watching: "Setup developing",
   }[lifecycle] || "Setup reviewed";
 }
 
 export function opportunityReason(entry) {
+  if (!entry?.reason_code && !entry?.reason_detail && entry?.entry_plan?.trigger === "raw strategy setup detected")
+    return "Setup and option preview recorded. No final entry decision was recorded for this setup.";
   const known = {
     entry_price_not_reached: "The order was sent, but the option never traded inside the bot's approved price range.",
     spy_afternoon_fvg_slot_reserved: "The bot saved this time slot for the higher-priority afternoon strategy.",

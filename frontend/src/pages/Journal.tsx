@@ -557,10 +557,18 @@ const STRATEGY_LABELS: Record<string, string> = {
   V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
   V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
   V2_FAILED_OR_BREAK_VWAP_REVERSION: "SPY Failed-Range Recovery",
+  RESEARCH_FAILED_RANGE_V2: "Failed-Range Recovery",
+  V2_GAP_FILL_RTH: "Gap Fill",
+  V2_AFTERNOON_COMPRESSION_BREAKOUT: "Afternoon Compression Breakout",
+  V2_AFTERNOON_REVERSAL: "Afternoon Reversal",
+  V2_SPY_ORB_RSI_MACD_SHORT: "ORB RSI/MACD Short",
+  V2_IMPULSE_ANCHORED_VWAP_PULLBACK: "Impulse Anchored VWAP Pullback",
+  RESEARCH_CTX_ORB_ATR10_V2: "Context-Filtered ORB (ATR10)",
+  CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG: "VWAP 10:30 Displacement",
 };
 const ALL_STRATEGIES = Object.keys(STRATEGY_LABELS);
 const strategyLabel = (strategyId?: string | null) => strategyId
-  ? (STRATEGY_LABELS[strategyId] ?? `Retired historical strategy (${strategyId})`)
+  ? (STRATEGY_LABELS[strategyId] ?? `Strategy: ${strategyId}`)
   : "—";
 
 /** Export the visible trades as a CSV download. */

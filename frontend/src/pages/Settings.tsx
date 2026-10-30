@@ -295,6 +295,7 @@ function TradierCredentialsPanel({ provider, paper }: { provider: string; paper:
 }
 
 export function Settings() {
+  const [strategyView, setStrategyView] = useState<"trading" | "paused" | "research">("trading");
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") === "strategies" ? "strategies" : "general";
   function setActiveTab(tab: "general" | "strategies") {
@@ -406,7 +407,9 @@ export function Settings() {
           activity={tradingTickers.length ? "trading" : "research"}
           tickers={strategy.observation_only ? [] : tradingTickers}
           label={strategy.observation_only ? "Research · All collected tickers" : tradingTickers.length ? "Trading on" : "No tickers enabled"} />
-        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Research scope: all collected watchlist tickers. Trading tickers are separate.</p>
+        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Last recorded switch on: {strategyHistory?.changes.find(change => change.strategy_id === strategy.strategy_id && change.new_enabled)
+          ? new Date(strategyHistory.changes.find(change => change.strategy_id === strategy.strategy_id && change.new_enabled)!.changed_at).toLocaleString()
+          : "Not available in loaded history"}</p>
         {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
           strategyId={strategy.strategy_id} failed={closedTradesFailed} loading={closedTradesLoading} />}
         {strategy.automatic_pauses?.map(pause => <p key={pause.ticker} className="text-xs pb-2" style={{ color: "var(--warning)" }}>{pause.ticker}: automatically moved to research only. Closed-trade PF {pause.profit_factor.toFixed(2)} across {pause.completed_trades} trades. Existing positions keep their exits.</p>)}
@@ -435,7 +438,9 @@ export function Settings() {
             Disabled because its code no longer matches the reviewed evidence.
           </p>
         )}
-        <StrategyRemoval id={strategy.strategy_id} version={strategy.version} name={strategy.display_name} />
+        <details className="text-xs"><summary className="cursor-pointer">Manage strategy</summary>
+          <StrategyRemoval id={strategy.strategy_id} version={strategy.version} name={strategy.display_name} />
+        </details>
       </StrategyToggleCard>
     );
   }
@@ -828,24 +833,26 @@ export function Settings() {
       {strategyResearch?.snapshot?.refreshing && <p role="status" className="text-xs">
         Showing saved research from {new Date(strategyResearch.snapshot.updated_at * 1000).toLocaleString()}. Refreshing in the background.
       </p>}
-      <AdminStrategyControls />
-      <ResearchTargetTickers />
-      <section aria-label="Automatically paused strategies" className="card p-4" style={{ border: "2px solid var(--warning)" }}>
+      <div className="flex flex-wrap gap-2" aria-label="Strategy status filter">
+        {(["trading", "paused", "research"] as const).map(view => <button key={view} type="button"
+          className={`btn ${strategyView === view ? "btn-primary" : "btn-ghost"}`}
+          aria-pressed={strategyView === view} onClick={() => setStrategyView(view)}>
+          {view === "trading" ? "Trading now" : view === "paused" ? "Paused" : "Research / off"}
+        </button>)}
+      </div>
+      {strategyView === "paused" && <section aria-label="Automatically paused strategies" className="card p-4" style={{ border: "2px solid var(--warning)" }}>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Automatically paused</h3>
         {(strategyCatalog?.strategies ?? []).some(strategy => strategy.automatic_pauses?.length)
           ? <div className="settings-card-grid">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.automatic_pauses?.length).map(strategyControl)}</div>
           : <p className="text-sm" style={{ color: "var(--ink-muted)" }}>{strategyCatalog ? "No automatically paused strategies in this account mode." : "Loading pause status..."}</p>}
-      </section>
+      </section>}
       {/* Strategies */}
-      <section>
-        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Can place orders</h3>
+      {strategyView === "trading" && <section>
+        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Trading now · {actualAccountMode}</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           On means the strategy may place {actualAccountMode} orders on the tickers listed under “Trades.” Research continues on all other collected tickers.
         </p>
         <div className="settings-card-grid">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only && Boolean(form[strategy.setting_key]) && (strategy.trading_tickers?.length ?? 0) > 0).map(strategyControl)}</div>
-        <div className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-          New ticker matches observe automatically without placing orders. If one passes review, every user receives a prompt and decides whether to turn it on for their own account.
-        </div>
         {(strategyHistory?.changes.length ?? 0) > 0 && (
           <details className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
             <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>Recent strategy switch history</summary>
@@ -858,9 +865,13 @@ export function Settings() {
             </div>
           </details>
         )}
-      </section>
+      </section>}
 
-      <section>
+      {strategyView === "research" && <section>
+        <details><summary className="cursor-pointer">Add strategies and research tickers</summary>
+          <AdminStrategyControls />
+          <ResearchTargetTickers />
+        </details>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research only</h3>
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
           On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} New matches need 20 non-overlapping completed tests and passing profit checks—not a minimum number of days.
@@ -874,7 +885,7 @@ export function Settings() {
           researchMatrix={strategyResearch}
         />
         </div>
-      </section>
+      </section>}
       </div>
 
       }
