@@ -483,6 +483,12 @@ def _init_db_at(db_path: Path) -> None:
         conn.execute(EXPIRATION_INDEX)
         conn.execute(_CREATE_CANDIDATE_OPTION_QUOTE_OBSERVATIONS)
         conn.execute(_CREATE_CANDIDATE_CONTRACT_ALTERNATIVES)
+        # Nullable evidence only. Never infer timestamps for existing rows.
+        for table in ('option_quote_observations', 'candidate_option_quote_observations',
+                      'candidate_contract_alternatives'):
+            columns = {row[1] for row in conn.execute(f'PRAGMA table_info({table})')}
+            if 'quote_metadata_json' not in columns:
+                conn.execute(f'ALTER TABLE {table} ADD COLUMN quote_metadata_json TEXT')
         conn.execute(_CREATE_PAPER_RESEARCH_OPTION_OBSERVATIONS)
         conn.execute(_CREATE_SCANNER_CANDLE_OBSERVATIONS)
         conn.execute(_CREATE_UNDERLYING_QUOTE_OBSERVATIONS)

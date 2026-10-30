@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import json
+import math
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
 
@@ -17,6 +18,21 @@ from database.connection import get_conn
 from database.helpers import _to_et_isoformat, _to_et_datetime
 
 logger = logging.getLogger("celo_trader.database")
+
+
+def _quote_metadata(quote: Mapping[str, Any]) -> str:
+    """Preserve provider timing as supplied, without inferring freshness."""
+    fields = ('quote_received_at', 'bid_date', 'ask_date', 'trade_date',
+              'quote_age_seconds', 'quote_source', 'source_symbol', 'bidsize', 'asksize')
+    data = {'schema_version': 1}
+    for key in fields:
+        value = quote.get(key)
+        if isinstance(value, float) and not math.isfinite(value):
+            value = None
+        if value is not None and not isinstance(value, (str, int, float, bool)):
+            value = None
+        data[key] = value
+    return json.dumps(data, allow_nan=False)
 
 # A fixed-horizon mark must be captured close to that horizon. A quote first
 # seen after a restart much later in the day is real, but it is not a truthful
@@ -72,13 +88,13 @@ def record_paper_option_quote(
                 """
                 INSERT OR IGNORE INTO option_quote_observations
                     (trade_id, observed_at, observed_minute, observation_kind,
-                     contract_symbol, bid, ask, mid, last, fill_price, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     contract_symbol, bid, ask, mid, last, fill_price, source, quote_metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     trade_id, observed_iso, minute_key, observation_kind,
                     contract_symbol, bid, ask, mid, _number(quote.get("last")),
-                    _number(fill_price), source,
+                    _number(fill_price), source, _quote_metadata(quote),
                 ),
             )
         return True
@@ -111,10 +127,10 @@ def record_candidate_option_quote(
             cursor = conn.execute(
                 """INSERT OR IGNORE INTO candidate_option_quote_observations
                    (candidate_id, observed_at, observation_kind, contract_symbol,
-                    bid, ask, mid, last, source)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    bid, ask, mid, last, source, quote_metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (candidate_id, _to_et_isoformat(observed_at), observation_kind,
-                 contract_symbol, bid, ask, mid, _number(quote.get("last")), source),
+                 contract_symbol, bid, ask, mid, _number(quote.get("last")), source, _quote_metadata(quote)),
             )
         return bool(cursor.rowcount)
     except Exception:
@@ -146,7 +162,7 @@ def promote_candidate_entry_quote(
     try:
         with get_conn() as conn:
             prior = conn.execute(
-                """SELECT contract_symbol, observed_at, bid, ask, mid, source
+                """SELECT contract_symbol, observed_at, bid, ask, mid, source, quote_metadata_json
                    FROM candidate_option_quote_observations
                    WHERE candidate_id = ? AND observation_kind = 'entry'""",
                 (candidate_id,),
@@ -155,20 +171,20 @@ def promote_candidate_entry_quote(
                 conn.execute(
                     """INSERT OR IGNORE INTO candidate_contract_alternatives
                        (candidate_id, contract_symbol, observed_at,
-                        observation_kind, bid, ask, mid, policy_json, source)
-                       VALUES (?, ?, ?, 'entry', ?, ?, ?, ?, ?)""",
+                        observation_kind, bid, ask, mid, policy_json, source, quote_metadata_json)
+                       VALUES (?, ?, ?, 'entry', ?, ?, ?, ?, ?, ?)""",
                     (
                         candidate_id, str(prior[0]), str(prior[1]), prior[2],
                         prior[3], prior[4],
                         json.dumps(["preview_superseded_by_order_intent"]),
-                        str(prior[5] or "tradier_contract_preview"),
+                        str(prior[5] or "tradier_contract_preview"), prior[6],
                     ),
                 )
             conn.execute(
                 """INSERT INTO candidate_option_quote_observations
                    (candidate_id, observed_at, observation_kind, contract_symbol,
-                    bid, ask, mid, last, source)
-                   VALUES (?, ?, 'entry', ?, ?, ?, ?, ?, ?)
+                    bid, ask, mid, last, source, quote_metadata_json)
+                   VALUES (?, ?, 'entry', ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(candidate_id, observation_kind) DO UPDATE SET
                        observed_at = excluded.observed_at,
                        contract_symbol = excluded.contract_symbol,
@@ -176,10 +192,11 @@ def promote_candidate_entry_quote(
                        ask = excluded.ask,
                        mid = excluded.mid,
                        last = excluded.last,
-                       source = excluded.source""",
+                       source = excluded.source,
+                       quote_metadata_json = excluded.quote_metadata_json""",
                 (
                     candidate_id, observed_iso, contract_symbol, bid, ask, mid,
-                    _number(quote.get("last")), source,
+                    _number(quote.get("last")), source, _quote_metadata(quote),
                 ),
             )
         return True
@@ -213,10 +230,10 @@ def record_candidate_contract_alternative(
             cursor = conn.execute(
                 """INSERT OR IGNORE INTO candidate_contract_alternatives
                    (candidate_id, contract_symbol, observed_at, observation_kind,
-                    bid, ask, mid, policy_json, source)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    bid, ask, mid, policy_json, source, quote_metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (candidate_id, symbol, _to_et_isoformat(observed_at), observation_kind,
-                 bid, ask, mid, json.dumps(policies or []), source),
+                 bid, ask, mid, json.dumps(policies or []), source, _quote_metadata(contract)),
             )
         return bool(cursor.rowcount)
     except Exception:
@@ -226,11 +243,15 @@ def record_candidate_contract_alternative(
 def capture_due_candidate_option_quotes(
     *, ticker: str, observed_at: datetime, quote_lookup,
     broker_account_id: str | None = None,
+    receipt_clock=None,
 ) -> int:
     """Capture due 30/60/90/120-minute bid/ask marks for today's candidates.
 
     The supplied callback only reads a quote. This function has no broker
     order method and its table has no quantity/order fields by design.
+    Each mark uses its callback receipt time, not the sweep start time.
+    Receipt time does not establish exchange freshness. Provider timestamps
+    remain separately preserved in quote_metadata_json.
     """
     observed_at = _to_et_datetime(observed_at)
     horizons = tuple(
@@ -267,9 +288,14 @@ def capture_due_candidate_option_quotes(
                     if exists:
                         continue
                     quote = quote_lookup(row["contract_symbol"])
+                    received_at = _to_et_datetime(
+                        receipt_clock() if receipt_clock else datetime.now(observed_at.tzinfo)
+                    )
+                    if not due_at <= received_at <= due_at + timedelta(minutes=CANDIDATE_MARK_GRACE_MINUTES):
+                        continue
                     if quote and record_candidate_option_quote(
                         candidate_id=row["candidate_id"], contract_symbol=row["contract_symbol"],
-                        observation_kind=kind, observed_at=observed_at, quote=quote,
+                        observation_kind=kind, observed_at=received_at, quote=quote,
                         source="tradier_candidate_followup",
                     ):
                         captured += 1
@@ -304,9 +330,14 @@ def capture_due_candidate_option_quotes(
                 if exists:
                     continue
                 quote = quote_lookup(row["contract_symbol"])
+                received_at = _to_et_datetime(
+                    receipt_clock() if receipt_clock else datetime.now(observed_at.tzinfo)
+                )
+                if not due_at <= received_at <= due_at + timedelta(minutes=CANDIDATE_MARK_GRACE_MINUTES):
+                    continue
                 if quote and record_candidate_contract_alternative(
                     candidate_id=row["candidate_id"], contract={**dict(quote), "symbol": row["contract_symbol"]},
-                    observation_kind=kind, observed_at=observed_at,
+                    observation_kind=kind, observed_at=received_at,
                     policies=json.loads(row["policy_json"] or "[]"), source="tradier_alternative_followup",
                 ):
                     captured += 1

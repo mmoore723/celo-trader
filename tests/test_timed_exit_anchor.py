@@ -49,6 +49,7 @@ class TimedExitAnchorTests(unittest.TestCase):
                 def sweep(clock, account='acct'):
                     return capture_due_candidate_option_quotes(ticker='META',
                         observed_at=stamp(clock), broker_account_id=account,
+                        receipt_clock=lambda: stamp(clock),
                         quote_lookup=lambda symbol: {'symbol':symbol,'bid':3,'ask':3.1})
                 self.assertEqual(0, sweep('10:30:00'))
                 self.assertEqual(0, sweep('10:32:00', 'other'))

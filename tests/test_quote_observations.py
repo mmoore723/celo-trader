@@ -334,6 +334,7 @@ class PaperOptionQuoteTests(unittest.TestCase):
                         observed_at=datetime.fromisoformat(observed_at),
                         quote_lookup=lambda symbol: {**quote, "symbol": symbol},
                         broker_account_id="acct",
+                        receipt_clock=lambda: datetime.fromisoformat(observed_at),
                     )
             kinds = [row[0] for row in conn.execute(
                 "SELECT observation_kind FROM candidate_option_quote_observations ORDER BY id"
