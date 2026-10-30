@@ -8,7 +8,7 @@ from pathlib import Path
 
 from strategy_health.weekly_exit_audit.engine import audit
 from strategy_health.weekly_exit_audit.replay import replay
-from strategy_health.weekly_exit_audit.source import load
+from strategy_health.weekly_exit_audit.source import load, journal_time, recorded_hold
 from strategy_health.weekly_exit_audit.statistics import noise
 from strategy_health.weekly_exit_audit.store import read, save
 
@@ -24,6 +24,19 @@ def trade(identifier=1):
 
 
 class WeeklyAuditTests(unittest.TestCase):
+    def test_hold_comes_from_frozen_plan_not_current_strategy_defaults(self):
+        meta = {"manual_plan": {"exit_plan": {"strategy_id": "SPY_TREND",
+                "summary": "Hold the same selected contract for 30 minutes, then exit at the executable bid."}}}
+        self.assertEqual(recorded_hold({}, meta, "SPY_TREND"), 30)
+        self.assertIsNone(recorded_hold({}, meta, "OTHER"))
+        self.assertIsNone(recorded_hold({}, {}, "SPY_TREND"))
+        self.assertEqual(recorded_hold({"reviewed_exit_minutes": 45}, meta, "SPY_TREND"), 45)
+
+    def test_journal_timezone_contract_is_eastern_not_utc(self):
+        self.assertEqual(journal_time("2026-10-14T10:03:52"), "2026-10-14T10:03:52-04:00")
+        self.assertEqual(journal_time("2026-12-14T10:03:52"), "2026-12-14T10:03:52-05:00")
+        self.assertEqual(journal_time("2026-10-14T14:03:52Z"), "2026-10-14T10:03:52-04:00")
+
     def test_strict_boundary_and_next_quote(self):
         result = replay(trade())
         self.assertEqual(result["status"], "priced")
@@ -102,12 +115,15 @@ class WeeklyAuditTests(unittest.TestCase):
                     t = trade(i)
                     conn.execute("INSERT INTO trades VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                  (i, "TSLA", "trend", "TSLA260130C00100000", "a", None, "closed",
-                                  1, t["entry_time"], t["exit_time"], 2, 1, 16.7,
-                                  json.dumps({"strategy_version": version})))
+                                  1, "2026-10-14T10:00:00", "2026-10-14T10:30:01", 2, 1, 16.7,
+                                  json.dumps({"strategy_version": version, "reviewed_exit_minutes": 30})))
             before = hashlib.sha256(path.read_bytes()).hexdigest()
             buckets = load(path, "paper")
             self.assertEqual(len(buckets), 3)
             self.assertEqual({key[-1] for key in buckets}, {"v1", "v2", "UNKNOWN-TRADE-3"})
+            for rows in buckets.values():
+                self.assertEqual(rows[0]["deadline"], "2026-10-14T10:30:00-04:00")
+                self.assertNotIn("invalid_price_or_timezone", rows[0]["issues"])
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), before)
 
 

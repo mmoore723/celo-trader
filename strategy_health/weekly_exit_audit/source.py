@@ -8,6 +8,22 @@ from datetime import timedelta
 from .replay import clock, enrich
 
 
+def journal_time(value):
+    from database.helpers import _to_et_datetime
+    return _to_et_datetime(value).isoformat()
+
+
+def recorded_hold(context, meta, strategy):
+    hold = context.get("max_hold_minutes") or context.get("reviewed_exit_minutes")
+    if hold:
+        return hold
+    plan = (meta.get("manual_plan") or {}).get("exit_plan") or {}
+    if (plan.get("strategy_id") == strategy and
+            plan.get("summary") == "Hold the same selected contract for 30 minutes, then exit at the executable bid."):
+        return 30
+    return None
+
+
 def parsed(value):
     try:
         result = json.loads(value or "{}")
@@ -43,7 +59,11 @@ def load(path, mode):
             for r in conn.execute("""SELECT q.trade_id,q.contract_symbol,q.observed_at,q.bid,q.ask
                 FROM trades t JOIN option_quote_observations q ON q.trade_id=t.id
                 WHERE t.paper=? ORDER BY q.trade_id,q.observed_at,q.id""", (mode == "paper",)):
-                quotes[r["trade_id"]].append(dict(time=r["observed_at"], bid=r["bid"], ask=r["ask"],
+                try:
+                    stamp = journal_time(r["observed_at"])
+                except (ValueError, TypeError, AttributeError):
+                    stamp = r["observed_at"]
+                quotes[r["trade_id"]].append(dict(time=stamp, bid=r["bid"], ask=r["ask"],
                                                   contract=r["contract_symbol"]))
     finally:
         conn.close()
@@ -79,16 +99,23 @@ def load(path, mode):
             issues.append("missing_parent")
         observed = [q for q in quotes[first["id"]] if q["contract"] == first["contract_symbol"]
                     and q["bid"] is not None and q["ask"] is not None]
+        entry_time = first.get("entry_fill_time") or first["entry_time"]
+        exit_time = first.get("exit_fill_time") or first["exit_time"]
+        try:
+            entry_time = journal_time(entry_time)
+            exit_time = journal_time(exit_time)
+        except (ValueError, TypeError, AttributeError):
+            issues.append("invalid_journal_timestamp")
         deadline = context.get("exit_deadline")
-        hold = context.get("max_hold_minutes") or context.get("reviewed_exit_minutes")
+        hold = recorded_hold(context, meta, first["strategy_id"])
         if not deadline and hold:
             try:
-                deadline = (clock(first["entry_time"])+timedelta(minutes=float(hold))).isoformat()
+                deadline = (clock(journal_time(first["entry_time"]))+timedelta(minutes=float(hold))).isoformat()
             except (ValueError, TypeError, OverflowError):
                 issues.append("invalid_deadline")
         quantity = int(first["contracts"])
-        trade = dict(id=root, entry_time=first.get("entry_fill_time") or first["entry_time"],
-                     exit_time=first.get("exit_fill_time") or first["exit_time"],
+        trade = dict(id=root, entry_time=entry_time,
+                     exit_time=exit_time,
                      entry_price=float(first["entry_price"]), quantity=quantity,
                      contract=first["contract_symbol"], realized_pnl=None,
                      entry_iv=context.get("entry_iv"), entry_delta=context.get("entry_delta"),
