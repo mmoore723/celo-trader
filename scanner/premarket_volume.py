@@ -5,6 +5,10 @@ from zoneinfo import ZoneInfo
 import math
 import logging
 import time as clock
+import json
+import os
+import tempfile
+from pathlib import Path
 
 ET = ZoneInfo("America/New_York")
 HISTORY_DAYS = 10
@@ -39,7 +43,57 @@ def window_volume(bars, session, cutoff):
     return sum(seen.values()) if seen else None
 
 
-def matched_premarket_rvol(alpaca, symbols, now, *, tradier=None):
+def _saved_windows(directory, symbol, cutoff, bars):
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    if not symbol.isalnum():
+        raise ValueError("Invalid underlying ticker")
+    path = directory / f"{symbol}_{cutoff:%H%M}.json"
+    try:
+        saved = json.loads(path.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    legacy = directory.parent / "premarket_eligibility"
+    recovered = {}
+    for record in legacy.glob(f"*_{symbol}_*.json"):
+        try:
+            payload = json.loads(record.read_text())
+            evidence = payload["evidence"]
+            value = evidence["premarket_volume"]
+            session = evidence["session"]
+            datetime.strptime(session, "%Y-%m-%d")
+            if (payload.get("bucket") == cutoff.strftime("%H:%M")
+                    and evidence.get("premarket_volume_feed") == "tradier_consolidated"
+                    and evidence.get("premarket_window") == f"04:00-{cutoff:%H:%M} America/New_York"
+                    and isinstance(value, (int, float)) and math.isfinite(value) and value >= 0):
+                recovered.setdefault(session, set()).add(value)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    for session, values in recovered.items():
+        if len(values) == 1:
+            saved.setdefault(session, values.pop())
+    stamps = sorted(datetime.fromisoformat(bar["t"]).astimezone(ET) for bar in bars)
+    if stamps:
+        first = stamps[0]
+        for day in sorted({stamp.date() for stamp in stamps}):
+            # The provider may truncate the oldest day at its rolling retention boundary.
+            if day == first.date() and first.time().replace(tzinfo=None) > time(4):
+                continue
+            value = window_volume(bars, day, cutoff)
+            if value is not None:
+                saved[day.isoformat()] = value
+    fd, temporary = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(saved, handle, allow_nan=False)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return saved
+
+
+def matched_premarket_rvol(alpaca, symbols, now, *, tradier=None, archive_dir=None):
     now = now.replace(tzinfo=ET) if now.tzinfo is None else now.astimezone(ET)
     cutoff = min(now.time().replace(second=0, microsecond=0, tzinfo=None), time(9, 30))
     if cutoff <= time(4) or not symbols:
@@ -58,6 +112,9 @@ def matched_premarket_rvol(alpaca, symbols, now, *, tradier=None):
     if not prior:
         return {}
     client = tradier if tradier is not None else _market_client()
+    if archive_dir is None and tradier is None:
+        from config.paths import get_user_data_dir
+        archive_dir = get_user_data_dir() / "premarket_volume_windows"
     if client.base.rstrip("/") != "https://api.tradier.com/v1":
         raise ValueError("Delayed Tradier sandbox data cannot supply premarket RVOL")
     results = {}
@@ -82,10 +139,15 @@ def matched_premarket_rvol(alpaca, symbols, now, *, tradier=None):
                 bars.append({"t": stamp.isoformat(), "v": row["volume"],
                              **{k: row.get(k) for k in ("open", "high", "low", "close")}})
             values = [window_volume(bars, session, cutoff) for session in prior + [now.date()]]
+            if archive_dir is not None:
+                saved = _saved_windows(archive_dir, symbol, cutoff, bars)
+                values = [saved.get(session.isoformat()) for session in prior] + [values[-1]]
         except Exception as ex:
             logger.warning("Consolidated premarket RVOL unavailable for %s: %s", symbol, ex)
             continue
         if any(value is None for value in values):
+            missing = [str(day) for day, value in zip(prior + [now.date()], values) if value is None]
+            logger.warning("Consolidated premarket RVOL unavailable for %s: missing matched windows %s", symbol, ",".join(missing))
             continue
         average = sum(values[:-1]) / len(prior)
         if average <= 0:

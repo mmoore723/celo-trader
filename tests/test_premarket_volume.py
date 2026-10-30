@@ -1,4 +1,7 @@
 import unittest
+import tempfile
+import json
+from pathlib import Path
 from datetime import datetime, date, time, timedelta
 from unittest.mock import patch
 
@@ -41,6 +44,37 @@ class ConsolidatedFeed:
 
 
 class PremarketVolumeTests(unittest.TestCase):
+    def test_recovers_only_matching_consolidated_saved_window(self):
+        from scanner.premarket_volume import _saved_windows
+        with tempfile.TemporaryDirectory() as directory:
+            legacy = Path(directory) / "premarket_eligibility"
+            legacy.mkdir()
+            payload = {"bucket": "09:30", "evidence": {"session": "2026-10-21",
+                       "premarket_volume": 123, "premarket_volume_feed": "tradier_consolidated",
+                       "premarket_window": "04:00-09:30 America/New_York"}}
+            (legacy / "2026-10-21_NVDA_context.json").write_text(json.dumps(payload))
+            archive = Path(directory) / "premarket_volume_windows"
+            self.assertEqual(_saved_windows(archive, "NVDA", time(9, 30), []), {"2026-10-21": 123})
+            self.assertEqual(_saved_windows(archive, "NVDA", time(8, 30), []), {})
+
+    def test_saved_windows_survive_provider_retention(self):
+        from scanner.premarket_volume import _saved_windows
+        with tempfile.TemporaryDirectory() as directory:
+            rows = [{"t": "2026-10-21T04:00:00-04:00", "v": 12},
+                    {"t": "2026-10-21T09:29:00-04:00", "v": 18}]
+            self.assertEqual(_saved_windows(directory, "QQQ", time(9, 30), rows)["2026-10-21"], 30)
+            truncated = [{"t": "2026-10-21T08:00:00-04:00", "v": 1}]
+            self.assertEqual(_saved_windows(directory, "QQQ", time(9, 30), truncated)["2026-10-21"], 30)
+            self.assertEqual(_saved_windows(directory, "QQQ", time(9, 30), [])["2026-10-21"], 30)
+            self.assertEqual(_saved_windows(directory, "QQQ", time(8, 30), truncated), {})
+
+    def test_truncated_oldest_day_is_not_a_complete_baseline(self):
+        from scanner.premarket_volume import _saved_windows
+        with tempfile.TemporaryDirectory() as directory:
+            rows = [{"t": "2026-10-21T08:00:00-04:00", "v": 5},
+                    {"t": "2026-10-22T04:01:00-04:00", "v": 10}]
+            self.assertEqual(_saved_windows(directory, "NVDA", time(9, 30), rows), {"2026-10-22": 10})
+
     def test_missing_prior_close_is_not_a_fabricated_gap_baseline(self):
         client = AlpacaBarsMixin()
         client.data = "data"
