@@ -42,8 +42,26 @@ class AuditInputCaptureTests(unittest.TestCase):
         self.quote['source_symbol']='OTHER'
         self.assertIsNone(entry_greeks(self.quote,self.symbol,self.start)['entry_iv'])
 
-    def test_unknown_provider_time_rejected(self):
+    def test_unknown_provider_time_preserves_observed_snapshot(self):
         self.quote['greeks'].pop('updated_at')
+        data=entry_greeks(self.quote,self.symbol,self.start)
+        self.assertEqual(.4,data['entry_iv'])
+        self.assertFalse(data['entry_greeks_snapshot']['model_timestamp_verified'])
+        self.assertIsNone(data['entry_greeks_snapshot']['model_age_seconds'])
+
+    def test_actual_provider_naive_timestamp_persists_without_timezone_guess(self):
+        self.quote['greeks']['updated_at']='2026-01-02 14:00:04'
+        data=entry_greeks(self.quote,self.symbol,self.start)
+        self.assertEqual('recorded_snapshot_unknown_model_time',data['entry_greeks_snapshot']['status'])
+        self.assertEqual('2026-01-02 14:00:04',data['entry_greeks_snapshot']['provider_updated_at'])
+        with tempfile.TemporaryDirectory() as directory:
+            path=self.fixture(directory)
+            trades=next(iter(load(path,'paper').values()))
+            self.assertEqual(.4,trades[0]['entry_iv'])
+            self.assertFalse(trades[0]['entry_greeks_evidence']['model_timestamp_verified'])
+
+    def test_invalid_receipt_time_still_rejected(self):
+        self.quote['quote_received_at']='2026-01-02 15:00:00'
         self.assertIsNone(entry_greeks(self.quote,self.symbol,self.start)['entry_iv'])
 
     def test_future_provider_time_rejected(self):

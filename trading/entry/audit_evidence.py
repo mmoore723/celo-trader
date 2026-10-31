@@ -35,13 +35,23 @@ def entry_greeks(quote, symbol, observed_at):
         return result
     try:
         received=timestamp(quote.get('quote_received_at'))
-        model=timestamp(raw.get('updated_at'))
-        if not model <= received <= observed_at:
+        if not received <= observed_at:
             raise ValueError('invalid_time_order')
-        evidence['model_age_seconds']=(observed_at-model).total_seconds()
     except (ValueError, TypeError, OverflowError):
-        evidence['status']='missing_or_invalid_model_timestamp'
+        evidence['status']='missing_or_invalid_receipt_timestamp'
         return result
+    evidence.update(model_timestamp_verified=False, model_age_seconds=None)
+    try:
+        model=timestamp(raw.get('updated_at'))
+    except (ValueError, TypeError, OverflowError):
+        # Preserve the observed snapshot without guessing the provider timezone.
+        model=None
+    if model is not None:
+        if model > received:
+            evidence['status']='future_model_timestamp'
+            return result
+        evidence.update(model_timestamp_verified=True,
+                        model_age_seconds=(observed_at-model).total_seconds())
     invalid=[]
     for target, key, lower, upper in [('entry_iv','mid_iv',0,float('inf')),
                                       ('entry_delta','delta',-1,1),('entry_gamma','gamma',0,float('inf'))]:
@@ -55,6 +65,7 @@ def entry_greeks(quote, symbol, observed_at):
             result[target]=value
         except (ValueError,TypeError,OverflowError):
             invalid.append(key)
-    evidence.update(status='partial' if invalid else 'recorded_provider_snapshot', missing_fields=invalid,
-                    limitation='Provider model snapshot, not fill-time recalculation; model age retained without an invented freshness threshold.')
+    status='recorded_provider_snapshot' if model is not None else 'recorded_snapshot_unknown_model_time'
+    evidence.update(status='partial' if invalid else status, missing_fields=invalid,
+                    limitation='Provider snapshot observed before entry, not fill-time recalculation. Model age is unknown when the provider timestamp lacks a verified timezone; no timezone or freshness threshold is invented.')
     return result

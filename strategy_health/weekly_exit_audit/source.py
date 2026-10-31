@@ -158,9 +158,13 @@ def load(path, mode):
             trade['entry_greeks_evidence']=snapshot
             try:
                 if (snapshot.get('contract_symbol')!=first['contract_symbol']
-                        or clock(snapshot['received_at'])>clock(entry_time)
-                        or clock(snapshot['provider_updated_at'])>clock(snapshot['received_at'])):
+                        or snapshot.get('source_symbol')!=first['contract_symbol']
+                        or snapshot.get('source')!='tradier'
+                        or clock(snapshot['received_at'])>clock(entry_time)):
                     raise ValueError('greeks_not_available_at_entry')
+                if snapshot.get('model_timestamp_verified', True):
+                    if clock(snapshot['provider_updated_at'])>clock(snapshot['received_at']):
+                        raise ValueError('future_model_timestamp')
             except (ValueError,TypeError,KeyError):
                 for field in ('entry_iv','entry_delta','entry_gamma'):
                     trade[field]=None
