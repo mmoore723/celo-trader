@@ -164,7 +164,7 @@ class TradierChainMixin:
         try:
             resp = self._get("/markets/quotes", {
                 "symbols": option_symbol,
-                "greeks":  "false",
+                "greeks":  "true",
             })
             received_at = datetime.now(timezone.utc).isoformat()
             quotes = resp.get("quotes", {}).get("quote", {})
@@ -188,6 +188,9 @@ class TradierChainMixin:
                 "trade_date": quotes.get("trade_date"),
                 "quote_source": "tradier",
                 "quote_received_at": received_at,
+                # Preserve provider values and model timestamp, never default
+                # absent Greeks to zero or label the receipt time model time.
+                "greeks": dict(quotes['greeks']) if isinstance(quotes.get('greeks'), dict) else {},
             }
         except Exception as e:
             logger.error("get_option_quote(%s) failed: %s", option_symbol, e)

@@ -51,6 +51,7 @@ def load(path, mode):
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only=ON")
     conn.execute("BEGIN")
+    underlying_paths = {}
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "trades" not in tables:
@@ -75,6 +76,22 @@ def load(path, mode):
                     stamp = r["observed_at"]
                 quotes[r["trade_id"]].append(dict(time=stamp, bid=r["bid"], ask=r["ask"],
                                                   contract=r["contract_symbol"]))
+        if 'scanner_candle_observations' in tables:
+            from .underlying import load_path
+            for row in trades:
+                if row['status'] != 'closed':
+                    continue
+                context=parsed(row.get('strategy_context_json'))
+                meta=candidates.get((row.get('candidate_id'),row.get('broker_account_id'),row['strategy_id'],row['ticker']),{})
+                horizon=context.get('exit_deadline')
+                hold=recorded_hold(context,meta,row['strategy_id'])
+                if not horizon and hold:
+                    try:
+                        horizon=(clock(journal_time(row['entry_time']))+timedelta(minutes=float(hold))).isoformat()
+                    except (ValueError,TypeError,OverflowError):
+                        pass
+                horizon=horizon or row.get('exit_fill_time') or row.get('exit_time')
+                underlying_paths[row['id']]=load_path(conn,row,horizon)
     finally:
         conn.close()
     positions = defaultdict(list)
@@ -132,6 +149,22 @@ def load(path, mode):
                      entry_gamma=context.get("entry_gamma"), underlying_path=context.get("underlying_1m_path"),
                      deadline=deadline, fees=context.get("roundtrip_fees", 3.30*quantity),
                      fees_assumed="roundtrip_fees" not in context, option_path=observed, issues=issues)
+        stored_path, path_info = underlying_paths.get(first['id'], (None, {'status':'no_scanner_candle_table'}))
+        if not trade['underlying_path']:
+            trade['underlying_path']=stored_path
+            trade['underlying_path_evidence']=path_info
+        snapshot=context.get('entry_greeks_snapshot')
+        if isinstance(snapshot,dict):
+            trade['entry_greeks_evidence']=snapshot
+            try:
+                if (snapshot.get('contract_symbol')!=first['contract_symbol']
+                        or clock(snapshot['received_at'])>clock(entry_time)
+                        or clock(snapshot['provider_updated_at'])>clock(snapshot['received_at'])):
+                    raise ValueError('greeks_not_available_at_entry')
+            except (ValueError,TypeError,KeyError):
+                for field in ('entry_iv','entry_delta','entry_gamma'):
+                    trade[field]=None
+                trade['entry_greeks_validation']='unverified_entry_snapshot'
         try:
             pnl = sum(float(t["realized_pnl"]) for t in legs)
             if not math.isfinite(pnl):

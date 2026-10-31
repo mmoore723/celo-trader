@@ -1940,6 +1940,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     })
     from config.runtime_exit_review import provenance
     _strategy_context.update(provenance(_current_rule))
+    from trading.entry.audit_evidence import entry_greeks
+    _strategy_context.update(entry_greeks(_fresh_quote, contract['symbol'], _now_et()))
     _strategy_context_json = _json.dumps(
         _strategy_context, default=str, sort_keys=True,
     )
