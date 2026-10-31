@@ -32,6 +32,16 @@ def parsed(value):
         return {}
 
 
+def recorded_version(context, meta):
+    """Keep economic strategy version separate from a corrected runtime."""
+    versions = {v for v in (context.get('strategy_version'), meta.get('strategy_version')) if v}
+    revisions = {v for v in (context.get('runtime_revision'), meta.get('runtime_revision')) if v}
+    if len(versions) != 1 or len(revisions) > 1:
+        return None
+    version = next(iter(versions))
+    return version + '+runtime.' + next(iter(revisions)) if revisions else version
+
+
 def load(path, mode):
     if mode not in ("paper", "live"):
         raise ValueError("Invalid account mode")
@@ -72,7 +82,7 @@ def load(path, mode):
         account = trade.get("broker_account_id")
         raw_meta = candidates.get((trade.get("candidate_id"), account, trade["strategy_id"], trade["ticker"]), {})
         raw_context = parsed(trade.get("strategy_context_json"))
-        frozen_versions = frozenset(v for v in (raw_meta.get("strategy_version"), raw_context.get("strategy_version")) if v)
+        frozen_versions = frozenset([recorded_version(raw_context, raw_meta)])
         positions[(account, trade["ticker"], trade["strategy_id"], frozen_versions,
                    trade.get("parent_trade_id") or trade["id"])].append(trade)
     buckets = defaultdict(list)
@@ -86,10 +96,10 @@ def load(path, mode):
         for leg in legs:
             leg_context = parsed(leg.get("strategy_context_json"))
             leg_meta = candidates.get((leg.get("candidate_id"), account, leg["strategy_id"], leg["ticker"]), {})
-            versions.update(v for v in (leg_context.get("strategy_version"), leg_meta.get("strategy_version")) if v)
-        version = next(iter(versions)) if len(versions) == 1 else f"UNKNOWN-TRADE-{root}"
+            versions.add(recorded_version(leg_context, leg_meta))
+        version = next(iter(versions)) if len(versions) == 1 and None not in versions else f"UNKNOWN-TRADE-{root}"
         issues = []
-        if len(versions) != 1:
+        if len(versions) != 1 or None in versions:
             issues.append("unknown_or_conflicting_version")
         if not account:
             issues.append("unknown_broker_account")

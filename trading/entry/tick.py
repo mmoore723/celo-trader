@@ -1938,6 +1938,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         "trigger_bar": str(_top.trigger_bar),
         "direction": direction,
     })
+    from config.runtime_exit_review import provenance
+    _strategy_context.update(provenance(_current_rule))
     _strategy_context_json = _json.dumps(
         _strategy_context, default=str, sort_keys=True,
     )

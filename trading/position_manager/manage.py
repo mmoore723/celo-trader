@@ -197,6 +197,32 @@ def _manage_open_position(
             research_session_close = session_close_if_open(alpaca, _now_et())
             if research_session_close is None:
                 return
+        # Session expiry does not require a fresh mark.
+        # Preserve the broker-session gate above and existing exit thresholds.
+        if research_session_close is not None:
+            from database.helpers import _to_et_datetime
+            guard_now = _now_et()
+            guard_entry = _to_et_datetime(trade.get('entry_time')) if trade.get('entry_time') else None
+            guard_result = _evaluate_reviewed_strategy_exit(
+                trade, guard_entry, guard_now, one_minute_bars=None,
+                five_minute_bars=None, session_close=research_session_close,
+            )
+            guard_due, guard_reason = guard_result or (False, 'hold')
+            # Only session expiry is unconditional here. Missing bars supplied
+            # by this preflight must not activate a missing-structure fallback.
+            if guard_reason != 'research_session_close':
+                guard_due, guard_reason = False, 'hold'
+            if guard_due:
+                guard_state = _US.setdefault('positions', {}).setdefault(trade['id'], {})
+                guard_due, guard_reason = _resolve_latched_exit(
+                    guard_state, guard_due, guard_reason, guard_now,
+                )
+                guard_state['exit_attempts'] = int(guard_state.get('exit_attempts') or 0) + 1
+                _persist_exit_latch(trade['id'], guard_state)
+                from trading.position_manager.close import _close_position
+                _close_position(alpaca, trade, float(trade['entry_price']), guard_reason)
+                return
+
         if trade.get('strategy_id') == 'RESEARCH_FAILED_RANGE_V2':
             from trading.research_order_exit import evaluate_exit
             deadline_now = _now_et()
@@ -310,7 +336,13 @@ def _manage_open_position(
         from trading.recovery_state import restore_stage1
         restore_stage1(trade, ps)
 
-        entry_time_iso = ps.get("entry_time") or trade.get("entry_time")
+        # Reviewed exits use the persisted entry clock, not post-order processing time.
+        # Keep the original entry clock when a later partial fill updates entry_fill_time.
+        entry_time_iso = (
+            trade.get("entry_time") or ps.get("entry_time")
+            if uses_broker_session(trade)
+            else ps.get("entry_time") or trade.get("entry_time")
+        )
         try:
             entry_time = datetime.fromisoformat(entry_time_iso) if entry_time_iso else None
             if entry_time is not None and entry_time.tzinfo is None:

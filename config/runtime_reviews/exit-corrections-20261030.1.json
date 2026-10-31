@@ -1,0 +1,654 @@
+{
+  "schema_version": 1,
+  "runtime_revision": "exit-corrections-20261030.1",
+  "status": "test_only",
+  "profitability_validated": false,
+  "base_revision": "101c295ff6b33d957505693fbd375a036cb196b1",
+  "purpose": "Correct session-deadline, original-entry clock and displacement fill-minute behavior. Historical returns are not validation of this runtime.",
+  "runtime_sources": [
+    {
+      "path": "trading/position_manager/manage.py",
+      "sha256": "04330674e92da0dc13cb79db5fbbb51d844e2a3e0dd7cd1660694a08fa9a3782"
+    },
+    {
+      "path": "trading/vwap_displacement_exit.py",
+      "sha256": "601350ca9636dc2b6ed6b050ed819e35efa2c602a399705a8d132dac66d0dcea"
+    },
+    {
+      "path": "trading/entry/tick.py",
+      "sha256": "dc0c12bc8fc174788331b6a3c74c2d2480f8ee30c943e4f2a3410a09addc0669"
+    },
+    {
+      "path": "config/runtime_exit_review.py",
+      "sha256": "99bdb4205436512a27e779d6e155fbcd635d78dee1c813226ca056d205ae81e8"
+    },
+    {
+      "path": "config/strategy_catalog.py",
+      "sha256": "2bcac871ebc06934d58812b2b8348ea32c476cd67247a32b6319b919707e5e60"
+    },
+    {
+      "path": "strategy_health/weekly_exit_audit/source.py",
+      "sha256": "75df73fddff851ee566ffde1082d16071d2f8c2294e9f7dd072ea8093e6aff36"
+    }
+  ],
+  "strategies": {
+    "V2_TREND_CONT": {
+      "strategy_version": "research.1",
+      "historical_evidence_path": "config/strategy_evidence/v2_trend_cont-research.1.json",
+      "historical_evidence_sha256": "896670a9d97ca79cc39e9db4499ee9a975816db8d87b33da5bbc2f7587495866",
+      "historical_policy_sources": [
+        {
+          "path": "research/engine/strategies/trend_continuation.py",
+          "sha256": "0a8bcdcd0598511bfbf1e4195b48432277d43e5338703161cc0b36df0ddb38f5"
+        },
+        {
+          "path": "research/engine/simulator.py",
+          "sha256": "263a5051cd9707a0a886bec0cbefa8b13c9150defd69107cdb9b25c41f9d243c"
+        },
+        {
+          "path": "trading/tested_strategy_research.py",
+          "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
+        },
+        {
+          "path": "trading/research_contract_selection.py",
+          "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+        },
+        {
+          "path": "strategy_health/trend_exit.py",
+          "sha256": "6e72a41b370077f6091ad70ee58e96a79c70ad98e26881be642f47bfaf52cfb5"
+        },
+        {
+          "path": "strategy_health/impulse_exit.py",
+          "sha256": "03477412226d5ceafb7233c1c3fe659349634a447cb5d684675fd9bb6448bd61"
+        },
+        {
+          "path": "trading/trend_continuation_research_exit.py",
+          "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
+        },
+        {
+          "path": "trading/entry/tick.py",
+          "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
+        },
+        {
+          "path": "trading/position_manager/manage.py",
+          "sha256": "e0dfb30eddbb769e205454e7ba2e6fc89a6d8708635c569f79529870ab0d76e9"
+        },
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        }
+      ]
+    },
+    "V2_ORB_PULLBACK": {
+      "strategy_version": "2.0.0",
+      "historical_evidence_path": "config/strategy_evidence/v2_orb_pullback-2.0.0.json",
+      "historical_evidence_sha256": "9e2f0cb75e84addbf760e5ddca5839ef9262d6514e44d9809fdb9442ac9fcccf",
+      "historical_policy_sources": []
+    },
+    "V2_SPY_TREND_CONT": {
+      "strategy_version": "2.1.0",
+      "historical_evidence_path": "config/strategy_evidence/v2_spy_trend_cont-2.1.0.json",
+      "historical_evidence_sha256": "34567cebf7e28a74e30c4c59a2cff1cb73b865c975f60ab43dacb3f11076331b",
+      "historical_policy_sources": [
+        {
+          "path": "trading/portfolio_policy.py",
+          "sha256": "24d921f4accd90ec6a406c246631267828a23e34c98a4e5ce26b20b66d85dbea"
+        },
+        {
+          "path": "trading/v2_orb_paper_execution.py",
+          "sha256": "b903d8d6bf2aa05f4bdbf0e76356e8d9dce428ed84f061f21797d865ee880bf8"
+        }
+      ]
+    },
+    "V2_SPY_AFTERNOON_FVG": {
+      "strategy_version": "2.1.0",
+      "historical_evidence_path": "config/strategy_evidence/v2_spy_afternoon_fvg-2.1.0.json",
+      "historical_evidence_sha256": "8c8ebcdf422d12f3803ed8885ba55e2463b2ce27cb0e7d6e88731bb646f8c42d",
+      "historical_policy_sources": []
+    },
+    "V2_FAILED_OR_BREAK_VWAP_REVERSION": {
+      "strategy_version": "2.1.0",
+      "historical_evidence_path": "config/strategy_evidence/v2_spy_failed_range_recovery-2.1.0.json",
+      "historical_evidence_sha256": "07aa698b78668a8a05506b6fb27c6ac28437a2f5310a1068a978063b684a6fa1",
+      "historical_policy_sources": []
+    },
+    "V2_TSLA_TWO_LEG_TREND_PULLBACK": {
+      "strategy_version": "2.2.0",
+      "historical_evidence_path": "config/strategy_evidence/v2_tsla_two_leg_trend_pullback-2.2.0.json",
+      "historical_evidence_sha256": "1858f8be0300ec6428698dfdfcabf3fc91291ee41d4d82592ff489708d8dd646",
+      "historical_policy_sources": []
+    },
+    "CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG": {
+      "strategy_version": "0.2.0",
+      "historical_evidence_path": "config/strategy_evidence/ctx_vwap_displacement-0.2.0.json",
+      "historical_evidence_sha256": "b5560a2afb529ca1b645d85d9d56e41169d50fb1cd26a7756d4cb184644f0955",
+      "historical_policy_sources": [
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        },
+        {
+          "path": "trading/vwap_displacement_exit.py",
+          "sha256": "fd9b33bfc98fff46ecd96e5d951d213a41ea3766563ee20223ace05eb6eaa21c"
+        },
+        {
+          "path": "trading/v2_orb_paper_exit.py",
+          "sha256": "2abfe6b3139760f8b42a3480631e4ccad90f1af794209ea8a652fce02ae449a4"
+        }
+      ]
+    },
+    "V2_AFTERNOON_COMPRESSION_BREAKOUT": {
+      "strategy_version": "research.2",
+      "historical_evidence_path": "config/strategy_evidence/v2_afternoon_compression_breakout-orders.json",
+      "historical_evidence_sha256": "d31633d00e531f96b51a3821de26c3cfb0fcd135ead1d9333cfccf69c79663b7",
+      "historical_policy_sources": [
+        {
+          "path": "config/research_order_specs.py",
+          "sha256": "d18b2755395cb68dab0ccfeb867f088cb67872f343a88aff331480f501bbe29f"
+        },
+        {
+          "path": "config/admin_strategy_overrides.py",
+          "sha256": "d4950afa288861ab89797068b78a6c95a840403b62f760a641b160e45f27c33b"
+        },
+        {
+          "path": "strategies/research_orders.py",
+          "sha256": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089"
+        },
+        {
+          "path": "trading/research_order_exit.py",
+          "sha256": "a2f6b90741fbc823edeebaf0f70e5add107ea368ec9527939b3827b08c9b605c"
+        },
+        {
+          "path": "trading/tested_strategy_research.py",
+          "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
+        },
+        {
+          "path": "trading/failed_range_research.py",
+          "sha256": "32fd813b6baac70310ce7ee6b829615253733cb33299d95c4a56d154c971ed1b"
+        },
+        {
+          "path": "trading/context_research_entries.py",
+          "sha256": "785ab9f71f5998879207c3d60620f0a93f0b185bab627659963bbe394c9a9215"
+        },
+        {
+          "path": "trading/research_contract_selection.py",
+          "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+        },
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        },
+        {
+          "path": "trading/entry/tick.py",
+          "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
+        },
+        {
+          "path": "trading/position_manager/manage.py",
+          "sha256": "e0dfb30eddbb769e205454e7ba2e6fc89a6d8708635c569f79529870ab0d76e9"
+        },
+        {
+          "path": "trading/recovery_state.py",
+          "sha256": "2d38c3ef352c81c1ee417daee0f45fd2deda1273d58c9b06c951c0e390d9d167"
+        },
+        {
+          "path": "trading/trend_continuation_research_exit.py",
+          "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
+        },
+        {
+          "path": "strategy_health/exit_protocols.py",
+          "sha256": "3b93be8740a32f7362f17049c6109ec7160db19280f53429acd36dfd1a2fe115"
+        },
+        {
+          "path": "trading/position_manager/close.py",
+          "sha256": "a3ba4ae7c615ee76a89e639cc7433de9af3ba4774eb1bb5e99ebffb87f3655e3"
+        },
+        {
+          "path": "trading/research_session_clock.py",
+          "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+        },
+        {
+          "path": "database/research_exits.py",
+          "sha256": "5d03965a95cce78b7b2f5268cc5ffe30fb838be98458df1311e2b46408128cbb"
+        },
+        {
+          "path": "strategy_health/compression_exit.py",
+          "sha256": "37e2978d5bfffef5fd779f8cbb6f7efa2bf356451c4cce6934356723d7bb7dda"
+        },
+        {
+          "path": "trading/loop/research_pass.py",
+          "sha256": "8468342e899d58dec859ee90a3979cbb755d802608ba1d90fc962fe919b962ad"
+        }
+      ]
+    },
+    "V2_GAP_FILL_RTH": {
+      "strategy_version": "research.2",
+      "historical_evidence_path": "config/strategy_evidence/v2_gap_fill_rth-orders.json",
+      "historical_evidence_sha256": "d1de714ad373107ae8de9950e703c59f5fe145f10a7f27bb05c1f764e984580f",
+      "historical_policy_sources": [
+        {
+          "path": "config/research_order_specs.py",
+          "sha256": "d18b2755395cb68dab0ccfeb867f088cb67872f343a88aff331480f501bbe29f"
+        },
+        {
+          "path": "config/admin_strategy_overrides.py",
+          "sha256": "d4950afa288861ab89797068b78a6c95a840403b62f760a641b160e45f27c33b"
+        },
+        {
+          "path": "strategies/research_orders.py",
+          "sha256": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089"
+        },
+        {
+          "path": "trading/research_order_exit.py",
+          "sha256": "a2f6b90741fbc823edeebaf0f70e5add107ea368ec9527939b3827b08c9b605c"
+        },
+        {
+          "path": "trading/tested_strategy_research.py",
+          "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
+        },
+        {
+          "path": "trading/failed_range_research.py",
+          "sha256": "32fd813b6baac70310ce7ee6b829615253733cb33299d95c4a56d154c971ed1b"
+        },
+        {
+          "path": "trading/context_research_entries.py",
+          "sha256": "785ab9f71f5998879207c3d60620f0a93f0b185bab627659963bbe394c9a9215"
+        },
+        {
+          "path": "trading/research_contract_selection.py",
+          "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+        },
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        },
+        {
+          "path": "trading/entry/tick.py",
+          "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
+        },
+        {
+          "path": "trading/position_manager/manage.py",
+          "sha256": "e0dfb30eddbb769e205454e7ba2e6fc89a6d8708635c569f79529870ab0d76e9"
+        },
+        {
+          "path": "trading/recovery_state.py",
+          "sha256": "2d38c3ef352c81c1ee417daee0f45fd2deda1273d58c9b06c951c0e390d9d167"
+        },
+        {
+          "path": "trading/trend_continuation_research_exit.py",
+          "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
+        },
+        {
+          "path": "strategy_health/exit_protocols.py",
+          "sha256": "3b93be8740a32f7362f17049c6109ec7160db19280f53429acd36dfd1a2fe115"
+        },
+        {
+          "path": "trading/position_manager/close.py",
+          "sha256": "a3ba4ae7c615ee76a89e639cc7433de9af3ba4774eb1bb5e99ebffb87f3655e3"
+        },
+        {
+          "path": "trading/research_session_clock.py",
+          "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+        },
+        {
+          "path": "trading/gap_fill_history.py",
+          "sha256": "136ea3dd39bbacd5d630db3395ae5c58d245750158790ac647c5c7d2c23e1b23"
+        }
+      ]
+    },
+    "V2_AFTERNOON_REVERSAL": {
+      "strategy_version": "research.1",
+      "historical_evidence_path": "config/strategy_evidence/v2_afternoon_reversal-orders.json",
+      "historical_evidence_sha256": "26d2b0e24a4f6aba86a05e10134cd67e62608765eea358e4a3377b64372146e6",
+      "historical_policy_sources": [
+        {
+          "path": "config/research_order_specs.py",
+          "sha256": "d18b2755395cb68dab0ccfeb867f088cb67872f343a88aff331480f501bbe29f"
+        },
+        {
+          "path": "config/admin_strategy_overrides.py",
+          "sha256": "d4950afa288861ab89797068b78a6c95a840403b62f760a641b160e45f27c33b"
+        },
+        {
+          "path": "strategies/research_orders.py",
+          "sha256": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089"
+        },
+        {
+          "path": "trading/research_order_exit.py",
+          "sha256": "a2f6b90741fbc823edeebaf0f70e5add107ea368ec9527939b3827b08c9b605c"
+        },
+        {
+          "path": "trading/tested_strategy_research.py",
+          "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
+        },
+        {
+          "path": "trading/failed_range_research.py",
+          "sha256": "32fd813b6baac70310ce7ee6b829615253733cb33299d95c4a56d154c971ed1b"
+        },
+        {
+          "path": "trading/context_research_entries.py",
+          "sha256": "785ab9f71f5998879207c3d60620f0a93f0b185bab627659963bbe394c9a9215"
+        },
+        {
+          "path": "trading/research_contract_selection.py",
+          "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+        },
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        },
+        {
+          "path": "trading/entry/tick.py",
+          "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
+        },
+        {
+          "path": "trading/position_manager/manage.py",
+          "sha256": "e0dfb30eddbb769e205454e7ba2e6fc89a6d8708635c569f79529870ab0d76e9"
+        },
+        {
+          "path": "trading/recovery_state.py",
+          "sha256": "2d38c3ef352c81c1ee417daee0f45fd2deda1273d58c9b06c951c0e390d9d167"
+        },
+        {
+          "path": "trading/trend_continuation_research_exit.py",
+          "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
+        },
+        {
+          "path": "strategy_health/exit_protocols.py",
+          "sha256": "3b93be8740a32f7362f17049c6109ec7160db19280f53429acd36dfd1a2fe115"
+        },
+        {
+          "path": "trading/position_manager/close.py",
+          "sha256": "a3ba4ae7c615ee76a89e639cc7433de9af3ba4774eb1bb5e99ebffb87f3655e3"
+        },
+        {
+          "path": "trading/research_session_clock.py",
+          "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+        }
+      ]
+    },
+    "V2_SPY_ORB_RSI_MACD_SHORT": {
+      "strategy_version": "research.2",
+      "historical_evidence_path": "config/strategy_evidence/v2_spy_orb_rsi_macd_short-orders.json",
+      "historical_evidence_sha256": "505be491208735efda40bb699b36609261a1aed2003d99e869366b5a7275f25b",
+      "historical_policy_sources": [
+        {
+          "path": "config/research_order_specs.py",
+          "sha256": "d18b2755395cb68dab0ccfeb867f088cb67872f343a88aff331480f501bbe29f"
+        },
+        {
+          "path": "config/admin_strategy_overrides.py",
+          "sha256": "d4950afa288861ab89797068b78a6c95a840403b62f760a641b160e45f27c33b"
+        },
+        {
+          "path": "strategies/research_orders.py",
+          "sha256": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089"
+        },
+        {
+          "path": "trading/research_order_exit.py",
+          "sha256": "a2f6b90741fbc823edeebaf0f70e5add107ea368ec9527939b3827b08c9b605c"
+        },
+        {
+          "path": "trading/tested_strategy_research.py",
+          "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
+        },
+        {
+          "path": "trading/failed_range_research.py",
+          "sha256": "32fd813b6baac70310ce7ee6b829615253733cb33299d95c4a56d154c971ed1b"
+        },
+        {
+          "path": "trading/context_research_entries.py",
+          "sha256": "785ab9f71f5998879207c3d60620f0a93f0b185bab627659963bbe394c9a9215"
+        },
+        {
+          "path": "trading/research_contract_selection.py",
+          "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+        },
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        },
+        {
+          "path": "trading/entry/tick.py",
+          "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
+        },
+        {
+          "path": "trading/position_manager/manage.py",
+          "sha256": "e0dfb30eddbb769e205454e7ba2e6fc89a6d8708635c569f79529870ab0d76e9"
+        },
+        {
+          "path": "trading/recovery_state.py",
+          "sha256": "2d38c3ef352c81c1ee417daee0f45fd2deda1273d58c9b06c951c0e390d9d167"
+        },
+        {
+          "path": "trading/trend_continuation_research_exit.py",
+          "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
+        },
+        {
+          "path": "strategy_health/exit_protocols.py",
+          "sha256": "3b93be8740a32f7362f17049c6109ec7160db19280f53429acd36dfd1a2fe115"
+        },
+        {
+          "path": "trading/position_manager/close.py",
+          "sha256": "a3ba4ae7c615ee76a89e639cc7433de9af3ba4774eb1bb5e99ebffb87f3655e3"
+        },
+        {
+          "path": "trading/research_session_clock.py",
+          "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+        }
+      ]
+    },
+    "V2_IMPULSE_ANCHORED_VWAP_PULLBACK": {
+      "strategy_version": "research.2",
+      "historical_evidence_path": "config/strategy_evidence/v2_impulse_anchored_vwap_pullback-orders.json",
+      "historical_evidence_sha256": "9f74a5b56b524c8a16023fefa7394638b3fd207eb16d299c92be56aa1292ba0a",
+      "historical_policy_sources": [
+        {
+          "path": "config/research_order_specs.py",
+          "sha256": "d18b2755395cb68dab0ccfeb867f088cb67872f343a88aff331480f501bbe29f"
+        },
+        {
+          "path": "config/admin_strategy_overrides.py",
+          "sha256": "d4950afa288861ab89797068b78a6c95a840403b62f760a641b160e45f27c33b"
+        },
+        {
+          "path": "strategies/research_orders.py",
+          "sha256": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089"
+        },
+        {
+          "path": "trading/research_order_exit.py",
+          "sha256": "a2f6b90741fbc823edeebaf0f70e5add107ea368ec9527939b3827b08c9b605c"
+        },
+        {
+          "path": "trading/tested_strategy_research.py",
+          "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
+        },
+        {
+          "path": "trading/failed_range_research.py",
+          "sha256": "32fd813b6baac70310ce7ee6b829615253733cb33299d95c4a56d154c971ed1b"
+        },
+        {
+          "path": "trading/context_research_entries.py",
+          "sha256": "785ab9f71f5998879207c3d60620f0a93f0b185bab627659963bbe394c9a9215"
+        },
+        {
+          "path": "trading/research_contract_selection.py",
+          "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+        },
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        },
+        {
+          "path": "trading/entry/tick.py",
+          "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
+        },
+        {
+          "path": "trading/position_manager/manage.py",
+          "sha256": "e0dfb30eddbb769e205454e7ba2e6fc89a6d8708635c569f79529870ab0d76e9"
+        },
+        {
+          "path": "trading/recovery_state.py",
+          "sha256": "2d38c3ef352c81c1ee417daee0f45fd2deda1273d58c9b06c951c0e390d9d167"
+        },
+        {
+          "path": "trading/trend_continuation_research_exit.py",
+          "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
+        },
+        {
+          "path": "strategy_health/exit_protocols.py",
+          "sha256": "3b93be8740a32f7362f17049c6109ec7160db19280f53429acd36dfd1a2fe115"
+        },
+        {
+          "path": "trading/position_manager/close.py",
+          "sha256": "a3ba4ae7c615ee76a89e639cc7433de9af3ba4774eb1bb5e99ebffb87f3655e3"
+        },
+        {
+          "path": "trading/research_session_clock.py",
+          "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+        }
+      ]
+    },
+    "RESEARCH_CTX_ORB_ATR10_V2": {
+      "strategy_version": "0.1.0.research.2",
+      "historical_evidence_path": "config/strategy_evidence/research_ctx_orb_atr10_v2-orders.json",
+      "historical_evidence_sha256": "4a57467e4729565ce7f9a78e5d5ffafb9ab0c873dc9238929a4919ea4e337719",
+      "historical_policy_sources": [
+        {
+          "path": "config/research_order_specs.py",
+          "sha256": "d18b2755395cb68dab0ccfeb867f088cb67872f343a88aff331480f501bbe29f"
+        },
+        {
+          "path": "config/admin_strategy_overrides.py",
+          "sha256": "d4950afa288861ab89797068b78a6c95a840403b62f760a641b160e45f27c33b"
+        },
+        {
+          "path": "strategies/research_orders.py",
+          "sha256": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089"
+        },
+        {
+          "path": "trading/research_order_exit.py",
+          "sha256": "a2f6b90741fbc823edeebaf0f70e5add107ea368ec9527939b3827b08c9b605c"
+        },
+        {
+          "path": "trading/tested_strategy_research.py",
+          "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
+        },
+        {
+          "path": "trading/failed_range_research.py",
+          "sha256": "32fd813b6baac70310ce7ee6b829615253733cb33299d95c4a56d154c971ed1b"
+        },
+        {
+          "path": "trading/context_research_entries.py",
+          "sha256": "785ab9f71f5998879207c3d60620f0a93f0b185bab627659963bbe394c9a9215"
+        },
+        {
+          "path": "trading/research_contract_selection.py",
+          "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+        },
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        },
+        {
+          "path": "trading/entry/tick.py",
+          "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
+        },
+        {
+          "path": "trading/position_manager/manage.py",
+          "sha256": "e0dfb30eddbb769e205454e7ba2e6fc89a6d8708635c569f79529870ab0d76e9"
+        },
+        {
+          "path": "trading/recovery_state.py",
+          "sha256": "2d38c3ef352c81c1ee417daee0f45fd2deda1273d58c9b06c951c0e390d9d167"
+        },
+        {
+          "path": "trading/trend_continuation_research_exit.py",
+          "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
+        },
+        {
+          "path": "strategy_health/exit_protocols.py",
+          "sha256": "3b93be8740a32f7362f17049c6109ec7160db19280f53429acd36dfd1a2fe115"
+        },
+        {
+          "path": "trading/position_manager/close.py",
+          "sha256": "a3ba4ae7c615ee76a89e639cc7433de9af3ba4774eb1bb5e99ebffb87f3655e3"
+        },
+        {
+          "path": "trading/research_session_clock.py",
+          "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+        }
+      ]
+    },
+    "RESEARCH_FAILED_RANGE_V2": {
+      "strategy_version": "2.1.0.research.2",
+      "historical_evidence_path": "config/strategy_evidence/research_failed_range_v2-orders.json",
+      "historical_evidence_sha256": "9624deebe2e59070e70aa1d7defd017bcfdbbaf57bfa2e1b65607ecba448999d",
+      "historical_policy_sources": [
+        {
+          "path": "config/research_order_specs.py",
+          "sha256": "d18b2755395cb68dab0ccfeb867f088cb67872f343a88aff331480f501bbe29f"
+        },
+        {
+          "path": "config/admin_strategy_overrides.py",
+          "sha256": "d4950afa288861ab89797068b78a6c95a840403b62f760a641b160e45f27c33b"
+        },
+        {
+          "path": "strategies/research_orders.py",
+          "sha256": "5f7da5cf90f6e5d81c67e4797a9f49ab994dbd55f1ce2d91b1804f2b57805089"
+        },
+        {
+          "path": "trading/research_order_exit.py",
+          "sha256": "a2f6b90741fbc823edeebaf0f70e5add107ea368ec9527939b3827b08c9b605c"
+        },
+        {
+          "path": "trading/tested_strategy_research.py",
+          "sha256": "3b42d5d12a6b9777cfe5901854fbaa65f3593cda79f1de580720677918fba647"
+        },
+        {
+          "path": "trading/failed_range_research.py",
+          "sha256": "32fd813b6baac70310ce7ee6b829615253733cb33299d95c4a56d154c971ed1b"
+        },
+        {
+          "path": "trading/context_research_entries.py",
+          "sha256": "785ab9f71f5998879207c3d60620f0a93f0b185bab627659963bbe394c9a9215"
+        },
+        {
+          "path": "trading/research_contract_selection.py",
+          "sha256": "8126acf7d1f87fbe02fa6beedcca468564d5d4cfebe138a201d81f0c3e5adeab"
+        },
+        {
+          "path": "trading/entry/contract.py",
+          "sha256": "d9129efd6b1ad1a3158a259aad1bad07b4756ed8ff71fc914d63766816bfb4d5"
+        },
+        {
+          "path": "trading/entry/tick.py",
+          "sha256": "d755e02cf823928256f02321ef7c9c57de7f0548e208878cdf90ba416cbfdf89"
+        },
+        {
+          "path": "trading/position_manager/manage.py",
+          "sha256": "e0dfb30eddbb769e205454e7ba2e6fc89a6d8708635c569f79529870ab0d76e9"
+        },
+        {
+          "path": "trading/recovery_state.py",
+          "sha256": "2d38c3ef352c81c1ee417daee0f45fd2deda1273d58c9b06c951c0e390d9d167"
+        },
+        {
+          "path": "trading/trend_continuation_research_exit.py",
+          "sha256": "6b961032ea54599aec1b980cb7bb5b6eeff4a5d8780ecec2fe19432709340d72"
+        },
+        {
+          "path": "strategy_health/exit_protocols.py",
+          "sha256": "3b93be8740a32f7362f17049c6109ec7160db19280f53429acd36dfd1a2fe115"
+        },
+        {
+          "path": "trading/position_manager/close.py",
+          "sha256": "a3ba4ae7c615ee76a89e639cc7433de9af3ba4774eb1bb5e99ebffb87f3655e3"
+        },
+        {
+          "path": "trading/research_session_clock.py",
+          "sha256": "9137462bf6ac6abf1b0a91c32d40c72b07e0c41946aec97ca7c9849ea2a40fd2"
+        }
+      ]
+    }
+  }
+}

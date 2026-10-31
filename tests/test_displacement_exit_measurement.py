@@ -43,6 +43,13 @@ class DisplacementExitMeasurementTests(unittest.TestCase):
         proof=json.loads((Path(__file__).parents[1]/'config/strategy_evidence/ctx_vwap_displacement-0.2.0.json').read_text())
         self.assertEqual(proof['implementation_sha256_at_review'],exits.engine_hash())
         expected=next(s['sha256'] for s in proof['runtime_policy_sources'] if s['path']=='trading/vwap_displacement_exit.py')
+        # The historical source pin must not be rewritten to make this pass.
+        self.assertEqual('fd9b33bfc98fff46ecd96e5d951d213a41ea3766563ee20223ace05eb6eaa21c', expected)
+        from config.runtime_exit_review import review
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        current = review(REVIEWED_STRATEGIES[exits.DISPLACEMENT_STRATEGY_ID], proof)
+        if current is not None:
+            expected=next(s['sha256'] for s in current['runtime_policy_sources'] if s['path']=='trading/vwap_displacement_exit.py')
         self.assertEqual(expected,exits.displacement_exit_hash())
         self.assertEqual('missing_exit_state',self.detect(session(),meta=exits.metadata(exits.STRATEGY_ID))[1])
         self.assertEqual('invalid_direction',self.detect(session(),direction='bearish')[1])

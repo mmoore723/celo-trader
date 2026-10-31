@@ -99,7 +99,8 @@ def evaluate_vwap_displacement_exit(
 
     one = _completed_bars(one_minute_bars, now=decision_cutoff, minutes=1)
     if target is not None and not one.empty:
-        reached = one.loc[(one["visible_at"] > entry) & (one["high"] >= target)]
+        # Match research: the fill-minute high may predate the purchase.
+        reached = one.loc[(one["time"] > entry.floor("min")) & (one["high"] >= target)]
         if not reached.empty:
             choices.append((pd.Timestamp(reached.iloc[0]["visible_at"]), "vwap_displacement_prior_high_target"))
 
