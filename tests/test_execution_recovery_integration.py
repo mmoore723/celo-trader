@@ -52,6 +52,30 @@ class RecoveryIntegrationTests(unittest.TestCase):
         self.assertEqual(2, next(t for t in self.rows() if t["status"] == "open")["contracts"])
         self.assertAlmostEqual(-10, sum(t["realized_pnl"] or 0 for t in self.rows()))
 
+    def test_unpriced_close_restart_reconciles_original_order_before_retry(self):
+        from trading.position_manager.close import _close_position
+        self.enter()
+        trade = self.rows()[0]
+        self.next_status, self.next_qty, self.next_price = 'pending_cancel', '1', '1.50'
+        state = {'positions': {}, 'account_balance': 4000}
+        with patch('trading.position_manager.close.get_user_state', return_value=state), \
+             patch('trading.position_manager.close._reconcile_if_phantom', return_value=False), \
+             patch('database.log_event'), patch('database.record_paper_option_quote'), \
+             patch('database.link_broker_order_to_trade'), patch('ai_reasoning.narrator.narrate_exit'), \
+             patch('database.insert_trade', side_effect=AssertionError('Duplicate insert')), \
+             patch('database.close_trade', side_effect=AssertionError('Duplicate close')):
+            _close_position(self.client, trade, None, 'research_structural_stop', pricing_unavailable=True)
+            self.assertEqual('market', self.submissions[-1]['type'])
+            self.assertNotIn('limit_price', self.submissions[-1])
+            remaining = next(t for t in self.rows() if t['status'] == 'open')
+            self.assertEqual(2, remaining['contracts'])
+            before = len(self.submissions)
+            restarted = self.make_client()
+            _close_position(restarted, remaining, None, 'research_structural_stop', pricing_unavailable=True)
+            self.assertEqual(before, len(self.submissions))
+            self.assertEqual(2, next(t for t in self.rows() if t['status'] == 'open')['contracts'])
+            self.assertAlmostEqual(-10, sum(t['realized_pnl'] or 0 for t in self.rows()))
+
     def test_close_preserves_tradier_bid_and_durable_quote_timestamps(self):
         from trading.position_manager.close import _close_position
         self.enter()

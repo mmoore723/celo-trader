@@ -261,6 +261,26 @@ def _manage_open_position(
                 from trading.position_manager.close import _close_position
                 _close_position(alpaca, trade, float(trade['entry_price']), deadline_reason)
                 return
+
+        # Full-exit intent and fixed deadlines survive missing quotes/bars.
+        # Partial profit-taking stays on its quantity-aware path below.
+        from trading.position_manager.exit_preflight import full_exit_reason, executable_quote
+        preflight_now = _now_et()
+        preflight_state = _US.setdefault('positions', {}).get(trade['id'], {})
+        preflight_reason = full_exit_reason(trade, preflight_state, preflight_now)
+        if preflight_reason:
+            preflight_state = _US['positions'].setdefault(trade['id'], {})
+            # A full deadline supersedes an unfinished partial profit take.
+            preflight_state['exit_pending_reason'] = preflight_reason
+            preflight_state.setdefault('exit_pending_since', preflight_now.isoformat())
+            preflight_state['exit_attempts'] = int(preflight_state.get('exit_attempts') or 0) + 1
+            _persist_exit_latch(trade['id'], preflight_state)
+            exit_bid, exit_quote = executable_quote(tradier, trade['contract_symbol'])
+            from trading.position_manager.close import _close_position
+            _close_position(alpaca, trade, exit_bid, preflight_reason,
+                            bid_price=exit_bid, reference_quote=exit_quote,
+                            pricing_unavailable=exit_bid is None)
+            return
         quote = tradier.get_option_quote(trade["contract_symbol"])
         alpaca_positions = alpaca.get_positions()
         alpaca_pos = next(

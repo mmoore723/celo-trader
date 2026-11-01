@@ -27,11 +27,12 @@ logger = logging.getLogger("celo_trader.trading_logic")
 def _close_position(
     alpaca: "AlpacaClient",
     trade: dict,
-    exit_price: float,
+    exit_price: Optional[float],
     reason: str,
     bid_price: Optional[float] = None,
     mtf_notes: Optional[list] = None,
     reference_quote: Optional[dict] = None,
+    pricing_unavailable: bool = False,
 ) -> None:
     from config.research_order_specs import SPECS
     from trading.research_session_clock import uses_broker_session
@@ -66,8 +67,10 @@ def _close_position(
         "Tier1_1pct"
     )
 
+    if pricing_unavailable and (not reason or reason.startswith('stage1')):
+        raise ValueError('Unpriced full exit requires a full liquidation reason')
     if paper:
-        logger.info("[PAPER] SELL %s @ $%.4f (%s)", trade["contract_symbol"], exit_price, reason)
+        logger.info("[PAPER] SELL %s reference=%s (%s)", trade["contract_symbol"], exit_price, reason)
     _urgent_exit = any(token in (reason or "").lower() for token in (
         "hard_stop", "initial_atr_stop", "structural_stop", "panic",
         "kill_lock", "daily_loss", "session_hard_cutoff", "research_session_close",
@@ -79,7 +82,7 @@ def _close_position(
     _tsla_pending_exit = trade.get('strategy_id') == 'V2_TSLA_TWO_LEG_TREND_PULLBACK' and bool(
         _US.get('positions', {}).get(trade['id'], {}).get('exit_pending_reason')
     )
-    _market_exit = _giveback_market or _session_market or _failed_range_deadline or _tsla_pending_exit
+    _market_exit = pricing_unavailable or _giveback_market or _session_market or _failed_range_deadline or _tsla_pending_exit
     fill = alpaca.place_option_order(
         symbol          = trade["contract_symbol"],
         qty             = trade["contracts"],
@@ -121,7 +124,7 @@ def _close_position(
                   f"checking the original order and actual remaining quantity next tick.")
         return
 
-    if (_failed_range_deadline or _tsla_pending_exit) and not (fill.get('confirmed_fill_price') or fill.get('filled_avg_price')):
+    if (_market_exit or pricing_unavailable) and not (fill.get('confirmed_fill_price') or fill.get('filled_avg_price')):
         return
     fill_price = float(fill.get("confirmed_fill_price") or
                        fill.get("filled_avg_price") or exit_price)
@@ -137,7 +140,7 @@ def _close_position(
                 contract_symbol=trade["contract_symbol"],
                 observation_kind="exit",
                 observed_at=_now_et(),
-                quote=reference_quote or ({} if _failed_range_deadline or _tsla_pending_exit else {"bid": bid_price, "mid": exit_price}),
+                quote=reference_quote or ({} if _market_exit else {"bid": bid_price, "mid": exit_price}),
                 source=(
                     "tradier_pre_submit_exit_quote"
                     if reference_quote else "exit_order"
