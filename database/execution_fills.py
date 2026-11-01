@@ -44,6 +44,10 @@ def _entry(conn, record, quantity, notional, timestamp, fill_time, order_id):
             quantity, price, values["stop_price"], values["target_price"], fill_time, record["trade_id"],
         ))
     else:
+        from trading.entry.exit_deadline import freeze_at_fill
+        from database.helpers import _to_et_datetime
+        values['strategy_context_json'] = json.dumps(freeze_at_fill(
+            values.get('strategy_context_json'), _to_et_datetime(timestamp).isoformat()), sort_keys=True)
         record["trade_id"] = _insert(conn, values)
         journal_context = {"recovery_id": record["id"], "contract": {"symbol": record["symbol"]},
                            "strategy_meta": {"shadow_candidate_id": values.get("candidate_id")}}

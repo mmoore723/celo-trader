@@ -1942,6 +1942,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     _strategy_context.update(provenance(_current_rule))
     from trading.entry.audit_evidence import entry_greeks
     _strategy_context.update(entry_greeks(_fresh_quote, contract['symbol'], _now_et()))
+    from trading.entry.exit_deadline import capture_policy
+    _strategy_context.pop('exit_deadline', None)
+    _strategy_context.update(capture_policy(strategy_id, alpaca, _now_et()))
     _strategy_context_json = _json.dumps(
         _strategy_context, default=str, sort_keys=True,
     )
@@ -2275,6 +2278,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         _candidate_meta = _opportunity_context.get("strategy_meta")
         if isinstance(_candidate_meta, dict):
             _candidate_id = _candidate_meta.get("shadow_candidate_id")
+    from trading.entry.exit_deadline import freeze_at_fill
+    _strategy_context_json = _json.dumps(freeze_at_fill(
+        _strategy_context_json, order.get("filled_at") or entry_utc), default=str, sort_keys=True)
     trade_id = order.get("accounted_trade_id") or insert_trade(
         ticker          = ticker,
         contract_symbol = contract["symbol"],

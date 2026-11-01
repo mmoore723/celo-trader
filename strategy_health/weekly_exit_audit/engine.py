@@ -55,6 +55,11 @@ def audit(trades):
                   baseline=None, top10=[], walk_forward=None, noise=None,
                   alternatives=[], assumptions=ASSUMPTIONS, grid_combinations=936)
     result.update(audit_scope='option_dollar_giveback_and_time_barriers',
+                  completion_meaning='Replay coverage only, not sufficient evidence to tune exits.',
+                  sample_evidence=dict(train_count=int(len(trades)*.7),
+                      test_count=len(trades)-int(len(trades)*.7),
+                      minimum_train=30, minimum_test=20,
+                      sufficient=int(len(trades)*.7) >= 30 and len(trades)-int(len(trades)*.7) >= 20),
                   supplemental_coverage_issues=supplemental,
                   supplemental_inputs_complete=not supplemental,
                   untested_exit_families=['iv_scaled_activation', 'underlying_structural_exits'])
@@ -118,4 +123,9 @@ def audit(trades):
     result["reason"] = ("Manual approval required; no automatic application."
                         if result["recommendation"] == "PROPOSE CHANGE"
                         else "No fully validated improvement meeting all coverage, noise and chronological-test requirements.")
+    if not result['sample_evidence']['sufficient']:
+        result['reason'] = (
+            f"{len(trades)} trades: {cut} training / {len(trades)-cut} test. "
+            "Insufficient evidence to select better parameters; at least 30 training and 20 test trades required. "
+            "COMPLETE means replay coverage only. Keep baseline.")
     return result

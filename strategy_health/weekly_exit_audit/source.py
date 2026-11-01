@@ -85,7 +85,7 @@ def load(path, mode):
                 meta=candidates.get((row.get('candidate_id'),row.get('broker_account_id'),row['strategy_id'],row['ticker']),{})
                 horizon=context.get('exit_deadline')
                 hold=recorded_hold(context,meta,row['strategy_id'])
-                if not horizon and hold:
+                if not horizon and hold and 'exit_deadline_capture' not in context:
                     try:
                         horizon=(clock(journal_time(row['entry_time']))+timedelta(minutes=float(hold))).isoformat()
                     except (ValueError,TypeError,OverflowError):
@@ -135,7 +135,7 @@ def load(path, mode):
             issues.append("invalid_journal_timestamp")
         deadline = context.get("exit_deadline")
         hold = recorded_hold(context, meta, first["strategy_id"])
-        if not deadline and hold:
+        if not deadline and hold and 'exit_deadline_capture' not in context:
             try:
                 deadline = (clock(journal_time(first["entry_time"]))+timedelta(minutes=float(hold))).isoformat()
             except (ValueError, TypeError, OverflowError):
