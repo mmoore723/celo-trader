@@ -14,6 +14,7 @@ import type { StrategyTickerRecommendation } from "../lib/api";
 import { PairEvidence } from "../components/settings/PairEvidence";
 import { AdminStrategyControls } from "../components/settings/AdminStrategyControls";
 import { ClosedTradeEvidence } from "../components/settings/ClosedTradeEvidence";
+import { TradingOverview } from "../components/settings/TradingOverview";
 import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
 import { StrategyExitNotice } from "../components/settings/StrategyExitNotice";
 import { StrategyIdentity } from "../components/settings/StrategyIdentity";
@@ -848,11 +849,9 @@ export function Settings() {
       </section>}
       {/* Strategies */}
       {strategyView === "trading" && <section>
-        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Trading now · {actualAccountMode}</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          On means the strategy may place {actualAccountMode} orders on the tickers listed under “Trades.” Research continues on all other collected tickers.
-        </p>
-        <div className="settings-card-grid">{(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.observation_only && Boolean(form[strategy.setting_key]) && (strategy.trading_tickers?.length ?? 0) > 0).map(strategyControl)}</div>
+        <TradingOverview strategies={(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.removed && !strategy.observation_only && strategy.enabled && (strategy.trading_tickers?.length ?? 0) > 0)}
+          evidence={closedTradeEvidence} mode={actualAccountMode} loading={closedTradesLoading || !strategyCatalog}
+          failed={closedTradesFailed} controls={strategyControl} />
         {(strategyHistory?.changes.length ?? 0) > 0 && (
           <details className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
             <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>Recent strategy switch history</summary>

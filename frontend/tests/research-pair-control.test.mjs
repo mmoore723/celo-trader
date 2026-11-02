@@ -28,7 +28,8 @@ test('test choices use a modal and cannot silently enable unsupported policies',
   assert.match(source, /onCancel=/);
   assert.match(source, /pair.exit_comparison/);
   assert.match(source, /pair.contract_tests/);
-  assert.match(source, /if \(researchOnly \|\| trading\) return/);
-  assert.match(source, /disabled=\{busy \|\| researchOnly \|\| trading\}/);
+  assert.match(source, /if \(comparing \|\| trading\) return/);
+  assert.match(source, /!comparing && !trading/);
+  assert.match(source, /Continue with current production rules/);
   assert.match(source, /Selecting two tests is not evidence/);
 });
