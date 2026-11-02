@@ -12,7 +12,10 @@ const performance = readFileSync(new URL("../src/pages/Performance.tsx", import.
 
 test("bot decisions live inside the journal while research remains separate", () => {
   assert.match(app, /path="\/opportunities"[^\n]+Navigate to="\/journal\?tab=decisions"/);
-  assert.match(app, /path="\/research"[^\n]+view="research"/);
+  assert.match(app, /path="\/research"[^\n]+<Research/);
+  const research = readFileSync(new URL("../src/pages/Research.tsx", import.meta.url), "utf8");
+  assert.match(research, /<Results view="research" embedded/);
+  assert.match(research, /Exit Lab/);
   assert.match(sidebar, /label: "Research Results", to: "\/research"/);
   assert.doesNotMatch(sidebar, /label: "Today's Decisions"/);
   assert.match(journal, /Bot Decisions/);

@@ -32,8 +32,8 @@ import { lazy, Suspense, useState, useEffect } from "react";
 // blast radius of a page-specific rendering failure.
 const LiveTrading = lazy(() => import("./pages/LiveTrading").then((module) => ({ default: module.LiveTrading })));
 const Performance = lazy(() => import("./pages/Performance").then((module) => ({ default: module.Performance })));
+const Research = lazy(() => import("./pages/Research").then((module) => ({ default: module.Research })));
 const Journal = lazy(() => import("./pages/Journal").then((module) => ({ default: module.Journal })));
-const ScannerOpportunities = lazy(() => import("./pages/ScannerOpportunities").then((module) => ({ default: module.ScannerOpportunities })));
 const Settings = lazy(() => import("./pages/Settings").then((module) => ({ default: module.Settings })));
 const Backtest = lazy(() => import("./pages/Backtest").then((module) => ({ default: module.Backtest })));
 const Playbooks = lazy(() => import("./pages/Playbooks").then((module) => ({ default: module.Playbooks })));
@@ -118,7 +118,7 @@ function AppShell() {
           <Route path="/performance" element={<Performance />} />
           <Route path="/journal"     element={<Journal />} />
           <Route path="/opportunities" element={<Navigate to="/journal?tab=decisions" replace />} />
-          <Route path="/research"    element={<ScannerOpportunities view="research" />} />
+          <Route path="/research"    element={<Research />} />
           <Route path="/backtest"    element={<Backtest />} />
           <Route path="/ai-reasoning" element={<AiReasoning />} />
           <Route path="/playbooks"   element={<Playbooks />} />
