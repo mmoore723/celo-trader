@@ -63,11 +63,13 @@ def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=Fa
     if result is not None:
         return response(result)
     if allow_stale:
-        stale = cached(DISPLAY_MAX_AGE_SECONDS)
+        # Display only: an old exact-scope snapshot is preferable to a blank page.
+        # Authorization callers still require the normal fresh path.
+        stale = cached(float('inf'))
         if stale is None:
             from api.research_display_store import load
             stored = load(key)
-            if stored is not None and 0 <= time() - stored[0] < DISPLAY_MAX_AGE_SECONDS:
+            if stored is not None and 0 <= time() - stored[0]:
                 stale = (monotonic() - (time() - stored[0]), stored[1], stored[0])
                 with _guard:
                     _cache[key] = stale
@@ -88,7 +90,7 @@ def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=Fa
                 raise
         if stale is not None:
             return response(stale)
-        raise HTTPException(status_code=503, detail="Research is preparing its first saved snapshot. Retry shortly.",
+        raise HTTPException(status_code=503, detail="The saved display for these settings and dates is refreshing. Recorded research has not been reset. Retry shortly.",
                             headers={"Retry-After": "5"})
     if not _build.acquire(timeout=BUILD_WAIT_SECONDS):
         raise HTTPException(status_code=503, detail='Research results are refreshing. Retry shortly.',

@@ -13,7 +13,10 @@ import strategy_health.research_matrix
 
 class ResearchRefreshTests(unittest.TestCase):
     def test_prepares_recommendations_without_opening_settings(self):
-        from api import recommendation_snapshot
+        # Earlier sys.modules fixtures can leave a stale package attribute.
+        # Patch the module used by the runtime import, not that stale object.
+        from importlib import import_module
+        recommendation_snapshot = import_module('api.recommendation_snapshot')
         users = [{'user_id': 'one', 'username': 'one', 'is_admin': False}]
         settings = {'paper_trading': True}
         with patch.dict('sys.modules', {'auth.users': SimpleNamespace(list_users=lambda: users)}), \

@@ -33,6 +33,30 @@ class SnapshotTests(unittest.TestCase):
         self.assertIs(module.research_snapshot(), module.research_snapshot())
         self.build.assert_called_once_with(90)
 
+    def test_restart_serves_old_exact_scope_display_without_resetting_evidence(self):
+        import time
+        saved = time.time() - 4 * 86400
+        module._build.acquire()
+        try:
+            with patch('api.research_display_store.load', return_value=(saved, {'strategies': ['saved']})):
+                result = module.research_snapshot(allow_stale=True)
+            self.assertEqual(result['strategies'], ['saved'])
+            self.assertEqual(result['snapshot']['updated_at'], saved)
+            self.assertTrue(result['snapshot']['refreshing'])
+            self.build.assert_not_called()
+        finally:
+            module._build.release()
+
+    def test_missing_scope_does_not_claim_new_experiment(self):
+        module._build.acquire()
+        try:
+            with self.assertRaises(HTTPException) as caught:
+                module.research_snapshot(allow_stale=True)
+            self.assertIn('Recorded research has not been reset', caught.exception.detail)
+            self.assertNotIn('first saved snapshot', caught.exception.detail)
+        finally:
+            module._build.release()
+
     def test_balance_updates_do_not_rebuild_or_mutate_settings(self):
         settings = {'paper_trading': True, 'last_known_balance': 3500}
         with patch('config.get_settings', return_value=settings):

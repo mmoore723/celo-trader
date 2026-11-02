@@ -77,7 +77,7 @@ function ResearchRow({ strategyId, pair, strategyName, strategyVersion, backtest
         <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{plan?.test ?? pair.next_action}</p>
       </div>
     </div>
-    <ResearchPairControl strategyId={strategyId} version={strategyVersion} ticker={pair.ticker} name={displayStrategyName(strategyName)} trading={pair.tradable} />
+    <ResearchPairControl strategyId={strategyId} version={strategyVersion} ticker={pair.ticker} name={displayStrategyName(strategyName)} trading={pair.tradable} pair={pair} />
     {pair.authored_exit_evidence && <div className="px-3 pb-2 text-xs"><AuthoredExitEvidence evidence={pair.authored_exit_evidence} /></div>}
     {pair.profit_protection_comparison && <div className="px-3 pb-2 text-xs"><ProfitProtectionComparison comparison={pair.profit_protection_comparison} /></div>}
     {pair.reference_contract_test && <div className="px-3 pb-2 text-xs"><ReferenceContractTest test={pair.reference_contract_test} /></div>}

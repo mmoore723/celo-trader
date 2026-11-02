@@ -22,3 +22,13 @@ test('errors remain visible and research refreshes after successful save', () =>
   assert.match(source, /strategy-research-results/);
   assert.match(source, /strategy-research-analytics/);
 });
+test('test choices use a modal and cannot silently enable unsupported policies', () => {
+  assert.match(source, /createPortal\(<dialog/);
+  assert.match(source, /node.showModal\(\)/);
+  assert.match(source, /onCancel=/);
+  assert.match(source, /pair.exit_comparison/);
+  assert.match(source, /pair.contract_tests/);
+  assert.match(source, /if \(researchOnly \|\| trading\) return/);
+  assert.match(source, /disabled=\{busy \|\| researchOnly \|\| trading\}/);
+  assert.match(source, /Selecting two tests is not evidence/);
+});

@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
-import { request } from '../../lib/api';
+import { request, type StrategyTickerResearchPair } from '../../lib/api';
 
-export function ResearchPairControl({ strategyId, version, ticker, name, trading }: {
+export function ResearchPairControl({ strategyId, version, ticker, name, trading, pair }: {
   strategyId: string; version: string; ticker: string; name: string; trading: boolean;
+  pair: StrategyTickerResearchPair;
 }) {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -12,9 +14,17 @@ export function ResearchPairControl({ strategyId, version, ticker, name, trading
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [exit, setExit] = useState('native');
+  const [contract, setContract] = useState('native');
+  const researchOnly = exit !== 'native' || contract !== 'native';
+  const selectedExit = pair.exit_comparison.find(item => String(item.minutes) === exit);
+  const selectedContract = pair.contract_tests.find(item => item.policy === contract);
+  const metrics = (item: { profit_factor: number | 'infinite' | null; net_one_contract_pnl: number; option_results: number }) =>
+    `PF ${item.profit_factor ?? 'unavailable'} | $${item.net_one_contract_pnl.toFixed(2)} net | ${item.option_results} priced results`;
   if (!user?.is_admin) return null;
   async function enable() {
     if (busy) return;
+    if (researchOnly || trading) return;
     setBusy(true); setError('');
     try {
       await request('/api/settings/strategies/admin-override', {
@@ -29,13 +39,36 @@ export function ResearchPairControl({ strategyId, version, ticker, name, trading
   }
   return <div className="px-3 pb-3 text-xs">
     {saved ? <p role="status" style={{ color: 'var(--positive)' }}>Pair permission saved. Account mode and risk limits unchanged. New entries still require valid signals and safety checks.</p>
-      : trading ? <span className="badge badge-green">Trading on</span>
-      : !confirming ? <button type="button" className="btn btn-primary btn-sm" onClick={() => { setConfirming(true); setError(''); }}>Turn on pair</button>
-      : <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--border)' }}>
+      : <button type="button" className="btn btn-primary btn-sm" onClick={() => { setConfirming(true); setError(''); }}>{trading ? 'Review tests' : 'Turn on pair'}</button>}
+    {confirming && createPortal(<dialog open={false} ref={node => { if (node && !node.open) node.showModal(); }}
+      onCancel={event => { if (busy) event.preventDefault(); else setConfirming(false); }}
+      aria-label={`Test choices for ${ticker} ${name}`} className="card p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto text-sm"
+      style={{ color: 'var(--ink)', background: 'var(--surface)', margin: 'auto' }}>
+      <div className="space-y-4">
         <p className="font-semibold">Turn on {ticker} / {name} / {version}?</p>
+        <p>Compare recorded tests below. These are hypothetical research results, not broker fills. Highest profit alone does not establish the best choice.</p>
+        <label className="block">Exit test
+          <select className="input w-full mt-1" value={exit} disabled={busy} onChange={event => setExit(event.target.value)}>
+            <option value="native">Current production exit (available to activate)</option>
+            {[...pair.exit_comparison].sort((a, b) => b.net_one_contract_pnl - a.net_one_contract_pnl).map(item =>
+              <option key={item.minutes} value={String(item.minutes)}>{item.minutes} minutes: {metrics(item)} (research only)</option>)}
+          </select>
+        </label>
+        {selectedExit && <p>{metrics(selectedExit)}. Win rate: {selectedExit.win_rate_pct ?? 'unavailable'}%. Late quotes excluded: {selectedExit.mistimed_quotes_ignored}.</p>}
+        <label className="block">Option-selection test
+          <select className="input w-full mt-1" value={contract} disabled={busy} onChange={event => setContract(event.target.value)}>
+            <option value="native">Current production contract selection (available to activate)</option>
+            {[...pair.contract_tests].sort((a, b) => b.net_one_contract_pnl - a.net_one_contract_pnl).map(item =>
+              <option key={item.policy} value={item.policy}>{item.label}: {metrics(item)} (research only)</option>)}
+          </select>
+        </label>
+        {selectedContract && <p>{metrics(selectedContract)} across {selectedContract.option_result_days} result days. Profile: {selectedContract.profile_version}. {selectedContract.explanation}</p>}
+        <p>Pair quote coverage: {pair.quote_coverage_pct == null ? 'unavailable' : `${pair.quote_coverage_pct}%`}. Comparisons may contain different trades. Selecting two tests is not evidence that their combination was tested.</p>
+        {researchOnly && <p role="status" style={{ color: 'var(--warning)' }}>Research selection only. Production assignment is not wired for these variants. Activation is blocked; nothing is saved or changed. Select both current production options to enable the native pair.</p>}
         <p>Overrides research qualification for this pair. Grants permission in paper and live modes, but does not enable live trading or change account mode. Execution, risk and loss-pause checks still apply.</p>
-        <div className="flex gap-2"><button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={enable}>{busy ? 'Saving...' : 'Confirm turn on'}</button><button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button></div>
-      </div>}
-    {error && <p role="alert" className="mt-2" style={{ color: 'var(--negative)' }}>{error}</p>}
+        {error && <p role="alert" style={{ color: 'var(--negative)' }}>{error}</p>}
+        <div className="flex gap-2"><button type="button" className="btn btn-primary btn-sm" disabled={busy || researchOnly || trading} onClick={enable}>{busy ? 'Saving...' : trading ? 'Already enabled' : 'Confirm turn on'}</button><button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button></div>
+      </div>
+    </dialog>, document.body)}
   </div>;
 }
