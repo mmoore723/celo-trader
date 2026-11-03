@@ -11,6 +11,8 @@ def build(sid, ticker, version, minutes=None, contract=None):
     from config.research_order_specs import SPECS
     if sid not in SPECS or SPECS[sid].version != version:
         raise ValueError('Selected test settings require a matching research order route.')
+    if SPECS[sid].allowed_tickers and ticker not in SPECS[sid].allowed_tickers:
+        raise ValueError('Ticker does not match the selected execution route.')
     if minutes is not None and (type(minutes) is not int or minutes not in MINUTES):
         raise ValueError('Choose a supported exit test: 30, 60, 90 or 120 minutes.')
     if contract is not None and contract not in CONTRACTS:

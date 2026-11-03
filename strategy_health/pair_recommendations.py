@@ -140,12 +140,14 @@ def recommendations(matrix, settings):
     from config.research_order_specs import execution_id
     from config.admin_strategy_overrides import allowed_ticker
     for strategy in matrix["strategies"]:
-        sid = execution_id(strategy["strategy_id"], strategy['version'])
         from config.strategy_retirement import is_retired
-        if is_retired(settings, sid, strategy['version']):
+        if is_retired(settings, strategy['strategy_id'], strategy['version']):
             continue
-        rule = REVIEWED_STRATEGIES.get(sid)
         for pair in strategy["pairs"]:
+            sid = execution_id(strategy["strategy_id"], strategy['version'], pair['ticker'])
+            if is_retired(settings, sid, strategy['version']):
+                continue
+            rule = REVIEWED_STRATEGIES.get(sid)
             evidence = pair.get("recommendation") or {}
             from strategy_health.closed_trade_guard import is_paused
             paused = (settings.get('strategy_pair_pauses') or {}).get(consent_scope(settings, sid, pair['ticker'])) is True

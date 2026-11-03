@@ -746,7 +746,7 @@ def build_research_matrix(
         strategy_current_results: list[tuple[str, float]] = []
         for ticker in sorted(tickers):
             research_version = evidence_version(strategy_id, rule.version if rule else runtime.version)
-            trading_enabled = execution_id(strategy_id, research_version) in enabled_by_ticker[ticker]
+            trading_enabled = execution_id(strategy_id, research_version, ticker) in enabled_by_ticker[ticker]
             source_samples = grouped.get((strategy_id, ticker), [])
             # This page summarizes the all-setups research contract policy on
             # EVERY ticker. Native order previews belong to a separate cohort;

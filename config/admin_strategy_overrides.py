@@ -9,6 +9,8 @@ def key(sid, ticker):
 
 
 def allowed_ticker(sid, ticker, rule):
+    if sid in SPECS and SPECS[sid].allowed_tickers and ticker not in SPECS[sid].allowed_tickers:
+        return False
     return bool(re.fullmatch(r'[A-Z][A-Z0-9.\-]{0,9}', ticker)) and (
         sid in SPECS or ticker in rule.tickers | rule.recommendation_tickers)
 
@@ -30,8 +32,8 @@ def tickers(settings, sid):
 
 def updates(settings, source, ticker, version, enabled, actor, *, exit_minutes=None, contract_policy=None):
     from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_strategy_integrity_errors
-    sid = execution_id(source.strip().upper(), version)
     symbol = ticker.strip().upper()
+    sid = execution_id(source.strip().upper(), version, symbol)
     rule = REVIEWED_STRATEGIES.get(sid)
     if rule is None or rule.version != version or rule.observation_only:
         raise ValueError('This exact research version does not have an order implementation.')

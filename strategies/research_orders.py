@@ -19,10 +19,20 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
     if cutoff.tzinfo is not None:
         cutoff = cutoff.tz_convert('America/New_York').tz_localize(None)
     symbol = ticker.strip().upper()
+    if spec.allowed_tickers and symbol not in spec.allowed_tickers:
+        return None
     key = (scope, symbol, strategy_id)
     if _emitted.get(key) == cutoff.floor('min'):
         return None
-    if strategy_id == 'RESEARCH_FAILED_RANGE_V2':
+    if strategy_id == 'RESEARCH_QQQ_TREND_V2':
+        from strategies.spy_trend_continuation_v2 import evaluate as native
+        # Identical native engine and real QQQ bars, as in the research shadow.
+        # The alias passes the unchanged SPY guard; actual orders retain QQQ.
+        signal = native(frame, ticker='SPY', execution_scope='approved_qqq_trend:' + scope + ':' + symbol)
+        if signal is not None:
+            signal.meta.update(underlying_stop=signal.meta['v2_stop'], underlying_target=signal.meta['v2_target'],
+                               timeframe_minutes=5)
+    elif strategy_id == 'RESEARCH_FAILED_RANGE_V2':
         from trading.failed_range_research import evaluate as native
         signal = native(frame, ticker=symbol, scope='research_worker:approved_order:' + scope, now=cutoff)
     elif strategy_id == 'RESEARCH_CTX_ORB_ATR10_V2':

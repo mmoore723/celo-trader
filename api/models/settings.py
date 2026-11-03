@@ -35,6 +35,7 @@ class Settings(BaseModel):
     enable_v2_impulse_anchored_vwap_pullback: bool = False
     enable_research_ctx_orb_atr10_v2: bool = False
     enable_research_failed_range_v2: bool = False
+    enable_research_qqq_trend_v2: bool = False
     strategy_spy_afternoon_fvg_v2_enabled: bool = True
     strategy_spy_failed_range_recovery_v2_enabled: bool = True
     strategy_tsla_two_leg_trend_pullback_v2_enabled: bool = True

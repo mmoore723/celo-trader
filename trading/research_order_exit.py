@@ -48,8 +48,9 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
             if selected['exit_minutes'] is not None:
                 return ((True, f"selected_test_{selected['exit_minutes']}m")
                         if current >= filled + timedelta(minutes=selected['exit_minutes']) else (False, 'hold'))
-        if sid == 'RESEARCH_FAILED_RANGE_V2':
-            return (True, 'research_failed_range_30m') if current >= filled + timedelta(minutes=30) else (False, 'hold')
+        if sid in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2'):
+            reason = 'research_qqq_trend_30m' if sid == 'RESEARCH_QQQ_TREND_V2' else 'research_failed_range_30m'
+            return (True, reason) if current >= filled + timedelta(minutes=30) else (False, 'hold')
         if frame is None or frame.empty:
             return False, 'waiting_for_bars'
         logical_entry = meta.get('trigger_bar') or entry_time

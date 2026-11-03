@@ -38,7 +38,7 @@ def dossier(matrix, settings, sid, ticker, version):
                  if (r['strategy_id'], r['ticker'], r['strategy_version']) == (sid, ticker, version)), None)
     if not item or item['kind'] != 'new_match':
         raise ValueError('This recommendation changed. Refresh Settings before reviewing it.')
-    strategy = next(s for s in matrix['strategies'] if execution_id(s['strategy_id'], s['version']) == sid and s['version'] == version)
+    strategy = next(s for s in matrix['strategies'] if execution_id(s['strategy_id'], s['version'], ticker) == sid and s['version'] == version)
     pair = next(p for p in strategy['pairs'] if p['ticker'] == ticker)
     source = strategy['strategy_id']
     library = strategy_details(source)

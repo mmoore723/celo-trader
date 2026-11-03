@@ -223,20 +223,21 @@ def _manage_open_position(
                 _close_position(alpaca, trade, float(trade['entry_price']), guard_reason)
                 return
 
-        if trade.get('strategy_id') == 'RESEARCH_FAILED_RANGE_V2':
+        if trade.get('strategy_id') in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2'):
             from trading.research_order_exit import evaluate_exit
             deadline_now = _now_et()
             due, deadline_reason = evaluate_exit(
                 trade, trade.get('entry_time'), deadline_now, None,
                 session_close=research_session_close,
             )
-            if due and deadline_reason in {'research_failed_range_30m', 'research_session_close'}:
+            if due and deadline_reason in {'research_failed_range_30m', 'research_qqq_trend_30m', 'research_session_close',
+                                           'selected_test_30m', 'selected_test_60m', 'selected_test_90m', 'selected_test_120m'}:
                 deadline_state = _US.setdefault('positions', {}).setdefault(trade['id'], {})
                 _resolve_latched_exit(deadline_state, True, deadline_reason, deadline_now)
                 deadline_state['exit_attempts'] = int(deadline_state.get('exit_attempts') or 0) + 1
                 _persist_exit_latch(trade['id'], deadline_state)
                 from trading.position_manager.close import _close_position
-                _close_position(alpaca, trade, float(trade['entry_price']), deadline_reason)
+                _close_position(alpaca, trade, None, deadline_reason, pricing_unavailable=True)
                 return
         if trade.get('strategy_id') == 'V2_TSLA_TWO_LEG_TREND_PULLBACK':
             from database.helpers import _to_et_datetime

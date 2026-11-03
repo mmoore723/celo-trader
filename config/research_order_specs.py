@@ -8,9 +8,11 @@ class ResearchOrderSpec:
     version: str
     timeframe: int
     reference_minutes: int
+    allowed_tickers: tuple[str, ...] = ()
 
 
 SPECS = {
+    'RESEARCH_QQQ_TREND_V2': ResearchOrderSpec('V2_SPY_TREND_CONT', 'Trend Continuation', '2.1.0', 5, 30, ('QQQ',)),
     'V2_AFTERNOON_COMPRESSION_BREAKOUT': ResearchOrderSpec('V2_AFTERNOON_COMPRESSION_BREAKOUT', 'Afternoon Compression Breakout', 'research.2', 1, 30),
     'V2_GAP_FILL_RTH': ResearchOrderSpec('V2_GAP_FILL_RTH', 'Gap Fill', 'research.2', 5, 90),
     'V2_AFTERNOON_REVERSAL': ResearchOrderSpec('V2_AFTERNOON_REVERSAL', 'Afternoon Reversal', 'research.1', 5, 90),
@@ -25,5 +27,6 @@ def setting_key(sid):
     return 'enable_' + sid.lower()
 
 
-def execution_id(source, version):
-    return next((sid for sid, spec in SPECS.items() if spec.source == source and spec.version == version), source)
+def execution_id(source, version, ticker=None):
+    return next((sid for sid, spec in SPECS.items() if spec.source == source and spec.version == version
+                 and (not spec.allowed_tickers or str(ticker or '').upper() in spec.allowed_tickers)), source)
