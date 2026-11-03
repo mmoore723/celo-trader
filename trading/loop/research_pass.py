@@ -172,9 +172,10 @@ def run_research_pass(readers, snapshot, state, stopped):
     alpaca, tradier = readers
     if stopped():
         return
+    from trading.research_bar_capture import session_frame
     def profit_bars(ticker):
-        bars, error, _ = alpaca.get_session_bars(ticker, '1Min')
-        return bars_to_df(bars) if bars and not error else pd.DataFrame()
+        return session_frame(alpaca, tradier, ticker,
+                             account=snapshot['settings'].get('active_broker_account_id'), clock=_now_et)
 
     study_ready = False
     def study_checkpoint():
@@ -207,8 +208,7 @@ def run_research_pass(readers, snapshot, state, stopped):
     # Include the close so 15:55 candles can decide at 16:00, without new entries.
     if snapshot["settings"].get("shadow_ledger_enabled", True):
         def exit_bars(ticker):
-            bars, error, _ = alpaca.get_session_bars(ticker, "1Min")
-            return bars_to_df(bars) if bars and not error else pd.DataFrame()
+            return profit_bars(ticker)
 
         def ema_exit_bars(ticker):
             from trading.research_ema_history import native_ema_history

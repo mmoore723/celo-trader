@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from inspect import getattr_static
+import math
 from typing import Any
 
 from trading.state import _now_et
@@ -221,6 +222,10 @@ def select_research_contract(
     saw_chain = False
     saw_price = False
     saw_spread = False
+    screen = {key: 0 for key in ('examined', 'invalid_price', 'not_otm',
+              'premium_below_minimum', 'premium_above_maximum', 'spread_too_wide',
+              'missing_symbol', 'eligible', 'chain_request_errors')}
+    info['screen_counts'] = screen
     for expiry in expirations:
         try:
             expiry_date = date.fromisoformat(str(expiry))
@@ -232,31 +237,47 @@ def select_research_contract(
         try:
             chain = chain_reader(ticker, str(expiry), option_type)
         except Exception:
+            screen['chain_request_errors'] += 1
             continue
         if not chain:
             continue
         saw_chain = True
         for raw in chain:
+            screen['examined'] += 1
             contract = dict(raw)
             try:
                 strike = float(contract.get("strike") or 0)
                 ask = float(contract.get("ask") or 0)
             except (TypeError, ValueError):
+                screen['invalid_price'] += 1
+                continue
+            if not all(math.isfinite(v) and v > 0 for v in (strike, ask)):
+                screen['invalid_price'] += 1
                 continue
             is_otm = strike > current_price if option_type == "call" else strike < current_price
-            if not is_otm or not profile.minimum_premium <= ask <= profile.maximum_premium:
+            if not is_otm:
+                screen['not_otm'] += 1
+                continue
+            if ask < profile.minimum_premium:
+                screen['premium_below_minimum'] += 1
+                continue
+            if ask > profile.maximum_premium:
+                screen['premium_above_maximum'] += 1
                 continue
             saw_price = True
             spread = _spread_pct(contract)
             if spread > profile.maximum_spread_pct:
+                screen['spread_too_wide'] += 1
                 saw_spread = True
                 continue
             symbol = str(contract.get("symbol") or "")
             if not symbol:
+                screen['missing_symbol'] += 1
                 continue
             contract["expiry"] = str(expiry)
             contract["selection_model"] = profile.version
             candidates.append((dte, abs(strike - current_price), spread, symbol, contract))
+            screen['eligible'] += 1
 
     if not candidates:
         info["reason"] = (

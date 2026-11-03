@@ -23,6 +23,21 @@ class _Tradier:
 
 
 class ResearchContractSelectionTests(unittest.TestCase):
+    def test_low_premium_diagnosis_does_not_loosen_profile(self):
+        reader = _Tradier(['2026-09-04'], {'2026-09-04': [
+            {'symbol':'LOW','strike':63,'bid':.70,'ask':.78},
+            {'symbol':'HIGH','strike':64,'bid':11,'ask':12},
+            {'symbol':'INVALID','strike':65,'bid':1,'ask':float('nan')},
+        ]})
+        with patch('trading.research_contract_selection._now_et', return_value=datetime(2026,9,1,10)):
+            selected,info=select_research_contract(reader,'NFLX','bullish',62.49,'V2_FAIR_VALUE_GAP')
+        self.assertIsNone(selected)
+        self.assertEqual('filtered',info['reason'])
+        self.assertEqual(1,info['screen_counts']['premium_below_minimum'])
+        self.assertEqual(1,info['screen_counts']['premium_above_maximum'])
+        self.assertEqual(1,info['screen_counts']['invalid_price'])
+        self.assertEqual(1.5,info['research_profile']['min_premium'])
+
     def test_context_orb_collects_same_week_150_to_1000_and_prefers_target_band(self):
         tradier = _Tradier(["2026-09-04", "2026-09-11"], {
             "2026-09-04": [

@@ -132,6 +132,7 @@ def observe_candidate_contract(
         "observed_at": _now_et().isoformat(),
         "underlying_price": round(price, 4),
         "reason": str((info or {}).get("reason") or "not_selected"),
+        "screen_counts": (info or {}).get("screen_counts"),
         "cheapest_cost": (info or {}).get("cheapest_cost"),
         "cheapest_symbol": (info or {}).get("cheapest_symbol"),
         "illiquid_cost": (info or {}).get("illiquid_cost"),
