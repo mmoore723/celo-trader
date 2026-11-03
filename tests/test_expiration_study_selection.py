@@ -92,7 +92,17 @@ class LongerExpirationSelectionTests(unittest.TestCase):
         self.assertEqual(LOW_PREMIUM_PROFILE, result['profile_version'])
         self.assertEqual((.25,1.49,.08), (result['minimum_ask'],result['maximum_ask'],result['maximum_spread_pct']))
         self.reader.chain = [option(bid=.40, ask=.50)]
-        self.assertEqual('no_contract_in_profile', self.run_selection(profile=LOW_PREMIUM_PROFILE)['reason'])
+        rejected = self.run_selection(profile=LOW_PREMIUM_PROFILE)
+        self.assertEqual('no_contract_in_profile', rejected['reason'])
+        self.assertEqual(1,rejected['screen_counts']['spread_too_wide'])
+
+    def test_rejected_quote_retains_timestamps_for_diagnosis(self):
+        stale = (SETUP-timedelta(seconds=90)).isoformat()
+        self.reader.quote['bid_date'] = stale
+        result = self.run_selection()
+        self.assertEqual('entry_quote_unusable',result['reason'])
+        self.assertEqual(stale,result['quote_evidence']['bid_date'])
+        self.assertFalse(result['quote_evidence']['bid_valid'])
 
     def test_unknown_profile_cannot_silently_change_limits(self):
         with self.assertRaises(KeyError):

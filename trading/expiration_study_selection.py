@@ -114,18 +114,34 @@ def select(readers, *, ticker, direction, underlying_price, setup_at, clock, pro
         return finish('setup_expired')
     candidates = []
     info['identity_rejections'] = 0
+    counts = info['screen_counts'] = dict(examined=0, invalid_price=0, not_otm=0,
+        premium_outside_profile=0, spread_too_wide=0, invalid_identity=0, eligible=0)
     for row in chain or []:
+        counts['examined'] += 1
         try:
             bid, ask, strike = (float(row[key]) for key in ('bid', 'ask', 'strike'))
             symbol = str(row.get('symbol') or '')
             otm = strike > price if direction == 'bullish' else strike < price
-            if not symbol or not math.isfinite(strike) or strike <= 0 or not otm or not _valid_price(bid, ask, bounds):
+            if not symbol or not all(math.isfinite(v) for v in (strike,bid,ask)) or strike <= 0 or not 0 < bid <= ask:
+                counts['invalid_price'] += 1
+                continue
+            if not otm:
+                counts['not_otm'] += 1
+                continue
+            if not bounds[0] <= ask <= bounds[1]:
+                counts['premium_outside_profile'] += 1
+                continue
+            if not _valid_price(bid, ask, bounds):
+                counts['spread_too_wide'] += 1
                 continue
             if not identity_matches(symbol, ticker=ticker, expiry=expiry, direction=direction, strike=strike):
                 info['identity_rejections'] += 1
+                counts['invalid_identity'] += 1
                 continue
         except (TypeError, ValueError, KeyError, OverflowError):
+            counts['invalid_price'] += 1
             continue
+        counts['eligible'] += 1
         candidates.append((abs(strike-price), (ask-bid)/((ask+bid)/2), symbol, strike))
     info['eligible_contracts'] = len(candidates)
     if not candidates:
@@ -144,11 +160,16 @@ def select(readers, *, ticker, direction, underlying_price, setup_at, clock, pro
     # is at receipt (when known), not backdated to either exchange stamp.
     if not isinstance(quote, dict):
         return finish('entry_quote_unusable')
+    info['quote_evidence'] = {key: quote.get(key) for key in
+        ('symbol','source_symbol','bid','ask','bid_date','ask_date','bidsize','asksize')}
+    info['quote_evidence']['received_at'] = received.isoformat()
     decision = received-timedelta(seconds=60)
     bid_quote = executable_bid(quote, contract=symbol, decision_at=decision, received_at=received)
     ask_quote = executable_bid(dict(quote or {}, bid_date=(quote or {}).get('ask_date')),
                                contract=symbol, decision_at=decision, received_at=received)
     if not bid_quote or not ask_quote:
+        info['quote_evidence']['bid_valid'] = bool(bid_quote)
+        info['quote_evidence']['ask_valid'] = bool(ask_quote)
         return finish('entry_quote_unusable')
     bid, ask = float(quote['bid']), float(quote['ask'])
     if not _valid_price(bid, ask, bounds):
