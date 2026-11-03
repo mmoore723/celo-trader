@@ -464,8 +464,9 @@ def _run_trading_loop_inner(user_id: str, poll_interval: int = 10) -> None:
             _US["scan_watchlist"] = _wl_batch
             _research_minute = _now_et().strftime("%Y-%m-%dT%H:%M")
             if _US.get("research_submitted_minute") != _research_minute:
+                from config.research_universe import collection_tickers
                 _submitted = submit_research(user_id, _stop, {
-                    "tickers": _wl_batch, "settings": _scan_settings,
+                    "tickers": collection_tickers(_scan_settings, _wl_batch), "settings": _scan_settings,
                     "balance": _US.get("account_balance", 0), "risk": get_user_risk(),
                 })
                 if _submitted:

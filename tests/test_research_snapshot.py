@@ -76,6 +76,16 @@ class SnapshotTests(unittest.TestCase):
             module.research_snapshot()
         self.assertEqual(self.build.call_count, 3)
 
+    def test_research_selection_preserves_raw_historical_snapshot(self):
+        settings = {'paper_trading': True}
+        with patch('config.get_settings', return_value=settings):
+            first = module.research_snapshot()
+            settings['research_tickers'] = ['SPY']
+            self.assertIs(module.research_snapshot(), first)
+            settings['research_tickers'] = ['QQQ']
+            self.assertIs(module.research_snapshot(), first)
+        self.build.assert_called_once_with(90)
+
     def test_user_and_settings_isolation_and_bound(self):
         module.research_snapshot()
         with patch('auth.context.get_current_user_id', return_value='other'):

@@ -23,8 +23,9 @@ def _research_snapshot(days: int, start_date: str | None, end_date: str | None, 
     from config.strategy_retirement import is_retired
     matrix = research_snapshot(days, start_date=start_date, end_date=end_date, allow_stale=allow_stale)
     settings = get_settings()
-    return {**matrix, 'strategies': [row for row in matrix['strategies']
-            if not is_retired(settings, row['strategy_id'], row.get('version'))]}
+    from config.research_universe import filter_research_display
+    return filter_research_display({**matrix, 'strategies': [row for row in matrix['strategies']
+            if not is_retired(settings, row['strategy_id'], row.get('version'))]}, settings)
 
 
 @router.get("/scorecard")

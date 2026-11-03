@@ -25,6 +25,9 @@ def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=Fa
     days = max(1, min(int(days), 365))
     settings = dict(get_settings())
     settings.pop("last_known_balance", None)
+    # This selects future observation and filters the response, not historical
+    # evidence generation. Keep existing exact-account/date display caches usable.
+    settings.pop("research_tickers", None)
     settings_digest = sha256(json.dumps(settings, sort_keys=True, default=str).encode()).hexdigest()
     key = (get_current_user_id(), str(get_db_path()), settings_digest, days, start_date, end_date)
 
