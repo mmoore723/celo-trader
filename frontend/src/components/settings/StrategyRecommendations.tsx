@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { StrategyTickerRecommendation } from "../../lib/api";
 import { strategyName } from "../../lib/strategyIdentity.js";
 import { StrategyIdentity } from "./StrategyIdentity";
@@ -12,7 +13,10 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [blocked, setBlocked] = useState<StrategyTickerRecommendation | null>(null);
   async function decide(item: StrategyTickerRecommendation, action: PairDecision) {
+    if (busy) return;
+    if (action === "enable" && !item.can_enable) { setBlocked(item); return; }
     if (action === "enable" && !window.confirm(`Allow ${strategyName(item.display_name)} to place ${item.account_mode} orders on ${item.ticker}?`)) return;
     setBusy(true); setError("");
     try { await onDecision(item, action); }
@@ -40,7 +44,7 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
           {item.blocker && !review && <p className="text-xs mt-2" style={{color: "var(--warning)"}}>{item.blocker}</p>}
           <div className="flex flex-wrap gap-2 mt-3">
             {review ? <><button disabled={busy} className="btn btn-primary" onClick={() => decide(item, "research_only")}>Move to research only</button><button disabled={busy} className="btn btn-ghost" onClick={() => decide(item, "keep_trading")}>Keep trading</button></>
-              : <><button disabled={busy || !item.can_enable} className="btn btn-primary" onClick={() => decide(item, "enable")}>Turn on · {item.account_mode}</button><button disabled={busy} className="btn btn-ghost" onClick={() => decide(item, "keep_off")}>Keep off</button></>}
+              : <><button type="button" disabled={busy} className={`btn ${item.can_enable ? "btn-primary" : "btn-ghost"}`} onClick={() => decide(item, "enable")}>{item.can_enable ? `Turn on · ${item.account_mode}` : "Why unavailable?"}</button><button disabled={busy} className="btn btn-ghost" onClick={() => decide(item, "keep_off")}>Keep off</button></>}
           </div>
         </article>)}
         <details className="text-xs mt-3" style={{color: "var(--ink-muted)"}}><summary className="cursor-pointer">What triggers this?</summary><p className="mt-2">{review
@@ -48,5 +52,16 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
           : "20 non-overlapping completed tests: first 14 and latest 6 each need PF 1.5+, the typical result must be positive, and no single winner may supply over 35% of gains. No minimum day count. Every research signal is still collected. These checks do not guarantee future profit."}</p></details>
       </section>;
     })}
+    {blocked && createPortal(<dialog ref={node => { if (node && !node.open) node.showModal(); }}
+      onCancel={() => setBlocked(null)} aria-labelledby="strategy-unavailable-title"
+      className="card p-5 w-full max-w-lg max-h-[85vh] overflow-y-auto text-sm"
+      style={{ margin: "auto", color: "var(--ink)", background: "var(--surface)" }}>
+      <h3 id="strategy-unavailable-title" className="font-semibold text-lg">Trading unavailable</h3>
+      <p className="mt-2">{blocked.ticker} · {strategyName(blocked.display_name)} · {blocked.strategy_version}</p>
+      <p role="status" className="mt-3">{blocked.blocker || "This pair has not passed the execution checks required to enable trading."}</p>
+      <p className="mt-3">Passing research tests is separate from being ready to place orders. The requirement above must be resolved before this pair can be enabled.</p>
+      <p className="mt-3">Nothing was enabled. Trading settings and existing positions are unchanged.</p>
+      <button type="button" className="btn btn-primary mt-4" onClick={() => setBlocked(null)}>Close</button>
+    </dialog>, document.body)}
   </>;
 }
