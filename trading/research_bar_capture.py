@@ -1,6 +1,8 @@
 """Research-only gap recovery with receipt-time provenance, never synthetic bars."""
 import json
 import logging
+from collections import OrderedDict
+from threading import RLock
 from datetime import timedelta
 
 import pandas as pd
@@ -8,6 +10,25 @@ from signals import bars_to_df
 from strategy_health.impulse_exit import et
 
 logger = logging.getLogger('celo_trader.research')
+_complete = OrderedDict()
+_cache_lock = RLock()
+
+
+def validated_frame(bars, now):
+    """Reject corrupt bars and exclude forming candles before reuse."""
+    import numpy as np
+    frame = bars_to_df(bars)
+    missing_minutes(frame, now)  # reject duplicates before filtering
+    cutoff = et(now).replace(second=0, microsecond=0)
+    stamps = frame['time'].map(et)
+    frame = frame.loc[(stamps.dt.date == cutoff.date()) & (stamps < cutoff)].copy()
+    values = frame[['open', 'high', 'low', 'close']].astype(float)
+    if not np.isfinite(values.to_numpy()).all() or (values <= 0).any().any():
+        raise ValueError('Invalid session OHLC')
+    if not ((values.low <= values[['open','close']].min(axis=1)) &
+            (values.high >= values[['open','close']].max(axis=1))).all():
+        raise ValueError('Inconsistent session OHLC')
+    return frame
 
 
 def missing_minutes(frame, now):
@@ -42,13 +63,42 @@ def record_recovery(*, ticker, account, now, received, missing, fallback, accept
              int(accepted), error, payload))
 
 
-def session_frame(primary, fallback, ticker, *, account, clock, persist=record_recovery):
+def session_frame(primary, fallback, ticker, *, account, clock, persist=record_recovery,
+                  prefer_consolidated=True):
     """Accept a valid complete frame or a strictly better coverage superset.
 
     Never merge feeds, manufacture bars, or remove a minute present in primary.
     Partial recovery is not completion: downstream policy gap checks still apply.
     """
     now = clock()
+    from config import get_db_path
+    cache_key = (str(get_db_path()), account, ticker.upper(), et(now).replace(second=0,microsecond=0))
+    if prefer_consolidated and et(now).hour >= 9 and et(now).time() >= et(now).replace(hour=9,minute=31,second=0,microsecond=0).time():
+        with _cache_lock:
+            cached = _complete.get(cache_key)
+            if cached is not None:
+                return cached.copy(deep=True)
+        try:
+            bars, error, _ = fallback.get_session_bars(ticker, '1Min')
+            if error or not bars:
+                raise ValueError('Consolidated request failed or returned no bars')
+            direct = validated_frame(bars, now)
+            gaps = missing_minutes(direct, now)
+            if gaps:
+                raise ValueError(f'Consolidated session missing {len(gaps)} completed minutes')
+            received = clock()
+            direct.attrs.update(source='tradier_session_1m_direct_v2', coverage_complete=True,
+                                missing_minutes=[], received_at=str(received))
+            persist(ticker=ticker, account=account, now=now, received=received,
+                    missing=[], fallback=direct, accepted=True, error=None)
+            with _cache_lock:
+                _complete[cache_key] = direct.copy(deep=True)
+                while len(_complete) > 128:
+                    _complete.popitem(last=False)
+            logger.debug('research_bar_capture ticker=%s source=tradier completed_minutes=%d missing_minutes=0', ticker, len(direct))
+            return direct
+        except Exception as exc:
+            logger.warning('research_bar_capture ticker=%s preferred_source=tradier failure=%s; checking alternate feed', ticker, exc)
     try:
         bars, error, _ = primary.get_session_bars(ticker, '1Min')
         frame = bars_to_df(bars) if bars and not error else pd.DataFrame()

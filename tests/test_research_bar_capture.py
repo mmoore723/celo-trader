@@ -17,7 +17,37 @@ class BarRecoveryTests(unittest.TestCase):
         self.f = SimpleNamespace(get_session_bars=Mock(return_value=(fallback, False, True)))
         self.persist = Mock()
         self.clock = lambda: datetime(2026,11,3,9,33)
-        return session_frame(self.p,self.f,'COIN',account='paper-A',clock=self.clock,persist=self.persist)
+        return session_frame(self.p,self.f,'COIN',account='paper-A',clock=self.clock,persist=self.persist,prefer_consolidated=False)
+
+    def test_direct_complete_feed_cached_only_within_minute_and_scope(self):
+        from trading.research_bar_capture import _complete
+        _complete.clear()
+        primary=SimpleNamespace(get_session_bars=Mock(return_value=(bars([30]),False,True)))
+        consolidated=SimpleNamespace(get_session_bars=Mock(return_value=(bars([30,31,32,33]),False,True)))
+        persist=Mock()
+        now=datetime(2026,11,3,9,33)
+        def read(account='A'):
+            return session_frame(primary,consolidated,'COIN',account=account,clock=lambda:now,persist=persist)
+        first=read(); self.assertEqual(3,len(first))
+        first.loc[0,'close']=999
+        self.assertNotEqual(999,read().iloc[0]['close'])
+        self.assertEqual(1,consolidated.get_session_bars.call_count)
+        primary.get_session_bars.assert_not_called()
+        read('B'); self.assertEqual(2,consolidated.get_session_bars.call_count)
+        now=datetime(2026,11,3,9,34)
+        self.assertEqual(4,len(read()))
+        self.assertEqual(3,consolidated.get_session_bars.call_count)
+        self.assertEqual([],persist.call_args.kwargs['missing'])
+        self.assertEqual('tradier_session_1m_direct_v2',persist.call_args.kwargs['fallback'].attrs['source'])
+
+    def test_direct_failure_uses_existing_recovery_without_inventing_bars(self):
+        from trading.research_bar_capture import _complete
+        _complete.clear()
+        primary=SimpleNamespace(get_session_bars=Mock(return_value=(bars([30,31,32]),False,True)))
+        consolidated=SimpleNamespace(get_session_bars=Mock(side_effect=TimeoutError('timeout')))
+        result=session_frame(primary,consolidated,'COIN',account='A',clock=lambda:datetime(2026,11,3,9,33),persist=Mock())
+        self.assertEqual(3,len(result))
+        self.assertFalse(_complete)
 
     def test_complete_primary_does_not_request_fallback(self):
         frame=self.run_case(bars([30,31,32]),[])

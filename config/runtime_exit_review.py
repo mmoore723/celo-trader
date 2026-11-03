@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'amzn-vwap-route-20261103.1'
+REVISION = 'research-consolidated-capture-20261103.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 
