@@ -8,6 +8,7 @@ from config import get_settings, DAILY_LOSS_HARD_CAP_PCT
 from database import log_event
 from risk.kill_lock import check_kill_lock, set_kill_lock
 from risk.db_helpers import get_todays_realized_pnl
+from risk.daily_override import serialized_loss_review
 
 logger = logging.getLogger("celo_trader.risk")
 
@@ -17,6 +18,7 @@ class DailyLossLimitReached(Exception):
 
 
 class GuardMixin:
+    @serialized_loss_review
     def check_daily_loss(self, account_balance: float) -> str | None:
         """Use day-open for both checks; persist a halt before requesting exits."""
         from trading.state import get_user_state
@@ -37,6 +39,8 @@ class GuardMixin:
             raise ValueError("Positive day-open and finite current equity required for loss checks")
         if not all(math.isfinite(x) and 0 < x <= 1 for x in (hard_fraction, soft_fraction)):
             raise ValueError("Invalid daily-loss percentages; entries blocked")
+        from risk.daily_override import effective_limits
+        hard_fraction, soft_fraction = effective_limits(day_start, hard_fraction, soft_fraction)
         realized = get_todays_realized_pnl()
         if not math.isfinite(realized):
             raise ValueError("Daily realized P&L is unavailable")

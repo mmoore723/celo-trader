@@ -25,7 +25,21 @@ router = APIRouter(prefix="/api/bot", tags=["bot"])
 def get_halt(request: Request):
     _get_uid(request)
     from risk.halt_controls import halt_status
-    return halt_status()
+    from risk.daily_override import session_date
+    from risk.daily_override import effective_limits
+    from config import get_settings
+    status = {**halt_status(), "session": session_date()}
+    settings = get_settings()
+    try:
+        base = float(settings.get(f"day_start_{status['session']}") or 0)
+        if base > 0:
+            hard, soft = effective_limits(base, float(settings["daily_loss_hard_cap_pct"]) / 100,
+                                          float(settings["max_daily_loss_pct"]))
+            status.update(day_start=base, equity_loss_limit_usd=base * hard,
+                          realized_loss_limit_usd=base * min(hard, soft))
+    except Exception:
+        status["limits_unavailable"] = True
+    return status
 
 
 @router.post("/halt/resume", response_model=BotActionResponse)
@@ -42,12 +56,15 @@ def resume_halt(request: Request, payload: dict):
     try:
         broker, _ = get_clients()
         resume_after_review(broker, day_start=settings.get(f"day_start_{today}"),
-                            settings=settings, realized=get_todays_realized_pnl())
+                            settings=settings, realized=get_todays_realized_pnl(),
+                            temporary_limit_usd=payload.get("temporary_limit_usd"),
+                            session=payload.get("session"))
     except Exception as exc:
         return BotActionResponse(ok=False, message=str(exc))
     from database import log_event
     log_event("INFO", "risk", f"Halt resume completed for user {uid}")
-    return BotActionResponse(ok=True, message="Loss halt cleared. Existing strategy gates and risk limits still apply.")
+    return BotActionResponse(ok=True, message=("Trading resumed with your temporary total daily loss limit until midnight Eastern. Permanent settings unchanged."
+        if payload.get("temporary_limit_usd") is not None else "Loss halt cleared. Existing strategy gates and risk limits still apply."))
 
 
 def _read_bot_state(user_id: str) -> dict[str, Any]:

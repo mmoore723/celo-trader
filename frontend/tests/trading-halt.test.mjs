@@ -29,6 +29,17 @@ test("halt presents explicit resume and keep halted controls", () => {
 test("pending broker exits disable resume", () => {
   assert.match(render({ halted: true, close_pending: true }), /disabled=""/);
 });
+test("resume opens a separate limit-selection dialog, not an immediate API action", () => {
+  const html = render({ halted: true, close_pending: false });
+  assert.match(html, /<dialog/);
+  assert.match(html, /Keep current limits/);
+  assert.match(html, /Set temporary daily stop loss/);
+  assert.match(html, /Confirm and resume/);
+  assert.match(source, /onClick=\{openReview\}/);
+  assert.match(source, /temporary_limit_usd: Number\(amount\)/);
+  assert.match(source, /Includes losses already taken/);
+  assert.doesNotMatch(source, /window.confirm/);
+});
 test("failed status refresh stays visible and disables resume", () => {
   const html = render({ halted: false }, true);
   assert.match(html, /TRADING STATUS UNVERIFIED/);
