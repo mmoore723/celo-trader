@@ -15,6 +15,16 @@ def trades(profits, overlap=False):
 
 
 class PairRecommendationTests(unittest.TestCase):
+    def test_summary_accepts_raw_results_and_reports_missing_dates_honestly(self):
+        from strategy_health.pair_recommendations import summarize
+        dated = summarize(trades([20, -10]))
+        self.assertIsNotNone(dated['period_start'])
+        self.assertIsNotNone(dated['period_end'])
+        missing = summarize([{'pnl': 20}, {'pnl': -10}])
+        self.assertEqual(missing['net_one_contract_pnl'], 10)
+        self.assertIsNone(missing['period_start'])
+        self.assertIsNone(missing['period_end'])
+
     def test_research_entry_version_cannot_enable_a_different_native_rule(self):
         from config.strategy_catalog import REVIEWED_STRATEGIES
         sid = 'V2_FAILED_OR_BREAK_VWAP_REVERSION'

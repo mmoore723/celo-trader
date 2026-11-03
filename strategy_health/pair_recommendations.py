@@ -45,10 +45,19 @@ def summarize(rows):
     profits = [row["pnl"] for row in rows]
     gains = sum(p for p in profits if p > 0)
     losses = -sum(p for p in profits if p < 0)
+    starts, ends = [], []
+    for row in rows:
+        for values, parsed_key, raw_key in ((starts, 'start', 'entry_at'), (ends, 'end', 'exit_at')):
+            value = row.get(parsed_key) or row.get(raw_key)
+            if value is not None:
+                try:
+                    values.append(timestamp(value))
+                except (TypeError, ValueError):
+                    pass
     return {
         "option_results": len(rows),
-        "period_start": min((row["start"] for row in rows), default=None).isoformat() if rows else None,
-        "period_end": max((row["end"] for row in rows), default=None).isoformat() if rows else None,
+        "period_start": min(starts).isoformat() if len(starts) == len(rows) and starts else None,
+        "period_end": max(ends).isoformat() if len(ends) == len(rows) and ends else None,
         "profit_factor": round(gains / losses, 2) if losses else "infinite" if gains else None,
         "net_one_contract_pnl": round(sum(profits), 2),
         "median_one_contract_pnl": round(median(profits), 2) if profits else None,
