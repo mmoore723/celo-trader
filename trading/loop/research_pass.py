@@ -53,12 +53,13 @@ def market_readers(alpaca, tradier):
 
 
 def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stopped):
-    bars, error, _ = alpaca.get_session_bars(ticker, "1Min")
-    if stopped() or error or not bars:
-        return
-    current = bars_to_df(bars)
+    from trading.research_bar_capture import session_frame
     account = settings.get("active_broker_account_id") or None
-    record_scanner_candles(ticker, current, broker_account_id=account)
+    current = session_frame(alpaca, tradier, ticker, account=account, clock=_now_et)
+    if stopped() or current.empty:
+        return
+    record_scanner_candles(ticker, current, broker_account_id=account,
+                           source=current.attrs.get('source', 'alpaca'))
     if not settings.get("shadow_ledger_enabled", True):
         return
     observed = enabled_observation_strategy_ids(settings, ticker=ticker)
@@ -178,6 +179,7 @@ def run_research_pass(readers, snapshot, state, stopped):
                              account=snapshot['settings'].get('active_broker_account_id'), clock=_now_et)
 
     study_ready = False
+    authored_checkpoint = lambda: None
     def study_checkpoint():
         try:
             capture_expiration_study(market=alpaca, options=tradier, settings=snapshot['settings'],
@@ -192,6 +194,7 @@ def run_research_pass(readers, snapshot, state, stopped):
         if not force and now-state.get('profit_checkpoint_at', -float('inf')) < 30:
             return
         state['profit_checkpoint_at'] = now
+        authored_checkpoint()
         from trading.diagnostics.contract_evidence import safe_capture
         safe_capture(reader=tradier, settings=snapshot['settings'], stopped=stopped)
         try:
@@ -228,16 +231,21 @@ def run_research_pass(readers, snapshot, state, stopped):
                     compression_frames[ticker] = bars_to_df(bars)
             return compression_frames[ticker]
 
-        try:
-            capture_authored_exits(
-                account=snapshot["settings"].get("active_broker_account_id"),
-                bars_lookup=exit_bars, quote_lookup=tradier.get_option_quote,
-                stopped=stopped, clock=_now_et,
-                ema_bars_lookup=ema_exit_bars,
-                compression_bars_lookup=compression_exit_bars,
-            )
-        except Exception:
-            logger.warning("Authored exit pass failed; research continues", exc_info=True)
+        def authored_checkpoint():
+            if stopped():
+                return
+            compression_frames.clear()
+            try:
+                capture_authored_exits(
+                    account=snapshot["settings"].get("active_broker_account_id"),
+                    bars_lookup=exit_bars, quote_lookup=tradier.get_option_quote,
+                    stopped=stopped, clock=_now_et,
+                    ema_bars_lookup=ema_exit_bars,
+                    compression_bars_lookup=compression_exit_bars,
+                )
+            except Exception:
+                logger.warning("Authored exit pass failed; research continues", exc_info=True)
+        authored_checkpoint()
         study_ready = True
         study_checkpoint()
     if stopped() or not alpaca.is_market_open():

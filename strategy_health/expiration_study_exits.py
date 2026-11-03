@@ -15,7 +15,7 @@ from strategy_health.exit_protocols import PROTOCOLS, SUPPORTED_PROTOCOL_PAIRS, 
 from strategy_health import context_orb_exit, context_vwap_exit, squeeze_exit
 from strategy_health.impulse_exit import et, executable_bid
 from strategy_health.authored_exit_summary import net_profit
-from trading.expiration_study_selection import PROFILE
+from trading.expiration_study_selection import PROFILE, PROFILES
 
 # These five timers ARE the authored exits, not generic substitute checkpoints.
 TIMED = {
@@ -34,7 +34,7 @@ ACTIVE = {'collecting', 'pending_quote'}
 
 def initialize(*, strategy_id, direction, trigger_bar, meta, selection):
     """Freeze candidate inputs and original selection; never enroll old prices."""
-    if selection.get('profile_version') != PROFILE:
+    if selection.get('profile_version') not in PROFILES:
         raise ValueError('Wrong contract-study profile')
     if strategy_id not in PROTOCOL_BY_STRATEGY:
         raise ValueError('No authored exit for this strategy')
@@ -45,7 +45,7 @@ def initialize(*, strategy_id, direction, trigger_bar, meta, selection):
     if not meta.get('strategy_version') or direction not in {'bullish', 'bearish'}:
         raise ValueError('Missing strategy version or direction')
     contract = selection.get('contract')
-    state = dict(profile_version=PROFILE, strategy_id=strategy_id,
+    state = dict(profile_version=selection['profile_version'], strategy_id=strategy_id,
                  strategy_version=meta['strategy_version'], protocol=meta.get('authored_exit_protocol') if strategy_id in PROTOCOLS else PROTOCOL_BY_STRATEGY[strategy_id],
                  direction=direction, trigger_bar=et(trigger_bar).isoformat(), meta=deepcopy(meta),
                  status='collecting' if contract else 'no_contract', reason=None,
@@ -88,7 +88,7 @@ def advance(state, *, frame=None, now, quote=None):
     if out['status'] not in ACTIVE:
         return out
     sid = out['strategy_id']
-    if out['profile_version'] != PROFILE or (PROTOCOL_BY_STRATEGY.get(sid) != out['protocol']
+    if out['profile_version'] not in PROFILES or (PROTOCOL_BY_STRATEGY.get(sid) != out['protocol']
             and (sid, out['protocol']) not in SUPPORTED_PROTOCOL_PAIRS):
         raise ValueError('Unknown exit/profile identity')
     now = et(now)

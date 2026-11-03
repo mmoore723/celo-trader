@@ -181,6 +181,29 @@ class ExpirationWorkerTests(unittest.TestCase):
         options.get_option_quote.assert_called_once_with(self.symbol)
         self.assertEqual(before, self.primary())
 
+    def test_low_premium_enrolls_and_captures_separately(self):
+        from trading.expiration_study_selection import LOW_PREMIUM_PROFILE
+        before = self.primary()
+        self.source.chain[0].update(bid=.49, ask=.50)
+        self.source.quote.update(bid=.49, ask=.50)
+        with research_settings_snapshot(get_current_user_id(), self.settings):
+            self.enroll()
+            self.enroll()
+        with self.fixture.connect() as conn:
+            low = ledger.load(conn, account='a', profile=LOW_PREMIUM_PROFILE)
+        self.assertEqual(1,len(low))
+        self.assertEqual('collecting',low[0]['state']['status'])
+        self.assertNotEqual('collecting',self.rows()[0]['state']['status'])
+        stats = ledger.capture(connect=self.fixture.connect,account='a',
+                               bars_lookup=lambda ticker:self.fixture.frame,
+                               quote_lookup=lambda symbol:dict(symbol=symbol,source_symbol=symbol,bid=.3,ask=.31,bid_date='2026-09-10T10:15:30'),
+                               clock=lambda:self.fixture.now)
+        self.assertEqual(0,stats['failed_rows'])
+        with self.fixture.connect() as conn:
+            low = ledger.load(conn,account='a',profile=LOW_PREMIUM_PROFILE)
+        self.assertEqual('priced',low[0]['state']['status'])
+        self.assertEqual(before,self.primary())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -10,7 +10,7 @@ from database.connection import get_conn
 from database import expiration_study as ledger
 from strategy_health.impulse_exit import et
 from strategy_health.expiration_study_exits import PROTOCOL_BY_STRATEGY
-from trading.expiration_study_selection import PROFILE, select
+from trading.expiration_study_selection import PROFILE, PROFILES, select
 
 logger = logging.getLogger('celo_trader.research')
 
@@ -67,6 +67,12 @@ def _account(settings):
 
 
 def observe(*, signal, ticker, price, reader, settings, clock, stopped=lambda: False):
+    for profile in PROFILES:
+        _observe_profile(signal=signal, ticker=ticker, price=price, reader=reader,
+                         settings=settings, clock=clock, stopped=stopped, profile=profile)
+
+
+def _observe_profile(*, signal, ticker, price, reader, settings, clock, stopped, profile):
     """Called only after primary observation; never backfill historical setups."""
     scope = _account(settings)
     meta = getattr(signal, 'meta', {})
@@ -80,13 +86,13 @@ def observe(*, signal, ticker, price, reader, settings, clock, stopped=lambda: F
             WHERE s.candidate_id=? AND COALESCE(s.broker_account_id,'')=?
             AND NOT EXISTS (SELECT 1 FROM research_expiration_comparisons e
                 WHERE e.candidate_id=s.candidate_id AND e.profile_version=?)''',
-            (candidate_id, scope[0], PROFILE)).fetchone()
+            (candidate_id, scope[0], profile)).fetchone()
     if (row is None or row['strategy_id'] != sid or row['ticker'] != ticker
             or row['direction'] != getattr(signal, 'direction', None)):
         return
     before = dict(reader.reads)
     selection = select(reader, ticker=ticker, direction=row['direction'], underlying_price=price,
-                       setup_at=row['observed_at'], clock=clock)
+                       setup_at=row['observed_at'], clock=clock, profile=profile)
     selection['provider_reads'] = {key: reader.reads[key]-before[key] for key in before}
     if stopped():
         return
@@ -101,8 +107,8 @@ def capture(*, market, options, settings, worker_state, stopped, clock):
         return
     from signals import bars_to_df
     def bars(ticker):
-        values, error, _ = market.get_session_bars(ticker, '1Min')
-        return bars_to_df(values) if values and not error else pd.DataFrame()
+        from trading.research_bar_capture import session_frame
+        return session_frame(market, options, ticker, account=scope[0], clock=clock)
     def native_bars(ticker):
         from trading.research_ema_history import native_ema_history
         frame = native_ema_history(market, ticker, worker_state, clock(), scope[0]).copy()

@@ -7,7 +7,7 @@ from copy import deepcopy
 import json
 
 from strategy_health.impulse_exit import et
-from trading.expiration_study_selection import PROFILE
+from trading.expiration_study_selection import PROFILE, PROFILES
 from strategy_health.expiration_study_exits import initialize, advance, ACTIVE, TIMED
 
 TABLE = 'research_expiration_comparisons'
@@ -43,11 +43,11 @@ def record(conn, *, account, candidate_id, selection):
                        trigger_bar=row['trigger_bar'], meta=json.loads(row['metadata_json']), selection=selection)
     result = conn.execute('''INSERT OR IGNORE INTO research_expiration_comparisons
         (candidate_id,profile_version,selection_json,state_json,active) VALUES (?,?,?,?,?)''',
-        (candidate_id, PROFILE, encoded(selection), encoded(state), int(state['status'] in ACTIVE)))
+        (candidate_id, state['profile_version'], encoded(selection), encoded(state), int(state['status'] in ACTIVE)))
     return bool(result.rowcount)
 
 
-def load(conn, *, account, active_only=False, cutoff=None, summary_only=False):
+def load(conn, *, account, active_only=False, cutoff=None, summary_only=False, profile=PROFILE):
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (TABLE,)).fetchone():
         return []
     columns = ("e.candidate_id,s.ticker,json_remove(e.state_json,'$.meta') AS state_json,"
@@ -58,7 +58,7 @@ def load(conn, *, account, active_only=False, cutoff=None, summary_only=False):
         WHERE e.profile_version=? AND COALESCE(s.broker_account_id,'')=?'''
         + (' AND e.active=1' if active_only else '')
         + (' AND s.observed_at>=?' if cutoff else '') + ' ORDER BY s.observed_at,s.candidate_id',
-        (PROFILE, account or '') + ((cutoff,) if cutoff else ()))
+        (profile, account or '') + ((cutoff,) if cutoff else ()))
     if summary_only:
         return [dict(candidate_id=row['candidate_id'], ticker=row['ticker'],
                      state=json.loads(row['state_json']), selection=json.loads(row['selection_json']))
@@ -85,7 +85,7 @@ def save_transition(conn, *, account, row, state):
         WHERE candidate_id=? AND profile_version=? AND state_json=?
         AND EXISTS (SELECT 1 FROM shadow_candidates s WHERE s.candidate_id=research_expiration_comparisons.candidate_id
         AND COALESCE(s.broker_account_id,'')=?)''',
-        (encoded(deepcopy(state)), int(state['status'] in ACTIVE), row['candidate_id'], PROFILE,
+        (encoded(deepcopy(state)), int(state['status'] in ACTIVE), row['candidate_id'], before['profile_version'],
          row['state_json'], account or ''))
     return bool(result.rowcount)
 
@@ -103,7 +103,7 @@ def capture(*, connect, account, bars_lookup, quote_lookup, clock, stopped=lambd
     if stopped():
         return dict(rows=0, bars_reads=0, quote_reads=0, failed_rows=0)
     with connect() as conn:
-        rows = load(conn, account=account, active_only=True)
+        rows = [row for profile in PROFILES for row in load(conn, account=account, active_only=True, profile=profile)]
     rows.sort(key=lambda r: r['state']['status'] != 'pending_quote')
     stats = dict(rows=0, bars_reads=0, quote_reads=0, failed_rows=0)
     frames, quotes = {}, {}

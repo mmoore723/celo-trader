@@ -82,6 +82,22 @@ class LongerExpirationSelectionTests(unittest.TestCase):
         self.assertEqual(2.1, result['contract']['ask'])
         self.assertEqual(SETUP.isoformat(), result['contract']['entry_quote_at'])
 
+    def test_low_premium_profile_is_separate_and_spread_limit_unchanged(self):
+        from trading.expiration_study_selection import LOW_PREMIUM_PROFILE
+        self.reader.chain = [option(bid=.49, ask=.50)]
+        self.reader.quote.update(bid=.49, ask=.50)
+        self.assertEqual('no_contract_in_profile', self.run_selection()['reason'])
+        result = self.run_selection(profile=LOW_PREMIUM_PROFILE)
+        self.assertEqual('selected', result['status'])
+        self.assertEqual(LOW_PREMIUM_PROFILE, result['profile_version'])
+        self.assertEqual((.25,1.49,.08), (result['minimum_ask'],result['maximum_ask'],result['maximum_spread_pct']))
+        self.reader.chain = [option(bid=.40, ask=.50)]
+        self.assertEqual('no_contract_in_profile', self.run_selection(profile=LOW_PREMIUM_PROFILE)['reason'])
+
+    def test_unknown_profile_cannot_silently_change_limits(self):
+        with self.assertRaises(KeyError):
+            self.run_selection(profile='unknown')
+
     def test_chain_inputs_and_listing_are_not_mutated(self):
         before = deepcopy((self.reader.listing, self.reader.chain, self.reader.quote))
         self.run_selection()

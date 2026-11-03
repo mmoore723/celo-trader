@@ -39,6 +39,7 @@ class ResearchPassTests(unittest.TestCase):
         ) as observe, patch('trading.loop.research_pass.maybe_observe'):
             run_research_pass((Mock(), Mock()), dict(settings={},tickers=['SPY','META'],risk=Mock(),balance=4000), {}, lambda:False)
         self.assertEqual(2,self.profit.call_count)
+        self.assertEqual(2,self.exits.call_count)
         self.assertEqual(['SPY','META'],[call.args[2] for call in observe.call_args_list])
 
     def test_all_watchlist_names_archive_when_entry_strategies_are_disabled(self):

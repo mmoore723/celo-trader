@@ -11,6 +11,8 @@ import re
 from strategy_health.impulse_exit import et, executable_bid
 
 PROFILE = 'expiration_8_21_nearest_v1'
+LOW_PREMIUM_PROFILE = 'expiration_8_21_low_premium_v1'
+PROFILES = {PROFILE: (1.50, 10.00), LOW_PREMIUM_PROFILE: (.25, 1.49)}
 MIN_DTE, MAX_DTE = 8, 21
 MIN_ASK, MAX_ASK = 1.50, 10.00
 MAX_SPREAD_PCT = .08
@@ -35,24 +37,25 @@ def identity_matches(symbol, *, ticker, expiry, direction, strike):
         return False
 
 
-def _valid_price(bid, ask):
+def _valid_price(bid, ask, bounds=(MIN_ASK, MAX_ASK)):
     return (all(math.isfinite(v) for v in (bid, ask)) and 0 < bid <= ask
-            and MIN_ASK <= ask <= MAX_ASK
+            and bounds[0] <= ask <= bounds[1]
             and (ask-bid)/((ask+bid)/2) <= MAX_SPREAD_PCT)
 
 
-def select(readers, *, ticker, direction, underlying_price, setup_at, clock):
+def select(readers, *, ticker, direction, underlying_price, setup_at, clock, profile=PROFILE):
     """Read at most one listing, one nearest-expiry chain, one selected quote.
 
     Never fall through to a later expiry or second contract after the selected
     quote fails. Never reuse today's data to reprice an expired setup. Quote
     refresh may invalidate a chain selection but cannot expand its price rules.
     """
+    bounds = PROFILES[profile]
     setup, started = et(setup_at), et(clock())
-    info = dict(profile_version=PROFILE, status='not_selected', reason=None,
+    info = dict(profile_version=profile, status='not_selected', reason=None,
                 setup_at=setup.isoformat(), selection_started_at=started.isoformat(),
                 minimum_dte=MIN_DTE, maximum_dte=MAX_DTE,
-                minimum_ask=MIN_ASK, maximum_ask=MAX_ASK,
+                minimum_ask=bounds[0], maximum_ask=bounds[1],
                 maximum_spread_pct=MAX_SPREAD_PCT,
                 reads=dict(expirations=0, chain=0, quote=0), contract=None)
 
@@ -116,7 +119,7 @@ def select(readers, *, ticker, direction, underlying_price, setup_at, clock):
             bid, ask, strike = (float(row[key]) for key in ('bid', 'ask', 'strike'))
             symbol = str(row.get('symbol') or '')
             otm = strike > price if direction == 'bullish' else strike < price
-            if not symbol or not math.isfinite(strike) or strike <= 0 or not otm or not _valid_price(bid, ask):
+            if not symbol or not math.isfinite(strike) or strike <= 0 or not otm or not _valid_price(bid, ask, bounds):
                 continue
             if not identity_matches(symbol, ticker=ticker, expiry=expiry, direction=direction, strike=strike):
                 info['identity_rejections'] += 1
@@ -148,7 +151,7 @@ def select(readers, *, ticker, direction, underlying_price, setup_at, clock):
     if not bid_quote or not ask_quote:
         return finish('entry_quote_unusable')
     bid, ask = float(quote['bid']), float(quote['ask'])
-    if not _valid_price(bid, ask):
+    if not _valid_price(bid, ask, bounds):
         return finish('refreshed_quote_outside_profile')
     info.update(status='selected', contract=dict(symbol=symbol, expiry=expiry, strike=strike,
                 bid=bid, ask=ask, bid_at=bid_quote[1], ask_at=ask_quote[1],
