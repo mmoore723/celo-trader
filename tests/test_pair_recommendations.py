@@ -15,6 +15,22 @@ def trades(profits, overlap=False):
 
 
 class PairRecommendationTests(unittest.TestCase):
+    def test_saved_activation_overrides_stale_snapshot_for_every_registered_pair(self):
+        from config.research_order_specs import SPECS
+        from config.admin_strategy_overrides import updates
+        from copy import deepcopy
+        evidence = assess(trades([20,20,-10,20,-10]*4))
+        for sid, spec in SPECS.items():
+            ticker = spec.allowed_tickers[0] if spec.allowed_tickers else 'QQQ'
+            matrix = {'strategies':[{'strategy_id':spec.source,'version':spec.version,'display_name':spec.name,
+                       'pairs':[{'ticker':ticker,'tradable':False,'recommendation':evidence}]}]}
+            original = deepcopy(matrix)
+            settings = updates({}, sid, ticker, spec.version, True, 'admin')
+            self.assertEqual([], recommendations(matrix, settings)['recommendations'], sid)
+            self.assertEqual(original, matrix)
+            settings.update(updates(settings,sid,ticker,spec.version,False,'admin'))
+            self.assertEqual('new_match', recommendations(matrix, settings)['recommendations'][0]['kind'])
+
     def test_summary_accepts_raw_results_and_reports_missing_dates_honestly(self):
         from strategy_health.pair_recommendations import summarize
         dated = summarize(trades([20, -10]))

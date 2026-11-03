@@ -148,13 +148,21 @@ def recommendations(matrix, settings):
             if is_retired(settings, sid, strategy['version']):
                 continue
             rule = REVIEWED_STRATEGIES.get(sid)
+            # Evidence snapshots may predate an explicit activation. Resolve
+            # current grants from settings without rewriting cached evidence.
+            tradable = pair['tradable']
+            from config.admin_strategy_overrides import active, key as grant_key
+            if grant_key(sid, pair['ticker']) in (settings.get('admin_strategy_overrides') or {}):
+                tradable = bool(rule and rule.version == strategy['version']
+                                and settings.get(rule.setting_key, False)
+                                and active(settings, sid, pair['ticker']))
             evidence = pair.get("recommendation") or {}
             from strategy_health.closed_trade_guard import is_paused
             paused = (settings.get('strategy_pair_pauses') or {}).get(consent_scope(settings, sid, pair['ticker'])) is True
             paused = paused or bool(rule and is_paused(settings, sid, pair['ticker'], rule.version))
-            if pair['tradable'] and paused:
+            if tradable and paused:
                 continue
-            kind = "review_active" if pair["tradable"] and evidence.get("review_active") else "new_match" if not pair["tradable"] and evidence.get("qualified") else None
+            kind = "review_active" if tradable and evidence.get("review_active") else "new_match" if not tradable and evidence.get("qualified") else None
             if kind is None:
                 continue
             key = f"{consent_scope(settings, sid, pair['ticker'])}:{kind}"
