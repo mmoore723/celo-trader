@@ -34,7 +34,24 @@ class BarRecoveryTests(unittest.TestCase):
 
     def test_incomplete_fallback_never_fabricates_minutes(self):
         frame=self.run_case(bars([30]),bars([30,32]))
-        self.assertEqual(1,len(frame));self.assertFalse(self.persist.call_args.kwargs['accepted'])
+        self.assertEqual(2,len(frame));self.assertTrue(self.persist.call_args.kwargs['accepted'])
+        self.assertFalse(frame.attrs['coverage_complete'])
+        self.assertEqual([datetime(2026,11,3,9,31)],missing_minutes(frame,self.clock()))
+        self.assertEqual('tradier_session_1m_partial_recovery_v1',frame.attrs['source'])
+
+    def test_replacement_cannot_lose_existing_minutes(self):
+        frame=self.run_case(bars([31]),bars([30,32]))
+        self.assertEqual(1,len(frame))
+        self.assertFalse(self.persist.call_args.kwargs['accepted'])
+
+    def test_same_sparse_coverage_is_not_a_recovery(self):
+        self.run_case(bars([30]),bars([30]))
+        self.assertFalse(self.persist.call_args.kwargs['accepted'])
+
+    def test_invalid_partial_candles_rejected(self):
+        bad=bars([30,32]);bad[1]['l']=105
+        self.run_case(bars([30]),bad)
+        self.assertFalse(self.persist.call_args.kwargs['accepted'])
 
     def test_previous_session_and_duplicate_fallback_rejected(self):
         for fallback in (bars([30,30,31,32]),[{**b,'t':b['t'].replace('11-03','11-02')} for b in bars([30,31,32])]):

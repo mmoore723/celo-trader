@@ -38,12 +38,16 @@ def record_recovery(*, ticker, account, now, received, missing, fallback, accept
             (broker_account_id,ticker,requested_at,received_at,source,
              missing_primary_json,accepted,error,bars_json) VALUES (?,?,?,?,?,?,?,?,?)''',
             (account, ticker, et(now).isoformat(), et(received).isoformat(),
-             'tradier_session_1m_recovery_v1', json.dumps([str(x) for x in missing]),
+             fallback.attrs.get('source', 'tradier_session_1m_recovery_v1'), json.dumps([str(x) for x in missing]),
              int(accepted), error, payload))
 
 
 def session_frame(primary, fallback, ticker, *, account, clock, persist=record_recovery):
-    """One fallback read per lookup; only a complete, valid same-session frame wins."""
+    """Accept a valid complete frame or a strictly better coverage superset.
+
+    Never merge feeds, manufacture bars, or remove a minute present in primary.
+    Partial recovery is not completion: downstream policy gap checks still apply.
+    """
     now = clock()
     try:
         bars, error, _ = primary.get_session_bars(ticker, '1Min')
@@ -62,8 +66,9 @@ def session_frame(primary, fallback, ticker, *, account, clock, persist=record_r
         if error or not bars:
             raise ValueError('Fallback request failed or returned no bars')
         replacement = bars_to_df(bars)
-        if missing_minutes(replacement, now):
-            raise ValueError('Fallback still lacks completed session minutes')
+        remaining = missing_minutes(replacement, now)
+        if not set(remaining) < set(missing):
+            raise ValueError('Fallback does not strictly improve completed-minute coverage')
         values = replacement[['open', 'high', 'low', 'close']].astype(float)
         import numpy as np
         if not np.isfinite(values.to_numpy()).all() or (values <= 0).any().any():
@@ -72,14 +77,20 @@ def session_frame(primary, fallback, ticker, *, account, clock, persist=record_r
                 (values.high >= values[['open', 'close']].max(axis=1))).all():
             raise ValueError('Inconsistent fallback OHLC')
         accepted = True
+        replacement.attrs.update(
+            source=('tradier_session_1m_partial_recovery_v1' if remaining
+                    else 'tradier_session_1m_recovery_v1'),
+            coverage_complete=not remaining,
+            missing_minutes=[str(x) for x in remaining])
     except Exception as exc:
         failure = str(exc)
     received = clock()
     persist(ticker=ticker, account=account, now=now, received=received,
             missing=missing, fallback=replacement, accepted=accepted, error=failure)
-    logger.info('research_bar_recovery ticker=%s missing_minutes=%d accepted=%s error=%s',
-                ticker, len(missing), accepted, failure)
+    logger.info('research_bar_recovery ticker=%s missing_minutes=%d accepted=%s remaining_minutes=%s error=%s',
+                ticker, len(missing), accepted,
+                len(replacement.attrs.get('missing_minutes', [])) if accepted else 'unknown', failure)
     if accepted:
-        replacement.attrs.update(source='tradier_session_1m_recovery_v1', received_at=str(received))
+        replacement.attrs.update(received_at=str(received))
         return replacement
     return frame
