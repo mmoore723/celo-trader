@@ -120,6 +120,16 @@ class EvidenceTests(unittest.TestCase):
                 self.record('two')
         self.assertEqual(1, len(self.read('selections')))
 
+    def test_capture_resumes_after_budget_increase_without_rewriting_evidence(self):
+        self.record()
+        original = [dict(r) for r in self.read('selections')]
+        with patch.object(evidence,'MAX_BYTES',16384):
+            with self.assertRaises((ValueError,__import__('sqlite3').DatabaseError)):
+                self.record('blocked')
+        self.assertTrue(self.record('new'))
+        self.assertEqual(original[0],dict(self.read('selections')[0]))
+        self.assertEqual(2,len(self.read('selections')))
+
     def test_symlink_rejected_and_stop_prevents_reads(self):
         other = self.target.with_name('link.sqlite3')
         other.symlink_to(self.target)

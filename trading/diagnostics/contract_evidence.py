@@ -20,7 +20,7 @@ from config.paths import get_user_data_dir
 from trading.diagnostics.native_coverage import PAIRS, warn
 
 PROTOCOL = 'contract_selection_capture_v1'
-MAX_BYTES = 64 * 1024 * 1024
+MAX_BYTES = 512 * 1024 * 1024
 MAX_SNAPSHOT = 512 * 1024
 MAX_CHAIN_ROWS = 2000
 MAX_WATCHES = 9
@@ -75,7 +75,11 @@ def connect(target):
                     minute TEXT NOT NULL, observed TEXT NOT NULL, payload TEXT NOT NULL,
                     PRIMARY KEY(account,session,symbol,minute));
             ''')
-            if conn.execute('PRAGMA page_count').fetchone()[0] * size > MAX_BYTES - 1024 * 1024:
+            used = (conn.execute('PRAGMA page_count').fetchone()[0]
+                    - conn.execute('PRAGMA freelist_count').fetchone()[0]) * size
+            if used >= MAX_BYTES * .8:
+                warn('contract_storage_above_80_percent')
+            if used > MAX_BYTES - 1024 * 1024:
                 raise ValueError('contract_storage_budget_reached')
             yield conn
             conn.commit()
