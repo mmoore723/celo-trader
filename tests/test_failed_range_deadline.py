@@ -8,9 +8,9 @@ from trading.position_manager.manage import _manage_open_position
 
 
 class FailedRangeDeadlineTests(TestCase):
-    def run_case(self, now, paper=True, session=True):
+    def run_case(self, now, paper=True, session=True, ticker='QQQ'):
         trade = position('RESEARCH_FAILED_RANGE_V2')
-        trade.update(id=293, ticker='QQQ', contracts=6, entry_price=1.61,
+        trade.update(id=293, ticker=ticker, contracts=6, entry_price=1.61,
                      entry_time='2026-10-14T10:35:27.447130-04:00')
         state = {'positions': {}}
         broker, market = Mock(), Mock()

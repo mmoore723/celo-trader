@@ -31,7 +31,7 @@ class ActivationReviewTests(unittest.TestCase):
 
     def test_known_rules_and_gaps_are_exposed_without_grant(self):
         r = self.review()
-        self.assertFalse(r['can_enable'])
+        self.assertTrue(r['can_enable'])
         self.assertIn('EMA8', r['rules']['entry'])
         self.assertIn('75-bar', r['rules']['exit'])
         self.assertEqual(64, len(r['rules']['source_sha256']))

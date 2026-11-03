@@ -12,6 +12,7 @@ class ResearchOrderSpec:
 
 
 SPECS = {
+    'V2_VWAP_PULLBACK': ResearchOrderSpec('V2_VWAP_PULLBACK', 'VWAP Pullback', 'research.1', 5, 90, ('AMZN',)),
     'RESEARCH_QQQ_TREND_V2': ResearchOrderSpec('V2_SPY_TREND_CONT', 'Trend Continuation', '2.1.0', 5, 30, ('QQQ',)),
     'V2_AFTERNOON_COMPRESSION_BREAKOUT': ResearchOrderSpec('V2_AFTERNOON_COMPRESSION_BREAKOUT', 'Afternoon Compression Breakout', 'research.2', 1, 30),
     'V2_GAP_FILL_RTH': ResearchOrderSpec('V2_GAP_FILL_RTH', 'Gap Fill', 'research.2', 5, 90),

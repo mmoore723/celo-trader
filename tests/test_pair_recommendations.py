@@ -82,7 +82,8 @@ class PairRecommendationTests(unittest.TestCase):
         self.assertEqual(16, len(result["recommendations"]))
         from config.research_order_specs import SPECS
         for row in result['recommendations']:
-            self.assertEqual(row['strategy_id'] in SPECS, row['can_enable'])
+            spec = SPECS.get(row['strategy_id'])
+            self.assertEqual(bool(spec and (not spec.allowed_tickers or 'META' in spec.allowed_tickers)), row['can_enable'])
         first = next(row for row in result["recommendations"] if not row['can_enable'])
         with self.assertRaises(ValueError):
             decide(matrix, {}, first["strategy_id"], "META", "enable", evidence["fingerprint"])

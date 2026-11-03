@@ -114,6 +114,7 @@ _DEFAULTS = {
     "enable_research_ctx_orb_atr10_v2": False,
     "enable_research_failed_range_v2": False,
     "enable_research_qqq_trend_v2": False,
+    "enable_v2_vwap_pullback": False,
     "strategy_orb_pullback_v2_enabled": True,
     # Passed the separately held-back SPY option-quote data at the reviewed
     # 30-minute same-contract exit. Enable it for new accounts just as the
