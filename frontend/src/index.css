@@ -98,6 +98,7 @@ html, body, #root {
 .app-topbar  { grid-area: topbar; }
 .app-sidebar { grid-area: sidebar; }
 .app-main    { grid-area: main; overflow-y: auto; background: var(--panel); position: relative; z-index: 1; }
+.app-alerts { position: sticky; top: 0; z-index: 40; max-height: 60vh; overflow-y: auto; }
 
 /* ── Card ───────────────────────────────────────────────────────────────── */
 .card {

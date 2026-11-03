@@ -37,3 +37,10 @@ test("failed status refresh stays visible and disables resume", () => {
 test("no loss halt produces no warning", () => {
   assert.equal(render({ halted: false }), "");
 });
+test("halt banners live inside the scrollable main area, not implicit sidebar grid cells", () => {
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /<main className="app-main"[^>]*>\s*<div className="app-alerts">\s*<BrokerAlertBanner \/>\s*<TradingHaltBanner \/>/);
+  assert.match(source, /result.ok === true/);
+  assert.match(source, /Still halted:/);
+  assert.match(source, /result.detail/);
+});

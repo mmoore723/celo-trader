@@ -15,9 +15,9 @@ export function TradingHaltBanner() {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scope: halt.data?.scope }),
       });
-      if (!response.ok) throw new Error("Resume request failed. Halt remains unchanged.");
       const result = await response.json();
-      setMessage(result.message);
+      if (!response.ok) throw new Error(result.detail || "Resume request failed. Halt remains unchanged.");
+      setMessage(result.ok === true ? result.message : `Still halted: ${result.message || "Broker review did not approve resuming."}`);
       await halt.refetch();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Resume failed.");
@@ -25,11 +25,11 @@ export function TradingHaltBanner() {
   }
   if (!halt.data?.halted && !halt.isError) return message ? <div role="status" className="p-3">{message}</div> : null;
   return <section role="alert" aria-live="assertive" className="bg-red-900 text-white p-4 flex flex-wrap items-center gap-3">
-    <div className="flex-1">
+    <div className="flex-1 min-w-0 basis-full sm:basis-64">
       <strong>{halt.isError ? "TRADING STATUS UNVERIFIED" : "TRADING HALTED: new entries blocked"}</strong>
       <p>{halt.isError ? "Cannot refresh halt status. Do not assume the bot is trading." : halt.data?.reason}</p>
       {halt.data?.close_pending && <p>Emergency exits are awaiting broker confirmation. Resume is unavailable until they finish.</p>}
-      <p>{message || "Choose whether to keep the halt or request a fresh broker check to resume. Risk limits remain unchanged."}</p>
+      <p role="status">{message || "Resume checks the broker and your existing loss limits. It cannot override a breached limit."}</p>
     </div>
     <button className="border rounded px-3 py-2" onClick={() => setMessage("Kept halted. No settings or limits changed.")}>Keep halted</button>
     <button className="bg-white text-red-900 rounded px-3 py-2 disabled:opacity-50" disabled={busy || halt.isError || halt.data?.close_pending} onClick={resume}>{busy ? "Checking broker..." : "Resume trading"}</button>

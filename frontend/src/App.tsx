@@ -105,11 +105,13 @@ function AppShell() {
           pointerEvents: "none", userSelect: "none", zIndex: 2,
         }}
       />
-      <BrokerAlertBanner />
-      <TradingHaltBanner />
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>
+        <div className="app-alerts">
+          <BrokerAlertBanner />
+          <TradingHaltBanner />
+        </div>
         <ErrorBoundary>
         <Suspense fallback={<PageLoader label="Loading workspace" />}>
         <Routes>
