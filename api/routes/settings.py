@@ -91,6 +91,40 @@ class AdminStrategyOverridePayload(BaseModel):
     enabled: bool
 
 
+class ActivationReviewPayload(BaseModel):
+    version: str
+    token: str
+    choice: str
+    notes: str = Field(default='', max_length=4000)
+    acknowledged: bool = False
+
+
+@router.get('/strategies/activation/{strategy_id}/{ticker}')
+def get_activation_review(strategy_id: str, ticker: str, version: str, request: Request):
+    if not getattr(request.state, 'is_admin', False):
+        raise HTTPException(403, 'Admin access required')
+    from config import get_settings
+    from api.recommendation_snapshot import for_decision
+    from strategy_health.activation_review import dossier
+    settings = get_settings()
+    try:
+        return dossier(for_decision(settings), settings, strategy_id, ticker, version)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post('/strategies/activation/{strategy_id}/{ticker}')
+def approve_activation_review(strategy_id: str, ticker: str, payload: ActivationReviewPayload, request: Request):
+    review = get_activation_review(strategy_id, ticker, payload.version, request)
+    from config import get_settings
+    from strategy_health.activation_review import approve
+    try:
+        return approve(review, get_settings(), payload.token, payload.choice, payload.notes,
+                       payload.acknowledged, request.state.user_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @router.get('/strategies/admin-controls')
 def get_admin_strategy_controls(request: Request) -> dict:
     if not getattr(request.state, 'is_admin', False):

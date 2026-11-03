@@ -7,6 +7,7 @@ import ts from "typescript";
 import { resolveStrategyIdentity } from "./strategy-identity-loader.mjs";
 const source = readFileSync(new URL("../src/components/settings/StrategyRecommendations.tsx", import.meta.url), "utf8");
 let compiled = ts.transpileModule(source, {compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext}}).outputText;
+compiled = compiled.replace('import { request } from "../../lib/api";', 'const request = async () => { throw new Error("No API calls during static render"); };');
 for (const name of ["react", "react-dom", "react/jsx-runtime"]) compiled = compiled.replaceAll(JSON.stringify(name), JSON.stringify(import.meta.resolve(name)));
 const {StrategyRecommendations} = await import(`data:text/javascript;base64,${Buffer.from(resolveStrategyIdentity(compiled)).toString("base64")}`);
 const render = recommendations => renderToStaticMarkup(createElement(StrategyRecommendations, {recommendations, onDecision: async () => {}}));
@@ -31,7 +32,7 @@ test("a losing active pair offers research-only or keep-trading without an enabl
 test("qualified research without an execution adapter never offers a working enable button", () => {
   const html = render([{...fixture, kind: "new_match", can_enable: false, blocker: "Execution implementation needed"}]);
   assert.match(html, /Execution implementation needed/);
-  assert.match(html, /Why unavailable\?/);
+  assert.match(html, /Review activation/);
   assert.doesNotMatch(html, /Turn on ·/);
   assert.doesNotMatch(html, /disabled=""/);
   assert.match(html, /Keep off/);
@@ -41,12 +42,18 @@ test("qualified research without an execution adapter never offers a working ena
 test("blocked enable opens an explanation before any confirmation or mutation", () => {
   const guard = source.indexOf('if (action === "enable" && !item.can_enable)');
   assert.ok(guard >= 0 && guard < source.indexOf('window.confirm'));
-  assert.match(source, /setBlocked\(item\); return/);
-  assert.match(source, /Nothing was enabled/);
-  assert.match(source, /onCancel=\{\(\) => setBlocked\(null\)\}/);
+  assert.match(source, /await openReview\(item\); return/);
+  assert.match(source, /does not enable trading/);
+  assert.match(source, /onCancel=/);
 });
 test("executable recommendations retain their explicit turn-on action", () => {
   const html = render([{...fixture, kind: "new_match", can_enable: true}]);
-  assert.match(html, /Turn on · paper/);
+  assert.match(html, /Review activation/);
   assert.doesNotMatch(html, /Why unavailable/);
+});
+test('guided approval is version-bound and distinct from trading activation', () => {
+  assert.match(source, /token: review.token/);
+  assert.match(source, /Save implementation approval/);
+  assert.match(source, /review.can_enable && review.approval\?\.status === 'implementation_approved'/);
+  assert.match(source, /review.tests/);
 });
