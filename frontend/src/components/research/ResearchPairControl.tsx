@@ -38,15 +38,15 @@ export function ResearchPairControl({ strategyId, version, ticker, name, trading
     } finally { setBusy(false); }
   }
   return <div className="px-3 pb-3 text-xs">
-    {saved ? <p role="status" style={{ color: 'var(--positive)' }}>Pair permission saved. Account mode and risk limits unchanged. New entries still require valid signals and safety checks.</p>
-      : <button type="button" className="btn btn-primary btn-sm" onClick={() => { setComparing(trading); setConfirming(true); setError(''); }}>{trading ? 'Review tests' : 'Turn on pair'}</button>}
+    {saved && <p role="status" style={{ color: 'var(--positive)' }}>Pair permission saved. Account mode and risk limits unchanged. New entries still require valid signals and safety checks.</p>}
+    <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => { setSaved(false); setComparing(trading); setConfirming(true); setError(''); }}>{trading ? 'Review tests' : 'Turn on pair'}</button>
     {confirming && createPortal(<dialog open={false} ref={node => { if (node && !node.open) node.showModal(); }}
       onCancel={event => { if (busy) event.preventDefault(); else setConfirming(false); }}
       aria-label={`Test choices for ${ticker} ${name}`} className="card p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto text-sm"
       style={{ color: 'var(--ink)', background: 'var(--surface)', margin: 'auto' }}>
       <div className="space-y-4">
         <p className="font-semibold text-lg">{ticker} · {name}</p><p className="text-xs">{version}</p>
-        <div className="flex gap-2"><button type="button" className={`btn ${!comparing ? 'btn-primary' : 'btn-ghost'}`} disabled={busy} onClick={() => setComparing(false)}>Enable strategy</button><button type="button" className={`btn ${comparing ? 'btn-primary' : 'btn-ghost'}`} disabled={busy} onClick={() => setComparing(true)}>Compare research</button></div>
+        <div className="flex gap-2" role="tablist" aria-label="Pair actions"><button type="button" role="tab" aria-selected={!comparing} className={`btn ${!comparing ? 'btn-primary' : 'btn-ghost'}`} disabled={busy} onClick={() => setComparing(false)}>Trading permission</button><button type="button" role="tab" aria-selected={comparing} className={`btn ${comparing ? 'btn-primary' : 'btn-ghost'}`} disabled={busy} onClick={() => setComparing(true)}>Compare research</button></div>
         {comparing ? <>
         <p>Compare recorded tests below. These are hypothetical research results, not broker fills. Highest profit alone does not establish the best choice.</p>
         <label className="block">Exit test

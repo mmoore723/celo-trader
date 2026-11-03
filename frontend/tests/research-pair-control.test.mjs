@@ -22,6 +22,13 @@ test('errors remain visible and research refreshes after successful save', () =>
   assert.match(source, /strategy-research-results/);
   assert.match(source, /strategy-research-analytics/);
 });
+test('saving never removes the action needed to reopen or re-enable a pair', () => {
+  assert.doesNotMatch(source, /saved\s*\?/);
+  assert.match(source, /setSaved\(false\); setComparing\(trading\); setConfirming\(true\)/);
+  assert.match(source, /role="tablist" aria-label="Pair actions"/);
+  assert.match(source, />Trading permission<\/button>/);
+  assert.doesNotMatch(source, />Enable strategy<\/button>/);
+});
 test('test choices use a modal and cannot silently enable unsupported policies', () => {
   assert.match(source, /createPortal\(<dialog/);
   assert.match(source, /node.showModal\(\)/);
