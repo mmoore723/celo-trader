@@ -325,23 +325,25 @@ def reviewed_strategy_integrity_errors() -> dict[str, tuple[str, ...]]:
             )
         ):
             errors.append("declared_pass_does_not_meet_target")
-        try:
-            actual_hash = hashlib.sha256(implementation_path.read_bytes()).hexdigest()
-        except OSError:
-            errors.append("implementation_missing")
-        else:
-            if actual_hash != evidence.get("implementation_sha256_at_review"):
-                errors.append("implementation_hash_mismatch")
         policy_sources = evidence.get("runtime_policy_sources", [])
         # Historical evidence stays immutable. Only an explicitly selected,
         # separately validated runtime review can supersede its source pins.
         from config.runtime_exit_review import review
+        runtime_review = None
         try:
             runtime_review = review(rule, evidence, root=_PROJECT_ROOT)
             if runtime_review is not None:
                 policy_sources = runtime_review['runtime_policy_sources']
         except (OSError, ValueError, KeyError, TypeError):
             errors.append('runtime_review_invalid')
+        try:
+            actual_hash = hashlib.sha256(implementation_path.read_bytes()).hexdigest()
+        except OSError:
+            errors.append("implementation_missing")
+        else:
+            expected_hash = (runtime_review or {}).get('implementation_sha256', evidence.get('implementation_sha256_at_review'))
+            if actual_hash != expected_hash:
+                errors.append("implementation_hash_mismatch")
         if not isinstance(policy_sources, list):
             errors.append("runtime_policy_sources_invalid")
         else:

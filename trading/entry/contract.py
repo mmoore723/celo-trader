@@ -319,6 +319,7 @@ def select_reviewed_v2_contract(
     for_display: bool = False,
     approved_dynamic_match: bool = False,
     strategy_id: object = None,
+    selected_test_policy: dict | None = None,
 ) -> Tuple[Optional[dict], dict]:
     """Select the strategy-specific paid-quote contract profile.
 
@@ -336,7 +337,12 @@ def select_reviewed_v2_contract(
         from trading.research_contract_selection import select_research_contract
         if (sid == 'V2_TREND_CONT' and ticker not in {"SPY", "QQQ"}) or max_spend <= 0:
             return None, {"reason": "invalid_selection_input"}
-        selected, detail = select_research_contract(tradier, ticker, direction, current_price, SPECS[sid].source if sid in SPECS else strategy_id)
+        extra = {}
+        if selected_test_policy is not None:
+            from config.research_pair_policy import validate
+            policy = validate(selected_test_policy, sid, ticker, SPECS[sid].version)
+            extra['policy_override'] = policy['contract_policy']
+        selected, detail = select_research_contract(tradier, ticker, direction, current_price, SPECS[sid].source if sid in SPECS else strategy_id, **extra)
         if selected and float(selected["ask"]) * 100 > max_spend:
             return None, {**detail, "reason": "over_budget", "cheapest_cost": float(selected["ask"]) * 100}
         return selected, detail

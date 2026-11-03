@@ -89,6 +89,8 @@ class AdminStrategyOverridePayload(BaseModel):
     ticker: str
     strategy_version: str
     enabled: bool
+    exit_minutes: int | None = None
+    contract_policy: str | None = None
 
 
 class ActivationReviewPayload(BaseModel):
@@ -108,7 +110,15 @@ def get_activation_review(strategy_id: str, ticker: str, version: str, request: 
     from strategy_health.activation_review import dossier
     settings = get_settings()
     try:
-        return dossier(for_decision(settings), settings, strategy_id, ticker, version)
+        try:
+            matrix = for_decision(settings)
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            # Refresh only the saved display offer, never run research here.
+            get_strategy_recommendations()
+            matrix = for_decision(settings)
+        return dossier(matrix, settings, strategy_id, ticker, version)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
@@ -146,7 +156,8 @@ def set_admin_strategy_override(payload: AdminStrategyOverridePayload, request: 
     try:
         with _lock_for(get_user_data_dir() / 'settings.json'):
             changes = updates(get_settings(), payload.strategy_id, payload.ticker,
-                              payload.strategy_version, payload.enabled, request.state.user_id)
+                              payload.strategy_version, payload.enabled, request.state.user_id,
+                              exit_minutes=payload.exit_minutes, contract_policy=payload.contract_policy)
             save_settings(changes)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc

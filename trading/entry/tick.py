@@ -1100,6 +1100,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             _preview_contract, _preview_info = select_reviewed_v2_contract(
                 tradier, ticker, direction, current_price, _preview_max_spend,
                 for_display=True, strategy_id=strategy_id,
+                **({'selected_test_policy': _top.meta['selected_test_policy']} if _top.meta.get('selected_test_policy') else {}),
             )
         else:
             _preview_contract, _preview_info = select_contract(
@@ -1393,6 +1394,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             tradier, ticker, direction, current_price, max_spend,
             approved_dynamic_match=_paper_approved_match,
             strategy_id=strategy_id,
+            **({'selected_test_policy': _top.meta['selected_test_policy']} if _top.meta.get('selected_test_policy') else {}),
         )
     else:
         contract, _sel_info = select_contract(tradier, ticker, direction, current_price, max_spend)

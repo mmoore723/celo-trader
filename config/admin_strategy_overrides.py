@@ -28,7 +28,7 @@ def tickers(settings, sid):
                    and active(settings, sid, row['ticker'])})
 
 
-def updates(settings, source, ticker, version, enabled, actor):
+def updates(settings, source, ticker, version, enabled, actor, *, exit_minutes=None, contract_policy=None):
     from config.strategy_catalog import REVIEWED_STRATEGIES, reviewed_strategy_integrity_errors
     sid = execution_id(source.strip().upper(), version)
     symbol = ticker.strip().upper()
@@ -46,6 +46,9 @@ def updates(settings, source, ticker, version, enabled, actor):
     grants[key(sid, symbol)] = dict(strategy_id=sid, ticker=symbol, strategy_version=version,
                                    approved_by_admin=True, approved_by=actor, enabled=bool(enabled),
                                    approved_at=datetime.now(timezone.utc).isoformat())
+    if exit_minutes is not None or contract_policy is not None:
+        from config.research_pair_policy import build
+        grants[key(sid, symbol)]['selected_test_policy'] = build(sid, symbol, version, exit_minutes, contract_policy)
     from strategy_health.pair_recommendations import consent_scope
     pauses = dict(settings.get('strategy_pair_pauses') or {})
     pauses[consent_scope(settings, sid, symbol)] = not enabled

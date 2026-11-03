@@ -14,7 +14,7 @@ test('admin pair action requires explicit confirmation and preserves existing en
   assert.match(source, /Confirm turn on/);
   assert.match(source, /\/api\/settings\/strategies\/admin-override/);
   assert.match(source, /if \(busy\) return/);
-  assert.match(source, /does not enable live trading/);
+  assert.match(source, /do not enable live trading/);
   assert.doesNotMatch(source, /paper_trading:|risk_pct:|submit_order|useEffect/);
 });
 test('errors remain visible and research refreshes after successful save', () => {
@@ -24,9 +24,8 @@ test('errors remain visible and research refreshes after successful save', () =>
 });
 test('saving never removes the action needed to reopen or re-enable a pair', () => {
   assert.doesNotMatch(source, /saved\s*\?/);
-  assert.match(source, /setSaved\(false\); setComparing\(trading\); setConfirming\(true\)/);
-  assert.match(source, /role="tablist" aria-label="Pair actions"/);
-  assert.match(source, />Trading permission<\/button>/);
+  assert.match(source, /setSaved\(false\); setConfirming\(true\)/);
+  assert.match(source, /Change pair settings/);
   assert.doesNotMatch(source, />Enable strategy<\/button>/);
 });
 test('test choices use a modal and cannot silently enable unsupported policies', () => {
@@ -35,8 +34,9 @@ test('test choices use a modal and cannot silently enable unsupported policies',
   assert.match(source, /onCancel=/);
   assert.match(source, /pair.exit_comparison/);
   assert.match(source, /pair.contract_tests/);
-  assert.match(source, /if \(comparing \|\| trading\) return/);
-  assert.match(source, /!comparing && !trading/);
-  assert.match(source, /Continue with current production rules/);
+  assert.match(source, /if \(!acknowledged\) return/);
+  assert.match(source, /exit_minutes: exit === 'native' \? null : Number\(exit\)/);
+  assert.match(source, /contract_policy: contract === 'native' \? null : contract/);
+  assert.match(source, /replacing the strategy exit/);
   assert.match(source, /Selecting two tests is not evidence/);
 });

@@ -47,6 +47,8 @@ def summarize(rows):
     losses = -sum(p for p in profits if p < 0)
     return {
         "option_results": len(rows),
+        "period_start": min((row["start"] for row in rows), default=None).isoformat() if rows else None,
+        "period_end": max((row["end"] for row in rows), default=None).isoformat() if rows else None,
         "profit_factor": round(gains / losses, 2) if losses else "infinite" if gains else None,
         "net_one_contract_pnl": round(sum(profits), 2),
         "median_one_contract_pnl": round(median(profits), 2) if profits else None,
@@ -58,6 +60,13 @@ def summarize(rows):
 
 def numeric(value):
     return math.inf if value == "infinite" else float(value or 0)
+
+
+def period_label(summary):
+    if not summary['period_start'] or not summary['period_end']:
+        return 'dates not recorded'
+    return ' to '.join(timestamp(summary[key]).astimezone(ZoneInfo('America/New_York')).strftime('%b %d, %Y')
+                       for key in ('period_start', 'period_end'))
 
 
 def assess(rows):
@@ -86,9 +95,9 @@ def assess(rows):
     if len(window) < 20:
         reasons.append(f"Needs {20 - len(window)} more non-overlapping completed tests")
     if numeric(train["profit_factor"]) < 1.5:
-        reasons.append("First 14 tests need PF 1.5 or higher")
+        reasons.append(f"Tests dated {period_label(train)} need PF 1.5 or higher")
     if numeric(check["profit_factor"]) < 1.5:
-        reasons.append("Latest 6 tests need PF 1.5 or higher")
+        reasons.append(f"Tests dated {period_label(check)} need PF 1.5 or higher")
     if (total["median_one_contract_pnl"] or 0) <= 0:
         reasons.append("The typical test must finish with a profit after costs")
     if total["largest_winner_share_pct"] is not None and total["largest_winner_share_pct"] > 35:

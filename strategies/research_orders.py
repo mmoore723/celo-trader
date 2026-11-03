@@ -71,6 +71,11 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
     signal.meta.update(strategy_version=spec.version, research_source_strategy_id=spec.source,
                        research_order_route='exact_research_v1', observation_only=False)
     signal.meta.pop('research_library', None)
+    from config import get_settings
+    from config.research_pair_policy import selected
+    policy = selected(get_settings(), strategy_id, symbol, spec.version)
+    if policy:
+        signal.meta['selected_test_policy'] = policy
     _emitted[key] = cutoff.floor('min')
     return signal
 

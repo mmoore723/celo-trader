@@ -27,7 +27,7 @@ def remember(matrix, settings):
         'pairs': [{key: deepcopy(pair[key]) for key in
                    ('ticker', 'tradable', 'research_contract_profile', 'recommendation', 'setups',
                     'option_results', 'option_result_days', 'quote_coverage_pct',
-                    'mistimed_quotes_ignored', 'contract_selection_reasons') if key in pair}
+                    'mistimed_quotes_ignored', 'contract_selection_reasons', 'exit_comparison', 'contract_tests') if key in pair}
                   for pair in strategy['pairs'] if pair.get('recommendation')],
     } for strategy in matrix['strategies']]}
     scope = _scope(settings)

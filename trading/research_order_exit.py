@@ -41,6 +41,13 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
             cap = min(cap, et(session_close) - timedelta(minutes=5))
         if current >= cap:
             return True, 'research_session_close'
+        selected = meta.get('selected_test_policy')
+        if selected is not None:
+            from config.research_pair_policy import validate
+            selected = validate(selected, sid, trade.get('ticker'), spec.version)
+            if selected['exit_minutes'] is not None:
+                return ((True, f"selected_test_{selected['exit_minutes']}m")
+                        if current >= filled + timedelta(minutes=selected['exit_minutes']) else (False, 'hold'))
         if sid == 'RESEARCH_FAILED_RANGE_V2':
             return (True, 'research_failed_range_30m') if current >= filled + timedelta(minutes=30) else (False, 'hold')
         if frame is None or frame.empty:

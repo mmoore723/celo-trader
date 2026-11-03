@@ -8,6 +8,11 @@ import { resolveStrategyIdentity } from "./strategy-identity-loader.mjs";
 const source = readFileSync(new URL("../src/components/settings/StrategyRecommendations.tsx", import.meta.url), "utf8");
 let compiled = ts.transpileModule(source, {compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext}}).outputText;
 compiled = compiled.replace('import { request } from "../../lib/api";', 'const request = async () => { throw new Error("No API calls during static render"); };');
+compiled = compiled.replace('import { ResearchPairControl } from "../research/ResearchPairControl";', 'const ResearchPairControl = () => null;');
+const dates = ts.transpileModule(readFileSync(new URL('../src/lib/evidencePeriod.ts', import.meta.url), 'utf8'), {compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
+const rules = ts.transpileModule(readFileSync(new URL('../src/lib/researchRuleText.ts', import.meta.url), 'utf8'), {compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
+compiled = compiled.replace('"../../lib/researchRuleText"', JSON.stringify('data:text/javascript;base64,' + Buffer.from(rules).toString('base64')));
+compiled = compiled.replace('"../../lib/evidencePeriod"', JSON.stringify('data:text/javascript;base64,' + Buffer.from(dates).toString('base64')));
 for (const name of ["react", "react-dom", "react/jsx-runtime"]) compiled = compiled.replaceAll(JSON.stringify(name), JSON.stringify(import.meta.resolve(name)));
 const {StrategyRecommendations} = await import(`data:text/javascript;base64,${Buffer.from(resolveStrategyIdentity(compiled)).toString("base64")}`);
 const render = recommendations => renderToStaticMarkup(createElement(StrategyRecommendations, {recommendations, onDecision: async () => {}}));
@@ -43,7 +48,7 @@ test("blocked enable opens an explanation before any confirmation or mutation", 
   const guard = source.indexOf('if (action === "enable" && !item.can_enable)');
   assert.ok(guard >= 0 && guard < source.indexOf('window.confirm'));
   assert.match(source, /await openReview\(item\); return/);
-  assert.match(source, /does not enable trading/);
+  assert.match(source, /blockedReason=/);
   assert.match(source, /onCancel=/);
 });
 test("executable recommendations retain their explicit turn-on action", () => {
@@ -51,9 +56,9 @@ test("executable recommendations retain their explicit turn-on action", () => {
   assert.match(html, /Review activation/);
   assert.doesNotMatch(html, /Why unavailable/);
 });
-test('guided approval is version-bound and distinct from trading activation', () => {
-  assert.match(source, /token: review.token/);
-  assert.match(source, /Save implementation approval/);
-  assert.match(source, /review.can_enable && review.approval\?\.status === 'implementation_approved'/);
-  assert.match(source, /review.tests/);
+test('activation uses the shared research settings modal, not an approval queue', () => {
+  assert.match(source, /<ResearchPairControl/);
+  assert.match(source, /pair=\{review.research_pair\}/);
+  assert.match(source, /Exact recorded parameters/);
+  assert.doesNotMatch(source, /Save implementation approval|Which rules should be implemented|Coverage and missing data/);
 });

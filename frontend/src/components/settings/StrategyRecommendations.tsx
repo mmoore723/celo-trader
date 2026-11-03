@@ -1,13 +1,17 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { request, type StrategyTickerRecommendation } from "../../lib/api";
+import { request, type StrategyTickerRecommendation, type StrategyTickerResearchPair } from "../../lib/api";
 import { strategyName } from "../../lib/strategyIdentity.js";
 import { StrategyIdentity } from "./StrategyIdentity";
+import { ResearchPairControl } from "../research/ResearchPairControl";
+import { evidencePeriod } from "../../lib/evidencePeriod";
+import { ruleLabel, ruleValue } from "../../lib/researchRuleText";
 
 export type PairDecision = "enable" | "keep_off" | "research_only" | "keep_trading";
 const pf = (value: number | "infinite" | null) => value === "infinite" ? "No losses yet" : value == null ? "—" : value.toFixed(2);
 
 type ActivationReview = {
+  research_pair: StrategyTickerResearchPair;
   token: string; can_enable: boolean; blocker: string | null; account_mode: string;
   rules: {entry: string | null; exit: string | null; parameters: Record<string, unknown>; source_sha256: string | null;
     current_research_contract_profile?: Record<string, unknown> | null; account_risk_fraction: number | null};
@@ -29,27 +33,12 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
   const [review, setReview] = useState<ActivationReview | null>(null);
   const [loading, setLoading] = useState(false);
   const [reviewError, setReviewError] = useState("");
-  const [choice, setChoice] = useState("");
-  const [notes, setNotes] = useState("");
-  const [acknowledged, setAcknowledged] = useState(false);
   const reviewPath = (item: StrategyTickerRecommendation) => `/api/settings/strategies/activation/${encodeURIComponent(item.strategy_id)}/${encodeURIComponent(item.ticker)}`;
   async function openReview(item: StrategyTickerRecommendation) {
-    setBlocked(item); setReview(null); setReviewError(""); setChoice(""); setNotes(""); setAcknowledged(false); setLoading(true);
+    setBlocked(item); setReview(null); setReviewError(""); setLoading(true);
     try { setReview(await request<ActivationReview>(`${reviewPath(item)}?version=${encodeURIComponent(item.strategy_version)}`)); }
     catch (err) { setReviewError(err instanceof Error ? err.message : "Could not load evidence. Refresh Settings and try again."); }
     finally { setLoading(false); }
-  }
-  async function saveApproval() {
-    if (!blocked || !review || busy || !acknowledged || !choice) return;
-    setBusy(true); setReviewError("");
-    try {
-      const approval = await request<NonNullable<ActivationReview['approval']>>(reviewPath(blocked), {
-        method: 'POST', body: JSON.stringify({version: blocked.strategy_version, token: review.token,
-          choice, notes: choice === 'changes' ? notes : '', acknowledged}),
-      });
-      setReview({...review, approval});
-    } catch (err) { setReviewError(err instanceof Error ? err.message : "Approval was not saved."); }
-    finally { setBusy(false); }
   }
   async function decide(item: StrategyTickerRecommendation, action: PairDecision) {
     if (busy) return;
@@ -76,7 +65,7 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
           <StrategyIdentity id={item.strategy_id} version={item.strategy_version} tickers={[item.ticker]} label={review ? "Review ticker" : "Suggested ticker"} />
           <p className="text-xs mt-1" style={{color: review ? "var(--negative)" : "var(--positive)"}}>{review
             ? `Latest ${item.completed_trades} non-overlapping tests: PF ${pf(item.profit_factor)} · $${item.net_pnl.toFixed(2)} after costs`
-            : `First 14 PF ${pf(item.evidence.training.profit_factor)} · Latest 6 PF ${pf(item.evidence.validation.profit_factor)}`}</p>
+            : `${evidencePeriod(item.evidence.training)}: PF ${pf(item.evidence.training.profit_factor)} · ${evidencePeriod(item.evidence.validation)}: PF ${pf(item.evidence.validation.profit_factor)}`}</p>
           <p className="text-xs mt-1" style={{color: "var(--ink-muted)"}}>Research results, not broker fills.</p>
           {item.blocker && !review && <p className="text-xs mt-2" style={{color: "var(--warning)"}}>{item.blocker}</p>}
           <div className="flex flex-wrap gap-2 mt-3">
@@ -86,46 +75,35 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
         </article>)}
         <details className="text-xs mt-3" style={{color: "var(--ink-muted)"}}><summary className="cursor-pointer">What triggers this?</summary><p className="mt-2">{review
           ? "The latest 10 non-overlapping completed research tests have PF below 1.0 and a net loss after costs. Moving to research only stops new entries for this pair, not other tickers or existing-position exits."
-          : "20 non-overlapping completed tests: first 14 and latest 6 each need PF 1.5+, the typical result must be positive, and no single winner may supply over 35% of gains. No minimum day count. Every research signal is still collected. These checks do not guarantee future profit."}</p></details>
+          : "20 non-overlapping completed tests: split chronologically into groups of 14 and 6; both date ranges need PF 1.5+, the typical result must be positive, and no single winner may supply over 35% of gains. No minimum day count. Every research signal is still collected. These checks do not guarantee future profit."}</p></details>
       </section>;
     })}
-    {blocked && createPortal(<dialog ref={node => { if (node && !node.open) node.showModal(); }}
-      onCancel={event => { if (busy || loading) event.preventDefault(); else setBlocked(null); }} aria-labelledby="strategy-unavailable-title"
-      className="card p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto text-sm"
-      style={{ margin: "auto", color: "var(--ink)", background: "var(--surface)" }}>
-      <h3 id="strategy-unavailable-title" className="font-semibold text-lg">Review activation</h3>
-      <p className="mt-2">{blocked.ticker} · {strategyName(blocked.display_name)} · {blocked.strategy_version}</p>
-      {loading && <p role="status" className="mt-3">Loading saved evidence...</p>}
-      {reviewError && <p role="alert" className="mt-3" style={{color: 'var(--negative)'}}>{reviewError}</p>}
-      {error && <p role="alert" className="mt-3" style={{color: 'var(--negative)'}}>{error}</p>}
-      {review && <div className="space-y-4 mt-4">
-        <p role="status">{review.can_enable ? 'Execution checks allow activation. Review the evidence before confirming.' : review.blocker}</p>
-        <section><h4 className="font-semibold">Evidence, not broker fills</h4>
-          <p>{review.evidence.independent_trades} non-overlapping tests; {review.evidence.overlapping_trades} overlapping results excluded from qualification.</p>
-          <p className="text-xs">{review.evidence.first_test_at ?? 'Unknown start'} to {review.evidence.last_test_at ?? 'Unknown end'}</p>
-          <table className="w-full mt-2 text-xs"><thead><tr><th className="text-left">Sample</th><th>Tests</th><th>PF</th><th>Net / 1 contract</th><th>Win rate</th></tr></thead>
-            <tbody>{(['training', 'validation'] as const).map(key => <tr key={key}><td>{key === 'training' ? 'First 14' : 'Latest 6'}</td>{['option_results', 'profit_factor', 'net_one_contract_pnl', 'win_rate_pct'].map(field => <td className="text-center" key={field}>{review.evidence[key][field] ?? 'Unavailable'}</td>)}</tr>)}</tbody></table>
-          <p className="text-xs mt-2">Net figures use the research model's recorded costs. They are not guaranteed fills or live validation.</p>
-          <details className="mt-2"><summary>Coverage and missing data</summary><dl>{Object.entries(review.coverage).map(([key,value]) => <div key={key} className="mt-1"><dt>{key.replaceAll('_',' ')}</dt><dd>{value == null ? 'Not recorded in this snapshot' : typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd></div>)}</dl></details>
-        </section>
-        <section><h4 className="font-semibold">Existing rules</h4><p>{review.rules.entry ?? 'A verified plain-English entry definition is not available here. Implementation review must resolve it, not guess.'}</p><p className="mt-2">{review.rules.exit ?? 'Exit definition requires implementation review.'}</p>
-          <details className="mt-2"><summary>Exact recorded parameters</summary><pre className="whitespace-pre-wrap text-xs">{JSON.stringify(review.rules.parameters, null, 2)}</pre><p className="break-all text-xs">Source: {review.rules.source_sha256 ?? 'Not pinned here'}</p></details>
-          <details className="mt-2"><summary>Current research contract profile</summary><pre className="whitespace-pre-wrap text-xs">{review.rules.current_research_contract_profile ? JSON.stringify(review.rules.current_research_contract_profile, null, 2) : 'Profile not verified in this snapshot. Implementation review must verify contract parity.'}</pre></details>
-          <p className="mt-2">{review.sizing} Account default: {review.rules.account_risk_fraction == null ? 'automatic sizing' : `${(review.rules.account_risk_fraction * 100).toFixed(1)}%`}. Existing strategy overrides still apply.</p>
-        </section>
-        <section><h4 className="font-semibold">Readiness</h4><p>{review.test_requirement}</p><p>{review.tests}</p></section>
-        {review.execution_review_errors.length > 0 && <p role="status">Execution review blocked: {review.execution_review_errors.join(', ')}. Existing review records do not match current code; approval cannot bypass this.</p>}
-        {review.previous_approvals.length > 0 && <details><summary>Previous approvals (evidence or rules have changed)</summary>{review.previous_approvals.map(a=><p key={a.token}>{a.status.replaceAll('_',' ')}: {a.created_at}. New review required for this snapshot.</p>)}</details>}
-        {review.approval ? <p role="status" className="rounded border p-3">{review.approval.status === 'changes_requested' ? 'Changes saved for review.' : 'Implementation and testing approved.'} Saved {review.approval.created_at}. {review.can_enable ? 'Activation is a separate confirmation below.' : 'Backend implementation and execution validation are still pending. This does not start an automatic coding worker.'}</p> : <section className="space-y-3">
-          <label className="block">Which rules should be implemented?<select className="input w-full mt-1" value={choice} onChange={e=>setChoice(e.target.value)} disabled={busy}><option value="">Choose</option><option value="exact">Keep the exact existing research rules</option><option value="changes">I need changes or clarification</option></select></label>
-          {choice === 'changes' && <label className="block">What needs to change?<textarea className="input w-full" maxLength={4000} value={notes} onChange={e=>setNotes(e.target.value)} disabled={busy}/></label>}
-          <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={e=>setAcknowledged(e.target.checked)} disabled={busy}/>I reviewed the hypothetical evidence. Approve implementation and testing only, not trading or risk changes.</label>
-          <button type="button" className="btn btn-primary" disabled={busy || !choice || !acknowledged || (choice === 'changes' && !notes.trim())} onClick={saveApproval}>{busy ? 'Saving...' : 'Save implementation approval'}</button>
-        </section>}
-        {review.can_enable && review.approval?.status === 'implementation_approved' && <button type="button" className="btn btn-primary" disabled={busy} onClick={async()=>{await decide({...blocked, can_enable:true}, 'enable');}}>Turn on · {review.account_mode}</button>}
-        <p className="text-xs">Reviewing or saving approval does not enable trading. Existing positions, risk limits and live-trading status stay unchanged.</p>
-      </div>}
-      <button type="button" className="btn btn-ghost mt-4" disabled={busy || loading} onClick={() => setBlocked(null)}>Close</button>
+    {blocked && !review && createPortal(<dialog ref={node => { if (node && !node.open) node.showModal(); }}
+      onCancel={() => setBlocked(null)} className="card p-5" style={{margin:"auto"}} aria-label="Loading activation">
+      <p>{loading ? 'Loading saved evidence...' : reviewError}</p>
+      {!loading && <button className="btn btn-ghost" onClick={()=>openReview(blocked)}>Retry</button>}
+      <button className="btn btn-ghost" onClick={()=>setBlocked(null)}>Close</button>
     </dialog>, document.body)}
+    {blocked && review && <ResearchPairControl key={review.token} strategyId={blocked.strategy_id}
+      ticker={blocked.ticker} version={blocked.strategy_version} name={strategyName(blocked.display_name)}
+      trading={false} pair={review.research_pair} initiallyOpen onClose={()=>setBlocked(null)}
+      blockedReason={!review.can_enable ? review.blocker || 'This strategy has no verified order route yet. It cannot be enabled.' : null}
+      evidence={<div className="space-y-3">
+        <section><h4 className="font-semibold">Research checks passed</h4>
+          <p>{review.evidence.independent_trades} non-overlapping tests. Research results, not broker fills.</p>
+          <table className="w-full text-xs mt-2"><thead><tr><th className="text-left">Test dates (Eastern)</th><th>Tests</th><th>PF</th><th>Net / contract</th><th>Win rate</th></tr></thead>
+            <tbody>{(['training','validation'] as const).map(key=><tr key={key}><td>{evidencePeriod(review.evidence[key])}</td>
+              {['option_results','profit_factor','net_one_contract_pnl','win_rate_pct'].map(field=><td className="text-center" key={field}>{review.evidence[key][field] ?? 'Unavailable'}</td>)}</tr>)}</tbody>
+          </table>
+        </section>
+        <details><summary>Exact recorded parameters</summary>
+          <p>{review.rules.entry ?? 'Entry rules stay unchanged.'}</p><p>{review.rules.exit ?? 'Original strategy exit stays unchanged unless you choose a timed exit below.'}</p>
+          <dl>{Object.entries(review.rules.parameters).map(([key,value])=><div key={key}><dt className="font-medium">{ruleLabel(key)}</dt><dd>{ruleValue(key,value)}</dd></div>)}</dl>
+        </details>
+        <details><summary>Current research contract profile</summary>
+          {review.rules.current_research_contract_profile ? <dl>{Object.entries(review.rules.current_research_contract_profile).map(([key,value])=><div key={key}><dt className="font-medium">{ruleLabel(key)}</dt><dd>{ruleValue(key,value)}</dd></div>)}</dl> : <p>No verified contract profile is recorded for this version.</p>}
+        </details>
+        <section><h4 className="font-semibold">Readiness</h4><p>{review.can_enable ? 'Ready to enable with the settings you choose below. Existing risk limits still apply.' : 'Not ready to trade. The execution route must be verified before this pair can be enabled.'}</p></section>
+      </div>}/>}
   </>;
 }

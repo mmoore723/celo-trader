@@ -47,7 +47,9 @@ class PairRecommendationTests(unittest.TestCase):
     def test_losing_validation_blocks_winning_history(self):
         result = assess(trades([20] * 14 + [-10] * 6))
         self.assertFalse(result["qualified"])
-        self.assertIn("Latest 6 tests need PF 1.5 or higher", result["reasons"])
+        self.assertTrue(any("Tests dated" in reason and "PF 1.5" in reason for reason in result["reasons"]))
+        self.assertIsNotNone(result["validation"]["period_start"])
+        self.assertIsNotNone(result["validation"]["period_end"])
 
     def test_one_outlier_does_not_qualify(self):
         self.assertFalse(assess(trades([1000] + [1] * 19))["qualified"])

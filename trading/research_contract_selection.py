@@ -7,7 +7,7 @@ access to submit, cancel, size, or manage an order.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from inspect import getattr_static
 import math
@@ -158,12 +158,17 @@ def _leaderboard(
 
 def select_research_contract(
     tradier: Any, ticker: str, direction: str, current_price: float,
-    strategy_id: object,
+    strategy_id: object, *, policy_override: str | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     """Read current chains and choose/order-free policy winners up to $1,000."""
     ticker = str(ticker or "").strip().upper()
     direction = str(direction or "").strip().lower()
     profile = research_contract_profile(strategy_id)
+    if policy_override is not None:
+        from config.research_pair_policy import CONTRACTS
+        if policy_override not in CONTRACTS:
+            return None, {'reason': 'unsupported_selected_contract_policy'}
+        profile = replace(profile, primary_policy=policy_override)
     # Workers expose bound reads on a SimpleNamespace instance, not its type.
     # Static lookup also avoids treating auto-created mock/proxy attributes as
     # an explicitly supplied capability.
@@ -287,6 +292,8 @@ def select_research_contract(
         return None, info
 
     leaderboard, selected_policy = _leaderboard(candidates, profile)
+    if policy_override is not None and selected_policy != policy_override:
+        return None, {**info, 'reason': 'selected_contract_policy_unavailable'}
     selected_row = next(
         row for row in leaderboard if selected_policy in row["policy_winner_for"]
     )

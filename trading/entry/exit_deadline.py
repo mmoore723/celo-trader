@@ -36,6 +36,12 @@ def freeze_at_fill(raw_context, fill_time):
     if policy.get('status') != 'awaiting_fill':
         return context
     try:
+        selected = context.get('selected_test_policy')
+        if selected is not None:
+            from config.research_pair_policy import validate
+            selected = validate(selected, policy['strategy_id'], selected.get('ticker'), policy['strategy_version'])
+            if selected['exit_minutes'] is not None:
+                policy = dict(policy, hold_minutes=selected['exit_minutes'], selected_policy_version=selected['policy_version'])
         filled = datetime.fromisoformat(str(fill_time).replace('Z', '+00:00'))
         cap = datetime.fromisoformat(policy['session_cap'])
         if filled.tzinfo is None or cap.tzinfo is None or filled >= cap:

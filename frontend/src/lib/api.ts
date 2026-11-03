@@ -1167,8 +1167,8 @@ export interface PairRecommendationEvidence {
   completed_trades: number; independent_trades: number; overlapping_trades: number;
   remaining_trades: number; reasons: string[]; fingerprint: string;
   first_test_at: string | null; last_test_at: string | null;
-  training: { profit_factor: number | "infinite" | null };
-  validation: { profit_factor: number | "infinite" | null };
+  training: { profit_factor: number | "infinite" | null; period_start?: string | null; period_end?: string | null };
+  validation: { profit_factor: number | "infinite" | null; period_start?: string | null; period_end?: string | null };
 }
 // Emitted by strategy_router.py when a signal or veto fires.
 // Frontend polls GET /api/bot/annotations/{ticker} every 5 s.

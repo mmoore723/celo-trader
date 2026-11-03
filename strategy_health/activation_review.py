@@ -80,6 +80,7 @@ def dossier(matrix, settings, sid, ticker, version):
               'display_name': item['display_name'], 'account_mode': item['account_mode'],
               'can_enable': item['can_enable'], 'blocker': item['blocker'],
               'evidence': item['evidence'], 'rules': rules,
+              'research_pair': {**pair, 'exit_comparison': pair.get('exit_comparison', []), 'contract_tests': pair.get('contract_tests', [])},
               'coverage': {k: pair.get(k) for k in coverage_keys},
               'sizing': 'Keep current account and strategy risk settings. This review cannot change risk limits.',
               'questions': ['Use the exact existing research rules, or request changes?',

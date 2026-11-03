@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'entry-deadline-capture-20261101.1'
+REVISION = 'selected-pair-settings-20261103.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 
@@ -49,6 +49,7 @@ def review(rule, evidence, *, root=None):
         if _sha(_path(root, source['path'])) != source['sha256']:
             raise ValueError('runtime_review_source_hash_mismatch')
     replacements = {s['path']: s['sha256'] for s in sources}
+    implementation = rule.implementation.removesuffix('.evaluate').replace('.', '/') + '.py'
     return {
         'runtime_revision': selected,
         'runtime_review_sha256': _sha(root / MANIFEST),
@@ -56,6 +57,7 @@ def review(rule, evidence, *, root=None):
         'runtime_policy_sources': [dict(s, sha256=replacements.get(s['path'], s['sha256']))
                                    for s in evidence.get('runtime_policy_sources', [])],
         'profitability_validated': False,
+        'implementation_sha256': replacements.get(implementation, evidence.get('implementation_sha256_at_review')),
     }
 
 
