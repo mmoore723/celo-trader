@@ -411,14 +411,10 @@ def build_premarket_report(tickers: str = "") -> list[dict]:
     _settings    = _gs()
     _pins        = [t.upper().strip() for t in (_settings.get("watchlist") or []) if t.strip()]
     _extra       = [t.upper().strip() for t in tickers.split(",") if t.strip()] if tickers else []
-    # Include top scanner hits from today's universe file
-    try:
-        _u = json.loads(universe_path.read_text()) if universe_path.exists() else {}
-        _scan_tickers = [d["ticker"] for d in _u.get("scan_details", [])
-                         if isinstance(d, dict) and d.get("ticker")][:8]
-    except Exception:
-        _scan_tickers = ["SPY", "QQQ"]
-    all_tickers = list(dict.fromkeys(_pins + _extra + _scan_tickers))[:20]
+    from api.daily_brief import trading_tickers
+    allowed = trading_tickers(_settings)
+    all_tickers = [ticker for ticker in dict.fromkeys(_pins + _extra + allowed)
+                   if ticker in allowed]
     if not all_tickers:
         return []
 

@@ -5,6 +5,20 @@ from datetime import time
 from fastapi import HTTPException
 
 
+def trading_tickers(settings):
+    """Current execution permissions, never the research/discovery universe."""
+    from config.strategy_catalog import REVIEWED_STRATEGIES, enabled_reviewed_strategy_ids
+    from config.admin_strategy_overrides import tickers as override_tickers
+    candidates = set()
+    for sid, rule in REVIEWED_STRATEGIES.items():
+        candidates.update(rule.tickers | rule.recommendation_tickers)
+        candidates.update(override_tickers(settings, sid))
+    candidates.update(row['ticker'] for row in (settings.get('strategy_pair_approvals') or {}).values()
+                      if isinstance(row, dict) and row.get('ticker'))
+    return sorted(ticker for ticker in candidates
+                  if enabled_reviewed_strategy_ids(settings, ticker=ticker))
+
+
 def _path():
     from config import get_user_data_dir
     return get_user_data_dir(create=False) / 'daily_brief.json'
@@ -19,19 +33,27 @@ def _saved():
 
 def read_report():
     from database import _now_et
+    from config import get_settings
     saved = _saved()
     if saved.get('date') != _now_et().date().isoformat():
         raise HTTPException(503, 'Today\'s brief is not ready. Preparation starts at 9:00 AM ET, without opening this page.', headers={'Retry-After': '60'})
-    return [{**row, 'prepared_at': saved['prepared_at']} for row in saved['rows']]
+    allowed = set(trading_tickers(get_settings()))
+    return [{**row, 'prepared_at': saved['prepared_at']} for row in saved['rows']
+            if row.get('ticker') in allowed]
 
 
 def prepare():
     from database import _now_et
-    from config import get_api_keys
+    from config import get_api_keys, get_settings
     from config.atomic_files import atomic_write_json
     from api.routes.market import build_premarket_report
     now = _now_et()
-    if now.time() < time(9) or _saved().get('date') == now.date().isoformat():
+    saved = _saved()
+    allowed = trading_tickers(get_settings())
+    if now.time() < time(9):
+        return
+    if saved.get('date') == now.date().isoformat() and set(allowed).issubset(
+            {row.get('ticker') for row in saved.get('rows', [])}):
         return
     keys = get_api_keys()
     if not any(keys.get(key) for key in ('alpaca_api_key', 'tradier_api_key', 'tradier_market_api_key')):

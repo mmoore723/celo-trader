@@ -8,6 +8,20 @@ from api import daily_brief
 
 
 class DailyBriefSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        p = patch.object(daily_brief, 'trading_tickers', return_value=['SPY'])
+        self.allowed = p.start()
+        self.addCleanup(p.stop)
+
+    def test_saved_research_tickers_disappear_immediately_without_rebuilding(self):
+        with patch.object(daily_brief, '_saved', return_value={
+                'date': '2026-11-03', 'prepared_at': '2026-11-03T09:00:00',
+                'rows': [{'ticker': 'SPY'}, {'ticker': 'AMD'}, {'ticker': 'NFLX'}]}), \
+             patch('database._now_et', return_value=datetime(2026, 11, 3, 10)):
+            self.assertEqual(['SPY'], [r['ticker'] for r in daily_brief.read_report()])
+            self.allowed.return_value = []
+            self.assertEqual([], daily_brief.read_report())
+
     def test_background_build_persists_across_reads_and_next_day_rebuilds(self):
         with tempfile.TemporaryDirectory() as folder, \
              patch.object(daily_brief, '_path', return_value=Path(folder) / 'brief.json'), \
