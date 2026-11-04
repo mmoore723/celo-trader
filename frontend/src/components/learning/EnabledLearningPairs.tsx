@@ -1,21 +1,26 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import type { ReviewedStrategyCatalogEntry } from '../../lib/api';
-import { learningLink } from '../../lib/learningLinks';
+import { PairLearning } from './PairLearning';
+import { learningFamily } from '../../lib/learningFamilies';
 
 export function EnabledLearningPairs({strategies}: {strategies: ReviewedStrategyCatalogEntry[]}) {
-  const [search, setSearch] = useState('');
-  const [selection, setSelection] = useState('');
-  const pairs = strategies.filter(s => s.enabled).flatMap(s => (s.trading_tickers ?? []).map(ticker => ({...s,ticker,key:`${s.strategy_id}:${ticker}:${s.version}`})));
-  const visible = pairs.filter(p => `${p.ticker} ${p.display_name}`.toLowerCase().includes(search.toLowerCase()));
-  const selected = visible.find(p => p.key === selection) ?? visible[0];
-  return <section className="card p-4 space-y-3" aria-label="Your enabled pairs">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">Your enabled pairs</h2><span className="text-xs">{pairs.length} pairs</span></div>
-    <input aria-label="Find a learning pair" className="input w-full" placeholder="Find a ticker or strategy" value={search} onChange={e => setSearch(e.target.value)} />
-    {!selected ? <p className="text-sm">No matching enabled pairs.</p> : <>
-      <label className="block text-sm">Choose a pair<select aria-label="Learning pair" className="input w-full mt-1" value={selected.key} onChange={e => setSelection(e.target.value)}>{visible.map(p => <option key={p.key} value={p.key}>{p.ticker} · {p.display_name} · {p.version}</option>)}</select></label>
-      <div className="flex flex-wrap items-center gap-2">{['lesson','reference','practice'].map(view => <Link className={`btn btn-sm ${view === 'lesson' ? 'btn-primary' : 'btn-ghost'}`} key={view} to={learningLink(selected.strategy_id,selected.ticker,selected.version,view)}>{view === 'lesson' ? 'Open lesson' : view === 'reference' ? 'Quick reference' : 'Practice'}</Link>)}</div>
-      <p className="text-xs" style={{color:'var(--ink-muted)'}}>One pair at a time. Practice separates your trades, scanner observations and teaching examples.</p>
-    </>}
+  const [family, setFamily] = useState('');
+  const [variant, setVariant] = useState('');
+  const enabled = strategies.filter(s => s.enabled && (s.trading_tickers ?? []).length);
+  const families = [...new Set(enabled.map(learningFamily))].sort();
+  const activeFamily = families.includes(family) ? family : families.find(name => name === 'Opening-Range Breakout (ORB)') ?? families[0];
+  const variants = enabled.filter(s => learningFamily(s) === activeFamily);
+  const selected = variants.find(s => `${s.strategy_id}:${s.version}` === variant) ?? variants[0];
+  return <section className="space-y-4" aria-label="Strategy school">
+    <div className="card p-4 space-y-3">
+      <h2 className="font-semibold text-xl">Learn a strategy</h2>
+      <p className="text-sm">Learn the setup on the chart, then its entry, exit, protection and sizing. Tickers are examples, not separate strategies.</p>
+      {!selected ? <p>No enabled strategies are available.</p> : <>
+        <label className="block text-sm">Strategy<select aria-label="Strategy family" className="input w-full mt-1" value={activeFamily} onChange={e => {setFamily(e.target.value); setVariant('');}}>{families.map(name => <option key={name}>{name}</option>)}</select></label>
+        {variants.length > 1 ? <label className="block text-sm">Variation and version<select aria-label="Strategy variation" className="input w-full mt-1" value={`${selected.strategy_id}:${selected.version}`} onChange={e => setVariant(e.target.value)}>{variants.map(s => <option key={s.strategy_id} value={`${s.strategy_id}:${s.version}`}>{s.display_name} · {s.version}</option>)}</select></label> : <p className="text-sm">{selected.display_name} · Version {selected.version}</p>}
+        <p className="text-xs">Used on {(selected.trading_tickers ?? []).join(', ')}. Variations can have different entry and exit rules.</p>
+      </>}
+    </div>
+    {selected && <PairLearning key={`${selected.strategy_id}:${selected.version}`} strategyCatalog={strategies} selection={{strategy:selected.strategy_id,version:selected.version,ticker:selected.trading_tickers![0]}} />}
   </section>;
 }
