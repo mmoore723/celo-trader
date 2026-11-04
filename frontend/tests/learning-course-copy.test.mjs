@@ -12,7 +12,9 @@ test('course pages omit research grades and duplicate technical block',()=>{
  assert.doesNotMatch(pair,/Research evidence|Research baseline|data\.evidence/);
  assert.doesNotMatch(page,/Research status:|Technical reference \(optional\)|GLOBAL_PARAMS/);
  assert.doesNotMatch(chart,/EVIDENCE_LABELS|evidence\.label/);
- assert.match(chart,/Explain more/);
+ assert.doesNotMatch(chart,/Explain more/);
+ assert.match(chart,/min-w-\[760px\]/);
+ assert.match(chart,/grid-cols-\[minmax\(0,1fr\)_320px\]/);
 });
 let code=ts.transpileModule(read('components/learning/VersionRuleWalkthrough.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
 for(const name of ['react','react/jsx-runtime']) code=code.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
@@ -20,8 +22,8 @@ const {VersionRuleWalkthrough}=await import('data:text/javascript;base64,'+Buffe
 test('lesson starts with one idea and optional explanations without losing exact rules',()=>{
  const html=renderToStaticMarkup(createElement(VersionRuleWalkthrough,{version:'v2',steps:['Wait for a finished candle.'],exit:'Exit after 30 minutes.',selectedPolicy:false}));
  assert.match(html,/Wait for the setup, not the excitement/);
- assert.match(html,/Why it matters/);
- assert.match(html,/Walk through an example/);
+ assert.match(html,/Its close is the last price/);
+ assert.match(html,/For example:/);
  assert.match(html,/Wait for a finished candle/);
- assert.doesNotMatch(html,/<details[^>]*open|Research baseline|broker fill|policy/);
+ assert.doesNotMatch(html,/<details|Explain more|Research baseline|broker fill|policy/);
 });

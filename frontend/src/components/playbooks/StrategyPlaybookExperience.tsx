@@ -4,6 +4,8 @@ import {
 } from "lucide-react";
 import type { ReviewedStrategyCatalogEntry } from "../../lib/api";
 
+import { BEGINNER_LESSONS } from "./beginnerLessons";
+
 export type LessonId = "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg" | "v2_recovery";
 type LessonStep = {
   label: string;
@@ -37,7 +39,6 @@ const STRATEGY_ID_BY_LESSON: Record<LessonId, string> = {
 
 
 const COACH_IMAGE = "/images/coach-celo-v5.png?v=1";
-const POINTING_COACH_IMAGE = new URL("../../assets/learning/coach-celo-pointing.png", import.meta.url).href;
 
 const COACH_FOCUS: Record<LessonId, number[]> = {
   v2_orb: [12, 43, 60, 73, 86],
@@ -54,7 +55,7 @@ function CoachChartGuide({ courseId, stepIndex, label }: { courseId: LessonId; s
     <div className="absolute top-[47%] h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-700" style={{ left: `${target}%`, border: "3px solid #facc15", background: "rgba(250,204,21,.2)", animation: "coach-target 1.4s ease-in-out infinite" }} />
     <div className="absolute bottom-8 transition-[left] duration-700 ease-in-out" style={{ left: `clamp(2px, calc(${target}% + 7px), calc(100% - 125px))`, animation: "coach-step .75s ease-in-out infinite" }}>
       <div className="mb-1 ml-1 max-w-[120px] rounded-lg px-2 py-1 text-[9px] sm:text-[10px] font-bold text-white shadow-lg" style={{ background: "rgba(8,35,74,.94)" }}>Look here: {label}</div>
-      <img src={POINTING_COACH_IMAGE} alt="" className="h-[135px] w-[90px] sm:h-[190px] sm:w-[125px] object-contain object-bottom drop-shadow-2xl" />
+
     </div>
   </div>;
 }
@@ -353,8 +354,9 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
   }, [activeCourses, selectedId]);
 
   if (!course || !step) return null;
+  const beginner = BEGINNER_LESSONS[course.id]?.[stepIndex];
   const audioSrc = course.id === 'v2_recovery' ? undefined : `/audio/coach-celo/${course.id}/${step.label.toLowerCase()}.mp3`;
-  const readAloud = !audioSrc || narrationError;
+  const readAloud = Boolean(beginner) || !audioSrc || narrationError;
 
   const chooseCourse = (id: LessonId) => {
     window.speechSynthesis?.cancel();
@@ -367,7 +369,7 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
       if (!window.speechSynthesis) return;
       window.speechSynthesis.cancel();
       if (narrationPlaying) { setNarrationPlaying(false); return; }
-      const utterance = new SpeechSynthesisUtterance(`${step.lesson} ${step.coach}`);
+      const utterance = new SpeechSynthesisUtterance(`${beginner?.meaning ?? step.lesson} ${beginner?.example ?? step.coach}`);
       utterance.onend = () => setNarrationPlaying(false);
       utterance.onerror = () => setNarrationPlaying(false);
       window.speechSynthesis.speak(utterance);
@@ -385,9 +387,9 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
     {activeCourses.length > 1 && <div className="flex gap-3 flex-wrap" role="tablist" aria-label="Active strategy lessons">
       {activeCourses.map((item) => <button key={item.id} onClick={() => chooseCourse(item.id)} role="tab" aria-selected={item.id === course.id} className="rounded-lg px-5 py-3 text-sm font-semibold transition-colors" style={{ border: item.id === course.id ? "1.5px solid #2970f6" : "1px solid var(--border)", color: item.id === course.id ? "#1e66ed" : "var(--ink-muted)", background: item.id === course.id ? "#f6f9ff" : "var(--surface)", boxShadow: item.id === course.id ? "0 4px 14px rgba(41,112,246,.08)" : "none" }}>{item.shortTitle}</button>)}
     </div>}
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(300px,.34fr)] gap-4 items-stretch">
+    <div className="overflow-x-auto" aria-label="Chart and Coach Celo side by side"><div className="grid grid-cols-[minmax(0,1fr)_320px] min-w-[760px] gap-4 items-start">
       <div className="card overflow-hidden p-0" style={{ boxShadow: "0 10px 32px rgba(23,47,82,.07)" }}>
-        <div className="px-5 pt-4 pb-3 grid grid-cols-1 lg:grid-cols-[minmax(300px,.62fr)_minmax(400px,1fr)] gap-4 items-center" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="px-5 pt-4 pb-3 grid grid-cols-1 2xl:grid-cols-[minmax(0,.62fr)_minmax(0,1fr)] gap-4 items-center" style={{ borderBottom: "1px solid var(--border)" }}>
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full grid place-items-center font-bold text-base text-white" style={{ background: course.id === "v2_orb" || course.id === "v2_two_leg" ? "#e8262d" : "#296df5" }}>{course.id === "v2_spy_fvg" ? "⚡" : course.id === "v2_recovery" ? "↩" : course.id === "v2_orb" || course.id === "v2_two_leg" ? "T" : "↗"}</div><div><div className="flex items-center gap-2 flex-wrap"><span className="font-bold text-sm" style={{ color: "var(--ink)" }}>{course.id === "v2_orb" || course.id === "v2_two_leg" ? "TSLA" : "SPY"}</span><span className="text-sm" style={{ color: "var(--ink-muted)" }}>{course.shortTitle}</span><span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: "#edf4ff", color: "#2368e9" }}>{course.id === "v2_two_leg" || course.id === "v2_recovery" ? "1m" : "5m"}</span></div><p className="text-[11px] mt-1" style={{ color: "var(--ink-muted)" }}>Lesson {stepIndex + 1} of {course.steps.length}{catalogEntry ? ` · ${catalogEntry.exit_minutes}m timed exit` : ""}</p>{catalogEntry?.integrity_errors.length ? <p className="text-[11px] mt-1 font-semibold" style={{ color: "#c73535" }}>Integrity check blocked this strategy.</p> : null}</div></div>
           <div className="flex items-start justify-between gap-1" aria-label="Lesson steps">{course.steps.map((item, index) => <button key={item.label} onClick={() => chooseStep(index)} className="flex-1 min-w-0 flex flex-col items-center gap-1.5 group"><span className="w-7 h-7 rounded-full grid place-items-center text-xs font-bold transition-colors" style={{ background: index === stepIndex ? "#1f6fff" : "#f1f3f7", color: index === stepIndex ? "white" : "#546176", boxShadow: index === stepIndex ? "0 0 0 4px #eaf1ff" : "none" }}>{index + 1}</span><span className="text-[11px] font-medium whitespace-nowrap" style={{ color: index === stepIndex ? "#1f6fff" : "#536075" }}>{item.label}</span></button>)}</div>
         </div>
@@ -404,7 +406,7 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
             <div className="absolute inset-x-0 top-[42px] h-[300px] flex justify-center overflow-hidden" style={{ background: "radial-gradient(circle at 50% 30%, rgba(55,124,255,.22), transparent 54%)" }}><img src={COACH_IMAGE} alt="Coach Celo, your strategy instructor" className="w-[245px] max-w-[82%] h-auto self-start" /></div>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-4">
-            <div className="relative -mt-2 rounded-2xl p-4 text-sm leading-relaxed" style={{ background: "#fff", color: "#273955", boxShadow: "0 8px 18px rgba(0,0,0,.17)" }}><span className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 bg-white" /><div className="relative"><strong>{step.title}</strong><p className="mt-2">{step.lesson}</p><details key={`${course.id}:${stepIndex}`} className="mt-3"><summary className="cursor-pointer font-semibold">Explain more</summary><p className="mt-2 text-sm leading-relaxed" style={{ color: "#64718a" }}>{step.coach}</p></details></div></div>
+            <div className="relative -mt-2 rounded-2xl p-4 text-sm leading-relaxed" style={{ background: "#fff", color: "#273955", boxShadow: "0 8px 18px rgba(0,0,0,.17)" }}><span className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 bg-white" /><div className="relative"><strong>{step.title}</strong><p className="mt-2">{beginner?.meaning ?? step.lesson}</p><p className="mt-3 text-sm leading-relaxed" style={{ color: "#475569" }}><strong>For example:</strong> {beginner?.example ?? step.coach}</p></div></div>
             <button className="w-full rounded-xl px-3 py-2.5 flex items-center gap-3 text-left" onClick={toggleNarration} style={{ background: "rgba(100,151,255,.15)", border: "1px solid rgba(173,204,255,.34)", color: "white" }} aria-label={narrationPlaying ? "Pause Coach Celo narration" : "Play Coach Celo narration"}>
               <span className="w-8 h-8 shrink-0 rounded-full grid place-items-center" style={{ background: "#3c7af9" }}>{narrationPlaying ? <span className="text-xs font-black">Ⅱ</span> : <Play size={14} fill="white" />}</span>
               <div className="min-w-0 flex-1"><p className="text-xs font-semibold">{readAloud ? 'Read lesson aloud' : 'Hear Coach Celo'}</p><p className="text-[10px]">{readAloud ? 'Browser voice, not recorded Coach audio. Full text is above.' : 'Recorded narration'}</p></div><span className="text-[10px]" style={{ color: "#bcd2ff" }}>{narrationPlaying ? 'Playing' : readAloud ? 'Read aloud' : `${Math.round(narrationProgress)}%`}</span>
@@ -414,6 +416,6 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
             <button className="btn btn-sm self-start" onClick={() => setShowGuardrails((value) => !value)} style={{ background: showGuardrails ? "#4a83ff" : "transparent", color: "white", borderColor: "#5576aa" }}><ShieldCheck size={14} />{showGuardrails ? "Back to lesson" : "See the safety rules"}</button>
           </div>
         </aside>
-    </div>
+    </div></div>
   </section>;
 }
