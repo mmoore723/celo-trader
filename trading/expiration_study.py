@@ -82,7 +82,7 @@ def _observe_profile(*, signal, ticker, price, reader, settings, clock, stopped,
         return
     candidate_id = meta['shadow_candidate_id']
     with get_conn() as conn:
-        row = conn.execute('''SELECT s.observed_at,s.strategy_id,s.ticker,s.direction FROM shadow_candidates s
+        row = conn.execute('''SELECT s.observed_at,s.trigger_bar,s.strategy_id,s.ticker,s.direction FROM shadow_candidates s
             WHERE s.candidate_id=? AND COALESCE(s.broker_account_id,'')=?
             AND NOT EXISTS (SELECT 1 FROM research_expiration_comparisons e
                 WHERE e.candidate_id=s.candidate_id AND e.profile_version=?)''',
@@ -92,7 +92,9 @@ def _observe_profile(*, signal, ticker, price, reader, settings, clock, stopped,
         return
     before = dict(reader.reads)
     selection = select(reader, ticker=ticker, direction=row['direction'], underlying_price=price,
-                       setup_at=row['observed_at'], clock=clock, profile=profile)
+                       setup_at=row['trigger_bar'], clock=clock, profile=profile)
+    selection['observed_at'] = row['observed_at']
+    selection['capture_revision'] = 'signal_time_validation_v2'
     selection['provider_reads'] = {key: reader.reads[key]-before[key] for key in before}
     if stopped():
         return

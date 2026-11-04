@@ -114,6 +114,18 @@ class ExpirationWorkerTests(unittest.TestCase):
         self.assertEqual([], self.source.calls)
         self.assertEqual([], self.rows())
 
+    def test_delayed_worker_observation_cannot_reset_signal_freshness(self):
+        with self.fixture.connect() as conn:
+            conn.execute("UPDATE shadow_candidates SET observed_at='2026-09-10T10:11:00' WHERE candidate_id='study'")
+        self.clock.now = datetime(2026, 9, 10, 10, 11, 3)
+        with research_settings_snapshot(get_current_user_id(), self.settings):
+            self.enroll()
+        row = self.rows()[0]
+        self.assertEqual('no_contract', row['state']['status'])
+        self.assertEqual('setup_expired', row['selection']['reason'])
+        self.assertEqual([], self.source.calls)
+
+
     def test_account_mode_provider_and_user_must_match_pinned_context(self):
         for changes in ({'active_broker_account_id': 'b'}, {'paper_trading': False},
                         {'broker_provider': 'tradier'}):

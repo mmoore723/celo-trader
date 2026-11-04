@@ -33,6 +33,19 @@ class ResearchPassTests(unittest.TestCase):
             for forbidden in ("place_option_order", "cancel_order", "_post", "_delete", "get_account"):
                 self.assertFalse(hasattr(reader, forbidden))
 
+    def test_exit_collection_precedes_expensive_diagnostics(self):
+        events=[]
+        market=Mock()
+        market.is_market_open.return_value=False
+        self.exits.side_effect=lambda **kw: events.append('authored')
+        self.profit.side_effect=lambda **kw: events.append('profit')
+        with patch('trading.loop.research_pass.capture_expiration_study',
+                   side_effect=lambda **kw: events.append('study')), patch(
+                   'trading.diagnostics.contract_evidence.safe_capture',
+                   side_effect=lambda **kw: events.append('diagnostics')):
+            run_research_pass((market,Mock()),dict(settings={},tickers=[]),{},lambda:False)
+        self.assertEqual(['authored','study','diagnostics','profit'],events)
+
     def test_profit_quotes_checkpoint_between_tickers_without_skipping_scans(self):
         with patch('trading.loop.research_pass.monotonic', side_effect=[0, 10, 35, 40]), patch(
             'trading.loop.research_pass.observe_ticker',

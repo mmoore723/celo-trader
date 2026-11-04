@@ -20,7 +20,7 @@ from tests.test_squeeze_exit_measurement import meta as squeeze_meta
 
 def selection(entry='2026-09-10T10:05:03'):
     return dict(profile_version=PROFILE, status='selected', reason='selected',
-                setup_at='2026-09-10T10:05:01', contract=dict(
+                setup_at='2026-09-10T10:05:00', contract=dict(
                     symbol='XYZ', ask=2.0, bid=1.9, entry_quote_at=entry))
 
 
@@ -40,6 +40,19 @@ def quote(bid=1.2, stamp='2026-09-10T10:15:30'):
 
 
 class StudyExitTests(unittest.TestCase):
+    def test_timer_that_cannot_finish_today_is_not_given_a_different_exit(self):
+        chosen=selection('2026-09-10T15:50:03')
+        chosen['setup_at']='2026-09-10T15:50:00'
+        state=initial('V2_SPY_TREND_CONT', trigger_bar='2026-09-10T15:50:00', selection=chosen)
+        self.assertEqual('unmeasurable',state['status'])
+        self.assertEqual('exit_horizon_outside_session',state['reason'])
+        self.assertNotIn('decision_at',state)
+
+    def test_late_entry_is_unmeasurable_not_a_repriced_result(self):
+        state=initial(selection=selection('2026-09-10T10:11:42'))
+        self.assertEqual('unmeasurable',state['status'])
+        self.assertEqual('late_entry_quote',state['reason'])
+
     def test_all_26_are_covered_and_only_five_are_authored_timers(self):
         from trading.tested_strategy_research import TESTED_RESEARCH_STRATEGIES
         from config.strategy_catalog import REVIEWED_STRATEGIES
@@ -203,6 +216,23 @@ class StudyStorageTests(unittest.TestCase):
         for key,value in [('entry_ask',.5),('contract_symbol','OTHER'),('profile_version','new')]:
             with self.assertRaises(ValueError):
                 storage.save_transition(self.conn,account='a',row=row,state={**row['state'],key:value})
+
+    def test_existing_late_active_attempt_gets_audit_record_not_repriced(self):
+        self.enroll()
+        row=storage.load(self.conn,account='a')[0]
+        old={**row['state'],'entry_quote_at':'2026-09-10T10:11:42'}
+        self.conn.execute('UPDATE research_expiration_comparisons SET state_json=?',
+                          (storage.encoded(old),))
+        stats=self.capture()
+        state=storage.load(self.conn,account='a')[0]['state']
+        self.assertEqual('unmeasurable',state['status'])
+        self.assertEqual('late_entry_quote',state['reason'])
+        self.assertEqual(old['entry_quote_at'],state['entry_quote_at'])
+        self.assertEqual(0,stats['quote_reads'])
+        audit=self.conn.execute('SELECT original_state_json FROM research_expiration_validation_events').fetchone()
+        self.assertEqual(old,json.loads(audit[0]))
+        self.capture()
+        self.assertEqual(1,self.conn.execute('SELECT count(*) FROM research_expiration_validation_events').fetchone()[0])
 
     @contextmanager
     def connect(self):

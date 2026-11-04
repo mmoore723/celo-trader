@@ -57,7 +57,23 @@ def initialize(*, strategy_id, direction, trigger_bar, meta, selection):
             raise ValueError('Invalid selected entry')
         state.update(contract_symbol=contract['symbol'], entry_ask=ask,
                      entry_quote_at=et(contract['entry_quote_at']).isoformat())
+        # Validate research feasibility, never substitute a different exit.
+        invalid = input_failure(state)
+        if invalid:
+            state.update(status='unmeasurable', reason=invalid)
     return state
+
+
+def input_failure(state):
+    entry = et(state['trigger_bar'])
+    quote = et(state['entry_quote_at'])
+    if not 0 <= (quote-entry).total_seconds() <= 60:
+        return 'late_entry_quote'
+    if state['strategy_id'] in TIMED:
+        horizon = quote + timedelta(minutes=TIMED[state['strategy_id']])
+        if horizon > entry.replace(hour=16, minute=0, second=0, microsecond=0):
+            return 'exit_horizon_outside_session'
+    return None
 
 
 def _event(state, frame, now):

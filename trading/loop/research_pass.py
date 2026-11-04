@@ -195,6 +195,8 @@ def run_research_pass(readers, snapshot, state, stopped):
             return
         state['profit_checkpoint_at'] = now
         authored_checkpoint()
+        if study_ready:
+            study_checkpoint()
         from trading.diagnostics.contract_evidence import safe_capture
         safe_capture(reader=tradier, settings=snapshot['settings'], stopped=stopped)
         try:
@@ -203,10 +205,6 @@ def run_research_pass(readers, snapshot, state, stopped):
                                       stopped=stopped, clock=_now_et)
         except Exception:
             logger.warning('Profit-protection checkpoint failed; research continues', exc_info=True)
-        if study_ready:
-            study_checkpoint()
-
-    profit_checkpoint(force=True)
     # Pending exits have priority over the expensive all-ticker signal replay.
     # Include the close so 15:55 candles can decide at 16:00, without new entries.
     if snapshot["settings"].get("shadow_ledger_enabled", True):
@@ -245,9 +243,8 @@ def run_research_pass(readers, snapshot, state, stopped):
                 )
             except Exception:
                 logger.warning("Authored exit pass failed; research continues", exc_info=True)
-        authored_checkpoint()
         study_ready = True
-        study_checkpoint()
+    profit_checkpoint(force=True)
     if stopped() or not alpaca.is_market_open():
         return
     for ticker in snapshot["tickers"]:

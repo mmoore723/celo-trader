@@ -47,7 +47,14 @@ def capture(row, frame, get_quote, clock):
         with get_conn() as conn:
             conn.execute("UPDATE research_strategy_exits SET status='missing_quote' WHERE candidate_id=? AND protocol=? AND status='pending_quote'",identity)
         return
+    requested=clock()
     quote,received=get_quote(row['contract_symbol'])
+    if pending:
+        from database.research_quote_diagnostics import record
+        with get_conn() as conn:
+            record(conn, candidate_id=identity[0], protocol=identity[1], contract=row['contract_symbol'],
+                   decision=row['decision_at'], requested=requested, received=received,
+                   deadline=et(row['decision_at'])+timedelta(minutes=1), quote=quote)
     if pending and et(received)>et(row['decision_at'])+timedelta(minutes=1):
         return
     decision=et(row['decision_at']) if pending else max(et(row['entry_quote_at']),et(received)-timedelta(seconds=60))

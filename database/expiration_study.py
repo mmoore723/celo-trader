@@ -8,7 +8,7 @@ import json
 
 from strategy_health.impulse_exit import et
 from trading.expiration_study_selection import PROFILE, PROFILES
-from strategy_health.expiration_study_exits import initialize, advance, ACTIVE, TIMED
+from strategy_health.expiration_study_exits import initialize, advance, ACTIVE, TIMED, input_failure
 
 TABLE = 'research_expiration_comparisons'
 CREATE_TABLE = '''CREATE TABLE IF NOT EXISTS research_expiration_comparisons (
@@ -33,11 +33,11 @@ def record(conn, *, account, candidate_id, selection):
         AND COALESCE(broker_account_id,'')=?''', (candidate_id, account or '')).fetchone()
     if row is None:
         return False
-    if et(selection['setup_at']) != et(row['observed_at']):
+    if et(selection['setup_at']) != et(row['trigger_bar']):
         raise ValueError('Study selection must belong to the original setup time')
     if selection.get('contract'):
         entry = et(selection['contract']['entry_quote_at'])
-        if not 0 <= (entry-et(row['observed_at'])).total_seconds() <= 60:
+        if not 0 <= (entry-et(row['trigger_bar'])).total_seconds() <= 60:
             raise ValueError('Cannot enroll a late/repriced entry')
     state = initialize(strategy_id=row['strategy_id'], direction=row['direction'],
                        trigger_bar=row['trigger_bar'], meta=json.loads(row['metadata_json']), selection=selection)
@@ -87,6 +87,14 @@ def save_transition(conn, *, account, row, state):
         AND COALESCE(s.broker_account_id,'')=?)''',
         (encoded(deepcopy(state)), int(state['status'] in ACTIVE), row['candidate_id'], before['profile_version'],
          row['state_json'], account or ''))
+    if result.rowcount and state['status'] == 'unmeasurable' and state.get('validation_revision'):
+        conn.execute('''CREATE TABLE IF NOT EXISTS research_expiration_validation_events (
+            candidate_id TEXT, profile_version TEXT, recorded_at TEXT, revision TEXT,
+            previous_status TEXT, reason TEXT, original_state_json TEXT,
+            UNIQUE(candidate_id,profile_version,revision))''')
+        conn.execute('''INSERT OR IGNORE INTO research_expiration_validation_events VALUES (?,?,?,?,?,?,?)''',
+                     (row['candidate_id'], before['profile_version'], state['validated_at'],
+                      state['validation_revision'], before['status'], state['reason'], row['state_json']))
     return bool(result.rowcount)
 
 
@@ -106,13 +114,21 @@ def capture(*, connect, account, bars_lookup, quote_lookup, clock, stopped=lambd
         rows = [row for profile in PROFILES for row in load(conn, account=account, active_only=True, profile=profile)]
     rows.sort(key=lambda r: r['state']['status'] != 'pending_quote')
     stats = dict(rows=0, bars_reads=0, quote_reads=0, failed_rows=0)
-    frames, quotes = {}, {}
+    frames, quotes, requested = {}, {}, {}
     for row in rows:
         if stopped():
             break
         stats['rows'] += 1
         try:
             state = row['state']
+            invalid = input_failure(state) if state['status'] == 'collecting' else None
+            if invalid:
+                corrected = dict(state, status='unmeasurable', reason=invalid,
+                                 validation_revision='signal_time_validation_v2',
+                                 validated_at=et(clock()).isoformat())
+                with connect() as conn:
+                    save_transition(conn, account=account, row=row, state=corrected)
+                continue
             sid = state['strategy_id']
             frame = None
             if state['status'] == 'collecting' and sid not in TIMED:
@@ -139,10 +155,22 @@ def capture(*, connect, account, bars_lookup, quote_lookup, clock, stopped=lambd
                 break
             symbol = state['contract_symbol']
             if symbol not in quotes:
+                requested[symbol] = clock()
                 quotes[symbol] = (None, clock())
                 stats['quote_reads'] += 1
                 quotes[symbol] = (quote_lookup(symbol), clock())
             quote, received = quotes[symbol]
+            if state['status'] == 'pending_quote':
+                from datetime import timedelta
+                from strategy_health import context_vwap_exit
+                from database.research_quote_diagnostics import record as record_quote
+                with connect() as conn:
+                    record_quote(conn, candidate_id=row['candidate_id'],
+                                 protocol=state['profile_version']+':'+state['protocol'],
+                                 contract=symbol, decision=state['decision_at'],
+                                 requested=requested[symbol], received=received, quote=quote,
+                                 deadline=et(state['decision_at'])+timedelta(
+                                     minutes=1 if premium or sid in context_vwap_exit.PROTOCOLS else 5))
             priced = advance(state, frame=frame, now=received, quote=quote)
             if priced != state:
                 with connect() as conn:

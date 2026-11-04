@@ -57,14 +57,17 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
     """Read-only broker callbacks; persist the first trigger before quote I/O."""
     if stopped():
         return
-    frames, quotes = {}, {}
+    frames, quotes, requested = {}, {}, {}
     def cached_quote(symbol):
         if symbol not in quotes:
+            requested[symbol] = clock()
             quotes[symbol] = (None, clock())
             quotes[symbol] = (quote_lookup(symbol), clock())
         return quotes[symbol]
 
-    for row in pending_exits(account, clock()):
+    rows = pending_exits(account, clock())
+    rows.sort(key=lambda row: row['status'] != 'pending_quote')
+    for row in rows:
         if stopped():
             break
         try:
@@ -127,6 +130,11 @@ def capture_authored_exits(*, account, bars_lookup, quote_lookup, stopped=lambda
                 continue
             symbol = row["contract_symbol"]
             quote, received = cached_quote(symbol)
+            from database.research_quote_diagnostics import record
+            with get_conn() as conn:
+                record(conn, candidate_id=identity[0], protocol=identity[1], contract=symbol,
+                       decision=decision, requested=requested[symbol], received=received,
+                       deadline=quote_deadline, quote=quote)
             if et(received)>quote_deadline:
                 continue
             priced = executable_bid(quote, contract=symbol, decision_at=decision, received_at=received)
