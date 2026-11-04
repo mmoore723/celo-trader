@@ -16,3 +16,12 @@ test('trade practice separates real rows, fictional samples and scanner observat
  assert.match(source,/Samples are fictional and never counted as trade results/);
  assert.match(read('PairLearning'),/not necessarily executed trades/);
 });
+test('main learning page has one pair chooser and header omits watching ticker',()=>{
+ const page=readFileSync(new URL('../src/pages/Playbooks.tsx',import.meta.url),'utf8');
+ const topbar=readFileSync(new URL('../src/components/layout/Topbar.tsx',import.meta.url),'utf8');
+ assert.equal((page.match(/<EnabledLearningPairs /g)||[]).length,1);
+ assert.doesNotMatch(page,/<LearningHub /);
+ assert.doesNotMatch(topbar,/Watching|status\.ticker/);
+ const walkthrough=readFileSync(new URL('../src/components/playbooks/StrategyPlaybookExperience.tsx',import.meta.url),'utf8');
+ assert.match(walkthrough,/activeCourses.length > 1 &&/);
+});

@@ -409,9 +409,9 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
 
   return <section className="flex flex-col gap-4 max-w-[1500px]">
     <div><h2 className="text-[28px] leading-tight font-bold tracking-tight" style={{ color: "#102950" }}>Strategy Playbook</h2><p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>Learn your currently available strategies one visual lesson at a time.</p></div>
-    <div className="flex gap-3 flex-wrap" role="tablist" aria-label="Active strategy lessons">
+    {activeCourses.length > 1 && <div className="flex gap-3 flex-wrap" role="tablist" aria-label="Active strategy lessons">
       {activeCourses.map((item) => <button key={item.id} onClick={() => chooseCourse(item.id)} role="tab" aria-selected={item.id === course.id} className="rounded-lg px-5 py-3 text-sm font-semibold transition-colors" style={{ border: item.id === course.id ? "1.5px solid #2970f6" : "1px solid var(--border)", color: item.id === course.id ? "#1e66ed" : "var(--ink-muted)", background: item.id === course.id ? "#f6f9ff" : "var(--surface)", boxShadow: item.id === course.id ? "0 4px 14px rgba(41,112,246,.08)" : "none" }}>{item.shortTitle}</button>)}
-    </div>
+    </div>}
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(300px,.34fr)] gap-4 items-stretch">
       <div className="card overflow-hidden p-0" style={{ boxShadow: "0 10px 32px rgba(23,47,82,.07)" }}>
         <div className="px-5 pt-4 pb-3 grid grid-cols-1 lg:grid-cols-[minmax(300px,.62fr)_minmax(400px,1fr)] gap-4 items-center" style={{ borderBottom: "1px solid var(--border)" }}>

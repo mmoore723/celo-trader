@@ -5,7 +5,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
-import { LearningHub } from "../components/learning/LearningHub";
 import { PairLearning } from "../components/learning/PairLearning";
 import { EnabledLearningPairs } from "../components/learning/EnabledLearningPairs";
 import { useSearchParams } from "react-router-dom";
@@ -418,7 +417,6 @@ export function Playbooks() {
 
       {tab === "playbooks" && (
       <div className="flex flex-col gap-4">
-      <LearningHub activeLessonIds={CURRENT_STRATEGIES.map((strategy) => strategy.id as "v2_orb" | "v2_trend" | "v2_spy_fvg" | "v2_two_leg" | "v2_recovery")} strategyCatalog={strategyCatalog?.strategies ?? []} />
 
       <details className="card p-4">
         <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>

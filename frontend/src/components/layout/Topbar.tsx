@@ -139,15 +139,6 @@ export function Topbar() {
             {formatSignedCurrency(pnl)}
           </span>
         </div>
-        {/* Watching ticker — desktop only */}
-        {status?.ticker && (
-          <div className="flex flex-col leading-none hidden md:flex">
-            <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Watching</span>
-            <span className="num text-sm font-semibold" style={{ color: "var(--ink)" }}>
-              {status.ticker}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Connection indicator — desktop only */}
