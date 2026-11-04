@@ -19,5 +19,5 @@ test('lessons explain units without claiming chart lines guarantee bot exits',()
  const view=readFileSync(new URL('../src/components/playbooks/StrategyPlaybookExperience.tsx',import.meta.url),'utf8');
  assert.match(view,/beginner\?\.meaning \?\? step.lesson/);
  assert.match(view,/beginner\?\.example \?\? step.coach/);
- assert.doesNotMatch(view,/POINTING_COACH_IMAGE|Explain more|\sxl:grid-cols-/);
+ assert.doesNotMatch(view,/Explain more|\sxl:grid-cols-/);
 });

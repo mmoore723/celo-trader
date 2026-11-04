@@ -39,6 +39,7 @@ const STRATEGY_ID_BY_LESSON: Record<LessonId, string> = {
 
 
 const COACH_IMAGE = "/images/coach-celo-v5.png?v=1";
+const POINTING_COACH_IMAGE = new URL("../../assets/learning/coach-celo-pointing.png", import.meta.url).href;
 
 const COACH_FOCUS: Record<LessonId, number[]> = {
   v2_orb: [12, 43, 60, 73, 86],
@@ -49,12 +50,14 @@ const COACH_FOCUS: Record<LessonId, number[]> = {
 };
 
 function CoachChartGuide({ courseId, stepIndex, label }: { courseId: LessonId; stepIndex: number; label: string }) {
+  if (courseId === "v2_orb") return null; // ORB points to exact price coordinates inside its SVG.
   const target = COACH_FOCUS[courseId][stepIndex] ?? 50;
   return <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden rounded-xl" aria-hidden>
     <style>{`@keyframes coach-step{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}} @keyframes coach-target{0%,100%{box-shadow:0 0 0 7px rgba(250,204,21,.13)}50%{box-shadow:0 0 0 15px rgba(250,204,21,.05)}}`}</style>
     <div className="absolute top-[47%] h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-700" style={{ left: `${target}%`, border: "3px solid #facc15", background: "rgba(250,204,21,.2)", animation: "coach-target 1.4s ease-in-out infinite" }} />
     <div className="absolute bottom-8 transition-[left] duration-700 ease-in-out" style={{ left: `clamp(2px, calc(${target}% + 7px), calc(100% - 125px))`, animation: "coach-step .75s ease-in-out infinite" }}>
       <div className="mb-1 ml-1 max-w-[120px] rounded-lg px-2 py-1 text-[9px] sm:text-[10px] font-bold text-white shadow-lg" style={{ background: "rgba(8,35,74,.94)" }}>Look here: {label}</div>
+      <img src={POINTING_COACH_IMAGE} alt="" className="h-[135px] w-[90px] object-contain" />
 
     </div>
   </div>;
@@ -142,6 +145,7 @@ const GUARDRAILS = [
 ];
 
 function CoachChart({ focus }: { focus: number }) {
+  const [pointTo, setPointTo] = useState<"high" | "low">("high");
   // Real TSLA 5-minute bars from a completed V2 opening-range pullback session.
   // This is a deliberately short replay of the setup window, not a fictional all-day staircase.
   const bars = [["9:30",308.04,311.40,307.09,311.30,33102],["9:35",311.38,312.39,310.515,312.18,14632],["9:40",312.54,313.25,310.79,313.25,11560],["9:45",313.37,317.14,313.37,316.13,36903],["9:50",315.92,316.54,314.475,315.215,24038],["9:55",315.14,315.14,313.44,313.54,17072],["10:00",313.945,315.24,313.715,314.735,16596],["10:05",314.57,315.955,314.415,315.45,6980],["10:10",314.74,315.465,314.4,315.005,7080],["10:15",314.83,315.39,314.06,315.39,8221],["10:20",315.51,315.775,314.64,314.82,8562],["10:25",314.675,314.9,314.33,314.77,4144],["10:30",314.99,317.21,314.99,316.78,9467],["10:35",316.82,317.66,316.69,317.56,10723],["10:40",317,317.66,316.7,317.66,5605],["10:45",317.48,318.28,317.13,317.76,13101]] as const;
@@ -152,17 +156,27 @@ function CoachChart({ focus }: { focus: number }) {
   const vwap = bars.map(([, , high, low, close, volume]) => { cumulativePV += ((high + low + close) / 3) * volume; cumulativeVolume += volume; return cumulativePV / cumulativeVolume; });
   const focusIndex = [1, 3, 5, 15, 15][focus];
   const focusX = x(focusIndex), focusY = y(bars[focusIndex][4]);
-  const rangeHigh = 313.25, rangeLow = 307.09;
+  const rangeHigh = Math.max(...bars.slice(0, 3).map(bar => bar[2]));
+  const rangeLow = Math.min(...bars.slice(0, 3).map(bar => bar[3]));
+  const pointedY = y(pointTo === "high" ? rangeHigh : rangeLow);
   const stage = focus === 0 ? "Build the range" : focus === 1 ? "Break beyond the range" : focus === 2 ? "First retest" : focus === 3 ? "Finished confirmation" : "Protect below the retest";
   return <div className="rounded-xl p-3 sm:p-4" style={{ background: "#fff", border: "1px solid #e8edf5" }}>
     <div className="flex items-center justify-between gap-2 mb-3"><span className="text-xs font-semibold" style={{ color: "var(--ink)" }}>TSLA · 5-minute candle replay</span><span className="text-[11px] shrink-0" style={{ color: "#2368e9" }}>{stage}</span></div>
-    <svg viewBox="0 0 760 382" className="w-full h-auto" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Real TSLA 5-minute ORB lesson chart showing opening range, break, retest, confirmation and VWAP">
+    <p className="text-sm mb-2">Use the first three 5-minute candles, 9:30 to 9:45 AM Eastern. At 9:45, lock the two prices and extend the lines through the rest of the session. Do not move them with later candles.</p>
+    <div className="flex gap-2 mb-2" aria-label="Point to opening range"><button className={`btn btn-sm ${pointTo === "high" ? "btn-primary" : "btn-ghost"}`} aria-pressed={pointTo === "high"} onClick={() => setPointTo("high")}>Show the high</button><button className={`btn btn-sm ${pointTo === "low" ? "btn-primary" : "btn-ghost"}`} aria-pressed={pointTo === "low"} onClick={() => setPointTo("low")}>Show the low</button></div>
+    <svg viewBox="0 0 840 420" className="w-full h-auto" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`TSLA opening range: high ${rangeHigh.toFixed(2)}, low ${rangeLow.toFixed(2)} from 9:30 to 9:45 Eastern. Coach points to the ${pointTo}. Lines stay fixed after 9:45.`}>
       {[76,130,183,237,290].map((gridY) => <line key={`h-${gridY}`} x1={left} y1={gridY} x2={right} y2={gridY} stroke="#edf1f7" strokeWidth="1" />)}
       {[0,3,6,9,12,15].map((index) => <line key={`v-${index}`} x1={x(index)} y1={top} x2={x(index)} y2={bottom} stroke="#f4f6f9" strokeWidth="1" />)}
       <rect x={x(0) - 16} y={y(rangeHigh)} width={x(2) - x(0) + 32} height={y(rangeLow) - y(rangeHigh)} rx="5" fill="#eaf2ff" stroke="#2870f4" strokeWidth="1.5" strokeDasharray="5 4" />
-      <text x={x(0) - 12} y={y(rangeHigh) - 9} fill="#1768e8" fontSize="12" fontWeight="700">OPENING RANGE · 9:30–9:45</text>
-      <line x1={x(0) - 16} y1={y(rangeHigh)} x2={x(2) + 16} y2={y(rangeHigh)} stroke="#2870f4" strokeWidth="1.4"/><text x={x(2) + 20} y={y(rangeHigh) + 4} fill="#1768e8" fontSize="10">range high</text>
-      <line x1={x(0) - 16} y1={y(rangeLow)} x2={x(2) + 16} y2={y(rangeLow)} stroke="#2870f4" strokeWidth="1.4"/><text x={x(2) + 20} y={y(rangeLow) + 4} fill="#1768e8" fontSize="10">range low</text>
+      <text x={left} y="35" fill="#102950" fontSize="14" fontWeight="700">FIRST 15 MINUTES: 9:30 to 9:45 ET</text>
+      <line x1={x(3)-22} y1="48" x2={x(3)-22} y2={bottom} stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 4" />
+      <text x={x(3)-12} y="57" fill="#475569" fontSize="12">9:45: keep both lines fixed →</text>
+      <line x1={x(0)-16} y1={y(rangeHigh)} x2={right} y2={y(rangeHigh)} stroke="#135fc9" strokeWidth={pointTo === "high" ? 4 : 3} />
+      <rect x="468" y={y(rangeHigh)-26} width="235" height="23" rx="4" fill="#e8f1ff" />
+      <text x="475" y={y(rangeHigh)-10} fill="#124b9a" fontSize="14" fontWeight="800">HIGH ${rangeHigh.toFixed(2)} · highest wick</text>
+      <line x1={x(0)-16} y1={y(rangeLow)} x2={right} y2={y(rangeLow)} stroke="#9d2479" strokeWidth={pointTo === "low" ? 4 : 3} strokeDasharray="9 4" />
+      <rect x="468" y={y(rangeLow)-26} width="235" height="23" rx="4" fill="#fbeaf6" />
+      <text x="475" y={y(rangeLow)-10} fill="#852064" fontSize="14" fontWeight="800">LOW ${rangeLow.toFixed(2)} · lowest wick</text>
       <rect x={focusX - 19} y={Math.max(top, focusY - 47)} width="38" height="96" rx="6" fill="#2d73f5" fillOpacity=".05" stroke="#2d73f5" strokeWidth="1.3" strokeDasharray="4 4" />
       {bars.map(([time, open, high, low, close], index) => { const green = close >= open; const color = green ? "#17a35a" : "#e54b47"; const candleX = x(index); return <g key={time}><line x1={candleX} x2={candleX} y1={y(high)} y2={y(low)} stroke={color} strokeWidth="1.1"/><rect x={candleX - 4.5} y={Math.min(y(open), y(close))} width="9" height={Math.max(3.2, Math.abs(y(open) - y(close)))} rx="0.8" fill={color}/></g>; })}
       <path d={vwap.map((value, index) => `${index === 0 ? "M" : "L"}${x(index)} ${y(value)}`).join(" ")} fill="none" stroke="#ef921e" strokeWidth="1.6" />
@@ -172,7 +186,11 @@ function CoachChart({ focus }: { focus: number }) {
       <line x1={x(15)} y1={y(318.28) - 37} x2={x(15)} y2={y(317.76)} stroke="#25354d" strokeWidth="1.2"/><circle cx={x(15)} cy={y(317.76)} r="4" fill="#25354d"/><rect x={x(15)-28} y={y(318.28)-58} width="56" height="19" rx="4" fill="#182132"/><text x={x(15)-21} y={y(318.28)-45} fill="white" fontSize="10" fontWeight="700">PROOF</text>
       <circle cx={focusX} cy={focusY} r="7" fill="#2870f4" stroke="white" strokeWidth="3"/>
       {[0,3,6,9,12,15].map((index) => <text key={bars[index][0]} x={x(index) - 13} y="315" fill="#6b778c" fontSize="11">{bars[index][0]}</text>)}
-      <text x="50" y="353" fill="#68768a" fontSize="11">1. Draw the first 15-minute range</text><text x="273" y="353" fill="#68768a" fontSize="11">2. Wait for break + retest</text><text x="510" y="353" fill="#68768a" fontSize="11">3. Enter only on proof above VWAP</text>
+      <text x="50" y="352" fill="#475569" fontSize="13">Include the thin candle tips (wicks), not just the colored bodies.</text>
+      <text x="50" y="375" fill="#475569" fontSize="13">Later candles can cross these lines. The original prices stay the same.</text>
+      <image href={POINTING_COACH_IMAGE} x="730" y={pointedY-29} width="90" height="148" aria-label={`Coach Celo pointing at the opening-range ${pointTo}`} />
+      <path d={`M 737 ${pointedY} L 708 ${pointedY} M 717 ${pointedY-6} L 708 ${pointedY} L 717 ${pointedY+6}`} fill="none" stroke="#102950" strokeWidth="3" />
+      <circle cx={right} cy={pointedY} r="8" fill="none" stroke="#e6aa00" strokeWidth="3" />
     </svg>
   </div>;
 }
