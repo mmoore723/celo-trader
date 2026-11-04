@@ -365,6 +365,7 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
   const [narrationProgress, setNarrationProgress] = useState(0);
   const [narrationError, setNarrationError] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  useEffect(() => () => { window.speechSynthesis?.cancel(); }, []);
   const activeCourses = COURSES.filter((course) => activeLessonIds.includes(course.id));
   const course = activeCourses.find((item) => item.id === selectedId) ?? activeCourses[0];
   const step = course?.steps[stepIndex];
@@ -379,14 +380,27 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
   }, [activeCourses, selectedId]);
 
   if (!course || !step) return null;
-  const audioSrc = `/audio/coach-celo/${course.id}/${step.label.toLowerCase()}.mp3`;
+  const audioSrc = course.id === 'v2_recovery' ? undefined : `/audio/coach-celo/${course.id}/${step.label.toLowerCase()}.mp3`;
+  const readAloud = !audioSrc || narrationError;
 
   const chooseCourse = (id: LessonId) => {
+    window.speechSynthesis?.cancel();
     audioRef.current?.pause(); setNarrationPlaying(false); setNarrationProgress(0); setNarrationError(false);
     setSelectedId(id); setStepIndex(0); setAnswer(null);
   };
-  const chooseStep = (next: number) => { audioRef.current?.pause(); setNarrationPlaying(false); setNarrationProgress(0); setNarrationError(false); setStepIndex(Math.max(0, Math.min(next, course.steps.length - 1))); setAnswer(null); };
+  const chooseStep = (next: number) => { window.speechSynthesis?.cancel(); audioRef.current?.pause(); setNarrationPlaying(false); setNarrationProgress(0); setNarrationError(false); setStepIndex(Math.max(0, Math.min(next, course.steps.length - 1))); setAnswer(null); };
   const toggleNarration = () => {
+    if (readAloud) {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      if (narrationPlaying) { setNarrationPlaying(false); return; }
+      const utterance = new SpeechSynthesisUtterance(`${step.lesson} ${step.coach}`);
+      utterance.onend = () => setNarrationPlaying(false);
+      utterance.onerror = () => setNarrationPlaying(false);
+      window.speechSynthesis.speak(utterance);
+      setNarrationPlaying(true);
+      return;
+    }
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) audio.play().catch(() => setNarrationError(true));
@@ -420,7 +434,7 @@ export function StrategyPlaybookExperience({ activeLessonIds, strategyCatalog }:
             <div className="relative -mt-2 rounded-2xl p-4 text-sm leading-relaxed" style={{ background: "#fff", color: "#273955", boxShadow: "0 8px 18px rgba(0,0,0,.17)" }}><span className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 bg-white" /><div className="relative"><strong>Coach Celo says:</strong> {step.lesson}<p className="mt-2 text-xs leading-relaxed" style={{ color: "#64718a" }}>{step.coach}</p></div></div>
             <button className="w-full rounded-xl px-3 py-2.5 flex items-center gap-3 text-left" onClick={toggleNarration} style={{ background: "rgba(100,151,255,.15)", border: "1px solid rgba(173,204,255,.34)", color: "white" }} aria-label={narrationPlaying ? "Pause Coach Celo narration" : "Play Coach Celo narration"}>
               <span className="w-8 h-8 shrink-0 rounded-full grid place-items-center" style={{ background: "#3c7af9" }}>{narrationPlaying ? <span className="text-xs font-black">Ⅱ</span> : <Play size={14} fill="white" />}</span>
-              <div className="min-w-0 flex-1"><p className="text-xs font-semibold">{narrationError ? "Narration unavailable" : "Hear Coach Celo"}</p><div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.22)" }}><div className="h-full rounded-full" style={{ width: `${narrationProgress || 0}%`, minWidth: narrationProgress ? undefined : "8px", background: "#80b1ff" }} /></div></div><span className="text-[10px]" style={{ color: "#bcd2ff" }}>{narrationPlaying ? "Playing" : "Audio"}</span>
+              <div className="min-w-0 flex-1"><p className="text-xs font-semibold">{readAloud ? 'Read lesson aloud' : 'Hear Coach Celo'}</p><p className="text-[10px]">{readAloud ? 'Browser voice, not recorded Coach audio. Full text is above.' : 'Recorded narration'}</p></div><span className="text-[10px]" style={{ color: "#bcd2ff" }}>{narrationPlaying ? 'Playing' : readAloud ? 'Read aloud' : `${Math.round(narrationProgress)}%`}</span>
             </button>
             <div><p className="text-[11px] uppercase tracking-[.15em] font-semibold mb-2" style={{ color: "#a9c7ff" }}>What to watch</p><ul className="flex flex-col gap-2.5">{step.watch.map((item) => <li key={item} className="flex gap-2 text-xs leading-relaxed" style={{ color: "#eff5ff" }}><Check size={14} className="shrink-0 mt-0.5" style={{ color: "#69df9c" }} />{item}</li>)}</ul></div>
             <div className="rounded-xl p-3 text-xs leading-relaxed" style={{ background: "rgba(255,105,143,.16)", color: "#ffdce8", borderLeft: "3px solid #ff7295" }}><strong style={{ color: "white" }}>Avoid the chop:</strong> {step.avoid}</div>

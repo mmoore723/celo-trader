@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import type { ClosedTradeEvidence, ReviewedStrategyCatalogEntry } from '../../lib/api';
 import { strategyName } from '../../lib/strategyIdentity.js';
+import { Link } from 'react-router-dom';
+import { learningLink } from '../../lib/learningLinks';
 
 const money = (value: number | null | undefined) => value == null ? 'Not available' : value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
@@ -48,6 +50,9 @@ export function TradingOverview({ strategies, evidence, loading, failed, mode, c
       </section>
       {chosen && <section className="card p-4 space-y-4" aria-label="Selected pair performance">
         <div><h4 className="font-semibold text-lg">{chosen.ticker} · {strategyName(chosen.strategy.display_name)}</h4><p className="text-xs">{chosen.strategy.version} · {mode} journal</p></div>
+        <nav className="flex gap-2 flex-wrap" aria-label="Learn this strategy pair">
+          {['Lesson','Reference','Practice'].map(label => <Link className="btn btn-sm btn-ghost" key={label} to={learningLink(chosen.strategy.strategy_id,chosen.ticker,chosen.strategy.version,label.toLowerCase())}>{label}</Link>)}
+        </nav>
         <div className="grid grid-cols-2 gap-3">
           {[
             ['Realized net P&L', measured ? money(record?.realized_pnl) : 'No results'],

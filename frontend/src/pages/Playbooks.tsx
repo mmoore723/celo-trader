@@ -6,6 +6,9 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
 import { LearningHub } from "../components/learning/LearningHub";
+import { PairLearning } from "../components/learning/PairLearning";
+import { Link, useSearchParams } from "react-router-dom";
+import { learningLink } from "../lib/learningLinks";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { api } from "../lib/api";
@@ -244,7 +247,9 @@ const CURRENT_STRATEGIES: Strategy[] = [
 
 export function Playbooks() {
   const { user } = useAuth();
-  const [tab,           setTab]           = useState<"playbooks" | "log-guide" | "how-it-works">("playbooks");
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') ?? 'playbooks';
+  const setTab = (value: string) => setParams({tab: value});
   const [search,        setSearch]        = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [openSection,   setOpenSection]   = useState<string | null>("routine");   // first section open by default
@@ -289,18 +294,21 @@ export function Playbooks() {
 
   return (
     <div className="p-4 flex flex-col gap-4">
+      {params.has('strategy') ? <PairLearning strategyCatalog={strategyCatalog?.strategies ?? []} /> : <>
       {/* Tab bar */}
       <div className="flex gap-2 border-b pb-2" style={{ borderColor: "var(--border)" }}>
-        {(["playbooks", "log-guide", "how-it-works"] as const).map((t) => (
+        {(["playbooks", "glossary", "log-guide", "how-it-works"] as const).map((t) => (
           <button
             key={t}
             className={`btn btn-sm ${tab === t ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setTab(t)}
           >
-            {t === "playbooks" ? "Learning Hub" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
+            {t === "playbooks" ? "Learning Hub" : t === "glossary" ? "Trading Glossary" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
           </button>
         ))}
       </div>
+      {tab === 'glossary' && <section className="card p-5"><h2 className="text-xl font-semibold mb-4">Trading concepts</h2><dl className="space-y-4">{['VWAP','FVG','ATR','RSI','MACD','SMA','EMA','RVOL'].map(term => <div key={term}><dt className="font-semibold">{term}</dt><dd className="text-sm mt-1">{GLOSSARY[term]}</dd></div>)}</dl></section>}
+      {tab === 'playbooks' && <details className="card p-4" open><summary className="font-semibold cursor-pointer">Your enabled pairs</summary><div className="grid gap-3 mt-3 sm:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(s => s.enabled).flatMap(s => (s.trading_tickers ?? []).map(ticker => <div key={`${s.strategy_id}:${ticker}`} className="text-sm"><strong>{ticker} · {s.display_name}</strong><p className="text-xs">{s.version}</p><div className="flex gap-3 mt-1">{['lesson','reference','practice'].map(view => <Link key={view} to={learningLink(s.strategy_id,ticker,s.version,view)}>{view[0].toUpperCase()+view.slice(1)}</Link>)}</div></div>))}</div></details>}
 
       {tab === "log-guide" && (
         <div className="flex flex-col gap-4">
@@ -624,6 +632,7 @@ export function Playbooks() {
           })}
         </div>
       )}
+      </>}
     </div>
   );
 }

@@ -95,7 +95,7 @@ function ExampleWorkspace({ example, mode, progressOwner }: { example: LearningE
   </div>;
 }
 
-function SecurePractice({ strategyId, progressOwner }: { strategyId: string; progressOwner: string }) {
+export function SecurePractice({ strategyId, progressOwner, ticker, version }: { strategyId: string; progressOwner: string; ticker?: string; version?: string }) {
   const [session, setSession] = useState<LearningPracticeStart | null>(null);
   const [result, setResult] = useState<{ correct: boolean; example: LearningExample } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,10 +105,14 @@ function SecurePractice({ strategyId, progressOwner }: { strategyId: string; pro
 
   const load = useCallback(async () => {
     setLoading(true); setError(""); setResult(null); setCoachAnswer("");
-    try { setSession(await api.learning.startPractice(strategyId)); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Practice unavailable"); setSession(null); }
+    try {
+      const response = await api.learning.startPractice(strategyId, ticker, version);
+      if ('status' in response) { setError(response.message); setSession(null); }
+      else setSession(response);
+    }
+    catch { setError("Practice could not load. Try again, or return to the lesson."); setSession(null); }
     finally { setLoading(false); }
-  }, [strategyId]);
+  }, [strategyId, ticker, version]);
   useEffect(() => { void load(); }, [load]);
 
   const answer = async (choice: PracticeAnswer) => {
@@ -192,7 +196,7 @@ export function LearningHub({ activeLessonIds, strategyCatalog }: { activeLesson
     {(tab === "practice" || tab === "replay") && <>
       <div className="card p-3 flex gap-2 flex-wrap">
         <select className="input text-sm" value={selectedStrategyId} onChange={(event) => setStrategyId(event.target.value)}>
-          {availableStrategies.map((strategy) => <option key={strategy.strategy_id} value={strategy.strategy_id}>{strategy.display_name} · {strategy.curated_examples}/{strategy.target} curated</option>)}
+          {availableStrategies.map((strategy) => <option key={strategy.strategy_id} value={strategy.strategy_id}>{strategy.display_name} · {strategy.curated_examples} reviewed examples</option>)}
         </select>
         {tab === "replay" && <select className="input text-sm" value={category} onChange={(event) => setCategory(event.target.value as LearningExampleCategory | "")}>
           <option value="">All example types</option>
@@ -207,7 +211,8 @@ export function LearningHub({ activeLessonIds, strategyCatalog }: { activeLesson
       <div className="card p-5"><p className="text-xs uppercase tracking-wider" style={{ color: "var(--ink-muted)" }}>Your practice</p><p className="text-3xl font-bold mt-2" style={{ color: "var(--ink)" }}>{completed.correct}</p><p className="text-sm" style={{ color: "var(--ink-muted)" }}>correct decisions · {completed.review} marked for review</p></div>
       <div className="card p-5"><p className="text-xs uppercase tracking-wider" style={{ color: "var(--ink-muted)" }}>ML shadow ranker</p><p className="text-3xl font-bold mt-2" style={{ color: "var(--ink)" }}>{ranker?.usable_episodes ?? 0}/1,000</p><p className="text-sm" style={{ color: "var(--ink-muted)" }}>{ranker?.status === "shadow_active" ? "Chronologically qualified · shadow predictions only" : ranker?.status === "trained_not_qualified" ? "Trained, but holdout quality did not qualify" : "Collecting independent chart-complete outcomes"} · no order authority</p></div>
       {availableStrategies.map((strategy) => <div className="card p-5" key={strategy.strategy_id}>
-        <div className="flex justify-between gap-3"><div><p className="font-semibold" style={{ color: "var(--ink)" }}>{strategy.display_name}</p><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Version {strategy.version} · curated library</p></div><strong style={{ color: "var(--accent)" }}>{strategy.curated_examples}/{strategy.target}</strong></div>
+        <div className="flex justify-between gap-3"><div><p className="font-semibold" style={{ color: "var(--ink)" }}>{strategy.display_name}</p><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Version {strategy.version} · reviewed examples, not your score</p></div><strong style={{ color: "var(--accent)" }}>{strategy.curated_examples} available</strong></div>
+        {!strategy.curated_examples && <p className="text-sm mt-2">This library is empty. No examples have passed its version and chart-coverage checks.</p>}
         <div className="h-2 rounded-full overflow-hidden mt-3" style={{ background: "var(--muted)" }}><div className="h-full" style={{ width: `${Math.min(100, strategy.curated_examples / strategy.target * 100)}%`, background: "var(--accent)" }} /></div>
         <p className="text-[11px] mt-2" style={{ color: "var(--ink-faint)" }}>Only version-matched, chart-complete, independent recorded episodes count.</p>
         <div className="grid grid-cols-2 gap-1 mt-3 text-[11px]" style={{ color: "var(--ink-muted)" }}>{Object.entries(strategy.category_targets).map(([key, target]) => <span key={key}>{CATEGORY_LABELS[key as LearningExampleCategory]}: {strategy.categories[key as LearningExampleCategory]}/{target}</span>)}</div>

@@ -24,6 +24,12 @@ from config.strategy_catalog import REVIEWED_STRATEGIES
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 logger = logging.getLogger("celo_trader.api.learning")
 
+
+@router.get('/guide')
+def learning_guide(strategy_id: str, ticker: str, version: str):
+    from api.routes.learning_guide import guide
+    return guide(strategy_id, ticker, version)
+
 ExampleCategory = Literal[
     "clean_win",
     "valid_loss",
@@ -358,6 +364,8 @@ def _expected_answers(example: dict) -> set[str]:
 
 class PracticeStart(BaseModel):
     strategy_id: str
+    ticker: str | None = None
+    version: str | None = None
 
 
 class PracticeAnswer(BaseModel):
@@ -446,9 +454,17 @@ def start_practice(body: PracticeStart) -> dict:
             (body.strategy_id,),
         ).fetchall()
         eligible = [json.loads(row["evidence_json"]) for row in rows]
+        scope, params = _account_scope()
+        owned = {row[0] for row in conn.execute(
+            'SELECT candidate_id FROM shadow_candidates WHERE '+scope, params)}
+        eligible = [item for item in eligible if item['example_id'] in owned
+                    and (not body.ticker or item['ticker'] == body.ticker.upper())
+                    and (not body.version or item['strategy_version'] == body.version)]
         example = next((item for item in eligible if item.get("practice_eligible")), None)
         if not example:
-            raise HTTPException(404, "No chart-complete practice example is available")
+            return {"status": "empty", "message": "No reviewed practice examples yet for this selection. Read the lesson or reference while the library is being built.",
+                    "strategy_id": body.strategy_id, "ticker": body.ticker,
+                    "version": body.version, "order_authority": False}
         session_id = secrets.token_urlsafe(24)
         created = datetime.now(_ET); expires = created + timedelta(minutes=30)
         conn.execute(

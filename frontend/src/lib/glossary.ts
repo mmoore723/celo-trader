@@ -3,14 +3,17 @@
  * Imported by Tooltip usage across Daily Brief, Playbooks, and Performance.
  */
 export const GLOSSARY: Record<string, string> = {
+  EMA: "Exponential Moving Average: a moving average that gives more weight to recent prices. Its period and candle timeframe must be stated.",
+  RSI: "Relative Strength Index: a momentum measure on a 0 to 100 scale comparing recent gains and losses. A threshold such as 50 is a strategy rule, not a guarantee of direction.",
+  MACD: "Moving Average Convergence Divergence compares a faster and slower EMA. Its signal line smooths that difference; the histogram shows the gap between MACD and its signal. Crossovers are momentum context, not certain predictions.",
   // ── Market / scanner terms ──────────────────────────────────────────────────
   RVOL:
-    "Relative Volume: today's trading volume compared to the historical average for this exact time of day. " +
-    "2× means twice the usual activity. Higher RVOL = more institutions involved = the move is more likely real, not a fake-out.",
+    "Relative volume compares volume with a historical baseline over a matching window. A value of 2 means twice that baseline. It measures activity, not who traded or whether a move will succeed.",
 
   ATR:
-    "Average True Range (14-day): measures how much the stock typically moves per day. " +
-    "A $1 ATR means it swings about $1 on an average day. Higher ATR = bigger option premium swings = more profit potential (and more risk).",
+    "Average True Range measures recent price movement, including gaps from the previous close. Its period and candle timeframe matter: 14 one-minute candles are not 14 days. ATR measures volatility, not direction or guaranteed profit.",
+  FVG: "Fair Value Gap: a three-candle price pattern where the first and third candles leave a gap around the middle candle's move. A bullish gap lies between the first high and third low; a bearish gap is the reverse. A return to the gap is not guaranteed.",
+  SMA: "Simple Moving Average: the arithmetic average of closing prices over a chosen number of candles. A 200 SMA on a five-minute chart uses 200 five-minute closes.",
 
   "ATR%":
     "ATR expressed as a percentage of the stock's price. " +
