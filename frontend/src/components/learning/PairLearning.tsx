@@ -4,6 +4,7 @@ import { request, type ReviewedStrategyCatalogEntry } from '../../lib/api';
 import { learningLink } from '../../lib/learningLinks';
 import { useAuth } from '../../contexts/AuthContext';
 import { SecurePractice } from './LearningHub';
+import { TradePractice } from './TradePractice';
 import { StrategyPlaybookExperience, type LessonId } from '../playbooks/StrategyPlaybookExperience';
 
 type Guide = { name: string; steps: string[]; exit: string; evidence: string; policy_version: string; source: string; selected_policy: boolean };
@@ -27,7 +28,7 @@ export function PairLearning({strategyCatalog}: {strategyCatalog: ReviewedStrate
     <p className="text-sm">Version {version}. Learning only; opening this page does not change trading.</p>
     <nav className="flex flex-wrap gap-2" aria-label="Pair learning resources">{['lesson','reference','practice'].map(item => <Link key={item} className={`btn btn-sm ${view === item ? 'btn-primary' : 'btn-ghost'}`} to={learningLink(strategy,ticker,version,item)}>{item[0].toUpperCase()+item.slice(1)}</Link>)}</nav>
     {isPending ? <p role="status">Loading the strategy reference...</p> : isError ? <p role="alert">This version’s learning reference could not load. Return to Settings to check the current version, or try again later.</p> : data && <>
-      {view === 'practice' ? <SecurePractice key={`${strategy}:${ticker}:${version}`} strategyId={strategy} ticker={ticker} version={version} progressOwner={String(user?.user_id ?? '')} /> : <>
+      {view === 'practice' ? <div className="space-y-4"><TradePractice key={`${strategy}:${ticker}:${version}`} strategy={strategy} ticker={ticker} version={version}/><details><summary className="cursor-pointer">Scanner chart practice (observed setups, not necessarily executed trades)</summary><SecurePractice key={`${strategy}:${ticker}:${version}`} strategyId={strategy} ticker={ticker} version={version} progressOwner={String(user?.user_id ?? '')} /></details></div> : <>
         <h3 className="font-semibold">{view === 'reference' ? 'Entry checklist' : 'How this setup works'}</h3>
         {data.steps.length ? <ol className="list-decimal pl-5 space-y-3 text-sm">{data.steps.map(step => <li key={step}>{step}</li>)}</ol> : <p className="text-sm">A step-by-step entry lesson has not been published for this version. The native exit reference and research evidence are below. No substitute rules are being shown.</p>}
         <h3 className="font-semibold">{data.selected_policy ? 'Your selected exit' : 'Research baseline exit reference'}</h3><p className="text-sm">{data.exit}</p>

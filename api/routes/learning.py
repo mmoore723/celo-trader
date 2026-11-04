@@ -30,6 +30,12 @@ def learning_guide(strategy_id: str, ticker: str, version: str):
     from api.routes.learning_guide import guide
     return guide(strategy_id, ticker, version)
 
+
+@router.get('/trade-practice')
+def trade_practice(strategy_id: str, ticker: str, version: str):
+    from api.routes.learning_trade_practice import library
+    return library(strategy_id, ticker, version)
+
 ExampleCategory = Literal[
     "clean_win",
     "valid_loss",

@@ -7,8 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronDown, ChevronRight } from "lucide-react";
 import { LearningHub } from "../components/learning/LearningHub";
 import { PairLearning } from "../components/learning/PairLearning";
-import { Link, useSearchParams } from "react-router-dom";
-import { learningLink } from "../lib/learningLinks";
+import { EnabledLearningPairs } from "../components/learning/EnabledLearningPairs";
+import { useSearchParams } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { api } from "../lib/api";
@@ -308,7 +308,7 @@ export function Playbooks() {
         ))}
       </div>
       {tab === 'glossary' && <section className="card p-5"><h2 className="text-xl font-semibold mb-4">Trading concepts</h2><dl className="space-y-4">{['VWAP','FVG','ATR','RSI','MACD','SMA','EMA','RVOL'].map(term => <div key={term}><dt className="font-semibold">{term}</dt><dd className="text-sm mt-1">{GLOSSARY[term]}</dd></div>)}</dl></section>}
-      {tab === 'playbooks' && <details className="card p-4" open><summary className="font-semibold cursor-pointer">Your enabled pairs</summary><div className="grid gap-3 mt-3 sm:grid-cols-2">{(strategyCatalog?.strategies ?? []).filter(s => s.enabled).flatMap(s => (s.trading_tickers ?? []).map(ticker => <div key={`${s.strategy_id}:${ticker}`} className="text-sm"><strong>{ticker} · {s.display_name}</strong><p className="text-xs">{s.version}</p><div className="flex gap-3 mt-1">{['lesson','reference','practice'].map(view => <Link key={view} to={learningLink(s.strategy_id,ticker,s.version,view)}>{view[0].toUpperCase()+view.slice(1)}</Link>)}</div></div>))}</div></details>}
+      {tab === 'playbooks' && <EnabledLearningPairs strategies={strategyCatalog?.strategies ?? []} />}
 
       {tab === "log-guide" && (
         <div className="flex flex-col gap-4">
