@@ -9,7 +9,7 @@ type Library = {actual:Exercise[]; samples:Exercise[]; exclusions:Record<string,
 function ExerciseCard({item}: {item:Exercise}) {
   const [answer,setAnswer] = useState('');
   return <article className="card p-4 space-y-3">
-    <p className="text-xs font-semibold" style={{color:'var(--accent)'}}>{item.source}</p>
+    <p className="text-xs font-semibold" style={{color:'var(--accent)'}}>{item.synthetic ? 'Teaching example' : 'From your trade journal'}</p>
     <h3 className="font-semibold">{item.title}</h3><p className="text-sm">{item.facts}</p>
     <p className="text-sm font-semibold">{item.question}</p>
     <div className="flex flex-wrap gap-2">{item.choices.map(choice => <button key={choice} disabled={Boolean(answer)} className="btn btn-sm btn-ghost" onClick={() => setAnswer(choice)}>{choice}</button>)}</div>
@@ -27,10 +27,10 @@ export function TradePractice({strategy,ticker,version}: {strategy:string;ticker
   const item=data.actual[index % Math.max(1,data.actual.length)];
   return <section className="space-y-3">
     <h3 className="font-semibold">Practice from your trades</h3>
-    <p className="text-xs">{data.mode.toUpperCase()} account · {version}. Guided review, not a scored exam or a strategy change.</p>
+    <p className="text-xs">{data.mode.toUpperCase()} account · {version}. Review a decision, then check your answer.</p>
     {item ? <><ExerciseCard key={item.id} item={item}/><button className="btn btn-sm btn-ghost" onClick={()=>setIndex(index+1)}>Next trade ({index % data.actual.length + 1}/{data.actual.length})</button></> : <p className="text-sm">No complete matching closed trades are available yet. Start with the two teaching examples below.</p>}
     {Object.keys(data.exclusions).length > 0 && <details><summary className="text-xs cursor-pointer">Why some trades are unavailable</summary>{Object.entries(data.exclusions).map(([reason,count])=><p key={reason} className="text-xs">{reason}: {count}</p>)}</details>}
     <details open={!item}><summary className="font-semibold cursor-pointer">Two teaching examples</summary><div className="grid gap-3 mt-3 lg:grid-cols-2">{data.samples.map(sample=><ExerciseCard key={sample.id} item={sample}/>)}</div></details>
-    <p className="text-xs" style={{color:'var(--ink-muted)'}}>{data.source}. Samples are fictional and never counted as trade results.</p>
+    <p className="text-xs" style={{color:'var(--ink-muted)'}}>Teaching examples are made up for practice. Journal examples come from your account.</p>
   </section>;
 }

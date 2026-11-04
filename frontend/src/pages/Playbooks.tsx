@@ -8,16 +8,9 @@ import { Search, ChevronDown, ChevronRight } from "lucide-react";
 import { PairLearning } from "../components/learning/PairLearning";
 import { EnabledLearningPairs } from "../components/learning/EnabledLearningPairs";
 import { useSearchParams } from "react-router-dom";
-import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-
-interface Strategy {
-  id: string; name: string; emoji: string; setup: string; entry: string;
-  stop: string; target: string; notes: string; evidence?: string;
-  tags: string[]; tuning: { param: string; value: string }[];
-}
 
 const LOG_CODES = [
   { code: "bar_eval", tag: "think", plain: "Per-candle evaluation", detail: "Shows what a promoted strategy saw and why it did or did not advance." },
@@ -32,16 +25,7 @@ const LOG_CODES = [
 ];
 
 const TAG_BADGE: Record<string, string> = { system: "badge-blue", signal: "badge-green", order: "badge-blue", exit: "badge-red", think: "badge-yellow", gate: "badge-yellow", risk: "badge-red" };
-const TAG_COLORS: Record<string, string> = { paper: "badge-blue", opening: "badge-green", pullback: "badge-yellow", trend: "badge-blue", afternoon: "badge-yellow", gap: "badge-green", TSLA: "badge-blue", "1-minute": "badge-blue", VWAP: "badge-green" };
 
-const GLOBAL_PARAMS = [
-  { param: "Trade risk", value: "Account tier", note: "calculated from the active broker balance and Settings" },
-  { param: "Position cap", value: "2 total", note: "never two positions in the same ticker" },
-  { param: "Hard protection", value: "Enabled", note: "the account stop remains active for every reviewed strategy" },
-  { param: "Timed exits", value: "30m / 90m", note: "30 minutes for SPY rules; 90 minutes for the reviewed TSLA rules" },
-  { param: "Quote convention", value: "Ask → bid", note: "entry uses the executable ask and exit uses the same contract's bid" },
-  { param: "Session cutoff", value: "3:55 PM ET", note: "no option position is carried beyond the bot's trading session" },
-];
 
 // ── How It Works — comprehensive bot explainer ────────────────────────────────
 const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }[] = [
@@ -182,68 +166,6 @@ const LOG_CATEGORIES: { key: string; label: string; emoji: string }[] = [
   { key: "exit",    label: "Exits",                emoji: "🏁" },
 ];
 
-// Only current reviewed V2 strategies belong in the learner's Playbook. A
-// strategy may shadow-observe in any account mode; live order authority is a
-// separate, per-user decision after the exact version/ticker pair qualifies.
-// The legacy reference data above remains for historic log wording, not lessons.
-const CURRENT_STRATEGIES: Strategy[] = [
-  {
-    id: "v2_orb", name: "TSLA Opening-Range Pullback V2", emoji: "🎯",
-    setup: "Mark the first 15 minutes. Wait for price to break the range, then return and test that same level.",
-    entry: "A completed 5-minute candle must reclaim the broken level, beat the prior candle, and sit on the correct side of VWAP.",
-    stop: "The pullback high or low is the line that proves the idea wrong.",
-    target: "The reviewed model uses the next-minute option ask and the same contract's executable bid 90 minutes later.",
-    notes: "TSLA only. The runtime, lesson, and evidence catalog all point to the same versioned implementation.",
-    evidence: "Promising but inconsistent: later results were positive, while the training period and month-by-month stability did not pass the stronger standard.",
-    tags: ["paper", "opening", "pullback"],
-    tuning: [{ param: "When", value: "Break before 10:30 ET; confirmation by 10:45 ET" }, { param: "Chop defense", value: "Close + reclaim + VWAP alignment" }],
-  },
-  {
-    id: "v2_trend", name: "SPY Trend Continuation V2", emoji: "🌊",
-    setup: "A fast trend is above or below a slower trend, then price closes through its recent range in that same direction.",
-    entry: "The completed 5-minute signal fills on the next bar. It never uses a future candle to decide.",
-    stop: "An ATR-based invalidation sits beyond the entry candle structure.",
-    target: "The reviewed rule exits the same contract at its executable bid 30 minutes after entry.",
-    notes: "SPY only. It evaluates completed five-minute candles and becomes eligible on the following one-minute bar.",
-    evidence: "Passed the predeclared later-data check under the same one-position account constraint used by the bot.",
-    tags: ["paper", "trend", "research"],
-    tuning: [{ param: "Chart", value: "Completed 5-minute SPY bars" }, { param: "Exit", value: "Same contract's 30-minute bid" }],
-  },
-  {
-    id: "v2_spy_fvg", name: "SPY Afternoon Fair Value Gap V2", emoji: "⚡",
-    setup: "Between 1:30 and 3:00 PM ET, a three-candle move leaves a meaningful price gap in the direction of the 5-minute trend.",
-    entry: "Price returns to that gap for the first time, overlaps it, closes on the favorable half, and stays aligned with VWAP plus EMA trend. Entry is on the following one-minute option quote.",
-    stop: "The confirming retest candle’s invalidation level; account-wide protections still apply.",
-    target: "The reviewed study exits the same selected contract 30 minutes after entry using the observed bid.",
-    notes: "SPY only. This is a narrow afternoon first-retest rule, not the old all-day generic FVG strategy.",
-    evidence: "Promising but underpowered: paid-quote results were positive from May through July, but the training set finished one signal short of its predeclared minimum.",
-    tags: ["paper", "afternoon", "gap"],
-    tuning: [{ param: "Window", value: "1:30–3:00 PM ET" }, { param: "Gap", value: "≥ 0.5 × ATR on completed 5-minute bars" }, { param: "Trend", value: "EMA 8/20 and session VWAP agree" }, { param: "Exit", value: "Same contract’s 30-minute bid" }],
-  },
-  {
-    id: "v2_two_leg", name: "TSLA Two-Leg Trend Pullback V2", emoji: "↗",
-    setup: "After 9:45 ET, TSLA must make a real move away from the 9:45 reference: price stays on the correct side of VWAP, EMA 9 is above or below EMA 20, and the first leg travels at least one ATR.",
-    entry: "It does not chase that first move. Price must pull back 0.25–1.25 ATR to EMA 9 without closing through VWAP, then a finished one-minute candle must reclaim the pullback’s prior high or low. The following minute’s selected option ask is the entry reference.",
-    stop: "The pullback extreme is the underlying invalidation. If price closes through VWAP or the trend EMAs cross, the setup is cancelled instead of being forced.",
-    target: "The reviewed model holds the same selected contract for 90 minutes, then uses its executable bid—not a midpoint or a made-up option price.",
-    notes: "TSLA only. This is a morning continuation pattern, not a generic all-day trend signal and not the old retired Trend Continuation rule.",
-    evidence: "Promising but inconsistent: the train and later aggregates were positive, while monthly performance was not stable enough for the strongest evidence grade.",
-    tags: ["paper", "TSLA", "1-minute", "VWAP"],
-    tuning: [{ param: "Reference", value: "09:45 ET close" }, { param: "First leg", value: "≥ 1 ATR with VWAP + EMA 9/20 agreement" }, { param: "Pullback", value: "0.25–1.25 ATR into EMA 9; VWAP must hold" }, { param: "Entry", value: "Completed 1-minute reclaim, then next-minute option ask" }, { param: "Exit", value: "Same contract’s 90-minute bid" }],
-  },
-  {
-    id: "v2_recovery", name: "SPY Failed-Range Recovery V2", emoji: "↩️",
-    setup: "Before 11:00 ET, a completed one-minute SPY candle closes at least 5% of the opening-range width outside the 9:30–9:44 range. By noon, an opposite-color candle must close back inside.",
-    entry: "The reversal must retain at least 5% of the range width to session VWAP. The following minute begins contract selection and records one exact contract plus its complete order intent.",
-    stop: "Ten percent of the opening-range width beyond the failed-break extreme.",
-    target: "The reviewed rule exits the same selected contract at its observed bid 30 minutes after entry.",
-    notes: "SPY only. A failed upside break creates a put idea; a failed downside break creates a call idea. This is not the retired generic opening-range strategy.",
-    evidence: "Passed the predeclared later-data check: 21 paid-quote trades across May–July, 61.9% winners, 3.04 profit factor, and positive results in every measured month.",
-    tags: ["paper", "SPY", "reversal", "opening range"],
-    tuning: [{ param: "Range", value: "09:30–09:44 ET one-minute bars" }, { param: "Break", value: "≥ 0.05 × range by 11:00 ET" }, { param: "Failure", value: "Opposite-color close back inside by noon" }, { param: "VWAP room", value: "≥ 0.05 × range" }, { param: "Exit", value: "Same contract’s 30-minute bid" }],
-  },
-];
-
 export function Playbooks() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
@@ -253,19 +175,6 @@ export function Playbooks() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [openSection,   setOpenSection]   = useState<string | null>("routine");   // first section open by default
   const { data: strategyCatalog } = useQuery({ queryKey: ["strategy-catalog", user?.user_id], queryFn: api.settings.strategies });
-  const enabledStrategyIds = useMemo(() => new Set(
-    (strategyCatalog?.strategies ?? []).filter((strategy) => strategy.enabled).map((strategy) => strategy.strategy_id)
-  ), [strategyCatalog]);
-  const currentStrategies = useMemo(() => CURRENT_STRATEGIES.filter((strategy) => (
-    enabledStrategyIds.has(
-      strategy.id === "v2_orb" ? "V2_ORB_PULLBACK" :
-      strategy.id === "v2_trend" ? "V2_SPY_TREND_CONT" :
-      strategy.id === "v2_spy_fvg" ? "V2_SPY_AFTERNOON_FVG" :
-      strategy.id === "v2_recovery" ? "V2_FAILED_OR_BREAK_VWAP_REVERSION" :
-      "V2_TSLA_TWO_LEG_TREND_PULLBACK"
-    )
-  )), [enabledStrategyIds]);
-
   // Filter + group log codes by search query and active category
   const filteredLogs = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -413,161 +322,6 @@ export function Playbooks() {
               ))
           )}
         </div>
-      )}
-
-      {tab === "playbooks" && (
-      <div className="flex flex-col gap-4">
-
-      <details className="card p-4">
-        <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>
-          Technical reference (optional)
-        </summary>
-        <div className="flex flex-col gap-4 mt-4">
-      {currentStrategies.length === 0 ? (
-        <div className="card p-5 text-sm" style={{ color: "var(--ink-muted)" }}>
-          No reviewed strategies are switched on. Turn one on in Settings → Strategy execution controls to see its lesson here.
-        </div>
-      ) : (
-
-      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))" }}>
-        {currentStrategies.map((s) => (
-          <div key={s.id} className="card p-4 flex flex-col gap-3">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <span className="text-2xl">{s.emoji}</span>
-                <h3 className="text-sm font-semibold mt-1" style={{ color: "var(--ink)" }}>
-                  {s.name}
-                </h3>
-              </div>
-              <div className="flex flex-wrap gap-1 justify-end">
-                {s.tags.map((t) => (
-                  <span key={t} className={`badge ${TAG_COLORS[t] ?? "badge-blue"}`}>{t}</span>
-                ))}
-              </div>
-            </div>
-
-            {/* Rules table */}
-            <div className="flex flex-col gap-2 text-xs">
-              {[
-                { label: "Setup",  value: s.setup },
-                { label: "Entry",  value: s.entry },
-                { label: "Stop",   value: s.stop  },
-                { label: "Target", value: s.target },
-              ].map((row) => (
-                <div key={row.label} className="flex gap-2">
-                  <span
-                    className="shrink-0 font-semibold uppercase tracking-wide w-14"
-                    style={{ color: "var(--ink-muted)" }}
-                  >
-                    {row.label}
-                  </span>
-                  <span style={{ color: "var(--ink)" }}>{row.value}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Tuning numbers */}
-            <div className="flex flex-col gap-1">
-              <span
-                className="text-xs font-semibold uppercase tracking-widest"
-                style={{ color: "var(--ink-muted)" }}
-              >
-                ⚙️ Live Tuning
-              </span>
-              <div
-                className="rounded-lg px-3 py-2 flex flex-col gap-1"
-                style={{ background: "var(--muted)" }}
-              >
-                {s.tuning.map((t) => {
-                  const tip =
-                    t.param.startsWith("RVOL") ? GLOSSARY.RVOL :
-                    t.param.startsWith("ATR")  ? GLOSSARY.ATR  :
-                    t.param === "VWAP"         ? GLOSSARY.VWAP :
-                    "";
-                  return (
-                    <div key={t.param} className="flex gap-2 text-xs">
-                      <span
-                        className="shrink-0 font-mono"
-                        style={{ color: "var(--ink-muted)", width: 130 }}
-                      >
-                        {tip ? <Tooltip text={tip}>{t.param}</Tooltip> : t.param}
-                      </span>
-                      <span className="font-mono font-semibold" style={{ color: "var(--accent)" }}>
-                        {t.value}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Notes */}
-            <div
-              className="text-xs px-3 py-2 rounded-lg"
-              style={{ background: "var(--muted)", color: "var(--ink-muted)" }}
-            >
-              💡 {s.notes}
-            </div>
-            <div
-              className="text-xs px-3 py-2 rounded-lg leading-relaxed"
-              style={{ background: "color-mix(in srgb, var(--accent) 8%, var(--surface))", color: "var(--ink-muted)", borderLeft: "3px solid var(--accent)" }}
-            >
-              <strong style={{ color: "var(--ink)" }}>Research status:</strong> {s.evidence ?? "No reviewed evidence status is available."}
-            </div>
-          </div>
-        ))}
-      </div>
-      )}
-
-      {/* Global risk parameters */}
-      <div className="flex flex-col gap-2 mt-2">
-        <div className="flex items-center gap-2">
-          <span className="text-base">🛡️</span>
-          <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-            Global Risk &amp; Exit Parameters
-          </span>
-          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>
-            — shared across all strategies
-          </span>
-        </div>
-        <div
-          className="card p-4 grid gap-x-8 gap-y-1.5"
-          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}
-        >
-          {GLOBAL_PARAMS.map((g) => {
-            const gTip =
-              g.param.startsWith("RVOL")      ? GLOSSARY.RVOL       :
-              g.param.startsWith("ATR")       ? GLOSSARY.ATR        :
-              g.param.includes("Stage 1")     ? GLOSSARY["Stage 1"] :
-              g.param.includes("Stage 2") || g.param.includes("trail") ? GLOSSARY["ATR Trail"] :
-              g.param.startsWith("VWAP")      ? GLOSSARY.VWAP       :
-              "";
-            return (
-            <div key={g.param} className="flex gap-2 text-xs items-baseline">
-              <span
-                className="shrink-0 font-mono"
-                style={{ color: "var(--ink-muted)", width: 148 }}
-              >
-                {gTip ? <Tooltip text={gTip}>{g.param}</Tooltip> : g.param}
-              </span>
-              <span className="font-mono font-semibold" style={{ color: "var(--accent)" }}>
-                {g.value}
-              </span>
-              {g.note && (
-                <span className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                  — {g.note}
-                </span>
-              )}
-            </div>
-            );
-          })}
-        </div>
-      </div>
-
-        </div>
-      </details>
-      </div>
       )}
 
       {tab === "how-it-works" && (

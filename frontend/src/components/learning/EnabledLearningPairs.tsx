@@ -14,11 +14,11 @@ export function EnabledLearningPairs({strategies}: {strategies: ReviewedStrategy
   return <section className="space-y-4" aria-label="Strategy school">
     <div className="card p-4 space-y-3">
       <h2 className="font-semibold text-xl">Learn a strategy</h2>
-      <p className="text-sm">Learn the setup on the chart, then its entry, exit, protection and sizing. Tickers are examples, not separate strategies.</p>
+      <p className="text-sm">Pick a course. Follow the chart. Practice the decisions.</p>
       {!selected ? <p>No enabled strategies are available.</p> : <>
         <label className="block text-sm">Strategy<select aria-label="Strategy family" className="input w-full mt-1" value={activeFamily} onChange={e => {setFamily(e.target.value); setVariant('');}}>{families.map(name => <option key={name}>{name}</option>)}</select></label>
         {variants.length > 1 ? <label className="block text-sm">Variation and version<select aria-label="Strategy variation" className="input w-full mt-1" value={`${selected.strategy_id}:${selected.version}`} onChange={e => setVariant(e.target.value)}>{variants.map(s => <option key={s.strategy_id} value={`${s.strategy_id}:${s.version}`}>{s.display_name} · {s.version}</option>)}</select></label> : <p className="text-sm">{selected.display_name} · Version {selected.version}</p>}
-        <p className="text-xs">Used on {(selected.trading_tickers ?? []).join(', ')}. Variations can have different entry and exit rules.</p>
+        <p className="text-xs">Examples: {(selected.trading_tickers ?? []).join(', ')}</p>
       </>}
     </div>
     {selected && <PairLearning key={`${selected.strategy_id}:${selected.version}`} strategyCatalog={strategies} selection={{strategy:selected.strategy_id,version:selected.version,ticker:selected.trading_tickers![0]}} />}

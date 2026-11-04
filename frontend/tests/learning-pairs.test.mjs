@@ -9,14 +9,14 @@ test('learning starts with strategy families and versions, not ticker search',()
  assert.doesNotMatch(source,/Find a ticker|Choose a pair|<input/);
  assert.match(source,/<PairLearning/);
  assert.match(read('PairLearning'),/activeLessonIds=\{\[lessons\[data.source\]\]\}/);
- assert.match(read('PairLearning'),/Protection and position sizing/);
+ assert.match(read('VersionRuleWalkthrough'),/Build your trade plan/);
 });
 test('trade practice separates real rows, fictional samples and scanner observations',()=>{
  const source=read('TradePractice');
  assert.match(source,/data.actual/);
  assert.match(source,/data.samples/);
- assert.match(source,/Samples are fictional and never counted as trade results/);
- assert.match(read('PairLearning'),/not necessarily executed trades/);
+ assert.match(source,/Teaching examples are made up for practice/);
+ assert.match(read('PairLearning'),/not necessarily trades the bot entered/);
 });
 test('main learning page has one pair chooser and header omits watching ticker',()=>{
  const page=readFileSync(new URL('../src/pages/Playbooks.tsx',import.meta.url),'utf8');
