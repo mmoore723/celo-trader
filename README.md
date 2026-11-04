@@ -45,7 +45,69 @@ Exits are strategy-specific. Not every strategy uses a 30-minute timer or the
 same profit trail. Consult the implementation and the policy recorded for the
 position. A research comparison does not silently replace a deployed exit.
 
+## Specialized strategies and tickers
+
+This is the implemented catalog as of November 4, 2026, not a list of currently
+enabled trades or a claim of profitability. Versions are separate implementations,
+even when their strategy names are similar. Account permission, integrity,
+contract, and risk checks still apply.
+
+### Ticker-specific execution implementations
+
+| Strategy | Specialized ticker(s) | Version | Strategy ID |
+| --- | --- | --- | --- |
+| Opening-Range Pullback | TSLA | 2.0.0 | `V2_ORB_PULLBACK` |
+| Trend Continuation | SPY | 2.1.0 | `V2_SPY_TREND_CONT` |
+| Trend Continuation, QQQ route | QQQ | 2.1.0 | `RESEARCH_QQQ_TREND_V2` |
+| Afternoon Fair Value Gap | SPY | 2.1.0 | `V2_SPY_AFTERNOON_FVG` |
+| Failed-Range Recovery | SPY | 2.1.0 | `V2_FAILED_OR_BREAK_VWAP_REVERSION` |
+| Two-Leg Trend Pullback | TSLA | 2.2.0 | `V2_TSLA_TWO_LEG_TREND_PULLBACK` |
+| VWAP Pullback | AMZN | research.1 | `V2_VWAP_PULLBACK` |
+| VWAP Pullback, 10:30 Displacement | AMZN, TSLA | 0.2.0 | `CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG` |
+
+Scopes above come from the catalog's base tickers and research order specs'
+explicit ticker restrictions. They are not a substitute for the current
+account's approved pair inventory. The SPY Trend and 10:30 Displacement catalog
+entries have paper-only defaults; any live eligibility must be checked through
+the account-specific authorization path, not inferred from this table.
+
+### Broader strategies with pair-specific approval
+
+These implementations are not assigned a fixed execution ticker list in their
+registry entries. Research and approval determine the exact strategy/ticker pair;
+an empty static ticker set does not mean every ticker is enabled.
+
+| Strategy | Version | Strategy ID | Static ticker scope |
+| --- | --- | --- | --- |
+| Trend Continuation | research.1 | `V2_TREND_CONT` | SPY and QQQ are recommendation targets, not blanket execution permission |
+| Afternoon Compression Breakout | research.2 | `V2_AFTERNOON_COMPRESSION_BREAKOUT` | Pair-specific |
+| Gap Fill | research.2 | `V2_GAP_FILL_RTH` | Pair-specific |
+| Afternoon Reversal | research.1 | `V2_AFTERNOON_REVERSAL` | Pair-specific |
+| ORB RSI/MACD Short | research.2 | `V2_SPY_ORB_RSI_MACD_SHORT` | Pair-specific; the legacy SPY ID is not a ticker restriction |
+| Impulse Anchored VWAP Pullback | research.2 | `V2_IMPULSE_ANCHORED_VWAP_PULLBACK` | Pair-specific |
+| Context-Filtered ORB, ATR10 execution variant | 0.1.0.research.2 | `RESEARCH_CTX_ORB_ATR10_V2` | Pair-specific |
+| Failed-Range Recovery, research-derived execution variant | 2.1.0.research.2 | `RESEARCH_FAILED_RANGE_V2` | Pair-specific |
+
+### Contextual observation variants
+
+These entries are marked observation-only in the static catalog. Their listed
+tickers are base study scopes, not a statement that collection is limited to
+those names or that orders are enabled. Explicit pair approval and runtime
+routing must be checked separately, including any paper execution adapter.
+
+| Strategy | Base study tickers | Version | Strategy ID |
+| --- | --- | --- | --- |
+| Context-Filtered ORB, NR7 / Inside Day | AMZN, QQQ, SPY, TSLA | 0.1.0 | `CTX_ORB_NR7_OR_INSIDE` |
+| Context-Filtered ORB, ATR10 | AMZN, QQQ, SPY, TSLA | 0.1.0 | `CTX_ORB_PRIOR_RANGE_LT_ATR10_LONG` |
+| VWAP Pullback, 1-Hour KER | AMZN, QQQ, SPY, TSLA | 0.1.0 | `CTX_VWAP_PULLBACK_KER10_LONG` |
+| 1-Hour Bollinger / Keltner Squeeze | QQQ | 0.1.0 | `CTX_1H_SQUEEZE_MACD_LONG` |
+
+For the actual enabled list, use Settings. Keep this catalog table synchronized
+with `config/strategy_catalog.py` and `config/research_order_specs.py` when
+versions or ticker restrictions change.
+
 ## Research and data boundaries
+
 
 Keep evidence separate by strategy, ticker, code/policy version, account, and
 paper/live mode. Distinguish historical replay, forward observations,
