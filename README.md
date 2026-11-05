@@ -176,6 +176,16 @@ market session. Verify actual worker records separately.
 
 ## Deployment
 
+Earnings checks use a best-effort Yahoo Finance calendar through yfinance,
+not the unavailable Tradier fundamentals endpoint. Two background workers
+fetch public ticker data without broker credentials. Successful results expire
+after 15 minutes; failures retry after one minute. Pending, stale or incomplete
+data remains unavailable, with a warning in system events. Unknown data does
+not currently block entry. Existing blackout settings apply to returned dates.
+Recent and upcoming dates are both required for company stocks; a provider-
+verified ETF is marked not applicable. Dates can be estimates and can change.
+This is not a guaranteed market-data service or proof of open-session coverage.
+
 Use [deploy.sh](deploy.sh) for application releases. Review the diff and keep
 unrelated work out. It runs the production Python suite, frontend lint and build,
 stages its application allowlist, commits and pushes to GitHub `main`, checks the

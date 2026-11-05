@@ -8,7 +8,6 @@ into TradierClient in broker/tradier_client.py.
 """
 
 import logging
-from datetime import date, datetime, timezone
 from typing import Optional
 
 import requests
@@ -104,55 +103,21 @@ class TradierOrdersMixin:
     # ── Earnings ──────────────────────────────────────────────────────────────
 
     def get_earnings(self, symbol: str) -> list[str] | None:
-        """Return validated dates, or None when the calendar is unavailable.
-
-        An explicit empty event list is distinct from missing or malformed data.
-        No plan entitlement is inferred from an HTTP error. This method does not
-        decide whether missing earnings data blocks an entry.
-        """
-        url = f"{self.base}/markets/fundamentals/calendars"
-        reason = None
-        dates = None
-        try:
-            r = requests.get(url, headers=self.headers, params={"symbols": symbol},
-                             timeout=10, allow_redirects=False)
-            if r.status_code != 200:
-                reason = f"HTTP {r.status_code}"
-            else:
-                events = r.json()["security"]["calendar"]["event"]
-                if isinstance(events, dict):
-                    events = [events]
-                if not isinstance(events, list) or any(not isinstance(e, dict) or not e.get("type") for e in events):
-                    raise ValueError("Invalid calendar events")
-                dates = []
-                for event in events:
-                    if event["type"] == "earnings":
-                        value = event["date"]
-                        date.fromisoformat(value)
-                        dates.append(value)
-        except requests.Timeout:
-            reason = "request timeout"
-        except requests.RequestException:
-            reason = "request failed"
-        except (ValueError, KeyError, TypeError):
-            reason = "invalid or missing calendar data"
-        if reason:
-            dates = None
+        """Read a non-blocking public calendar snapshot; None means unverified."""
+        from broker.earnings_calendar import snapshot
+        current = snapshot(symbol)
         statuses = getattr(self, "earnings_status", {})
         previous = statuses.get(symbol, {})
-        statuses[symbol] = {
-            "status": "unavailable" if reason else "available",
-            "reason": reason,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
-            "source": "tradier/markets/fundamentals/calendars",
-            "dates": dates,
-        }
+        statuses[symbol] = current
         self.earnings_status = statuses
-        if reason:
+        if current["status"] not in {"available", "not_applicable"}:
             _debounced_log("WARNING", "broker.earnings",
-                           f"[{symbol}] Earnings data unavailable ({reason}). "
+                           f"[{symbol}] Earnings data unavailable ({current['reason']}). "
                            "The earnings blackout cannot be verified. Current entry behavior is unchanged; "
                            "this is NOT confirmation of no earnings.")
-        elif previous.get("status") == "unavailable":
-            log_event("INFO", "broker.earnings", f"[{symbol}] Earnings calendar lookup recovered.")
-        return dates
+            return None
+        if previous.get("status") not in {"available", "not_applicable"}:
+            log_event("INFO", "broker.earnings",
+                      f"[{symbol}] Earnings calendar ready: {current['source']}; "
+                      f"status={current['status']}; checked_at={current['checked_at']}.")
+        return list(current["dates"])

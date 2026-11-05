@@ -40,5 +40,6 @@ pytz>=2024.1              # timezone handling for market hours
 
 # ── Market data fallback (ETFs on IEX-free tier have no data) ─────────────────
 yfinance>=0.2.40          # Yahoo Finance fallback for SPY/QQQ and any IEX gap
+lxml>=5,<7               # yfinance recent earnings table parser
 zstandard>=0.23.0         # streaming Databento .csv.zst research imports
 databento>=0.82,<0.83    # optional historical OPRA research download client
