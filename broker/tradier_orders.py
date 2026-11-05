@@ -8,12 +8,13 @@ into TradierClient in broker/tradier_client.py.
 """
 
 import logging
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import requests
 
 from database import log_event
-from broker.common import _retry
+from broker.common import _retry, _debounced_log
 
 logger = logging.getLogger("celo_trader.broker")
 
@@ -102,35 +103,56 @@ class TradierOrdersMixin:
 
     # ── Earnings ──────────────────────────────────────────────────────────────
 
-    def get_earnings(self, symbol: str) -> list[str]:
-        """
-        Return upcoming earnings dates for `symbol` from Tradier.
+    def get_earnings(self, symbol: str) -> list[str] | None:
+        """Return validated dates, or None when the calendar is unavailable.
 
-        The /markets/fundamentals/calendars endpoint is only available on
-        paid Tradier plans — it returns 404 on free/sandbox keys.
-        Any HTTP 4xx is treated as "endpoint unavailable" and returns an empty
-        list silently (debug-level only) so the bot isn't flooded with warnings.
+        An explicit empty event list is distinct from missing or malformed data.
+        No plan entitlement is inferred from an HTTP error. This method does not
+        decide whether missing earnings data blocks an entry.
         """
-        # Call directly (no _retry) — this endpoint returns 404 on free Tradier
-        # plans and retrying it 3× just spams the log.
+        url = f"{self.base}/markets/fundamentals/calendars"
+        reason = None
+        dates = None
         try:
-            url = f"{self.base}/markets/fundamentals/calendars"
-            r   = requests.get(url, headers=self.headers,
-                               params={"symbols": symbol}, timeout=10)
-            if r.status_code == 404 or r.status_code == 403:
-                # Endpoint not available on this plan — silent, no retries.
-                return []
-            r.raise_for_status()
-            resp   = r.json() if r.text and r.text.strip() else {}
-            events = resp.get("security", {}).get("calendar", {}).get("event", [])
-            if isinstance(events, dict):
-                events = [events]
-            return [
-                e.get("date") for e in events
-                if e.get("type") == "earnings" and e.get("date")
-            ]
-        except requests.exceptions.HTTPError as exc:
-            logger.debug("get_earnings(%s): HTTP %s — skipping", symbol, exc)
-            return []
-        except Exception:
-            return []
+            r = requests.get(url, headers=self.headers, params={"symbols": symbol},
+                             timeout=10, allow_redirects=False)
+            if r.status_code != 200:
+                reason = f"HTTP {r.status_code}"
+            else:
+                events = r.json()["security"]["calendar"]["event"]
+                if isinstance(events, dict):
+                    events = [events]
+                if not isinstance(events, list) or any(not isinstance(e, dict) or not e.get("type") for e in events):
+                    raise ValueError("Invalid calendar events")
+                dates = []
+                for event in events:
+                    if event["type"] == "earnings":
+                        value = event["date"]
+                        date.fromisoformat(value)
+                        dates.append(value)
+        except requests.Timeout:
+            reason = "request timeout"
+        except requests.RequestException:
+            reason = "request failed"
+        except (ValueError, KeyError, TypeError):
+            reason = "invalid or missing calendar data"
+        if reason:
+            dates = None
+        statuses = getattr(self, "earnings_status", {})
+        previous = statuses.get(symbol, {})
+        statuses[symbol] = {
+            "status": "unavailable" if reason else "available",
+            "reason": reason,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "source": "tradier/markets/fundamentals/calendars",
+            "dates": dates,
+        }
+        self.earnings_status = statuses
+        if reason:
+            _debounced_log("WARNING", "broker.earnings",
+                           f"[{symbol}] Earnings data unavailable ({reason}). "
+                           "The earnings blackout cannot be verified. Current entry behavior is unchanged; "
+                           "this is NOT confirmation of no earnings.")
+        elif previous.get("status") == "unavailable":
+            log_event("INFO", "broker.earnings", f"[{symbol}] Earnings calendar lookup recovered.")
+        return dates

@@ -687,7 +687,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         if _s.get("earnings_filter_enabled", True):
             _blackout = int(_s.get("earnings_blackout_days", EARNINGS_BLACKOUT_DAYS))
             earnings  = tradier.get_earnings(ticker)
-            if is_near_earnings(earnings, _blackout):
+            if earnings is not None and is_near_earnings(earnings, _blackout):
                 logger.info("Earnings blackout: %s — skipping", ticker)
                 return
     except Exception:

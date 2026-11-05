@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'research-entry-capture-validation-20261103.1'
+REVISION = 'earnings-availability-20261105.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 
