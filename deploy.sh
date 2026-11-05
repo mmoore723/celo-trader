@@ -6,6 +6,14 @@
 
 set -euo pipefail
 
+FORCE_MARKET_HOURS=false
+for argument in "$@"; do
+  case "$argument" in
+    --force-market-hours) FORCE_MARKET_HOURS=true ;;
+    *) echo "Unknown deployment argument: $argument"; exit 2 ;;
+  esac
+done
+
 EC2_HOST="ec2-user@3.148.153.141"      # ← change this
 EC2_DIR="/opt/celo_trader"
 # FIX 2026-07-24: every ssh call below was missing -i, so it silently fell
@@ -32,6 +40,7 @@ PRODUCTION_PATHS=(
   config
   database
   deploy/application_log_retention.py
+  deploy/market_hours_guard.py
   deploy/DEPLOY_GUIDE.md
   deploy/celo-dashboard-logrotate
   deploy/celo-journald.conf
@@ -97,6 +106,15 @@ if [ -z "${CELO_TEST_PYTHON:-}" ] && [ -x ".venv-paid-research/bin/python" ]; th
   TEST_PYTHON=".venv-paid-research/bin/python"
 fi
 
+check_deployment_window() {
+  if [ "$FORCE_MARKET_HOURS" = true ]; then
+    "$TEST_PYTHON" deploy/market_hours_guard.py --force-market-hours
+  else
+    "$TEST_PYTHON" deploy/market_hours_guard.py
+  fi
+}
+check_deployment_window
+
 echo "==> Running the complete production Python acceptance suite..."
 "$TEST_PYTHON" tests/run_production_suite.py
 
@@ -153,6 +171,7 @@ if ! git diff --cached --quiet; then
 fi
 
 echo "==> Checking and pushing the verified release commit to GitHub main..."
+check_deployment_window
 git fetch origin main
 if ! git merge-base --is-ancestor origin/main HEAD; then
   echo "Refusing deployment: the verified release is not a fast-forward of origin/main."
@@ -176,6 +195,7 @@ if [ -n "$REMOTE_TRACKED_DIRTY" ]; then
 fi
 
 echo "==> Pulling on EC2..."
+check_deployment_window
 REMOTE_PREVIOUS_SHA="$(ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && git rev-parse HEAD")"
 ssh -i "$EC2_KEY" "$EC2_HOST" "cd $EC2_DIR && git fetch origin main && git checkout main && git pull --ff-only origin main"
 
@@ -202,6 +222,7 @@ ssh -i "$EC2_KEY" "$EC2_HOST" \
   "cd $EC2_DIR && test -f .env && test \$(grep -E '^JWT_SECRET=.{32,}$' .env | wc -l) -eq 1 && test \$(grep -E '^ENCRYPTION_KEY=.+$' .env | wc -l) -eq 1"
 
 echo "==> Restarting services on EC2..."
+check_deployment_window
 ssh -i "$EC2_KEY" "$EC2_HOST" "sudo systemctl restart celo-dashboard && sudo systemctl status celo-dashboard --no-pager"
 
 echo "==> Verifying deployed health endpoint..."

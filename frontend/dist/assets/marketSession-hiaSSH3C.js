@@ -1,0 +1,2 @@
+function e(e){let t=new Intl.DateTimeFormat(`en-US`,{timeZone:`America/New_York`,weekday:`short`,year:`numeric`,month:`2-digit`,day:`2-digit`,hour:`2-digit`,minute:`2-digit`,hourCycle:`h23`}).formatToParts(e instanceof Date?e:new Date(e));return Object.fromEntries(t.map(e=>[e.type,e.value]))}function t(t=new Date){let n=e(t);return`${n.year}-${n.month}-${n.day}`}function n(t=new Date){let n=e(t);return n.weekday===`Sat`||n.weekday===`Sun`||Number(n.hour)*60+Number(n.minute)>=960}export{t as n,n as t};
+//# sourceMappingURL=marketSession-hiaSSH3C.js.map

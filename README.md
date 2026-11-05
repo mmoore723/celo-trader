@@ -192,6 +192,14 @@ Before reporting success, verify GitHub `main` and production commits match, the
 served frontend belongs to the release, services are healthy, and the affected
 user flow works. A push alone is not deployment verification.
 
+Normal releases are blocked on weekdays from 09:30 through 15:59 Eastern,
+including holidays and early-close afternoons conservatively. The guard uses
+daylight-saving-aware time, not an exchange calendar. An explicitly authorized
+emergency release can use `./deploy.sh --force-market-hours`. Checks run before
+tests, publication, server update and restart. If the window closes during a
+release, inspect GitHub and server state before resuming; do not claim deployment
+completed. Automatic recovery of a failed health check remains available.
+
 Document rollback first. The script attempts to restore the previous server
 commit if health verification fails. That can leave GitHub and production
 different and requires follow-up. Preserve history and use a corrective commit,
