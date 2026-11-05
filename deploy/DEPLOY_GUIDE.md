@@ -1,9 +1,14 @@
 # Celo Trader — AWS Deployment Guide
 
+> Legacy provisioning reference, not the current release procedure. Use the root
+> README and `./deploy.sh` for the FastAPI/React application. The backend must
+> bind to `127.0.0.1:8501`; access the site through nginx over HTTPS. Do not expose
+> port 8501 publicly. The Streamlit and separate bot-service steps below are stale.
+
 ## What you'll end up with
 - EC2 t2.micro (free tier) running Ubuntu 22.04
 - Trading bot auto-starts at boot, restarts if it crashes
-- Streamlit dashboard at `http://YOUR_IP:8501` from any browser
+- Dashboard through nginx over HTTPS; backend port 8501 is loopback-only
 - One command to push code updates from your Mac
 
 ---
@@ -34,7 +39,7 @@
      - Click **Create key pair** — it auto-downloads `celo_trader.pem`
    - **Network settings** → **Edit** → Add these inbound rules:
      - SSH (port 22) — Source: My IP
-     - Custom TCP (port 8501) — Source: Anywhere IPv4 *(for Streamlit)*
+     - HTTPS (port 443) for the nginx public endpoint; do not open port 8501
    - **Storage**: 20 GB gp3 *(increase from default 8 GB)*
 4. Click **Launch Instance**
 
@@ -130,7 +135,7 @@ sudo systemctl status celo-bot
 sudo systemctl status celo-dashboard
 ```
 
-Open your browser: **http://YOUR_ELASTIC_IP:8501**
+Open your configured HTTPS domain through nginx, not port 8501.
 
 ---
 

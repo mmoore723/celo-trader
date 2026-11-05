@@ -1,7 +1,7 @@
 """Persistent scanner-wide underlying candles for prospective research."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -22,7 +22,7 @@ def record_scanner_candles(
     required = {"time", "open", "high", "low", "close"}
     if frame.empty or not required.issubset(frame.columns):
         return 0
-    now_text = _to_et_isoformat(recorded_at or datetime.now())
+    now_text = _to_et_isoformat(recorded_at or datetime.now(timezone.utc))
     rows = []
     for row in frame.sort_values("time").drop_duplicates("time", keep="last").itertuples(index=False):
         rows.append((

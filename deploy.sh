@@ -32,6 +32,7 @@ PRODUCTION_PATHS=(
   config
   database
   deploy/application_log_retention.py
+  deploy/DEPLOY_GUIDE.md
   deploy/celo-dashboard-logrotate
   deploy/celo-journald.conf
   deploy/release_retention.py

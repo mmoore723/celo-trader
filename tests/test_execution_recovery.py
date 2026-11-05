@@ -90,6 +90,15 @@ class RecoveryTests(unittest.TestCase):
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(f"SELECT * FROM {table}")]
 
+    def test_invalid_limit_creates_no_order_or_recovery_record(self):
+        for price in (None, 0, -1, float('nan'), float('inf')):
+            with self.subTest(price=price):
+                result = self.client.place_option_order(SYMBOL, 3, "buy", limit_price=price,
+                    position_intent="buy_to_open", order_context=self.context())
+                self.assertIsNone(result)
+        self.assertEqual([], self.submissions)
+        self.assertEqual([], self.rows('execution_recovery'))
+
     def test_normal_entry_is_booked_once_and_duplicate_intent_never_posts(self):
         fill = self.enter()
         self.assertEqual(3, fill["filled_qty"])

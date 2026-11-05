@@ -15,7 +15,7 @@ EnvironmentFile=/opt/celo_trader/.env
 # until systemd's 90-second SIGKILL deadline. The application lifespan hook
 # gets up to 15 seconds to stop trading-loop workers; five more seconds lets
 # Uvicorn finish closing sockets and flush logs.
-ExecStart=/opt/celo_trader/venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8501 --workers 1 --timeout-graceful-shutdown 20
+ExecStart=/opt/celo_trader/venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8501 --workers 1 --timeout-graceful-shutdown 20
 Restart=always
 RestartSec=5
 # Keep service output in journald, which already has bounded retention.  The

@@ -83,6 +83,10 @@ class AlpacaOrdersMixin:
         Alpaca options docs (valid single-leg payload examples):
         https://docs.alpaca.markets/docs/options-orders
         """
+        # A malformed limit request must never silently become a market order.
+        # Explicit market liquidation remains supported for protective exits.
+        from broker.order_validation import validate_option_price
+        limit_price = validate_option_price(order_type, limit_price)
         context = order_context or {}
         attempt_id = context.get("execution_attempt_id") or uuid.uuid4().hex
         intent_id = str(context.get("intent_id") or "").strip()
@@ -215,8 +219,8 @@ class AlpacaOrdersMixin:
         if position_intent:
             payload["position_intent"] = position_intent
 
-        # Options orders should always be limit to avoid bad fills
-        if order_type == "limit" and limit_price:
+        # Limit requests were validated above; market exits must be explicit.
+        if order_type == "limit":
             payload["type"]        = "limit"
             payload["limit_price"] = str(round(limit_price, 2))
         else:

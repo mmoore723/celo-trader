@@ -40,6 +40,8 @@ def scope(broker):
 
 
 def _validate(store, args):
+    from broker.order_validation import validate_option_price
+    validate_option_price(args.get("order_type", "limit"), args.get("limit_price"))
     context = args.get("order_context") or {}
     if args["side"] == "buy":
         entry = context.get("entry_record") or {}

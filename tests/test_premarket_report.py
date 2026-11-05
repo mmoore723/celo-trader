@@ -66,7 +66,8 @@ class PremarketReportTests(unittest.TestCase):
 
         fake_yfinance = SimpleNamespace(download=download)
         with patch("api.routes.market.universe_path", Path("/missing/premarket-universe.json")), \
-             patch("config.get_settings", return_value={"watchlist": ["SPY"], "paper_trading": True}), \
+             patch("config.get_settings", return_value={"watchlist": ["SPY"], "paper_trading": True,
+                                                       "strategy_spy_trend_cont_v2_enabled": True}), \
              patch.dict("sys.modules", {"yfinance": fake_yfinance}), \
              patch("broker.get_clients", return_value=(_Alpaca(), object())):
             report = build_premarket_report("")
