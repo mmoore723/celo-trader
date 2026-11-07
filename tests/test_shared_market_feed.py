@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 import sqlite3
+import pandas as pd
 
 from broker.shared_market import SharedMarketBroker, FEED_POLICY, stamp_bars
 from broker.tradier_market import TradierMarketMixin, ET
@@ -25,6 +26,31 @@ class Market(TradierMarketMixin):
 
 
 class SharedFeedTests(TestCase):
+    def test_research_order_routes_request_only_matching_archive_source(self):
+        from strategies import research_orders
+        from config.research_order_specs import SPECS
+        direct_routes = {'RESEARCH_QQQ_TREND_V2', 'RESEARCH_FAILED_RANGE_V2',
+                         'RESEARCH_CTX_ORB_ATR10_V2'}
+        for sid, spec in SPECS.items():
+            if sid in direct_routes:
+                continue
+            with self.subTest(strategy=sid), \
+                 patch.object(research_orders, '_emitted', {}), \
+                 patch.object(research_orders, 'strategy_details', return_value=SimpleNamespace(version=spec.version)), \
+                 patch.object(research_orders, '_research_bars', return_value=[]), \
+                 patch('trading.gap_fill_history.with_history', return_value=[]), \
+                 patch('config.get_settings', return_value={'active_broker_account_id':'account-A'}), \
+                 patch('database.load_scanner_candles', return_value=pd.DataFrame()) as loader:
+                result = research_orders.evaluate(pd.DataFrame(),
+                    ticker=spec.allowed_tickers[0] if spec.allowed_tickers else 'QQQ',
+                    execution_scope='feed-test', now=pd.Timestamp('2026-11-06 10:00'),
+                    strategy_id=sid)
+                self.assertIsNone(result)
+                self.assertEqual(2 if sid == 'V2_GAP_FILL_RTH' else 1, loader.call_count)
+                for call in loader.call_args_list:
+                    self.assertEqual(FEED_POLICY, call.kwargs['required_source'])
+                    self.assertEqual('account-A', call.kwargs['broker_account_id'])
+
     def test_market_and_order_ownership(self):
         execution, market = Mock(), Mock()
         broker = SharedMarketBroker(execution, market)

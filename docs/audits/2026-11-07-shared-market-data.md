@@ -66,3 +66,25 @@ fail systematically or service health fails: scoped revert of this release throu
 deploy.sh to `0019a846178b3e39917faa2111342c97050bd0cb` behavior and runtime review.
 Retain the additive candle-revision table and historical records. Do not change saved
 strategy switches, risk settings, broker mode or policies on existing positions.
+# Follow-up archive isolation, runtime revision 20261107.2
+
+Entry-path inspection found that `strategies/research_orders.py` still loaded
+archived one-minute candles without a source constraint. Gap Fill also loaded
+unfiltered native five-minute history. These paths could combine pre-cutover
+IEX archive rows with current Tradier bars despite the shared broker boundary.
+
+Both archive reads now require `tradier_consolidated_v1`. Old records remain
+untouched. A strategy may lack sufficient matching history immediately after
+cutover; it must not silently substitute old-feed bars to create a signal.
+No exit, threshold, selected policy, switch or account-risk change is included.
+
+Regression tests exercise each generic research-order route, verify exact
+account scope and source requirements, and cover both Gap Fill archive reads.
+Existing archive tests separately verify foreign-feed exclusion and retention
+of historical candle revisions. Full deployment acceptance must pass before
+release completion is claimed.
+
+Rollback: revert this follow-up code, test and runtime-review selection through
+`deploy.sh` to the db580b3 release. Keep all historical evidence and the new
+review manifest. Roll back if runtime integrity or entry routing regresses;
+do not treat an honest lack of same-feed warmup as a reason to mix feeds again.
