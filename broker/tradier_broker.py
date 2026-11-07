@@ -12,6 +12,7 @@ class TradierBrokerClient:
     mandatory 15-minute delayed quotes as if they were live signals.
     """
 
+    feed_policy = "tradier_consolidated_v1"
     _MARKET_METHODS = {
         "get_bars", "get_session_bars", "get_latest_quote", "get_snapshots",
         "get_option_quote", "get_option_chain", "get_expirations",

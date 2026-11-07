@@ -47,6 +47,7 @@ PRODUCTION_PATHS=(
   deploy/release_retention.py
   docs/adr/0004-atomic-tradier-broker-cutover.md
   docs/audits/2026-11-07-entry-data-parity.md
+  docs/audits/2026-11-07-shared-market-data.md
   frontend
   logger_config
   regime_manager

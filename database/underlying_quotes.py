@@ -12,7 +12,7 @@ from database.helpers import _to_et_isoformat
 def record_underlying_quote(
     ticker: str, quote: Mapping[str, object] | None, *,
     broker_account_id: str | None = None, observed_at: datetime | None = None,
-    source: str = "alpaca",
+    source: str = "unknown",
 ) -> bool:
     """Persist an executable bid/ask midpoint without affecting decisions."""
     if not quote:
@@ -37,6 +37,6 @@ def record_underlying_quote(
                VALUES (?,?,?,?,?,?,?,?)""",
             (str(broker_account_id or ""), ticker.strip().upper(),
              _to_et_isoformat(observed_at or datetime.now()), bid, ask,
-             (bid + ask) / 2.0, source, quote_at),
+             (bid + ask) / 2.0, str(quote.get('data_feed') or quote.get('quote_source') or source), quote_at),
         )
     return True

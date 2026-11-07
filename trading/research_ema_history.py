@@ -73,7 +73,9 @@ def native_ema_history(alpaca,ticker,state,now,account,archive=None):
         validated=[dict(time=b.timestamp,open=b.open,high=b.high,low=b.low,close=b.close,volume=b.volume)
                    for b in _native_bars(frame,now) if b.timestamp.date()==today]
         if validated:
-            archive(pd.DataFrame(validated))
+            archived = pd.DataFrame(validated)
+            archived.attrs.update(frame.attrs)
+            archive(archived)
     complete=bool(with_native_ema_history((),frame,now))
     if key not in cache and len(cache)>=128:
         del cache[next(iter(cache))]

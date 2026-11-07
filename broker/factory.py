@@ -9,6 +9,7 @@ logic changed, only relocated.
 from broker.alpaca_client import AlpacaClient
 from broker.tradier_client import TradierClient
 from broker.tradier_broker import TradierBrokerClient
+from broker.shared_market import SharedMarketBroker
 
 TRADIER_LIVE_BASE = "https://api.tradier.com/v1"
 TRADIER_SANDBOX_BASE = "https://sandbox.tradier.com/v1"
@@ -55,14 +56,13 @@ def get_tradier_market_client() -> TradierClient:
 
     Alpaca can remain the temporary paper execution broker, but contract
     selection and order ceilings must not inherit Tradier sandbox's mandatory
-    delayed quotes.  Falling back to the legacy configured client keeps the
-    existing explicit stale-quote failure when no production token is saved.
+    delayed quotes. Without a production token, data is unavailable; a sandbox
+    token is never substituted for the research/trading market-data authority.
     """
     from config import get_api_keys
     keys = get_api_keys()
     market_key = str(keys.get("tradier_market_api_key") or "")
-    if not market_key:
-        return TradierClient()
+    # Never substitute a delayed sandbox token for production market data.
     return TradierClient(
         api_key=market_key,
         account_id=str(keys.get("tradier_live_account_id") or ""),
@@ -101,4 +101,5 @@ def get_tradier_broker(*, paper: bool | None = None) -> tuple[TradierBrokerClien
 def get_clients() -> tuple[object, TradierClient]:
     if configured_broker_provider() == "tradier":
         return get_tradier_broker()
-    return AlpacaClient(), get_tradier_market_client()
+    market = get_tradier_market_client()
+    return SharedMarketBroker(AlpacaClient(), market), market

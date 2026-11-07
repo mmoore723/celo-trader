@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import date, datetime, time as wall_time, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
+from broker.shared_market import FEED_POLICY, stamp_bars
 
 logger = logging.getLogger("celo_trader.broker")
 ET = ZoneInfo("America/New_York")
@@ -35,6 +36,14 @@ def _utc_bar_time(value: object) -> str:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=ET)
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _quote_timestamp(raw):
+    stamp = max(float(raw.get('bid_date') or 0), float(raw.get('ask_date') or 0))
+    if stamp <= 0:
+        return None
+    seconds = stamp / 1000 if stamp > 10_000_000_000 else stamp
+    return datetime.fromtimestamp(seconds, timezone.utc).isoformat()
 
 
 def _bar(row: dict) -> dict | None:
@@ -93,7 +102,8 @@ class TradierMarketMixin:
             return False
 
     def _quote_rows(self, symbols: list[str]) -> list[dict]:
-        if not symbols or not getattr(self, "api_key", ""):
+        if (not symbols or not getattr(self, "api_key", "")
+                or getattr(self, "base", "") != "https://api.tradier.com/v1"):
             return []
         payload = self._get("/markets/quotes", {
             "symbols": ",".join(symbols), "greeks": "false",
@@ -115,6 +125,12 @@ class TradierMarketMixin:
                 "bid": bid, "ask": ask, "last": last,
                 "quote_age_seconds": _quote_age_seconds(raw),
                 "quote_source": "tradier",
+                "data_feed": (FEED_POLICY if self.base == "https://api.tradier.com/v1"
+                              else "tradier_delayed_or_unknown"),
+                "received_at": datetime.now(timezone.utc).isoformat(),
+                "bid_time_ms": raw.get("bid_date"),
+                "ask_time_ms": raw.get("ask_date"),
+                "t": _quote_timestamp(raw),
             }
         except Exception as exc:
             logger.error("get_latest_quote(%s) failed: %s", symbol, exc)
@@ -132,6 +148,8 @@ class TradierMarketMixin:
                 opening = float(raw.get("open") or price or 0)
                 change = (price - previous) / previous * 100 if previous else 0.0
                 result[symbol] = {
+                    "data_feed": FEED_POLICY,
+                    "received_at": datetime.now(timezone.utc).isoformat(),
                     "price": price, "prev_close": previous,
                     "change_pct": change, "open_price": opening,
                     "gap_pct": ((opening - previous) / previous * 100 if previous else change),
@@ -178,6 +196,11 @@ class TradierMarketMixin:
 
     def get_bars(self, symbol: str, timeframe: str, limit: int = 100) -> tuple[list[dict], bool]:
         try:
+            if not getattr(self, "api_key", "") or getattr(self, "base", "") != "https://api.tradier.com/v1":
+                logger.warning("market_data_unavailable: production Tradier credentials required")
+                return [], True
+            if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+                return [], True
             normalized = {"1Min": "1min", "5Min": "5min", "15Min": "15min"}
             if timeframe in {"1Day", "Day", "1D"}:
                 end = datetime.now(ET).date()
@@ -188,7 +211,7 @@ class TradierMarketMixin:
                 })
                 rows = _objects((payload.get("history") or {}).get("day"))
                 bars = [value for value in (_bar(row) for row in rows) if value]
-                return bars[-limit:], False
+                return stamp_bars(bars[-limit:], self.base), False
 
             hourly = timeframe in {"1Hour", "60Min"}
             interval = "15min" if hourly else normalized.get(timeframe, str(timeframe).lower())
@@ -200,7 +223,7 @@ class TradierMarketMixin:
             bars = self._timesales(symbol, interval, start, end)
             if hourly:
                 bars = _hourly(bars)
-            return bars[-limit:], False
+            return stamp_bars(bars[-limit:], self.base), False
         except Exception as exc:
             logger.error("get_bars(%s, %s) failed: %s", symbol, timeframe, exc)
             return [], True
@@ -209,12 +232,21 @@ class TradierMarketMixin:
         self, symbol: str, timeframe: str = "5Min",
     ) -> tuple[list[dict], bool, bool]:
         try:
+            if not getattr(self, "api_key", "") or getattr(self, "base", "") != "https://api.tradier.com/v1":
+                logger.warning("market_data_unavailable: production Tradier credentials required")
+                return [], True, False
             now = datetime.now(ET)
             interval_map = {"1Min": "1min", "5Min": "5min", "15Min": "15min"}
             hourly = timeframe in {"1Hour", "60Min"}
             interval = "15min" if hourly else interval_map.get(timeframe, "1min")
             market_open = self.is_market_open()
+            # During today's session an empty response is a gap, not permission
+            # to substitute yesterday's candles. This also covers clock outages.
+            require_today = now.weekday() < 5 and now.time() >= wall_time(9, 30)
             for days_back in range(0, 8):
+                if require_today and days_back > 0:
+                    logger.warning("market_data_unavailable: %s %s current session missing; no prior-day fallback", symbol, timeframe)
+                    return [], True, market_open
                 session_date = now.date() - timedelta(days=days_back)
                 if session_date.weekday() >= 5:
                     continue
@@ -228,7 +260,12 @@ class TradierMarketMixin:
                 if bars:
                     if hourly:
                         bars = _hourly(bars)
-                    return bars, False, market_open and days_back == 0
+                    # Defend against a provider returning an earlier session.
+                    bars = [row for row in bars if datetime.fromisoformat(
+                        row['t'].replace('Z', '+00:00')).astimezone(ET).date() == session_date]
+                    if not bars:
+                        continue
+                    return stamp_bars(bars, self.base), False, market_open and days_back == 0
             return [], False, False
         except Exception as exc:
             logger.error("get_session_bars(%s, %s) failed: %s", symbol, timeframe, exc)

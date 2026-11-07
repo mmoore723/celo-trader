@@ -59,8 +59,13 @@ class MarketDataMixin:
         # (not this fetch) applies the exact requested start/end dates.
         _anchor_date = _dt.date.today()
         _cache_max_days = backtest_data_cache.max_days_for(self.months)
-        bundle = backtest_data_cache.load(self.ticker, _cache_max_days, as_of=_anchor_date)
+        _feed_policy = getattr(self.alpaca, 'feed_policy', None)
+        _shared_feed = _feed_policy == 'tradier_consolidated_v1'
+        _cache_ticker = f'{self.ticker}__{_feed_policy}' if _shared_feed else self.ticker
+        bundle = backtest_data_cache.load(_cache_ticker, _cache_max_days, as_of=_anchor_date)
         if bundle is not None:
+            if _shared_feed:
+                self._data_source = _feed_policy
             self._df_1h        = bundle["df_1h"]
             self._df_15m       = bundle["df_15m"]
             self._df1m         = bundle["df1m"]
@@ -137,7 +142,7 @@ class MarketDataMixin:
                         )
                         df = pd.DataFrame()
                     else:
-                        _data_source = "alpaca"
+                        _data_source = _feed_policy if _shared_feed else "alpaca"
                         logger.info("Backtest: Alpaca returned %d 5m bars for %s (%s to %s)",
                                     len(df), self.ticker, _earliest, _latest)
         except Exception as _al_ex:
@@ -146,6 +151,8 @@ class MarketDataMixin:
         # yfinance fallback — same 20/30s non-blocking timeout pattern as
         # _fetch_extra_timeframe() below (shutdown(wait=False) so a hang
         # can't block the process even here).
+        if df.empty and _shared_feed:
+            return {"error": f"Matching Tradier history is unavailable or too short for {self.ticker}'s requested window. No IEX or Yahoo substitution was used."}
         if df.empty:
             try:
                 import yfinance as yf
@@ -210,6 +217,8 @@ class MarketDataMixin:
         # cap; 1h supports ~730 days so the same window is always covered.
         self._df_1h  = self._fetch_extra_timeframe("1h",  _start_d, _end_d)
         self._df_15m = self._fetch_extra_timeframe("15m", _start_d, _end_d)
+        if _shared_feed and (self._df_1h.empty or self._df_15m.empty):
+            return {"error": "Matching Tradier higher-timeframe history is missing. No alternate feed was used."}
         logger.info(
             "Backtest: extra-timeframe fetch for %s — 1h=%d bars, 15m=%d bars",
             self.ticker, len(self._df_1h), len(self._df_15m),
@@ -247,7 +256,7 @@ class MarketDataMixin:
         self._prep_entry_sources(df[_full_session_mask].reset_index(drop=True))
 
         backtest_data_cache.save(
-            self.ticker, _cache_max_days, as_of=_anchor_date,
+            _cache_ticker, _cache_max_days, as_of=_anchor_date,
             df=df, df_1h=self._df_1h, df_15m=self._df_15m,
             df1m=self._df1m, day1m_start=self._1m_day_start,
             df5m_full=self._df5m_full, day5m_start=self._5m_day_start,

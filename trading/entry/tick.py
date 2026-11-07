@@ -814,6 +814,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         from trading.entry.candidate_observation import observe_candidate_contract
         _candidate_preview_cache: dict = {}
         def _candidate_observer(ticker_arg, signal_arg, underlying_arg):
+            if isinstance(getattr(signal_arg, 'meta', None), dict):
+                signal_arg.meta['market_data'] = dict(_df_today_1m.attrs)
             observe_candidate_contract(
                 ticker=ticker_arg, signal=signal_arg, underlying_price=underlying_arg,
                 tradier=tradier, balance=balance, risk=_risk, settings=settings,
@@ -982,6 +984,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         "ticker": ticker.upper(),
         "strategy_id": strategy_id,
         "context": {
+            "market_data": dict(_df_today_1m.attrs),
             "trigger_bar": str(_top.trigger_bar),
             "strategy_meta": _top.meta,
             "entry_plan": {
@@ -1940,6 +1943,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     from config.strategy_catalog import REVIEWED_STRATEGIES
     _current_rule = REVIEWED_STRATEGIES.get(str(strategy_id).strip().upper())
     _strategy_context.update({
+        "market_data": dict(_df_today_1m.attrs),
         "strategy_id": strategy_id,
         "strategy_version": _current_rule.version if _current_rule is not None else None,
         "trigger_bar": str(_top.trigger_bar),

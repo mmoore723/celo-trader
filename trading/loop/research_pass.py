@@ -85,7 +85,7 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
                 record_scanner_candles(ticker, pd.DataFrame([
                     dict(time=b.timestamp, open=b.open, high=b.high, low=b.low, close=b.close, volume=b.volume)
                     for b in gap_bars if last_archived is None or b.timestamp >= last_archived]),
-                    broker_account_id=account, timeframe='5Min', source='alpaca_native5')
+                    broker_account_id=account, timeframe='5Min', source=history_5m.attrs.get('data_feed', 'unknown'))
                 gap_archive[gap_key] = gap_bars[-1].timestamp
         if stopped():
             return
@@ -109,6 +109,8 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
 
         def record(symbol, signal, price):
             if not stopped():
+                if isinstance(getattr(signal, 'meta', None), dict):
+                    signal.meta['market_data'] = dict(current.attrs)
                 from scanner.premarket_eligibility import screen_signal
                 if "premarket_screen" not in (signal.meta or {}):
                     screen_signal(alpaca, symbol, signal, now=_now_et())
@@ -141,6 +143,7 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
             raise RuntimeError("Observation router unexpectedly returned executable signals")
         tested_frame = load_scanner_candles(
             ticker, broker_account_id=account, timeframe="1Min", limit=10_000,
+            required_source=current.attrs.get('data_feed', 'tradier_consolidated_v1'),
         )
         if tested_frame.empty:
             tested_frame = current
@@ -149,7 +152,7 @@ def observe_ticker(alpaca, tradier, ticker, settings, state, risk, balance, stop
             from trading.research_ema_history import native_ema_history
             native_15m=native_ema_history(alpaca,ticker,state,_now_et(),account,
                 archive=lambda f: record_scanner_candles(ticker,f,broker_account_id=account,
-                                                       timeframe='15Min',source='alpaca_iex_native15'))
+                                                       timeframe='15Min',source=f.attrs.get('data_feed', 'unknown')))
         if stopped():
             return
         for signal in evaluate_tested_research(
@@ -216,7 +219,7 @@ def run_research_pass(readers, snapshot, state, stopped):
             account=snapshot['settings'].get('active_broker_account_id')
             frame=native_ema_history(alpaca,ticker,state,_now_et(),account,
                 archive=lambda f: record_scanner_candles(ticker,f,broker_account_id=account,
-                                                       timeframe='15Min',source='alpaca_iex_native15')).copy()
+                                                       timeframe='15Min',source=f.attrs.get('data_feed', 'unknown'))).copy()
             frame.attrs['source_minutes']=15
             return frame
 

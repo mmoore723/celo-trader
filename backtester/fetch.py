@@ -49,6 +49,8 @@ class FetchMixin:
                 logger.warning("Backtest: Alpaca %s fetch failed for %s: %s",
                                 interval, self.ticker, _al_ex)
 
+        if getattr(self.alpaca, 'feed_policy', None) == 'tradier_consolidated_v1':
+            return pd.DataFrame()  # Report unavailable, never substitute another provider.
         try:
             import yfinance as yf
             import concurrent.futures as _cf

@@ -13,6 +13,7 @@ from trading.entry.tick import _entry_quote_is_fresh
 
 class _MarketClient(TradierMarketMixin):
     api_key = "live-token"
+    base = "https://api.tradier.com/v1"
 
     def __init__(self, responses: dict[str, dict]):
         self.responses = responses

@@ -37,4 +37,9 @@ def bars_to_df(bars: list[dict]) -> pd.DataFrame:
     except Exception:
         # Fallback for tz-naive or already-local timestamps
         df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
-    return df.sort_values("time").reset_index(drop=True)
+    result = df.sort_values("time").reset_index(drop=True)
+    if any("data_feed" in row for row in bars):
+        from broker.shared_market import bar_provenance
+        result.attrs.update(bar_provenance(bars))
+        result.attrs['source'] = result.attrs['data_feed']
+    return result

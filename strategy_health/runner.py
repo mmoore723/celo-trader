@@ -13,7 +13,7 @@ import logging
 from collections import defaultdict
 from typing import Optional
 
-from broker import AlpacaClient
+from broker import AlpacaClient, get_clients
 from database import get_conn, save_strategy_audit
 from strategy_health.engine import audit_ticker
 from strategy_health.narrator import build_narrative, build_weekly_narrative
@@ -71,7 +71,7 @@ def run_daily_audit(alpaca: Optional[AlpacaClient] = None,
     saved (same shape narrator.build_narrative() expects).
     """
     if alpaca is None:
-        alpaca = AlpacaClient()
+        alpaca, _ = get_clients()
     if tickers is None:
         tickers = _recent_traded_tickers() or DEFAULT_TICKERS
 
