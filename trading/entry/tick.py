@@ -910,6 +910,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     direction   = _top.direction      # "bullish" | "bearish"
     entry_rvol  = _top.rvol           # Entry_Volume_Multiplier for audit log
     strategy_id = _top.strategy_id
+    from trading.entry.data_parity import live_data_refusal
+    _data_refusal = live_data_refusal(strategy_id, settings)
+    if _data_refusal:
+        _skip_log(ticker, "research_data_parity", strategy=strategy_id, detail=_data_refusal)
+        return
     _signal_tier = getattr(_top, "tier", "main")
     _reviewed_paid_profile = uses_reviewed_paid_execution_profile(strategy_id)
     # The session cutoff must include the strategy's complete reviewed hold.
@@ -2111,6 +2116,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         _durable_annotations = None
     from config.strategy_retirement import active_ids
     if strategy_id not in active_ids(get_settings(), {strategy_id}):
+        return
+    _data_refusal = live_data_refusal(strategy_id, get_settings())
+    if _data_refusal:
+        _skip_log(ticker, "research_data_parity", strategy=strategy_id, detail=_data_refusal)
         return
     order = alpaca.place_option_order(
         symbol          = contract["symbol"],
