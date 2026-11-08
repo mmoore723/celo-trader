@@ -70,6 +70,7 @@ PRODUCTION_PATHS=(
   candlestick_patterns.py
   celo-dashboard.service
   celo-underlying-capture.service
+  celo-session-capture.service
   deploy.sh
   market_data.py
   nginx_celotrader.conf
@@ -249,6 +250,14 @@ if ! ssh -i "$EC2_KEY" "$EC2_HOST" \
   "sudo install -m 0644 $EC2_DIR/celo-underlying-capture.service /etc/systemd/system/celo-underlying-capture.service && sudo systemctl daemon-reload && sudo systemctl enable celo-underlying-capture && sudo systemctl restart celo-underlying-capture && sudo systemctl is-active --quiet celo-underlying-capture"; then
   echo "NOT DEPLOYED completely: application healthy, capture worker failed."
   echo "Stop celo-underlying-capture and investigate; do not change trading settings."
+  exit 1
+fi
+
+echo "==> Installing and restarting approved-universe session capture..."
+if ! ssh -i "$EC2_KEY" "$EC2_HOST" \
+  "sudo install -m 0644 $EC2_DIR/celo-session-capture.service /etc/systemd/system/celo-session-capture.service && sudo systemctl daemon-reload && sudo systemctl enable celo-session-capture && sudo systemctl restart celo-session-capture && sudo systemctl is-active --quiet celo-session-capture"; then
+  echo "NOT DEPLOYED completely: application healthy, full-session capture worker failed."
+  echo "Stop celo-session-capture and investigate; do not change trading settings."
   exit 1
 fi
 

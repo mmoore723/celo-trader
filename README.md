@@ -216,5 +216,36 @@ different and requires follow-up. Preserve history and use a corrective commit,
 not a force-push, for repository rollback.
 
 Deployment does not authorize live trading, orders, or risk-limit changes.
+
+### Independent session capture
+
+`celo-session-capture` records the explicitly configured `research_tickers`
+regardless of positions or trading switches. Research > Data Coverage reads
+persisted summaries; it does not run collection or calculations. The recorder
+uses the production Tradier feed only, with a 04:00 to 20:00 Eastern target on
+provider-confirmed market days, completed one-minute stock history and
+timestamped stock snapshots. Broker order hours do not truncate this target.
+Shortened-session or unavailable extended-hours intervals remain visible gaps,
+not a claim that every missing minute is a feed outage.
+Every listed option expiration is queued without DTE, premium, spread or strike
+filters. Raw chain snapshots preserve all returned contracts, including invalid
+quotes, provider Greeks and sizes. Requests rotate within a bounded budget.
+
+This is **not a complete exchange tick archive**. Quote changes between polls
+are unavailable. Option rotation can be slow; pending expirations, each
+contract's quote validation, and refresh timestamps remain visible. Missing
+stock minutes are unresolved gaps, not synthetic zero-volume candles.
+Recovered history retains its receipt timestamp and is not forward evidence.
+Archives and durable task checkpoints live in the user's `session_capture`
+directory, separately from trading databases. Responses are compressed and
+append-only. Capture stops explicitly when free space falls below 1 GiB.
+No automatic data deletion, subscription purchase or trading changes occur.
+
+Rollback: stop and disable `celo-session-capture` immediately if it competes
+with trading for rate capacity, exceeds its resource caps, or reports storage
+errors. Preserve the archive. Revert the capture/UI release with a corrective
+commit through `deploy.sh`, never by changing strategy or risk settings. Verify
+the application health, existing capture services and GitHub/production match.
+
 Documentation-only changes require no application restart. Follow
 [release rules](AGENTS.md) and report local and deployment status separately.

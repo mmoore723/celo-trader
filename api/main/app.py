@@ -79,6 +79,8 @@ from api.routes import weekly_exit_audit
 app.include_router(weekly_exit_audit.router, dependencies=_auth)
 from api.routes import exit_lab
 app.include_router(exit_lab.router, dependencies=_auth)
+from api.routes import session_capture
+app.include_router(session_capture.router, dependencies=_auth)
 app.include_router(ai_reasoning.router,    dependencies=_auth)
 app.include_router(learning.router,        dependencies=_auth)
 app.include_router(signals.router,         dependencies=_auth)
