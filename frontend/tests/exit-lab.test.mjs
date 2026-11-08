@@ -6,7 +6,17 @@ const research = readFileSync(new URL('../src/pages/Research.tsx', import.meta.u
 
 test('Exit Lab is lazy and mounts only its selected subtab', () => {
   assert.match(research, /lazy\(\(\) => import\('\.\/ExitLab'\)/);
-  assert.match(research, /tab === 'results' \? <Results[^\n]+: <Lab/);
+  assert.match(research, /tab === 'results' \? <Results[^\n]+: tab === 'exits' \? <Lab \/> : <Coverage \/>/);
+  assert.match(research, /lazy\(\(\) => import\('\.\/CaptureCoverage'\)/);
+});
+
+test('coverage reports measured delay without starting research or disguising unknowns', () => {
+  const coverage = readFileSync(new URL('../src/pages/CaptureCoverage.tsx', import.meta.url), 'utf8');
+  assert.match(coverage, /Longest observed option refresh gap/);
+  assert.match(coverage, /v == null \? 'Not measured'/);
+  assert.match(coverage, /Receipt timing does not prove fresh contract prices/);
+  assert.match(coverage, /No timing samples yet. This is not zero delay/);
+  assert.doesNotMatch(coverage, /useMutation|method: ['"]POST|submit_order|runBacktest/);
 });
 test('Exit Lab uses account-scoped summaries and requests trades on demand', () => {
   assert.match(lab, /active_broker_account_id/);

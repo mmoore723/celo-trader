@@ -126,6 +126,8 @@ echo "==> Running the complete production Python acceptance suite..."
 echo "==> Linting React frontend..."
 cd frontend
 npm run lint
+echo "==> Running frontend regression tests..."
+npm test
 cd ..
 
 echo "==> Building React frontend..."
