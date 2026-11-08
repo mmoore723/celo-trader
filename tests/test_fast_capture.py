@@ -50,14 +50,29 @@ class FastCaptureTests(unittest.TestCase):
         self.assertEqual(original['registered_at'],row['registered_at'])
         self.assertEqual(1,self.r.db.execute('SELECT count(*) FROM events').fetchone()[0])
 
-    def test_more_than_twenty_fair_batches_no_exclusions(self):
-        for i in range(41): self.add(symbol=f'SPY261120C{600000+i:08}',origin_id=str(i))
+    def test_more_than_batch_limit_fair_batches_no_exclusions(self):
+        for i in range(601): self.add(symbol=f'SPY261120C{600000+i:08}',origin_id=str(i))
         seen=set()
         for i in range(3):
             now=NOW+timedelta(seconds=i*5); batch=self.r.due(now); seen.update(batch)
             self.r.record(batch,{'quotes':{'quote':[self.quote(s,now) for s in batch]}},now,now)
-        self.assertEqual(41,len(seen))
-        self.assertEqual(41,self.r.db.execute('SELECT count(*) FROM registrations').fetchone()[0])
+        self.assertEqual(601,len(seen))
+        self.assertEqual(601,self.r.db.execute('SELECT count(*) FROM registrations').fetchone()[0])
+
+    def test_expired_contract_preserved_but_not_polled(self):
+        expired='SPY261106C00600000'
+        self.add(symbol=expired)
+        self.add()
+        self.assertEqual([SYMBOL],self.r.due(NOW))
+        self.assertEqual(2,self.r.db.execute('SELECT count(*) FROM registrations').fetchone()[0])
+        b=self.r.health(NOW)[scope_key('paper-a','paper')][0]
+        self.assertIn('contract_expired_no_further_polling_records_preserved',b['errors'])
+        self.assertEqual(1,b['pending'])
+        self.assertEqual(1,b['late'])
+
+    def test_expiration_date_kept_through_eastern_day(self):
+        self.add(symbol='SPY261109C00600000')
+        self.assertEqual(1,len(self.r.due(NOW)))
 
     def test_failure_checkpoint_and_bounded_retry(self):
         self.add(); self.r.fail([SYMBOL],NOW,'provider_http_429')

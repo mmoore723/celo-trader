@@ -271,14 +271,22 @@ a replacement exit rule. Saved registrations continue across restarts and accoun
 switches. All scopes remain separate even when they share a raw market quote.
 Expired registrations and archived observations are retained, not rewritten.
 
-The worker rotates up to 20 contracts per request, at most one request every five
+The worker rotates up to 300 contracts per request, at most one request every five
 seconds, backing off on failures and provider quota pressure. It does not drop
-contracts above 20. More contracts mean slower per-contract coverage, explicitly
+contracts above the batch limit. Contracts past their OCC expiration date in
+Eastern time stop polling but remain visible with an explicit expiry reason;
+the expiration day itself is retained. More contracts mean slower per-contract coverage, explicitly
 reported as pending receipts, stale receipts and measured wall-clock gaps. The
 five-second interval is not a promise of five-second coverage for each contract.
 Raw quote timestamps, sizes and provider Greeks are preserved. These are sampled
 market observations, never broker fills or a tick-complete tape. Broad universe
 capture remains independent and unchanged.
+
+The 300-contract batch returned all requested symbols in an after-hours production
+provider probe on November 7, 2026. This is not market-session latency validation.
+If larger batches fail or overload the collector, restore the previous 20-contract
+batch through a corrective deploy.sh release, retaining all registrations and
+observations. Never relax experiment coverage requirements to hide slow collection.
 
 Research > Data Coverage and Exit Lab read the saved capture report only. The
 UI cannot start a worker, evaluate a strategy or modify a policy. A stale worker

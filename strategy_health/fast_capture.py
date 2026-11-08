@@ -18,7 +18,7 @@ import time
 from strategy_health.session_capture import Feed, ET, objects, quote_validation
 
 CADENCE = 5
-BATCH = 20
+BATCH = 300
 OCC = re.compile(r'^[A-Z.]{1,6}[0-9]{6}[CP][0-9]{8}$')
 
 
@@ -113,9 +113,9 @@ class Registry:
 
     def due(self, now):
         return [r[0] for r in self.db.execute('''SELECT p.symbol FROM polling p
-            WHERE p.next_at<=? AND EXISTS (SELECT 1 FROM registrations r
+            WHERE p.next_at<=? AND substr(p.symbol,-15,6)>=? AND EXISTS (SELECT 1 FROM registrations r
               WHERE r.symbol=p.symbol AND r.until_at>=? AND r.entry_at<=?)
-            ORDER BY p.next_at,p.symbol LIMIT ?''',(now.timestamp(),now.isoformat(),now.isoformat(),BATCH))]
+            ORDER BY p.next_at,p.symbol LIMIT ?''',(now.timestamp(),now.astimezone(ET).strftime('%y%m%d'),now.isoformat(),now.isoformat(),BATCH))]
 
     def record(self, symbols, payload, requested, received):
         if shutil.disk_usage(self.root).free < 1024**3:
@@ -166,10 +166,13 @@ class Registry:
                 registrations=0,contracts=set(),pending=set(),late=set(),missing_inputs=set(),
                 last_collection=None,max_gap_seconds=0,gaps_over_10=0,errors=set()))
             b['registrations']+=1
+            expired = r['symbol'][-15:-9] < now.astimezone(ET).strftime('%y%m%d')
+            if expired:
+                b['errors'].add('contract_expired_no_further_polling_records_preserved')
             if r['symbol'] not in b['contracts']:
                 b['contracts'].add(r['symbol']); b['gaps_over_10']+=r['gaps_over_10']
-            if not r['received_at']: b['pending'].add(r['symbol'])
-            if not r['received_at'] or (now-stamp(r['received_at'])).total_seconds()>10: b['late'].add(r['symbol'])
+            if not expired and not r['received_at']: b['pending'].add(r['symbol'])
+            if not expired and (not r['received_at'] or (now-stamp(r['received_at'])).total_seconds()>10): b['late'].add(r['symbol'])
             if r['readiness']!='capture_only': b['missing_inputs'].add(r['readiness'])
             if r['error']: b['errors'].add(r['error'])
             b['max_gap_seconds']=max(b['max_gap_seconds'],r['max_gap'])
