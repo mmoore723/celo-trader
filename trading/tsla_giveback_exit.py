@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import json
+from trading.decision_trace import decision, note
 
 
 STATE_KEY = "tsla_giveback_65_35_v1"
@@ -14,6 +15,7 @@ def use_giveback_market_order(trade, reason, paper):
                 and reason == EXIT_REASON)
 
 
+@decision
 def giveback_exit(state, entry_price, bid, now):
     if now.tzinfo is None:
         raise ValueError("Aware clock required")
@@ -43,6 +45,7 @@ def giveback_exit(state, entry_price, bid, now):
     return False, "hold"
 
 
+@decision
 def evaluate_tsla_giveback(trade, entry_time, now, quote):
     if (str(trade.get("strategy_id") or "").upper() != "V2_TSLA_TWO_LEG_TREND_PULLBACK"
             or str(trade.get("ticker") or "").upper() != "TSLA"
@@ -61,9 +64,11 @@ def evaluate_tsla_giveback(trade, entry_time, now, quote):
             return False, "hold"
         context = json.loads(row[0]) if row[0] else {}
         state = dict(context.get(STATE_KEY) or {})
+        note('giveback_persisted_state_read',state)
         if state.get("pending"):
             return True, EXIT_REASON
         if not quote or quote.get("symbol") != trade["contract_symbol"]:
+            note('giveback_quote_rejected',{'reason':'missing_or_wrong_contract'})
             return False, "hold"
         try:
             received = datetime.fromisoformat(quote["quote_received_at"])
@@ -72,8 +77,10 @@ def evaluate_tsla_giveback(trade, entry_time, now, quote):
             if (received.tzinfo is None or not timedelta(0) <= now - received <= timedelta(seconds=60)
                     or not bid.is_finite() or not ask.is_finite() or not 0 < bid <= ask
                     or age is None or not 0 <= float(age) <= 60):
+                note('giveback_quote_rejected',{'reason':'quote_freshness_or_price_validation'})
                 return False, "hold"
         except (KeyError, TypeError, ValueError, InvalidOperation):
+            note('giveback_quote_rejected',{'reason':'quote_fields_invalid'})
             return False, "hold"
         result = giveback_exit(state, trade["entry_price"], bid, now)
         if state != context.get(STATE_KEY):

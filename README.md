@@ -288,6 +288,32 @@ If larger batches fail or overload the collector, restore the previous 20-contra
 batch through a corrective deploy.sh release, retaining all registrations and
 observations. Never relax experiment coverage requirements to hide slow collection.
 
+### Native exit decision log
+
+The position manager records its exit checks without changing their results.
+Records include a unique management-cycle ID, account/mode/trade identity, saved
+entry policy context, actual evaluator arguments, source quote clocks, observer
+clock, before/after state, holds, exit reasons and validation skips. The broker
+mark and Tradier quote are distinguished. TSLA giveback records the persisted
+state it read and the state used by its pure decision helper.
+
+`user_data/<user>/exit_decisions/decisions.sqlite3` is an append-only observation
+archive, not a fill ledger. A bounded 32-event background queue writes it; order
+execution never waits for SQLite. Snapshotting still has CPU cost. Frames and
+large objects have explicit size limits, and incomplete snapshots are labeled.
+Failed writes, dropped events and the last successful save appear in the separate
+`health.json`. Counters are process-lifetime diagnostics, not historical coverage.
+There is a 1 GB free-disk reserve. A forced process termination can lose queued
+records; these logs alone do not establish complete native replay or fill timing.
+No observation retroactively repairs old research evidence.
+
+Rollback: set `CELO_EXIT_TRACE_DISABLED=1` in the service environment and restart
+through the normal operational procedure, or publish a corrective deploy.sh
+release removing the instrumentation. Preserve the archive. Roll back if the
+instrumentation changes an exit result, causes a management exception, or creates
+unacceptable decision latency. Disk/queue failures must leave exits running and
+mark capture incomplete, never change a trading setting to conceal a gap.
+
 Research > Data Coverage and Exit Lab read the saved capture report only. The
 UI cannot start a worker, evaluate a strategy or modify a policy. A stale worker
 report is flagged after 90 seconds. Discovery-limit and missing-input failures

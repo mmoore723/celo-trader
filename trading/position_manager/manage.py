@@ -34,6 +34,7 @@ from datetime import datetime
 from typing import Optional
 
 import pandas as pd
+from trading.decision_trace import decision, position_cycle, traced_call, note
 
 from trading.state import get_user_state, get_user_risk, get_user_trade_log, _now_et, _ET_TZ
 from config import get_bot_state_path
@@ -54,6 +55,7 @@ from trading.position_manager.helpers import _reconcile_if_phantom
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
+@decision
 def _resolve_latched_exit(
     position_state: dict,
     should_exit: bool,
@@ -121,6 +123,7 @@ def _exit_latch_snapshot(position_state: dict) -> dict:
     }
 
 
+@decision
 def _evaluate_reviewed_strategy_exit(
     trade: dict,
     entry_time: datetime | str | None,
@@ -171,6 +174,7 @@ def _evaluate_reviewed_strategy_exit(
     return evaluate_v2_orb_paper_exit(entry_time, now_et, strategy_id)
 
 
+@position_cycle
 def _manage_open_position(
     alpaca: "AlpacaClient",
     tradier: "TradierClient",
@@ -196,6 +200,7 @@ def _manage_open_position(
             from trading.research_session_clock import session_close_if_open
             research_session_close = session_close_if_open(alpaca, _now_et())
             if research_session_close is None:
+                note('exit_check_skipped', {'reason':'broker_session_not_open_or_unverified'})
                 return
         # Session expiry does not require a fresh mark.
         # Preserve the broker-session gate above and existing exit thresholds.
@@ -226,7 +231,7 @@ def _manage_open_position(
         if trade.get('strategy_id') in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2', 'V2_VWAP_PULLBACK'):
             from trading.research_order_exit import evaluate_exit
             deadline_now = _now_et()
-            due, deadline_reason = evaluate_exit(
+            due, deadline_reason = traced_call('early_native_deadline', evaluate_exit,
                 trade, trade.get('entry_time'), deadline_now, None,
                 session_close=research_session_close,
             )
@@ -268,7 +273,7 @@ def _manage_open_position(
         from trading.position_manager.exit_preflight import full_exit_reason, executable_quote
         preflight_now = _now_et()
         preflight_state = _US.setdefault('positions', {}).get(trade['id'], {})
-        preflight_reason = full_exit_reason(trade, preflight_state, preflight_now)
+        preflight_reason = traced_call('full_exit_preflight', full_exit_reason, trade, preflight_state, preflight_now)
         if preflight_reason:
             preflight_state = _US['positions'].setdefault(trade['id'], {})
             # A full deadline supersedes an unfinished partial profit take.
@@ -277,12 +282,14 @@ def _manage_open_position(
             preflight_state['exit_attempts'] = int(preflight_state.get('exit_attempts') or 0) + 1
             _persist_exit_latch(trade['id'], preflight_state)
             exit_bid, exit_quote = executable_quote(tradier, trade['contract_symbol'])
+            note('preflight_exit_price', {'bid':exit_bid,'quote':exit_quote,'reason':preflight_reason})
             from trading.position_manager.close import _close_position
             _close_position(alpaca, trade, exit_bid, preflight_reason,
                             bid_price=exit_bid, reference_quote=exit_quote,
                             pricing_unavailable=exit_bid is None)
             return
         quote = tradier.get_option_quote(trade["contract_symbol"])
+        note('option_quote_received_by_manager',quote)
         alpaca_positions = alpaca.get_positions()
         alpaca_pos = next(
             (p for p in alpaca_positions if p.get("symbol") == trade["contract_symbol"]),
@@ -300,7 +307,10 @@ def _manage_open_position(
             )
         else:
             logger.warning("Cannot price %s — holding", trade["contract_symbol"])
+            note('exit_check_skipped', {'reason':'pricing_unavailable'})
             return
+
+        note('selected_option_mark', {'current_price':current_price,'basis':'broker_position' if alpaca_pos is not None and alpaca_pos.get('current_price') is not None else 'tradier_mid'})
 
         bid_price     = float(quote.get("bid") or current_price) if quote else current_price
         entry_price   = trade["entry_price"]
@@ -708,7 +718,9 @@ def _manage_open_position(
                 if bars and not error:
                     from signals import bars_to_df
                     ps['compression_repair_frame'] = bars_to_df(bars)
-            return ps.get('compression_repair_frame', pd.DataFrame())
+            result = ps.get('compression_repair_frame', pd.DataFrame())
+            note('compression_bars_lookup_result',result)
+            return result
         _reviewed_exit = _evaluate_reviewed_strategy_exit(
             trade,
             entry_time,
@@ -730,13 +742,13 @@ def _manage_open_position(
                     should_exit, reason = _giveback_exit
         elif _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
             from trading.simplified_exit_live import evaluate_simplified_live_exit
-            should_exit, reason = evaluate_simplified_live_exit(
+            should_exit, reason = traced_call('simplified_exit', evaluate_simplified_live_exit,
                 ps, entry_price, current_price,
                 entry_time=entry_time, now=now_et, direction=direction,
                 atr=_atr_for_exit, underlying_now=_underlying_for_exit,
             )
         else:
-            should_exit, reason = _risk.should_exit(
+            should_exit, reason = traced_call('adaptive_risk_exit', _risk.should_exit,
                 entry_price, current_price,
                 entry_time      = entry_time,
                 now             = now_et,
@@ -967,6 +979,7 @@ def _manage_open_position(
                              reference_quote=quote)
 
     except Exception as e:
+        note('manager_error', {'error_type':type(e).__name__,'reason':'manager_retry_next_tick'})
         from database import log_event
         logger.error("Error managing position: %s", e)
         log_event("ERROR", "trading_logic",
