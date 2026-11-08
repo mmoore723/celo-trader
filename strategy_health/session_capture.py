@@ -134,6 +134,11 @@ class Archive:
             day TEXT,ticker TEXT,minute TEXT,received_at TEXT,fresh INTEGER,
             PRIMARY KEY(day,ticker,minute));
           CREATE INDEX IF NOT EXISTS responses_day ON responses(day,kind,ticker);
+          CREATE TABLE IF NOT EXISTS chain_refreshes (
+            response_id TEXT PRIMARY KEY, day TEXT, ticker TEXT, expiration TEXT,
+            requested_epoch REAL, received_epoch REAL, contracts INTEGER, fresh INTEGER);
+          CREATE INDEX IF NOT EXISTS chain_refreshes_scope
+            ON chain_refreshes(day,ticker,expiration,received_epoch);
         ''')
 
     def enqueue(self, day, tickers):
@@ -188,6 +193,9 @@ class Archive:
                         ELSE contracts.last_quote END, validation=excluded.validation''',
                         (day,ticker,row['symbol'],expiration,received.isoformat(),received.isoformat(),
                          received.isoformat() if validation == 'fresh' else None,validation))
+                self.db.execute('INSERT OR IGNORE INTO chain_refreshes VALUES (?,?,?,?,?,?,?,?)',
+                    (identity,day,ticker,expiration,requested.timestamp(),received.timestamp(),
+                     len(rows),sum(quote_validation(r,received)=='fresh' for r in rows)))
             elif kind == 'bars':
                 rows = objects((payload.get('series') or {}).get('data'))
                 if not rows:
@@ -232,6 +240,23 @@ def quote_validation(row, received):
         return 'missing_quote_or_source_time'
 
 
+def chain_cadence(archive, day, ticker, now):
+    """Receipt cadence, not source freshness or tick coverage. New records only."""
+    rows=archive.db.execute('''WITH ordered AS (
+        SELECT *,received_epoch-LAG(received_epoch) OVER (
+            PARTITION BY expiration ORDER BY received_epoch,response_id) AS gap
+        FROM chain_refreshes WHERE day=? AND ticker=?)
+        SELECT expiration,COUNT(*) AS samples,MAX(gap) AS max_gap,
+            MAX(received_epoch-requested_epoch) AS max_request_seconds,
+            MIN(received_epoch) AS first_received,MAX(received_epoch) AS last_received
+        FROM ordered GROUP BY expiration ORDER BY expiration''',(day,ticker)).fetchall()
+    return [dict(expiration=r['expiration'],samples=r['samples'],
+                 max_gap_seconds=r['max_gap'],max_request_seconds=r['max_request_seconds'],
+                 first_received_at=datetime.fromtimestamp(r['first_received'],timezone.utc).isoformat(),
+                 last_received_at=datetime.fromtimestamp(r['last_received'],timezone.utc).isoformat(),
+                 age_seconds=max(0,now.timestamp()-r['last_received'])) for r in rows]
+
+
 def summary(archive, day, tickers, window, now):
     expected = max(0, int((min(now,window[1])-window[0]).total_seconds()//60)) if window else 0
     rows = []
@@ -246,6 +271,7 @@ def summary(archive, day, tickers, window, now):
             FROM contracts WHERE day=? AND ticker=?''',(day,ticker)).fetchone()
         quotes = archive.db.execute('''SELECT count(*),sum(fresh),max(received_at) FROM quote_minutes
             WHERE day=? AND ticker=?''',(day,ticker)).fetchone()
+        cadence=chain_cadence(archive,day,ticker,now)
         rows.append(dict(ticker=ticker, expected_minutes=expected, captured_minutes=expected-len(missing),
             coverage_pct=round(100*(expected-len(missing))/expected,1) if expected else None,
             missing_minutes=missing, first_bar=bars[0][0] if bars else None,last_bar=bars[-1][0] if bars else None,
@@ -254,6 +280,9 @@ def summary(archive, day, tickers, window, now):
             contracts_discovered=contracts[0],contracts_with_fresh_snapshot=contracts[1] or 0,
             last_chain_at=contracts[2],pending_expirations=[r['expiration'] for r in chains if not r['last_ok']],
             oldest_chain_at=min((r['last_ok'] for r in chains if r['last_ok']),default=None),
+            option_refresh_cadence=cadence,
+            max_option_refresh_gap_seconds=max((r['max_gap_seconds'] for r in cadence if r['max_gap_seconds'] is not None),default=None),
+            oldest_option_refresh_age_seconds=max((r['age_seconds'] for r in cadence),default=None),
             errors=[dict(kind=r['kind'],expiration=r['expiration'],reason=r['error']) for r in tasks if r['error']] ))
     return dict(day=day,source=SOURCE,heartbeat_at=now.isoformat(),tickers=rows,
                 session_start=window[0].isoformat() if window else None,
@@ -264,6 +293,7 @@ def summary(archive, day, tickers, window, now):
                 limitations=['No exchange tick-completeness claim. Quotes between snapshots are not captured.',
                 'Target is 04:00-20:00 Eastern on provider-confirmed market days, including shortened days. Provider availability may be shorter.',
                 'All listed expirations rotate under a shared request budget; pending and stale contracts are not complete.',
+                'Refresh gaps measure successful chain response receipts, not every contract price update. Unmeasured gaps are unknown, not zero.',
                 'Missing bar minutes are unresolved, not fabricated zero-volume candles.',
                 'Historical candles retain their later receipt time, not original decision availability.',
                 'Greeks, sizes and open interest are retained exactly when supplied, with provider timestamps.'])

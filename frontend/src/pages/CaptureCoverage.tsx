@@ -5,8 +5,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { FastCaptureStatus } from '../components/FastCaptureStatus';
 
 type Row = { ticker: string; expected_minutes: number; captured_minutes: number; coverage_pct: number | null; missing_minutes: string[]; first_bar: string | null; last_bar: string | null; quote_minutes: number; fresh_quote_minutes: number; last_quote_at: string | null; listed_expirations: number; captured_expirations: number; contracts_discovered: number; contracts_with_fresh_snapshot: number; pending_expirations: string[]; oldest_chain_at: string | null; errors: { kind: string; expiration: string; reason: string }[] };
-type Report = { status: string; day?: string; heartbeat_at?: string; worker_stale: boolean; session_start?: string; session_end?: string; tickers: Row[]; limitations?: string[]; error?: string };
+type CadenceRow = Row & { max_option_refresh_gap_seconds?: number | null; oldest_option_refresh_age_seconds?: number | null; option_refresh_cadence?: { expiration: string; samples: number; max_gap_seconds: number | null; max_request_seconds: number; age_seconds: number }[] };
+type Report = { status: string; day?: string; heartbeat_at?: string; worker_stale: boolean; session_start?: string; session_end?: string; tickers: CadenceRow[]; limitations?: string[]; error?: string };
 const stamp = (v?: string | null) => v ? new Date(v).toLocaleString() : 'Not received';
+const duration = (v?: number | null) => v == null ? 'Not measured' : `${Math.round(v)} seconds`;
 
 export function CaptureCoverage() {
   const { user } = useAuth();
@@ -29,6 +31,11 @@ export function CaptureCoverage() {
       <h3 className="font-semibold">{r.ticker}: exact coverage</h3><p className="text-xs">First bar: {stamp(r.first_bar)}. Last bar: {stamp(r.last_bar)}. Last stock snapshot: {stamp(r.last_quote_at)}.</p>
       <p className="text-xs">{r.contracts_with_fresh_snapshot}/{r.contracts_discovered} discovered contracts had at least one fresh snapshot. This does not mean continuous option coverage. Oldest expiration refresh: {stamp(r.oldest_chain_at)}.</p>
       <p className="text-xs">Pending expirations: {r.pending_expirations.join(', ') || 'None listed'}</p>
+      <p className="text-xs">Longest observed option refresh gap: {duration(r.max_option_refresh_gap_seconds)}. Oldest refresh age at report time: {duration(r.oldest_option_refresh_age_seconds)}. Receipt timing does not prove fresh contract prices.</p>
+      <details><summary>Option refresh timing by expiration</summary>
+        {!r.option_refresh_cadence?.length ? <p className="text-xs">No timing samples yet. This is not zero delay.</p> :
+          <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th>Expiration</th><th>Responses</th><th>Longest gap</th><th>Longest request</th><th>Age at report</th></tr></thead><tbody>{r.option_refresh_cadence.map(c => <tr key={c.expiration}><td>{c.expiration}</td><td>{c.samples}</td><td>{duration(c.max_gap_seconds)}</td><td>{duration(c.max_request_seconds)}</td><td>{duration(c.age_seconds)}</td></tr>)}</tbody></table></div>}
+      </details>
       <details><summary>{r.missing_minutes.length} unresolved stock minutes</summary><p className="text-xs break-words">{r.missing_minutes.join(', ') || 'None'}</p></details>
       <p className="text-xs">{r.errors.map(e => `${e.kind} ${e.expiration}: ${e.reason}`).join('; ') || 'No recorded request failures'}</p>
       {detail.isPending && <p>Loading contract inventory...</p>}{detail.error && <p role="alert">{detail.error.message}</p>}

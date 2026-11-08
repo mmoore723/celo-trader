@@ -358,3 +358,27 @@ Deployment rollback: remove the unused library in a corrective deploy.sh release
 if it disrupts imports or regression tests. No migration or trading-setting
 rollback is needed. Preserve saved evidence; no research runs are started by
 shipping this code.
+
+### Full-session scope and refresh timing
+
+The session collector uses the explicit `research_tickers` universe, not the
+trade journal or enabled strategy signals. On provider-confirmed market days it
+targets completed stock minutes from 04:00 through 20:00 Eastern, stock quote
+snapshots and every listed option expiration. It is not a complete exchange
+tick tape; snapshots miss intervening updates and provider quotas limit rotation.
+
+Research Data Coverage now shows observed option-chain refresh gaps, request
+duration and refresh age by expiration. A successful chain receipt is not proof
+that every contract had a fresh price. One response cannot establish a refresh
+interval. Missing timing history displays as unmeasured, never zero delay.
+New append-only `chain_refreshes` metadata survives restarts and deduplicates by
+raw response ID. Existing history is not rewritten or silently relabeled.
+This report is calculated by the background worker; opening the page only reads
+saved results. Synthetic coverage checks include a full 960-minute day for the
+23-name approved-universe fixture with no trade inputs. Actual session coverage
+must still be verified during market hours.
+
+Rollback: corrective deploy.sh release restoring the earlier summary and UI if
+timing collection causes worker errors or excessive summary latency. Retain the
+additive metadata table and raw archives; the old worker ignores that table.
+This change does not alter subscriptions, exits, risk limits or trading switches.

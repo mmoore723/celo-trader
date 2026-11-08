@@ -179,5 +179,53 @@ class SessionCaptureTests(unittest.TestCase):
         self.assertNotIn('submit_order',source)
         self.assertNotIn('save_settings',source)
 
+    def test_refresh_delay_is_measured_not_assumed_from_nominal_interval(self):
+        expiry='2026-11-20'
+        self.accept('expirations',{'expirations':{'date':[expiry]}})
+        payload={'options':{'option':dict(symbol='SPY261120C00600000',bid=0,ask=2)}}
+        first=NOW+timedelta(seconds=1)
+        self.accept('chain',payload,expiration=expiry)
+        one=summary(self.archive,DAY,['SPY'],WINDOW,first)['tickers'][0]
+        self.assertIsNone(one['max_option_refresh_gap_seconds'])
+        self.assertEqual(0,one['contracts_with_fresh_snapshot'])
+        later=NOW+timedelta(seconds=301)
+        self.archive.accept(self.task('chain',expiration=expiry),{},later-timedelta(seconds=3),later,payload,WINDOW)
+        # Identical retry must not inflate observations.
+        self.archive.accept(self.task('chain',expiration=expiry),{},later-timedelta(seconds=3),later,payload,WINDOW)
+        row=summary(self.archive,DAY,['SPY'],WINDOW,later+timedelta(seconds=20))['tickers'][0]
+        self.assertEqual(300,row['max_option_refresh_gap_seconds'])
+        self.assertEqual(20,row['oldest_option_refresh_age_seconds'])
+        self.assertEqual(2,row['option_refresh_cadence'][0]['samples'])
+        self.assertEqual(3,row['option_refresh_cadence'][0]['max_request_seconds'])
+        self.assertEqual(0,row['contracts_with_fresh_snapshot'])
+        reopened=Archive(self.tmp.name)
+        try:
+            persisted=summary(reopened,DAY,['SPY'],WINDOW,later+timedelta(seconds=20))['tickers'][0]
+            self.assertEqual(row['option_refresh_cadence'],persisted['option_refresh_cadence'])
+        finally:
+            reopened.db.close()
+
+    def test_rejected_chain_is_not_a_successful_refresh(self):
+        expiry='2026-11-20'
+        self.accept('expirations',{'expirations':{'date':[expiry]}})
+        with self.assertRaises(ValueError): self.accept('chain',{'options':{'option':[]}},expiration=expiry)
+        row=summary(self.archive,DAY,['SPY'],WINDOW,NOW)['tickers'][0]
+        self.assertEqual([],row['option_refresh_cadence'])
+        self.assertIsNone(row['oldest_option_refresh_age_seconds'])
+
+    def test_full_day_all_approved_tickers_without_any_trade_inputs(self):
+        from config.research_universe import selected_tickers
+        tickers=selected_tickers({'research_tickers':
+            'AAPL AMD AMZN BABA COIN GOOG GOOGL META MGM MSFT MU NFLX NKE NVDA OKTA PANW PLNT PLTR QQQ SAIL SHOP SPY TSLA'.split()})
+        self.archive.enqueue(DAY,tickers)
+        end=WINDOW[1]
+        rows=[dict(time=(WINDOW[0]+timedelta(minutes=n)).isoformat(),open=1,high=2,low=1,close=2,volume=1)
+              for n in range(960)]
+        for ticker in tickers:
+            self.archive.accept(self.task('bars',ticker),{},end,end+timedelta(seconds=1),{'series':{'data':rows}},WINDOW)
+        report=summary(self.archive,DAY,tickers,WINDOW,end+timedelta(seconds=1))
+        self.assertEqual(len(tickers),len(report['tickers']))
+        self.assertTrue(all(r['captured_minutes']==960 and r['coverage_pct']==100 for r in report['tickers']))
+
 
 if __name__=='__main__': unittest.main()
