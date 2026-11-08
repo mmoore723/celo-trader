@@ -64,7 +64,7 @@
     },
     {
       "path": "config/runtime_exit_review.py",
-      "sha256": "d249c33ec18a61c81f909c2bd2882a33d5b14d2318d3fe015fe41f698d07a055"
+      "sha256": "15b4abc811786617e668e2a88d07f7b0ddf310a1d1e85c92530ef28f61dd332d"
     },
     {
       "path": "config/strategy_catalog.py",
