@@ -71,6 +71,7 @@ PRODUCTION_PATHS=(
   celo-dashboard.service
   celo-underlying-capture.service
   celo-session-capture.service
+  celo-holding-forward.service
   deploy.sh
   market_data.py
   nginx_celotrader.conf
@@ -258,6 +259,13 @@ if ! ssh -i "$EC2_KEY" "$EC2_HOST" \
   "sudo install -m 0644 $EC2_DIR/celo-session-capture.service /etc/systemd/system/celo-session-capture.service && sudo systemctl daemon-reload && sudo systemctl enable celo-session-capture && sudo systemctl restart celo-session-capture && sudo systemctl is-active --quiet celo-session-capture"; then
   echo "NOT DEPLOYED completely: application healthy, full-session capture worker failed."
   echo "Stop celo-session-capture and investigate; do not change trading settings."
+  exit 1
+fi
+
+echo "==> Updating existing fast capture service (preserving legacy archives)..."
+if ! ssh -i "$EC2_KEY" "$EC2_HOST" \
+  "if test ! -f /etc/systemd/system/celo-holding-forward.service.pre-integration; then sudo cp /etc/systemd/system/celo-holding-forward.service /etc/systemd/system/celo-holding-forward.service.pre-integration; fi && sudo install -m 0644 $EC2_DIR/celo-holding-forward.service /etc/systemd/system/celo-holding-forward.service && sudo systemctl daemon-reload && sudo systemctl enable celo-holding-forward && sudo systemctl restart celo-holding-forward && sudo systemctl is-active --quiet celo-holding-forward"; then
+  echo "NOT DEPLOYED completely: fast capture service failed. Restore its pre-integration unit and investigate."
   exit 1
 fi
 

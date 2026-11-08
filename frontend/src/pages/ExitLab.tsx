@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { api, request } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { FastCaptureStatus } from '../components/FastCaptureStatus';
 
 type Metrics = { net: number | null; win_rate: number | null; profit_factor: number | null; worst_loss: number | null; drawdown: number | null };
 type Candidate = { id: string; version: string; name: string; baseline_metrics?: Metrics; metrics?: Metrics; improvement?: number | null; interval?: [number, number] | null; winners_to_losses?: number | null; pairs?: number; sessions?: number; coverage?: number | null; status?: string };
@@ -67,6 +68,7 @@ function ScopedExitLab({ scope, ready }: { scope: string; ready: boolean }) {
   const query = useQuery({ queryKey: ['exit-lab', scope], queryFn: ({ signal }) => request<{ buckets: Bucket[]; capture_state: string }>('/api/exit-lab', { signal }), enabled: ready, staleTime: 60_000, refetchInterval: 60_000, refetchIntervalInBackground: false });
   const rows = (query.data?.buckets ?? []).filter(b => `${b.name} ${b.ticker} ${b.version}`.toLowerCase().includes(filter.toLowerCase()));
   return <section className="space-y-4" aria-label="Exit Lab">
+    <FastCaptureStatus />
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">Exit Lab</h1><p className="text-xs" style={{ color: 'var(--ink-muted)' }}>Saved bucket-level evidence. Opening this page never runs a backtest or changes a policy.</p></div><input className="input" aria-label="Filter Exit Lab buckets" placeholder="Ticker or strategy" value={filter} onChange={event => setFilter(event.target.value)} /></header>
     {query.isPending && <p role="status">Loading saved summaries...</p>}{query.error && <p role="alert" className="card p-4">Exit Lab unavailable: {query.error.message}</p>}
     {!query.isPending && !query.error && !rows.length && <div className="card p-6">{query.data?.buckets.length ? 'No matching buckets.' : 'No Exit Lab snapshot published yet. The background publisher must initialize the enabled inventory. No experiments are implied to be running.'}</div>}

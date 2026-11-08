@@ -249,3 +249,48 @@ the application health, existing capture services and GitHub/production match.
 
 Documentation-only changes require no application restart. Follow
 [release rules](AGENTS.md) and report local and deployment status separately.
+# Fast research capture integration
+
+The existing `celo-holding-forward` service now runs
+`python -m strategy_health.fast_capture --user admin` from the versioned application.
+It does not submit orders, evaluate candidates or change trading settings.
+The earlier `/opt/celo_holding_observer/20261014_v6/data` archives remain intact.
+
+It discovers the current account/mode's saved broker trades, primary research
+contract selections, alternative contracts and expiration-study selections using
+read-only database connections. Each durable registration retains account, mode,
+strategy, ticker, version, contract, origin, first discovery time and capture horizon.
+Missing versions/policies are visible and do not magically become valid exit tests.
+Copied metadata is explicitly a discovery-time snapshot, not verified entry-time
+state. New experiment code can call `Registry.register` with an explicit horizon
+covering both policies; doing so collects data only and cannot authorize evaluation.
+
+Automatic registrations capture through the next verified session close plus
+60 seconds, or a later saved deadline. This is a data-retention envelope, never
+a replacement exit rule. Saved registrations continue across restarts and account
+switches. All scopes remain separate even when they share a raw market quote.
+Expired registrations and archived observations are retained, not rewritten.
+
+The worker rotates up to 20 contracts per request, at most one request every five
+seconds, backing off on failures and provider quota pressure. It does not drop
+contracts above 20. More contracts mean slower per-contract coverage, explicitly
+reported as pending receipts, stale receipts and measured wall-clock gaps. The
+five-second interval is not a promise of five-second coverage for each contract.
+Raw quote timestamps, sizes and provider Greeks are preserved. These are sampled
+market observations, never broker fills or a tick-complete tape. Broad universe
+capture remains independent and unchanged.
+
+Research > Data Coverage and Exit Lab read the saved capture report only. The
+UI cannot start a worker, evaluate a strategy or modify a policy. A stale worker
+report is flagged after 90 seconds. Discovery-limit and missing-input failures
+remain visible; the source scan is bounded and never called a complete inventory
+when it exceeds that bound. No prior quote is backfilled into a missing interval.
+
+Rollback: on capture crash loops, quota starvation, source database contention or
+unacceptable resource use, stop only `celo-holding-forward`. Restore its saved
+`/etc/systemd/system/celo-holding-forward.service.pre-integration` unit, reload
+systemd and restart that service to resume the original observer. Preserve both
+archives. Revert the capture integration with a corrective commit and `deploy.sh`
+before declaring a source rollback complete. Never change trading switches,
+exit policies or risk limits as part of this rollback. The service backup is made
+once before the first integration deployment and is not overwritten on later releases.

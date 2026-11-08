@@ -1,0 +1,27 @@
+[Unit]
+Description=Celo registered-contract fast capture (no orders or evaluations)
+After=network.target celo-dashboard.service
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/celo_trader
+Environment="CELO_ENV=production"
+Environment="PYTHONPATH=/opt/celo_trader"
+EnvironmentFile=/opt/celo_trader/.env
+ExecStart=/opt/celo_trader/venv/bin/python -m strategy_health.fast_capture --user admin
+Restart=always
+RestartSec=15
+Nice=15
+CPUQuota=15%
+MemoryMax=256M
+StandardOutput=journal
+StandardError=journal
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/celo_trader/user_data
+
+[Install]
+WantedBy=multi-user.target

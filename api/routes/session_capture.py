@@ -1,11 +1,32 @@
 """Persisted market-capture coverage. No collection or analysis on requests."""
 import json
 import sqlite3
+import hashlib
 from datetime import datetime, timezone
 from fastapi import APIRouter, Query
 from config.paths import get_user_data_dir
 
 router = APIRouter(prefix='/api/session-capture', tags=['research'])
+
+
+@router.get('/fast')
+def fast_coverage():
+    """Read the worker's saved summary, never enroll, collect or evaluate."""
+    from config import get_settings
+    settings=get_settings()
+    mode='paper' if settings.get('paper_trading',True) else 'live'
+    key=hashlib.sha256(json.dumps([settings.get('active_broker_account_id'),mode]).encode()).hexdigest()
+    try:
+        data=json.loads((get_user_data_dir(create=False)/'fast_capture_health.json').read_text())
+        age=(datetime.now(timezone.utc)-datetime.fromisoformat(data['heartbeat_at'])).total_seconds()
+        return dict(status=data['status'],heartbeat_at=data['heartbeat_at'],worker_stale=age<0 or age>90,
+                    error=data.get('error'),buckets=data.get('scopes',{}).get(key,[]),
+                    discovery=data.get('discovery',{}) if data.get('discovery_scope')==key else {},
+                    mode=mode,batch_size=data['batch_size'],request_interval_seconds=data['request_interval_seconds'],
+                    capture_only=True,experiment_evaluation_started=False)
+    except (OSError,ValueError,KeyError,TypeError):
+        return dict(status='not_verified',worker_stale=True,buckets=[],mode=mode,
+                    error='No saved fast-capture report is available for this worker.')
 
 
 @router.get('')

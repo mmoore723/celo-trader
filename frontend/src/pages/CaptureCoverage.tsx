@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { request } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { FastCaptureStatus } from '../components/FastCaptureStatus';
 
 type Row = { ticker: string; expected_minutes: number; captured_minutes: number; coverage_pct: number | null; missing_minutes: string[]; first_bar: string | null; last_bar: string | null; quote_minutes: number; fresh_quote_minutes: number; last_quote_at: string | null; listed_expirations: number; captured_expirations: number; contracts_discovered: number; contracts_with_fresh_snapshot: number; pending_expirations: string[]; oldest_chain_at: string | null; errors: { kind: string; expiration: string; reason: string }[] };
 type Report = { status: string; day?: string; heartbeat_at?: string; worker_stale: boolean; session_start?: string; session_end?: string; tickers: Row[]; limitations?: string[]; error?: string };
@@ -17,6 +18,7 @@ export function CaptureCoverage() {
   if (report.error) return <p role="alert">Capture report unavailable: {report.error.message}</p>;
   const data = report.data!;
   return <section className="card p-4 space-y-3">
+    <FastCaptureStatus />
     <h2 className="text-lg font-semibold">Full-session data coverage</h2>
     <p className="text-sm">{data.tickers.length} approved tickers. Independent of trades. Market observations are shared research data, not paper or live fills.</p>
     <p className="text-sm" role="status">Worker: {data.worker_stale ? 'STALE / NOT VERIFIED' : data.status.replaceAll('_', ' ')}. Last report: {stamp(data.heartbeat_at)}</p>
