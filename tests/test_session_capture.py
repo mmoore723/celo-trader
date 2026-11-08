@@ -88,7 +88,7 @@ class SessionCaptureTests(unittest.TestCase):
     def test_timestamp_disagreement_rejected(self):
         with self.assertRaises(ValueError): bar_stamp(dict(time=DAY+' 04:00:00',timestamp=0))
 
-    def test_get_only_feed_no_fallback_or_orders(self):
+    def test_allowlisted_feed_no_fallback_or_orders(self):
         feed=Feed('test')
         with self.assertRaises(ValueError): feed.get('accounts/orders')
         response=Mock(status_code=200,headers={},json=lambda: {})
@@ -97,6 +97,33 @@ class SessionCaptureTests(unittest.TestCase):
             self.assertFalse(get.call_args.kwargs['allow_redirects'])
             self.assertTrue(get.call_args.args[0].startswith('https://api.tradier.com/'))
             with self.assertRaisesRegex(ValueError,'budget_wait'): feed.get('quotes')
+
+    def test_bulk_quote_post_is_market_data_only_and_preserves_fields(self):
+        feed=Feed('test')
+        response=Mock(status_code=200,headers={},json=lambda:{'quotes':{'quote':[]}})
+        with patch.object(feed.session,'post',return_value=response) as post:
+            feed.quotes(['SPY261120C00600000']*600)
+            self.assertEqual('https://api.tradier.com/v1/markets/quotes',post.call_args.args[0])
+            self.assertFalse(post.call_args.kwargs['allow_redirects'])
+            self.assertEqual('true',post.call_args.kwargs['data']['greeks'])
+            self.assertEqual('true',post.call_args.kwargs['data']['includeLotSize'])
+        for endpoint in ('accounts/orders','calendar','options/chains'):
+            with self.assertRaises(ValueError): Feed('test').get(endpoint,quote_body=True)
+        for symbols in ([],['SPY']*601,['SPY,QQQ'],[''],None):
+            with self.assertRaises(ValueError): Feed('test').quotes(symbols)
+
+    def test_bulk_quotes_share_quota_and_backoff(self):
+        import time
+        for status in (400,429):
+            feed=Feed('test')
+            with patch.object(feed.session,'post',return_value=Mock(status_code=status,headers={})):
+                with self.assertRaisesRegex(ValueError,'provider_http'): feed.quotes(['SPY'])
+                with self.assertRaisesRegex(ValueError,'budget_wait'): feed.get('calendar')
+                self.assertGreater(feed.next_request-time.monotonic(),59)
+        feed=Feed('test')
+        with patch.object(feed.session,'post',return_value=Mock(status_code=200,headers={'X-Ratelimit-Available':'39'},json=lambda:{})):
+            feed.quotes(['SPY'])
+            self.assertGreater(feed.next_request-time.monotonic(),59)
 
     def test_400_and_429_back_off_and_leave_trading_reserve(self):
         for status in (400,429):

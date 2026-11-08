@@ -38,7 +38,7 @@ def objects(value):
 
 
 class Feed:
-    """Hard GET allowlist, explicit shared quota reserve, no fallback feed."""
+    """Market-data allowlist, quote-only POST, quota reserve, no fallback feed."""
     def __init__(self, token):
         if not token:
             raise ValueError('missing_production_tradier_token')
@@ -46,15 +46,27 @@ class Feed:
         self.session.headers.update(Authorization='Bearer ' + token, Accept='application/json')
         self.next_request = 0.0
 
-    def get(self, endpoint, params=None):
+    def quotes(self, symbols):
+        if (not isinstance(symbols, list) or not 1 <= len(symbols) <= 600
+                or any(not isinstance(s,str) or not s or ',' in s for s in symbols)):
+            raise ValueError('capture_invalid_quote_batch')
+        return self.get('quotes', {'symbols':','.join(symbols),'greeks':'true','includeLotSize':'true'}, quote_body=True)
+
+    def get(self, endpoint, params=None, *, quote_body=False):
         if endpoint not in ENDPOINTS:
             raise ValueError('capture_endpoint_not_allowed')
+        if quote_body and endpoint != 'quotes':
+            raise ValueError('capture_post_only_quotes_allowed')
         if time.monotonic() < self.next_request:
             raise ValueError('capture_rate_budget_wait')
         # At most 30 requests/minute. Existing trading clients retain priority.
         self.next_request = time.monotonic() + 2
-        response = self.session.get('https://api.tradier.com/v1/markets/' + endpoint,
-                                    params=params, timeout=(2, 8), allow_redirects=False)
+        if quote_body:
+            response = self.session.post('https://api.tradier.com/v1/markets/quotes',
+                                         data=params, timeout=(2, 8), allow_redirects=False)
+        else:
+            response = self.session.get('https://api.tradier.com/v1/markets/' + endpoint,
+                                        params=params, timeout=(2, 8), allow_redirects=False)
         received = utcnow()
         available = response.headers.get('X-Ratelimit-Available')
         if available is not None and int(available) < 40:

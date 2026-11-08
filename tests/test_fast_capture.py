@@ -51,13 +51,13 @@ class FastCaptureTests(unittest.TestCase):
         self.assertEqual(1,self.r.db.execute('SELECT count(*) FROM events').fetchone()[0])
 
     def test_more_than_batch_limit_fair_batches_no_exclusions(self):
-        for i in range(601): self.add(symbol=f'SPY261120C{600000+i:08}',origin_id=str(i))
+        for i in range(1201): self.add(symbol=f'SPY261120C{600000+i:08}',origin_id=str(i))
         seen=set()
         for i in range(3):
             now=NOW+timedelta(seconds=i*5); batch=self.r.due(now); seen.update(batch)
             self.r.record(batch,{'quotes':{'quote':[self.quote(s,now) for s in batch]}},now,now)
-        self.assertEqual(601,len(seen))
-        self.assertEqual(601,self.r.db.execute('SELECT count(*) FROM registrations').fetchone()[0])
+        self.assertEqual(1201,len(seen))
+        self.assertEqual(1201,self.r.db.execute('SELECT count(*) FROM registrations').fetchone()[0])
 
     def test_expired_contract_preserved_but_not_polled(self):
         expired='SPY261106C00600000'

@@ -271,7 +271,7 @@ a replacement exit rule. Saved registrations continue across restarts and accoun
 switches. All scopes remain separate even when they share a raw market quote.
 Expired registrations and archived observations are retained, not rewritten.
 
-The worker rotates up to 300 contracts per request, at most one request every five
+The worker rotates up to 600 contracts per request, at most one request every five
 seconds, backing off on failures and provider quota pressure. It does not drop
 contracts above the batch limit. Contracts past their OCC expiration date in
 Eastern time stop polling but remain visible with an explicit expiry reason;
@@ -282,10 +282,15 @@ Raw quote timestamps, sizes and provider Greeks are preserved. These are sampled
 market observations, never broker fills or a tick-complete tape. Broad universe
 capture remains independent and unchanged.
 
-The 300-contract batch returned all requested symbols in an after-hours production
-provider probe on November 7, 2026. This is not market-session latency validation.
-If larger batches fail or overload the collector, restore the previous 20-contract
-batch through a corrective deploy.sh release, retaining all registrations and
+The collector uses Tradier's market-data-only POST /v1/markets/quotes endpoint
+for bulk quotes, avoiding long GET URLs. It cannot POST to any other endpoint.
+Calendar and other data requests remain GET-only; rate reserve and backoff are
+shared by both methods. No order endpoint or new subscription is introduced.
+All 540 current unexpired symbols returned in 0.202 seconds in an after-hours
+provider probe on November 8, 2026. This is not market-session latency validation.
+The 600-symbol ceiling bounds payload size; larger inventories rotate without
+being silently dropped. If bulk requests fail or overload the collector, restore
+the previous 300-contract GET batch through a corrective deploy.sh release, retaining all registrations and
 observations. Never relax experiment coverage requirements to hide slow collection.
 
 ### Native exit decision log

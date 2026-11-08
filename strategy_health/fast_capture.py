@@ -1,4 +1,4 @@
-"""Durable research quote registrations. GET-only replacement for holding observer.
+"""Durable research quote registrations. Market-data-only holding observer.
 
 Registrations are capture requests, never experiment enrollment or order intents.
 Source databases are read-only. Old holding archives are not changed.
@@ -18,7 +18,7 @@ import time
 from strategy_health.session_capture import Feed, ET, objects, quote_validation
 
 CADENCE = 5
-BATCH = 300
+BATCH = 600
 OCC = re.compile(r'^[A-Z.]{1,6}[0-9]{6}[CP][0-9]{8}$')
 
 
@@ -294,7 +294,7 @@ def main():
                     if symbols:
                         next_batch=time.monotonic()+CADENCE
                         try:
-                            payload,received=feed.get('quotes',{'symbols':','.join(symbols),'greeks':'true','includeLotSize':'true'})
+                            payload,received=feed.quotes(symbols)
                             registry.record(symbols,payload,now,received)
                         except Exception as exc:
                             registry.fail(symbols,now,str(exc) if isinstance(exc,ValueError) else type(exc).__name__)
