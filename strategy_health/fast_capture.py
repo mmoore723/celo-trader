@@ -230,6 +230,10 @@ def discover(path, account, mode, registry, calendar, now):
             for row in rows:
                 try:
                     meta=json.loads(row['metadata'] or '{}')
+                    if not row['contract_symbol']:
+                        raise ValueError('source_contract_missing')
+                    if not row['entry_at']:
+                        raise ValueError('source_entry_timestamp_missing')
                     entry=source_stamp(row['entry_at'])
                     if entry>now: raise ValueError('source_entry_in_future')
                     until=capture_horizon(entry,calendar,meta)

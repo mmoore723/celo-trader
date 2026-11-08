@@ -140,6 +140,7 @@ class FastCaptureTests(unittest.TestCase):
         cal=[(NOW,NOW+timedelta(hours=6)),(NOW+timedelta(days=1),NOW+timedelta(days=1,hours=6))]
         result=discover(path,'a','paper',self.r,cal,NOW)
         self.assertEqual(2,result['registered']); self.assertEqual(1,sum(result['blocked'].values()))
+        self.assertEqual({'source_contract_missing':1},result['blocked'])
         self.assertEqual({'research_alternative','research_expiration_study'},
                          {r[0] for r in self.r.db.execute('SELECT origin FROM registrations')})
 
