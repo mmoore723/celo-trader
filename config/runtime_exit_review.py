@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'exit-decision-capture-20261108.1'
+REVISION = 'exit-action-capture-20261108.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

@@ -34,7 +34,7 @@ from datetime import datetime
 from typing import Optional
 
 import pandas as pd
-from trading.decision_trace import decision, position_cycle, traced_call, note
+from trading.decision_trace import decision, position_cycle, traced_call, note, exit_order
 
 from trading.state import get_user_state, get_user_risk, get_user_trade_log, _now_et, _ET_TZ
 from config import get_bot_state_path
@@ -820,7 +820,7 @@ def _manage_open_position(
                     },
                 )
             from trading.position_manager.helpers import _snapshot_exit_annotations
-            fill = alpaca.place_option_order(
+            fill = exit_order(alpaca.place_option_order, trade,
                 symbol          = trade["contract_symbol"],
                 qty             = half_contracts,
                 side            = "sell",

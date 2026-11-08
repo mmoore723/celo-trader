@@ -145,6 +145,42 @@ def decision(function):
     return wrapped
 
 
+def exit_order(function, trade, **order):
+    """Observe the exact request and response without changing either.
+
+    A response is broker-reported evidence, not an independently reconciled fill.
+    Calls outside the manager receive their own journal context.
+    """
+    if os.environ.get('CELO_EXIT_TRACE_DISABLED')=='1':
+        return function(**order)
+    token=None
+    action_id=str(uuid4())
+    try:
+        if _context.get() is None:
+            from config.paths import get_user_data_dir
+            identity={k:trade.get(k) for k in ('id','broker_account_id','paper','strategy_id','ticker',
+                'contract_symbol','contracts','entry_time','entry_price','strategy_context_json')}
+            token=_context.set({'root':str(get_user_data_dir(create=False)/'exit_decisions'),
+                'identity':{'cycle_id':str(uuid4()),'trade':snapshot(identity)['data'],
+                    'mode':'paper' if trade.get('paper') in (True,1) else 'live' if trade.get('paper') in (False,0) else 'unknown'}})
+    except Exception:
+        _warning()
+    try:
+        note('exit_order_request',{'action_id':action_id,'remaining_contracts':trade.get('contracts'),
+                                  'order':order,'evidence':'requested_not_filled'})
+        try:
+            result=function(**order)
+        except Exception as exc:
+            note('exit_order_response',{'action_id':action_id,'error_type':type(exc).__name__,
+                                       'evidence':'call_failed_fill_status_not_inferred'})
+            raise
+        note('exit_order_response',{'action_id':action_id,'response':result,
+                                   'evidence':'broker_response_not_independent_reconciliation'})
+        return result
+    finally:
+        if token is not None: _context.reset(token)
+
+
 def position_cycle(function):
     @wraps(function)
     def wrapped(alpaca,tradier,trade,balance):

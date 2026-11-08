@@ -20,6 +20,7 @@ from typing import Optional
 from trading.state import get_user_state, get_user_risk, get_user_trade_log, set_user_trade_log, _now_et
 from config import get_bot_state_path
 from trading.position_manager.helpers import _snapshot_exit_annotations, _reconcile_if_phantom
+from trading.decision_trace import exit_order
 
 logger = logging.getLogger("celo_trader.trading_logic")
 
@@ -83,7 +84,7 @@ def _close_position(
         _US.get('positions', {}).get(trade['id'], {}).get('exit_pending_reason')
     )
     _market_exit = pricing_unavailable or _giveback_market or _session_market or _failed_range_deadline or _tsla_pending_exit
-    fill = alpaca.place_option_order(
+    fill = exit_order(alpaca.place_option_order, trade,
         symbol          = trade["contract_symbol"],
         qty             = trade["contracts"],
         side            = "sell",

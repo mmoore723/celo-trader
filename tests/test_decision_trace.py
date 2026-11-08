@@ -99,5 +99,46 @@ class DecisionTraceTests(unittest.TestCase):
         trace.note('large',['x'*100000]*10)
         self.assertEqual(['event_size_limit'],self.rows()[0]['snapshot']['issues'])
 
+    def test_exit_request_and_partial_response_preserve_arguments_and_identity(self):
+        from unittest.mock import Mock
+        response={'id':'order-1','filled_qty':'1','status':'partially_filled'}
+        broker=Mock(return_value=response)
+        order=dict(symbol='contract',qty=2,side='sell',order_type='limit',limit_price=1.5,
+                   position_intent='sell_to_close',order_context={'exit_reason':'stage1'})
+        self.assertIs(response,trace.exit_order(broker,{'contracts':5},**order))
+        broker.assert_called_once_with(**order)
+        rows=self.rows();request,reply=[r['snapshot']['data'] for r in rows]
+        self.assertEqual(5,request['remaining_contracts'])
+        self.assertEqual(order,request['order'])
+        self.assertEqual(request['action_id'],reply['action_id'])
+        self.assertEqual(response,reply['response'])
+
+    def test_exit_exception_and_logging_failure_do_not_change_broker_behavior(self):
+        from unittest.mock import Mock
+        error=TimeoutError('unknown execution outcome')
+        broker=Mock(side_effect=error)
+        with patch.object(trace,'_write',side_effect=OSError('disk')):
+            with self.assertRaises(TimeoutError) as caught:
+                trace.exit_order(broker,{'contracts':2},qty=2)
+            self.assertIs(error,caught.exception)
+            broker.assert_called_once_with(qty=2)
+            self.assertTrue(trace.flush())
+
+    def test_exit_no_fill_and_retries_are_not_labeled_filled(self):
+        for _ in range(2): self.assertIsNone(trace.exit_order(lambda **kw:None,{'contracts':2},qty=1))
+        rows=self.rows()
+        self.assertNotEqual(rows[0]['snapshot']['data']['action_id'],rows[2]['snapshot']['data']['action_id'])
+        self.assertIsNone(rows[1]['snapshot']['data']['response'])
+
+    def test_exit_outside_manager_has_scoped_context_and_restores_it(self):
+        token=trace._context.set(None)
+        try:
+            trade={'id':12,'contracts':1,'paper':True,'broker_account_id':'a'}
+            with patch('config.paths.get_user_data_dir',return_value=Path(self.temp.name)):
+                self.assertEqual(7,trace.exit_order(lambda **kw:7,trade,qty=1))
+            self.assertIsNone(trace._context.get())
+            self.assertEqual(12,self.rows()[0]['trade']['id'])
+        finally: trace._context.reset(token)
+
 
 if __name__=='__main__': unittest.main()

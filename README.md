@@ -382,3 +382,28 @@ Rollback: corrective deploy.sh release restoring the earlier summary and UI if
 timing collection causes worker errors or excessive summary latency. Retain the
 additive metadata table and raw archives; the old worker ignores that table.
 This change does not alter subscriptions, exits, risk limits or trading switches.
+
+### Native exit request evidence
+
+The manager's full and partial exits now journal the exact broker-call arguments
+and response under a shared action ID. Remaining position quantity, requested
+sell quantity, reason, prices and order type are distinct from broker-reported
+filled quantity. Timeouts never imply no fill; responses are not independently
+reconciled fills. Logging disabled or unavailable leaves the original call,
+arguments, return value and exception unchanged. Direct full-close calls outside
+the manager also get a scoped capture context.
+
+`strategy_health/native_exit_requests.py` converts these observed requests into
+shadow-pricing intents. It validates account/mode/strategy/ticker/version,
+entry-context fingerprint and contract, rejects incomplete evidence, separates
+retries and requests after hypothetical liquidation, and blocks actual-versus-
+shadow quantity divergence. It does not replace native decisions with a timer.
+These records alone do not prove complete decision coverage. The adapter does
+not enroll an experiment, qualify a candidate or alter production exits.
+
+The source review is appended as `exit-action-capture-20261108.1`; historical
+research artifacts and prior reviews are unchanged. Rollback uses
+`CELO_EXIT_TRACE_DISABLED=1` and a normal service restart, or a corrective
+deploy.sh release restoring the prior wrappers and matching runtime review.
+Retain journals. Roll back if logging changes a broker argument/result or adds
+unacceptable exit latency. Actual session latency and coverage remain pending.
