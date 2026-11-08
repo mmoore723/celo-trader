@@ -333,3 +333,28 @@ archives. Revert the capture integration with a corrective commit and `deploy.sh
 before declaring a source rollback complete. Never change trading switches,
 exit policies or risk limits as part of this rollback. The service backup is made
 once before the first integration deployment and is not overwritten on later releases.
+
+### Paired exit accounting core
+
+`strategy_health/paired_exit_accounting.py` is a pure, offline shadow-pricing
+library. It does not enroll experiments, run automatically, submit orders or
+change policies. Native and candidate adapters must supply verified exit intents;
+this library does not yet implement those adapters or qualify a candidate.
+
+Both branches use identical entry fills, contracts and quantities. Exit pricing
+uses the first eligible observed bid after each intent, available size, explicit
+fees and slippage. Partial exits conserve quantity. Source freshness and receipt
+coverage extend through the later exit. Missing prices remain blocked, not zero
+profit. Invalid or stale receipts cannot fill a coverage gap. Reported drawdown
+is closed-trade equity drawdown, not intratrade mark-to-market drawdown.
+
+Reports stay separate by account, mode, strategy, ticker, code version, experiment
+and policy pair. All exit results are hypothetical, not broker fills. Uncertainty,
+native decision validation, holdout and qualification remain separate unfinished
+work. Unit tests cover costs, quantities, stale/late quotes, gaps, duplicates and
+isolation. No observed profitability is claimed from synthetic tests.
+
+Deployment rollback: remove the unused library in a corrective deploy.sh release
+if it disrupts imports or regression tests. No migration or trading-setting
+rollback is needed. Preserve saved evidence; no research runs are started by
+shipping this code.
