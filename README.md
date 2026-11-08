@@ -407,3 +407,33 @@ research artifacts and prior reviews are unchanged. Rollback uses
 deploy.sh release restoring the prior wrappers and matching runtime review.
 Retain journals. Roll back if logging changes a broker argument/result or adds
 unacceptable exit latency. Actual session latency and coverage remain pending.
+
+### Structural supplement comparison
+
+`strategy_health/structural_supplement.py` is an explicitly invoked offline
+research evaluator, not a production exit policy. It selects only the configured
+entry-level field and requires scoped evidence that the source was complete and
+the level recorded before entry. Calls use a strict price breach below support;
+puts mirror above resistance. Equality holds. No ATR or inferred-level fallback,
+forming candle, indicator trigger or reconstructed historical price is used.
+
+Forward underlying prints need source and receipt clocks, provider identity and
+evidence IDs. Stale/future/recovered observations are rejected and counted;
+duplicate source events cannot inflate coverage. Gaps through the later native
+exit block the pair. This observes sampled last trades, not every exchange tick.
+
+The orchestration function prices native actions with the paired accounting
+model before composing the candidate. Native full exits already triggered keep
+precedence. Earlier completed partial sales retain their size. A structural
+breach overlapping an unfinished partial is blocked, not treated as a known
+cancellation or fill. This intentionally leaves that execution case unmodeled.
+Option-pricing failures and structural-input failures have distinct stage labels.
+
+Synthetic tests cover call/put symmetry, late/missing/wrong-side levels, equality,
+feed identity, duplicates, gaps, safety precedence, partial fills and paired
+winner-to-loss outcomes. No archived trade cohort has been evaluated by this
+release. Archive adapters, independent decision-coverage validation, approved
+frozen specifications and prospective outcomes remain required before enrollment
+or qualification. Installing the module does not start a worker or promote exits.
+Rollback is corrective removal through deploy.sh; no trading-setting or database
+migration rollback is needed. Retain all source evidence and prior reports.
