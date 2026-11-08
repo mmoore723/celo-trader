@@ -221,6 +221,7 @@ def evaluate_tested_research(
         if key in _emitted:
             continue
         _emitted.add(key)
+        from strategy_health.structural_capture import entry_levels
         results.append(Signal(
             strategy_id=spec.strategy_id,
             direction="bullish" if candidate.side is Side.LONG else "bearish",
@@ -229,6 +230,7 @@ def evaluate_tested_research(
             trigger_bar=pd.Timestamp(candidate.timestamp) + timedelta(minutes=spec.timeframe_minutes),
             meta={
                 **dict(candidate.features),
+                **entry_levels(spec.strategy_id, candidate, bars, strategy, spec.timeframe_minutes),
                 "strategy_version": spec.version,
                 "research_emission_policy": EMISSION_POLICY,
                 "implementation": spec.implementation or strategy.__class__.__module__,

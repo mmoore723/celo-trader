@@ -138,6 +138,11 @@ class ResearchOrderExecutionTests(unittest.TestCase):
             self.assertIsNotNone(actual, sid)
             self.assertEqual(expected[0].direction, actual.direction)
             self.assertEqual(expected[0].trigger_bar, actual.trigger_bar)
+            if sid == 'V2_IMPULSE_ANCHORED_VWAP_PULLBACK':
+                self.assertEqual('captured', actual.meta['structural_levels']['status'])
+                self.assertEqual(100, actual.meta['structural_levels']['support'])
+                self.assertEqual(expected[0].meta['structural_levels']['support'],
+                                 actual.meta['structural_levels']['support'])
             for key in ('underlying_stop', 'underlying_target', 'authored_exit_protocol', 'authored_exit_state'):
                 self.assertEqual(expected[0].meta.get(key), actual.meta.get(key), (sid, key))
 

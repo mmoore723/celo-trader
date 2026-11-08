@@ -88,3 +88,46 @@ Rollback: revert this follow-up code, test and runtime-review selection through
 `deploy.sh` to the db580b3 release. Keep all historical evidence and the new
 review manifest. Roll back if runtime integrity or entry routing regresses;
 do not treat an honest lack of same-feed warmup as a reason to mix feeds again.
+# Capture-only follow-up: November 7, 2026
+
+Approved scope: preserve existing raw levels and underlying last-trade evidence.
+No entry, exit, sizing, risk, strategy permission or live-status changes.
+
+The adapter now preserves trade_date and last_volume separately from bid/ask
+timestamps. Entry metadata saves the existing previous touch-bar low/high for
+VWAP Pullback and the engine's existing pullback extreme for Impulse. Missing
+values stay missing. These fields do not become protective stops in this release.
+
+The independent celo-underlying-capture service polls production Tradier GET
+quotes every five seconds while positions or saved native deadlines need data.
+It reads the active account and mode, records account/mode/trade IDs and raw
+source fields in a new append-only underlying_trade_observations table, and
+recovers its watch list from saved trades after restart. Repeated retries with
+the same receipt timestamp cannot duplicate evidence. SQLite lock waits are
+bounded to 200ms. Request timeouts and rate limits produce visible blocked
+health with bounded backoff. No execution client is loaded by this worker.
+
+Capture continues for 30 seconds beyond a saved deadline to retain closing-time
+observations. Late quotes remain late, never substituted as on-time exit fills.
+No candidate horizons are invented. Closed trades missing a saved deadline
+are reported and cannot receive an inferred post-exit horizon. Polling is not
+every-print tape and the first observation can follow entry by a polling delay.
+Prior observations are not rewritten or presented as original-time evidence.
+
+Health is persisted in each user's underlying_capture_health.json and systemd
+journal. A successful process start is not proof of fresh market-session data.
+Structural levels are frozen entry metadata, not recomputed support/resistance.
+The recorded receipt time identifies when this worker received the quote, not
+when the trading loop received an earlier quote. Both capture mechanisms remain
+distinct. This release does not start or qualify an exit experiment.
+
+Rollback: stop and disable celo-underlying-capture first, revert this release
+through deploy.sh to the prior capture-free source c490f731, keep the additive
+observation table and historical review manifests. Do not change account settings
+or position policies. Roll back capture on repeated worker crashes, sustained
+SQLite lock errors or measurable trading/API latency regression.
+
+Verification: focused capture and entry parity regression, then full deploy.sh
+acceptance. Saturday checks can verify service/health and deployed source only.
+Fresh quotes, real entry metadata and session-close continuity require the next
+open session. Existing scheduled verification must check this newer release.

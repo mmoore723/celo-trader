@@ -67,9 +67,11 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
         trigger = pd.Timestamp(candidate.timestamp) + timedelta(minutes=spec.timeframe)
         if not trigger <= cutoff < trigger + timedelta(minutes=1):
             return None
+        from strategy_health.structural_capture import entry_levels
         signal = Signal(strategy_id=strategy_id, direction='bullish' if candidate.side is Side.LONG else 'bearish',
                         confidence=.70, rvol=0.0, trigger_bar=trigger,
                         meta={**dict(candidate.features), 'underlying_stop': float(candidate.stop),
+                              **entry_levels(spec.source, candidate, bars, engine, spec.timeframe),
                               'underlying_target': float(candidate.target),
                               'timeframe_minutes': spec.timeframe,
                               'entry_timing': f'completed_{spec.timeframe}m_signal_then_next_quote',

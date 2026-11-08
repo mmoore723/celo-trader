@@ -33,6 +33,12 @@ class VwapOrderTests(unittest.TestCase):
                 actual = research_orders.evaluate(data, 'AMZN', execution_scope='orders', now=now, strategy_id=SID)
                 self.assertEqual(1, len(expected))
                 self.assertIsNotNone(actual)
+                levels = actual.meta['structural_levels']
+                self.assertEqual('captured', levels['status'])
+                self.assertEqual(bars[-2].low if direction == 1 else bars[-2].high,
+                                 levels['support'] if direction == 1 else levels['resistance'])
+                for key in ('support', 'resistance', 'basis', 'source_completed_at'):
+                    self.assertEqual(expected[0].meta['structural_levels'][key], levels[key])
                 self.assertEqual(expected[0].direction, actual.direction)
                 for key in ('underlying_stop','underlying_target','authored_exit_protocol','authored_exit_state'):
                     self.assertEqual(expected[0].meta[key], actual.meta[key])

@@ -26,6 +26,16 @@ class Market(TradierMarketMixin):
 
 
 class SharedFeedTests(TestCase):
+    def test_adapter_preserves_last_trade_clock_separate_from_quote_clock(self):
+        market = Market()
+        market._quote_rows = Mock(return_value=[dict(symbol='SPY',bid=99,ask=101,last=100,
+            bid_date=1793998801000,ask_date=1793998802000,trade_date=1793998800000,last_volume=50)])
+        quote = market.get_latest_quote('SPY')
+        self.assertEqual(1793998800000, quote['trade_time_ms'])
+        self.assertEqual(50, quote['last_size'])
+        market._quote_rows.return_value[0].pop('trade_date')
+        self.assertIsNone(market.get_latest_quote('SPY')['trade_time_ms'])
+
     def test_research_order_routes_request_only_matching_archive_source(self):
         from strategies import research_orders
         from config.research_order_specs import SPECS

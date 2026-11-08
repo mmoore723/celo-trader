@@ -69,6 +69,7 @@ PRODUCTION_PATHS=(
   broker_health.py
   candlestick_patterns.py
   celo-dashboard.service
+  celo-underlying-capture.service
   deploy.sh
   market_data.py
   nginx_celotrader.conf
@@ -240,6 +241,14 @@ if ! ssh -i "$EC2_KEY" "$EC2_HOST" "curl --fail --silent --show-error --retry 12
   else
     echo "CRITICAL: rollback did not restore health. Manual server intervention is required."
   fi
+  exit 1
+fi
+
+echo "==> Installing and restarting isolated underlying capture..."
+if ! ssh -i "$EC2_KEY" "$EC2_HOST" \
+  "sudo install -m 0644 $EC2_DIR/celo-underlying-capture.service /etc/systemd/system/celo-underlying-capture.service && sudo systemctl daemon-reload && sudo systemctl enable celo-underlying-capture && sudo systemctl restart celo-underlying-capture && sudo systemctl is-active --quiet celo-underlying-capture"; then
+  echo "NOT DEPLOYED completely: application healthy, capture worker failed."
+  echo "Stop celo-underlying-capture and investigate; do not change trading settings."
   exit 1
 fi
 

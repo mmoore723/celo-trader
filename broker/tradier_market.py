@@ -130,6 +130,9 @@ class TradierMarketMixin:
                 "received_at": datetime.now(timezone.utc).isoformat(),
                 "bid_time_ms": raw.get("bid_date"),
                 "ask_time_ms": raw.get("ask_date"),
+                # Evidence only: never substitute bid/ask time for trade time.
+                "trade_time_ms": raw.get("trade_date"),
+                "last_size": raw.get("last_volume"),
                 "t": _quote_timestamp(raw),
             }
         except Exception as exc:

@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'shared-market-data-20261107.2'
+REVISION = 'underlying-capture-20261107.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 
