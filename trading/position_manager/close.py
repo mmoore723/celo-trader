@@ -389,10 +389,13 @@ def _close_position(
         except Exception as e:
             logger.error("Tax sweep failed: %s", e)
 
+    # The fill is already booked. Preserve the halt, but finish removing the
+    # closed position before propagating it to the caller.
+    _daily_loss_error = None
     try:
         _risk.record_pnl(pnl, account_balance=_US["account_balance"])
-    except DailyLossLimitReached:
-        raise
+    except DailyLossLimitReached as exc:
+        _daily_loss_error = exc
 
     try:
         _US["session_pnl"] = sum(
@@ -449,6 +452,15 @@ def _close_position(
         atomic_update_json(_state_path_cl, _remove_closed_position)
     except Exception:
         pass
+
+    if _daily_loss_error is not None:
+        _US["flip_eligible"] = False
+        _US["flip_direction"] = None
+        _US["flip_ticker"] = None
+        if hasattr(_trade_log, "clear_context"):
+            _trade_log.clear_context()
+        set_user_trade_log(logger)
+        raise _daily_loss_error
 
     from config import get_settings as _gs
     _is_hard_stop         = "stop" in (reason or "")

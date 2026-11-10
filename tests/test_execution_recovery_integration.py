@@ -17,6 +17,42 @@ class RecoveryIntegrationTests(unittest.TestCase):
     enter = fixtures.RecoveryTests.enter
     rows = fixtures.RecoveryTests.rows
 
+    def test_daily_loss_after_full_fill_cleans_closed_state_before_reraising(self):
+        from trading.position_manager.close import _close_position
+        from risk import DailyLossLimitReached
+        self.enter()
+        trade = self.rows()[0]
+        self.next_status, self.next_qty, self.next_price = 'filled', '3', '1.50'
+        state = {'positions': {trade['id']: {'exit_pending_reason': 'test_exit'},
+                               999: {'keep': True}}, 'account_balance': 4000,
+                 'flip_eligible': True, 'flip_ticker': 'SPY', 'flip_direction': 'bearish'}
+        risk = Mock()
+        error = DailyLossLimitReached('post-fill loss')
+        risk.record_pnl.side_effect = error
+        persisted = {'open_positions': {str(trade['id']): {}, '999': {'keep': True}}}
+        def update(path, mutate):
+            persisted.update(mutate(persisted))
+        with patch('trading.position_manager.close.get_user_state', return_value=state), \
+             patch('trading.position_manager.close.get_user_risk', return_value=risk), \
+             patch('trading.position_manager.close.get_user_trade_log', return_value=Mock()), \
+             patch('trading.position_manager.close.set_user_trade_log'), \
+             patch('config.atomic_update_json', side_effect=update), \
+             patch('database.log_event'), patch('database.record_paper_option_quote'), \
+             patch('database.link_broker_order_to_trade'), patch('ai_reasoning.narrator.narrate_exit'), \
+             patch('database.insert_trade', side_effect=AssertionError('Duplicate insert')), \
+             patch('database.close_trade', side_effect=AssertionError('Duplicate close')):
+            with self.assertRaises(DailyLossLimitReached) as caught:
+                _close_position(self.client, trade, 1.50, 'test_exit')
+        self.assertIs(error, caught.exception)
+        self.assertEqual('closed', self.rows()[0]['status'])
+        self.assertNotIn(trade['id'], state['positions'])
+        self.assertEqual({'keep': True}, state['positions'][999])
+        self.assertNotIn(str(trade['id']), persisted['open_positions'])
+        self.assertIn('999', persisted['open_positions'])
+        self.assertFalse(state['flip_eligible'])
+        self.assertEqual(2, len(self.submissions))
+        risk.record_pnl.assert_called_once()
+
     def test_other_user_database_and_other_account_cannot_recover_our_order(self):
         self.next_status, self.next_qty = "pending_cancel", "1"
         self.enter()
