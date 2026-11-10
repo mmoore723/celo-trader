@@ -566,11 +566,10 @@ export function LiveTrading() {
         })()}
       </div>}
 
-      {/* Chart is the cockpit. Supporting trade activity sits below it instead
-          of squeezing the teachable chart into a mismatched side column. */}
-      <div className="flex flex-col gap-4">
+      {/* Chart left, supporting activity right; stacked on smaller screens. */}
+      <div className="live-trading-workspace">
         {/* Chart panel */}
-        <div className="card overflow-hidden">
+        <div className="card overflow-hidden min-w-0" data-testid="live-chart-panel">
           <div
             className="flex items-center gap-3 px-4 py-3"
             style={{ borderBottom: chartExpanded ? "1px solid var(--border)" : undefined }}
@@ -741,12 +740,13 @@ export function LiveTrading() {
           </div>}
         </div>
 
+        <aside className="live-trading-details" aria-label="Trading activity beside chart">
         {/* Focused pre-entry callouts. The redundant ticker scanner and raw
             option-chain widgets were removed from the trading cockpit. */}
         <div className="card flex flex-col">
           {/* Keep this as a compact live snapshot of the exact same durable,
               day-by-day scanner trail shown on Scanner Opportunities. */}
-          <div className="border-t px-3 py-2 flex items-center justify-between"
+          <div className="border-t px-3 py-2 flex flex-wrap gap-2 items-center justify-between"
                style={{ borderColor: "var(--border)" }}>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider"
@@ -763,7 +763,7 @@ export function LiveTrading() {
                   : "Waiting for bot to start scanning…"}
               </p>
             ) : (
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{scannerOpportunityPreview.map((opportunity: any) => {
+              <div className="grid gap-2">{scannerOpportunityPreview.map((opportunity: any) => {
                 const lifecycle = opportunityLifecycle(opportunity);
                 const linked = todayTradesRaw.find((row: Trade) => row.id === opportunity.trade?.id);
                 const lifecycleText = lifecycleCopy(linked ? { ...opportunity, trade: linked } : opportunity);
@@ -838,8 +838,6 @@ export function LiveTrading() {
             )}
           </div>
         </div>
-      </div>
-
       {/* ── Manage positions, then inspect the bot's activity ─────────────── */}
       <div className="card overflow-hidden">
         {/* Open positions */}
@@ -1249,7 +1247,7 @@ export function LiveTrading() {
       <div className="card overflow-hidden">
         <button
           type="button"
-          className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-muted transition-colors"
+          className="w-full px-3 py-2.5 flex flex-wrap items-center gap-2 text-left hover:bg-muted transition-colors"
           onClick={() => setNewsExpanded((open) => !open)}
           aria-expanded={newsExpanded}
         >
@@ -1334,6 +1332,8 @@ export function LiveTrading() {
           )}
         </div>
         )}
+      </div>
+        </aside>
       </div>
     </div>
 
