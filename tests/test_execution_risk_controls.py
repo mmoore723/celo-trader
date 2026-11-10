@@ -28,13 +28,14 @@ class SizingTests(unittest.TestCase):
     def test_no_bootstrap_override(self):
         self.settings.return_value = {'growth_mode':True}
         self.assertEqual(0, self.risk.calculate_contracts(8.5, 4000))
-        self.assertEqual(1, self.risk.calculate_contracts(2, 4000))
+        self.assertEqual(0, self.risk.calculate_contracts(2, 4000))
 
     def test_reviewed_timer_uses_full_debit(self):
         strategy = 'V2_TSLA_TWO_LEG_TREND_PULLBACK'
-        self.assertEqual(2, self.risk.calculate_contracts(1, 5000))
+        self.assertEqual(0, self.risk.calculate_contracts(1, 5000))
         self.assertEqual(0, self.risk.calculate_contracts(1, 5000, strategy_id=strategy))
-        self.assertEqual(1, self.risk.calculate_contracts(.5, 5000, strategy_id=strategy))
+        self.assertEqual(0, self.risk.calculate_contracts(.5, 5000, strategy_id=strategy))
+        self.assertEqual(1, self.risk.calculate_contracts(.48, 5000, strategy_id=strategy))
 
     def test_reviewed_structure_uses_full_debit(self):
         self.assertEqual(1, self.risk.entry_risk_fraction('CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG'))

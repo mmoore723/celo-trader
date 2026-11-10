@@ -42,3 +42,8 @@ test("daily history is labeled and keeps separate zoom state", () => {
   assert.match(result.layout.xaxis.title.text, /Daily option candles/);
   assert.match(result.layout.uirevision, /daily/);
 });
+test("recorded chart levels cannot masquerade as enforced stops", () => {
+  const result = optionPositionFigure(base);
+  assert.match(result.layout.annotations[0].text, /Target \(Reference-only\)/);
+  assert.match(result.layout.annotations[1].text, /Stop \(Reference-only\)/);
+});

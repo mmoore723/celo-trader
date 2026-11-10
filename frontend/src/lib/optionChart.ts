@@ -1,4 +1,5 @@
 export interface OptionChartData {
+  risk_classification?: { observed_at?: string; sizing_basis: string; levels: { name: string; value: number | null; state: "Enforced" | "Reference-only" | "Unavailable"; reason: string }[] };
   trade_id: number; mode: "paper" | "live"; ticker: string; contract_symbol: string;
   option_type: string; strike: number | null; expiry: string; contracts: number;
   entry_price: number | null; entry_time: number | null;

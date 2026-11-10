@@ -36,7 +36,7 @@ export function optionPositionFigure(data: OptionChartData, dark = false) {
       annotations.push({ x: et(start + (end - start) / 2), y: level, showarrow: false,
         yanchor: name === "Stop" ? "top" : "bottom", font: { color, size: 11 },
         bgcolor: dark ? "rgba(20,25,34,0.92)" : "rgba(255,255,255,0.92)",
-        text: `${name} ${money(level)} | ${move >= 0 ? "+" : ""}${move.toFixed(1)}%<br>` +
+        text: `${name === "Entry" ? name : name + " (Reference-only)"} ${money(level)} | ${move >= 0 ? "+" : ""}${move.toFixed(1)}%<br>` +
           `${money(pnl)} | Qty ${data.contracts} | R:R ${ratio ? `1:${ratio}` : "unavailable"}` });
     }
     traces.push({ type: "scatter", mode: "text+markers", name: "Entry fill", x: [et(start)], y: [entry],

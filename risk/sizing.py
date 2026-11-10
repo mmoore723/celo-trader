@@ -76,13 +76,10 @@ class SizingMixin:
         return MIN_RR_RATIO_PROFESSIONAL
 
     def entry_risk_fraction(self, strategy_id: str | None = None) -> float:
-        """Reviewed timers/structure exits do not enforce a premium stop.
-
-        Budget their full debit. The generic stop is a planning assumption,
-        not a guaranteed fill or maximum loss (gaps/slippage can exceed it).
-        """
-        from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
-        return 1.0 if uses_v2_orb_execution_profile(strategy_id) else self.ORB_STOP_PCT
+        """All long-option entries budget full debit, never a promised stop fill."""
+        # Stops can fail to fill during gaps, stale quotes or broker outages.
+        # No strategy earns additional quantity from an assumed stop fill.
+        return 1.0
 
     def effective_notional_pct(self, balance: float, risk_pct: float | None = None) -> float:
         """Manual sizing uses the visible premium cap, never a hidden tier cap."""
@@ -100,12 +97,9 @@ class SizingMixin:
     def calculate_contracts(self, option_ask: float, account_balance: Optional[float] = None,
                             *, strategy_id: str | None = None) -> int:
         """
-        ORB tiered risk model.
-
-        Formula: floor( (equity × RISK_PCT) / (premium × ORB_STOP_PCT × 100) )
-        RISK_PCT is 3% when growth_mode is ON and balance < $50k, else 1%.
+        Formula: floor((equity * selected risk %) / (premium * 100 + fees)).
         Both the risk budget and notional cap are ceilings, never minimums.
-        Reviewed exits without a premium stop use full-debit risk instead.
+        Stops do not reduce this conservative long-option loss budget.
         """
         balance = self.account_balance if account_balance is None else account_balance
         if not all(math.isfinite(x) and x > 0 for x in (option_ask, balance)):
@@ -113,7 +107,8 @@ class SizingMixin:
 
         risk_pct             = self.effective_risk_pct(balance)
         total_risk_dollars   = balance * risk_pct
-        risk_per_contract    = option_ask * self.entry_risk_fraction(strategy_id) * 100
+        from risk.protection import full_debit_risk
+        risk_per_contract = full_debit_risk(option_ask)
 
         if not math.isfinite(risk_pct) or not 0 < risk_pct <= 1 or risk_per_contract <= 0:
             return 0
@@ -152,6 +147,7 @@ class SizingMixin:
                 "risk_per_contract": round(risk_per_contract, 2),
                 "option_ask":        round(option_ask, 4),
                 "contracts":         contracts,
+                "risk_basis":        "full_debit_plus_round_trip_fees",
             },
         )
         return max(0, contracts)
@@ -181,7 +177,9 @@ class SizingMixin:
         if not math.isfinite(risk_pct) or not 0 < risk_pct <= 1:
             return 0.0
         notional_pct = self.effective_notional_pct(bal, risk_pct)
-        premium = min(risk_budget / self.entry_risk_fraction(strategy_id), bal * notional_pct)
+        from risk.protection import full_debit_risk
+        fees = full_debit_risk(1.0) - 100.0
+        premium = max(0.0, min(risk_budget - fees, bal * notional_pct))
         # Round down: a rounded-up quote can exceed the budget by one cent.
         return math.floor(premium / (1.0 + self.SLIPPAGE_PCT)) / 100
 

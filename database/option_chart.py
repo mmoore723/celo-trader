@@ -62,7 +62,16 @@ def read_option_chart(path: Path, *, trade_id: int, account_id: str,
                     or quote["source"] not in {"tradier_quote", "tradier_chain", "tradier_pre_submit_exit_quote"}):
                 continue
             points.setdefault(stamp, {"time": stamp, "bid": bid, "ask": ask})
+        from risk.protection import display_risk_levels
+        try:
+            import json
+            state = json.loads((path.parent / 'bot_state.json').read_text())
+            snapshot = (state.get('open_positions') or {}).get(str(trade_id), {}).get('risk_classification')
+        except (OSError, ValueError, TypeError, AttributeError):
+            snapshot = None
+        inventory = display_risk_levels(trade, snapshot, datetime.fromtimestamp(now_s, timezone.utc))
         return {
+            "risk_classification": inventory,
             "trade_id": trade_id, "mode": "paper" if paper else "live",
             "ticker": trade["ticker"], "contract_symbol": trade["contract_symbol"],
             "option_type": trade["option_type"], "strike": _number(trade.get("strike")),

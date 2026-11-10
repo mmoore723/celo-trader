@@ -23,6 +23,17 @@ export function OptionPositionView({ data }: { data: OptionChartData }) {
       <div><div className="text-xs text-ink-muted">{data.closed ? "Exit value" : "Position value"}</div>{optionMoney(value)}</div>
     </div>
     <OptionPricePlot data={data} />
+    <div className="px-4 pb-3 text-xs" aria-label="Protection status">
+      <p className="font-semibold">Protection status</p>
+      <p className="text-ink-muted">Enforced: monitored by execution. Reference-only: does not exit. Unavailable: monitoring or level cannot be verified.</p>
+      <details className="mt-2"><summary className="cursor-pointer">Inspect risk levels</summary>
+        {data.risk_classification?.levels.map(level => <div key={level.name} className="py-1 border-b border-line">
+          <span>{level.name.replaceAll("_", " ")}: {optionMoney(level.value)} · <strong>{level.state === "Enforced" && (!data.risk_classification?.observed_at || Date.now() - Date.parse(data.risk_classification.observed_at) > 60_000) ? "Unavailable" : level.state}</strong></span>
+          <p className="text-ink-muted">{level.reason}</p>
+        </div>) ?? <p>Unavailable: no verified protection snapshot.</p>}
+      </details>
+      <p className="mt-2 text-ink-muted">Sizing budgets the full option premium plus configured fees. Stops do not guarantee a fill price.</p>
+    </div>
     <div className="px-4 pb-4 text-xs text-ink-muted space-y-2">
       <div className="flex flex-wrap justify-between gap-2">
         <span>Reference target: {changeAt(target)} total</span><span>Reference stop: {changeAt(stop)} total</span>

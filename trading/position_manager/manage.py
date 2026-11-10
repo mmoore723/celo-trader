@@ -682,7 +682,7 @@ def _manage_open_position(
             from trading.diagnostics.exit_policy import reviewed_exit_description
             _policy_desc = reviewed_exit_description(trade, ps, now_et)
             if _policy_desc is None:
-                _policy_desc = f"Stop {_stop_desc}. {_stage_desc}.{_vwap_desc}"
+                _policy_desc = f"Calculated reference {_stop_desc}. See Protection status for verified active levels. {_stage_desc}.{_vwap_desc}"
             log_event(
                 "INFO", "position_update",
                 f"🟡 [{trade['contract_symbol']}] Holding — "
@@ -732,6 +732,7 @@ def _manage_open_position(
             compression_bars_lookup=compression_bars_lookup,
         )
         if _reviewed_exit is not None:
+            _risk_branch = 'reviewed'
             should_exit, reason = _reviewed_exit
             if not should_exit:
                 from trading.tsla_giveback_exit import evaluate_tsla_giveback
@@ -741,6 +742,7 @@ def _manage_open_position(
                 if _giveback_exit is not None:
                     should_exit, reason = _giveback_exit
         elif _simplified_mode and _atr_for_exit is not None and _underlying_for_exit is not None:
+            _risk_branch = 'simplified'
             from trading.simplified_exit_live import evaluate_simplified_live_exit
             should_exit, reason = traced_call('simplified_exit', evaluate_simplified_live_exit,
                 ps, entry_price, current_price,
@@ -748,6 +750,7 @@ def _manage_open_position(
                 atr=_atr_for_exit, underlying_now=_underlying_for_exit,
             )
         else:
+            _risk_branch = 'adaptive'
             should_exit, reason = traced_call('adaptive_risk_exit', _risk.should_exit,
                 entry_price, current_price,
                 entry_time      = entry_time,
@@ -767,6 +770,32 @@ def _manage_open_position(
                 momentum_fading  = _momentum_fading,
             )
 
+        # Classification follows the selected branch; it never selects an exit.
+        # Persist separately so a display failure cannot interrupt protection.
+        try:
+            from risk.protection import classify_risk_levels, monitored_risk_fields, monitoring_failure
+            _fields = list(monitored_risk_fields(trade, branch=_risk_branch))
+            if _risk_branch == 'adaptive':
+                _fields = [f for f in _fields if f != ('initial_atr_stop' if atr_trail_stop else 'atr_trail_stop')]
+                if not stage1_done:
+                    _fields = [f for f in _fields if f != 'stage1_be_price']
+            if _risk_branch == 'simplified':
+                _fields = [f for f in _fields if f != ('initial_atr_stop' if ps.get('struct_stop_price') else 'struct_stop_price')]
+            _inventory = classify_risk_levels(
+                trade, position=ps, monitored_fields=_fields,
+                monitoring_reason=monitoring_failure(now=now_et, quote=quote, frame=df_under, reason=reason))
+            _inventory['observed_at'] = now_et.isoformat()
+            _inventory['execution_branch'] = _risk_branch
+            ps['risk_classification'] = _inventory
+            def _write_risk_inventory(state):
+                positions = dict(state.get('open_positions') or {})
+                item = dict(positions.get(str(trade_id)) or {})
+                item['risk_classification'] = _inventory
+                positions[str(trade_id)] = item
+                return dict(state, open_positions=positions)
+            atomic_update_json(_state_path_m, _write_risk_inventory)
+        except Exception:
+            logger.warning('risk_classification_unavailable trade=%s', trade_id, exc_info=True)
         should_exit, reason = _resolve_latched_exit(ps, should_exit, reason, now_et)
 
         if not should_exit:

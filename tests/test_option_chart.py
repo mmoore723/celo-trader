@@ -81,6 +81,12 @@ class OptionChartTests(unittest.TestCase):
         self.read()
         self.assertEqual(self.db.read_bytes(), before)
 
+    def test_no_monitoring_evidence_does_not_claim_enforced_stop(self):
+        data=self.read()
+        self.assertIn('risk_classification',data)
+        self.assertTrue(all(row['state'] in {'Reference-only','Unavailable'}
+                            for row in data['risk_classification']['levels']))
+
     def test_router_is_registered_in_production_app(self):
         import ast
         app = ast.parse((Path(__file__).parents[1] / "api/main/app.py").read_text())

@@ -1590,7 +1590,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         # Spell out the RISK vs PRICE distinction so this isn't confused with the
         # max_position_dollars / "over_budget" cost cap above. SIZING_ZERO fires
         _risk_pct          = _risk.effective_risk_pct(balance)
-        _risk_per_contract = eff_entry * _risk.entry_risk_fraction(strategy_id) * 100
+        from risk.protection import full_debit_risk
+        _risk_per_contract = full_debit_risk(eff_entry)
         _risk_budget       = balance * _risk_pct
         log_event("INFO", "bar_eval",
                   f"🔴 [{ticker}] Contract premium ${ask_price:.2f} (${eff_entry:.2f} w/ 5% "
@@ -1956,6 +1957,16 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     from trading.entry.exit_deadline import capture_policy
     _strategy_context.pop('exit_deadline', None)
     _strategy_context.update(capture_policy(strategy_id, alpaca, _now_et()))
+    from risk.protection import classify_risk_levels, full_debit_risk
+    _strategy_context['entry_risk_assessment'] = {
+        'version': 'full-debit-fees-v1',
+        'basis': 'full_debit_plus_round_trip_fees',
+        'maximum_planning_premium': max(eff_entry, _order_mid, _order_ask or 0),
+        'risk_per_contract': full_debit_risk(max(eff_entry, _order_mid, _order_ask or 0)),
+        'approved_quantity': n_contracts,
+        'risk_levels': classify_risk_levels(dict(strategy_id=strategy_id, ticker=ticker,
+                                                strategy_context_json=_strategy_context)),
+    }
     _strategy_context_json = _json.dumps(
         _strategy_context, default=str, sort_keys=True,
     )
@@ -1989,6 +2000,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             "step_limit": round(float(_order_ask), 4) if _order_ask is not None else None,
             "maximum_entry_price": round(float(eff_entry), 4),
             "quantity": int(n_contracts),
+            "risk_assessment": _strategy_context['entry_risk_assessment'],
             "user_approved_match": _user_approved_match,
             "estimated_notional": round(float(eff_entry) * int(n_contracts) * 100, 2),
             "rr_ratio": rr_audit.get("R_R_Ratio"),
@@ -2017,6 +2029,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             "intent_id": uuid4().hex,
             "status": "ready",
             "candidate_id": None,
+            "risk_assessment": _strategy_context['entry_risk_assessment'],
         }
 
     # ── Signal-only mode gate ─────────────────────────────────────────────────
@@ -2512,7 +2525,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             "exit_protection":  _entry_protection,
             "eff_target":       round(rr_audit["eff_target"], 4),
             "Expected_Win":     rr_audit["Expected_Win"],
-            "Expected_Loss":    rr_audit["Expected_Loss"],
+            "Expected_Loss":    None,
+            "Reference_Loss":   rr_audit["Expected_Loss"],
+            "Sizing_Risk":      _strategy_context['entry_risk_assessment'],
             "paper":            paper,
             "entry_time_et":    entry_utc.isoformat(),
         },

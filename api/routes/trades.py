@@ -136,7 +136,9 @@ def _row_to_trade(row: dict) -> Trade:
     if mae_px is not None and entry_px > 0:
         mae_pct = round((mae_px - entry_px) / entry_px * 100, 1)
 
+    from risk.protection import classify_risk_levels
     return Trade(
+        risk_classification=classify_risk_levels(row),
         id=int(row.get("id", 0)),
         ticker=str(row.get("ticker", "")),
         direction=direction,

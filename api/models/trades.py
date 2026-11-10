@@ -23,6 +23,7 @@ class Trade(BaseModel):
     entry_price: float
     exit_price: Optional[float]
     stop_price: Optional[float]   # option premium stop-loss level at entry
+    risk_classification: Optional[dict[str, Any]] = None
     target_price: Optional[float] # Stage-1 target at entry
     # ── MFE / MAE ─────────────────────────────────────────────────────────────
     peak_price: Optional[float] = None   # highest option mid-price seen (MFE raw)

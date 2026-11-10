@@ -110,8 +110,13 @@ def entry_protection_summary(trade: dict, now: object, reference_stop: float, re
     except Exception:
         # A display failure after a confirmed fill must not interrupt bookkeeping.
         description = 'Exit description unavailable. Active protection is not confirmed by this display.'
-    reviewed = description is not None
+    # Entry-time reference calculations are not proof of current monitoring,
+    # even on the generic route. The manager publishes actual enforcement.
+    reviewed = True
+    from risk.protection import classify_risk_levels
+    inventory = classify_risk_levels(dict(trade, stop_price=reference_stop, target_price=reference_target))
     return {
+        'risk_classification': inventory,
         'description': description or 'Generic risk manager; prices below are its initial calculated references, not guaranteed fills.',
         'generic_reference_levels_only': reviewed,
         'stop_price': None if reviewed else reference_stop,
