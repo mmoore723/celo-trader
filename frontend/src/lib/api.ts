@@ -1322,6 +1322,8 @@ export const api = {
     systemHealth: () => request<AdminSystemHealth>("/api/admin/system-health"),
   },
   bot: {
+    entryPermission: () => request<{enabled:boolean;paper:boolean;scope:string}>("/api/bot/entry-permission"),
+    setEntryPermission: (payload: {enabled:boolean;paper:boolean;scope:string}) => request<{ok:boolean;message:string}>("/api/bot/entry-permission", {method:"POST",body:JSON.stringify(payload)}),
     status:    () => request<BotStatus>("/api/bot/status"),
     start:     () => request<{ok:boolean;message:string}>("/api/bot/start", { method: "POST" }),
     stop:      () => request<{ok:boolean;message:string}>("/api/bot/stop",  { method: "POST" }),

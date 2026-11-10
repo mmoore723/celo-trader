@@ -21,6 +21,63 @@ from api.models import BotStatus, BotActionResponse
 router = APIRouter(prefix="/api/bot", tags=["bot"])
 
 
+@router.get("/entry-permission")
+def entry_permission(request: Request):
+    uid = _get_uid(request)
+    from config import get_settings
+    from risk.halt_controls import halt_status
+    settings = get_settings(uid)
+    return {"enabled": bool(settings.get("trading_enabled", True)),
+            "paper": bool(settings.get("paper_trading", True)),
+            "scope": halt_status()["scope"]}
+
+
+@router.post("/entry-permission", response_model=BotActionResponse)
+def set_entry_permission(request: Request, payload: dict):
+    uid = _get_uid(request)
+    from config import get_settings, save_settings, get_maintenance_state
+    from risk.halt_controls import halt_status
+    settings = get_settings(uid)
+    halt = halt_status()
+    if not settings.get("paper_trading", True):
+        raise HTTPException(409, "This control is for paper entries only. Live settings were not changed.")
+    if payload.get("scope") != halt["scope"] or payload.get("paper") is not True:
+        raise HTTPException(409, "Account or mode changed. Refresh before continuing.")
+    enabled = payload.get("enabled")
+    if type(enabled) is not bool:
+        raise HTTPException(422, "Choose whether paper entries should be enabled.")
+    if enabled:
+        if get_maintenance_state().get("maintenance_mode"):
+            raise HTTPException(409, "Maintenance blocks trading. Clear it separately in Admin.")
+        if halt["halted"] or halt["close_pending"]:
+            raise HTTPException(409, "A safety halt or pending close remains. Use the halt review controls.")
+        from broker import get_clients
+        try:
+            account = get_clients()[0].get_account()
+            if account.get("trading_blocked") or account.get("account_blocked"):
+                raise ValueError("The broker blocks trading on this account.")
+            import math
+            if not math.isfinite(float(account["equity"])) or float(account["equity"]) <= 0:
+                raise ValueError("Broker equity is unavailable.")
+        except Exception as exc:
+            raise HTTPException(409, "Cannot enable entries: broker readiness check failed.") from exc
+    # Recheck account/mode after the network request. Never clear any safety lock.
+    current = get_settings(uid)
+    latest_halt = halt_status()
+    if not current.get("paper_trading", True) or latest_halt["scope"] != payload["scope"]:
+        raise HTTPException(409, "Account or mode changed. No entry permission was saved.")
+    if enabled and (latest_halt["halted"] or latest_halt["close_pending"] or get_maintenance_state().get("maintenance_mode")):
+        raise HTTPException(409, "A safety halt appeared during review. Entry permission was not changed.")
+    save_settings({"trading_enabled": enabled}, user_id=uid)
+    if bool(get_settings(uid).get("trading_enabled")) != enabled:
+        raise HTTPException(409, "Entry permission did not persist. Refresh and try again.")
+    from database import log_event
+    log_event("WARNING", "risk", f"User set paper entry permission to {enabled}; risk limits and safety gates unchanged")
+    return BotActionResponse(ok=True, message=(
+        "Paper entries enabled. Start Bot if stopped. Strategy and safety checks still apply."
+        if enabled else "New paper entries paused. Open positions keep their exits."))
+
+
 @router.get("/halt")
 def get_halt(request: Request):
     _get_uid(request)

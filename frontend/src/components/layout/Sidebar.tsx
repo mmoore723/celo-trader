@@ -41,6 +41,21 @@ export function Sidebar() {
   // accidentally show "Start Bot" and tempt the user to double-start the bot.
   const statusKnown = status !== null;
   const [busy, setBusy] = useState(false);
+  const [controlMessage, setControlMessage] = useState("");
+  const entryPermission = useQuery({queryKey:["entry-permission",user?.user_id],
+    queryFn:api.bot.entryPermission,refetchInterval:10_000,retry:false});
+  async function togglePaperEntries() {
+    const permission = entryPermission.data;
+    if (!permission || !permission.paper) return;
+    if (!permission.enabled && !window.confirm("Resume paper entries with the current strategies, stops and risk limits?")) return;
+    setBusy(true);
+    try {
+      const result = await api.bot.setEntryPermission({...permission,enabled:!permission.enabled});
+      setControlMessage(result.message);
+      await entryPermission.refetch();
+    } catch (error) { setControlMessage(error instanceof Error ? error.message : "Entry permission could not be changed."); }
+    finally { setBusy(false); }
+  }
   const [opportunitiesSeenAt, setOpportunitiesSeenAt] = useState(() =>
     localStorage.getItem("celo-opportunities-seen-at") ?? ""
   );
@@ -68,7 +83,9 @@ export function Sidebar() {
 
   async function startBot() {
     setBusy(true);
-    try { await api.bot.start(); } finally { setBusy(false); }
+    try { const result = await api.bot.start(); setControlMessage(result.message); }
+    catch (error) { setControlMessage(error instanceof Error ? error.message : "Bot could not start."); }
+    finally { setBusy(false); }
   }
   async function stopBot() {
     setBusy(true);
@@ -163,6 +180,13 @@ export function Sidebar() {
            style={{ color: "var(--ink-faint)" }}>
           Bot Controls
         </p>
+        {entryPermission.data?.paper && <>
+          <p className="text-xs">Paper mode · Entries: {entryPermission.data.enabled ? "On" : "Paused"}</p>
+          <button className="btn btn-ghost w-full justify-center" disabled={busy || entryPermission.isFetching}
+            onClick={togglePaperEntries}>{entryPermission.data.enabled ? "Pause all entries" : "Resume all entries"}</button>
+        </>}
+        {entryPermission.isError && <p className="text-xs" role="alert">Entry permission unavailable. Refresh to check.</p>}
+        {controlMessage && <p className="text-xs break-words" role="status">{controlMessage}</p>}
         {!statusKnown ? (
           /* WS hasn't sent the first status yet — don't show Start or Stop
              until we know the real bot state to avoid accidental double-starts */

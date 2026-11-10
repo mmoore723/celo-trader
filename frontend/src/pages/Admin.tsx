@@ -8,6 +8,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { PasswordChecklist, isPasswordValid } from "../components/PasswordChecklist";
 import { api } from "../lib/api";
 import { RemovedStrategies } from "../components/settings/StrategyRemoval";
+import { AdminActivityLog } from "../components/AdminActivityLog";
 
 interface User {
   user_id:    string;
@@ -244,6 +245,7 @@ export function Admin() {
         </button>
       </div>
 
+      {user?.is_admin && <AdminActivityLog />}
       <RemovedStrategies />
       <section className="card px-3 py-2" aria-label="Machine learning readiness">
         {rankerError ? <p className="text-xs" style={{ color: "var(--negative)" }}>ML readiness unavailable</p> : ranker ? (() => {
