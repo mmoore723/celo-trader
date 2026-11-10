@@ -7,6 +7,7 @@ import zlib
 import json
 
 from strategy_health.session_capture import Archive, Feed, ET, bar_stamp, quote_validation, session_window, summary, select_capture_task
+from strategy_health.session_capture import reserve_capture_task
 
 
 DAY='2026-11-06'
@@ -15,6 +16,38 @@ WINDOW=(NOW.replace(minute=0),NOW.replace(hour=20,minute=0))
 
 
 class SessionCaptureTests(unittest.TestCase):
+    def test_option_inventory_rotates_tickers_before_more_expirations(self):
+        tasks = [dict(ticker=t, kind='chain', expiration=str(e))
+                 for t in ['AAPL', 'SPY', 'TSLA'] for e in range(30)]
+        cursors = {}
+        selected = []
+        for _ in range(6):
+            row = select_capture_task(tasks, ['AAPL', 'SPY', 'TSLA'], ('chain',), cursors)
+            selected.append((row['ticker'], row['expiration']))
+            cursors['options'] = row['ticker']
+            tasks.remove(row)
+        self.assertEqual([('AAPL','0'),('SPY','0'),('TSLA','0'),
+                          ('AAPL','1'),('SPY','1'),('TSLA','1')], selected)
+
+    def test_rotation_skips_backoff_tickers_and_keeps_lanes_separate(self):
+        tasks = [dict(ticker='AAPL',kind='chain'), dict(ticker='TSLA',kind='chain'),
+                 dict(ticker='SPY',kind='bars')]
+        cursors = {'options':'AAPL','bars':'TSLA'}
+        self.assertEqual('TSLA',select_capture_task(tasks,['AAPL','SPY','TSLA'],('chain',),cursors)['ticker'])
+        self.assertEqual('SPY',select_capture_task(tasks,['AAPL','SPY','TSLA'],('bars',),cursors)['ticker'])
+        self.assertEqual('AAPL',select_capture_task(tasks,['AAPL','SPY','TSLA'],('chain',),{'options':'REMOVED'})['ticker'])
+
+    def test_attempt_cursor_survives_restart_without_claiming_collection(self):
+        tasks = [dict(ticker='SPY',kind='chain'),dict(ticker='NFLX',kind='chain')]
+        self.assertEqual('SPY',reserve_capture_task(self.archive,DAY,tasks,['SPY','NFLX'],('chain',))['ticker'])
+        reopened = Archive(self.tmp.name)
+        try:
+            self.assertEqual('NFLX',reserve_capture_task(reopened,DAY,tasks,['SPY','NFLX'],('chain',))['ticker'])
+            self.assertEqual(0,reopened.db.execute('SELECT count(*) FROM responses').fetchone()[0])
+            self.assertEqual('SPY',reserve_capture_task(reopened,'2026-11-09',tasks,['SPY','NFLX'],('chain',))['ticker'])
+        finally:
+            reopened.db.close()
+
     def test_idle_bar_turn_uses_due_option_work(self):
         task = {'ticker': 'SPY', 'kind': 'chain'}
         self.assertIs(task, select_capture_task([task], ['SPY'], ('bars',)))

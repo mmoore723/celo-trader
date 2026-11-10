@@ -139,6 +139,9 @@ class Archive:
             requested_epoch REAL, received_epoch REAL, contracts INTEGER, fresh INTEGER);
           CREATE INDEX IF NOT EXISTS chain_refreshes_scope
             ON chain_refreshes(day,ticker,expiration,received_epoch);
+          CREATE TABLE IF NOT EXISTS rotation_cursor (
+            day TEXT, lane TEXT, ticker TEXT,
+            PRIMARY KEY(day,lane));
         ''')
 
     def enqueue(self, day, tickers):
@@ -299,16 +302,44 @@ def summary(archive, day, tickers, window, now):
                 'Greeks, sizes and open interest are retained exactly when supplied, with provider timestamps.'])
 
 
-def select_capture_task(due_tasks, tickers, preferred_kinds):
+def select_capture_task(due_tasks, tickers, preferred_kinds, cursors=None):
     """Keep alternating priority, but never idle while eligible work is due.
 
     Caller supplies the existing day/next_at-filtered, ordered queue. This
-    selects at most one task; Feed still owns pacing and quota backoff.
+    Select one ticker after the last attempted ticker in this lane, then its
+    oldest due task. Separate lanes preserve candle/option alternation. Feed
+    still owns pacing and quota backoff. Failed requests also yield their turn.
     """
     eligible = [row for row in due_tasks
                 if row['ticker'] in tickers and row['kind'] in ('bars', 'expirations', 'chain')]
-    return next((row for row in eligible if row['kind'] in preferred_kinds),
-                eligible[0] if eligible else None)
+    preferred = [row for row in eligible if row['kind'] in preferred_kinds]
+    pool = preferred or eligible
+    if not pool:
+        return None
+    lane = 'bars' if pool[0]['kind'] == 'bars' else 'options'
+    pool = [row for row in pool if ('bars' if row['kind'] == 'bars' else 'options') == lane]
+    order = list(dict.fromkeys(tickers))
+    previous = (cursors or {}).get(lane)
+    if previous in order:
+        offset = order.index(previous) + 1
+        order = order[offset:] + order[:offset]
+    by_ticker = {}
+    for row in pool:
+        by_ticker.setdefault(row['ticker'], row)
+    return next(by_ticker[ticker] for ticker in order if ticker in by_ticker)
+
+
+def reserve_capture_task(archive, day, due_tasks, tickers, preferred_kinds):
+    """Persist the attempt cursor before network I/O so restarts stay fair."""
+    cursors = dict(archive.db.execute(
+        'SELECT lane,ticker FROM rotation_cursor WHERE day=?', (day,)).fetchall())
+    task = select_capture_task(due_tasks, tickers, preferred_kinds, cursors)
+    if task is not None:
+        lane = 'bars' if task['kind'] == 'bars' else 'options'
+        with archive.db:
+            archive.db.execute('INSERT OR REPLACE INTO rotation_cursor VALUES (?,?,?)',
+                               (day, lane, task['ticker']))
+    return task
 
 
 def main():
@@ -399,7 +430,7 @@ def main():
                     kinds = ('bars',) if rotation%2 else ('expirations','chain')
                     tasks = archive.db.execute("SELECT * FROM tasks WHERE day=? AND next_at<=? ORDER BY CASE WHEN kind='expirations' THEN 0 ELSE 1 END,next_at,ticker,expiration",
                                                (day,now.timestamp())).fetchall()
-                    task = select_capture_task(tasks, tickers, kinds)
+                    task = reserve_capture_task(archive, day, tasks, tickers, kinds)
                     if task:
                         kind,ticker = task['kind'],task['ticker']
                         if kind=='bars':
