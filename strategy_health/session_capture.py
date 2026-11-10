@@ -299,6 +299,18 @@ def summary(archive, day, tickers, window, now):
                 'Greeks, sizes and open interest are retained exactly when supplied, with provider timestamps.'])
 
 
+def select_capture_task(due_tasks, tickers, preferred_kinds):
+    """Keep alternating priority, but never idle while eligible work is due.
+
+    Caller supplies the existing day/next_at-filtered, ordered queue. This
+    selects at most one task; Feed still owns pacing and quota backoff.
+    """
+    eligible = [row for row in due_tasks
+                if row['ticker'] in tickers and row['kind'] in ('bars', 'expirations', 'chain')]
+    return next((row for row in eligible if row['kind'] in preferred_kinds),
+                eligible[0] if eligible else None)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--user', required=True)
@@ -387,7 +399,7 @@ def main():
                     kinds = ('bars',) if rotation%2 else ('expirations','chain')
                     tasks = archive.db.execute("SELECT * FROM tasks WHERE day=? AND next_at<=? ORDER BY CASE WHEN kind='expirations' THEN 0 ELSE 1 END,next_at,ticker,expiration",
                                                (day,now.timestamp())).fetchall()
-                    task = next((r for r in tasks if r['ticker'] in tickers and r['kind'] in kinds),None)
+                    task = select_capture_task(tasks, tickers, kinds)
                     if task:
                         kind,ticker = task['kind'],task['ticker']
                         if kind=='bars':

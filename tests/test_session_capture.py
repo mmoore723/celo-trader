@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import zlib
 import json
 
-from strategy_health.session_capture import Archive, Feed, ET, bar_stamp, quote_validation, session_window, summary
+from strategy_health.session_capture import Archive, Feed, ET, bar_stamp, quote_validation, session_window, summary, select_capture_task
 
 
 DAY='2026-11-06'
@@ -15,6 +15,27 @@ WINDOW=(NOW.replace(minute=0),NOW.replace(hour=20,minute=0))
 
 
 class SessionCaptureTests(unittest.TestCase):
+    def test_idle_bar_turn_uses_due_option_work(self):
+        task = {'ticker': 'SPY', 'kind': 'chain'}
+        self.assertIs(task, select_capture_task([task], ['SPY'], ('bars',)))
+
+    def test_idle_option_turn_uses_due_bar_work(self):
+        task = {'ticker': 'SPY', 'kind': 'bars'}
+        self.assertIs(task, select_capture_task([task], ['SPY'], ('expirations', 'chain')))
+
+    def test_preferred_queue_retains_priority_and_due_order(self):
+        chain = {'ticker': 'SPY', 'kind': 'chain'}
+        bar = {'ticker': 'SPY', 'kind': 'bars'}
+        later = {'ticker': 'NFLX', 'kind': 'bars'}
+        tasks = [chain, bar, later]
+        self.assertIs(bar, select_capture_task(tasks, ['SPY', 'NFLX'], ('bars',)))
+        self.assertIs(chain, select_capture_task(tasks, ['SPY', 'NFLX'], ('expirations', 'chain')))
+
+    def test_fallback_never_adds_unapproved_ticker_or_unknown_task(self):
+        tasks = [{'ticker': 'OTHER', 'kind': 'chain'}, {'ticker': 'SPY', 'kind': 'orders'}]
+        self.assertIsNone(select_capture_task(tasks, ['SPY'], ('bars',)))
+        self.assertIsNone(select_capture_task([], ['SPY'], ('bars',)))
+
     def setUp(self):
         self.tmp=TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
