@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from strategy_health.exit_archive_reader import ExitArchiveReader, timestamp
+from strategy_health.exit_archive_reader import ExitArchiveReader, timestamp, journal_fill_timestamp
 from strategy_health.fast_capture import Registry
 from strategy_health.paired_exit_accounting import Entry, Scope, Intent, Pricing, compare
 from trading.decision_trace import _write
@@ -144,6 +144,30 @@ class ArchiveReaderTests(unittest.TestCase):
         self.assertEqual(D(590),r['level'].value)
         self.assertTrue(r['level'].evidence_id.startswith('original_candidate:'))
         self.assertFalse(r['independently_reconciled_fill'])
+
+    def test_actual_journal_writer_timestamp_format_reads_without_rewriting(self):
+        import sqlite3
+        from database.helpers import _to_et_isoformat
+        self.original_entry()
+        raw = _to_et_isoformat(T)
+        self.assertEqual('2026-11-09T10:00:00',raw)
+        with sqlite3.connect(self.root/'trades_paper.db') as db:
+            db.execute('UPDATE trades SET entry_fill_time=?',(raw,))
+        result=self.reader.entry_level(self.entry,'structural_levels.support')
+        self.assertEqual(raw,result['entry_fill_time_raw'])
+        with sqlite3.connect(self.root/'trades_paper.db') as db:
+            self.assertEqual(raw,db.execute('SELECT entry_fill_time FROM trades').fetchone()[0])
+
+    def test_journal_dst_handling_does_not_relax_source_clock_validation(self):
+        self.assertEqual(datetime(2026,7,1,14,tzinfo=timezone.utc),
+                         journal_fill_timestamp('2026-07-01T10:00:00'))
+        self.assertEqual(datetime(2026,11,9,15,tzinfo=timezone.utc),
+                         journal_fill_timestamp('2026-11-09T10:00:00'))
+        for raw in ('2026-11-01T01:30:00','2026-03-08T02:30:00'):
+            with self.assertRaisesRegex(ValueError,'ambiguous_or_nonexistent'):
+                journal_fill_timestamp(raw)
+        with self.assertRaisesRegex(ValueError,'aware_timestamp'):
+            timestamp('2026-11-09T10:00:00')
 
     def test_raw_feature_requires_matching_original_level_evidence(self):
         import sqlite3

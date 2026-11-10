@@ -11,6 +11,7 @@ from pathlib import Path
 import sqlite3
 import time
 import zlib
+from zoneinfo import ZoneInfo
 
 from strategy_health.paired_exit_accounting import Quote, clock, money
 from strategy_health.structural_supplement import StockPrint, level_from_context
@@ -19,6 +20,27 @@ from strategy_health.native_exit_requests import context_hash
 
 def timestamp(value):
     return clock(datetime.fromisoformat(value)).astimezone(timezone.utc)
+
+
+def journal_fill_timestamp(value):
+    """Decode trades.entry_fill_time's documented Eastern-naive schema only.
+
+    Provider clocks and candidate timestamps still require explicit offsets.
+    Never silently select one side of a daylight-saving ambiguity.
+    """
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is not None:
+        return timestamp(value)
+    zone = ZoneInfo('America/New_York')
+    candidates = set()
+    for fold in (0, 1):
+        local = parsed.replace(tzinfo=zone, fold=fold)
+        utc = local.astimezone(timezone.utc)
+        if utc.astimezone(zone).replace(tzinfo=None) == parsed:
+            candidates.add(utc)
+    if len(candidates) != 1:
+        raise ValueError('ambiguous_or_nonexistent_journal_fill_time')
+    return candidates.pop()
 
 
 def source_timestamp(value):
@@ -92,7 +114,7 @@ class ExitArchiveReader:
                     or trade['contract_symbol']!=entry.contract):
                 raise ValueError('entry_trade_scope_mismatch')
             if (not trade['entry_order_id'] or not trade['entry_fill_time']
-                    or timestamp(trade['entry_fill_time'])!=entry.filled_at
+                    or journal_fill_timestamp(trade['entry_fill_time'])!=entry.filled_at
                     or money(trade['entry_price'])!=money(entry.premium)):
                 raise ValueError('entry_fill_record_mismatch')
             context=json.loads(trade['strategy_context_json'] or '{}')
@@ -136,6 +158,8 @@ class ExitArchiveReader:
                                  recorded_at=recorded,evidence_id=evidence)
         return dict(level=level, frozen_context_hash=context_hash(context),
                     candidate_observed_at=observed,entry_order_id=trade['entry_order_id'],
+                    entry_fill_time_raw=trade['entry_fill_time'],
+                    entry_fill_time_schema='trades_eastern_naive_or_explicit_offset',
                     independently_reconciled_fill=False)
 
     def option_quotes(self, entry, registration_id, through):
