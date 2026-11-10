@@ -6,12 +6,51 @@ from unittest.mock import patch
 import pandas as pd
 
 from trading.diagnostics.exit_policy import reviewed_exit_description
+from trading.diagnostics.exit_policy import entry_protection_summary
 from trading.diagnostics.bar_thinking import _log_bar_thinking
 from trading.v2_orb_execution_profile import uses_v2_orb_execution_profile
 from trading.v2_orb_paper_exit import V2_EXIT_MINUTES_BY_STRATEGY
 
 
 class ExitPolicyNarrationTests(unittest.TestCase):
+    def test_selected_timer_hides_reference_stop_and_matches_execution(self):
+        from config.research_pair_policy import build
+        from trading.research_order_exit import evaluate_exit
+        sid = 'RESEARCH_QQQ_TREND_V2'
+        for minutes in (30, 60, 90, 120):
+            meta = dict(strategy_version='2.1.0', research_order_route='exact_research_v1',
+                        selected_test_policy=build(sid,'QQQ','2.1.0',minutes), underlying_stop=651.64)
+            t = dict(self.trade, strategy_id=sid,ticker='QQQ',strategy_context_json=meta)
+            summary = entry_protection_summary(t,self.now,2.11,3.51)
+            self.assertIsNone(summary['stop_price'])
+            self.assertIsNone(summary['target_price'])
+            self.assertIn(f'selected {minutes}-minute timer',summary['description'])
+            self.assertIn('references only',summary['description'])
+            entry = pd.Timestamp(t['entry_time'])
+            self.assertEqual(evaluate_exit(t,entry,entry+pd.Timedelta(minutes=minutes-1),None),(False,'hold'))
+            self.assertEqual(evaluate_exit(t,entry,entry+pd.Timedelta(minutes=minutes),None),(True,f'selected_test_{minutes}m'))
+
+    def test_invalid_selection_does_not_claim_protection(self):
+        t=dict(self.trade,strategy_id='RESEARCH_QQQ_TREND_V2',ticker='QQQ',strategy_context_json={'selected_test_policy':{}})
+        self.assertIn('could not be verified',reviewed_exit_description(t,{},self.now))
+
+    def test_tsla_existing_giveback_is_disclosed_without_adding_it_elsewhere(self):
+        t=dict(self.trade,strategy_id='V2_TSLA_TWO_LEG_TREND_PULLBACK',ticker='TSLA',paper=True)
+        text=reviewed_exit_description(t,{},self.now)
+        self.assertIn('$65 profit per contract',text)
+        self.assertIn('once per minute',text)
+        self.assertNotIn('$65',reviewed_exit_description(dict(t,ticker='QQQ'),{},self.now))
+
+    def test_ai_snapshot_does_not_label_reference_prices_active(self):
+        from ai_reasoning.feature_snapshot import build_entry_snapshot
+        protection=entry_protection_summary(self.trade,self.now,2.11,3.51)
+        s=build_entry_snapshot(ticker='SPY',strategy_id='V2_SPY_TREND_CONT',direction='bullish',confidence=.9,
+            rvol=1.5,contract_symbol='TEST',option_type='call',strike=600,expiry='2026-12-01',
+            n_contracts=2,entry_price=2.34,stop_price=2.11,target_price=3.51,rr_ratio=2,
+            paper=True,exit_protection=protection)
+        self.assertIsNone(s['stop_price']);self.assertIsNone(s['target_price']);self.assertIsNone(s['rr_ratio'])
+        self.assertIn('30-minute timer',s['exit_protection']['description'])
+
     def setUp(self):
         self.now = pd.Timestamp("2026-09-18 10:45", tz="America/New_York")
         self.trade = {"id": 1, "strategy_id": "V2_SPY_TREND_CONT", "ticker": "SPY",

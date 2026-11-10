@@ -2433,7 +2433,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             _struct_stop_opt = _risk.structural_stop_from_level(
                 confirmed_price, _underlying_now, float(_entry_bar_stop))
             logger.info(
-                "structural_stop_set ticker=%s entry_bar_level=%.4f "
+                "structural_stop_reference_calculated ticker=%s entry_bar_level=%.4f "
                 "underlying_now=%.4f option_stop=%.4f",
                 ticker, _entry_bar_stop, _underlying_now, _struct_stop_opt,
             )
@@ -2470,6 +2470,15 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         set_user_trade_log(logger)
     _trade_log = get_user_trade_log()
 
+    from trading.diagnostics.exit_policy import entry_protection_summary
+    _stop_px = round(_risk.dynamic_stop_price(confirmed_price, entry_utc), 2)
+    _tgt_px = round(_risk.stage1_exit_price(confirmed_price), 2)
+    _entry_protection = entry_protection_summary({
+        'strategy_id': _US.get('last_strategy_id', 'UNKNOWN'), 'ticker': ticker,
+        'paper': paper, 'entry_time': entry_utc.isoformat(),
+        'strategy_context_json': _strategy_context_json,
+    }, entry_utc, _stop_px, _tgt_px)
+
     # Determine risk tier label for this trade
     _active_risk_pct = _risk.effective_risk_pct(balance)
     _tier_label = (
@@ -2497,9 +2506,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             "n_contracts":      n_contracts,
             "entry_price":      round(confirmed_price, 4),
             "eff_entry":        round(rr_audit["eff_entry"], 4),
-            "stop_loss":        round(_risk.dynamic_stop_price(confirmed_price, entry_utc), 4),
-            "stop_pct":         round(_risk.ORB_STOP_PCT * 100, 1),
-            "stage1_target":    round(_risk.stage1_exit_price(confirmed_price), 4),
+            "stop_loss":        _entry_protection['stop_price'],
+            "stop_pct":         None if _entry_protection['generic_reference_levels_only'] else round(_risk.ORB_STOP_PCT * 100, 1),
+            "stage1_target":    _entry_protection['target_price'],
+            "exit_protection":  _entry_protection,
             "eff_target":       round(rr_audit["eff_target"], 4),
             "Expected_Win":     rr_audit["Expected_Win"],
             "Expected_Loss":    rr_audit["Expected_Loss"],
@@ -2519,16 +2529,13 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             "V2_FAILED_OR_BREAK_VWAP_REVERSION": "SPY Failed-Range Recovery",
             "V2_TSLA_TWO_LEG_TREND_PULLBACK": "TSLA Two-Leg Trend Pullback",
         }.get(_US.get("last_strategy_id", "UNKNOWN"), "Reviewed strategy")
-        _stop_px  = round(_risk.dynamic_stop_price(confirmed_price, entry_utc), 2)
-        _tgt_px   = round(_risk.stage1_exit_price(confirmed_price), 2)
         _mode_tag = "[PAPER] " if paper else ""
         log_event(
             "INFO", "trading_logic",
             f"🟢 {_mode_tag}ENTRY — Buying {ticker} {opt_type.upper()} "
             f"({n_contracts} contract{'s' if n_contracts > 1 else ''} @ ${confirmed_price:.2f}) "
             f"via {_strat_name}. "
-            f"Stop: ${_stop_px:.2f} · Target: ${_tgt_px:.2f} · "
-            f"R:R: {rr_audit['R_R_Ratio']} · Volume: {entry_rvol:.1f}× normal",
+            f"{_entry_protection['description']} Volume: {entry_rvol:.1f} times normal.",
         )
     except Exception:
         pass  # never let narrative logging crash the trade
@@ -2558,6 +2565,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             paper            = paper,
             trade_id         = trade_id,
             signal_meta      = _signal_meta,
+            exit_protection  = _entry_protection,
         )
     except Exception as _ai_ex:
         logger.debug("ai_reasoning narrate_entry dispatch failed (non-fatal): %s", _ai_ex)

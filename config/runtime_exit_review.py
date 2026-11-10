@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'decision-compression-20261109.1'
+REVISION = 'protection-description-20261110.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

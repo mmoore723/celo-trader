@@ -40,6 +40,7 @@ def build_entry_snapshot(
     paper: bool,
     trade_id: Optional[int] = None,
     signal_meta: Optional[dict] = None,
+    exit_protection: Optional[dict] = None,
 ) -> dict:
     """
     Package one entry decision's already-computed data for the LLM prompt.
@@ -63,9 +64,10 @@ def build_entry_snapshot(
         "expiry":          expiry,
         "n_contracts":     n_contracts,
         "entry_price":     round(entry_price, 4),
-        "stop_price":      round(stop_price, 4),
-        "target_price":    round(target_price, 4),
-        "rr_ratio":        rr_ratio,
+        "stop_price":      None if exit_protection and exit_protection.get('generic_reference_levels_only') else round(stop_price, 4),
+        "target_price":    None if exit_protection and exit_protection.get('generic_reference_levels_only') else round(target_price, 4),
+        "rr_ratio":        None if exit_protection and exit_protection.get('generic_reference_levels_only') else rr_ratio,
+        "exit_protection": exit_protection,
         "paper_trading":   paper,
         "signal_meta":     signal_meta or {},
     }
