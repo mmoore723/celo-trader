@@ -87,7 +87,7 @@ html, body, #root {
 .app-shell {
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "topbar  topbar"
     "sidebar main";
@@ -96,6 +96,11 @@ html, body, #root {
 }
 
 .app-topbar  { grid-area: topbar; }
+.app-topbar { min-height: var(--topbar-h); }
+.account-header-metrics > div { white-space: nowrap; gap: 4px; }
+@media (max-width: 1199px) {
+  .account-header-metrics { order: 1; width: 100%; overflow-x: auto; padding-bottom: 4px; }
+}
 .app-sidebar { grid-area: sidebar; }
 .app-main    { grid-area: main; overflow-y: auto; background: var(--panel); position: relative; z-index: 1; }
 .app-alerts { position: sticky; top: 0; z-index: 40; max-height: 60vh; overflow-y: auto; }

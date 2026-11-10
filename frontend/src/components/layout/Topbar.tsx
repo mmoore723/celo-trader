@@ -48,7 +48,7 @@ export function Topbar() {
 
   return (
     <header
-      className="app-topbar flex items-center px-5 gap-4 border-b"
+      className="app-topbar flex flex-wrap items-center px-3 py-2 gap-3 border-b"
       style={{ background: "var(--surface)", borderColor: "var(--border)" }}
     >
       {/* Hamburger — mobile only */}
@@ -104,40 +104,42 @@ export function Topbar() {
             CLOSED
           </span>
         )}
-        {/* Strategy ID — desktop only */}
-        {status?.last_strategy_id && (
-          <span className="text-xs font-mono hidden lg:inline" style={{ color: "var(--ink-muted)" }}>
-            {status.last_strategy_id}
-          </span>
-        )}
       </div>
 
       {/* Spacer */}
       <div className="flex-1" />
 
       {/* Live metrics — compact on mobile, full on desktop */}
-      <div className="flex items-center gap-3 md:gap-5 shrink-0">
+      <div className="account-header-metrics flex items-center gap-4 md:gap-5" aria-label="Trading account snapshot">
         <div className="flex flex-col leading-none">
-          <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Current Equity</span>
+          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Equity</span>
           <span className="num text-sm font-semibold" style={{ color: "var(--ink)" }}>
             {brokerConnected ? fmt(bal) : "Not connected"}
           </span>
         </div>
-        <div className="flex-col leading-none hidden lg:flex">
+        <div className="flex flex-col leading-none">
           <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Day Open</span>
           <span className="num text-sm font-semibold" style={{ color: "var(--ink)" }}>
             {brokerConnected ? fmt(dayOpen) : "—"}
           </span>
         </div>
         <div className="flex flex-col leading-none">
-          <span className="text-xs hidden sm:block" style={{ color: "var(--ink-muted)" }}>Account Change</span>
+          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>Today</span>
           <span
             className="num text-sm font-semibold flex items-center gap-1"
             style={{ color: pnl >= 0 ? "var(--positive)" : "var(--negative)" }}
           >
-            {pnl >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-            {formatSignedCurrency(pnl)}
+            {brokerConnected && (pnl >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />)}
+            {brokerConnected ? formatSignedCurrency(pnl) : "Unavailable"}
           </span>
+        </div>
+        <div className="flex flex-col leading-none">
+          <span className="text-xs text-ink-muted">Buying power</span>
+          <span className="num text-sm font-semibold">{brokerConnected && status?.options_buying_power != null ? fmt(status.options_buying_power) : "Unavailable"}</span>
+        </div>
+        <div className="flex flex-col leading-none">
+          <span className="text-xs text-ink-muted">Open positions</span>
+          <span className="num text-sm font-semibold">{brokerConnected && status?.open_positions != null ? Object.keys(status.open_positions).length : "Unavailable"}</span>
         </div>
       </div>
 
@@ -148,7 +150,7 @@ export function Topbar() {
         ) : (
           <WifiOff size={14} style={{ color: "var(--negative)" }} />
         )}
-        {!connected ? "Reconnecting…" : brokerConnected ? "Bot Live" : "Broker not connected"}
+        {!connected ? "Reconnecting…" : brokerConnected ? "Connected" : "Broker not connected"}
       </div>
 
       {/* Theme toggle */}

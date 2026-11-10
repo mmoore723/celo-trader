@@ -413,30 +413,6 @@ export function LiveTrading() {
     <>
     <div className="p-4 flex flex-col gap-4">
 
-      {/* One account ribbon establishes context without seven competing cards. */}
-      <section className="card px-4 py-3 flex flex-col gap-3 lg:flex-row lg:items-center" aria-label="Trading account snapshot">
-        <div className="flex items-center gap-2 lg:pr-5 lg:border-r" style={{ borderColor: "var(--border)" }}>
-          <span className="text-sm font-semibold">Trading workspace</span>
-          <span className={`badge ${status?.is_paper !== false ? "badge-yellow" : "badge-green"}`}>
-            {status?.is_paper !== false ? "Paper" : "Live"}
-          </span>
-          <span className="text-xs" style={{ color: status?.running ? "var(--positive)" : "var(--ink-muted)" }}>
-            {status?.running ? "Bot running" : "Bot stopped"}
-          </span>
-        </div>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-5 lg:flex-1">
-          {[
-            { label: "Equity", value: status?.broker_connected ? `$${status.account_balance.toFixed(2)}` : "Not connected" },
-            { label: "Day open", value: status?.broker_connected ? `$${(status.day_start_balance ?? status.account_balance).toFixed(2)}` : "—" },
-            { label: "Today", value: <PnlBadge value={status?.session_pnl} /> },
-            { label: "Buying power", value: `$${(status?.options_buying_power ?? 0).toFixed(2)}` },
-            { label: "Open positions", value: openTrades.length },
-          ].map(item => <div key={item.label} className="min-w-0">
-            <dt className="text-[10px] uppercase tracking-wide text-ink-muted">{item.label}</dt>
-            <dd className="num text-sm font-semibold truncate">{item.value}</dd>
-          </div>)}
-        </dl>
-      </section>
 
       {status?.opportunity_window?.expires_at && (
         <div

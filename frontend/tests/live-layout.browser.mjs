@@ -9,6 +9,10 @@ try {
   const chart=page.getByTestId('live-chart-panel');
   const details=page.getByRole('complementary',{name:'Trading activity beside chart'});
   await details.waitFor();
+  assert.equal(await page.getByLabel('Trading account snapshot').count(),1);
+  assert.equal(await page.getByText('Trading workspace',{exact:true}).count(),0);
+  const header=page.getByRole('banner');
+  for(const label of ['Equity','Day Open','Today','Buying power','Open positions','$19,859.90','$16,219.90']) assert.equal(await header.getByText(label,{exact:true}).count(),1);
   for(const label of ['Setups and recent trades','Open Positions (0)','Live activity','Market Context']) {
     assert.equal(await details.getByText(label,{exact:true}).count(),1);
   }
@@ -16,6 +20,7 @@ try {
   assert.ok(d.x>=c.x+c.width && Math.abs(c.y-d.y)<2,'Details must sit to right of chart');
   await page.screenshot({path:'/tmp/celo-live-right-desktop.png',fullPage:true});
   await page.setViewportSize({width:390,height:850});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'No page-wide horizontal overflow');
   const cm=await chart.boundingBox(),dm=await details.boundingBox();
   assert.ok(dm.y>=cm.y+cm.height,'Mobile must stack');
   await page.screenshot({path:'/tmp/celo-live-right-mobile.png',fullPage:true});
