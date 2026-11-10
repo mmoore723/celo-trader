@@ -101,6 +101,23 @@ class ArchiveReaderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'version_mismatch'):
             self.reader.decision_events(replace(self.entry,scope=replace(self.entry.scope,version='v2')),T+timedelta(seconds=30))
 
+    def test_mixed_legacy_compressed_and_writer_rollback_records(self):
+        from unittest.mock import patch
+        import sqlite3
+        events=[]
+        for index, disabled in enumerate(('1','0','1')):
+            event=self.event();event['event_id']='event'+str(index)
+            event['snapshot']['data']={'bars':['exact original candle']*3000}
+            with patch.dict('os.environ',{'CELO_EXIT_TRACE_COMPRESSION_DISABLED':disabled}):
+                _write(self.root/'exit_decisions',event)
+            events.append(event)
+        with sqlite3.connect(self.root/'exit_decisions/decisions.sqlite3') as db:
+            stored=[json.loads(row[0]) for row in db.execute('SELECT payload FROM decisions ORDER BY event_id')]
+        self.assertNotIn('_celo_storage',stored[0])
+        self.assertEqual('zlib-base64-v1',stored[1]['_celo_storage'])
+        self.assertNotIn('_celo_storage',stored[2])
+        self.assertEqual(events,self.reader.decision_events(self.entry,T+timedelta(seconds=30))['events'])
+
     def test_payload_identity_corruption_blocked(self):
         event=self.event(); _write(self.root/'exit_decisions',event)
         import sqlite3

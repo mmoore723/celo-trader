@@ -14,6 +14,7 @@ import sqlite3
 from threading import Thread, Lock
 import time
 from uuid import uuid4
+from trading.decision_codec import encode_event
 
 _context = ContextVar('exit_trace_context', default=None)
 _queue = Queue(maxsize=32)
@@ -80,7 +81,8 @@ def _write(root, event):
         trade=event['trade']
         db.execute('INSERT OR IGNORE INTO decisions VALUES (?,?,?,?,?,?,?,?,?)',
             (event['event_id'],event['cycle_id'],event['recorded_at'],trade.get('broker_account_id'),
-             event['mode'],str(trade.get('id')),trade.get('strategy_id'),trade.get('ticker'),json.dumps(event,allow_nan=False)))
+             event['mode'],str(trade.get('id')),trade.get('strategy_id'),trade.get('ticker'),
+             encode_event(event, compress=os.environ.get('CELO_EXIT_TRACE_COMPRESSION_DISABLED') != '1')))
 
 
 def _worker():

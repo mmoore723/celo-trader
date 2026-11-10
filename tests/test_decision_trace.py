@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 import pandas as pd
 from trading import decision_trace as trace
+from trading.decision_codec import decode_event
 
 
 class DecisionTraceTests(unittest.TestCase):
@@ -22,7 +23,7 @@ class DecisionTraceTests(unittest.TestCase):
     def rows(self):
         self.assertTrue(trace.flush())
         with sqlite3.connect(self.root/'decisions.sqlite3') as c:
-            return [json.loads(r[0]) for r in c.execute('SELECT payload FROM decisions')]
+            return [decode_event(r[0]) for r in c.execute('SELECT payload FROM decisions')]
 
     def test_exact_input_output_and_mutation_snapshots(self):
         state={'peak':1}

@@ -228,7 +228,8 @@ class ExitArchiveReader:
                  entry.scope.ticker, entry.filled_at.isoformat(), through.isoformat()))
         events = []
         for row in rows:
-            event = json.loads(row['payload']); trade = event.get('trade', {})
+            from trading.decision_codec import decode_event
+            event = decode_event(row['payload']); trade = event.get('trade', {})
             if (event.get('event_id') != row['event_id'] or event.get('mode') != row['mode']
                     or timestamp(event.get('recorded_at')) != timestamp(row['recorded_at'])
                     or str(trade.get('id')) != str(entry.trade_id)
