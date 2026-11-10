@@ -19,8 +19,25 @@ The option archive's original validation is retained. Frozen experiment freshnes
 spread, quantity and receipt-gap requirements must still run in the pricing engine.
 Native records must pass the native-request adapter's context and quantity checks.
 These readers do not certify complete decision coverage, causal entry-level
-availability, experiment approval or qualification. They do not infer levels from
-registration metadata copied after entry. Empty archives are not successful tests.
+availability, experiment approval or qualification. The entry-level adapter now
+checks the linked original candidate against the trade's frozen context, account,
+version, contract and fill clock. It supports only the existing structural_levels
+schema with explicit completed-bar and recorded timestamps. Unmapped raw level
+fields remain blocked, not inferred. Broker fill reconciliation remains separate.
+Registration metadata copied after entry is not accepted as original evidence.
+Empty archives are not successful tests. Reads have row, byte and time limits.
+
+## November 9 capture performance repair
+
+Registered-option capture adds indexes for contract-window lookup and registration
+receipt lookup. Repeated unchanged registration discovery no longer opens write
+transactions. Request timestamps are taken immediately before the request, not
+before discovery. Saved health separates discovery, due query, request and persist
+durations. These are capture-only changes; provider quotas and trading stay fixed.
+Index construction happens at collector startup. Existing observations and their
+timestamps are not rewritten. Rollback uses deploy.sh to restore prior worker
+code; additive indexes may remain safely. No data deletion is required. Actual
+next-session cadence must still be measured before claiming the gaps are fixed.
 
 ## Release and rollback
 

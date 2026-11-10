@@ -38,6 +38,21 @@ class FastCaptureTests(unittest.TestCase):
         self.assertEqual(2,len(report[scope_key('paper-a','paper')]))
         self.assertEqual(1,len(report[scope_key('paper-b','paper')]))
 
+    def test_repeat_discovery_does_not_start_write_transaction(self):
+        identity=self.add(); statements=[]
+        self.r.db.set_trace_callback(statements.append)
+        self.assertEqual(identity,self.add(metadata={'level':999}))
+        self.r.db.set_trace_callback(None)
+        self.assertFalse(any(s.upper().startswith(('BEGIN','INSERT','UPDATE')) for s in statements))
+        self.assertEqual(100,json.loads(self.r.db.execute('SELECT metadata FROM registrations').fetchone()[0])['level'])
+
+    def test_capture_queries_use_contract_and_receipt_indexes(self):
+        self.add()
+        plans=[r[3] for r in self.r.db.execute('EXPLAIN QUERY PLAN SELECT id FROM registrations WHERE symbol=? AND entry_at<=? AND until_at>=?',(SYMBOL,NOW.isoformat(),NOW.isoformat()))]
+        self.assertTrue(any('registration_contract_window' in p for p in plans))
+        plans=[r[3] for r in self.r.db.execute('EXPLAIN QUERY PLAN SELECT max(received_at) FROM links WHERE registration=?',('one',))]
+        self.assertTrue(any('link_registration_receipt' in p for p in plans))
+
     def test_restart_idempotence_preserves_metadata_and_extends_horizon(self):
         identity=self.add(); original=dict(self.r.db.execute('SELECT * FROM registrations').fetchone())
         reopened=Registry(self.root)

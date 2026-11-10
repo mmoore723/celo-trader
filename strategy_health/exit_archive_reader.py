@@ -13,7 +13,8 @@ import time
 import zlib
 
 from strategy_health.paired_exit_accounting import Quote, clock, money
-from strategy_health.structural_supplement import StockPrint
+from strategy_health.structural_supplement import StockPrint, level_from_context
+from strategy_health.native_exit_requests import context_hash
 
 
 def timestamp(value):
@@ -27,14 +28,17 @@ def source_timestamp(value):
 
 
 class ExitArchiveReader:
-    def __init__(self, user_root, *, max_rows=100000, timeout_seconds=5):
+    def __init__(self, user_root, *, max_rows=100000, timeout_seconds=5, max_bytes=64*1024*1024):
         self.root = Path(user_root).resolve()
         if not isinstance(max_rows, int) or not 1 <= max_rows <= 1000000:
             raise ValueError('invalid_row_limit')
         if not 0 < timeout_seconds <= 30:
             raise ValueError('invalid_query_timeout')
+        if not isinstance(max_bytes,int) or not 1 <= max_bytes <= 256*1024*1024:
+            raise ValueError('invalid_byte_limit')
         self.max_rows = max_rows
         self.timeout = timeout_seconds
+        self.max_bytes = max_bytes
 
     @contextmanager
     def _open(self, relative):
@@ -54,10 +58,76 @@ class ExitArchiveReader:
             db.close()
 
     def _rows(self, db, sql, params):
-        rows = db.execute(sql + ' LIMIT ?', (*params, self.max_rows + 1)).fetchall()
-        if len(rows) > self.max_rows:
-            raise ValueError('archive_row_limit_exceeded')
+        rows=[]; size=0
+        for row in db.execute(sql + ' LIMIT ?', (*params, self.max_rows + 1)):
+            if len(rows) >= self.max_rows:
+                raise ValueError('archive_row_limit_exceeded')
+            size += sum(len(v.encode('utf-8')) if isinstance(v,str) else len(v)
+                        if isinstance(v,bytes) else 8 for v in row)
+            if size > self.max_bytes: raise ValueError('archive_byte_limit_exceeded')
+            rows.append(row)
         return rows
+
+    def entry_level(self, entry, field):
+        """Read original linked candidate evidence, never later registry copies.
+
+        Only the existing structural_levels schema carries verified per-level
+        source and recording clocks. Other fields remain explicitly unsupported
+        until their original availability evidence is mapped, not inferred.
+        """
+        entry.scope.validate(); clock(entry.filled_at)
+        if field not in ('structural_levels.support','structural_levels.resistance'):
+            raise ValueError('missing_level_availability_schema:'+field)
+        with self._open('trades_'+entry.scope.mode+'.db') as db:
+            trades=self._rows(db,'SELECT * FROM trades WHERE id=?',(str(entry.trade_id),))
+            if len(trades)!=1: raise ValueError('missing_original_trade')
+            trade=trades[0]
+            if (trade['broker_account_id']!=entry.scope.account
+                    or trade['paper']!=int(entry.scope.mode=='paper')
+                    or trade['strategy_id']!=entry.scope.strategy
+                    or trade['ticker']!=entry.scope.ticker
+                    or trade['contract_symbol']!=entry.contract):
+                raise ValueError('entry_trade_scope_mismatch')
+            if (not trade['entry_order_id'] or not trade['entry_fill_time']
+                    or timestamp(trade['entry_fill_time'])!=entry.filled_at
+                    or money(trade['entry_price'])!=money(entry.premium)):
+                raise ValueError('entry_fill_record_mismatch')
+            context=json.loads(trade['strategy_context_json'] or '{}')
+            if context.get('strategy_version')!=entry.scope.version:
+                raise ValueError('entry_version_mismatch')
+            candidates=self._rows(db,'SELECT * FROM shadow_candidates WHERE candidate_id=?',
+                                  (trade['candidate_id'],))
+            if len(candidates)!=1: raise ValueError('missing_original_candidate')
+            candidate=candidates[0]
+            if (candidate['broker_account_id']!=entry.scope.account
+                    or candidate['ticker']!=entry.scope.ticker
+                    or candidate['strategy_id']!=entry.scope.strategy
+                    or str(candidate['linked_trade_id'])!=str(entry.trade_id)):
+                raise ValueError('candidate_trade_link_mismatch')
+            observed=timestamp(candidate['observed_at'])
+            metadata=json.loads(candidate['metadata_json'] or '{}')
+        if metadata.get('strategy_version')!=entry.scope.version:
+            raise ValueError('candidate_version_mismatch')
+        levels=metadata.get('structural_levels')
+        if not isinstance(levels,dict) or levels.get('schema')!=1 or levels.get('status')!='captured':
+            raise ValueError('missing_original_structural_levels')
+        if levels!=context.get('structural_levels'):
+            raise ValueError('entry_level_context_mismatch')
+        if levels.get('updates_after_entry') is not False:
+            raise ValueError('entry_level_not_frozen')
+        completed=timestamp(levels.get('source_completed_at'))
+        recorded=timestamp(levels.get('recorded_at'))
+        if not completed<=recorded<=observed<=entry.filled_at:
+            raise ValueError('entry_level_availability_not_proven')
+        if money(levels.get(field.split('.')[-1]))<=0:
+            raise ValueError('invalid_entry_level')
+        digest=hashlib.sha256(json.dumps(metadata,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        evidence='original_candidate:'+str(candidate['candidate_id'])+':'+digest
+        level=level_from_context(entry,metadata,field,source_completed_at=completed,
+                                 recorded_at=recorded,evidence_id=evidence)
+        return dict(level=level, frozen_context_hash=context_hash(context),
+                    candidate_observed_at=observed,entry_order_id=trade['entry_order_id'],
+                    independently_reconciled_fill=False)
 
     def option_quotes(self, entry, registration_id, through):
         """Read only observations linked to this exact broker-trade registration.

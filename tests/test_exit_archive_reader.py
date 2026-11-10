@@ -118,6 +118,56 @@ class ArchiveReaderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'entry_time_mismatch'):
             self.read(entry=replace(self.entry,filled_at=T+timedelta(seconds=1)))
 
+    def original_entry(self, **level_changes):
+        import sqlite3
+        from database.schema import _CREATE_TRADES, _CREATE_SHADOW_CANDIDATES
+        levels=dict(schema=1,status='captured',support=590,resistance=None,
+            source_completed_at=(T-timedelta(minutes=2)).isoformat(),
+            recorded_at=(T-timedelta(seconds=30)).isoformat(),updates_after_entry=False)
+        levels.update(level_changes)
+        meta=dict(strategy_version='v1',structural_levels=levels)
+        with sqlite3.connect(self.root/'trades_paper.db') as db:
+            db.executescript(_CREATE_TRADES+_CREATE_SHADOW_CANDIDATES)
+            db.execute('''INSERT INTO trades(id,ticker,contract_symbol,option_type,strike,expiry,
+                contracts,entry_price,entry_time,paper,strategy_id,broker_account_id,candidate_id,
+                strategy_context_json,entry_order_id,entry_fill_time) VALUES
+                (1,'SPY',?,'call',600,'2026-11-20',1,2,?,1,'test','a','candidate',?,'order',?)''',
+                (C,T.isoformat(),json.dumps(meta),T.isoformat()))
+            db.execute('''INSERT INTO shadow_candidates(candidate_id,observed_at,ticker,
+                strategy_id,direction,confidence,broker_account_id,metadata_json,linked_trade_id)
+                VALUES ('candidate',?,'SPY','test','bullish',1,'a',?,1)''',
+                ((T-timedelta(seconds=20)).isoformat(),json.dumps(meta)))
+
+    def test_original_entry_level_not_registry_metadata(self):
+        self.original_entry()
+        r=self.reader.entry_level(self.entry,'structural_levels.support')
+        self.assertEqual(D(590),r['level'].value)
+        self.assertTrue(r['level'].evidence_id.startswith('original_candidate:'))
+        self.assertFalse(r['independently_reconciled_fill'])
+
+    def test_late_level_blocked(self):
+        self.original_entry(recorded_at=(T+timedelta(seconds=1)).isoformat())
+        with self.assertRaisesRegex(ValueError,'availability_not_proven'):
+            self.reader.entry_level(self.entry,'structural_levels.support')
+
+    def test_original_level_changed_in_trade_blocked(self):
+        import sqlite3
+        self.original_entry()
+        with sqlite3.connect(self.root/'trades_paper.db') as db:
+            meta=json.loads(db.execute('SELECT strategy_context_json FROM trades').fetchone()[0])
+            meta['structural_levels']['support']=599
+            db.execute('UPDATE trades SET strategy_context_json=?',(json.dumps(meta),))
+        with self.assertRaisesRegex(ValueError,'context_mismatch'):
+            self.reader.entry_level(self.entry,'structural_levels.support')
+
+    def test_unmapped_raw_level_not_inferred(self):
+        with self.assertRaisesRegex(ValueError,'missing_level_availability_schema'):
+            self.reader.entry_level(self.entry,'or_low')
+
+    def test_bytes_bounded_and_no_partial_success(self):
+        self.record(); self.reader=ExitArchiveReader(self.root,max_bytes=1)
+        with self.assertRaisesRegex(ValueError,'byte_limit'): self.read()
+
     def stock_archive(self, **changes):
         archive=Archive(self.root/'session_capture'); self.addCleanup(archive.db.close)
         quote=dict(symbol='SPY',last=600,trade_date=int(T.timestamp()*1000),volume=100)

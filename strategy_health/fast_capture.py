@@ -84,6 +84,8 @@ class Registry:
             max_gap REAL DEFAULT 0, gaps_over_10 INTEGER DEFAULT 0);
           CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY, recorded_at TEXT, kind TEXT, detail TEXT);
+          CREATE INDEX IF NOT EXISTS registration_contract_window ON registrations(symbol,entry_at,until_at);
+          CREATE INDEX IF NOT EXISTS link_registration_receipt ON links(registration,received_at);
         ''')
 
     def register(self, *, account, mode, strategy, ticker, version, symbol, entry_at,
@@ -97,6 +99,9 @@ class Registry:
             raise ValueError('capture_horizon_invalid')
         identity = hashlib.sha256(json.dumps([account,mode,strategy,ticker,version,symbol,
                                              entry.isoformat(),origin,str(origin_id)]).encode()).hexdigest()
+        prior = self.db.execute('SELECT until_at FROM registrations WHERE id=?',(identity,)).fetchone()
+        if prior is not None and until <= stamp(prior[0]):
+            return identity  # Existing metadata is immutable; no repeated write transaction.
         readiness = 'capture_only' if version and policy else 'missing_version_or_policy'
         with self.db:
             self.db.execute('''INSERT OR IGNORE INTO registrations VALUES
@@ -266,6 +271,7 @@ def main():
     feed=Feed(get_api_keys().get('tradier_market_api_key'))
     calendar=[]; refresh=discover_at=publish_at=next_batch=0.; discovery={}; last_state=None
     discovery_scope=None
+    timings={}
     while True:
         now=datetime.now(timezone.utc); state='waiting_for_market'; error=None
         try:
@@ -284,20 +290,31 @@ def main():
             active=any(a<=now<=b+timedelta(seconds=60) for a,b in calendar)
             if time.monotonic()>=discover_at or discovery_scope!=scope_key(account,mode):
                 if not account: raise ValueError('capture_account_missing')
+                started=time.monotonic()
                 discovery=discover(root/('trades_'+mode+'.db'),account,mode,registry,calendar,now)
+                timings['discovery_seconds']=time.monotonic()-started
                 discovery_scope=scope_key(account,mode)
                 discover_at=time.monotonic()+(10 if active else 300)
             if active:
                 state='collecting'
                 if time.monotonic()>=max(feed.next_request,next_batch):
+                    started=time.monotonic()
                     symbols=registry.due(now)
+                    timings['due_query_seconds']=time.monotonic()-started
                     if symbols:
                         next_batch=time.monotonic()+CADENCE
+                        requested=datetime.now(timezone.utc)
                         try:
+                            started=time.monotonic()
                             payload,received=feed.quotes(symbols)
-                            registry.record(symbols,payload,now,received)
+                            timings['request_seconds']=time.monotonic()-started
+                            started=time.monotonic()
+                            registry.record(symbols,payload,requested,received)
+                            timings['persist_seconds']=time.monotonic()-started
+                            timings['last_batch_at']=received.isoformat()
+                            timings['last_batch_contracts']=len(symbols)
                         except Exception as exc:
-                            registry.fail(symbols,now,str(exc) if isinstance(exc,ValueError) else type(exc).__name__)
+                            registry.fail(symbols,requested,str(exc) if isinstance(exc,ValueError) else type(exc).__name__)
                             raise
                     else: state='waiting_for_registrations'
         except Exception as exc:
@@ -306,6 +323,7 @@ def main():
             report={'heartbeat_at':datetime.now(timezone.utc).isoformat(),'status':state,'error':error,
                 'discovery':discovery,'discovery_scope':discovery_scope,'scopes':registry.health(datetime.now(timezone.utc)),
                 'batch_size':BATCH,'request_interval_seconds':CADENCE,'capture_only':True,
+                'processing_timings':dict(timings),
                 'experiment_evaluation_started':False}
             atomic_write_json(root/'fast_capture_health.json',report)
             signature=json.dumps([state,error,discovery.get('blocked')],sort_keys=True)
