@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 from zoneinfo import ZoneInfo
+from strategy_health.modeled_exit_fees import ModeledFeeSchedule
 
 
 def clock(value):
@@ -45,6 +46,13 @@ class Scope:
 
 
 @dataclass(frozen=True)
+class EntryFeeFill:
+    contracts: int
+    premium: Decimal
+    evidence_id: str
+
+
+@dataclass(frozen=True)
 class Entry:
     scope: Scope
     trade_id: str
@@ -54,6 +62,7 @@ class Entry:
     contracts: int
     entry_fees: Decimal
     fill_evidence_id: str
+    fee_fills: tuple[EntryFeeFill, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -84,12 +93,21 @@ class Pricing:
     slippage_per_share: Decimal
     exit_fee_per_contract: Decimal
     fee_schedule_version: str
+    modeled_fees: ModeledFeeSchedule | None = None
+    fee_rounding: str = 'unrounded'
 
     def validate(self):
         for x in (self.max_wait_seconds,self.max_source_age_seconds,self.max_receipt_gap_seconds):
             if not 0 < float(x) < float('inf'): raise ValueError('positive_finite_timing_required')
         if money(self.slippage_per_share)<0 or money(self.exit_fee_per_contract)<0 or not self.fee_schedule_version:
             raise ValueError('explicit_nonnegative_cost_schedule_required')
+        if self.fee_rounding not in ('unrounded', 'per_fill_ceiling'):
+            raise ValueError('invalid_fee_rounding')
+        if self.modeled_fees is not None:
+            if not isinstance(self.modeled_fees, ModeledFeeSchedule):
+                raise ValueError('invalid_modeled_fee_schedule')
+            if self.modeled_fees.version != self.fee_schedule_version or money(self.exit_fee_per_contract) != 0:
+                raise ValueError('conflicting_fee_models')
 
 
 def _usable(q, config):
@@ -121,14 +139,42 @@ def _price(entry, intents, quotes, config):
         if selected is None: raise ValueError('unavailable_eligible_exit_quote')
         used.add(selected.evidence_id)
         price=max(Decimal(0),money(selected.bid)-money(config.slippage_per_share))
+        fee_detail = (config.modeled_fees.charge(side='sell', contracts=intent.contracts,
+                      premium=price, rounding=config.fee_rounding, entry_at=entry.filled_at)
+                      if config.modeled_fees else None)
         fills.append({'at':selected.received_at,'quantity':intent.contracts,'premium':price,
-                      'fee':money(config.exit_fee_per_contract)*intent.contracts,
+                      'fee':fee_detail['total'] if fee_detail else money(config.exit_fee_per_contract)*intent.contracts,
+                      'fee_detail':fee_detail,
                       'reason':intent.reason,'intent_evidence':intent.evidence_id,'quote_evidence':selected.evidence_id})
         prior=selected.received_at;left-=intent.contracts
     if left: raise ValueError('incomplete_exit_quantity')
     net=sum((f['premium']*100*f['quantity']-f['fee'] for f in fills),Decimal(0))
-    net-=money(entry.premium)*100*entry.contracts+money(entry.entry_fees)
-    return {'net':net,'closed_at':fills[-1]['at'],'fills':fills}
+    entry_fee_detail = None
+    if config.modeled_fees:
+        if config.fee_rounding == 'per_fill_ceiling' and not entry.fee_fills:
+            raise ValueError('entry_fill_breakdown_required_for_fee_rounding')
+        entry_fills = entry.fee_fills or (EntryFeeFill(entry.contracts, entry.premium, entry.fill_evidence_id),)
+        identities=set(); total_quantity=0; total_premium=Decimal(0); details=[]
+        for fill in entry_fills:
+            if not isinstance(fill, EntryFeeFill):
+                raise ValueError('invalid_entry_fee_fill_evidence')
+            quantity(fill.contracts)
+            if not fill.evidence_id or fill.evidence_id in identities or money(fill.premium)<=0:
+                raise ValueError('invalid_entry_fee_fill_evidence')
+            identities.add(fill.evidence_id)
+            total_quantity+=fill.contracts; total_premium+=money(fill.premium)*fill.contracts
+            details.append(config.modeled_fees.charge(side='buy', contracts=fill.contracts,
+                premium=fill.premium, rounding=config.fee_rounding, entry_at=entry.filled_at))
+        if total_quantity != entry.contracts or total_premium != money(entry.premium)*entry.contracts:
+            raise ValueError('entry_fee_fills_do_not_reconcile')
+        entry_fee_detail = dict(total=sum((d['total'] for d in details),Decimal(0)),
+            fills=details, provenance='modeled_not_broker_charged',
+            granularity='recorded_fills' if entry.fee_fills else 'aggregate_entry_linear_costs_only')
+    entry_cost = entry_fee_detail['total'] if entry_fee_detail else money(entry.entry_fees)
+    net-=money(entry.premium)*100*entry.contracts+entry_cost
+    return {'net':net,'closed_at':fills[-1]['at'],'fills':fills,
+            'entry_fee_applied':entry_cost,'entry_fee_detail':entry_fee_detail,
+            'original_entry_fee_input':money(entry.entry_fees)}
 
 
 def compare(entry, baseline, candidate, quotes, pricing, *, baseline_policy, candidate_policy):
@@ -140,6 +186,12 @@ def compare(entry, baseline, candidate, quotes, pricing, *, baseline_policy, can
             'fee_schedule_version':pricing.fee_schedule_version}
     try:
         entry.scope.validate();pricing.validate();clock(entry.filled_at);quantity(entry.contracts)
+        if pricing.modeled_fees:
+            pricing.modeled_fees.validate(entry.filled_at)
+        result['pricing_identity'] = (pricing.max_wait_seconds, pricing.max_source_age_seconds,
+            pricing.max_receipt_gap_seconds, str(money(pricing.slippage_per_share)),
+            str(money(pricing.exit_fee_per_contract)), pricing.fee_schedule_version,
+            pricing.modeled_fees.fingerprint() if pricing.modeled_fees else None, pricing.fee_rounding)
         if (not entry.trade_id or not entry.contract or not entry.fill_evidence_id
                 or not baseline_policy or not candidate_policy
                 or money(entry.premium)<=0 or money(entry.entry_fees)<0):
@@ -190,7 +242,7 @@ def summarize(attempts):
     """Separate every scope and policy pair. No overall pooled winner."""
     groups=defaultdict(list);seen=set()
     for r in attempts:
-        key=(r['scope'],r['baseline_policy'],r['candidate_policy'])
+        key=(r['scope'],r['baseline_policy'],r['candidate_policy'],tuple(r.get('pricing_identity', ())))
         identity=(key,r['trade_id'])
         if identity in seen: raise ValueError('duplicate_paired_attempt')
         seen.add(identity);groups[key].append(r)
@@ -198,6 +250,7 @@ def summarize(attempts):
     for key,rows in groups.items():
         valid=[r for r in rows if r['status']=='evaluable']
         output.append({'scope':key[0],'baseline_policy':key[1],'candidate_policy':key[2],
+            'pricing_identity':key[3],
             'attempts':len(rows),'evaluable':len(valid),'blocked':len(rows)-len(valid),
             'sessions':len({r['session'] for r in valid}),
             'baseline':_metrics(valid,'baseline'),'candidate':_metrics(valid,'candidate'),
