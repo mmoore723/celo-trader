@@ -118,6 +118,19 @@ class ArchiveReaderTests(unittest.TestCase):
         self.assertNotIn('_celo_storage',stored[2])
         self.assertEqual(events,self.reader.decision_events(self.entry,T+timedelta(seconds=30))['events'])
 
+    def test_compression_cannot_bypass_total_decoded_byte_budget(self):
+        from unittest.mock import patch
+        from trading.decision_codec import decode_event
+        for index in range(2):
+            event=self.event();event['event_id']='event'+str(index)
+            event['snapshot']['data']={'state':'same'*5000}
+            _write(self.root/'exit_decisions',event)
+        self.reader=ExitArchiveReader(self.root,max_bytes=30000)
+        with patch('trading.decision_codec.decode_event',wraps=decode_event) as decoder:
+            with self.assertRaisesRegex(ValueError,'decoded_byte_limit'):
+                self.reader.decision_events(self.entry,T+timedelta(seconds=30))
+            self.assertEqual(1,decoder.call_count)
+
     def test_payload_identity_corruption_blocked(self):
         event=self.event(); _write(self.root/'exit_decisions',event)
         import sqlite3

@@ -227,9 +227,22 @@ class ExitArchiveReader:
                 (entry.scope.account, entry.scope.mode, str(entry.trade_id), entry.scope.strategy,
                  entry.scope.ticker, entry.filled_at.isoformat(), through.isoformat()))
         events = []
+        decoded_bytes = 0
         for row in rows:
             from trading.decision_codec import decode_event
+            # Bound the expanded aggregate, not only compressed SQLite bytes.
+            # The codec verifies the declared size before accepting any event.
+            envelope = json.loads(row['payload'])
+            if not isinstance(envelope, dict):
+                raise ValueError('decision_payload_not_object')
+            expanded_size = (envelope.get('raw_bytes') if '_celo_storage' in envelope
+                             else len(row['payload'].encode('utf-8')))
+            if isinstance(expanded_size, bool) or not isinstance(expanded_size, int) or expanded_size <= 0:
+                raise ValueError('invalid_decision_expanded_size')
+            if decoded_bytes + expanded_size > self.max_bytes:
+                raise ValueError('archive_decoded_byte_limit_exceeded')
             event = decode_event(row['payload']); trade = event.get('trade', {})
+            decoded_bytes += expanded_size
             if (event.get('event_id') != row['event_id'] or event.get('mode') != row['mode']
                     or timestamp(event.get('recorded_at')) != timestamp(row['recorded_at'])
                     or str(trade.get('id')) != str(entry.trade_id)
