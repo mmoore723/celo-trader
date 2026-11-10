@@ -5,6 +5,7 @@ Source databases are read-only. Old holding archives are not changed.
 """
 import argparse
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import fcntl
 import hashlib
@@ -260,6 +261,45 @@ def discover(path, account, mode, registry, calendar, now):
     return {'source_database':'read_only','registered':added,'blocked':problems}
 
 
+class DiscoveryTask:
+    """One background discovery, with its own SQLite connection and no API calls."""
+    def __init__(self):
+        self.executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='capture-discovery')
+        self.future=None
+        self.started=None
+
+    @staticmethod
+    def run(root,path,account,mode,calendar,now):
+        started=time.monotonic(); registry=None
+        try:
+            registry=Registry(root)
+            result=discover(path,account,mode,registry,calendar,now)
+        except Exception as exc:
+            result={'source_database':'read_only','registered':0,
+                    'blocked':{'discovery_failed:'+type(exc).__name__:1}}
+        finally:
+            if registry is not None: registry.db.close()
+        return {'scope':scope_key(account,mode),'result':result,'seconds':time.monotonic()-started}
+
+    def submit(self,root,path,account,mode,calendar,now):
+        if self.future is not None: return False
+        self.started=time.monotonic()
+        self.future=self.executor.submit(self.run,root,path,account,mode,tuple(calendar),now)
+        return True
+
+    def take(self):
+        if self.future is None or not self.future.done(): return None
+        result=self.future.result(); self.future=None; self.started=None
+        return result
+
+    def health(self):
+        return {'running':self.future is not None,
+                'running_seconds':time.monotonic()-self.started if self.started is not None else 0}
+
+    def close(self):
+        self.executor.shutdown(wait=True)
+
+
 def main():
     parser=argparse.ArgumentParser(); parser.add_argument('--user',required=True); parser.add_argument('--once',action='store_true')
     args=parser.parse_args()
@@ -272,6 +312,7 @@ def main():
     calendar=[]; refresh=discover_at=publish_at=next_batch=0.; discovery={}; last_state=None
     discovery_scope=None
     timings={}
+    background=None if args.once else DiscoveryTask()
     while True:
         now=datetime.now(timezone.utc); state='waiting_for_market'; error=None
         try:
@@ -288,13 +329,25 @@ def main():
                 refresh=time.monotonic()+3600
             settings=get_settings(); account=settings.get('active_broker_account_id'); mode='paper' if settings.get('paper_trading',True) else 'live'
             active=any(a<=now<=b+timedelta(seconds=60) for a,b in calendar)
-            if time.monotonic()>=discover_at or discovery_scope!=scope_key(account,mode):
+            current_scope=scope_key(account,mode)
+            completed=background.take() if background else None
+            if completed is not None:
+                timings['discovery_seconds']=completed['seconds']
+                if completed['scope']==current_scope:
+                    discovery=completed['result']; discovery_scope=current_scope
+                    discover_at=time.monotonic()+(10 if active else 300)
+                else:
+                    discover_at=0  # Old account result never labels the new account ready.
+            if time.monotonic()>=discover_at or discovery_scope!=current_scope:
                 if not account: raise ValueError('capture_account_missing')
-                started=time.monotonic()
-                discovery=discover(root/('trades_'+mode+'.db'),account,mode,registry,calendar,now)
-                timings['discovery_seconds']=time.monotonic()-started
-                discovery_scope=scope_key(account,mode)
-                discover_at=time.monotonic()+(10 if active else 300)
+                if background:
+                    background.submit(root/'fast_capture',root/('trades_'+mode+'.db'),account,mode,calendar,now)
+                else:
+                    started=time.monotonic()
+                    discovery=discover(root/('trades_'+mode+'.db'),account,mode,registry,calendar,now)
+                    timings['discovery_seconds']=time.monotonic()-started
+                    discovery_scope=current_scope
+                    discover_at=time.monotonic()+(10 if active else 300)
             if active:
                 state='collecting'
                 if time.monotonic()>=max(feed.next_request,next_batch):
@@ -324,6 +377,7 @@ def main():
                 'discovery':discovery,'discovery_scope':discovery_scope,'scopes':registry.health(datetime.now(timezone.utc)),
                 'batch_size':BATCH,'request_interval_seconds':CADENCE,'capture_only':True,
                 'processing_timings':dict(timings),
+                'discovery_worker':background.health() if background else {'running':False,'running_seconds':0},
                 'experiment_evaluation_started':False}
             atomic_write_json(root/'fast_capture_health.json',report)
             signature=json.dumps([state,error,discovery.get('blocked')],sort_keys=True)

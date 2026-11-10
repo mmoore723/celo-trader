@@ -39,6 +39,16 @@ timestamps are not rewritten. Rollback uses deploy.sh to restore prior worker
 code; additive indexes may remain safely. No data deletion is required. Actual
 next-session cadence must still be measured before claiming the gaps are fixed.
 
+Discovery now runs in a single background task with its own SQLite connection.
+No second task is queued while it runs. Existing registered contracts continue
+polling. Failed discovery reports an explicit blocker and is retried; results
+from a prior account cannot label a different account ready. Health reports
+discovery elapsed time. The one-shot diagnostic command remains synchronous.
+This isolates discovery latency, not CPU usage; real market cadence still needs
+verification under the service's existing CPU and memory limits. Roll back this
+worker change via deploy.sh if contention, memory pressure or collection failures
+increase. Keep stored observations and existing indexes unchanged.
+
 ## Release and rollback
 
 Run the complete deploy.sh regression gate and verify GitHub/production identity.

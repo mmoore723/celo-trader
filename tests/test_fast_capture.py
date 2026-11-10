@@ -46,6 +46,44 @@ class FastCaptureTests(unittest.TestCase):
         self.assertFalse(any(s.upper().startswith(('BEGIN','INSERT','UPDATE')) for s in statements))
         self.assertEqual(100,json.loads(self.r.db.execute('SELECT metadata FROM registrations').fetchone()[0])['level'])
 
+    def test_slow_discovery_does_not_block_capture_or_queue_more_jobs(self):
+        from threading import Event
+        from strategy_health.fast_capture import DiscoveryTask
+        started,release=Event(),Event()
+        task=DiscoveryTask()
+        self.add()
+        def slow(*args):
+            started.set(); release.wait(3)
+            return {'registered':0,'blocked':{}}
+        try:
+            with patch('strategy_health.fast_capture.discover',side_effect=slow):
+                self.assertTrue(task.submit(self.root,self.root/'source.db','a','paper',[],NOW))
+                self.assertTrue(started.wait(2))
+                self.assertIsNone(task.take())
+                self.assertFalse(task.submit(self.root,self.root/'source.db','b','live',[],NOW))
+                self.r.record([SYMBOL],{'quotes':{'quote':self.quote()}},NOW,NOW)
+                self.assertEqual(1,self.r.db.execute('SELECT count(*) FROM observations').fetchone()[0])
+                release.set()
+                task.future.result(timeout=3)
+                result=task.take()
+                self.assertEqual(scope_key('a','paper'),result['scope'])
+                self.assertFalse(task.health()['running'])
+        finally:
+            release.set(); task.close()
+
+    def test_background_discovery_failure_is_explicit_and_retryable(self):
+        from strategy_health.fast_capture import DiscoveryTask
+        task=DiscoveryTask()
+        try:
+            with patch('strategy_health.fast_capture.discover',side_effect=RuntimeError('offline')):
+                task.submit(self.root,self.root/'source.db','a','paper',[],NOW)
+                task.future.result(timeout=3)
+                self.assertEqual({'discovery_failed:RuntimeError':1},task.take()['result']['blocked'])
+            self.assertTrue(task.submit(self.root,self.root/'missing.db','a','paper',[],NOW))
+            task.future.result(timeout=3)
+            self.assertEqual({'missing_source_database':1},task.take()['result']['blocked'])
+        finally: task.close()
+
     def test_capture_queries_use_contract_and_receipt_indexes(self):
         self.add()
         plans=[r[3] for r in self.r.db.execute('EXPLAIN QUERY PLAN SELECT id FROM registrations WHERE symbol=? AND entry_at<=? AND until_at>=?',(SYMBOL,NOW.isoformat(),NOW.isoformat()))]
