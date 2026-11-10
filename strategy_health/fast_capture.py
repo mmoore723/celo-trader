@@ -19,6 +19,7 @@ import time
 from strategy_health.session_capture import Feed, ET, objects, quote_validation
 
 CADENCE = 5
+BATCH_INTERVAL = 2  # Dispatch different due contracts without resetting their own cadence.
 BATCH = 600
 OCC = re.compile(r'^[A-Z.]{1,6}[0-9]{6}[CP][0-9]{8}$')
 
@@ -358,7 +359,7 @@ def main():
                     symbols=registry.due(now)
                     timings['due_query_seconds']=time.monotonic()-started
                     if symbols:
-                        next_batch=time.monotonic()+CADENCE
+                        next_batch=time.monotonic()+BATCH_INTERVAL
                         requested=datetime.now(timezone.utc)
                         try:
                             started=time.monotonic()
@@ -378,7 +379,8 @@ def main():
         if time.monotonic()>=publish_at or args.once:
             report={'heartbeat_at':datetime.now(timezone.utc).isoformat(),'status':state,'error':error,
                 'discovery':discovery,'discovery_scope':discovery_scope,'scopes':registry.health(datetime.now(timezone.utc)),
-                'batch_size':BATCH,'request_interval_seconds':CADENCE,'capture_only':True,
+                'batch_size':BATCH,'request_interval_seconds':BATCH_INTERVAL,
+                'per_contract_target_seconds':CADENCE,'capture_only':True,
                 'processing_timings':dict(timings),
                 'discovery_worker':background.health() if background else {'running':False,'running_seconds':0},
                 'experiment_evaluation_started':False}

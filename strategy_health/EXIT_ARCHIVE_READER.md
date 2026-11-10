@@ -49,6 +49,15 @@ verification under the service's existing CPU and memory limits. Roll back this
 worker change via deploy.sh if contention, memory pressure or collection failures
 increase. Keep stored observations and existing indexes unchanged.
 
+Batch dispatch spacing is two seconds, matching the existing feed request floor.
+Each registered contract retains a five-second due target. This allows different
+due batches to proceed without adding a five-second wait between every batch.
+The provider quota reserve/backoff remains authoritative. No contracts are removed,
+and five-second coverage is a target, not a guarantee. A 957-contract test proves
+600 plus 357 contracts are scheduled without duplicates or early repeat polling.
+Revert BATCH_INTERVAL to five through deploy.sh if quota/backoff or execution
+resource contention increases; retain all archived data and trading settings.
+
 ## Release and rollback
 
 Run the complete deploy.sh regression gate and verify GitHub/production identity.

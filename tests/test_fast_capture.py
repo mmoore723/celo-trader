@@ -38,6 +38,21 @@ class FastCaptureTests(unittest.TestCase):
         self.assertEqual(2,len(report[scope_key('paper-a','paper')]))
         self.assertEqual(1,len(report[scope_key('paper-b','paper')]))
 
+    def test_multi_batch_dispatch_keeps_five_second_per_contract_target(self):
+        from strategy_health.fast_capture import BATCH_INTERVAL,CADENCE
+        symbols=['SPY261120C'+str(50000000+i).zfill(8) for i in range(957)]
+        for symbol in symbols: self.add(symbol=symbol)
+        first=self.r.due(NOW)
+        self.assertEqual(600,len(first))
+        self.r.record(first,{'quotes':{'quote':[self.quote(s) for s in first]}},NOW,NOW)
+        at=NOW+timedelta(seconds=BATCH_INTERVAL)
+        second=self.r.due(at)
+        self.assertEqual(357,len(second)); self.assertFalse(set(first)&set(second))
+        self.r.record(second,{'quotes':{'quote':[self.quote(s,at) for s in second]}},at,at)
+        self.assertEqual([],self.r.due(NOW+timedelta(seconds=CADENCE-1)))
+        self.assertEqual(set(first),set(self.r.due(NOW+timedelta(seconds=CADENCE))))
+        self.assertEqual(set(symbols),set(first+second))
+
     def test_repeat_discovery_does_not_start_write_transaction(self):
         identity=self.add(); statements=[]
         self.r.db.set_trace_callback(statements.append)
