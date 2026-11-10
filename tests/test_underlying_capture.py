@@ -132,6 +132,28 @@ class CaptureTests(unittest.TestCase):
 
 
 class LevelTests(unittest.TestCase):
+    def test_existing_feature_levels_capture_both_sides_without_recalculation(self):
+        from strategy_health.structural_capture import RAW_LEVEL_FIELDS
+        bars = [SimpleNamespace(timestamp=NOW, low=1, high=999)]
+        for strategy, fields in RAW_LEVEL_FIELDS.items():
+            for side, field, key in [('long', fields[0], 'support'), ('short', fields[1], 'resistance')]:
+                candidate = SimpleNamespace(side=SimpleNamespace(value=side), timestamp=NOW,
+                    features={field: 100} if field else {}, stop=77)
+                out = entry_levels(strategy,candidate,bars,None,5)['structural_levels']
+                if field is None:
+                    self.assertEqual('missing',out['status'])
+                else:
+                    self.assertEqual(100,out[key]); self.assertEqual(field,out['source_field'])
+                    self.assertEqual((NOW+timedelta(minutes=5)).isoformat(),out['source_completed_at'])
+                self.assertEqual(77,candidate.stop)
+
+    def test_missing_raw_feature_never_falls_back_to_stop(self):
+        candidate = SimpleNamespace(side=SimpleNamespace(value='long'),timestamp=NOW,
+                                    features={},stop=77)
+        out=entry_levels('V2_AFTERNOON_COMPRESSION_BREAKOUT',candidate,
+                         [SimpleNamespace(timestamp=NOW)],None,1)
+        self.assertEqual('missing',out['structural_levels']['status'])
+
     def test_raw_touch_and_extreme_are_metadata_only(self):
         bars = [SimpleNamespace(timestamp=NOW-timedelta(minutes=5), low=90, high=110),
                 SimpleNamespace(timestamp=NOW, low=95, high=105)]

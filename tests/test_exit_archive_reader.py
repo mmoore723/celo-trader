@@ -145,6 +145,37 @@ class ArchiveReaderTests(unittest.TestCase):
         self.assertTrue(r['level'].evidence_id.startswith('original_candidate:'))
         self.assertFalse(r['independently_reconciled_fill'])
 
+    def test_raw_feature_requires_matching_original_level_evidence(self):
+        import sqlite3
+        self.original_entry(source_field='compression_low')
+        strategy='V2_AFTERNOON_COMPRESSION_BREAKOUT'
+        self.entry=replace(self.entry,scope=replace(self.entry.scope,strategy=strategy))
+        with sqlite3.connect(self.root/'trades_paper.db') as db:
+            meta=json.loads(db.execute('SELECT strategy_context_json FROM trades').fetchone()[0])
+            meta['compression_low']=590
+            db.execute('UPDATE trades SET strategy_id=?,strategy_context_json=?',(strategy,json.dumps(meta)))
+            db.execute('UPDATE shadow_candidates SET strategy_id=?,metadata_json=?',(strategy,json.dumps(meta)))
+        result=self.reader.entry_level(self.entry,'compression_low')
+        self.assertEqual(D(590),result['level'].value)
+        with sqlite3.connect(self.root/'trades_paper.db') as db:
+            meta['compression_low']=589
+            db.execute('UPDATE shadow_candidates SET metadata_json=?',(json.dumps(meta),))
+        with self.assertRaisesRegex(ValueError,'raw_level_evidence_mismatch'):
+            self.reader.entry_level(self.entry,'compression_low')
+
+    def test_raw_feature_without_original_capture_is_not_reconstructed(self):
+        import sqlite3
+        self.original_entry()
+        strategy='V2_AFTERNOON_COMPRESSION_BREAKOUT'
+        self.entry=replace(self.entry,scope=replace(self.entry.scope,strategy=strategy))
+        with sqlite3.connect(self.root/'trades_paper.db') as db:
+            meta=json.loads(db.execute('SELECT strategy_context_json FROM trades').fetchone()[0])
+            meta['compression_low']=590
+            db.execute('UPDATE trades SET strategy_id=?,strategy_context_json=?',(strategy,json.dumps(meta)))
+            db.execute('UPDATE shadow_candidates SET strategy_id=?,metadata_json=?',(strategy,json.dumps(meta)))
+        with self.assertRaisesRegex(ValueError,'raw_level_evidence_mismatch'):
+            self.reader.entry_level(self.entry,'compression_low')
+
     def test_late_level_blocked(self):
         self.original_entry(recorded_at=(T+timedelta(seconds=1)).isoformat())
         with self.assertRaisesRegex(ValueError,'availability_not_proven'):

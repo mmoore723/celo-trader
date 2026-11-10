@@ -71,12 +71,15 @@ class ExitArchiveReader:
     def entry_level(self, entry, field):
         """Read original linked candidate evidence, never later registry copies.
 
-        Only the existing structural_levels schema carries verified per-level
-        source and recording clocks. Other fields remain explicitly unsupported
-        until their original availability evidence is mapped, not inferred.
+        Require original structural_levels source and recording clocks. Raw
+        feature fields additionally require a matching captured source_field,
+        strategy mapping and value. Never infer availability for older records.
         """
         entry.scope.validate(); clock(entry.filled_at)
-        if field not in ('structural_levels.support','structural_levels.resistance'):
+        from strategy_health.structural_capture import RAW_LEVEL_FIELDS
+        raw_fields = RAW_LEVEL_FIELDS.get(entry.scope.strategy, ())
+        raw_field = field in raw_fields and field is not None
+        if field not in ('structural_levels.support','structural_levels.resistance') and not raw_field:
             raise ValueError('missing_level_availability_schema:'+field)
         with self._open('trades_'+entry.scope.mode+'.db') as db:
             trades=self._rows(db,'SELECT * FROM trades WHERE id=?',(str(entry.trade_id),))
@@ -119,7 +122,13 @@ class ExitArchiveReader:
         recorded=timestamp(levels.get('recorded_at'))
         if not completed<=recorded<=observed<=entry.filled_at:
             raise ValueError('entry_level_availability_not_proven')
-        if money(levels.get(field.split('.')[-1]))<=0:
+        level_key = field.split('.')[-1]
+        if raw_field:
+            level_key = 'support' if raw_fields[0] == field else 'resistance'
+            if (levels.get('source_field') != field or metadata.get(field) != context.get(field)
+                    or metadata.get(field) != levels.get(level_key)):
+                raise ValueError('entry_raw_level_evidence_mismatch')
+        if money(levels.get(level_key))<=0:
             raise ValueError('invalid_entry_level')
         digest=hashlib.sha256(json.dumps(metadata,sort_keys=True,separators=(',',':')).encode()).hexdigest()
         evidence='original_candidate:'+str(candidate['candidate_id'])+':'+digest
