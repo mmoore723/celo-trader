@@ -99,6 +99,8 @@ def record_router_candidate(ticker: str, signal: object, underlying_price: float
                         if repeatable else uuid4().hex)
         observed = _now_et()
         observed_at = observed.isoformat()
+        from strategy_health.structural_capture import router_entry_levels
+        meta.update(router_entry_levels(signal, observed))
         try:
             entry_price = float(underlying_price) if underlying_price is not None else None
             if entry_price is not None and entry_price <= 0:

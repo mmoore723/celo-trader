@@ -76,8 +76,8 @@ class ExitArchiveReader:
         strategy mapping and value. Never infer availability for older records.
         """
         entry.scope.validate(); clock(entry.filled_at)
-        from strategy_health.structural_capture import RAW_LEVEL_FIELDS
-        raw_fields = RAW_LEVEL_FIELDS.get(entry.scope.strategy, ())
+        from strategy_health.structural_capture import LEVEL_FIELDS
+        raw_fields = LEVEL_FIELDS.get(entry.scope.strategy, ())
         raw_field = field in raw_fields and field is not None
         if field not in ('structural_levels.support','structural_levels.resistance') and not raw_field:
             raise ValueError('missing_level_availability_schema:'+field)
