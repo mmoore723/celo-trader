@@ -202,7 +202,8 @@ def discover(path, account, mode, registry, calendar, now):
     with closing(sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True,timeout=.2)) as db:
         db.row_factory=sqlite3.Row
         started=time.monotonic()
-        db.set_progress_handler(lambda:int(time.monotonic()-started>1),1000)
+        # Runs off the polling loop. Allow bounded wall time under CPU quota.
+        db.set_progress_handler(lambda:int(time.monotonic()-started>15),1000)
         tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         sources=[]
         if 'trades' in tables:
@@ -276,7 +277,8 @@ class DiscoveryTask:
             result=discover(path,account,mode,registry,calendar,now)
         except Exception as exc:
             result={'source_database':'read_only','registered':0,
-                    'blocked':{'discovery_failed:'+type(exc).__name__:1}}
+                    'blocked':{'discovery_failed:'+type(exc).__name__:1},
+                    'error_code':getattr(exc,'sqlite_errorname',type(exc).__name__)}
         finally:
             if registry is not None: registry.db.close()
         return {'scope':scope_key(account,mode),'result':result,'seconds':time.monotonic()-started}
@@ -335,7 +337,8 @@ def main():
                 timings['discovery_seconds']=completed['seconds']
                 if completed['scope']==current_scope:
                     discovery=completed['result']; discovery_scope=current_scope
-                    discover_at=time.monotonic()+(10 if active else 300)
+                    failed=any(k.startswith('discovery_failed:') for k in discovery.get('blocked',{}))
+                    discover_at=time.monotonic()+(10 if active or failed else 300)
                 else:
                     discover_at=0  # Old account result never labels the new account ready.
             if time.monotonic()>=discover_at or discovery_scope!=current_scope:
