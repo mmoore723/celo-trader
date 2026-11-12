@@ -1,116 +1,66 @@
-/**
- * marketStructure.ts — swing-point detection + trend-structure classification.
- *
- * Single source of truth: this used to be hand-duplicated (same algorithm,
- * copy-pasted) between TradingChart.tsx and KChart.tsx. Both old files are
- * being retired in favor of one engine that imports this once.
- *
- * Two layers:
- *   1. detectSwings()      — raw pivot-high/pivot-low detection + HH/HL/LH/LL
- *                            labeling from consecutive same-kind pivots
- *                            (unchanged algorithm from the old chart files).
- *   2. classifyStructure() — NEW: walks the swing sequence and tags the first
- *      swing that breaks the prevailing trend as CHoCH (Change of Character),
- *      and any swing that *confirms* the new trend afterward as BOS (Break
- *      of Structure). This is the same distinction ICT/SMC-style market-
- *      structure reading uses. It is a client-side classification only — the
- *      this is a purely descriptive chart overlay for teaching, not a
- *      production strategy signal.
+/** Chart-only structure, not an execution policy. Fixed five-bar pivots.
+ * Labels use the following bar: confirmation candle has closed, no backdating.
+ * This is candle-based confirmation, not proof of bot receipt time.
  */
 import type { Bar } from "../../lib/api";
-
+export const SWING_CONFIRMATION_BARS = 5;
 export interface SwingPoint {
-  idx: number;
-  time: string;     // ISO — caller converts to whatever Time type it needs
-  price: number;
-  kind: "SH" | "SL";
-  label: "SH" | "SL" | "HH" | "LH" | "HL" | "LL";
+  idx: number; confirmedIdx: number; time: string; pivotTime: string; price: number;
+  kind: "SH" | "SL"; label: "SH" | "SL" | "HH" | "LH" | "HL" | "LL";
 }
-
-export interface StructureEvent extends SwingPoint {
-  /** "bos" = confirms the current trend direction continuing.
-   *  "choch" = first swing that broke the prior trend — a heads-up, not a signal. */
-  structure: "bos" | "choch" | null;
-  trend: "up" | "down" | null;
-}
-
-export function detectSwings(bars: Bar[], lookback = 3): SwingPoint[] {
-  const rawHighs: { idx: number; price: number }[] = [];
-  const rawLows: { idx: number; price: number }[] = [];
-
-  for (let i = lookback; i < bars.length - lookback; i++) {
-    const b = bars[i];
-    let isHigh = true, isLow = true;
-    for (let j = i - lookback; j <= i + lookback; j++) {
-      if (j === i) continue;
-      if (bars[j].high >= b.high) isHigh = false;
-      if (bars[j].low <= b.low) isLow = false;
-    }
-    if (isHigh) rawHighs.push({ idx: i, price: b.high });
-    if (isLow) rawLows.push({ idx: i, price: b.low });
-  }
-
+export function detectSwings(bars: Bar[], lookback = SWING_CONFIRMATION_BARS): SwingPoint[] {
+  if (!Number.isInteger(lookback) || lookback < 1) return [];
   const out: SwingPoint[] = [];
-
-  let prevHighPrice: number | null = null;
-  for (const h of rawHighs) {
-    const label: SwingPoint["label"] =
-      prevHighPrice === null ? "SH" : h.price > prevHighPrice ? "HH" : "LH";
-    prevHighPrice = h.price;
-    out.push({ idx: h.idx, time: bars[h.idx].time, price: h.price, kind: "SH", label });
+  let lastHigh: number | undefined, lastLow: number | undefined;
+  for (let i = lookback; i + lookback + 1 < bars.length; i++) {
+    const b = bars[i];
+    const neighbors = bars.slice(i-lookback, i).concat(bars.slice(i+1, i+lookback+1));
+    const confirmedIdx = i + lookback + 1;
+    const base = { idx:i, confirmedIdx, time:bars[confirmedIdx].time, pivotTime:b.time };
+    if (neighbors.every(n => b.high > n.high)) {
+      out.push({ ...base, price:b.high, kind:"SH", label:lastHigh == null ? "SH" : b.high > lastHigh ? "HH" : "LH" });
+      lastHigh = b.high;
+    }
+    if (neighbors.every(n => b.low < n.low)) {
+      out.push({ ...base, price:b.low, kind:"SL", label:lastLow == null ? "SL" : b.low > lastLow ? "HL" : "LL" });
+      lastLow = b.low;
+    }
   }
-
-  let prevLowPrice: number | null = null;
-  for (const l of rawLows) {
-    const label: SwingPoint["label"] =
-      prevLowPrice === null ? "SL" : l.price > prevLowPrice ? "HL" : "LL";
-    prevLowPrice = l.price;
-    out.push({ idx: l.idx, time: bars[l.idx].time, price: l.price, kind: "SL", label });
-  }
-
-  out.sort((a, b) => a.idx - b.idx);
   return out;
 }
-
-/**
- * Walk a swing sequence and tag BOS / CHoCH.
- *
- * Rule (deliberately simple and explainable, not a proprietary indicator):
- *   - Track a running "trend" state: starts null (undetermined) until we see
- *     two consecutive same-direction swings (HH followed by HL, or LH
- *     followed by LL) — that establishes "up" or "down".
- *   - Once a trend is established, any swing that CONTINUES it (another HH
- *     or HL while up; another LH or LL while down) is tagged "bos".
- *   - The first swing that CONTRADICTS the established trend (an LH or LL
- *     appearing while trend="up"; an HH or HL appearing while trend="down")
- *     is tagged "choch" and flips the trend state.
- *   - SH/SL (first-ever pivot, no prior comparison) are untagged (null).
+export interface StructureLabel {
+  time: string; text: string; direction: "up" | "down" | "neutral"; event: boolean;
+}
+/** A break is a completed close through an already confirmed pivot.
+ * HH alone is not CHoCH. Only the opposite break changes directional state.
  */
-export function classifyStructure(swings: SwingPoint[]): StructureEvent[] {
-  const out: StructureEvent[] = [];
-  let trend: "up" | "down" | null = null;
-
-  for (const sw of swings) {
-    let structure: StructureEvent["structure"] = null;
-    const bullishSwing = sw.label === "HH" || sw.label === "HL";
-    const bearishSwing = sw.label === "LH" || sw.label === "LL";
-
-    if (bullishSwing || bearishSwing) {
-      const swingTrend: "up" | "down" = bullishSwing ? "up" : "down";
-      if (trend === null) {
-        // First directional swing just seeds the trend — nothing to compare
-        // against yet, so it's neither a continuation nor a reversal.
-        trend = swingTrend;
-      } else if (swingTrend === trend) {
-        structure = "bos";
-      } else {
-        structure = "choch";
-        trend = swingTrend;
-      }
+export function structureLabels(bars: Bar[], includeBreaks = true): StructureLabel[] {
+  const swings = detectSwings(bars);
+  const out: StructureLabel[] = swings.map(s => ({ time:s.time,
+    text:`${s.label} confirmed`, event:false,
+    direction:s.label === "HH" || s.label === "HL" ? "up" : s.label === "LH" || s.label === "LL" ? "down" : "neutral" }));
+  if (!includeBreaks) return out;
+  let high: SwingPoint | undefined, low: SwingPoint | undefined;
+  let brokenHigh: number | undefined, brokenLow: number | undefined;
+  let trend: "up" | "down" | undefined;
+  let si = 0;
+  for (let i = 1; i < bars.length; i++) {
+    // Levels must be known before the candle being tested began.
+    while (si < swings.length && swings[si].confirmedIdx <= i-1) {
+      const s = swings[si++];
+      if (s.kind === "SH") high=s; else low=s;
     }
-
-    out.push({ ...sw, structure, trend });
+    const close = bars[i-1].close;
+    let direction: "up" | "down" | undefined;
+    if (high && high.idx !== brokenHigh && close > high.price) {
+      direction="up"; brokenHigh=high.idx;
+    } else if (low && low.idx !== brokenLow && close < low.price) {
+      direction="down"; brokenLow=low.idx;
+    }
+    if (!direction) continue;
+    const kind = trend == null ? "break" : trend === direction ? "BOS" : "CHoCH";
+    out.push({ time:bars[i].time, text:`${direction === "up" ? "Bullish" : "Bearish"} ${kind}`, direction, event:true });
+    trend=direction;
   }
-
-  return out;
+  return out.sort((a,b) => a.time.localeCompare(b.time));
 }

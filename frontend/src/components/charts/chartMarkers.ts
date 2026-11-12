@@ -8,7 +8,7 @@ import { createSeriesMarkers } from "lightweight-charts";
 import type { ISeriesApi, ISeriesMarkersPluginApi, SeriesMarker, Time } from "lightweight-charts";
 import type { OverlayInputs } from "./chartOverlays";
 import type { ChartPalette } from "./palette";
-import { detectSwings, classifyStructure } from "./marketStructure";
+import { structureLabels } from "./marketStructure";
 import { gradeBeforeEntry } from "./executionGrade";
 import { toEpochTime } from "./zoneBands";
 
@@ -45,20 +45,12 @@ export function buildAndApplyMarkers(
   }
 
   if (input.showSwings) {
-    // Longer views used to label nearly every minor pivot, hiding the candles.
-    // Use a wider pivot window as more bars enter the view, prefer actual
-    // BOS/CHoCH events, and cap the final teaching markers.
-    const lookback = input.bars.length >= 400 ? 8 : input.bars.length >= 200 ? 6 : input.bars.length >= 100 ? 5 : 3;
-    const swings = classifyStructure(detectSwings(input.bars, lookback));
-    const candidates = input.showStructure ? swings.filter((sw) => sw.structure) : swings;
-    const stride = Math.max(1, Math.ceil(candidates.length / 18));
-    for (const [index, sw] of candidates.entries()) {
-      if (index % stride !== 0 && index !== candidates.length - 1) continue;
-      const isHigh = sw.kind === "SH";
-      const color = sw.label === "HH" || sw.label === "HL" ? P.structureUp : P.structureDown;
-      let text = sw.label as string;
-      if (input.showStructure && sw.structure) text = `${sw.label} · ${sw.structure === "choch" ? "CHoCH" : "BOS"}`;
-      markers.push({ time: toEpochTime(sw.time), position: isHigh ? "aboveBar" : "belowBar", color: sw.structure === "choch" ? P.choch : color, shape: isHigh ? "arrowDown" : "arrowUp", text, size: sw.structure ? 2 : 1 });
+    for (const label of structureLabels(input.bars, input.showStructure).slice(-18)) {
+      const up = label.direction === "up";
+      markers.push({ time:toEpochTime(label.time), position:up ? "belowBar" : "aboveBar",
+        color:label.direction === "neutral" ? P.choch : up ? P.structureUp : P.structureDown,
+        shape:label.event ? (up ? "arrowUp" : "arrowDown") : "circle",
+        text:label.text, size:label.event ? 2 : 1 });
     }
   }
 
@@ -67,7 +59,8 @@ export function buildAndApplyMarkers(
       // Strategy annotations can also contain structure shorthand. Respect
       // the same Structure toggle so disabling it truly declutters the chart.
       const isStructureAnnotation = /(?:^|[\s·:_-])(HH|HL|LH|LL|SH|SL|BOS|CHOCH)(?:$|[\s·:_-])/i.test(ann.label);
-      if (isStructureAnnotation && !input.showSwings) continue;
+      // Legacy annotations lack confirmation timestamps. Suppress hindsight arrows.
+      if (isStructureAnnotation) continue;
       const isBullish = ann.direction === "bullish";
       markers.push({ time: toEpochTime(ann.ts), position: isBullish ? "belowBar" : "aboveBar", color: ann.color, shape: ann.strategy === "veto" ? "square" : isBullish ? "arrowUp" : "arrowDown", text: ann.label, size: ann.strategy === "veto" ? 1 : 2 });
     }

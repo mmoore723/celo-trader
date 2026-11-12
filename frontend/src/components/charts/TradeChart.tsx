@@ -185,6 +185,7 @@ export function TradeChart({
 
   return (
     <div className="flex flex-col w-full" onWheel={(e) => e.stopPropagation()}>
+      {showSwings && <p className="text-xs text-muted px-2 py-1" title="Five candles on each side confirm a swing. Markers appear after confirmation, not at the earlier high or low. A bullish/bearish break requires a completed close beyond a confirmed swing. Historical candle timing is not the bot's data-receipt time.">Structure: confirmed later, not at the peak. Chart context only, not bot exit signals.</p>}
       {showExecutionGrade && trades.length > 0 && <p className="text-xs text-muted px-2 py-1">Candle grade describes the completed candle before entry, not the strategy signal or chance of profit.</p>}
       <div className="relative w-full" style={{ height }}>
         <div className="absolute top-2 left-3 z-10" style={{ pointerEvents: "none" }}>
