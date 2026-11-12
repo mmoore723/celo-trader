@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'premium-integration-20261112.2'
+REVISION = 'premium-integration-20261112.3'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

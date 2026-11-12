@@ -22,6 +22,17 @@ class RecommendationSnapshotTests(unittest.TestCase):
     def setUp(self):
         snapshot._offers.clear()
 
+    def test_premium_review_preserves_eight_counts_and_confidence_without_trade_payloads(self):
+        from strategy_health.premium_rules import RULES
+        data,_=matrix()
+        report={'bucket':'test','candidates':[dict(rule=r,confidence=.99375,tested_exits=8,trades=[{'private_evidence':'detail only'}]) for r in RULES]}
+        data['strategies'][0]['pairs'][0]['premium_exit_research']=report
+        settings={'paper_trading':True}
+        snapshot.remember(data,settings)
+        saved=snapshot.for_decision(settings)['strategies'][0]['pairs'][0]['premium_exit_research']
+        self.assertEqual(len(saved['candidates']),8)
+        self.assertTrue(all(c['confidence']==.99375 and c['tested_exits']==8 and 'trades' not in c for c in saved['candidates']))
+
     def test_click_uses_server_evidence_without_aggregate_rebuild_or_balance_dependency(self):
         data, evidence = matrix()
         settings = {'paper_trading': True, 'risk_per_trade': .38, 'last_known_balance': 4000}

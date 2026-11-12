@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { request, type StrategyTickerRecommendation, type StrategyTickerResearchPair } from "../../lib/api";
+import { request, type PremiumExitReport, type StrategyTickerRecommendation, type StrategyTickerResearchPair } from "../../lib/api";
+import { PremiumExitEvidence } from '../research/PremiumExitEvidence';
 import { strategyName } from "../../lib/strategyIdentity.js";
 import { StrategyIdentity } from "./StrategyIdentity";
 import { ResearchPairControl } from "../research/ResearchPairControl";
@@ -23,11 +24,14 @@ type ActivationReview = {
   execution_review_errors: string[];
 };
 
-export function StrategyRecommendations({ recommendations, onDecision }: {
+export function StrategyRecommendations({ recommendations, onDecision, premiumReviews = [] }: {
+  premiumReviews?: PremiumExitReport[];
   recommendations: StrategyTickerRecommendation[];
   onDecision: (item: StrategyTickerRecommendation, decision: PairDecision) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [premiumBucket,setPremiumBucket]=useState('');
+  const premiumReport=premiumReviews.find(r=>r.bucket===premiumBucket) ?? premiumReviews[0];
   const [error, setError] = useState("");
   const [blocked, setBlocked] = useState<StrategyTickerRecommendation | null>(null);
   const [review, setReview] = useState<ActivationReview | null>(null);
@@ -50,6 +54,16 @@ export function StrategyRecommendations({ recommendations, onDecision }: {
     finally { setBusy(false); }
   }
   return <>
+    <section className="card p-4" aria-label="Profit-taking Auto Review">
+      <h3 className="text-sm font-semibold">Profit-taking exit review</h3>
+      <p className="text-xs">Each exit is checked separately against the recorded deployed exit. Insufficient evidence prevents approval.</p>
+      {premiumReport ? <>
+        <label className="text-sm">Strategy and ticker <select className="input my-2" value={premiumReport.bucket} onChange={e=>setPremiumBucket(e.target.value)}>
+          {premiumReviews.map(r=><option key={r.bucket} value={r.bucket}>{strategyName(r.strategy_id)} · {r.ticker} · {r.strategy_version}</option>)}
+        </select></label>
+        <PremiumExitEvidence report={premiumReport} />
+      </> : <p className="text-xs">The background worker has not published an exit review for this account yet.</p>}
+    </section>
     {error && <p role="alert" className="text-sm" style={{color: "var(--negative)"}}>{error}</p>}
     {(["new_match", "review_active"] as const).map(kind => {
       const rows = recommendations.filter(item => item.kind === kind);

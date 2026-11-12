@@ -9,6 +9,11 @@ const source = readFileSync(new URL("../src/components/settings/StrategyRecommen
 let compiled = ts.transpileModule(source, {compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext}}).outputText;
 compiled = compiled.replace('import { request } from "../../lib/api";', 'const request = async () => { throw new Error("No API calls during static render"); };');
 compiled = compiled.replace('import { ResearchPairControl } from "../research/ResearchPairControl";', 'const ResearchPairControl = () => null;');
+let premium = ts.transpileModule(readFileSync(new URL('../src/components/research/PremiumExitEvidence.tsx', import.meta.url), 'utf8'), {compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
+premium = premium.replace(/import \{ request \} from ['"]..\/..\/lib\/api['"];?/, 'const request = async () => { throw new Error("No API calls during static render"); };');
+premium = premium.replace(/import \{ useAuth \} from ['"]..\/..\/contexts\/AuthContext['"];?/, 'const useAuth = () => ({user: null});');
+for (const name of ["react", "react/jsx-runtime"]) premium = premium.replaceAll(JSON.stringify(name), JSON.stringify(import.meta.resolve(name))).replaceAll("'" + name + "'", JSON.stringify(import.meta.resolve(name)));
+compiled = compiled.replace("'../research/PremiumExitEvidence'", JSON.stringify('data:text/javascript;base64,' + Buffer.from(premium).toString('base64')));
 const dates = ts.transpileModule(readFileSync(new URL('../src/lib/evidencePeriod.ts', import.meta.url), 'utf8'), {compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
 const rules = ts.transpileModule(readFileSync(new URL('../src/lib/researchRuleText.ts', import.meta.url), 'utf8'), {compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
 compiled = compiled.replace('"../../lib/researchRuleText"', JSON.stringify('data:text/javascript;base64,' + Buffer.from(rules).toString('base64')));
@@ -61,4 +66,14 @@ test('activation uses the shared research settings modal, not an approval queue'
   assert.match(source, /pair=\{review.research_pair\}/);
   assert.match(source, /Exact recorded parameters/);
   assert.doesNotMatch(source, /Save implementation approval|Which rules should be implemented|Coverage and missing data/);
+});
+
+test('Auto Review renders persisted eight-exit confidence and bucket selector', () => {
+  const report = {bucket:'test', strategy_id:'V2_SPY_TREND_CONT', ticker:'SPY', strategy_version:'1', candidates:[{rule:'gain_2pct',label:'2% Premium Gain',paired_trades:0,sessions:0,coverage:0,baseline:{},candidate:{},confidence:.99375,tested_exits:8,status:'collecting',exclusions:{},historical:{paired_trades:0}}], baseline_source:'Recorded deployed exit', specification:'premium-exits-v2', execution_validation:null};
+  const html = renderToStaticMarkup(createElement(StrategyRecommendations, {recommendations:[], premiumReviews:[report], onDecision:async()=>{}}));
+  assert.match(html, /Profit-taking exit review/);
+  assert.match(html, /<select/);
+  assert.match(html, /Recorded deployed exit/);
+  assert.match(html, /99.375/);
+  assert.match(html, /8 exit tests/);
 });

@@ -21,14 +21,21 @@ def _scope(settings):
 
 
 def remember(matrix, settings):
+    def compact_pair(pair):
+        result={key:deepcopy(pair[key]) for key in
+            ('ticker','tradable','research_contract_profile','recommendation','setups',
+             'option_results','option_result_days','quote_coverage_pct','mistimed_quotes_ignored',
+             'contract_selection_reasons','exit_comparison','contract_tests') if key in pair}
+        report=pair.get('premium_exit_research')
+        if report:
+            report=report.get('execution_validation',report)
+            result['premium_exit_research']={**{k:deepcopy(v) for k,v in report.items() if k not in ('candidates','execution_validation')},
+                'candidates':[{k:deepcopy(v) for k,v in c.items() if k!='trades'} for c in report['candidates']]}
+        return result
     compact = {'strategies': [{
         'strategy_id': strategy['strategy_id'], 'version': strategy['version'],
         'display_name': strategy['display_name'],
-        'pairs': [{key: deepcopy(pair[key]) for key in
-                   ('ticker', 'tradable', 'research_contract_profile', 'recommendation', 'setups',
-                    'option_results', 'option_result_days', 'quote_coverage_pct',
-                    'mistimed_quotes_ignored', 'contract_selection_reasons', 'exit_comparison', 'contract_tests') if key in pair}
-                  for pair in strategy['pairs'] if pair.get('recommendation')],
+        'pairs': [compact_pair(pair) for pair in strategy['pairs'] if pair.get('recommendation') or pair.get('premium_exit_research')],
     } for strategy in matrix['strategies']]}
     scope = _scope(settings)
     with _lock:

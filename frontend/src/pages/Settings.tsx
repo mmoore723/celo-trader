@@ -491,6 +491,7 @@ export function Settings() {
       <div className="settings-paired-grid">
       {recommendationsFailed ? <div className="card p-4 text-sm" role="alert">Recommendations could not load. <button className="btn btn-ghost" onClick={() => refreshRecommendations()}>Try again</button></div> : recommendationsLoading ? <p role="status" className="text-sm">Checking strategy recommendations…</p> : <StrategyRecommendations
         recommendations={strategyRecommendations?.recommendations ?? []}
+        premiumReviews={strategyRecommendations?.premium_exit_reviews ?? []}
         onDecision={decideRecommendation}
       />}
       </div>

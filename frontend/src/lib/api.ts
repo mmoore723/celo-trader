@@ -11,6 +11,7 @@ export interface PremiumExitMetrics {
   drawdown: number; profit_factor: number | 'infinite' | null;
 }
 export interface PremiumExitReport {
+  strategy_id: string; ticker: string; strategy_version: string;
   bucket: string; specification: string; updated_at: string; fingerprint: string;
   baseline_source?: string; execution_validation?: PremiumExitReport;
   candidates: { rule: string; label: string; paired_trades: number; sessions: number;
@@ -1403,7 +1404,7 @@ export const api = {
     strategyRemovals: () => request<{can_restore: boolean; research_tickers: string[]; universe_source: string; strategies: {strategy_id: string; version: string; display_name: string; removed: boolean}[]}>("/api/settings/strategies/removal"),
     removeStrategy: (strategy_id: string, version: string, removed: boolean) => request<{ok: boolean}>("/api/settings/strategies/removal", {method: "POST", body: JSON.stringify({strategy_id, version, removed})}),
     strategyHistory: (limit = 20) => request<{changes: StrategySettingChange[]}>(`/api/settings/strategies/history?limit=${limit}`),
-    recommendations: () => request<{recommendations: StrategyTickerRecommendation[]}>("/api/settings/strategies/recommendations"),
+    recommendations: () => request<{recommendations: StrategyTickerRecommendation[]; premium_exit_reviews?: PremiumExitReport[]}>("/api/settings/strategies/recommendations"),
     decidePair: (item: StrategyTickerRecommendation, decision: "enable" | "keep_off" | "research_only" | "keep_trading") =>
       request<{ok: boolean}>(`/api/settings/strategies/recommendations/${encodeURIComponent(item.strategy_id)}/${encodeURIComponent(item.ticker)}`,
         {method: "POST", body: JSON.stringify({decision, fingerprint: item.fingerprint})}),
