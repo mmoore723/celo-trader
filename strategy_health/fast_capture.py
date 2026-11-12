@@ -85,6 +85,9 @@ class Registry:
             symbol TEXT PRIMARY KEY, attempted_at TEXT, received_at TEXT,
             next_at REAL DEFAULT 0, failures INTEGER DEFAULT 0, error TEXT,
             max_gap REAL DEFAULT 0, gaps_over_10 INTEGER DEFAULT 0);
+          CREATE TABLE IF NOT EXISTS batches (
+            requested_at TEXT PRIMARY KEY, received_at TEXT, write_finished_at TEXT,
+            contracts INTEGER, fresh INTEGER, missing INTEGER, write_seconds REAL);
           CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY, recorded_at TEXT, kind TEXT, detail TEXT);
           CREATE INDEX IF NOT EXISTS registration_contract_window ON registrations(symbol,entry_at,until_at);
@@ -135,22 +138,37 @@ class Registry:
             if symbol not in symbols or symbol in by_symbol:
                 raise ValueError('unexpected_or_duplicate_contract')
             by_symbol[symbol] = row
+        started=time.monotonic()
+        # Fetch shared registration/poll state once, then persist one atomic batch.
+        # Keep both source/receipt clocks and every registration link unchanged.
+        placeholders=','.join('?' for _ in symbols)
+        requested_text=requested.isoformat(); received_text=received.isoformat()
         with self.db:
+            prior={r['symbol']:r['received_at'] for r in self.db.execute(
+                f'SELECT symbol,received_at FROM polling WHERE symbol IN ({placeholders})',symbols)}
+            existing={r[0] for r in self.db.execute(
+                f'SELECT symbol FROM observations WHERE received_at=? AND symbol IN ({placeholders})',
+                [received_text,*symbols])}
+            links=[(r['id'],r['symbol'],received_text) for r in self.db.execute(
+                f'SELECT id,symbol FROM registrations WHERE symbol IN ({placeholders}) AND entry_at<=? AND until_at>=?',
+                [*symbols,requested_text,requested_text])]
+            observations=[]; updates=[]; fresh=missing=0
             for symbol in symbols:
-                raw = by_symbol.get(symbol, {'symbol':symbol,'capture_error':'missing_provider_quote'})
-                valid = quote_validation(raw,received)
-                inserted = self.db.execute('INSERT OR IGNORE INTO observations VALUES (?,?,?,?,?)',
-                    (symbol,received.isoformat(),requested.isoformat(),valid,json.dumps(raw,allow_nan=False))).rowcount
-                self.db.execute('''INSERT OR IGNORE INTO links SELECT id,?,? FROM registrations
-                    WHERE symbol=? AND entry_at<=? AND until_at>=?''',
-                    (symbol,received.isoformat(),symbol,requested.isoformat(),requested.isoformat()))
-                if inserted:
-                    prior = self.db.execute('SELECT received_at FROM polling WHERE symbol=?',(symbol,)).fetchone()[0]
-                    gap = max(0,(received-stamp(prior)).total_seconds()) if prior else 0
-                    self.db.execute('''UPDATE polling SET attempted_at=?,received_at=?,next_at=?,failures=0,
-                        error=?,max_gap=max(max_gap,?),gaps_over_10=gaps_over_10+? WHERE symbol=?''',
-                        (requested.isoformat(),received.isoformat(),requested.timestamp()+CADENCE,
-                         None if valid=='fresh' else valid,gap,int(gap>10),symbol))
+                raw=by_symbol.get(symbol,{'symbol':symbol,'capture_error':'missing_provider_quote'})
+                valid=quote_validation(raw,received)
+                fresh+=int(valid=='fresh'); missing+=int(symbol not in by_symbol)
+                observations.append((symbol,received_text,requested_text,valid,json.dumps(raw,allow_nan=False)))
+                if symbol not in existing:
+                    previous=prior.get(symbol)
+                    gap=max(0,(received-stamp(previous)).total_seconds()) if previous else 0
+                    updates.append((requested_text,received_text,requested.timestamp()+CADENCE,
+                        None if valid=='fresh' else valid,gap,int(gap>10),symbol))
+            self.db.executemany('INSERT OR IGNORE INTO observations VALUES (?,?,?,?,?)',observations)
+            self.db.executemany('INSERT OR IGNORE INTO links VALUES (?,?,?)',links)
+            self.db.executemany('''UPDATE polling SET attempted_at=?,received_at=?,next_at=?,failures=0,
+                error=?,max_gap=max(max_gap,?),gaps_over_10=gaps_over_10+? WHERE symbol=?''',updates)
+            self.db.execute('INSERT OR IGNORE INTO batches VALUES (?,?,?,?,?,?,?)',
+                (requested_text,received_text,datetime.now(timezone.utc).isoformat(),len(symbols),fresh,missing,time.monotonic()-started))
 
     def fail(self, symbols, now, reason):
         with self.db:
@@ -200,7 +218,7 @@ def discover(path, account, mode, registry, calendar, now, *, broker_only=False)
     if not Path(path).is_file():
         return {'source_database':'missing','registered':0,'blocked':{'missing_source_database':1}}
     cutoff=(now.astimezone(ET).date()-timedelta(days=10)).isoformat()
-    problems={}; added=0; errors=[]
+    problems={}; unavailable={}; added=0; errors=[]
     with closing(sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True,timeout=.2)) as db:
         db.row_factory=sqlite3.Row
         started=time.monotonic()
@@ -231,7 +249,8 @@ def discover(path, account, mode, registry, calendar, now, *, broker_only=False)
             sources.append(('research_expiration_study','''SELECT s.candidate_id||':'||q.profile_version AS origin_id,
                 s.ticker,s.strategy_id,
                 CASE WHEN json_valid(q.state_json) THEN json_extract(q.state_json,'$.contract_symbol') END AS contract_symbol,
-                CASE WHEN json_valid(q.state_json) THEN json_extract(q.state_json,'$.entry_quote_at') END AS entry_at,s.metadata_json AS metadata
+                CASE WHEN json_valid(q.state_json) THEN json_extract(q.state_json,'$.entry_quote_at') END AS entry_at,s.metadata_json AS metadata,
+                CASE WHEN json_valid(q.state_json) THEN json_extract(q.state_json,'$.status') END AS selection_status
                 FROM shadow_candidates s JOIN research_expiration_comparisons q ON s.candidate_id=q.candidate_id
                 WHERE s.broker_account_id=? AND s.observed_at>=?
                 ORDER BY s.observed_at LIMIT 10001''',(account,cutoff)))
@@ -252,6 +271,9 @@ def discover(path, account, mode, registry, calendar, now, *, broker_only=False)
             for row in rows:
                 try:
                     meta=json.loads(row['metadata'] or '{}')
+                    if not row['contract_symbol'] and 'selection_status' in row.keys() and row['selection_status']=='no_contract':
+                        unavailable['no_contract_selected']=unavailable.get('no_contract_selected',0)+1
+                        continue
                     if not row['contract_symbol']:
                         raise ValueError('source_contract_missing')
                     if not row['entry_at']:
@@ -279,7 +301,7 @@ def discover(path, account, mode, registry, calendar, now, *, broker_only=False)
                 except (ValueError,TypeError,KeyError,AttributeError) as exc:
                     reason=str(exc) if isinstance(exc,ValueError) and str(exc).startswith(('capture_','source_')) else type(exc).__name__
                     problems[reason]=problems.get(reason,0)+1
-    return {'source_database':'read_only','registered':added,'blocked':problems,'errors':errors}
+    return {'source_database':'read_only','registered':added,'blocked':problems,'errors':errors,'unavailable':unavailable}
 
 
 class DiscoveryTask:
@@ -440,7 +462,7 @@ def main():
             registry.db.close()
             lock.close()
             return
-        time.sleep(1)
+        time.sleep(.1 if active else 1)
 
 
 if __name__=='__main__': main()

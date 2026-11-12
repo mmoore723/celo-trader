@@ -53,6 +53,19 @@ class FastCaptureTests(unittest.TestCase):
         self.assertEqual(set(first),set(self.r.due(NOW+timedelta(seconds=CADENCE))))
         self.assertEqual(set(symbols),set(first+second))
 
+    def test_batch_receipt_audit_and_duplicate_replay_are_atomic(self):
+        self.add()
+        payload={'quotes':{'quote':self.quote()}}
+        self.r.record([SYMBOL],payload,NOW,NOW)
+        self.r.record([SYMBOL],payload,NOW,NOW)
+        row=self.r.db.execute('SELECT * FROM batches').fetchone()
+        self.assertEqual(NOW.isoformat(),row['requested_at'])
+        self.assertEqual(NOW.isoformat(),row['received_at'])
+        self.assertEqual(1,row['contracts']); self.assertEqual(1,row['fresh'])
+        self.assertEqual(1,self.r.db.execute('SELECT count(*) FROM observations').fetchone()[0])
+        self.assertEqual(1,self.r.db.execute('SELECT count(*) FROM links').fetchone()[0])
+        self.assertEqual(0,self.r.db.execute('SELECT gaps_over_10 FROM polling').fetchone()[0])
+
     def test_repeat_discovery_does_not_start_write_transaction(self):
         identity=self.add(); statements=[]
         self.r.db.set_trace_callback(statements.append)
@@ -226,11 +239,13 @@ class FastCaptureTests(unittest.TestCase):
         c.execute('INSERT INTO candidate_contract_alternatives VALUES (?,?,?,?)',('id','entry',SYMBOL,NOW.isoformat()))
         c.execute('INSERT INTO research_expiration_comparisons VALUES (?,?,?)',('id','profile-v1',json.dumps({'contract_symbol':SYMBOL,'entry_quote_at':NOW.isoformat()})))
         c.execute('INSERT INTO research_expiration_comparisons VALUES (?,?,?)',('id','bad-profile','invalid-json'))
+        c.execute('INSERT INTO research_expiration_comparisons VALUES (?,?,?)',('id','no-selection',json.dumps({'status':'no_contract'})))
         c.commit(); c.close()
         cal=[(NOW,NOW+timedelta(hours=6)),(NOW+timedelta(days=1),NOW+timedelta(days=1,hours=6))]
         result=discover(path,'a','paper',self.r,cal,NOW)
         self.assertEqual(2,result['registered']); self.assertEqual(1,sum(result['blocked'].values()))
         self.assertEqual({'source_contract_missing':1},result['blocked'])
+        self.assertEqual({'no_contract_selected':1},result['unavailable'])
         self.assertEqual({'research_alternative','research_expiration_study'},
                          {r[0] for r in self.r.db.execute('SELECT origin FROM registrations')})
 

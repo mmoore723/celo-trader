@@ -3,7 +3,7 @@ import { api, request } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 type Bucket = { strategy: string; ticker: string; version: string; registrations: number; contracts: number; pending: number; late: number; last_collection: string | null; max_gap_seconds: number; gaps_over_10: number; errors: string[]; missing_inputs: string[] };
-type Health = { status: string; heartbeat_at?: string; worker_stale: boolean; error?: string; buckets: Bucket[]; discovery?: { blocked?: Record<string, number> } };
+type Health = { status: string; heartbeat_at?: string; worker_stale: boolean; error?: string; buckets: Bucket[]; discovery?: { blocked?: Record<string, number>; unavailable?: Record<string, number> } };
 
 export function FastCaptureStatus() {
   const { user } = useAuth();
@@ -17,7 +17,8 @@ export function FastCaptureStatus() {
       <p>{data.worker_stale ? 'Worker not verified' : data.status.replaceAll('_', ' ')}. Last report: {data.heartbeat_at ? new Date(data.heartbeat_at).toLocaleString() : 'Not received'}.</p>
       <p className="text-xs">Collecting quotes only. This does not start an exit experiment or change trading. Contracts rotate in batches; a five-second request interval is not a five-second guarantee for every contract.</p>
       {data.error && <p role="alert">{data.error}</p>}
-      {!!Object.keys(data.discovery?.blocked ?? {}).length && <p role="alert">Registration problems: {Object.entries(data.discovery?.blocked ?? {}).map(([reason, count]) => `${reason.replaceAll('_', ' ')} (${count})`).join('; ')}</p>}
+      {!!Object.keys(data.discovery?.blocked ?? {}).length && <p role="alert">Registration problems (source records): {Object.entries(data.discovery?.blocked ?? {}).map(([reason, count]) => `${reason.replaceAll('_', ' ')} (${count})`).join('; ')}</p>}
+      {!!Object.keys(data.discovery?.unavailable ?? {}).length && <p>Not registered because no option contract was selected: {Object.values(data.discovery?.unavailable ?? {}).reduce((a,b) => a+b,0)} study records. These are not lost quotes or executed trades.</p>}
       <details><summary>{data.buckets.length} strategy/ticker/version groups with active capture registrations</summary>
         {!data.buckets.length && <p className="text-xs">No contracts currently registered through a future capture deadline. This does not mean the collector has captured a full session.</p>}
         {data.buckets.map(b => <div className="border-t py-2 text-xs" key={`${b.strategy}:${b.ticker}:${b.version}`}>
