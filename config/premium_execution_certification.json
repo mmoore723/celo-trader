@@ -9,7 +9,7 @@
   "checked_at": "2026-11-12T09:30:00Z",
   "sources": {
     "strategy_health/premium_rules.py": "4d28d392a77048a7b373070a5d4aef25f06009d267c37c3893ddcf05f3471bc2",
-    "strategy_health/premium_research.py": "6b7ca575b39c10b83f320150a6450f922699e659332350ef358795e5ff268117",
+    "strategy_health/premium_research.py": "6ddf4bf0051955a396acc41a18fa74fffff41e073e5f968b7236645a3c4388e8",
     "strategy_health/premium_native.py": "723fb42005ce953afba07a65dcf230209b97d0802ce174d14cb17704662c1ada",
     "strategy_health/premium_approval.py": "390fba942f726f6f946993a11c6200597d4c2d2d6032274849bb564693dd6c05",
     "trading/premium_policy.py": "750a8c214ce44a4eea5de4b5cec89fe939f3b890bed2af77bb0eef9e2bd17e83",

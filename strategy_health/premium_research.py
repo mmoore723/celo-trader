@@ -10,6 +10,8 @@ from contextvars import ContextVar
 
 BACKGROUND_ANALYSIS = ContextVar('premium_background_analysis', default=False)
 ANALYSIS_DEADLINE = ContextVar('premium_analysis_deadline', default=float('inf'))
+ANALYSIS_KEYS = ContextVar('premium_analysis_keys', default=None)
+SEEN_KEYS = ContextVar('premium_seen_keys', default=None)
 
 from strategy_health.premium_rules import RULES, VERSION, EXECUTION_RULES, clock, replay, net, rule_specifications
 
@@ -265,9 +267,15 @@ def pair_report(*, samples, completed, settings, strategy, ticker, version, nati
     try:
         with get_conn() as conn:
             initialize(conn)
-            conn.execute('INSERT OR IGNORE INTO premium_exit_work(bucket,account,mode) VALUES (?,?,?)',(key,account,mode))
-            next_key=conn.execute('SELECT bucket FROM premium_exit_work WHERE account IS ? AND mode=? ORDER BY last_run,bucket LIMIT 1',(account,mode)).fetchone()
-            if time.monotonic()>ANALYSIS_DEADLINE.get() or (next_key and next_key[0]!=key):
+            seen=SEEN_KEYS.get()
+            if seen is not None: seen.add(key)
+            added=conn.execute('INSERT OR IGNORE INTO premium_exit_work(bucket,account,mode) VALUES (?,?,?)',(key,account,mode)).rowcount
+            eligible=ANALYSIS_KEYS.get()
+            if eligible is None:
+                eligible={r[0] for r in conn.execute('SELECT bucket FROM premium_exit_work WHERE account IS ? AND mode=? ORDER BY last_run,bucket LIMIT 200',(account,mode))}
+                ANALYSIS_KEYS.set(eligible)
+            if added: eligible.add(key)
+            if time.monotonic()>ANALYSIS_DEADLINE.get() or key not in eligible:
                 row=conn.execute('SELECT payload FROM premium_exit_reports WHERE bucket=?',(key,)).fetchone()
                 return json.loads(row[0]) if row else None
             conn.execute('UPDATE premium_exit_work SET last_run=? WHERE bucket=?',(time.time(),key))
