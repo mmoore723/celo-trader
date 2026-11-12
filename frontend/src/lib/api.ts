@@ -3,6 +3,7 @@
  */
 
 import type { OptionChartData } from "./optionChart";
+import { normalizeStrategyLabels } from "./strategyIdentity.js";
 const BASE = import.meta.env.VITE_API_URL ?? "";
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -20,7 +21,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const detail = await res.text().catch(() => res.statusText);
     throw new Error(`API ${res.status}: ${detail}`);
   }
-  return res.json() as Promise<T>;
+  return normalizeStrategyLabels(await res.json()) as T;
 }
 
 // ── Types (matching api/models.py) ─────────────────────────────────────────

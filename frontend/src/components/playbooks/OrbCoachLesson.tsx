@@ -154,7 +154,7 @@ export function OrbCoachLesson() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex gap-3 items-center">
             <div className="w-12 h-12 rounded-2xl overflow-hidden shrink-0" style={{ border: "2px solid color-mix(in srgb, var(--accent) 45%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface))", boxShadow: "0 0 26px color-mix(in srgb, var(--accent) 28%, transparent)" }}><img src={COACH_IMAGE} alt="Coach Celo" className="w-full h-full object-contain object-bottom" /></div>
-            <div><p className="text-[11px] uppercase tracking-[0.16em] font-semibold" style={{ color: "var(--accent)" }}>Coach Celo · Learn by replay</p><h2 className="text-lg font-semibold mt-0.5" style={{ color: "var(--ink)" }}>TSLA Opening-Range Pullback</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>A step-by-step practice replay — not investment advice.</p></div>
+            <div><p className="text-[11px] uppercase tracking-[0.16em] font-semibold" style={{ color: "var(--accent)" }}>Coach Celo · Learn by replay</p><h2 className="text-lg font-semibold mt-0.5" style={{ color: "var(--ink)" }}>Opening-Range Pullback</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>A step-by-step practice replay — not investment advice.</p></div>
           </div>
           <button type="button" className="btn btn-ghost btn-sm self-start sm:self-auto" onClick={startGuidedReplay} aria-pressed={guidedReplayActive} title="Restart the five-step guided lesson">
             <Sparkles size={13} />{guidedReplayActive ? "Guided replay active" : "Start guided replay"}

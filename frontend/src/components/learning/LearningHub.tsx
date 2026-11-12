@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { strategyName } from "../../lib/strategyIdentity.js";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, BrainCircuit, GraduationCap, RotateCcw, Trophy } from "lucide-react";
 
@@ -50,7 +51,7 @@ function ExampleWorkspace({ example, mode, progressOwner }: { example: LearningE
     <section className="card overflow-hidden">
       <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
         <div>
-          <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{example.ticker} · {example.strategy_id}</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{example.ticker} · {strategyName(example.strategy_id)}</p>
           <p className="text-xs" style={{ color: "var(--ink-muted)" }}>{new Date(example.observed_at).toLocaleString()} · v{example.strategy_version}</p>
         </div>
         <span className="badge badge-blue">{mode === "practice" && !answered ? "Frozen decision" : CATEGORY_LABELS[example.category]}</span>
@@ -133,7 +134,7 @@ export function SecurePractice({ strategyId, progressOwner, ticker, version }: {
   const shown = result?.example ?? session.example;
   return <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0, 1.7fr) minmax(270px, .8fr)" }}>
     <section className="card overflow-hidden">
-      <div className="px-4 py-3"><strong>{shown.ticker} · {shown.strategy_id}</strong><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Server-frozen evidence · v{shown.strategy_version}</p></div>
+      <div className="px-4 py-3"><strong>{shown.ticker} · {strategyName(shown.strategy_id)}</strong><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Version {shown.strategy_version}</p></div>
       <VisualLessonStage example={shown} unlocked={Boolean(result)} />
       <div className="p-4"><p className="text-sm font-semibold">{result ? result.example.coach.summary : session.example.prompt}</p>
         {!result && <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">{(["call", "put", "wait", "reject"] as PracticeAnswer[]).map((choice) => <button className="btn btn-ghost" key={choice} onClick={() => void answer(choice)}>{choice === "call" ? "Enter CALL" : choice === "put" ? "Enter PUT" : choice[0].toUpperCase()+choice.slice(1)}</button>)}</div>}

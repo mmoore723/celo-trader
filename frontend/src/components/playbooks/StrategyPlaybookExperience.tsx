@@ -66,7 +66,7 @@ function CoachChartGuide({ courseId, stepIndex, label }: { courseId: LessonId; s
 const COURSES: Course[] = [
   {
     id: "v2_orb",
-    title: "TSLA Opening-Range Pullback",
+    title: "Opening-Range Pullback",
     shortTitle: "Opening-Range Pullback",
     level: "Beginner · 5 steps",
     description: "A patient setup: let price break the opening range, pull back, and prove it can continue.",
@@ -80,7 +80,7 @@ const COURSES: Course[] = [
   },
   {
     id: "v2_trend",
-    title: "SPY Trend Continuation",
+    title: "Trend Continuation",
     shortTitle: "Trend Continuation",
     level: "Intermediate · 5 steps",
     description: "A SPY trend needs structure, a pause, and proof that momentum has resumed before an entry is considered.",
@@ -94,7 +94,7 @@ const COURSES: Course[] = [
   },
   {
     id: "v2_spy_fvg",
-    title: "SPY Afternoon Fair Value Gap",
+    title: "Afternoon Fair Value Gap",
     shortTitle: "Afternoon Fair Value Gap",
     level: "Intermediate · 5 steps",
     description: "A narrow afternoon SPY setup: identify an imbalance, wait for its first return, then demand trend and VWAP agreement.",
@@ -108,7 +108,7 @@ const COURSES: Course[] = [
   },
   {
     id: "v2_two_leg",
-    title: "TSLA Two-Leg Trend Pullback",
+    title: "Two-Leg Trend Pullback",
     shortTitle: "Two-Leg Trend Pullback",
     level: "Intermediate · 5 steps",
     description: "A one-minute TSLA continuation setup: one impulse leg, one controlled pullback leg, then a completed reclaim.",
@@ -122,7 +122,7 @@ const COURSES: Course[] = [
   },
   {
     id: "v2_recovery",
-    title: "SPY Failed-Range Recovery",
+    title: "Failed-Range Recovery",
     shortTitle: "Failed-Range Recovery",
     level: "Intermediate · 5 steps",
     description: "A failed opening-range breakout reverses only after a completed candle proves price returned inside the range with room to VWAP.",

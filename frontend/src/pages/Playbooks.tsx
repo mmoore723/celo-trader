@@ -37,8 +37,8 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
       "8:00 AM ET — Bot wakes up, fetches your Alpaca account balance, and updates internal risk sizing.",
       "9:00–9:25 AM ET — Pre-market scan: checks ~140 liquid US stocks and ETFs for gap + volume. Tickers with a 1–4% gap AND elevated relative volume (RVOL ≥ 2×) make the cut. Top 10 become today's watchlist.",
       "9:30 AM ET — Market opens. SPY and QQQ are always added as anchors regardless of gap. Any tickers you pinned in Settings > Watchlist are prepended so the bot always watches them.",
-      "9:45 AM ET — The promoted Opening-Range Pullback and TSLA Two-Leg Trend Pullback can begin evaluating completed data.",
-      "1:30 PM ET — The promoted SPY Afternoon Fair Value Gap enters its reviewed observation window.",
+      "9:45 AM ET — The promoted Opening-Range Pullback and Two-Leg Trend Pullback can begin evaluating completed data.",
+      "1:30 PM ET — The promoted Afternoon Fair Value Gap enters its reviewed observation window.",
       "3:55 PM ET — Hard session cutoff. All remaining positions are closed regardless of P&L. Options expire and after-hours liquidity evaporates — this is non-negotiable.",
       "After 4:00 PM ET — Bot enters deep sleep. No API calls, no evaluation. Wakes at 8:00 AM next trading day.",
     ],
@@ -76,7 +76,7 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
     emoji: "📡",
     title: "How Strategies Generate Signals",
     body: [
-      "The router contains only promoted evaluators: Opening-Range Pullback, SPY Trend Continuation, and SPY Afternoon Fair Value Gap. TSLA Two-Leg Trend Pullback enters through its reviewed one-minute state machine.",
+      "The router contains only promoted evaluators: Opening-Range Pullback, Trend Continuation, and Afternoon Fair Value Gap. Two-Leg Trend Pullback enters through its reviewed one-minute state machine.",
       "Each strategy keeps the same timeframe, setup, contract-selection rule, and timed exit that passed its paid option-quote study. Account safeguards can still block an otherwise valid setup.",
     ],
   },
@@ -137,7 +137,7 @@ const HOW_IT_WORKS: { id: string; emoji: string; title: string; body: string[] }
     body: [
       "Account-level safety exits take priority over the strategy timer: emergency close, daily protection, and the 3:55 PM session cutoff cannot be bypassed by a lesson rule.",
       "If no account-level protection fires, the strategy exits the exact selected contract at its registered horizon using the broker-side executable price.",
-      "SPY Trend Continuation and SPY Afternoon FVG use 30 minutes. TSLA Opening-Range Pullback and TSLA Two-Leg Trend Pullback use 90 minutes.",
+      "Trend Continuation and Afternoon Fair Value Gap use 30 minutes. Opening-Range Pullback and Two-Leg Trend Pullback use 90 minutes.",
       "MFE and MAE are measurements of what happened while the trade was open; they are not substitute fills and do not rewrite the exit after the fact.",
     ],
   },

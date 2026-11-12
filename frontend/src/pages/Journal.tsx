@@ -19,6 +19,7 @@ import { ScannerOpportunities } from "./ScannerOpportunities";
 import { useSearchParams } from "react-router-dom";
 import { inJournalWindow, journalRealizedSummary } from "../lib/journalWindow.js";
 import { formatSignedCurrency } from "../lib/money.js";
+import { strategyName } from "../lib/strategyIdentity.js";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -552,11 +553,11 @@ type DateWindow = "today" | "week" | "month" | "custom" | "all";
 
 // Values stay as stable strategy IDs for filtering; labels are written for people.
 const STRATEGY_LABELS: Record<string, string> = {
-  V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
-  V2_SPY_TREND_CONT: "SPY Trend Continuation",
-  V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
-  V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
-  V2_FAILED_OR_BREAK_VWAP_REVERSION: "SPY Failed-Range Recovery",
+  V2_ORB_PULLBACK: "Opening-Range Pullback",
+  V2_SPY_TREND_CONT: "Trend Continuation",
+  V2_TSLA_TWO_LEG_TREND_PULLBACK: "Two-Leg Trend Pullback",
+  V2_SPY_AFTERNOON_FVG: "Afternoon Fair Value Gap",
+  V2_FAILED_OR_BREAK_VWAP_REVERSION: "Failed-Range Recovery",
   RESEARCH_FAILED_RANGE_V2: "Failed-Range Recovery",
   V2_GAP_FILL_RTH: "Gap Fill",
   V2_AFTERNOON_COMPRESSION_BREAKOUT: "Afternoon Compression Breakout",
@@ -566,9 +567,9 @@ const STRATEGY_LABELS: Record<string, string> = {
   RESEARCH_CTX_ORB_ATR10_V2: "Context-Filtered ORB (ATR10)",
   CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG: "VWAP 10:30 Displacement",
 };
-const ALL_STRATEGIES = Object.keys(STRATEGY_LABELS);
+const ALL_STRATEGIES = [...new Set([...Object.keys(STRATEGY_LABELS), 'RESEARCH_QQQ_TREND_V2', 'V2_TREND_CONT', 'TREND_CONT', 'V2_VWAP_PULLBACK'].map(strategyName))];
 const strategyLabel = (strategyId?: string | null) => strategyId
-  ? (STRATEGY_LABELS[strategyId] ?? `Strategy: ${strategyId}`)
+  ? strategyName(strategyId)
   : "—";
 
 /** Export the visible trades as a CSV download. */
@@ -638,7 +639,7 @@ export function Journal() {
     // Date filter
     if (!inJournalWindow(t, dateWindow, customFrom)) return false;
     // Strategy filter
-    if (stratFilter !== "all" && t.strategy_id !== stratFilter) return false;
+    if (stratFilter !== "all" && strategyLabel(t.strategy_id) !== stratFilter) return false;
     return true;
   });
 
@@ -780,8 +781,8 @@ export function Journal() {
             style={{ fontSize: 12, padding: "2px 8px", height: 28 }}
           >
             <option value="all">All Strategies</option>
-            {ALL_STRATEGIES.map((s) => (
-              <option key={s} value={s}>{STRATEGY_LABELS[s]}</option>
+            {[...new Set([...ALL_STRATEGIES, ...allTrades.map(t => strategyLabel(t.strategy_id))])].sort().map((s) => (
+              <option key={s} value={s}>{s}</option>
             ))}
           </select>
 

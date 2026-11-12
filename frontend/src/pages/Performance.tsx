@@ -1,3 +1,4 @@
+import { strategyName } from "../lib/strategyIdentity.js";
 /**
  * Performance.tsx — actionable trading analytics dashboard.
  *
@@ -409,7 +410,7 @@ export function Performance() {
                   const reviewReady = strategyEvidence?.sample_status === "review_ready";
                   return (
                     <tr key={s.strategy_id}>
-                      <td style={{ fontWeight: 600 }}>{s.strategy_id}</td>
+                      <td style={{ fontWeight: 600 }}>{strategyName(s.strategy_id)}</td>
                       <td className="num text-right">{s.trades}</td>
                       <td className="num text-right"
                           style={{ color: s.win_rate>=50 ? posColor : s.win_rate>=40 ? "var(--ink)" : negColor }}>

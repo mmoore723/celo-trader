@@ -5,6 +5,7 @@
 import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { strategyName as readableStrategy } from "../lib/strategyIdentity.js";
 import { ChevronDown, Newspaper, RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
@@ -512,7 +513,7 @@ export function LiveTrading() {
                   </span>
                 )}
                 {latestSignal.strategy && (
-                  <span className="badge badge-blue">{latestSignal.strategy}</span>
+                  <span className="badge badge-blue">{readableStrategy(latestSignal.strategy)}</span>
                 )}
                 {/* Sizing */}
                 <div style={{
@@ -673,7 +674,7 @@ export function LiveTrading() {
               custom wheel/resize workarounds), real shaded zones, and the
               "Watch this setup" boomerang jump-to-time with narration. */}
           {chartSetup && <div className="px-3 py-2 text-xs border-t">
-            <b>Recorded setup: {chartSetup.ticker} · {chartSetup.strategy_id.replace(/^V2_/, "").replaceAll("_", " ")}</b>
+            <b>Recorded setup: {chartSetup.ticker} · {readableStrategy(chartSetup.strategy_id)}</b>
             <p>{chartSetup.entry_plan?.trigger || chartSetup.reason_detail || "Recorded setup evidence"}</p>
             <p>{setupLevels.length ? "Lines show the price levels saved when this setup was evaluated. Click a setup card to change drawings." : "No price levels were saved for this setup. No pattern or resistance levels have been invented."}</p>
             {setupLevels.filter(row => row.type === "hline").map(row => <span key={row.id} className="inline-block mr-3">{row.label}: ${row.price!.toFixed(2)}</span>)}
@@ -762,7 +763,7 @@ export function LiveTrading() {
                   ?? opportunity.entry_plan?.trigger
                   ?? "Scanner setup detected";
                 const quantity = opportunity.planned_quantity ?? trade.contracts;
-                const strategyName = String(opportunity.strategy_id ?? "Setup").replace(/^V2_/, "").replaceAll("_", " ");
+                const strategyName = readableStrategy(opportunity.strategy_id ?? "Setup");
                 const statusTitle = lifecycleText.title;
                 const accent = isEntered
                   ? "var(--positive)"
@@ -1019,7 +1020,7 @@ export function LiveTrading() {
                             <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
                               {r.ticker}
                             </span>
-                            {r.strategy && <span className="badge badge-blue">{r.strategy}</span>}
+                            {r.strategy && <span className="badge badge-blue">{readableStrategy(r.strategy)}</span>}
                           </div>
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
                                 style={{ background: `${statusColor}22`, color: statusColor }}>
@@ -1320,31 +1321,31 @@ export function LiveTrading() {
       // Education is defined only for the reviewed production strategies.
       const STRAT_EDU: Record<string, { name: string; setup: string; watch: string; manage: string; color: string }> = {
         V2_ORB_PULLBACK: {
-          name: "TSLA Opening-Range Pullback", color: "#eab308",
+          name: "Opening-Range Pullback", color: "#eab308",
           setup: "After the 9:30–9:45 opening range is complete, TSLA breaks the range and returns for its first one-minute retouch.",
           watch: "The broken range boundary, first retouch, VWAP side, and completed one-minute confirmation must agree.",
           manage: "The reviewed profile uses the selected contract's next ask and a same-contract executable-bid exit after 90 minutes, with account safeguards.",
         },
         V2_SPY_TREND_CONT: {
-          name: "SPY Trend Continuation", color: "#8b5cf6",
+          name: "Trend Continuation", color: "#8b5cf6",
           setup: "SPY trend structure pauses, then a completed five-minute candle proves continuation in the established direction.",
           watch: "EMA structure, VWAP side, the mini-range break, and the recorded structural invalidation.",
           manage: "The reviewed profile enters on the next available option ask and measures the same contract's bid after 30 minutes.",
         },
         V2_SPY_AFTERNOON_FVG: {
-          name: "SPY Afternoon Fair Value Gap", color: "#06b6d4",
+          name: "Afternoon Fair Value Gap", color: "#06b6d4",
           setup: "Between 1:30 and 3:00 PM ET, SPY creates a qualifying three-candle imbalance and returns to it for the first time.",
           watch: "The gap zone, favorable-half retest close, EMA 8/20 direction, and VWAP agreement.",
           manage: "The reviewed profile enters at the next option ask and measures the same contract's bid after 30 minutes.",
         },
         V2_TSLA_TWO_LEG_TREND_PULLBACK: {
-          name: "TSLA Two-Leg Trend Pullback", color: "#3b82f6",
+          name: "Two-Leg Trend Pullback", color: "#3b82f6",
           setup: "TSLA trends on one-minute bars, forms two controlled counter-trend legs, and resumes with VWAP and EMA alignment.",
           watch: "Distinct pullback legs, the recovery between them, VWAP integrity, and the completed resumption candle.",
           manage: "The reviewed profile enters on the next option ask and measures the same contract's executable bid after 90 minutes.",
         },
         V2_FAILED_OR_BREAK_VWAP_REVERSION: {
-          name: "SPY Failed-Range Recovery", color: "#2563eb",
+          name: "Failed-Range Recovery", color: "#2563eb",
           setup: "SPY completes a meaningful opening-range break, then an opposite-color one-minute candle closes back inside before noon with room to VWAP.",
           watch: "The fixed 9:30–9:44 range, the completed outside close, failed-break extreme, recovery close, and remaining room to session VWAP.",
           manage: "After chart proof, one exact 7–21 DTE contract receives a recorded working limit, price ceiling, quantity, and same-contract 30-minute exit.",

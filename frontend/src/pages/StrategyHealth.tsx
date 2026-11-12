@@ -19,13 +19,7 @@ import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
 import { api, type ReviewedStrategyCatalogEntry, type StrategyFunnelRow, type StrategyRiskMathRow, type StrategyScorecard, type CandidateScorecard, type PaperResearchScorecard, type PaidResearchEvidence, type PaidTrendResearchProgress, type V2OrbPaperScorecard } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 
-const STRAT_NAMES: Record<string, string> = {
-  V2_ORB_PULLBACK: "TSLA Opening-Range Pullback",
-  V2_SPY_TREND_CONT: "SPY Trend Continuation",
-  V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
-  V2_SPY_AFTERNOON_FVG: "SPY Afternoon Fair Value Gap",
-  V2_FAILED_OR_BREAK_VWAP_REVERSION: "SPY Failed-Range Recovery",
-};
+import { strategyName } from "../lib/strategyIdentity.js";
 
 function ActivePilotCard({ strategies = [] }: { strategies?: ReviewedStrategyCatalogEntry[] }) {
   const enabled = strategies.filter((strategy) => strategy.execution_enabled && strategy.status === "paper_candidate");
@@ -56,7 +50,7 @@ function pct(n: number, d: number): string {
 
 function ScorecardTable({ rows }: { rows: StrategyScorecard["strategies"] }) {
   if (!rows.length) return <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>No tagged results yet — opportunity trades will appear separately once entered.</p>;
-  return <div style={{ overflowX: "auto" }}><table className="w-full text-sm"><thead><tr><th>Strategy</th><th>Trades</th><th>Win rate</th><th>Expectancy</th><th>P&amp;L</th><th>Blocked</th><th>Status</th></tr></thead><tbody>{rows.map(r => <tr key={r.strategy_id}><td>{STRAT_NAMES[r.strategy_id] ?? r.strategy_id}</td><td>{r.closed_trades}</td><td>{r.win_rate == null ? "—" : `${r.win_rate}%`}</td><td style={{ color: (r.expectancy ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{r.expectancy == null ? "—" : `$${r.expectancy.toFixed(2)}`}</td><td style={{ color: r.pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>${r.pnl.toFixed(2)}</td><td>{r.blocked_signals}</td><td>{r.sample_status === "review_ready" ? "Ready to review" : "Collecting data"}</td></tr>)}</tbody></table></div>;
+  return <div style={{ overflowX: "auto" }}><table className="w-full text-sm"><thead><tr><th>Strategy</th><th>Trades</th><th>Win rate</th><th>Expectancy</th><th>P&amp;L</th><th>Blocked</th><th>Status</th></tr></thead><tbody>{rows.map(r => <tr key={r.strategy_id}><td>{strategyName(r.strategy_id)}</td><td>{r.closed_trades}</td><td>{r.win_rate == null ? "—" : `${r.win_rate}%`}</td><td style={{ color: (r.expectancy ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{r.expectancy == null ? "—" : `$${r.expectancy.toFixed(2)}`}</td><td style={{ color: r.pnl >= 0 ? "var(--positive)" : "var(--negative)" }}>${r.pnl.toFixed(2)}</td><td>{r.blocked_signals}</td><td>{r.sample_status === "review_ready" ? "Ready to review" : "Collecting data"}</td></tr>)}</tbody></table></div>;
 }
 
 function Scorecard({ data }: { data: StrategyScorecard }) {
@@ -108,7 +102,7 @@ function CandidateScorecard({ data }: { data: CandidateScorecard }) {
         const top = Object.entries(row.block_reasons).sort((a, b) => b[1] - a[1])[0];
         const direction = row.directional_win_rate == null ? "Collecting" : `${row.directional_win_rate}% (${row.measured})`;
         const avgMove = row.avg_directional_move_pct == null ? "—" : `${row.avg_directional_move_pct >= 0 ? "+" : ""}${row.avg_directional_move_pct.toFixed(2)}%`;
-        return <tr key={row.strategy_id}><td>{STRAT_NAMES[row.strategy_id] ?? row.strategy_id}</td><td>{row.raw_candidates}</td><td>{row.entered}</td><td>{row.observed_only}</td><td>{row.blocked}</td><td>{direction}</td><td style={{ color: (row.avg_directional_move_pct ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{avgMove}</td><td>{top ? `${top[0]} (${top[1]})` : "—"}</td></tr>;
+        return <tr key={row.strategy_id}><td>{strategyName(row.strategy_id)}</td><td>{row.raw_candidates}</td><td>{row.entered}</td><td>{row.observed_only}</td><td>{row.blocked}</td><td>{direction}</td><td style={{ color: (row.avg_directional_move_pct ?? 0) >= 0 ? "var(--positive)" : "var(--negative)" }}>{avgMove}</td><td>{top ? `${top[0]} (${top[1]})` : "—"}</td></tr>;
       })}
     </tbody></table></div>
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
@@ -125,7 +119,7 @@ function CandidateScorecard({ data }: { data: CandidateScorecard }) {
             const move = evidence.avg_directional_move_pct == null ? "—" : `${evidence.avg_directional_move_pct >= 0 ? "+" : ""}${evidence.avg_directional_move_pct.toFixed(2)}%`;
             return `${evidence.directional_win_rate}% right · ${move} (${evidence.measured})`;
           };
-          return <tr key={row.strategy_id}><td>{STRAT_NAMES[row.strategy_id] ?? row.strategy_id}</td><td>{text("observed_only")}</td><td>{text("blocked")}</td><td>{text("entered")}</td></tr>;
+          return <tr key={row.strategy_id}><td>{strategyName(row.strategy_id)}</td><td>{text("observed_only")}</td><td>{text("blocked")}</td><td>{text("entered")}</td></tr>;
         })}
       </tbody></table></div>
     </div>
@@ -316,7 +310,7 @@ function FunnelTable({ perStrategy }: { perStrategy: Record<string, StrategyFunn
             return (
               <tr key={sid} style={{ borderBottom: "1px solid var(--border)" }}>
                 <td style={{ padding: "6px 8px", fontWeight: 600 }}>
-                  {STRAT_NAMES[sid] ?? sid}
+                  {strategyName(sid)}
                   <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>{sid}</div>
                 </td>
                 <td style={{ padding: "6px 8px" }}>{row.raw_signals}</td>
@@ -379,7 +373,7 @@ function RiskMathTable({ perStrategy }: { perStrategy: Record<string, StrategyRi
             return (
               <tr key={sid} style={{ borderBottom: "1px solid var(--border)" }}>
                 <td style={{ padding: "6px 8px", fontWeight: 600 }}>
-                  {STRAT_NAMES[sid] ?? sid}
+                  {strategyName(sid)}
                   <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>{sid}</div>
                 </td>
                 <td style={{ padding: "6px 8px" }}>

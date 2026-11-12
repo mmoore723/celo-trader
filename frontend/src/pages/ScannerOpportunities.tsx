@@ -15,9 +15,9 @@ import { collapseOpportunityEpisodes, opportunityDecisionTitle, opportunityLifec
 import { profitFactorText, researchActionLabel, researchPairVisible, researchProfitFactorText, sortResearchPairs } from "../lib/researchPairView.js";
 
 const NAMES: Record<string, string> = {
-  V2_ORB_PULLBACK: "Opening-Range Pullback", V2_SPY_TREND_CONT: "SPY Trend Continuation",
-  V2_SPY_AFTERNOON_FVG: "SPY Afternoon FVG", V2_FAILED_OR_BREAK_VWAP_REVERSION: "SPY Failed-Range Recovery",
-  V2_TSLA_TWO_LEG_TREND_PULLBACK: "TSLA Two-Leg Trend Pullback",
+  V2_ORB_PULLBACK: "Opening-Range Pullback", V2_SPY_TREND_CONT: "Trend Continuation",
+  V2_SPY_AFTERNOON_FVG: "Afternoon Fair Value Gap", V2_FAILED_OR_BREAK_VWAP_REVERSION: "Failed-Range Recovery",
+  V2_TSLA_TWO_LEG_TREND_PULLBACK: "Two-Leg Trend Pullback",
   CTX_VWAP_PULLBACK_1030_DISPLACEMENT_LONG: "VWAP Pullback (10:30 Displacement)",
 };
 const todayEt = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
