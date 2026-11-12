@@ -17,6 +17,19 @@ router = APIRouter(prefix="/api/trades", tags=["trades"])
 logger = logging.getLogger("celo_trader.api.trades")
 
 
+def _premium_policy(raw):
+    from strategy_health.premium_rules import RULES
+    try:
+        context=_json.loads(raw) if isinstance(raw,str) else raw or {}
+        policy=context.get('premium_exit_policy')
+        if not isinstance(policy,dict):
+            return None
+        return {**{k:policy.get(k) for k in ('rule','version','mode','approved_at')},
+                'label':RULES.get(policy.get('rule'),'Unknown recorded policy')}
+    except (ValueError,TypeError,AttributeError):
+        return None
+
+
 def _reconcile_day_bounds(value: str) -> tuple[str, str, str]:
     """Return an ET trading date and its half-open UTC interval."""
     import re
@@ -162,6 +175,7 @@ def _row_to_trade(row: dict) -> Trade:
         entry_time=str(row["entry_time"]) if row.get("entry_time") else None,
         exit_time=str(row["exit_time"]) if row.get("exit_time") else None,
         exit_reason=row.get("exit_reason"),
+        premium_exit_policy=_premium_policy(row.get('strategy_context_json')),
         stage1_done=bool(row.get("stage1_done", False)),
         mode=mode,
         recap=row.get("recap"),

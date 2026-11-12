@@ -22,8 +22,16 @@ def refresh_once(stop):
                 if not get_db_path().is_file():
                     continue
                 today = _now_et().date()
-                matrix = research_snapshot(90, start_date=(today - timedelta(days=89)).isoformat(),
-                                           end_date=today.isoformat())
+                from strategy_health.premium_research import BACKGROUND_ANALYSIS, ANALYSIS_DEADLINE
+                from time import monotonic
+                token=BACKGROUND_ANALYSIS.set(True)
+                budget=ANALYSIS_DEADLINE.set(monotonic()+20)
+                try:
+                    matrix = research_snapshot(90, start_date=(today - timedelta(days=89)).isoformat(),
+                                               end_date=today.isoformat(), force_refresh=True)
+                finally:
+                    ANALYSIS_DEADLINE.reset(budget)
+                    BACKGROUND_ANALYSIS.reset(token)
                 if matrix and 'strategies' in matrix:
                     remember(matrix, get_settings())
             except Exception:

@@ -32,6 +32,11 @@ export function strategyName(name) {
   return names[name] ?? (name || "Not recorded");
 }
 
+export function exitReason(reason) {
+  return ({premium_2pct:'2% Premium Gain',premium_25pct:'25% Premium Gain',
+    giveback_25pct:'25% Peak-Profit Giveback'})[reason] ?? reason ?? 'Not recorded';
+}
+
 // Normalize presentation fields only. IDs, versions, evidence and submitted
 // settings remain untouched, including nested activation specifications.
 export function normalizeStrategyLabels(value) {

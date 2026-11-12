@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Trade } from "../lib/api";
 import { formatSignedCurrency } from "../lib/money.js";
+import { exitReason } from '../lib/strategyIdentity.js';
 
 type Row = Trade & {
   mode: "paper" | "live";
@@ -96,7 +97,8 @@ function TradeRows({ trade: t, expanded, toggle }: { trade: Row; expanded: boole
   const details = {
     "User ID": t.user_id, "Broker account": t.broker_account_id, "Contract": t.contract_symbol,
     "Strategy ID": t.strategy_id, "Strategy version": t.strategy_version, "Strike": money(t.strike), "Expiration": t.expiry,
-    "Entry reason": t.entry_reason, "Exit reason": t.exit_reason, "Exit time": time(t.exit_time),
+    "Entry reason": t.entry_reason, "Exit reason": exitReason(t.exit_reason), "Exit time": time(t.exit_time),
+    "Profit-taking policy": t.premium_exit_policy?.label, "Profit policy version": t.premium_exit_policy?.version,
     "Entry order": t.entry_order_id, "Exit order": t.exit_order_id,
     "Recorded entry fill time": time(t.entry_fill_time), "Recorded exit fill time": time(t.exit_fill_time),
     "Partial-close parent trade": t.parent_trade_id, "Recorded stop reference": money(t.stop_price),

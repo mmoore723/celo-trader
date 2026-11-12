@@ -71,6 +71,9 @@ def _resolve_latched_exit(
     `_close_position` removes the position state only after a confirmed fill.
     """
     pending_reason = str(position_state.get("exit_pending_reason") or "").strip()
+    if pending_reason in ('premium_2pct','premium_25pct','giveback_25pct') and should_exit and reason not in ('premium_2pct','premium_25pct','giveback_25pct'):
+        position_state['exit_pending_reason'] = reason
+        return True, reason
     if pending_reason and should_exit and reason == 'research_session_close':
         position_state['exit_pending_reason'] = reason
         return True, reason
@@ -769,6 +772,11 @@ def _manage_open_position(
                 atr_target_price = _atr_target_price,
                 momentum_fading  = _momentum_fading,
             )
+
+        # Supplemental approved paper exit. Native and safety exits have priority.
+        if not should_exit:
+            from trading.premium_policy import evaluate_position
+            should_exit, reason = evaluate_position(trade, quote, now_et)
 
         # Classification follows the selected branch; it never selects an exit.
         # Persist separately so a display failure cannot interrupt protection.

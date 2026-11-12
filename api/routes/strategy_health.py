@@ -11,10 +11,35 @@ import logging
 from collections import defaultdict
 from datetime import timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/strategy-health", tags=["strategy-health"])
 logger = logging.getLogger("celo_trader.api.strategy_health")
+
+
+class PremiumApproval(BaseModel):
+    bucket: str
+    rule: str
+    report_hash: str
+
+
+@router.post('/premium-exits/approve')
+def approve_premium_exit(payload: PremiumApproval, request: Request):
+    if not getattr(request.state,'is_admin',False):
+        raise HTTPException(403,'Administrator approval required')
+    from config import get_settings,save_settings,get_user_data_dir
+    from config.atomic_files import _lock_for
+    from database import get_conn
+    from strategy_health.premium_approval import approve
+    try:
+        with _lock_for(get_user_data_dir()/'settings.json'):
+            with get_conn() as conn:
+                updates,result=approve(conn,get_settings(),payload.bucket,payload.rule,payload.report_hash)
+            save_settings(updates)
+        return result
+    except ValueError as exc:
+        raise HTTPException(409,str(exc)) from exc
 
 
 def _research_snapshot(days: int, start_date: str | None, end_date: str | None, *, allow_stale=False) -> dict:

@@ -800,6 +800,9 @@ def build_research_matrix(
                     "mistimed_quotes_ignored": 0,
                 }
             completed = completed_strategy_results(samples, strategy_id, authored_exits, exit_minutes)
+            from strategy_health.premium_research import pair_report
+            premium_report = pair_report(samples=samples, completed=completed, settings=settings,
+                strategy=strategy_id, ticker=ticker, version=research_version,native_exits=authored_exits)
             recommendation = assess(completed)
             current_summary = {**current_summary, **summarize(completed),
                                **_distribution_summary([row['pnl'] for row in completed])}
@@ -896,6 +899,7 @@ def build_research_matrix(
                 "next_action": next_action,
                 "improvement_tests": improvement_tests,
                 "exit_comparison": exit_summaries,
+                "premium_exit_research": premium_report,
                 "contract_tests": contract_tests,
                 "leading_contract_test": contract_tests[0] if contract_tests else None,
                 "research_contract_profile": (

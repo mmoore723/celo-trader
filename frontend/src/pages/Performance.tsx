@@ -27,12 +27,14 @@ import { Tooltip } from "../components/Tooltip";
 import { GLOSSARY } from "../lib/glossary";
 import { formatSignedCurrency } from "../lib/money.js";
 import { PostMarketReport } from "./DailyBrief";
+import { exitReason } from '../lib/strategyIdentity.js';
 
 // ── Exit reason categorisation (frontend only) ────────────────────────────────
 type ExitGroup = "target" | "timecap" | "signal" | "stop" | "cutoff" | "other";
 
 function categoriseExit(raw: string): { label: string; group: ExitGroup } {
   const key = (raw || "").split(/[\s(]/)[0];
+  if (['premium_2pct','premium_25pct','giveback_25pct'].includes(key)) return {label:exitReason(key),group:'target'};
   if (key.startsWith("stage1"))               return { label: "Stage 1 Target",   group: "target"  };
   if (key.startsWith("vwap_breach"))          return { label: "VWAP Breach Exit", group: "target"  };
   if (key.startsWith("peak_giveback"))        return { label: "Peak Giveback",     group: "stop"    };

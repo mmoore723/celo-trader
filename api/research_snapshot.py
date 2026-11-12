@@ -17,7 +17,7 @@ DISPLAY_MAX_AGE_SECONDS = 86400
 MAX_SNAPSHOTS = 6
 
 
-def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=False):
+def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=False, force_refresh=False):
     from auth.context import get_current_user_id
     from config import get_db_path, get_settings
     from strategy_health.research_matrix import build_research_matrix
@@ -62,7 +62,7 @@ def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=Fa
             logging.getLogger(__name__).exception("Research display snapshot persistence failed")
         return entry
 
-    result = cached()
+    result = None if force_refresh else cached()
     if result is not None:
         return response(result)
     if allow_stale:
@@ -99,7 +99,7 @@ def research_snapshot(days=90, *, start_date=None, end_date=None, allow_stale=Fa
         raise HTTPException(status_code=503, detail='Research results are refreshing. Retry shortly.',
                             headers={'Retry-After': '5'})
     try:
-        result = cached()
+        result = None if force_refresh else cached()
         if result is None:
             result = rebuild()
         return response(result)

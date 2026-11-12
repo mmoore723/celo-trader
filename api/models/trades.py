@@ -38,6 +38,7 @@ class Trade(BaseModel):
     entry_time: Optional[str]
     exit_time: Optional[str]
     exit_reason: Optional[str]
+    premium_exit_policy: Optional[dict[str, Any]] = None
     stage1_done: Optional[bool]
     mode: Optional[str]           # "paper" | "live" — derived from paper int column
     recap: Optional[str] = None   # auto-generated post-trade recap narrative

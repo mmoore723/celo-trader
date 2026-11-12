@@ -56,6 +56,8 @@ class ResearchRefreshTests(unittest.TestCase):
                  {'user_id': 'two', 'username': 'two', 'is_admin': False}]
         contexts = []
         def build(*args, **kwargs):
+            from strategy_health.premium_research import BACKGROUND_ANALYSIS
+            self.assertTrue(BACKGROUND_ANALYSIS.get())
             contexts.append((get_current_user_id(), get_current_is_admin()))
         with patch.dict('sys.modules', {'auth.users': SimpleNamespace(list_users=lambda: users)}), \
              patch('config.get_db_path', return_value=Mock(is_file=lambda: True)), \
@@ -63,7 +65,9 @@ class ResearchRefreshTests(unittest.TestCase):
              patch('api.research_snapshot.research_snapshot', side_effect=build) as snapshot:
             research_refresh.refresh_once(Event())
         self.assertEqual(contexts, [('one', True), ('two', False)])
-        snapshot.assert_called_with(90, start_date='2026-06-27', end_date='2026-09-24')
+        snapshot.assert_called_with(90, start_date='2026-06-27', end_date='2026-09-24', force_refresh=True)
+        from strategy_health.premium_research import BACKGROUND_ANALYSIS
+        self.assertFalse(BACKGROUND_ANALYSIS.get())
         self.assertEqual(get_current_user_id(), 'system')
         self.assertFalse(get_current_is_admin())
 

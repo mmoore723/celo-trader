@@ -19,7 +19,7 @@ import { ScannerOpportunities } from "./ScannerOpportunities";
 import { useSearchParams } from "react-router-dom";
 import { inJournalWindow, journalRealizedSummary } from "../lib/journalWindow.js";
 import { formatSignedCurrency } from "../lib/money.js";
-import { strategyName } from "../lib/strategyIdentity.js";
+import { strategyName, exitReason } from "../lib/strategyIdentity.js";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -172,9 +172,10 @@ function TradeDetail({ t, onViewChart }: { t: Trade; onViewChart: () => void }) 
             <div>Hold time: <strong style={{ color: "var(--ink)" }}>
               {fmtDuration(t.entry_time, t.exit_time)}
             </strong></div>
-            {/* Full raw exit reason — not normalized — so user sees the real detail */}
+            {t.premium_exit_policy && <div>Profit-taking policy: <strong>{t.premium_exit_policy.label}</strong> ({t.premium_exit_policy.version}). Supplements original exit.</div>}
+            {/* Keep the recorded reason available in details. */}
             <div>Exit reason: <strong style={{ color: "var(--ink)", wordBreak: "break-all" }}>
-              {t.exit_reason ?? "—"}
+              {exitReason(t.exit_reason)}
             </strong></div>
           </div>
 
@@ -916,7 +917,7 @@ export function Journal() {
                         {/* Full raw exit reason in table */}
                         <td className="text-xs hidden lg:table-cell"
                             style={{ color: "var(--ink-muted)", maxWidth: 200, wordBreak: "break-word" }}>
-                          {t.exit_reason ?? "—"}
+                          {exitReason(t.exit_reason)}
                         </td>
                         <td className="text-xs num hidden lg:table-cell" style={{ color: "var(--ink-muted)" }}>
                           {fmtTime(t.entry_time)}

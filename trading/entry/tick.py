@@ -1952,6 +1952,12 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     })
     from config.runtime_exit_review import provenance
     _strategy_context.update(provenance(_current_rule))
+    if settings.get('paper_trading') is True and _current_rule is not None:
+        from strategy_health.premium_native import baseline_spec
+        _strategy_context['premium_baseline']=baseline_spec(settings,strategy_id,ticker,_current_rule.version)
+    from trading.premium_policy import freeze_selection
+    _strategy_context.update(freeze_selection(settings, strategy_id, ticker,
+        _current_rule.version if _current_rule is not None else None))
     from trading.entry.audit_evidence import entry_greeks
     _strategy_context.update(entry_greeks(_fresh_quote, contract['symbol'], _now_et()))
     from trading.entry.exit_deadline import capture_policy

@@ -6,6 +6,22 @@ import type { OptionChartData } from "./optionChart";
 import { normalizeStrategyLabels } from "./strategyIdentity.js";
 const BASE = import.meta.env.VITE_API_URL ?? "";
 
+export interface PremiumExitMetrics {
+  net_pnl: number; worst_loss: number | null; win_rate: number | null;
+  drawdown: number; profit_factor: number | 'infinite' | null;
+}
+export interface PremiumExitReport {
+  bucket: string; specification: string; updated_at: string; fingerprint: string;
+  baseline_source?: string; execution_validation?: PremiumExitReport;
+  candidates: { rule: string; label: string; paired_trades: number; sessions: number;
+    research_only?: boolean; rule_specification?: { arm_dollars_per_contract: string | null };
+    selection?: { paired_trades: number; sessions: number }; holdout_started_after?: string | null;
+    coverage: number; confidence: number; tested_exits: number; baseline: PremiumExitMetrics; candidate: PremiumExitMetrics;
+    baseline_winners_to_losses: number; improvement_interval: number[] | null;
+    exclusions: Record<string, number>; recommendation: string; status: string;
+    historical: { paired_trades: number }; promotion_ready: boolean }[];
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",   // send session cookie with every API call
@@ -154,6 +170,7 @@ export interface StrategyTickerResearchPair {
     evidence: string;
     test: string;
   }[];
+  premium_exit_research?: PremiumExitReport;
   exit_comparison: {
     minutes: number;
     option_results: number;
@@ -431,6 +448,7 @@ export interface PaidTrendResearchProgress {
 }
 
 export interface Trade {
+  premium_exit_policy?: { rule: string; version: string; label: string; mode: string } | null;
   id: number;
   contract_symbol?: string;
   strike?: number;

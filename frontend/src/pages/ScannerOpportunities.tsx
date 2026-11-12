@@ -5,6 +5,7 @@ import { SearchX } from "lucide-react";
 import { api, type ScannerOpportunity, type StrategyResearchMatrix, type StrategyTickerResearchPair } from "../lib/api";
 import { PageLoader } from "../components/PageLoader";
 import { AuthoredExitEvidence } from "../components/AuthoredExitEvidence";
+import { PremiumExitEvidence } from "../components/research/PremiumExitEvidence";
 import { ExpirationStudy } from "../components/ExpirationStudy";
 import { ProfitProtectionComparison, ReferenceContractTest } from "../components/ProfitProtectionComparison";
 import { ResearchAnalyticsView } from "../components/research/ResearchAnalyticsView";
@@ -78,6 +79,7 @@ function ResearchRow({ strategyId, pair, strategyName, strategyVersion, backtest
       </div>
     </div>
     <ResearchPairControl strategyId={strategyId} version={strategyVersion} ticker={pair.ticker} name={displayStrategyName(strategyName)} trading={pair.tradable} pair={pair} />
+    <div className="px-3 pb-2 text-xs"><PremiumExitEvidence report={pair.premium_exit_research} /></div>
     {pair.authored_exit_evidence && <div className="px-3 pb-2 text-xs"><AuthoredExitEvidence evidence={pair.authored_exit_evidence} /></div>}
     {pair.profit_protection_comparison && <div className="px-3 pb-2 text-xs"><ProfitProtectionComparison comparison={pair.profit_protection_comparison} /></div>}
     {pair.reference_contract_test && <div className="px-3 pb-2 text-xs"><ReferenceContractTest test={pair.reference_contract_test} /></div>}

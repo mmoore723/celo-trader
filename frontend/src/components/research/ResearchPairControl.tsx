@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
 import { request, type StrategyTickerResearchPair } from '../../lib/api';
+import { PremiumExitEvidence } from './PremiumExitEvidence';
 
 export function ResearchPairControl({ strategyId, version, ticker, name, trading, pair, initiallyOpen = false, onClose, evidence, blockedReason }: {
   strategyId: string; version: string; ticker: string; name: string; trading: boolean;
@@ -54,6 +55,7 @@ export function ResearchPairControl({ strategyId, version, ticker, name, trading
       <div className="space-y-4">
         <p className="font-semibold text-lg">{ticker} · {name}</p><p className="text-xs">{version}</p>
         {evidence}
+        <PremiumExitEvidence report={pair.premium_exit_research} />
         <label className="block">Exit setting
           <select className="input w-full mt-1" value={exit} disabled={busy} onChange={event => { setExit(event.target.value); setAcknowledged(false); }}>
             <option value="native">Original strategy exit</option>

@@ -193,7 +193,10 @@ def recommendations(matrix, settings):
                 "account_mode": "paper" if paper else "live", "can_enable": can_enable,
                 "blocker": "Automatically moved to research only: actual closed-trade PF fell below 1 for this account and version." if automatic_pause else None if can_enable else "Research passed; the matching order-entry and exit route still needs implementation and review." if not executable else "Turn on the strategy switch before adding this ticker." if not switch_on and not rule.authored_exit_order_route else "Research passed; live execution review is still required.",
             })
-    return {"recommendations": result, "policy": POLICY, "evaluated_strategies": len(matrix["strategies"])}
+    premium_reviews = [pair['premium_exit_research'].get('execution_validation',pair['premium_exit_research']) for strategy in matrix['strategies']
+                       for pair in strategy['pairs'] if pair.get('premium_exit_research')]
+    return {"recommendations": result, "premium_exit_reviews": premium_reviews,
+            "policy": POLICY, "evaluated_strategies": len(matrix["strategies"])}
 
 
 def decide(matrix, settings, sid, ticker, decision, fingerprint):

@@ -84,6 +84,18 @@ def _close_position(
         _US.get('positions', {}).get(trade['id'], {}).get('exit_pending_reason')
     )
     _market_exit = pricing_unavailable or _giveback_market or _session_market or _failed_range_deadline or _tsla_pending_exit
+    if reason == 'giveback_25pct':
+        # This new optional policy is paper-only. A retained signal must never
+        # turn into an unbounded market sell when the next quote gaps down.
+        if not paper or trade.get('paper') not in (True, 1):
+            raise ValueError('Premium giveback is not authorized for live execution')
+        from decimal import Decimal, ROUND_CEILING
+        from strategy_health.premium_rules import giveback_bid_floor
+        floor=float(giveback_bid_floor(trade['entry_price']).quantize(Decimal('.01'),rounding=ROUND_CEILING))
+        exit_price=max(float(exit_price or 0),floor)
+        bid_price=max(float(bid_price or 0),floor)
+        _market_exit=False
+        _urgent_exit=False
     fill = exit_order(alpaca.place_option_order, trade,
         symbol          = trade["contract_symbol"],
         qty             = trade["contracts"],
@@ -95,7 +107,7 @@ def _close_position(
         position_intent = "sell_to_close",
         # The strategy has already selected bid or midpoint-then-bid from
         # this exact Tradier contract. Do not overwrite it with another feed.
-        price_authority = "tradier" if reference_quote else "alpaca",
+        price_authority = "tradier" if reference_quote or reason == 'giveback_25pct' else "alpaca",
         order_context   = {
             "ticker": trade.get("ticker"),
             "strategy_id": trade.get("strategy_id"),
