@@ -11,8 +11,21 @@ from api.routes.trades import _row_to_trade, _strategy_version_from_trade_row
 
 def strategy_name(value):
     from config.strategy_catalog import REVIEWED_STRATEGIES
+    from strategy_audit_log.constants import _STRAT_NAMES
     rule = REVIEWED_STRATEGIES.get(value)
-    return rule.display_name if rule else str(value or '').replace('_', ' ')
+    name = rule.display_name if rule else _STRAT_NAMES.get(value, str(value or '').replace('_', ' '))
+    # Display only. Execution IDs, policy versions and saved records stay intact.
+    normalized = {
+        'TSLA Opening-Range Pullback': 'Opening-Range Pullback',
+        'SPY Trend Continuation': 'Trend Continuation',
+        'SPY Afternoon Fair Value Gap': 'Afternoon Fair Value Gap',
+        'SPY Afternoon FVG': 'Afternoon Fair Value Gap',
+        'SPY Failed-Range Recovery': 'Failed-Range Recovery',
+        'TSLA Two-Leg Trend Pullback': 'Two-Leg Trend Pullback',
+        'LIQ SWEEP': 'Liquidity Sweep',
+        'RECOVERED UNTRACKED': 'Recovered trade (strategy not recorded)',
+    }
+    return normalized.get(name, name)
 
 
 def entry_epoch(value):
@@ -23,7 +36,7 @@ def entry_epoch(value):
         return 0
 
 
-def read_journal(root: Path, *, user_id='', mode='all', status='all', ticker='', strategy='', strategy_id='', offset=0, limit=50):
+def read_journal(root: Path, *, user_id='', mode='all', status='all', ticker='', strategy='', strategy_id='', strategy_group='', offset=0, limit=50):
     root = root.resolve()
     names = {}
     users_db = root / 'users.db'
@@ -76,6 +89,9 @@ def read_journal(root: Path, *, user_id='', mode='all', status='all', ticker='',
                     if strategy_id:
                         if 'strategy_id' not in columns: continue
                         clauses.append('strategy_id=?'); params.append(strategy_id)
+                    if strategy_group:
+                        if 'strategy_id' not in columns: continue
+                        clauses.append('strategy_name(strategy_id)=?'); params.append(strategy_group)
                     if status != 'all': clauses.append('status=?'); params.append(status)
                     if ticker: clauses.append('ticker=?'); params.append(ticker.upper())
                     if strategy.strip():
@@ -109,7 +125,7 @@ def read_journal(root: Path, *, user_id='', mode='all', status='all', ticker='',
             result.append(trade)
         except (ValueError, TypeError):
             warnings.append(f'{owner["username"]} ({trade_mode}) trade {row["id"]}: invalid saved fields')
-    options = [{'id': s, 'name': strategy_name(s)} for s in strategies]
+    options = [{'id': name, 'name': name} for name in {strategy_name(s) for s in strategies}]
     options.sort(key=lambda s: (s['name'].lower(), s['id']))
     return {'trades':result, 'users':owners, 'strategies':options, 'total':total, 'offset':offset, 'limit':limit,
             'has_more':offset+limit<total, 'warnings':warnings}

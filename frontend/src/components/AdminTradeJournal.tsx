@@ -32,7 +32,7 @@ export function AdminTradeJournal() {
   const query = useQuery<Journal>({
     queryKey: ["admin-trade-journal", user, mode, status, ticker, strategy, offset],
     queryFn: async ({ signal }) => {
-      const params = new URLSearchParams({ user_id: user, mode, status, ticker, strategy_id: strategy, offset: String(offset), limit: "50" });
+      const params = new URLSearchParams({ user_id: user, mode, status, ticker, strategy_group: strategy, offset: String(offset), limit: "50" });
       const response = await fetch(`/api/admin/trade-journal?${params}`, { credentials: "include", signal });
       if (!response.ok) throw new Error(response.status === 403 ? "Admin access required." : "Journal could not load. Please refresh.");
       return response.json();
@@ -68,7 +68,7 @@ export function AdminTradeJournal() {
         onChange={e => change(setStrategy, e.target.value)}>
         <option value="">All strategies</option>
         {strategy && !query.data?.strategies.some(s => s.id === strategy) && <option value={strategy}>{strategy}</option>}
-        {query.data?.strategies.map(s => <option key={s.id} value={s.id}>{s.name}{query.data.strategies.some(other => other.id !== s.id && other.name === s.name) ? ` (${s.id})` : ""}</option>)}
+        {query.data?.strategies.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select></label>
     </div>
     {query.isError && <p role="alert" style={{ color: "var(--negative)" }}>{query.error.message}</p>}

@@ -80,7 +80,7 @@ class AdminJournalTests(unittest.TestCase):
         for search in ('trend continuation','V2_SPY_TREND_CONT','spy trend'):
             result=read_journal(self.root,strategy=search,limit=1)
             self.assertEqual(3,result['total'])
-            self.assertEqual('SPY Trend Continuation',result['trades'][0]['strategy_name'])
+            self.assertEqual('Trend Continuation',result['trades'][0]['strategy_name'])
         self.assertEqual(0,read_journal(self.root,strategy="' OR 1=1 --")['total'])
 
     def test_dropdown_includes_off_page_strategies_and_filters_exactly(self):
@@ -90,10 +90,24 @@ class AdminJournalTests(unittest.TestCase):
                 db.execute('UPDATE trades SET strategy_id=?', (f'STRATEGY_{index}',))
         result = read_journal(self.root, limit=1)
         self.assertEqual(3, len(result['strategies']))
-        selected = result['strategies'][0]['id']
+        selected = 'STRATEGY_0'
         filtered = read_journal(self.root, strategy_id=selected, limit=1)
         self.assertEqual(1, filtered['total'])
         self.assertEqual(selected, filtered['trades'][0]['strategy_id'])
         self.assertEqual(result['strategies'], filtered['strategies'])
         self.assertEqual(0, read_journal(self.root, strategy_id='STRATEGY')['total'])
         self.assertEqual(0, read_journal(self.root, strategy_id="' OR 1=1 --")['total'])
+
+    def test_unified_dropdown_groups_names_without_rewriting_trade_identity(self):
+        ids = ['TREND_CONT', 'V2_SPY_TREND_CONT', 'RESEARCH_QQQ_TREND_V2']
+        for path, strategy in zip(sorted(self.root.glob('*/trades_*.db')), ids):
+            with sqlite3.connect(path) as db:
+                db.execute('ALTER TABLE trades ADD COLUMN strategy_id TEXT')
+                db.execute('UPDATE trades SET strategy_id=?', (strategy,))
+        result = read_journal(self.root, strategy_group='Trend Continuation')
+        self.assertEqual(3, result['total'])
+        self.assertEqual([{'id':'Trend Continuation','name':'Trend Continuation'}], result['strategies'])
+        self.assertEqual(set(ids), {t['strategy_id'] for t in result['trades']})
+        self.assertEqual({'Trend Continuation'}, {t['strategy_name'] for t in result['trades']})
+        self.assertEqual(1, read_journal(self.root, strategy_id=ids[0])['total'])
+        self.assertEqual(0, read_journal(self.root, strategy_group="' OR 1=1 --")['total'])

@@ -99,11 +99,13 @@ def trade_journal(request: Request, user_id: str = '', mode: Literal['all','pape
                   ticker: str = Query('', max_length=20), offset: int = Query(0, ge=0),
                   strategy: str = Query('', max_length=120),
                   strategy_id: str = Query('', max_length=120),
+                  strategy_group: str = Query('', max_length=120),
                   limit: int = Query(50, ge=1, le=100)):
     _require_admin(request)
     from api.admin_journal import read_journal
     return read_journal(BASE_DIR/'user_data', user_id=user_id, mode=mode, status=status,
-                        ticker=ticker.strip(), strategy=strategy, strategy_id=strategy_id, offset=offset, limit=limit)
+                        ticker=ticker.strip(), strategy=strategy, strategy_id=strategy_id,
+                        strategy_group=strategy_group, offset=offset, limit=limit)
 
 @router.get("/users")
 async def list_users(request: Request):
