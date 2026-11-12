@@ -11,6 +11,7 @@ type Row = Trade & {
   parent_trade_id?: number; mode_warning?: string;
 };
 type Journal = { trades: Row[]; users: { user_id: string; username: string }[];
+  strategies: { id: string; name: string }[];
   total: number; has_more: boolean; warnings: string[] };
 const missing = "Not recorded";
 const money = (value?: number | null) => value == null ? missing : `$${value.toFixed(2)}`;
@@ -31,7 +32,7 @@ export function AdminTradeJournal() {
   const query = useQuery<Journal>({
     queryKey: ["admin-trade-journal", user, mode, status, ticker, strategy, offset],
     queryFn: async ({ signal }) => {
-      const params = new URLSearchParams({ user_id: user, mode, status, ticker, strategy, offset: String(offset), limit: "50" });
+      const params = new URLSearchParams({ user_id: user, mode, status, ticker, strategy_id: strategy, offset: String(offset), limit: "50" });
       const response = await fetch(`/api/admin/trade-journal?${params}`, { credentials: "include", signal });
       if (!response.ok) throw new Error(response.status === 403 ? "Admin access required." : "Journal could not load. Please refresh.");
       return response.json();
@@ -63,8 +64,12 @@ export function AdminTradeJournal() {
       </select></label>
       <label>Ticker <input className="input" placeholder="All tickers" value={ticker} maxLength={20}
         onChange={e => change(setTicker, e.target.value.trim().toUpperCase())} /></label>
-      <label>Strategy <input className="input" placeholder="Search strategy name or ID" value={strategy} maxLength={120}
-        onChange={e => change(setStrategy, e.target.value)} /></label>
+      <label>Strategy <select className="input" value={strategy}
+        onChange={e => change(setStrategy, e.target.value)}>
+        <option value="">All strategies</option>
+        {strategy && !query.data?.strategies.some(s => s.id === strategy) && <option value={strategy}>{strategy}</option>}
+        {query.data?.strategies.map(s => <option key={s.id} value={s.id}>{s.name}{query.data.strategies.some(other => other.id !== s.id && other.name === s.name) ? ` (${s.id})` : ""}</option>)}
+      </select></label>
     </div>
     {query.isError && <p role="alert" style={{ color: "var(--negative)" }}>{query.error.message}</p>}
     {query.isPending && <p role="status">Loading trade journal...</p>}

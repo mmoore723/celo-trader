@@ -82,3 +82,18 @@ class AdminJournalTests(unittest.TestCase):
             self.assertEqual(3,result['total'])
             self.assertEqual('SPY Trend Continuation',result['trades'][0]['strategy_name'])
         self.assertEqual(0,read_journal(self.root,strategy="' OR 1=1 --")['total'])
+
+    def test_dropdown_includes_off_page_strategies_and_filters_exactly(self):
+        for index, path in enumerate(sorted(self.root.glob('*/trades_*.db'))):
+            with sqlite3.connect(path) as db:
+                db.execute('ALTER TABLE trades ADD COLUMN strategy_id TEXT')
+                db.execute('UPDATE trades SET strategy_id=?', (f'STRATEGY_{index}',))
+        result = read_journal(self.root, limit=1)
+        self.assertEqual(3, len(result['strategies']))
+        selected = result['strategies'][0]['id']
+        filtered = read_journal(self.root, strategy_id=selected, limit=1)
+        self.assertEqual(1, filtered['total'])
+        self.assertEqual(selected, filtered['trades'][0]['strategy_id'])
+        self.assertEqual(result['strategies'], filtered['strategies'])
+        self.assertEqual(0, read_journal(self.root, strategy_id='STRATEGY')['total'])
+        self.assertEqual(0, read_journal(self.root, strategy_id="' OR 1=1 --")['total'])

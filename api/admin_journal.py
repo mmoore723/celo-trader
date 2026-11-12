@@ -23,14 +23,14 @@ def entry_epoch(value):
         return 0
 
 
-def read_journal(root: Path, *, user_id='', mode='all', status='all', ticker='', strategy='', offset=0, limit=50):
+def read_journal(root: Path, *, user_id='', mode='all', status='all', ticker='', strategy='', strategy_id='', offset=0, limit=50):
     root = root.resolve()
     names = {}
     users_db = root / 'users.db'
     if users_db.is_file() and not users_db.is_symlink():
         with closing(sqlite3.connect(users_db.as_uri()+'?mode=ro', uri=True, timeout=.2)) as db:
             names = dict(db.execute('SELECT id,username FROM users'))
-    owners = []; rows = []; total = 0; warnings = []
+    owners = []; rows = []; total = 0; warnings = []; strategies = set()
     for directory in sorted(root.iterdir()) if root.is_dir() else []:
         if not directory.is_dir() or directory.is_symlink():
             continue
@@ -70,6 +70,12 @@ def read_journal(root: Path, *, user_id='', mode='all', status='all', ticker='',
                     db.create_function('journal_epoch', 1, entry_epoch, deterministic=True)
                     db.create_function('strategy_name', 1, strategy_name, deterministic=True)
                     clauses=[]; params=[]
+                    columns = {r[1] for r in db.execute('PRAGMA table_info(trades)')}
+                    if 'strategy_id' in columns:
+                        strategies.update(r[0] for r in db.execute("SELECT DISTINCT strategy_id FROM trades WHERE strategy_id IS NOT NULL AND strategy_id != ''"))
+                    if strategy_id:
+                        if 'strategy_id' not in columns: continue
+                        clauses.append('strategy_id=?'); params.append(strategy_id)
                     if status != 'all': clauses.append('status=?'); params.append(status)
                     if ticker: clauses.append('ticker=?'); params.append(ticker.upper())
                     if strategy.strip():
@@ -103,5 +109,7 @@ def read_journal(root: Path, *, user_id='', mode='all', status='all', ticker='',
             result.append(trade)
         except (ValueError, TypeError):
             warnings.append(f'{owner["username"]} ({trade_mode}) trade {row["id"]}: invalid saved fields')
-    return {'trades':result, 'users':owners, 'total':total, 'offset':offset, 'limit':limit,
+    options = [{'id': s, 'name': strategy_name(s)} for s in strategies]
+    options.sort(key=lambda s: (s['name'].lower(), s['id']))
+    return {'trades':result, 'users':owners, 'strategies':options, 'total':total, 'offset':offset, 'limit':limit,
             'has_more':offset+limit<total, 'warnings':warnings}
