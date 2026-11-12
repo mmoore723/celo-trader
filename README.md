@@ -437,3 +437,21 @@ frozen specifications and prospective outcomes remain required before enrollment
 or qualification. Installing the module does not start a worker or promote exits.
 Rollback is corrective removal through deploy.sh; no trading-setting or database
 migration rollback is needed. Retain all source evidence and prior reports.
+
+### Trend Continuation paper profit-taking
+
+For explicitly assigned SPY and QQQ Trend Continuation paper entries, the
+approved interim exit sells half the contracts (rounded down) when a valid
+option bid reaches 125% of actual average entry cost. After the half-sale is
+confirmed, the remainder exits after giving back 25% of the highest observed
+per-contract profit since entry. One-contract positions skip the partial sale
+and begin trailing after the same 25% gain threshold. Existing native deadlines,
+safety exits and session liquidation retain priority. Giveback orders retain the
+modeled cost-covering limit floor; this is not a guarantee of execution or profit.
+
+The policy is frozen at entry. Existing strategy names and strategy versions do
+not change. Live settings and research candidate specifications are unchanged.
+This is a user-approved interim paper rule, not a research-qualified promotion.
+Rollback restores previous assignments for future entries; keep this handler
+available until all positions entered under it have closed. Roll back selection
+if quantity reconciliation, persisted state or duplicate-order protection fails.

@@ -2,6 +2,9 @@
 import json
 from hashlib import sha256
 from strategy_health.premium_rules import EXECUTION_RULES, VERSION, advance, clock
+from trading.trend_profit_exit import RULE as TREND_RULE, PAIRS
+
+PAPER_RULES = EXECUTION_RULES | {TREND_RULE}
 
 
 def scope(account, strategy, ticker, version):
@@ -22,13 +25,15 @@ def freeze_selection(settings, strategy, ticker, version):
     assignment=(settings.get('premium_exit_paper_assignments') or {}).get(scope(account,strategy,ticker,version))
     if not assignment:
         return {}
-    if (assignment.get('rule') not in EXECUTION_RULES or assignment.get('version')!=VERSION
+    if (assignment.get('rule') not in PAPER_RULES or assignment.get('version')!=VERSION
             or assignment.get('account')!=account or assignment.get('mode')!='paper'
             or assignment.get('strategy')!=strategy or assignment.get('ticker')!=ticker
             or assignment.get('strategy_version')!=version
             or assignment.get('fingerprint')!=fingerprint(assignment)
             or not assignment.get('approval_id')):
         raise ValueError('Invalid approved premium policy; entry refused')
+    if assignment.get('rule') == TREND_RULE and (strategy, ticker) not in PAIRS:
+        raise ValueError('Trend profit exit is restricted to approved pairs')
     return {'premium_exit_policy':json.loads(json.dumps(assignment))}
 
 
@@ -46,7 +51,7 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
     policy=context.get('premium_exit_policy')
     if not policy:
         return False,'hold'
-    if (policy.get('rule') not in EXECUTION_RULES
+    if (policy.get('rule') not in PAPER_RULES
             or policy.get('account')!=trade.get('broker_account_id') or policy.get('mode')!='paper'
             or policy.get('strategy')!=trade.get('strategy_id') or policy.get('ticker')!=trade.get('ticker')
             or policy.get('version')!=VERSION or policy.get('fingerprint')!=fingerprint(policy)):
@@ -54,13 +59,22 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
     if clock(now)<=clock(trade['entry_time']):
         return False,'hold'
     previous=context.get('premium_exit_state') or {}
-    state=advance(policy['rule'],previous,entry=float(trade['entry_price']),
-                  quantity=int(trade['contracts']),quote=quote,received=now,symbol=trade['contract_symbol'])
+    if policy['rule'] == TREND_RULE:
+        if (trade.get('strategy_id'), trade.get('ticker')) not in PAIRS:
+            raise ValueError('Trend profit exit pair mismatch')
+        from trading.trend_profit_exit import advance as trend_advance, sold_quantity
+        current=conn.execute('SELECT contracts FROM trades WHERE id=?', (trade['id'],)).fetchone()
+        state, decision=trend_advance(previous,entry=float(trade['entry_price']),
+            quantity=int(current[0]),sold=sold_quantity(conn,trade),quote=quote,now=now,symbol=trade['contract_symbol'])
+    else:
+        state=advance(policy['rule'],previous,entry=float(trade['entry_price']),
+                      quantity=int(trade['contracts']),quote=quote,received=now,symbol=trade['contract_symbol'])
+        decision=(True,policy['rule']) if state.get('signal') else (False,'hold')
     if state!=previous:
         context['premium_exit_state']=state
         conn.execute('UPDATE trades SET strategy_context_json=? WHERE id=? AND paper=1 AND broker_account_id IS ?',
                      (json.dumps(context),trade['id'],trade.get('broker_account_id')))
-    return (True,policy['rule']) if state.get('signal') else (False,'hold')
+    return decision
 
 
 def evaluate_position(trade, quote, now):

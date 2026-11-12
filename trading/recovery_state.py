@@ -3,6 +3,18 @@ from database import get_conn
 
 
 def restore_stage1(trade, position_state):
+    import json
+    context = trade.get('strategy_context_json') or {}
+    context = json.loads(context) if isinstance(context, str) else context
+    if trade.get('paper') in (True, 1) and (context.get('premium_exit_policy') or {}).get('rule') == 'trend_partial_profit':
+        from trading.trend_profit_exit import partial_remaining, PARTIAL
+        remaining = partial_remaining(trade)
+        position_state['stage1_done'] = remaining == 0
+        position_state['stage1_be_price'] = None
+        if remaining == 0 and position_state.get('exit_pending_reason') == PARTIAL:
+            position_state.pop('exit_pending_reason', None)
+            position_state.pop('exit_pending_since', None)
+        return
     if trade.get('strategy_id') == 'RESEARCH_CTX_ORB_ATR10_V2':
         from trading.research_order_exit import partial_remaining
         remaining = partial_remaining(trade)

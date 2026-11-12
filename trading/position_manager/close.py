@@ -84,7 +84,7 @@ def _close_position(
         _US.get('positions', {}).get(trade['id'], {}).get('exit_pending_reason')
     )
     _market_exit = pricing_unavailable or _giveback_market or _session_market or _failed_range_deadline or _tsla_pending_exit
-    if reason == 'giveback_25pct':
+    if reason in ('giveback_25pct','trend_profit_giveback'):
         # This new optional policy is paper-only. A retained signal must never
         # turn into an unbounded market sell when the next quote gaps down.
         if not paper or trade.get('paper') not in (True, 1):
@@ -107,7 +107,7 @@ def _close_position(
         position_intent = "sell_to_close",
         # The strategy has already selected bid or midpoint-then-bid from
         # this exact Tradier contract. Do not overwrite it with another feed.
-        price_authority = "tradier" if reference_quote or reason == 'giveback_25pct' else "alpaca",
+        price_authority = "tradier" if reference_quote or reason in ('giveback_25pct','trend_profit_giveback') else "alpaca",
         order_context   = {
             "ticker": trade.get("ticker"),
             "strategy_id": trade.get("strategy_id"),

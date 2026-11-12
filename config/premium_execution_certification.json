@@ -1,22 +1,22 @@
 {
   "version": "premium-exits-v2",
   "passed": true,
-  "validation": "Mocked broker execution only; not live-validated",
-  "backend_tests": 1888,
-  "backend_skips": 3,
-  "focused_premium_tests": 27,
-  "frontend_tests": 215,
-  "checked_at": "2026-11-12T09:30:00Z",
+  "validation": "Mocked broker execution, confirmed partial-fill recovery and duplicate-order checks; not live-validated. Full release regression enforced by deploy.sh.",
+  "focused_premium_tests": 40,
+  "checked_at": "2026-11-12T23:02:53.392527+00:00",
   "sources": {
     "strategy_health/premium_rules.py": "4d28d392a77048a7b373070a5d4aef25f06009d267c37c3893ddcf05f3471bc2",
     "strategy_health/premium_research.py": "6ddf4bf0051955a396acc41a18fa74fffff41e073e5f968b7236645a3c4388e8",
     "strategy_health/premium_native.py": "723fb42005ce953afba07a65dcf230209b97d0802ce174d14cb17704662c1ada",
     "strategy_health/premium_approval.py": "390fba942f726f6f946993a11c6200597d4c2d2d6032274849bb564693dd6c05",
-    "trading/premium_policy.py": "750a8c214ce44a4eea5de4b5cec89fe939f3b890bed2af77bb0eef9e2bd17e83",
-    "trading/position_manager/close.py": "7c73eb0ee94f1913f39f67028ea8cf923ff4ad25d68665168a2cceec3770e8dc",
-    "trading/position_manager/manage.py": "fbae208c1223eec098c712f528efc0106c37f8f77a95ca4f648341ad5da6e4ad",
+    "trading/premium_policy.py": "ebc3031e2baaf1b4c2b0ffb6796570d1da0316d0ba44ddedb1560870baa271bf",
+    "trading/position_manager/close.py": "1a0d90d61b59926589e15ca49bce29e579ce535bc737f0301c799f30e4fa7fce",
+    "trading/position_manager/manage.py": "a72b67739d0f19ab1e4c7794b1c4487511fdc80328939991764728f157ec68b8",
     "trading/entry/tick.py": "1d4eab1ba8ad183010c6a01022be14cc1f6fccb791580cc0ea9e6ed59d18e110",
     "broker/alpaca_orders.py": "887c38ebf184bdf8a2723ed69bfac4bda92c7bfc25639eedda0a511c767cfd17",
-    "broker/tradier_execution.py": "ebf07a9e45111e92558b97a1082a8a67161dfbf1601bbbe9a4b60b4747b9d642"
+    "broker/tradier_execution.py": "ebf07a9e45111e92558b97a1082a8a67161dfbf1601bbbe9a4b60b4747b9d642",
+    "trading/trend_profit_exit.py": "ee56402bc79f8948099afaf289f80af42781467971589fd3ada5bf0cdc7e09a9",
+    "trading/recovery_state.py": "855e64711e30d2ef22bec9882cb3a842f02ec439793ab2dea32db97f1d6f4172",
+    "trading/position_manager/exit_preflight.py": "e428124487ff1ea6c060172a06d7489eede783d41328b50388639de162ebfa11"
   }
 }

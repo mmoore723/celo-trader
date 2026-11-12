@@ -71,7 +71,7 @@ def _resolve_latched_exit(
     `_close_position` removes the position state only after a confirmed fill.
     """
     pending_reason = str(position_state.get("exit_pending_reason") or "").strip()
-    if pending_reason in ('premium_2pct','premium_25pct','giveback_25pct') and should_exit and reason not in ('premium_2pct','premium_25pct','giveback_25pct'):
+    if pending_reason in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback') and should_exit and reason not in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback'):
         position_state['exit_pending_reason'] = reason
         return True, reason
     if pending_reason and should_exit and reason == 'research_session_close':
@@ -819,8 +819,11 @@ def _manage_open_position(
 
         if reason.startswith("stage1"):
             half_contracts = max(1, trade["contracts"] // 2)
-            if reason == 'stage1_research_atr10':
-                from trading.research_order_exit import partial_remaining
+            if reason in ('stage1_research_atr10', 'stage1_trend_profit'):
+                if reason == 'stage1_trend_profit':
+                    from trading.trend_profit_exit import partial_remaining
+                else:
+                    from trading.research_order_exit import partial_remaining
                 half_contracts = min(int(trade['contracts']), partial_remaining(trade))
                 if half_contracts <= 0:
                     _clear_exit_latch(ps)
@@ -860,10 +863,11 @@ def _manage_open_position(
             fill = exit_order(alpaca.place_option_order, trade,
                 symbol          = trade["contract_symbol"],
                 qty             = half_contracts,
+                price_authority = 'tradier' if reason == 'stage1_trend_profit' else 'alpaca',
                 side            = "sell",
                 order_type      = "limit",
-                limit_price     = bid_price if reason == 'stage1_research_atr10' else current_price,
-                step_to_price   = None if reason == 'stage1_research_atr10' else bid_price,
+                limit_price     = bid_price if reason in ('stage1_research_atr10','stage1_trend_profit') else current_price,
+                step_to_price   = None if reason in ('stage1_research_atr10','stage1_trend_profit') else bid_price,
                 allow_market_fallback = False,
                 position_intent = "sell_to_close",
                 order_context   = {
@@ -965,7 +969,7 @@ def _manage_open_position(
                 "INFO", "trading_logic",
                 f"🟢 Took 50% profit — sold {_sold_qty} contract"
                 f"{'s' if _sold_qty != 1 else ''} at ${fill_price:.2f} "
-                f"(+${partial_pnl:.2f}). ATR/swing trailing stop now active on remainder.",
+                f"(+${partial_pnl:.2f}). " + ("25% peak-profit giveback manages the remainder after the half-sale completes." if reason == 'stage1_trend_profit' else "ATR/swing trailing stop now active on remainder."),
             )
 
             try:
@@ -991,13 +995,13 @@ def _manage_open_position(
                 logger.debug("ai_reasoning narrate_exit dispatch failed (non-fatal): %s", _ai_ex)
 
             from config import STAGE2_TRAIL_PCT
-            ps["stage1_done"]     = reason != 'stage1_research_atr10' or _sold_qty >= half_contracts
-            ps["stage1_be_price"] = None if reason == 'stage1_research_atr10' else round(entry_price * (1.0 + STAGE2_TRAIL_PCT), 4)
+            ps["stage1_done"]     = reason not in ('stage1_research_atr10','stage1_trend_profit') or _sold_qty >= half_contracts
+            ps["stage1_be_price"] = None if reason in ('stage1_research_atr10','stage1_trend_profit') else round(entry_price * (1.0 + STAGE2_TRAIL_PCT), 4)
             # Stage 1 is a partial profit-take, not an instruction to liquidate
             # the runner.  Once that fill is confirmed, retire its sticky exit
             # intent and let Stage 2 evaluate the remaining contracts normally.
             _clear_exit_latch(ps)
-            if reason == 'stage1_research_atr10' and _sold_qty < half_contracts:
+            if reason in ('stage1_research_atr10','stage1_trend_profit') and _sold_qty < half_contracts:
                 _resolve_latched_exit(ps, True, reason, now_et)
             _persist_exit_latch(trade["id"], ps)
 
