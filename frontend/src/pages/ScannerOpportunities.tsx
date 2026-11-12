@@ -34,10 +34,19 @@ function DecisionCard({ entry }: { entry: ScannerOpportunity }) {
   return <article className="card p-4" style={{ borderLeft: `5px solid ${color}` }}>
     <div className="flex flex-wrap items-start gap-3">
       <div className="w-20"><p className="text-xs" style={{ color: "var(--ink-faint)" }}>{time(entry.observed_at)} ET</p><p className="text-lg font-semibold">{entry.ticker}</p></div>
-      <div className="flex-1 min-w-52"><p className="text-sm font-semibold" style={{ color }}>{opportunityDecisionTitle(entry)}</p><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{displayStrategyName(NAMES[entry.strategy_id] ?? entry.strategy_id)}</p><p className="text-sm mt-2">{opportunityReason(entry)}</p></div>
+      <div className="flex-1 min-w-52"><p className="text-sm font-semibold" style={{ color }}>{opportunityDecisionTitle(entry)}</p><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>{displayStrategyName(NAMES[entry.strategy_id] ?? entry.strategy_id)}</p><p className="text-sm mt-2">{entry.explanation?.conclusion || opportunityReason(entry)}</p></div>
       {entered && trade?.pnl != null && <div className="text-right"><p className="text-xs" style={{ color: "var(--ink-muted)" }}>Result</p><p className="text-lg font-semibold" style={{ color: Number(trade.pnl) >= 0 ? "var(--positive)" : "var(--negative)" }}>{money(trade.pnl)}</p></div>}
     </div>
-    <details className="mt-3 border-t pt-3" style={{ borderColor: "var(--border)" }}><summary className="text-xs font-medium cursor-pointer" style={{ color: "var(--accent)" }}>Show recorded details</summary><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs" style={{ color: "var(--ink-muted)" }}><p><b>Direction:</b> {entry.direction || "—"}</p><p><b>Contract:</b> {trade?.contract_symbol || contract.symbol || "Not selected"}</p><p><b>Quantity:</b> {entry.planned_quantity ?? trade?.contracts ?? "—"}</p><p><b>Entry:</b> {money(trade?.entry_price ?? entry.contract_preview?.planned_entry_price ?? entry.entry_plan?.estimated_entry_price)}</p></div></details>
+    {entry.explanation && <div className="mt-3 space-y-3 text-sm">
+      <p><strong>What the bot saw:</strong> {entry.explanation.setup}</p>
+      {entry.explanation.checks.map((check, index) => <div key={index} className="rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+        <p className="font-semibold">{check.name}</p><p className="mt-1">{check.saw} {check.required}</p>
+        <p className="mt-1" style={{ color: "var(--ink-muted)" }}>{check.meaning}</p>
+      </div>)}
+      {entry.explanation.where && <p className="text-xs" style={{ color: "var(--ink-muted)" }}><strong>Where this came from:</strong> {entry.explanation.where}</p>}
+      {entry.explanation.source.includes("missing") && <p className="text-xs" style={{ color: "var(--warning)" }}>Recovered explanation from the saved check. The final decision log was missing; historical records have not been rewritten.</p>}
+    </div>}
+    <details className="mt-3 border-t pt-3" style={{ borderColor: "var(--border)" }}><summary className="text-xs font-medium cursor-pointer" style={{ color: "var(--accent)" }}>Show recorded details</summary><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs" style={{ color: "var(--ink-muted)" }}><p><b>Direction:</b> {entry.direction || "—"}</p><p><b>Contract:</b> {trade?.contract_symbol || contract.symbol || entry.contract_preview?.symbol || "Not recorded"}</p><p><b>{trade ? "Contracts:" : "Estimated contracts:"}</b> {entry.planned_quantity ?? trade?.contracts ?? "—"}</p><p><b>{trade ? "Entry fill:" : "Preview price:"}</b> {money(trade?.entry_price ?? entry.contract_preview?.planned_entry_price ?? entry.entry_plan?.estimated_entry_price)}</p></div></details>
   </article>;
 }
 

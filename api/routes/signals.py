@@ -401,6 +401,8 @@ def get_scanner_opportunities(
         logger.exception("scanner opportunities query failed")
         raise HTTPException(status_code=500, detail=str(exc))
 
+    from api.decision_explanation import explain_decision
+
     journal_by_candidate: dict[str, dict] = {}
     quotes_by_candidate: dict[str, list[dict]] = {}
     for raw in quote_rows:
@@ -450,6 +452,17 @@ def get_scanner_opportunities(
         outcome_value = str(journal.get("outcome") or stored_outcome) if journal else stored_outcome
         reason_code = row.get("gate_reason") or (journal.get("reason_code") if journal else None)
         reason_detail = row.get("gate_detail") or (journal.get("reason_detail") if journal else None)
+        screen = decision_meta.get("premarket_screen") or metadata.get("premarket_screen") or {}
+        decision_source = "recorded decision"
+        # Read-only recovery from the decision-time snapshot, never current settings.
+        # Do not overwrite entered, research-only or independently blocked outcomes.
+        if (outcome_value == "pending" and not reason_code and not reason_detail
+                and isinstance(screen, dict) and screen.get("allowed") is False):
+            outcome_value = "blocked"
+            reason_code = "premarket_screen_rejected"
+            decision_source = "saved premarket check; final journal entry was missing"
+        explanation = explain_decision(row, plan_context, {**metadata, **decision_meta},
+                                       reason_code, reason_detail, decision_source)
         trade = None
         if row.get("linked_trade_id"):
             trade = {
@@ -471,7 +484,7 @@ def get_scanner_opportunities(
             "entry_plan": entry_plan, "contract": contract, "contract_preview": contract_preview,
             "contract_recipe": contract_recipe, "contract_selection": contract_selection,
             "planned_quantity": plan_context.get("planned_quantity"), "exit_plan": exit_plan,
-            "order_intent": order_intent,
+            "order_intent": order_intent, "explanation": explanation,
             "plan_status": _plan_status(contract=contract, preview=contract_preview, trade=trade, outcome=outcome_value),
             "option_quote_timeline": quote_timeline,
             "option_type": (trade or {}).get("option_type") or (
@@ -513,6 +526,8 @@ def get_scanner_opportunities(
             "tier": journal.get("tier") or "main", "trigger_bar": context.get("trigger_bar"),
             "outcome": journal.get("outcome"), "reason_code": journal.get("reason_code"),
             "reason_detail": journal.get("reason_detail"),
+            "explanation": explain_decision(journal, context, meta, journal.get("reason_code"),
+                                             journal.get("reason_detail"), "recorded decision"),
             "entry_plan": context.get("entry_plan") if isinstance(context.get("entry_plan"), dict) else {},
             "contract": context.get("contract") if isinstance(context.get("contract"), dict) else {},
             "contract_preview": _contract_preview(context),

@@ -32,6 +32,7 @@ export function lifecycleCopy(entry) {
 
 export function opportunityDecisionTitle(entry) {
   if (entry?.outcome === "entered") return "Trade entered";
+  if (entry?.reason_code === "premarket_screen_rejected") return "Not entered: premarket check failed";
   if (entry?.reason_code === "entry_price_not_reached") return "Order sent · not filled";
   if (entry?.reason_code === "stale_entry_quote") return "Skipped: option price was delayed";
   if (entry?.reason_code === "spy_trend_level_too_close") return "Skipped: next price wall was too close";
@@ -46,7 +47,7 @@ export function opportunityDecisionTitle(entry) {
 
 export function opportunityReason(entry) {
   if (!entry?.reason_code && !entry?.reason_detail && entry?.entry_plan?.trigger === "raw strategy setup detected")
-    return "Setup and option preview recorded. No final entry decision was recorded for this setup.";
+    return "The bot found a setup and checked an option price, but did not save what happened next. This record cannot tell us why no trade followed.";
   const known = {
     entry_price_not_reached: "The order was sent, but the option never traded inside the bot's approved price range.",
     spy_afternoon_fvg_slot_reserved: "The bot saved this time slot for the higher-priority afternoon strategy.",
@@ -57,7 +58,7 @@ export function opportunityReason(entry) {
   if (entry?.reason_code === "stale_entry_quote") {
     const match = String(entry?.reason_detail || "").match(/was\s+([\d.]+)s\s+old/i);
     const observedAge = match ? `${match[1]} seconds old` : "missing a current timestamp";
-    return `The exact Tradier option price was ${observedAge}. The bot requires a quote no more than 120 seconds old, so no order was sent. This usually means the delayed sandbox price feed is being used.`;
+    return `The exact Tradier option price was ${observedAge}. The entry check rejected it as too old to use. An old quote can make a trade look cheaper than it is. The saved record does not establish the cause of the delay.`;
   }
   return (
     (entry?.reason_code && known[entry.reason_code])

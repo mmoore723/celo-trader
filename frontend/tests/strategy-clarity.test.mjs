@@ -16,6 +16,6 @@ test('strategy page defaults to trading and hides other groups', () => {
 test('recorded previews do not claim a check is still running', () => {
   const entry = { lifecycle: 'pricing', entry_plan: { trigger: 'raw strategy setup detected' } };
   assert.equal(opportunityDecisionTitle(entry), 'Option preview recorded');
-  assert.match(opportunityReason(entry), /No final entry decision/);
+  assert.match(opportunityReason(entry), /did not save what happened next/);
   assert.equal(opportunityReason({ ...entry, reason_detail: 'Budget exceeded' }), 'Budget exceeded');
 });

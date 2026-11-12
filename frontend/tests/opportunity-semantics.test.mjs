@@ -42,7 +42,7 @@ test("live preview collapses repeated detections from one episode", () => {
   assert.deepEqual(dedupeLatestEpisodes(rows, 3).map((row) => row.id), ["3", "2"]);
 });
 
-test("stale quote decisions explain the exact two-minute price rule", () => {
+test("stale quote explanations do not invent a feed cause or threshold", () => {
   const entry = {
     outcome: "blocked",
     reason_code: "stale_entry_quote",
@@ -50,9 +50,8 @@ test("stale quote decisions explain the exact two-minute price rule", () => {
   };
   assert.equal(opportunityDecisionTitle(entry), "Skipped: option price was delayed");
   assert.match(opportunityReason(entry), /904\.1 seconds old/);
-  assert.match(opportunityReason(entry), /no more than 120 seconds old/);
-  assert.match(opportunityReason(entry), /no order was sent/);
-  assert.match(opportunityReason(entry), /sandbox price feed/);
+  assert.match(opportunityReason(entry), /rejected it as too old/);
+  assert.doesNotMatch(opportunityReason(entry), /sandbox|120/);
 });
 
 test("SPY trend context blocks name the nearby price wall", () => {
@@ -63,4 +62,8 @@ test("SPY trend context blocks name the nearby price wall", () => {
   };
   assert.equal(opportunityDecisionTitle(entry), "Skipped: next price wall was too close");
   assert.match(opportunityReason(entry), /0\.32 ATR/);
+});
+
+test("saved premarket rejection is named plainly", () => {
+ assert.equal(opportunityDecisionTitle({reason_code:"premarket_screen_rejected"}), "Not entered: premarket check failed");
 });

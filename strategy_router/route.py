@@ -319,6 +319,9 @@ def route_signals(
                     logger.warning("candidate observation resolve failed (non-fatal)", exc_info=True)
             continue
         if not screen_passed:
+            if not quiet:
+                _gates._journal_dropped([sig], [], ticker, 'premarket_screen_rejected',
+                    'The saved premarket eligibility check did not pass.')
             observe(strategy_id, 'premarket_screen_rejected', 'routing')
             continue
         signals.append(sig)
@@ -379,6 +382,9 @@ def route_signals(
                     # return an observation-only candidate to the entry loop.
                     continue
                 if not screen_passed:
+                    if not quiet:
+                        _gates._journal_dropped([sig], [], ticker, 'premarket_screen_rejected',
+                            'The saved premarket eligibility check did not pass.')
                     observe(strategy_id, 'premarket_screen_rejected', 'routing')
                     continue
                 signals.append(sig)

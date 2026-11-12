@@ -675,6 +675,7 @@ export interface ScannerOpportunityOrderIntent {
   confirmed_fill_price?: number | null; trade_id?: number | null;
 }
 export interface ScannerOpportunity {
+  explanation?: { setup: string; checks: { name: string; saw: string; required: string; meaning: string }[]; where: string; source: string; conclusion?: string | null; recorded_detail?: string | null };
   id: string; source: "candidate" | "journal_only"; observed_at: string;
   ticker: string; strategy_id: string; direction: "bullish" | "bearish" | string;
   confidence: number; tier: "main" | "opportunity" | string; trigger_bar?: string | null;
