@@ -12,7 +12,8 @@ import shutil
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Query
+from typing import Literal
 from pydantic import BaseModel, Field
 from config.paths import BASE_DIR
 
@@ -91,6 +92,16 @@ def _cpu_health(sample_seconds: float = 0.1) -> dict:
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+@router.get("/trade-journal")
+def trade_journal(request: Request, user_id: str = '', mode: Literal['all','paper','live'] = 'all',
+                  status: Literal['all','open','closed'] = 'all',
+                  ticker: str = Query('', max_length=20), offset: int = Query(0, ge=0),
+                  limit: int = Query(50, ge=1, le=100)):
+    _require_admin(request)
+    from api.admin_journal import read_journal
+    return read_journal(BASE_DIR/'user_data', user_id=user_id, mode=mode, status=status,
+                        ticker=ticker.strip(), offset=offset, limit=limit)
 
 @router.get("/users")
 async def list_users(request: Request):

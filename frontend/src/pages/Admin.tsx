@@ -9,6 +9,7 @@ import { PasswordChecklist, isPasswordValid } from "../components/PasswordCheckl
 import { api } from "../lib/api";
 import { RemovedStrategies } from "../components/settings/StrategyRemoval";
 import { AdminActivityLog } from "../components/AdminActivityLog";
+import { AdminTradeJournal } from "../components/AdminTradeJournal";
 
 interface User {
   user_id:    string;
@@ -236,7 +237,7 @@ export function Admin() {
   }
 
   return (
-    <div className="p-4 flex flex-col gap-4" style={{ maxWidth: 600, width: "100%" }}>
+    <div className="p-4 flex flex-col gap-4" style={{ maxWidth: 1600, width: "100%" }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div><h2 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>Admin</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>System status and account access</p></div>
@@ -245,6 +246,7 @@ export function Admin() {
         </button>
       </div>
 
+      {user?.is_admin && <AdminTradeJournal />}
       {user?.is_admin && <AdminActivityLog />}
       <RemovedStrategies />
       <section className="card px-3 py-2" aria-label="Machine learning readiness">
