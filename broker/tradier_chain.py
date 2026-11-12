@@ -165,6 +165,7 @@ class TradierChainMixin:
             resp = self._get("/markets/quotes", {
                 "symbols": option_symbol,
                 "greeks":  "true",
+                "includeLotSize": "true",
             })
             received_at = datetime.now(timezone.utc).isoformat()
             quotes = resp.get("quotes", {}).get("quote", {})
@@ -179,6 +180,8 @@ class TradierChainMixin:
                 "source_symbol": quotes.get("symbol"),
                 "bid":    bid,
                 "ask":    ask,
+                "bidsize": quotes.get("bidsize"),
+                "asksize": quotes.get("asksize"),
                 "mid":    round((bid + ask) / 2, 4),
                 "spread": round(ask - bid, 4),
                 "last":   float(quotes.get("last", 0) or 0),

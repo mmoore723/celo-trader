@@ -63,10 +63,10 @@ def capture_horizon(entry, calendar, metadata):
 
 
 class Registry:
-    def __init__(self, root):
+    def __init__(self, root, *, timeout=.2):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(self.root/'fast_capture.sqlite3', timeout=.2)
+        self.db = sqlite3.connect(self.root/'fast_capture.sqlite3', timeout=timeout)
         self.db.row_factory = sqlite3.Row
         self.db.executescript('''PRAGMA journal_mode=WAL;
           CREATE TABLE IF NOT EXISTS registrations (
@@ -194,12 +194,12 @@ class Registry:
         return result
 
 
-def discover(path, account, mode, registry, calendar, now):
+def discover(path, account, mode, registry, calendar, now, *, broker_only=False):
     """Read existing fills and research selections without registering experiments."""
     if not Path(path).is_file():
         return {'source_database':'missing','registered':0,'blocked':{'missing_source_database':1}}
     cutoff=(now.astimezone(ET).date()-timedelta(days=10)).isoformat()
-    problems={}; added=0
+    problems={}; added=0; errors=[]
     with closing(sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True,timeout=.2)) as db:
         db.row_factory=sqlite3.Row
         started=time.monotonic()
@@ -208,33 +208,43 @@ def discover(path, account, mode, registry, calendar, now):
         tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         sources=[]
         if 'trades' in tables:
-            sources.append(('broker_trade',db.execute('''SELECT id AS origin_id,ticker,strategy_id,contract_symbol,
+            sources.append(('broker_trade','''SELECT id AS origin_id,ticker,strategy_id,contract_symbol,
                 entry_time AS entry_at,strategy_context_json AS metadata FROM trades
                 WHERE broker_account_id=? AND paper=? AND (entry_time>=? OR status='open')
-                ORDER BY id LIMIT 10001''',(account,int(mode=='paper'),cutoff)).fetchall()))
-        if {'shadow_candidates','candidate_option_quote_observations'}<=tables:
-            sources.append(('research_selection',db.execute('''SELECT s.candidate_id AS origin_id,s.ticker,
+                ORDER BY id LIMIT 10001''',(account,int(mode=='paper'),cutoff)))
+        if not broker_only and {'shadow_candidates','candidate_option_quote_observations'}<=tables:
+            sources.append(('research_selection','''SELECT s.candidate_id AS origin_id,s.ticker,
                 s.strategy_id,q.contract_symbol,q.observed_at AS entry_at,s.metadata_json AS metadata
                 FROM shadow_candidates s JOIN candidate_option_quote_observations q
                 ON s.candidate_id=q.candidate_id AND q.observation_kind='entry'
                 WHERE s.broker_account_id=? AND s.observed_at>=? ORDER BY s.observed_at LIMIT 10001''',
-                (account,cutoff)).fetchall()))
-        if {'shadow_candidates','candidate_contract_alternatives'}<=tables:
-            sources.append(('research_alternative',db.execute('''SELECT s.candidate_id AS origin_id,s.ticker,
+                (account,cutoff)))
+        if not broker_only and {'shadow_candidates','candidate_contract_alternatives'}<=tables:
+            sources.append(('research_alternative','''SELECT s.candidate_id AS origin_id,s.ticker,
                 s.strategy_id,q.contract_symbol,q.observed_at AS entry_at,s.metadata_json AS metadata
                 FROM shadow_candidates s JOIN candidate_contract_alternatives q
                 ON s.candidate_id=q.candidate_id AND q.observation_kind='entry'
                 WHERE s.broker_account_id=? AND s.observed_at>=? ORDER BY s.observed_at LIMIT 10001''',
-                (account,cutoff)).fetchall()))
-        if {'shadow_candidates','research_expiration_comparisons'}<=tables:
-            sources.append(('research_expiration_study',db.execute('''SELECT s.candidate_id||':'||q.profile_version AS origin_id,
+                (account,cutoff)))
+        if not broker_only and {'shadow_candidates','research_expiration_comparisons'}<=tables:
+            sources.append(('research_expiration_study','''SELECT s.candidate_id||':'||q.profile_version AS origin_id,
                 s.ticker,s.strategy_id,
                 CASE WHEN json_valid(q.state_json) THEN json_extract(q.state_json,'$.contract_symbol') END AS contract_symbol,
                 CASE WHEN json_valid(q.state_json) THEN json_extract(q.state_json,'$.entry_quote_at') END AS entry_at,s.metadata_json AS metadata
                 FROM shadow_candidates s JOIN research_expiration_comparisons q ON s.candidate_id=q.candidate_id
                 WHERE s.broker_account_id=? AND s.observed_at>=?
-                ORDER BY s.observed_at LIMIT 10001''',(account,cutoff)).fetchall()))
-        for origin,rows in sources:
+                ORDER BY s.observed_at LIMIT 10001''',(account,cutoff)))
+        for origin,query,parameters in sources:
+            # Independent budgets and errors: one research source must not
+            # discard already discovered broker entries or other selections.
+            started=time.monotonic()
+            try:
+                rows=db.execute(query,parameters).fetchall()
+            except sqlite3.Error as exc:
+                code=getattr(exc,'sqlite_errorname',type(exc).__name__)
+                problems[origin+':'+code]=1
+                errors.append({'source':origin,'stage':'read','code':code,'detail':str(exc)})
+                continue
             if len(rows)>10000:
                 problems[origin+'_source_limit_exceeded']=len(rows)
                 continue  # Never silently treat a truncated inventory as complete.
@@ -257,29 +267,42 @@ def discover(path, account, mode, registry, calendar, now):
                         metadata={'source_snapshot':meta,'availability':'first_seen_by_capture_worker_not_verified_entry_state',
                                   'capture_envelope':'next_session_close_plus_60s_or_later_saved_deadline'},now=now)
                     added+=1
+                except sqlite3.Error as exc:
+                    code=getattr(exc,'sqlite_errorname',type(exc).__name__)
+                    problems[origin+':'+code]=problems.get(origin+':'+code,0)+1
+                    errors.append({'source':origin,'stage':'register','code':code,'detail':str(exc),
+                                   'origin_id':str(row['origin_id'])})
+                    # Retry this source on the next pass, not thousands of
+                    # two-second waits while the writer is unavailable.
+                    break
                 except (ValueError,TypeError,KeyError,AttributeError) as exc:
                     reason=str(exc) if isinstance(exc,ValueError) and str(exc).startswith(('capture_','source_')) else type(exc).__name__
                     problems[reason]=problems.get(reason,0)+1
-    return {'source_database':'read_only','registered':added,'blocked':problems}
+    return {'source_database':'read_only','registered':added,'blocked':problems,'errors':errors}
 
 
 class DiscoveryTask:
     """One background discovery, with its own SQLite connection and no API calls."""
-    def __init__(self):
+    def __init__(self, *, broker_only=False):
+        self.broker_only=broker_only
         self.executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='capture-discovery')
         self.future=None
         self.started=None
 
     @staticmethod
-    def run(root,path,account,mode,calendar,now):
+    def run(root,path,account,mode,calendar,now,broker_only=False):
         started=time.monotonic(); registry=None
         try:
-            registry=Registry(root)
-            result=discover(path,account,mode,registry,calendar,now)
+            # Only the discovery thread waits for the quote writer. The polling
+            # connection retains its short timeout so capture is never held here.
+            registry=Registry(root,timeout=2)
+            options={'broker_only':True} if broker_only else {}
+            result=discover(path,account,mode,registry,calendar,now,**options)
         except Exception as exc:
             result={'source_database':'read_only','registered':0,
                     'blocked':{'discovery_failed:'+type(exc).__name__:1},
-                    'error_code':getattr(exc,'sqlite_errorname',type(exc).__name__)}
+                    'error_code':getattr(exc,'sqlite_errorname',type(exc).__name__),
+                    'error_detail':str(exc)}
         finally:
             if registry is not None: registry.db.close()
         return {'scope':scope_key(account,mode),'result':result,'seconds':time.monotonic()-started}
@@ -287,7 +310,7 @@ class DiscoveryTask:
     def submit(self,root,path,account,mode,calendar,now):
         if self.future is not None: return False
         self.started=time.monotonic()
-        self.future=self.executor.submit(self.run,root,path,account,mode,tuple(calendar),now)
+        self.future=self.executor.submit(self.run,root,path,account,mode,tuple(calendar),now,self.broker_only)
         return True
 
     def take(self):
@@ -316,6 +339,9 @@ def main():
     discovery_scope=None
     timings={}
     background=None if args.once else DiscoveryTask()
+    # Native entries must not wait behind large or failing research scans.
+    native_background=None if args.once else DiscoveryTask(broker_only=True)
+    native_at=0.; native_scope=None; native_discovery={}
     while True:
         now=datetime.now(timezone.utc); state='waiting_for_market'; error=None
         try:
@@ -333,12 +359,23 @@ def main():
             settings=get_settings(); account=settings.get('active_broker_account_id'); mode='paper' if settings.get('paper_trading',True) else 'live'
             active=any(a<=now<=b+timedelta(seconds=60) for a,b in calendar)
             current_scope=scope_key(account,mode)
+            if native_background:
+                native_completed=native_background.take()
+                if native_completed is not None:
+                    timings['native_discovery_seconds']=native_completed['seconds']
+                    if native_completed['scope']==current_scope:
+                        native_discovery=native_completed['result']; native_scope=current_scope
+                        native_at=time.monotonic()+(2 if active else 30)
+                    else: native_at=0
+                if time.monotonic()>=native_at or native_scope!=current_scope:
+                    if not account: raise ValueError('capture_account_missing')
+                    native_background.submit(root/'fast_capture',root/('trades_'+mode+'.db'),account,mode,calendar,now)
             completed=background.take() if background else None
             if completed is not None:
                 timings['discovery_seconds']=completed['seconds']
                 if completed['scope']==current_scope:
                     discovery=completed['result']; discovery_scope=current_scope
-                    failed=any(k.startswith('discovery_failed:') for k in discovery.get('blocked',{}))
+                    failed=bool(discovery.get('errors')) or any(k.startswith('discovery_failed:') for k in discovery.get('blocked',{}))
                     discover_at=time.monotonic()+(10 if active or failed else 300)
                 else:
                     discover_at=0  # Old account result never labels the new account ready.
@@ -383,11 +420,19 @@ def main():
                 'per_contract_target_seconds':CADENCE,'capture_only':True,
                 'processing_timings':dict(timings),
                 'discovery_worker':background.health() if background else {'running':False,'running_seconds':0},
+                'native_discovery':native_discovery,'native_discovery_scope':native_scope,
+                'native_discovery_worker':native_background.health() if native_background else {'running':False},
                 'experiment_evaluation_started':False}
             atomic_write_json(root/'fast_capture_health.json',report)
-            signature=json.dumps([state,error,discovery.get('blocked')],sort_keys=True)
+            signature=json.dumps([state,error,discovery.get('blocked'),discovery.get('error_code'),
+                                  native_discovery.get('blocked'),native_discovery.get('error_code')],sort_keys=True)
             if signature!=last_state:
-                print(json.dumps({'capture_health_transition':state,'error':error,'discovery_blocked':discovery.get('blocked')}),flush=True)
+                print(json.dumps({'capture_health_transition':state,'error':error,
+                    'discovery_blocked':discovery.get('blocked'),
+                    'discovery_error_code':discovery.get('error_code'),
+                    'discovery_error_detail':discovery.get('error_detail'),
+                    'discovery_errors':discovery.get('errors'),
+                    'native_discovery':native_discovery}),flush=True)
                 last_state=signature
             publish_at=time.monotonic()+15
         if args.once:

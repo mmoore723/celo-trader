@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'risk-classification-20261110.1'
+REVISION = 'capture-discovery-20261112.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 
