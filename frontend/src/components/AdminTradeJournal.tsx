@@ -6,7 +6,7 @@ import { formatSignedCurrency } from "../lib/money.js";
 type Row = Trade & {
   mode: "paper" | "live";
   journal_key: string; user_id: string; username: string; retained_user: boolean;
-  broker_account_id?: string; strategy_version?: string; entry_reason?: string;
+  broker_account_id?: string; strategy_version?: string; strategy_name?: string; entry_reason?: string;
   entry_order_id?: string; exit_order_id?: string; entry_fill_time?: string; exit_fill_time?: string;
   parent_trade_id?: number; mode_warning?: string;
 };
@@ -25,12 +25,13 @@ export function AdminTradeJournal() {
   const [mode, setMode] = useState("all");
   const [status, setStatus] = useState("all");
   const [ticker, setTicker] = useState("");
+  const [strategy, setStrategy] = useState("");
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const query = useQuery<Journal>({
-    queryKey: ["admin-trade-journal", user, mode, status, ticker, offset],
+    queryKey: ["admin-trade-journal", user, mode, status, ticker, strategy, offset],
     queryFn: async ({ signal }) => {
-      const params = new URLSearchParams({ user_id: user, mode, status, ticker, offset: String(offset), limit: "50" });
+      const params = new URLSearchParams({ user_id: user, mode, status, ticker, strategy, offset: String(offset), limit: "50" });
       const response = await fetch(`/api/admin/trade-journal?${params}`, { credentials: "include", signal });
       if (!response.ok) throw new Error(response.status === 403 ? "Admin access required." : "Journal could not load. Please refresh.");
       return response.json();
@@ -44,8 +45,10 @@ export function AdminTradeJournal() {
       <button className="btn btn-ghost" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh journal</button>
     </div>
     <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>
-      All users and saved broker accounts, including previous accounts. User identifies whose account traded, not who manually clicked an order.
+      All users and saved broker accounts, including previous accounts. User identifies the journal owner, not a verified person who submitted the order.
       Saved trade records only, not hypothetical research. Open trades do not show live marks here.
+      Unlinked records have no matching registered user; their original owner is unverified.
+      Older journals contain matching entries, so record counts are not unique executions.
     </p>
     <div className="flex flex-wrap gap-3 my-3 text-sm">
       <label>User <select className="input" value={user} onChange={e => change(setUser, e.target.value)}>
@@ -60,13 +63,15 @@ export function AdminTradeJournal() {
       </select></label>
       <label>Ticker <input className="input" placeholder="All tickers" value={ticker} maxLength={20}
         onChange={e => change(setTicker, e.target.value.trim().toUpperCase())} /></label>
+      <label>Strategy <input className="input" placeholder="Search strategy name or ID" value={strategy} maxLength={120}
+        onChange={e => change(setStrategy, e.target.value)} /></label>
     </div>
     {query.isError && <p role="alert" style={{ color: "var(--negative)" }}>{query.error.message}</p>}
     {query.isPending && <p role="status">Loading trade journal...</p>}
     {query.data?.warnings.map(w => <p key={w} role="alert" style={{ color: "var(--negative)" }}>{w}</p>)}
     {query.data && <>
-      <p className="text-xs mb-2">{query.data.total} matching saved trades. Realized P&amp;L is before fees. Expand a trade for its complete details.</p>
-      <div className="overflow-x-auto" tabIndex={0} aria-label="Trade journal table">
+      <p className="text-xs mb-2">{query.data.total} matching journal records. Realized P&amp;L is before fees. Expand a trade for its complete details.</p>
+      <div className="overflow-auto" style={{ maxHeight: 560 }} tabIndex={0} aria-label="Trade journal table">
         <table className="w-full text-sm text-left"><thead><tr>
           {["Trade", "User", "Mode / account", "Ticker / option", "Strategy", "Quantity", "Entry", "Exit", "Realized P&L", "Status", "Entered (ET)"].map(h => <th className="p-2 whitespace-nowrap" key={h}>{h}</th>)}
         </tr></thead><tbody>{query.data.trades.map(t => <TradeRows key={t.journal_key} trade={t}
@@ -95,10 +100,10 @@ function TradeRows({ trade: t, expanded, toggle }: { trade: Row; expanded: boole
   };
   return <><tr className="border-t" style={{ borderColor: "var(--border)" }}>
     <td className="p-2"><button className="btn btn-ghost" aria-expanded={expanded} onClick={toggle}>#{t.id} {expanded ? "Hide" : "Details"}</button></td>
-    <td className="p-2 font-semibold">{t.username}{t.retained_user ? " (retained records)" : ""}</td>
+    <td className="p-2 font-semibold">{t.username}</td>
     <td className="p-2"><strong>{t.mode.toUpperCase()}</strong><div className="text-xs break-all">{t.broker_account_id || missing}</div></td>
     <td className="p-2 whitespace-nowrap">{t.ticker} {t.option_type?.toUpperCase() || missing}</td>
-    <td className="p-2">{t.strategy_id?.replace(/^(RESEARCH_|V2_)/, "").replaceAll("_", " ") || missing}</td>
+    <td className="p-2">{t.strategy_name || t.strategy_id?.replace(/^(RESEARCH_|V2_)/, "").replaceAll("_", " ") || missing}</td>
     <td className="p-2">{t.contracts}</td><td className="p-2">{money(t.entry_price)}</td><td className="p-2">{money(t.exit_price)}</td>
     <td className="p-2 whitespace-nowrap">{t.pnl == null ? missing : formatSignedCurrency(t.pnl)}</td>
     <td className="p-2">{t.status}</td><td className="p-2 whitespace-nowrap">{time(t.entry_time)}</td>

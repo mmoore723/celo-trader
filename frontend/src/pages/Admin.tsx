@@ -20,6 +20,7 @@ interface User {
 
 export function Admin() {
   const { user }      = useAuth();
+  const [adminTab, setAdminTab] = useState<"overview" | "journal">("overview");
   const [users, setUsers]       = useState<User[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
@@ -246,7 +247,17 @@ export function Admin() {
         </button>
       </div>
 
-      {user?.is_admin && <AdminTradeJournal />}
+      <div role="tablist" aria-label="Admin sections" className="flex gap-2">
+        <button id="admin-overview-tab" role="tab" aria-selected={adminTab === "overview"}
+          aria-controls="admin-overview-panel" className={`btn ${adminTab === "overview" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setAdminTab("overview")}>Overview</button>
+        <button id="admin-journal-tab" role="tab" aria-selected={adminTab === "journal"}
+          aria-controls="admin-journal-panel" className={`btn ${adminTab === "journal" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setAdminTab("journal")}>Trade journal</button>
+      </div>
+      {adminTab === "journal" && user?.is_admin && <div id="admin-journal-panel" role="tabpanel" aria-labelledby="admin-journal-tab"><AdminTradeJournal /></div>}
+      <div id="admin-overview-panel" role="tabpanel" aria-labelledby="admin-overview-tab" hidden={adminTab !== "overview"}>
+      <div className="flex flex-col gap-4" style={{ maxWidth: 600 }}>
       {user?.is_admin && <AdminActivityLog />}
       <RemovedStrategies />
       <section className="card px-3 py-2" aria-label="Machine learning readiness">
@@ -633,6 +644,8 @@ export function Admin() {
         )}
         </div>
       </details>
+      </div>
+      </div>
     </div>
   );
 }

@@ -61,3 +61,24 @@ class AdminJournalTests(unittest.TestCase):
 
     def test_legacy_eastern_and_aware_clock_match(self):
         self.assertEqual(entry_epoch('2026-11-11T11:00:00'),entry_epoch('2026-11-11T16:00:00Z'))
+
+    def test_empty_unlinked_folders_are_not_users_and_retained_owner_is_unknown(self):
+        directory=self.root/'empty-old-id'; directory.mkdir()
+        with sqlite3.connect(directory/'trades_paper.db') as db:
+            db.execute('CREATE TABLE trades(id)')
+        report=read_journal(self.root)
+        self.assertNotIn('empty-old-id',[u['user_id'] for u in report['users']])
+        owner=next(u for u in report['users'] if u['user_id']=='retired')
+        self.assertEqual('Unlinked records (retired)',owner['username'])
+        self.assertTrue(owner['retained_user'])
+
+    def test_strategy_search_matches_id_and_friendly_name(self):
+        for path in self.root.glob('*/trades_*.db'):
+            with sqlite3.connect(path) as db:
+                db.execute('ALTER TABLE trades ADD COLUMN strategy_id TEXT')
+                db.execute("UPDATE trades SET strategy_id='V2_SPY_TREND_CONT'")
+        for search in ('trend continuation','V2_SPY_TREND_CONT','spy trend'):
+            result=read_journal(self.root,strategy=search,limit=1)
+            self.assertEqual(3,result['total'])
+            self.assertEqual('SPY Trend Continuation',result['trades'][0]['strategy_name'])
+        self.assertEqual(0,read_journal(self.root,strategy="' OR 1=1 --")['total'])
