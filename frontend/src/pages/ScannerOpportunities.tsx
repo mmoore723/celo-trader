@@ -79,7 +79,10 @@ function ResearchRow({ strategyId, pair, strategyName, strategyVersion, backtest
       </div>
     </div>
     <ResearchPairControl strategyId={strategyId} version={strategyVersion} ticker={pair.ticker} name={displayStrategyName(strategyName)} trading={pair.tradable} pair={pair} />
-    <div className="px-3 pb-2 text-xs"><PremiumExitEvidence report={pair.premium_exit_research} /></div>
+    <details className="px-3 pb-3 text-xs" aria-label={`Profit-taking tests for ${pair.ticker} ${displayStrategyName(strategyName)}`}>
+      <summary className="cursor-pointer font-medium" style={{ color: "var(--accent)" }}>Profit-taking exit tests (8) · {pair.ticker} · {displayStrategyName(strategyName)}</summary>
+      <div className="mt-2">{pair.premium_exit_research ? <PremiumExitEvidence report={pair.premium_exit_research} /> : <p>Waiting for the background worker to publish this pair's exit tests.</p>}</div>
+    </details>
     {pair.authored_exit_evidence && <div className="px-3 pb-2 text-xs"><AuthoredExitEvidence evidence={pair.authored_exit_evidence} /></div>}
     {pair.profit_protection_comparison && <div className="px-3 pb-2 text-xs"><ProfitProtectionComparison comparison={pair.profit_protection_comparison} /></div>}
     {pair.reference_contract_test && <div className="px-3 pb-2 text-xs"><ReferenceContractTest test={pair.reference_contract_test} /></div>}

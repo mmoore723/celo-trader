@@ -21,6 +21,7 @@ from strategy_health.session_capture import Feed, ET, objects, quote_validation
 CADENCE = 5
 BATCH_INTERVAL = 2  # Dispatch different due contracts without resetting their own cadence.
 BATCH = 600
+DISCOVERY_ACTIVE_SECONDS = 2
 OCC = re.compile(r'^[A-Z.]{1,6}[0-9]{6}[CP][0-9]{8}$')
 
 
@@ -260,7 +261,7 @@ def discover(path, account, mode, registry, calendar, now, *, broker_only=False)
                     until=capture_horizon(entry,calendar,meta)
                     if until<now: continue
                     selected=meta.get('selected_test_policy') or {}
-                    policy=selected.get('policy_version') or selected.get('version') or meta.get('authored_exit_protocol') or meta.get('exit_policy_version')
+                    policy=selected.get('policy_version') or selected.get('version') or meta.get('authored_exit_protocol') or meta.get('exit_policy_version') or (meta.get('premium_baseline') or {}).get('fingerprint')
                     registry.register(account=account,mode=mode,strategy=row['strategy_id'],ticker=row['ticker'],
                         version=meta.get('strategy_version'),symbol=row['contract_symbol'] or '',entry_at=entry.isoformat(),
                         until_at=until.isoformat(),origin=origin,origin_id=row['origin_id'],policy=policy,
@@ -376,7 +377,7 @@ def main():
                 if completed['scope']==current_scope:
                     discovery=completed['result']; discovery_scope=current_scope
                     failed=bool(discovery.get('errors')) or any(k.startswith('discovery_failed:') for k in discovery.get('blocked',{}))
-                    discover_at=time.monotonic()+(10 if active or failed else 300)
+                    discover_at=time.monotonic()+(DISCOVERY_ACTIVE_SECONDS if active or failed else 300)
                 else:
                     discover_at=0  # Old account result never labels the new account ready.
             if time.monotonic()>=discover_at or discovery_scope!=current_scope:
@@ -388,7 +389,7 @@ def main():
                     discovery=discover(root/('trades_'+mode+'.db'),account,mode,registry,calendar,now)
                     timings['discovery_seconds']=time.monotonic()-started
                     discovery_scope=current_scope
-                    discover_at=time.monotonic()+(10 if active else 300)
+                    discover_at=time.monotonic()+(DISCOVERY_ACTIVE_SECONDS if active else 300)
             if active:
                 state='collecting'
                 if time.monotonic()>=max(feed.next_request,next_batch):

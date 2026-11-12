@@ -204,6 +204,13 @@ class FastCaptureTests(unittest.TestCase):
         self.assertEqual('paper-a',row['account']); self.assertEqual('research_selection',row['origin'])
         self.assertIn('not_verified_entry_state',row['metadata'])
 
+    def test_capture_service_has_bounded_headroom_and_execution_priority(self):
+        from strategy_health.fast_capture import DISCOVERY_ACTIVE_SECONDS
+        unit=(Path(__file__).resolve().parents[1]/'celo-holding-forward.service').read_text()
+        self.assertIn('CPUQuota=50%',unit)
+        self.assertIn('Nice=15',unit)
+        self.assertLessEqual(DISCOVERY_ACTIVE_SECONDS,2)
+
     def test_missing_version_does_not_silently_drop_capture(self):
         self.add(version=None,policy=None)
         self.assertEqual([SYMBOL],self.r.due(NOW))

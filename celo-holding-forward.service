@@ -13,7 +13,9 @@ ExecStart=/opt/celo_trader/venv/bin/python -m strategy_health.fast_capture --use
 Restart=always
 RestartSec=15
 Nice=15
-CPUQuota=15%
+# Quote persistence must keep up with the five-second capture target.
+# Nice=15 preserves execution priority; cap capture at half of one core.
+CPUQuota=50%
 MemoryMax=256M
 StandardOutput=journal
 StandardError=journal
