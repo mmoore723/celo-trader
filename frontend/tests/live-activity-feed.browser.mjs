@@ -7,6 +7,8 @@ await page.goto('http://127.0.0.1:5174/tests/live-activity-feed.fixture.html');
 await page.waitForSelector('.activity-entry');
 assert.equal(await page.locator('.activity-entry').count(),12);
 assert.equal(await page.locator('.activity-entry.latest').count(),1);
+assert.equal(await page.getByText('AlpacaClient: routing', {exact:false}).count(),0);
+assert.equal(await page.locator('.activity-entry').nth(1).evaluate(e=>getComputedStyle(e).opacity),'0.6');
 assert.equal(await page.locator('.activity-checks [data-state=passed]').count(),12);
 assert.equal(await page.locator('.activity-checks [data-state=pending]').count(),12);
 await page.getByRole('button',{name:'Pause feed'}).click();

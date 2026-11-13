@@ -374,3 +374,6 @@ html, body, #root {
 .activity-feed footer,.activity-empty { padding:12px; font-size:11px; color:var(--ink-muted); line-height:1.6; }
 @keyframes activity-arrive { from { transform:translateY(-6px); opacity:.5; } to { transform:translateY(0);opacity:1; } }
 @media(prefers-reduced-motion:reduce) { .activity-entry.latest { animation:none; } }
+
+.activity-entry:not(.latest) { opacity:.60; transition:opacity .2s ease; }
+.activity-entry:not(.latest):hover,.activity-entry:not(.latest):focus-within { opacity:1; }
