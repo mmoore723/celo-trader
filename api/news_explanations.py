@@ -40,7 +40,12 @@ def _generate(key: str, source: dict):
     try:
         from ai_reasoning.client import call_claude
         response = call_claude(_PROMPT, json.dumps(source), _MODEL, 400, 15)
-        parsed = json.loads(response.text or '{}')
+        text = (response.text or '{}').strip()
+        if text.startswith('```json') and text.endswith('```'):
+            text = text[7:-3].strip()
+        elif text.startswith('```') and text.endswith('```'):
+            text = text[3:-3].strip()
+        parsed = json.loads(text)
         fields = ('what_happened', 'ticker_meaning')
         if not all(isinstance(parsed.get(f), str) and 0 < len(parsed[f]) <= 800 for f in fields):
             raise ValueError('No valid explanation')
@@ -64,7 +69,7 @@ def explain_news(articles: list[dict], ticker: str) -> list[dict]:
     result = []
     for article in articles:
         source = {'ticker': ticker, 'headline': _text(article.get('headline')), 'summary': _text(article.get('summary'))}
-        key = hashlib.sha256(json.dumps(source, sort_keys=True).encode()).hexdigest()
+        key = hashlib.sha256(('v2:' + json.dumps(source, sort_keys=True)).encode()).hexdigest()
         explanation = {'status': 'pending', 'ticker': ticker}
         try:
             with _db() as db:

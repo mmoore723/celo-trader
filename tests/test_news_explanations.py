@@ -38,8 +38,8 @@ class NewsExplanationTests(unittest.TestCase):
     def test_headline_only_and_cache_reuse(self):
         article = {'headline':'Sales increased', 'summary':''}
         source = {'ticker':'AMZN', **article}
-        key = news.hashlib.sha256(news.json.dumps(source, sort_keys=True).encode()).hexdigest()
-        with patch('ai_reasoning.client.call_claude', return_value=SimpleNamespace(text='{"what_happened":"Sales rose.","ticker_meaning":"The headline alone does not explain profits."}')):
+        key = news.hashlib.sha256(('v2:' + news.json.dumps(source, sort_keys=True)).encode()).hexdigest()
+        with patch('ai_reasoning.client.call_claude', return_value=SimpleNamespace(text='```json\n{"what_happened":"Sales rose.","ticker_meaning":"The headline alone does not explain profits."}\n```')):
             news._generate(key, source)
         with patch.object(news._pool, 'submit') as submit:
             result = news.explain_news([article], 'AMZN')
