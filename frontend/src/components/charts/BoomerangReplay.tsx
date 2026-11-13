@@ -151,7 +151,8 @@ export const BoomerangReplay = forwardRef<BoomerangReplayHandle, Props>(function
     <div className="flex flex-col w-full">
       <TradeChart
         bars={bars}
-        revealCount={idx}
+        // Fit all arrived candles immediately, before the follow-live effect runs.
+        revealCount={mode === "live" && wasAtLive.current ? bars.length : idx}
         revealStart={startIdx}
         viewportKey={`${resetKey ?? "chart"}|${startIdx > 0 ? `replay:${startIdx}` : "live"}`}
         {...rest}

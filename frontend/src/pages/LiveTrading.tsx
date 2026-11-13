@@ -693,7 +693,6 @@ export function LiveTrading() {
             trades={tickerTrades}
             compactMarkers
             showExecutionGrade={false}
-            viewportKey={`${ticker}|${tf}|${effectivePeriod}|premarket`}
             showVwap={showVwap}
             showVwapBands={false}
             showOR={showOR}
