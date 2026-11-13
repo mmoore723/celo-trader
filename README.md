@@ -455,3 +455,40 @@ This is a user-approved interim paper rule, not a research-qualified promotion.
 Rollback restores previous assignments for future entries; keep this handler
 available until all positions entered under it have closed. Roll back selection
 if quantity reconciliation, persisted state or duplicate-order protection fails.
+
+
+### Research to approved ticker configurations
+
+Research entry versions now resolve to shared execution implementations, with
+explicit approval for each ticker. The November 12, 2026 connection inventory
+covers 26 research strategy/version records across 20 tickers (520 combinations).
+This is execution coverage, not evidence that all combinations are profitable.
+No permissions, account mode, risk limits or existing exit assignments are changed
+by installing this release. Existing native SPY/QQQ/AMZN routes remain assigned.
+
+`config/research_order_specs.py` maps exact research versions to execution.
+`config/research_activation.py` provides the read-only activation check shown
+before confirmation. `config/admin_strategy_overrides.py` stores approved ticker
+configurations. `strategies/research_orders.py` uses the shared research detectors
+and freezes the selected settings into new trade context. Quote-triggered ORB
+entries use `trading/entry/injected_setups.py`. The common entry/order pipeline
+still enforces account safety, quote quality, budgets and duplicate protection.
+`trading/research_order_exit.py` dispatches the recorded exit protocol. Mandatory
+execution liquidation remains five minutes before the verified session close,
+including for research protocols whose reference replay runs through the close.
+That difference must not be represented as identical historical fills.
+
+New execution IDs prefixed `APPROVED_` are internal version adapters, not separate
+ticker strategies. Screens group their plain strategy names and display tickers
+separately. Existing historical evidence and older entry-time policies are retained.
+Unknown versions and retired versions cannot be activated implicitly. Opening a
+review only checks readiness; confirmation is still required to save permission.
+
+Validation is in `tests/test_research_activation_matrix.py` and the existing
+research execution, reconciliation, recovery and partial-order tests. These use
+synthetic candles and mocked brokers; they do not claim real-market fill validation.
+Rollback: revert this release through `deploy.sh` to the previous release
+`9d9a0cf8bcc2a96005f77f095726d248d262788c` before approving any new adapter.
+If a new adapter has since opened a position, disable its future entries first
+and retain its manager until those positions are closed; never remove the policy
+needed to manage an open trade.

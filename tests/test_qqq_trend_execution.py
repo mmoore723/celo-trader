@@ -30,7 +30,7 @@ class QqqTrendExecutionTests(unittest.TestCase):
         self.assertEqual({}, reviewed_strategy_integrity_errors())
         self.assertEqual(SID, execution_id(SOURCE,'2.1.0','QQQ'))
         self.assertEqual(SOURCE, execution_id(SOURCE,'2.1.0','SPY'))
-        self.assertEqual(SOURCE, execution_id(SOURCE,'2.1.0','AAPL'))
+        self.assertEqual('APPROVED_'+SOURCE, execution_id(SOURCE,'2.1.0','AAPL'))
         base={'paper_trading':True, 'risk_per_trade':.03, 'strategy_spy_trend_cont_v2_enabled':True}
         changes=updates(base,SOURCE,'QQQ','2.1.0',True,'admin',exit_minutes=90,contract_policy='closest_otm_150_1000')
         self.assertNotIn('paper_trading',changes)

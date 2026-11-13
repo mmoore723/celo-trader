@@ -78,4 +78,29 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
         except Exception:
             statuses[TWO_LEG] = "data_check_failed"
             logger.warning("Two-leg input evaluation failed for %s", ticker, exc_info=True)
+    # Newly approved research retouch uses the SAME episode detector as research,
+    # with separate state and the real ticker quote. No registry entry grants access.
+    from config.research_order_specs import SPECS
+    from config.strategy_ticker_recommendations import is_user_authorized_ticker
+    for sid in enabled:
+        spec = SPECS.get(sid)
+        if not spec or spec.adapter != 'retouch' or not is_user_authorized_ticker(sid, ticker, settings):
+            continue
+        try:
+            from trading.orb_retouch_research import update
+            from strategies.research_orders import finalize
+            if quote is None:
+                quote = alpaca.get_latest_quote(ticker)
+                record_underlying_quote(ticker, quote, observed_at=_now_et(),
+                                        broker_account_id=settings.get('active_broker_account_id') or None)
+            signal, status = update(state.setdefault('approved_retouch', {}), frame,
+                ticker=ticker, quote=quote, now=_now_et(),
+                scope='research_worker:approved_order:' + str(settings.get('active_broker_account_id') or 'default'))
+            statuses[sid] = status
+            signal = finalize(signal, sid, ticker)
+            if signal is not None:
+                signals.append(signal)
+        except Exception:
+            statuses[sid] = 'data_check_failed'
+            logger.warning('Approved retouch evaluation failed for %s', ticker, exc_info=True)
     return signals, statuses, quote

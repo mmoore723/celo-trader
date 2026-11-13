@@ -25,7 +25,7 @@ class ReviewedStrategyCatalogTests(unittest.TestCase):
             strategy_ids_for_source("bar_close"),
             {strategy_id for strategy_id, _evaluate in ACTIVE_STRATEGIES},
         )
-        self.assertEqual({"V2_ORB_PULLBACK"}, strategy_ids_for_source("live_retouch"))
+        self.assertEqual({"V2_ORB_PULLBACK", "APPROVED_V2_ORB_PULLBACK"}, strategy_ids_for_source("live_retouch"))
         self.assertEqual(
             {"V2_TSLA_TWO_LEG_TREND_PULLBACK"},
             strategy_ids_for_source("one_minute_state"),

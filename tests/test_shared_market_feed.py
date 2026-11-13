@@ -42,7 +42,7 @@ class SharedFeedTests(TestCase):
         direct_routes = {'RESEARCH_QQQ_TREND_V2', 'RESEARCH_FAILED_RANGE_V2',
                          'RESEARCH_CTX_ORB_ATR10_V2'}
         for sid, spec in SPECS.items():
-            if sid in direct_routes:
+            if sid in direct_routes or spec.adapter != 'library':
                 continue
             with self.subTest(strategy=sid), \
                  patch.object(research_orders, '_emitted', {}), \
@@ -56,7 +56,7 @@ class SharedFeedTests(TestCase):
                     execution_scope='feed-test', now=pd.Timestamp('2026-11-06 10:00'),
                     strategy_id=sid)
                 self.assertIsNone(result)
-                self.assertEqual(2 if sid == 'V2_GAP_FILL_RTH' else 1, loader.call_count)
+                self.assertEqual(3 if spec.source == 'V2_EMA_PULLBACK_RTH' else 2 if sid == 'V2_GAP_FILL_RTH' else 1, loader.call_count)
                 for call in loader.call_args_list:
                     self.assertEqual(FEED_POLICY, call.kwargs['required_source'])
                     self.assertEqual('account-A', call.kwargs['broker_account_id'])

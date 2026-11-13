@@ -249,7 +249,7 @@ for _sid, _spec in _RESEARCH_ORDERS.items():
     REVIEWED_STRATEGIES[_sid] = ReviewedStrategy(
         strategy_id=_sid, display_name=_spec.name, version=_spec.version,
         tickers=frozenset(), recommendation_tickers=frozenset(),
-        setting_key=_research_setting(_sid), signal_source='bar_close',
+        setting_key=_research_setting(_sid), signal_source=('live_retouch' if _spec.adapter == 'retouch' else 'bar_close'),
         implementation='strategies.research_orders', exit_minutes=None,
         research_exit_minutes=_spec.reference_minutes, minimum_session_minutes=_spec.timeframe,
         paper_only=False, status='paper_candidate', evidence_grade='promising_underpowered',

@@ -86,6 +86,8 @@ def publish_qualified_recommendation(qualification: dict, *, evidence_artifact: 
         raise ValueError("Only qualified evidence may become a recommendation")
     sid = str(qualification.get("strategy_id") or "").strip().upper()
     ticker = str(qualification.get("ticker") or "").strip().upper()
+    from config.research_order_specs import execution_id
+    sid = execution_id(sid, qualification.get("strategy_version"), ticker)
     rule = REVIEWED_STRATEGIES.get(sid)
     if rule is None or qualification.get("strategy_version") != rule.version:
         raise ValueError("Qualification does not match the current strategy version")

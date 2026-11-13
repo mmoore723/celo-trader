@@ -56,6 +56,7 @@ def classify_risk_levels(trade, *, position=None, monitored_fields=(), monitorin
         'resistance': context.get('pa_nearest_resistance'),
         'or_midpoint': context.get('or_midpoint'),
         'previous_high': context.get('previous_high'),
+        'sma20': context.get('sma20'),
         'struct_stop_price': position.get('struct_stop_price'),
         'atr_trail_stop': position.get('atr_trail_stop'),
         'initial_atr_stop': position.get('initial_atr_stop'),
@@ -129,16 +130,22 @@ def monitored_risk_fields(trade, *, branch):
             from config.research_pair_policy import validate
             if validate(meta['selected_test_policy'], sid, trade.get('ticker'), spec.version)['exit_minutes'] is not None:
                 return ()
+        if spec.adapter in ('native_trend', 'native_fvg', 'retouch', 'two_leg'):
+            return ()
         if sid in ('RESEARCH_QQQ_TREND_V2', 'RESEARCH_FAILED_RANGE_V2'):
             return ()
-        if sid == 'RESEARCH_CTX_ORB_ATR10_V2':
+        if sid == 'RESEARCH_CTX_ORB_ATR10_V2' or spec.source == 'CTX_ORB_NR7_OR_INSIDE':
             return ('or_midpoint',)
+        if spec.adapter == 'context':
+            return ('previous_high',)
+        if spec.adapter == 'squeeze':
+            return ('sma20',)
         # These engines consume the frozen initial levels. Gap Fill additionally
         # evolves its own stop; a recorded initial level is not its current stop.
         if sid == 'V2_GAP_FILL_RTH':
             return ()
         from strategy_health.exit_protocols import PROTOCOLS
-        if meta.get('authored_exit_protocol') == PROTOCOLS.get(spec.source):
+        if PROTOCOLS.get(spec.source) and meta.get('authored_exit_protocol') == PROTOCOLS[spec.source]:
             return ('underlying_stop', 'underlying_target')
     except (ValueError, TypeError, KeyError):
         pass

@@ -18,7 +18,11 @@ def capture_policy(strategy_id, broker, now):
             raise ValueError('No verified open session')
         cap = min(close.astimezone(ET) - timedelta(minutes=5),
                   now.astimezone(ET).replace(hour=15, minute=55, second=0, microsecond=0))
+        from config.research_order_specs import SPECS
+        spec = SPECS.get(strategy_id)
         hold = 30 if strategy_id in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2') else rule.exit_minutes
+        if spec and spec.adapter in ('native_trend', 'native_fvg', 'retouch', 'two_leg'):
+            hold = spec.reference_minutes
         return {'exit_deadline_capture': {
             'status': 'awaiting_fill', 'schema_version': 1,
             'strategy_id': strategy_id, 'strategy_version': rule.version,

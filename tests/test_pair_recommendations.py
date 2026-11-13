@@ -21,7 +21,7 @@ class PairRecommendationTests(unittest.TestCase):
         from copy import deepcopy
         evidence = assess(trades([20,20,-10,20,-10]*4))
         for sid, spec in SPECS.items():
-            ticker = spec.allowed_tickers[0] if spec.allowed_tickers else 'QQQ'
+            ticker = spec.allowed_tickers[0] if spec.allowed_tickers else 'MU'
             matrix = {'strategies':[{'strategy_id':spec.source,'version':spec.version,'display_name':spec.name,
                        'pairs':[{'ticker':ticker,'tradable':False,'recommendation':evidence}]}]}
             original = deepcopy(matrix)
@@ -100,9 +100,11 @@ class PairRecommendationTests(unittest.TestCase):
         for row in result['recommendations']:
             spec = SPECS.get(row['strategy_id'])
             self.assertEqual(bool(spec and (not spec.allowed_tickers or 'META' in spec.allowed_tickers)), row['can_enable'])
-        first = next(row for row in result["recommendations"] if not row['can_enable'])
-        with self.assertRaises(ValueError):
-            decide(matrix, {}, first["strategy_id"], "META", "enable", evidence["fingerprint"])
+        self.assertTrue(all(row['can_enable'] for row in result['recommendations']))
+        first = result['recommendations'][0]
+        granted = decide(matrix, {}, first['strategy_id'], 'META', 'enable', evidence['fingerprint'])
+        self.assertEqual(1, len(granted['strategy_pair_approvals']))
+        self.assertNotIn('paper_trading', granted)
 
     def test_review_choice_is_exact_pair_and_mode_and_does_not_touch_research(self):
         from config.strategy_catalog import REVIEWED_STRATEGIES
@@ -154,7 +156,7 @@ class PairRecommendationTests(unittest.TestCase):
             self.assertNotIn(sid, enabled_reviewed_strategy_ids({**approved, rule.setting_key: False}, ticker="SPY"))
             self.assertNotIn(sid, enabled_reviewed_strategy_ids(approved, ticker="AAPL"))
             matrix['strategies'][0]['pairs'][0]['ticker'] = 'META'
-            with self.assertRaisesRegex(ValueError, 'order-entry and exit route'):
+            with self.assertRaisesRegex(ValueError, 'Results changed'):
                 decide(matrix, settings, sid, 'META', 'enable', evidence['fingerprint'])
 
 

@@ -40,3 +40,10 @@ test('test choices use a modal and cannot silently enable unsupported policies',
   assert.match(source, /replacing the strategy exit/);
   assert.match(source, /Selecting two tests is not evidence/);
 });
+test('activation checks the exact connection before allowing confirmation', () => {
+  assert.match(source, /activation-capability/);
+  assert.match(source, /enabled: confirming && !!user\?\.is_admin/);
+  assert.match(source, /blockedReason \|\| !connectionReady/);
+  assert.match(source, /One shared strategy, with approved settings/);
+  assert.match(source, /Nothing has been enabled/);
+});

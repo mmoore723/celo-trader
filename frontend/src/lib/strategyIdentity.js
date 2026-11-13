@@ -1,4 +1,16 @@
 const names = {
+  CTX_1H_SQUEEZE_MACD_LONG: "Hourly Squeeze",
+  CTX_VWAP_PULLBACK_KER10_LONG: "VWAP Pullback (1-Hour KER)",
+  CTX_ORB_NR7_OR_INSIDE: "Context-Filtered ORB (NR7 / Inside)",
+  TV_SUPERTREND_REVERSAL_V4: "SuperTrend Reversal",
+  V2_VWAP_REVERSION_RTH: "VWAP Reversion",
+  V2_TURTLE_SOUP_RTH: "Turtle Soup Reversal",
+  V2_RANGE_SWEEP_RECLAIM: "Range Sweep Reclaim (Calls)",
+  V2_ORB_CONFIRMED_BREAKOUT: "Confirmed Opening-Range Breakout",
+  V2_OPENING_MOMENTUM_RTH_EXPLORATORY: "Opening Momentum",
+  V2_MIDDAY_BREAKDOWN: "Midday Breakdown",
+  V2_FAIR_VALUE_GAP: "Fair Value Gap",
+  V2_EMA_PULLBACK_RTH: "EMA Pullback",
   V2_ORB_PULLBACK: "Opening-Range Pullback",
   V2_SPY_TREND_CONT: "Trend Continuation",
   V2_TREND_CONT: "Trend Continuation",
@@ -29,6 +41,7 @@ const names = {
 };
 
 export function strategyName(name) {
+  if (typeof name === 'string' && name.startsWith('APPROVED_')) return strategyName(name.slice(9));
   return names[name] ?? (name || "Not recorded");
 }
 

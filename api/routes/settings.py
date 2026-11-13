@@ -146,6 +146,15 @@ def get_admin_strategy_controls(request: Request) -> dict:
             if not row['removed'] and (row['strategy_id'] in SPECS or not row['observation_only'])]}
 
 
+@router.get('/strategies/activation-capability')
+def get_activation_capability(strategy_id: str, ticker: str, strategy_version: str, request: Request) -> dict:
+    if not getattr(request.state, 'is_admin', False):
+        raise HTTPException(403, 'Admin access required')
+    from config import get_settings
+    from config.research_activation import capability
+    return capability(get_settings(), strategy_id, ticker, strategy_version)
+
+
 @router.post('/strategies/admin-override')
 def set_admin_strategy_override(payload: AdminStrategyOverridePayload, request: Request) -> dict:
     if not getattr(request.state, 'is_admin', False):

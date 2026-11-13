@@ -58,8 +58,7 @@ class TrendResearchExecutionTests(unittest.TestCase):
         self.assertFalse(is_user_authorized_ticker(SID, 'SPY', saved))
 
     def test_wrong_version_profile_ticker_or_fingerprint_cannot_grant(self):
-        for ticker, version, profile in [('META', 'research.1', 'research_contracts_v1'),
-                                         ('SPY', 'research.2', 'research_contracts_v1'),
+        for ticker, version, profile in [('SPY', 'research.2', 'research_contracts_v1'),
                                          ('SPY', 'research.1', 'other')]:
             data, evidence = matrix(ticker, version, profile)
             self.assertFalse(recommendations(data, {})['recommendations'][0]['can_enable'])

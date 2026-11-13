@@ -158,6 +158,10 @@ class ResearchOrderExecutionTests(unittest.TestCase):
                 expected, _ = select_research_contract(broker, 'SPY', 'bullish', 100, spec.source)
                 actual, _ = select_reviewed_v2_contract(broker, 'SPY', 'bullish', 100, 400, strategy_id=sid)
                 self.assertEqual(expected, actual)
+                if spec.adapter == 'squeeze':
+                    # This fixture has only 1 DTE; squeeze requires 3 to 5.
+                    self.assertIsNone(actual)
+                    continue
                 self.assertIsNotNone(actual)
                 rejected, reason = select_reviewed_v2_contract(broker, 'SPY', 'bullish', 100, 100, strategy_id=sid)
                 self.assertIsNone(rejected)
@@ -180,8 +184,11 @@ class ResearchOrderExecutionTests(unittest.TestCase):
     def test_all_library_exits_dispatch_exact_frozen_protocol_in_both_modes(self):
         entry = datetime(2026, 9, 10, 10, 5, 1); now = entry+timedelta(minutes=10)
         for sid, spec in SPECS.items():
-            if sid.startswith('RESEARCH_'): continue
-            meta = candidate_metadata(spec.source, strategy_details(spec.source).factory())
+            if sid.startswith('RESEARCH_') or strategy_details(spec.source) is None: continue
+            strategy = strategy_details(spec.source).factory()
+            if spec.source == 'TV_SUPERTREND_REVERSAL_V4':
+                strategy._last_timestamp = entry
+            meta = candidate_metadata(spec.source, strategy)
             for paper in (True, False):
                 trade = {**position(sid, **meta, underlying_stop=98, underlying_target=104), 'paper': paper}
                 with patch('trading.research_order_exit.first_exit', return_value=(now, 'underlying_stop')) as engine:

@@ -9,6 +9,7 @@ from strategy_health.exit_protocols import candidate_metadata
 from trading.tested_strategy_research import strategy_details, _research_bars, _latest_candidate
 
 _emitted = {}
+_episode_state = {}
 
 
 def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
@@ -24,7 +25,54 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
     key = (scope, symbol, strategy_id)
     if _emitted.get(key) == cutoff.floor('min'):
         return None
-    if strategy_id == 'RESEARCH_QQQ_TREND_V2':
+    if spec.adapter == 'retouch':
+        return None  # Live quote path calls finalize() from injected_setups.
+    if strategy_id.startswith('APPROVED_') and spec.adapter == 'library':
+        # Use the research evaluator itself, including warmup and frozen exit
+        # state. Execution has its own dedupe scope and accepts only a fresh signal.
+        from database import load_scanner_candles
+        from config import get_settings
+        from broker.shared_market import FEED_POLICY
+        from trading.tested_strategy_research import evaluate_tested_research
+        account = get_settings().get('active_broker_account_id') or None
+        def history_for(tf):
+            return load_scanner_candles(symbol, broker_account_id=account,
+                                       timeframe=tf, limit=10000, required_source=FEED_POLICY)
+        history = history_for('1Min')
+        prices = pd.concat([history, pd.DataFrame(frame)], ignore_index=True) if not history.empty else frame
+        candidates = evaluate_tested_research(prices, symbol, [spec.source],
+            scope='approved_order:' + scope + ':' + strategy_id, now=cutoff,
+            history_5m=history_for('5Min') if spec.source == 'V2_EMA_PULLBACK_RTH' else None,
+            history_15m=history_for('15Min') if spec.source == 'V2_EMA_PULLBACK_RTH' else None)
+        signal = candidates[0] if candidates else None
+        if signal is not None:
+            trigger = pd.Timestamp(signal.trigger_bar)
+            if not trigger <= cutoff < trigger + timedelta(minutes=1):
+                return None
+    elif spec.adapter == 'two_leg':
+        from trading.two_leg_research import update
+        signal, _ = update(_episode_state, frame, ticker=symbol, now=cutoff,
+                           scope='research_worker:approved_order:' + scope)
+    elif spec.adapter == 'context':
+        from trading.context_research_entries import evaluate as native
+        from strategy_health.context_orb_exit import metadata as orb_metadata
+        from strategy_health.context_vwap_exit import metadata as vwap_metadata
+        signal = native(frame, strategy_id=spec.source, ticker=symbol,
+                        scope='research_worker:approved_order:' + scope, now=cutoff)
+        if signal is not None:
+            signal.meta.update(orb_metadata(spec.source))
+            signal.meta.update(vwap_metadata(spec.source))
+    elif spec.adapter == 'squeeze':
+        from strategies.context_strategy_observers import evaluate_squeeze_macd
+        from strategy_health.squeeze_exit import metadata
+        signal = evaluate_squeeze_macd(frame, ticker='QQQ',
+                    execution_scope='approved_squeeze:' + scope + ':' + symbol, now=cutoff)
+        if signal is not None:
+            signal.meta.update(metadata(spec.source))
+    elif spec.adapter == 'native_fvg':
+        from strategies.spy_afternoon_fvg_v2 import evaluate as native
+        signal = native(frame, ticker='SPY', execution_scope='approved_fvg:' + scope + ':' + symbol, now=cutoff)
+    elif strategy_id == 'RESEARCH_QQQ_TREND_V2' or spec.adapter == 'native_trend':
         from strategies.spy_trend_continuation_v2 import evaluate as native
         # Identical native engine and real QQQ bars, as in the research shadow.
         # The alias passes the unchanged SPY guard; actual orders retain QQQ.
@@ -76,6 +124,15 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
                               'timeframe_minutes': spec.timeframe,
                               'entry_timing': f'completed_{spec.timeframe}m_signal_then_next_quote',
                               **candidate_metadata(spec.source, engine)})
+    signal = finalize(signal, strategy_id, symbol)
+    if signal is not None:
+        _emitted[key] = cutoff.floor('min')
+    return signal
+
+
+def finalize(signal, strategy_id, symbol):
+    """Freeze exact ticker configuration on a signal, without granting consent."""
+    spec = SPECS[strategy_id]
     if signal is None:
         return None
     if signal.meta.get('strategy_version', spec.version) != spec.version:
@@ -86,11 +143,18 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
     signal.meta.pop('research_library', None)
     from config import get_settings
     from config.research_pair_policy import selected
-    policy = selected(get_settings(), strategy_id, symbol, spec.version)
+    settings = get_settings()
+    from config.admin_strategy_overrides import key
+    from strategy_health.pair_recommendations import consent_scope
+    grant = ((settings.get('admin_strategy_overrides') or {}).get(key(strategy_id, symbol))
+             or (settings.get('strategy_pair_approvals') or {}).get(consent_scope(settings, strategy_id, symbol)) or {})
+    if grant.get('ticker_config'):
+        from copy import deepcopy
+        signal.meta['approved_ticker_config'] = deepcopy(grant['ticker_config'])
+    policy = selected(settings, strategy_id, symbol, spec.version)
     if policy:
         signal.meta['selected_test_policy'] = policy
-    _emitted[key] = cutoff.floor('min')
     return signal
 
 
-EVALUATORS = [(sid, partial(evaluate, strategy_id=sid)) for sid in SPECS]
+EVALUATORS = [(sid, partial(evaluate, strategy_id=sid)) for sid in SPECS if SPECS[sid].adapter != 'retouch']

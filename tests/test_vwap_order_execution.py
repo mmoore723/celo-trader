@@ -20,8 +20,9 @@ class VwapOrderTests(unittest.TestCase):
         for paper in (True, False):
             self.assertIn(SID, enabled_reviewed_strategy_ids({**changes, 'paper_trading':paper}, ticker='AMZN'))
             self.assertNotIn(SID, enabled_reviewed_strategy_ids(changes, ticker='QQQ'))
-        with self.assertRaises(ValueError):
-            updates({}, SID, 'QQQ', 'research.1', True, 'admin')
+        qqq = updates({}, SID, 'QQQ', 'research.1', True, 'admin')
+        self.assertIn('APPROVED_'+SID, enabled_reviewed_strategy_ids(qqq, ticker='QQQ'))
+        self.assertNotIn('APPROVED_'+SID, enabled_reviewed_strategy_ids(qqq, ticker='AMZN'))
 
     def test_real_entry_parity_and_duplicate_protection(self):
         for direction in (1, -1):

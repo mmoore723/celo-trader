@@ -231,7 +231,8 @@ def _manage_open_position(
                 _close_position(alpaca, trade, float(trade['entry_price']), guard_reason)
                 return
 
-        if trade.get('strategy_id') in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2', 'V2_VWAP_PULLBACK'):
+        if (trade.get('strategy_id') in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2', 'V2_VWAP_PULLBACK')
+                or str(trade.get('strategy_id', '')).startswith('APPROVED_') and trade.get('strategy_id') in SPECS):
             from trading.research_order_exit import evaluate_exit
             deadline_now = _now_et()
             due, deadline_reason = traced_call('early_native_deadline', evaluate_exit,

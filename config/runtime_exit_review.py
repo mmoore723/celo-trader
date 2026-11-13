@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'capture-persistence-20261112.1'
+REVISION = 'approved-ticker-routes-20261112.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

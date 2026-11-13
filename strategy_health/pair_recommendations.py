@@ -223,7 +223,8 @@ def decide(matrix, settings, sid, ticker, decision, fingerprint):
         if rule.authored_exit_order_route:
             updates[rule.setting_key] = True
         approvals = dict(settings.get("strategy_pair_approvals") or {})
-        approvals[mode_key] = {"strategy_version": item["strategy_version"], "user_approved": True,
+        from config.admin_strategy_overrides import ticker_config
+        approvals[mode_key] = {"ticker_config": ticker_config(sid, ticker, item["strategy_version"]), "strategy_version": item["strategy_version"], "user_approved": True,
                                "strategy_id": sid, "ticker": ticker,
                                "evidence_fingerprint": fingerprint, "approved_at": datetime.now(timezone.utc).isoformat()}
         updates["strategy_pair_approvals"] = approvals

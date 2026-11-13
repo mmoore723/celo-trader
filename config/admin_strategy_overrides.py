@@ -42,6 +42,9 @@ def updates(settings, source, ticker, version, enabled, actor, *, exit_minutes=N
     if not allowed_ticker(sid, symbol, rule):
         raise ValueError('This ticker is outside the implemented entry rule scope.')
     from strategy_health.closed_trade_guard import is_paused
+    from config.strategy_retirement import is_retired
+    if enabled and is_retired(settings, sid, version):
+        raise ValueError('This strategy version is retired. Restore it before approving a ticker.')
     if enabled and is_paused(settings, sid, symbol, version):
         raise ValueError('Actual closed-trade PF pause is active for this account. Research qualification override does not change that loss control.')
     grants = dict(settings.get('admin_strategy_overrides') or {})
@@ -51,6 +54,7 @@ def updates(settings, source, ticker, version, enabled, actor, *, exit_minutes=N
     if exit_minutes is not None or contract_policy is not None:
         from config.research_pair_policy import build
         grants[key(sid, symbol)]['selected_test_policy'] = build(sid, symbol, version, exit_minutes, contract_policy)
+    grants[key(sid, symbol)]['ticker_config'] = ticker_config(sid, symbol, version, exit_minutes, contract_policy)
     from strategy_health.pair_recommendations import consent_scope
     pauses = dict(settings.get('strategy_pair_pauses') or {})
     pauses[consent_scope(settings, sid, symbol)] = not enabled
@@ -58,3 +62,13 @@ def updates(settings, source, ticker, version, enabled, actor, *, exit_minutes=N
     if enabled:
         result[rule.setting_key] = True
     return result
+
+
+def ticker_config(sid, symbol, version, exit_minutes=None, contract_policy=None):
+    """Exact activation selection shared by manual and evidence-led approvals."""
+    spec = SPECS.get(sid)
+    return dict(schema=1, source_strategy_id=spec.source if spec else sid,
+                execution_strategy_id=sid, strategy_version=version, ticker=symbol,
+                entry_rule='exact_registered_version',
+                exit_rule='selected_timer' if exit_minutes is not None else 'registered_baseline',
+                exit_minutes=exit_minutes, contract_policy=contract_policy or 'registered_baseline')

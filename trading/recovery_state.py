@@ -15,7 +15,7 @@ def restore_stage1(trade, position_state):
             position_state.pop('exit_pending_reason', None)
             position_state.pop('exit_pending_since', None)
         return
-    if trade.get('strategy_id') == 'RESEARCH_CTX_ORB_ATR10_V2':
+    if trade.get('strategy_id') in ('RESEARCH_CTX_ORB_ATR10_V2', 'APPROVED_CTX_ORB_NR7_OR_INSIDE'):
         from trading.research_order_exit import partial_remaining
         remaining = partial_remaining(trade)
         position_state['stage1_done'] = remaining == 0

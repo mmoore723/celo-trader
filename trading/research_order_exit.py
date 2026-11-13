@@ -48,6 +48,9 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
             if selected['exit_minutes'] is not None:
                 return ((True, f"selected_test_{selected['exit_minutes']}m")
                         if current >= filled + timedelta(minutes=selected['exit_minutes']) else (False, 'hold'))
+        if spec.adapter in ('native_trend', 'native_fvg', 'retouch', 'two_leg'):
+            minutes = spec.reference_minutes
+            return ((True, f'selected_test_{minutes}m') if current >= filled + timedelta(minutes=minutes) else (False, 'hold'))
         if sid in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2'):
             reason = 'research_qqq_trend_30m' if sid == 'RESEARCH_QQQ_TREND_V2' else 'research_failed_range_30m'
             return (True, reason) if current >= filled + timedelta(minutes=30) else (False, 'hold')
@@ -57,9 +60,13 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
         common = dict(entry_at=logical_entry, entry_quote_at=entry_time,
                       direction=meta.get('direction') or ('bearish' if trade.get('option_type') == 'put' else 'bullish'),
                       meta=meta, now=now)
-        if sid == ATR10:
+        from strategy_health.context_orb_exit import PREMIUM_PROTOCOLS
+        if spec.source in PREMIUM_PROTOCOLS:
             from strategy_health.context_orb_exit import first_exit as midpoint_exit
             event = midpoint_exit(frame, **common, strategy_id=spec.source)
+        elif spec.adapter == 'squeeze':
+            from strategy_health.squeeze_exit import first_exit as squeeze_exit
+            event = squeeze_exit(frame, **common)
         else:
             protocol = PROTOCOLS[spec.source]
             recorded_protocol = meta.get('authored_exit_protocol')
@@ -75,11 +82,13 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
             if reason == 'waiting_for_bars' or et(stamp) > current:
                 return False, 'hold'
             return True, 'research_' + reason
-        if sid == ATR10 and quote:
+        if (spec.source in PREMIUM_PROTOCOLS or spec.adapter == 'squeeze') and quote:
             priced = executable_bid(quote, contract=trade['contract_symbol'],
                                     decision_at=current-timedelta(seconds=60), received_at=current)
             if priced:
                 bid = priced[0]
+                if spec.adapter == 'squeeze':
+                    return (True, 'research_squeeze_target_150') if bid >= float(trade['entry_price']) * 2.5 else (False, 'hold')
                 if bid >= float(trade['entry_price']) * 2:
                     return True, 'research_atr10_target_100'
                 if bid >= float(trade['entry_price']) * 1.30 and partial_remaining(trade) > 0:
