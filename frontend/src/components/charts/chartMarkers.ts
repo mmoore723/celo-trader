@@ -39,9 +39,9 @@ export function buildAndApplyMarkers(
       const grade = input.showExecutionGrade ? gradeBeforeEntry(input.bars, t.entry_time) : null;
       const option = t.option_type?.toUpperCase();
       const buy = option === "CALL" || option === "PUT" ? `BUY ${option}` : "BUY";
-      markers.push({ time: toEpochTime(t.entry_time), position: "belowBar", color: P.up, shape: "arrowUp", text: grade ? `${buy} · prior candle: ${grade.grade}` : buy, size: 2 });
+      markers.push({ time: toEpochTime(t.entry_time), position: "belowBar", color: P.up, shape: "arrowUp", text: input.compactMarkers ? "" : grade ? `${buy} · prior candle: ${grade.grade}` : buy, size: 2 });
     }
-    if (t.exit_time) markers.push({ time: toEpochTime(t.exit_time), position: "aboveBar", color: P.down, shape: "arrowDown", text: t.exit_reason ?? "SELL", size: 2 });
+    if (t.exit_time) markers.push({ time: toEpochTime(t.exit_time), position: "aboveBar", color: P.down, shape: "arrowDown", text: input.compactMarkers ? "" : t.exit_reason ?? "SELL", size: 2 });
   }
 
   if (input.showSwings) {
@@ -55,7 +55,7 @@ export function buildAndApplyMarkers(
   }
 
   for (const ann of input.annotations) {
-    if (ann.type === "marker" && ann.price != null) {
+    if (!input.compactMarkers && ann.type === "marker" && ann.price != null) {
       // Strategy annotations can also contain structure shorthand. Respect
       // the same Structure toggle so disabling it truly declutters the chart.
       const isStructureAnnotation = /(?:^|[\s·:_-])(HH|HL|LH|LL|SH|SL|BOS|CHOCH)(?:$|[\s·:_-])/i.test(ann.label);
@@ -72,7 +72,7 @@ export function buildAndApplyMarkers(
   // screen. No backend change needed: this is pure frontend arithmetic on
   // data that was already flowing through.
   for (const ann of input.annotations) {
-    if (ann.type !== "zone" || !ann.strategy?.includes("FVG") || ann.price_low == null || ann.price_high == null) continue;
+    if (input.compactMarkers || ann.type !== "zone" || !ann.strategy?.includes("FVG") || ann.price_low == null || ann.price_high == null) continue;
     const gapLow = ann.price_low, gapHigh = ann.price_high;
     const gapSize = gapHigh - gapLow;
     if (gapSize <= 0) continue;

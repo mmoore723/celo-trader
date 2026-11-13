@@ -73,7 +73,9 @@ test("option view lazy loads Plotly while stock chart and trade selection remain
   assert.match(liveTrading, /useState\("1Min"\)/);
   assert.match(liveTrading, /"True one-minute stock candles with the option position overlaid\."/);
   assert.match(liveTrading, /"Option trades" : "1-minute stock"/);
-  assert.match(liveTrading, /showTradeWindow\(selected\.entry_time, selected\.exit_time\)/);
+  assert.doesNotMatch(liveTrading, /showTradeWindow\(selected\.entry_time, selected\.exit_time\)/);
+  assert.match(liveTrading, /compactMarkers/);
+  assert.match(liveTrading, /barLimitForPeriod\(tf, effectivePeriod\), true/);
   assert.match(liveTrading, /trades=\{tickerTrades\}/);
   assert.match(replay, /showTradeWindow: \(entryTime: string, exitTime\?: string\) => void/);
 });

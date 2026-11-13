@@ -2,10 +2,10 @@
  * LiveTrading.tsx — Main trading cockpit.
  * Real-time chart, actionable trade alert, open positions, eval log, scanner.
  */
-import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
+import { useState, useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { strategyName as readableStrategy } from "../lib/strategyIdentity.js";
+import { exitReason, strategyName as readableStrategy } from "../lib/strategyIdentity.js";
 import { ChevronDown, Newspaper, RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
 import { useBotStore } from "../store/bot";
@@ -26,11 +26,19 @@ type Period = "1D" | "5D" | "1M" | "3M";
 
 // PERIOD_MS was used by KChart for windowing; TradingChart handles it internally
 
+function chartExitDescription(reason?: string | null): string {
+  if (!reason) return "Exit reason not recorded";
+  if (reason.includes("session_close") || reason.includes("session_flatten")) return "Closed before the market session ended";
+  if (reason.startsWith("stage1_")) return "Sold part of the position to take profit";
+  const timer = reason.match(/(?:markout_|selected_test_)(\d+)m/);
+  if (timer) return `Closed after the ${timer[1]}-minute holding limit`;
+  return exitReason(reason);
+}
+
 function barLimitForPeriod(tf: string, period: Period): number {
   const barsPerDay: Record<string, number> = {
-    // Regular US session is 390 minutes.  These counts intentionally exclude
-    // extended hours because the chart and bot both use 09:30–16:00 ET.
-    "1Min": 390, "5Min": 78, "15Min": 26, "1Hour": 7,
+    // Display the available 04:00 through 16:00 Eastern candles.
+    "1Min": 720, "5Min": 144, "15Min": 48, "1Hour": 12,
   };
   // FIX 2026-07-17: "1D" was loading 3 trading days of bars (not 1) — the
   // multiplier below was 3, so selecting "1D" actually rendered 7/15, 7/16,
@@ -163,7 +171,6 @@ export function LiveTrading() {
   // Recreating lightweight-charts on every switch can leave a queued resize
   // callback touching an already-disposed canvas.
   const stockChartWasOpened = useRef(false);
-  const lastFramedPosition = useRef("");
 
   function toggleChart() {
     setChartExpanded((expanded) => {
@@ -210,8 +217,8 @@ export function LiveTrading() {
   const effectivePeriod: Period = tf === "1Min" && period !== "1D" ? "1D" : period;
 
   const { data: bars = [], isLoading: barsLoading } = useQuery({
-    queryKey: ["bars", ticker, tf, effectivePeriod],
-    queryFn: () => api.market.bars(ticker, tf, barLimitForPeriod(tf, effectivePeriod)),
+    queryKey: ["bars", ticker, tf, effectivePeriod, "premarket"],
+    queryFn: () => api.market.bars(ticker, tf, barLimitForPeriod(tf, effectivePeriod), true),
     refetchInterval: barsRefetchMs,
     retry: false,   // fail fast — retries pile up and delay visible feedback
   });
@@ -359,19 +366,6 @@ export function LiveTrading() {
   const chartAnnotations = [...(chartSetup
     ? [...(setupTrade?.annotations ?? []), ...setupLevels]
     : [...annotations, ...(displayedTrade?.annotations ?? [])]), ...stockPositionLevels];
-
-  // A selected position is a focused teaching view: show exactly 20 complete
-  // one-minute stock candles before its buy minute through 20 after its close.
-  useEffect(() => {
-    const selected = optionChart.selected;
-    if (optionChart.view !== "stock" || tf !== "1Min" || !selected?.entry_time || chartBars.length === 0 || !chartReplayRef.current) return;
-    const entry = Date.parse(selected.entry_time);
-    if (entry < Date.parse(chartBars[0].time) || entry > Date.parse(chartBars.at(-1)!.time) + 60_000) return;
-    const key = `${selected.mode}:${selected.id}:${selected.entry_time}:${selected.exit_time ?? "open"}`;
-    if (lastFramedPosition.current === key) return;
-    lastFramedPosition.current = key;
-    chartReplayRef.current?.showTradeWindow(selected.entry_time, selected.exit_time);
-  }, [optionChart.selected, optionChart.view, tf, chartBars]);
 
   // Narration for the boomerang replay's caption strip — reuses the same
   // trade-events endpoint the trade drawer already uses, scoped to whichever
@@ -683,12 +677,23 @@ export function LiveTrading() {
             Stock-price risk/reward references for trade #{displayedTrade.id}. Option premium paid: ${displayedTrade.entry_price.toFixed(2)} x 100 x {displayedTrade.contracts} contracts.
             {stockPositionLevels.filter(row => row.type === "zone").length < 2 ? " Some stock entry/stop/target levels were not recorded; missing boxes are not invented." : " Stock moves are not option-dollar P&L."}
           </div>}
+          <div className="px-3 py-2 text-xs text-ink-muted">Day view includes available premarket candles from 4 AM Eastern. Green arrows: buys. Red arrows: sells. Trading hours are unchanged.</div>
+          <details className="px-3 py-2 text-xs">
+            <summary className="cursor-pointer">Trade marker details</summary>
+            {tickerTrades.map(trade => <div key={trade.id} className="py-1">
+              #{trade.id} · {readableStrategy(trade.strategy_id ?? "")} · Buy {trade.option_type} {trade.entry_time ? new Date(trade.entry_time).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }) : "time unavailable"} ET.
+              {trade.exit_time && <> Sell {new Date(trade.exit_time).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" })} ET: {chartExitDescription(trade.exit_reason)}.</>}
+            </div>)}
+          </details>
           <BoomerangReplay
             ref={chartReplayRef}
             mode="live"
             resetKey={`${ticker}|${tf}|${effectivePeriod}`}
             bars={chartBars}
             trades={tickerTrades}
+            compactMarkers
+            showExecutionGrade={false}
+            viewportKey={`${ticker}|${tf}|${effectivePeriod}|premarket`}
             showVwap={showVwap}
             showVwapBands={false}
             showOR={showOR}

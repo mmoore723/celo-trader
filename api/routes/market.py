@@ -52,6 +52,7 @@ def get_bars(
     ticker: str,
     timeframe: str = Query("5Min", enum=["1Min", "5Min", "15Min", "1Hour"]),
     limit: int = Query(200, ge=10, le=2000),
+    premarket: bool = False,
 ) -> list[Bar]:
     """
     Fetch OHLCV bars with pre/after-market data.
@@ -123,14 +124,9 @@ def get_bars(
                     .dt.tz_localize(None)
                 )
                 raw_yf = raw_yf[["time","open","high","low","close","volume"]].copy()
-                # ── Regular session only (9:30 AM – 4:00 PM ET) ─────────────
-                # Pre/after-market bars are the root cause of every chart spike:
-                # extended-hours prices are legitimate but differ from regular
-                # session prices, creating apparent "spikes" between sessions.
-                # The bot only trades 9:30–4 PM ET so there is no analytical
-                # value in showing extended hours bars on the chart.
+                # Display-only session selection. Trading data and rules are unchanged.
                 import datetime as _dt2
-                _open  = _dt2.time(9, 30)
+                _open = _dt2.time(4, 0) if premarket else _dt2.time(9, 30)
                 _close = _dt2.time(16, 0)
                 # Use explicit >= / < instead of .between() so that 4:00 PM bars
                 # (first extended-hours bar) are excluded (.between is inclusive on both ends)

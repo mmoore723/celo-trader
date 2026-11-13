@@ -27,6 +27,7 @@ export interface OverlayInputs {
   showPremiumDiscount: boolean;
   showKillzones: boolean;
   showExecutionGrade: boolean;
+  compactMarkers?: boolean;
   orHigh?: number;
   orLow?: number;
   positionLevels?: PositionLevels;

@@ -35,6 +35,7 @@ export interface TradeChartProps {
   showPremiumDiscount?: boolean;
   showKillzones?: boolean;
   showExecutionGrade?: boolean;
+  compactMarkers?: boolean;
   showRsi?: boolean;
   showMacd?: boolean;
   orHigh?: number;
@@ -68,6 +69,7 @@ export function TradeChart({
   bars, trades = [], annotations = [],
   showVwap = true, showVwapBands = true, showOR = true, showSwings = true,
   showStructure = true, showPremiumDiscount = false, showKillzones = false, showExecutionGrade = true,
+  compactMarkers = false,
   showRsi = true, showMacd = true,
   orHigh, orLow, positionLevels, positionLevelsOnCandleScale = false, simulationOverlay, replayTrade,
   height = 420, ticker, revealCount, revealStart, viewportKey, minuteTimelineEnd, minuteTimelineStart,
@@ -113,7 +115,7 @@ export function TradeChart({
     overlayMgr.current?.setVwap(visibleBars, showVwap, showVwapBands);
     overlayMgr.current?.apply({
       bars: visibleBars, trades: visibleTrades, annotations: visibleAnnotations,
-      showVwap, showSwings, showStructure, showPremiumDiscount, showKillzones, showExecutionGrade,
+      showVwap, showSwings, showStructure, showPremiumDiscount, showKillzones, showExecutionGrade, compactMarkers,
       orHigh: showOR ? orHigh : undefined,
       orLow: showOR ? orLow : undefined,
       positionLevels, positionLevelsOnCandleScale, simulationOverlay, replayTrade,
@@ -121,7 +123,7 @@ export function TradeChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     bars, trades, annotations, revealCount, revealStart, showVwap, showVwapBands, showOR, showSwings,
-    showStructure, showPremiumDiscount, showKillzones, showExecutionGrade,
+    showStructure, showPremiumDiscount, showKillzones, showExecutionGrade, compactMarkers,
     orHigh, orLow, positionLevels, positionLevelsOnCandleScale, simulationOverlay, replayTrade,
     minuteTimelineEnd, minuteTimelineStart,
   ]);

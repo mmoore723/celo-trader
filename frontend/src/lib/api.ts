@@ -1371,7 +1371,7 @@ export const api = {
     alpacaDailyPnl: () => request<{date:string; pnl:number}[]>("/api/trades/alpaca-daily-pnl"),
   },
   market: {
-    bars:    (ticker: string, tf="5Min", limit=400) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}`),
+    bars:    (ticker: string, tf="5Min", limit=400, premarket=false) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}&premarket=${premarket}`),
     quotes:  (tickers: string) => request<Quote[]>(`/api/market/quotes?tickers=${tickers}`),
     scanner:   () => request<ScannerResult[]>("/api/market/scanner"),
     premarket: (tickers?: string) => request<PremarketTicker[]>(
