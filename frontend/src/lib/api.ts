@@ -1195,6 +1195,7 @@ export interface PairRecommendationEvidence {
 // Emitted by strategy_router.py when a signal or veto fires.
 // Frontend polls GET /api/bot/annotations/{ticker} every 5 s.
 export interface NewsArticle {
+  explanation?: { status: "pending" | "ready" | "unavailable"; ticker: string; basis?: string; what_happened?: string; ticker_meaning?: string };
   id?: number;
   headline: string;
   summary?: string;

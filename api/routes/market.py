@@ -800,6 +800,7 @@ def get_news(
                 "created_at": a.get("created_at", ""),
                 "symbols":    a.get("symbols", []),
             })
-        return result
+        from api.news_explanations import explain_news
+        return explain_news(result, symbols)
     except Exception:
         return []   # never fail the frontend; news is supplemental
