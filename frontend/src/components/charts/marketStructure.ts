@@ -64,3 +64,19 @@ export function structureLabels(bars: Bar[], includeBreaks = true): StructureLab
   }
   return out.sort((a,b) => a.time.localeCompare(b.time));
 }
+
+/** Display only: keep confirmed structure readable at full-session scale. */
+export function compactStructureLabels(bars: Bar[], labels: StructureLabel[]): StructureLabel[] {
+  const spacing = Math.max(8, Math.ceil(bars.length / 8));
+  const selected: StructureLabel[] = [];
+  const indices = new Map(bars.map((bar, i) => [bar.time, i]));
+  // Keep the latest context, without piling adjacent labels on each other.
+  for (const label of [...labels].reverse()) {
+    const index = indices.get(label.time);
+    if (index == null || selected.some(other => Math.abs(index - (indices.get(other.time) ?? index)) < spacing)) continue;
+    const text = label.text.replace(" confirmed", "").replace("Bullish ", "").replace("Bearish ", "");
+    selected.push({ ...label, text: label.event ? `${text === "break" ? "Break" : text} ${label.direction === "up" ? "↑" : "↓"}` : text });
+    if (selected.length === 6) break;
+  }
+  return selected.reverse();
+}

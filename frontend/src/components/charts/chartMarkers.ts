@@ -8,7 +8,7 @@ import { createSeriesMarkers } from "lightweight-charts";
 import type { ISeriesApi, ISeriesMarkersPluginApi, SeriesMarker, Time } from "lightweight-charts";
 import type { OverlayInputs } from "./chartOverlays";
 import type { ChartPalette } from "./palette";
-import { structureLabels } from "./marketStructure";
+import { compactStructureLabels, structureLabels } from "./marketStructure";
 import { gradeBeforeEntry } from "./executionGrade";
 import { toEpochTime } from "./zoneBands";
 
@@ -39,13 +39,14 @@ export function buildAndApplyMarkers(
       const grade = input.showExecutionGrade ? gradeBeforeEntry(input.bars, t.entry_time) : null;
       const option = t.option_type?.toUpperCase();
       const buy = option === "CALL" || option === "PUT" ? `BUY ${option}` : "BUY";
-      markers.push({ time: toEpochTime(t.entry_time), position: "belowBar", color: P.up, shape: "arrowUp", text: input.compactMarkers ? "" : grade ? `${buy} · prior candle: ${grade.grade}` : buy, size: 2 });
+      markers.push({ time: toEpochTime(t.entry_time), position: "belowBar", color: P.up, shape: "arrowUp", text: input.compactMarkers ? "Buy" : grade ? `${buy} · prior candle: ${grade.grade}` : buy, size: 2 });
     }
-    if (t.exit_time) markers.push({ time: toEpochTime(t.exit_time), position: "aboveBar", color: P.down, shape: "arrowDown", text: input.compactMarkers ? "" : t.exit_reason ?? "SELL", size: 2 });
+    if (t.exit_time) markers.push({ time: toEpochTime(t.exit_time), position: "aboveBar", color: P.down, shape: "arrowDown", text: input.compactMarkers ? "Sell" : t.exit_reason ?? "SELL", size: 2 });
   }
 
   if (input.showSwings) {
-    for (const label of structureLabels(input.bars, input.showStructure).slice(-18)) {
+    const labels = structureLabels(input.bars, input.showStructure);
+    for (const label of input.compactMarkers ? compactStructureLabels(input.bars, labels) : labels.slice(-18)) {
       const up = label.direction === "up";
       markers.push({ time:toEpochTime(label.time), position:up ? "belowBar" : "aboveBar",
         color:label.direction === "neutral" ? P.choch : up ? P.structureUp : P.structureDown,

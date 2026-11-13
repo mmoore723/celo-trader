@@ -37,11 +37,16 @@ export function TradingHaltBanner() {
       setMessage(error instanceof Error ? error.message : "Resume failed.");
     } finally { setBusy(false); }
   }
-  if (!halt.data?.halted && !halt.isError) return message ? <div role="status" className="p-3">{message}</div> : null;
+  if (halt.isError && !halt.data?.halted && !halt.data?.close_pending) return <section role="status" aria-live="polite" className="px-4 py-2 text-sm flex items-center gap-3" style={{ background: "var(--surface-raised)", color: "var(--ink-muted)" }}>
+    <span>Connection check delayed. Current entry permission is unknown. Retrying automatically.</span>
+    <button className="btn btn-sm btn-ghost" onClick={() => halt.refetch()}>Retry status check</button>
+  </section>;
+  if (!halt.data?.halted && !halt.data?.close_pending && !halt.isError) return message ? <div role="status" className="p-3">{message}</div> : null;
   return <section role="alert" aria-live="assertive" className="bg-red-900 text-white p-4 flex flex-wrap items-center gap-3">
     <div className="flex-1 min-w-0 basis-full sm:basis-64">
-      <strong>{halt.isError ? "TRADING STATUS UNVERIFIED" : "TRADING HALTED: new entries blocked"}</strong>
-      <p>{halt.isError ? "Cannot refresh halt status. Do not assume the bot is trading." : halt.data?.reason}</p>
+      <strong>{halt.data?.close_pending ? "EXIT CONFIRMATION PENDING" : "TRADING HALTED: new entries blocked"}</strong>
+      <p>{halt.data?.reason}
+      {halt.isError && <p>Connection check delayed. The last recorded safety warning remains in effect until verified.</p>}</p>
       {halt.data?.close_pending && <p>Emergency exits are awaiting broker confirmation. Resume is unavailable until they finish.</p>}
       <p role="status">{message || "Resume trading lets you review your limits or set a temporary limit for today."}</p>
     </div>

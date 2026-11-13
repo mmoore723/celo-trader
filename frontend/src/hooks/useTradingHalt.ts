@@ -11,9 +11,17 @@ export function useTradingHalt() {
       if (!response.ok) throw new Error("Unable to verify trading halt status.");
       return response.json();
     },
-    refetchInterval: 5000,
+    refetchInterval: query => {
+      if (query.state.data?.halted || query.state.data?.close_pending) return 5000;
+      const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).map(p => [p.type, p.value]));
+      const minute = Number(parts.hour) * 60 + Number(parts.minute);
+      const regularClock = !["Sat", "Sun"].includes(parts.weekday) && minute >= 570 && minute < 960;
+      return regularClock ? 5000 : 60000;
+    },
+    retry: 1,
+    retryDelay: 1000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
-    staleTime: 0,
+    staleTime: 5000,
   });
 }

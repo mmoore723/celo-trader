@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import ts from 'typescript';
 const src=await readFile(new URL('../src/components/charts/marketStructure.ts',import.meta.url),'utf8');
 const js=ts.transpileModule(src,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {detectSwings,structureLabels}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const {detectSwings,structureLabels,compactStructureLabels}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const bar=(i,h,l=h-2,c=(h+l)/2)=>({time:new Date(Date.UTC(2026,10,11,14,30+i)).toISOString(),open:c,high:h,low:l,close:c,volume:100});
 test('pivot waits for right candles to close, never marked at original peak',()=>{
  const b=[1,2,3,4,5,10,5,4,3,2,1,2].map((v,i)=>bar(i,v));
@@ -35,4 +35,13 @@ test('markers use causal labels and suppress unverified legacy structure annotat
  assert.match(m,/structureLabels\(input.bars/);
  assert.doesNotMatch(m,/length >= 400/);
  assert.match(m,/if \(isStructureAnnotation\) continue/);
+});
+
+test('compact structure limits density without moving confirmation timestamps',()=>{
+ const b=Array.from({length:675},(_,i)=>bar(i,100+Math.sin(i/3)*5));
+ const all=structureLabels(b),shown=compactStructureLabels(b,all);
+ assert.ok(shown.length>0 && shown.length<=6);
+ assert.ok(shown.every(x=>all.some(y=>y.time===x.time && y.event===x.event)));
+ assert.ok(shown.every(x=>!x.text.includes('confirmed') && !x.text.includes('Bullish') && !x.text.includes('Bearish')));
+ for(let i=1;i<shown.length;i++) assert.ok(b.findIndex(x=>x.time===shown[i].time)-b.findIndex(x=>x.time===shown[i-1].time)>=Math.ceil(b.length/8));
 });

@@ -677,7 +677,12 @@ export function LiveTrading() {
             Stock-price risk/reward references for trade #{displayedTrade.id}. Option premium paid: ${displayedTrade.entry_price.toFixed(2)} x 100 x {displayedTrade.contracts} contracts.
             {stockPositionLevels.filter(row => row.type === "zone").length < 2 ? " Some stock entry/stop/target levels were not recorded; missing boxes are not invented." : " Stock moves are not option-dollar P&L."}
           </div>}
-          <div className="px-3 py-2 text-xs text-ink-muted">Day view includes available premarket candles from 4 AM Eastern. Green arrows: buys. Red arrows: sells. Trading hours are unchanged.</div>
+          <div className="px-3 py-2 text-xs text-ink-muted">Day view includes available premarket candles from 4 AM Eastern. Green Buy arrows show entries. Red Sell arrows show exits. Trading hours are unchanged.</div>
+          {showSwings && <details className="px-3 py-1 text-xs text-ink-muted">
+            <summary className="cursor-pointer">Read the structure labels</summary>
+            <p>HH: higher high. HL: higher low. LH: lower high. LL: lower low. SH/SL: first confirmed swing high/low.</p>
+            <p>BOS: trend continues. CHoCH: direction changes. Arrows show up or down. Only six spaced labels appear. Each marks when the pattern was confirmed, not the earlier peak. These are chart context, not buy or sell instructions.</p>
+          </details>}
           <details className="px-3 py-2 text-xs">
             <summary className="cursor-pointer">Trade marker details</summary>
             {tickerTrades.map(trade => <div key={trade.id} className="py-1">
@@ -826,6 +831,7 @@ export function LiveTrading() {
           <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
                style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}>
             Open Positions ({openTrades.length})
+            <p className="normal-case font-normal tracking-normal mt-1">What you own now: contracts, current value and profit or loss.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="data-table">
@@ -914,6 +920,7 @@ export function LiveTrading() {
 
       <div className="card overflow-hidden flex flex-col">
         <div className="px-3 pt-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Live activity</div>
+        <p className="px-3 pt-1 text-xs text-ink-muted">What the bot is doing: scanning, checking a setup or managing a trade. A setup is not an open position.</p>
         <div className="flex flex-col">
         <div className="flex border-b text-xs font-semibold uppercase tracking-wider"
              style={{ borderColor: "var(--border)" }}>

@@ -40,10 +40,11 @@ test("resume opens a separate limit-selection dialog, not an immediate API actio
   assert.match(source, /Includes losses already taken/);
   assert.doesNotMatch(source, /window.confirm/);
 });
-test("failed status refresh stays visible and disables resume", () => {
+test("failed refresh shows a quiet connection message, never false halt controls", () => {
   const html = render({ halted: false }, true);
-  assert.match(html, /TRADING STATUS UNVERIFIED/);
-  assert.match(html, /disabled=""/);
+  assert.match(html, /Connection check delayed/);
+  assert.match(html, /Retry status check/);
+  assert.doesNotMatch(html, /TRADING HALTED|Resume trading|Keep halted|role="alert"/);
 });
 test("no loss halt produces no warning", () => {
   assert.equal(render({ halted: false }), "");
@@ -54,4 +55,13 @@ test("halt banners live inside the scrollable main area, not implicit sidebar gr
   assert.match(source, /result.ok === true/);
   assert.match(source, /Still halted:/);
   assert.match(source, /result.detail/);
+});
+
+test("known halt stays urgent even when refresh fails", () => {
+ const html=render({halted:true,reason:"Daily loss cap",close_pending:false},true);
+ assert.match(html,/TRADING HALTED/); assert.match(html,/Daily loss cap/); assert.match(html,/disabled=""/);
+});
+test("pending exits remain visible without a halt flag", () => {
+ const html=render({halted:false,close_pending:true},true);
+ assert.match(html,/EXIT CONFIRMATION PENDING/); assert.match(html,/disabled=""/);
 });
