@@ -492,3 +492,11 @@ Rollback: revert this release through `deploy.sh` to the previous release
 If a new adapter has since opened a position, disable its future entries first
 and retain its manager until those positions are closed; never remove the policy
 needed to manage an open trade.
+
+### November 13 exit reporting correction
+
+Confirmed sales now report the broker fill price separately from the trigger
+quote. An unavailable trigger quote is shown as unavailable, not formatted as
+a number. This prevents a post-fill logging error; exit policies are unchanged.
+Rollback: revert this reporting release through deploy.sh to f37ddbe, restoring
+the matching runtime review. No settings or database migration is required.

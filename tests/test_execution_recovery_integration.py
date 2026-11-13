@@ -53,6 +53,43 @@ class RecoveryIntegrationTests(unittest.TestCase):
         self.assertEqual(2, len(self.submissions))
         risk.record_pnl.assert_called_once()
 
+    def test_full_close_reports_broker_fill_when_trigger_price_is_missing_or_different(self):
+        from trading.position_manager.close import _close_position
+        for trigger in (None, 1.55):
+            with self.subTest(trigger=trigger):
+                # Each subcase uses its own account database and durable order ledger.
+                if trigger is not None:
+                    self.setUp()
+                self.enter()
+                trade = self.rows()[0]
+                self.next_status, self.next_qty, self.next_price = 'filled', '3', '1.50'
+                state = {'positions': {trade['id']: {}}, 'account_balance': 4000}
+                trade_log, risk = Mock(), Mock()
+                with patch('trading.position_manager.close.get_user_state', return_value=state), \
+                     patch('trading.position_manager.close.get_user_risk', return_value=risk), \
+                     patch('trading.position_manager.close.get_user_trade_log', return_value=trade_log), \
+                     patch('trading.position_manager.close.set_user_trade_log') as reset_log, \
+                     patch('config.atomic_update_json'), patch('database.log_event') as events, \
+                     patch('database.record_paper_option_quote'), patch('database.link_broker_order_to_trade'), \
+                     patch('ai_reasoning.narrator.narrate_exit'), \
+                     patch('database.close_trade', side_effect=AssertionError('Duplicate close')):
+                    _close_position(self.client, trade, trigger, 'selected_test_90m',
+                                    pricing_unavailable=trigger is None)
+                closed = self.rows()[0]
+                self.assertEqual('closed', closed['status'])
+                self.assertEqual(1.50, closed['exit_price'])
+                self.assertNotIn(trade['id'], state['positions'])
+                self.assertEqual(2, len(self.submissions))
+                risk.record_pnl.assert_called_once()
+                reset_log.assert_called_once()
+                report = next(c.kwargs['extra'] for c in trade_log.info.call_args_list
+                              if c.args[0] == 'trade_closed')
+                self.assertEqual(1.50, report['exit_price'])
+                self.assertEqual(trigger, report['trigger_price'])
+                narrative = next(c.args[2] for c in events.call_args_list if 'EXIT' in c.args[2])
+                self.assertIn('@ $1.50', narrative)
+                self.assertIn('trigger unavailable' if trigger is None else 'trigger $1.55', narrative)
+
     def test_other_user_database_and_other_account_cannot_recover_our_order(self):
         self.next_status, self.next_qty = "pending_cancel", "1"
         self.enter()

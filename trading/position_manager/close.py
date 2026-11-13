@@ -365,10 +365,11 @@ def _close_position(
         )
         _mode_tag = "[PAPER] " if paper else ""
         _emoji    = "🟢" if pnl >= 0 else "🔴"
+        _trigger_text = f"${exit_price:.2f}" if exit_price is not None else "unavailable"
         log_event(
             "INFO", "trading_logic",
             f"{_emoji} {_mode_tag}EXIT — Sold {_ticker_close} {_opt_close} "
-            f"@ ${fill_price:.2f} (trigger ${exit_price:.2f}, entry ${_entry_px:.2f}). "
+            f"@ ${fill_price:.2f} (trigger {_trigger_text}, entry ${_entry_px:.2f}). "
             f"P&L: {_pnl_sign}${pnl:.2f}. Reason: {_reason_nice}.",
         )
     except Exception:
@@ -498,7 +499,8 @@ def _close_position(
             "Risk_Tier_Used":          _tier_label,
             "R_R_Ratio":               "n/a",
             "Entry_Volume_Multiplier": "n/a",
-            "exit_price":   round(exit_price, 4),
+            "exit_price":   round(fill_price, 4),
+            "trigger_price": round(exit_price, 4) if exit_price is not None else None,
             "realized_pnl": round(pnl, 2),
             "exit_reason":  reason,
             "flip_armed":   _is_hard_stop and _flip_setting_enabled,
