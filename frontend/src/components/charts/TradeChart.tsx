@@ -187,7 +187,7 @@ export function TradeChart({
 
   return (
     <div className="flex flex-col w-full" onWheel={(e) => e.stopPropagation()}>
-      {compactMarkers && annotations.some(a => a.type === "hline") && <details className="text-xs text-muted px-2 py-1">
+      {compactMarkers && annotations.some(a => a.type === "hline") && <details className="text-xs text-ink-muted px-2 py-1">
         <summary>Chart notes: saved reference levels</summary>
         <p>These notes are not proof of an active stop. Crowded notes stay here so candles and Buy/Sell remain clear.</p>
         <ul>{annotations.filter(a => a.type === "hline" && a.price != null).map(a => <li key={a.id}>{a.label}: ${a.price!.toFixed(2)}</li>)}</ul>
