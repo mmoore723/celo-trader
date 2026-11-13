@@ -20,6 +20,8 @@ import { OptionPositionChart } from "../components/charts/OptionPositionChart";
 import { useOptionChartSelection } from "../components/charts/useOptionChartSelection";
 import { connectionHealthView } from "../lib/connectionHealthView.js";
 
+import { LiveActivityFeed } from "../components/LiveActivityFeed";
+
 const FALLBACK_TICKERS = ["SPY", "QQQ"];
 
 type Period = "1D" | "5D" | "1M" | "3M";
@@ -727,6 +729,102 @@ export function LiveTrading() {
         </div>
 
         <aside className="live-trading-details" aria-label="Trading activity beside chart">
+      {/* ── Manage positions, then inspect the bot's activity ─────────────── */}
+      <div className="card overflow-hidden">
+        {/* Open positions */}
+        <div>
+          <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
+               style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}>
+            Open Positions ({openTrades.length})
+            <p className="normal-case font-normal tracking-normal mt-1">What you own now: contracts, current value and profit or loss.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th>
+                  <th>Now</th><th>Strategy</th><th>P&L (live)</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {openTrades.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
+                      No open positions
+                    </td>
+                  </tr>
+                ) : (
+                  openTrades.map((t: Trade) => {
+                    const livePos = status?.open_positions?.[String(t.id)];
+                    const curPx   = livePos?.current_option_price ?? null;
+                    const qty     = livePos?.contracts ?? t.contracts ?? 1;
+                    const unreal  = curPx != null ? (curPx - t.entry_price) * qty * 100 : null;
+                    const pnlPct  = curPx != null ? (curPx - t.entry_price) / t.entry_price * 100 : null;
+                    const updTime = livePos?.current_option_price_time;
+                    return (
+                      <tr key={t.id}
+                        style={{ cursor: "pointer" }}
+                        title="Click to view bot thinking log for this trade"
+                        onClick={() => setTradeDrawerId(id => id === t.id ? null : t.id)}>
+                        <td className="font-semibold" style={{ color: "var(--accent)" }}>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); optionChart.selectOption(t); }}
+                            aria-label={`View ${t.ticker} option chart`} title={`View ${t.ticker} option chart`}>{t.ticker}</button>
+                        </td>
+                        <td>
+                          <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
+                            {t.direction?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="num text-center">
+                          <span className="badge badge-blue">{qty}c</span>
+                        </td>
+                        <td className="num">${t.entry_price.toFixed(2)}</td>
+                        <td className="num" style={{ whiteSpace: "nowrap" }}>
+                          {curPx != null ? (
+                            <>
+                              <span style={{ fontWeight: 600 }}>${curPx.toFixed(2)}</span>
+                              {updTime && (
+                                <span style={{ color: "var(--ink-faint)", fontSize: 9, marginLeft: 3 }}>
+                                  {updTime}
+                                </span>
+                              )}
+                            </>
+                          ) : "—"}
+                        </td>
+                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                          {t.strategy_id ?? "—"}
+                        </td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {unreal != null ? (
+                            <span style={{ fontWeight: 700, color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                              {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
+                              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
+                                ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
+                              </span>
+                            </span>
+                          ) : (
+                            <PnlBadge value={t.pnl} />
+                          )}
+                        </td>
+                        <td>
+                          <button className="btn btn-ghost btn-sm text-xs"
+                            onClick={() => api.bot.closeTrade(t.id)}>
+                            Close
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <LiveActivityFeed />
+      <details className="card p-3"><summary>Saved setups and diagnostic log</summary>
         {/* Focused pre-entry callouts. The redundant ticker scanner and raw
             option-chain widgets were removed from the trading cockpit. */}
         <div className="card flex flex-col">
@@ -824,100 +922,6 @@ export function LiveTrading() {
             )}
           </div>
         </div>
-      {/* ── Manage positions, then inspect the bot's activity ─────────────── */}
-      <div className="card overflow-hidden">
-        {/* Open positions */}
-        <div>
-          <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
-               style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}>
-            Open Positions ({openTrades.length})
-            <p className="normal-case font-normal tracking-normal mt-1">What you own now: contracts, current value and profit or loss.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Ticker</th><th>Dir</th><th>Qty</th><th>Entry</th>
-                  <th>Now</th><th>Strategy</th><th>P&L (live)</th><th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {openTrades.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="text-center py-6" style={{ color: "var(--ink-muted)" }}>
-                      No open positions
-                    </td>
-                  </tr>
-                ) : (
-                  openTrades.map((t: Trade) => {
-                    const livePos = status?.open_positions?.[String(t.id)];
-                    const curPx   = livePos?.current_option_price ?? null;
-                    const qty     = livePos?.contracts ?? t.contracts ?? 1;
-                    const unreal  = curPx != null ? (curPx - t.entry_price) * qty * 100 : null;
-                    const pnlPct  = curPx != null ? (curPx - t.entry_price) / t.entry_price * 100 : null;
-                    const updTime = livePos?.current_option_price_time;
-                    return (
-                      <tr key={t.id}
-                        style={{ cursor: "pointer" }}
-                        title="Click to view bot thinking log for this trade"
-                        onClick={() => setTradeDrawerId(id => id === t.id ? null : t.id)}>
-                        <td className="font-semibold" style={{ color: "var(--accent)" }}>
-                          <button type="button" onClick={(e) => { e.stopPropagation(); optionChart.selectOption(t); }}
-                            aria-label={`View ${t.ticker} option chart`} title={`View ${t.ticker} option chart`}>{t.ticker}</button>
-                        </td>
-                        <td>
-                          <span className={`badge ${t.direction === "long" ? "badge-green" : "badge-red"}`}>
-                            {t.direction?.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="num text-center">
-                          <span className="badge badge-blue">{qty}c</span>
-                        </td>
-                        <td className="num">${t.entry_price.toFixed(2)}</td>
-                        <td className="num" style={{ whiteSpace: "nowrap" }}>
-                          {curPx != null ? (
-                            <>
-                              <span style={{ fontWeight: 600 }}>${curPx.toFixed(2)}</span>
-                              {updTime && (
-                                <span style={{ color: "var(--ink-faint)", fontSize: 9, marginLeft: 3 }}>
-                                  {updTime}
-                                </span>
-                              )}
-                            </>
-                          ) : "—"}
-                        </td>
-                        <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                          {t.strategy_id ?? "—"}
-                        </td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          {unreal != null ? (
-                            <span style={{ fontWeight: 700, color: unreal >= 0 ? "var(--positive)" : "var(--negative)" }}>
-                              {unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}
-                              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.75, fontWeight: 400 }}>
-                                ({pnlPct != null ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(1) + "%" : ""})
-                              </span>
-                            </span>
-                          ) : (
-                            <PnlBadge value={t.pnl} />
-                          )}
-                        </td>
-                        <td>
-                          <button className="btn btn-ghost btn-sm text-xs"
-                            onClick={() => api.bot.closeTrade(t.id)}>
-                            Close
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-
       <div className="card overflow-hidden flex flex-col">
         <div className="px-3 pt-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Live activity</div>
         <p className="px-3 pt-1 text-xs text-ink-muted">What the bot is doing: scanning, checking a setup or managing a trade. A setup is not an open position.</p>
@@ -1231,6 +1235,7 @@ export function LiveTrading() {
       </div>
       </div>
 
+      </details>
       {/* ── News feed ───────────────────────────────────────────────────────── */}
       <div className="card overflow-hidden">
         <button

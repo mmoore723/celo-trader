@@ -91,20 +91,6 @@ function AppShell() {
     <div className="app-shell">
       {showSetup && <ApiSetupModal onClose={closeSetup} />}
       {!showSetup && <StrategyRecommendationModal />}
-      {/* Mascot watermark — fixed behind all page content */}
-      <img
-        src="/mascot.png"
-        aria-hidden="true"
-        style={{
-          position: "fixed", top: "50%", left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 1100, height: 1100, objectFit: "contain",
-          opacity: 0.07, filter: "grayscale(100%)",
-          WebkitMaskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, black 35%, transparent 70%)",
-          maskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, black 35%, transparent 70%)",
-          pointerEvents: "none", userSelect: "none", zIndex: 2,
-        }}
-      />
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>
