@@ -15,6 +15,8 @@ import type { SimulationOverlay, ReplayTrade } from "../../lib/chart_types";
 import type { ChartPalette } from "./palette";
 import { premiumDiscountRange, killzoneRangesForBars } from "./zones";
 import { ZoneBandManager, toEpochTime } from "./zoneBands";
+import { HandwrittenNotes } from "./handwrittenNotes";
+import { referenceNotes } from "./handwrittenLayout";
 import { buildAndApplyMarkers } from "./chartMarkers";
 
 export interface OverlayInputs {
@@ -39,6 +41,7 @@ export interface OverlayInputs {
 /** Tracks price-line handles across renders so they can be cleared before redrawing. */
 export class OverlayManager {
   private candle: ISeriesApi<"Candlestick">;
+  private handwritten: HandwrittenNotes;
   private vwapLines: Record<"vwap" | "u1" | "l1" | "u2" | "l2", ISeriesApi<"Line"> | null> = { vwap: null, u1: null, l1: null, u2: null, l2: null };
   // { series, line } pairs so clearPriceLines() can call removePriceLine on
   // whichever series a given line actually belongs to.
@@ -69,6 +72,8 @@ export class OverlayManager {
 
   constructor(chart: IChartApi, candle: ISeriesApi<"Candlestick">, palette: ChartPalette) {
     this.chart = chart;
+    this.handwritten = new HandwrittenNotes(chart, candle);
+    candle.attachPrimitive(this.handwritten);
     this.candle = candle;
     this.zoneMgr = new ZoneBandManager(chart);
     this.palette = palette;
@@ -146,6 +151,8 @@ export class OverlayManager {
   apply(input: OverlayInputs) {
     const P = this.palette;
     this.clearPriceLines();
+    const notes = input.compactMarkers ? referenceNotes(input.annotations) : [];
+    this.handwritten.set([], input.bars, input.trades);
     const zoneSpecs: Parameters<ZoneBandManager["sync"]>[0] = [];
 
     if (input.bars.length === 0) {
@@ -178,8 +185,8 @@ export class OverlayManager {
     );
     const orZoneFrom = (todayOrStart as number) > (firstT as number) ? todayOrStart : firstT;
 
-    if (input.orHigh != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: input.orHigh, color: P.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Hi" }) });
-    if (input.orLow != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: input.orLow, color: P.orLow, lineWidth: 2, lineStyle: LineStyle.Solid, title: "OR Lo" }) });
+    if (input.orHigh != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: input.orHigh, color: P.orHigh, lineWidth: 2, lineStyle: LineStyle.Solid, title: input.compactMarkers ? "" : "OR Hi", axisLabelVisible: !input.compactMarkers }) });
+    if (input.orLow != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: input.orLow, color: P.orLow, lineWidth: 2, lineStyle: LineStyle.Solid, title: input.compactMarkers ? "" : "OR Lo", axisLabelVisible: !input.compactMarkers }) });
     if (input.orHigh != null && input.orLow != null) {
       zoneSpecs.push({ id: "or_zone", fromTime: orZoneFrom, toTime: lastT, low: input.orLow, high: input.orHigh, color: P.orHigh + "18" });
     }
@@ -290,8 +297,13 @@ export class OverlayManager {
     }
 
     // ── Bot annotations (hline / zone) ───────────────────────────────────────
+    const seenPrices = new Set<number>();
     for (const ann of input.annotations) {
-      if (ann.type === "hline" && ann.price != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: ann.price, color: ann.color, lineWidth: 1, lineStyle: LineStyle.Dashed, title: ann.label }) });
+      if (input.compactMarkers && ann.type === "hline" && ann.price != null) {
+        if (seenPrices.has(ann.price)) continue;
+        seenPrices.add(ann.price);
+      }
+      if (ann.type === "hline" && ann.price != null) this.priceLines.push({ series: referenceAnchor, line: referenceAnchor.createPriceLine({ price: ann.price, color: ann.color, lineWidth: 1, lineStyle: LineStyle.Dashed, title: input.compactMarkers ? "" : ann.label, axisLabelVisible: !input.compactMarkers }) });
       else if (ann.type === "zone" && ann.price_low != null && ann.price_high != null) {
         const start = toEpochTime(ann.ts);
         const finish = ann.end_ts ? toEpochTime(ann.end_ts) : lastT;
@@ -302,11 +314,17 @@ export class OverlayManager {
       }
     }
 
+    if (input.compactMarkers) {
+      if (input.orHigh != null && !notes.some(n => n.price === input.orHigh)) notes.push({price: input.orHigh, text: "Opening high", color: P.orHigh});
+      if (input.orLow != null && !notes.some(n => n.price === input.orLow)) notes.push({price: input.orLow, text: "Opening low", color: P.orLow});
+    }
+    this.handwritten.set(notes, input.bars, input.trades);
     this.zoneMgr.sync(zoneSpecs);
     this.markersPrimitive = buildAndApplyMarkers(this.candle, input, P, this.markersPrimitive);
   }
 
   destroy() {
+    this.candle.detachPrimitive(this.handwritten);
     this.clearPriceLines();
     this.zoneMgr.destroy();
     if (this.markersPrimitive) {
