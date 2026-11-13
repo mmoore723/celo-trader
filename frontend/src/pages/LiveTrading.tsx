@@ -729,103 +729,6 @@ export function LiveTrading() {
           </div>}
         </div>
 
-      {/* ── News feed ───────────────────────────────────────────────────────── */}
-      <div className="card overflow-hidden">
-        <button
-          type="button"
-          className="w-full px-3 py-2.5 flex flex-wrap items-center gap-2 text-left hover:bg-muted transition-colors"
-          onClick={() => setNewsExpanded((open) => !open)}
-          aria-expanded={newsExpanded}
-        >
-          <Newspaper size={14} style={{ color: "var(--ink-muted)" }} />
-          <span className="text-xs font-semibold uppercase tracking-wider"
-                style={{ color: "var(--ink-muted)" }}>Market Context</span>
-          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
-            {newsArticles.length} headline{newsArticles.length === 1 ? "" : "s"} for {newsSymbols}
-          </span>
-          {!newsExpanded && newsArticles[0]?.headline && (
-            <span className="text-xs truncate ml-2" style={{ color: "var(--ink-muted)", flex: 1 }}>
-              {newsArticles[0].headline}
-            </span>
-          )}
-          <span className="text-[10px] ml-auto" style={{ color: "var(--ink-faint)" }}>via Alpaca</span>
-          <ChevronDown size={14} style={{
-            color: "var(--ink-muted)",
-            transform: newsExpanded ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 160ms ease",
-          }} />
-        </button>
-        {newsExpanded && (
-        <div className="flex flex-col divide-y border-t" style={{ borderColor: "var(--border)" }}>
-          {newsArticles.length === 0 ? (
-            <p className="px-3 py-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-              No recent news is available for {ticker} right now.
-            </p>
-          ) : (
-            newsArticles.map((article, i) => {
-              // Format timestamp as "Jul 12, 9:34 AM"
-              const ts = article.created_at
-                ? new Date(article.created_at).toLocaleString("en-US", {
-                    month: "short", day: "numeric",
-                    hour: "numeric", minute: "2-digit",
-                  })
-                : "";
-              return (
-                <div key={article.id ?? i} className="px-3 py-2">
-                  <div className="flex items-start gap-2">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {article.url ? (
-                        <a
-                          href={article.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium hover:underline"
-                          style={{ color: "var(--ink)", lineHeight: 1.4, display: "block" }}
-                        >
-                          {article.headline}
-                        </a>
-                      ) : (
-                        <span className="text-sm font-medium" style={{ color: "var(--ink)", lineHeight: 1.4, display: "block" }}>
-                          {article.headline}
-                        </span>
-                      )}
-                      <div className="mt-2 space-y-1 text-sm" style={{ color: "var(--ink-muted)", lineHeight: 1.6 }}>
-                        {article.explanation?.status === "ready" ? <>
-                          <p><strong>What happened:</strong> {article.explanation.what_happened}</p>
-                          <p><strong>What it means for {article.explanation.ticker}:</strong> {article.explanation.ticker_meaning}</p>
-                          <p className="text-xs">AI explanation based on {article.explanation.basis === "headline_only" ? "the headline only" : "the headline and publisher summary"}. Full article not reviewed.</p>
-                        </> : <p className="text-xs">{article.explanation?.status === "pending" ? "Preparing a plain-English explanation…" : "AI explanation is unavailable right now. Read the source for details."}</p>}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {article.source && (
-                          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
-                            {article.source}
-                          </span>
-                        )}
-                        {ts && (
-                          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
-                            {ts}
-                          </span>
-                        )}
-                        {article.symbols?.length > 0 && (
-                          <div className="flex gap-1">
-                            {article.symbols.slice(0, 4).map((s) => (
-                              <span key={s} className="badge badge-blue" style={{ fontSize: 9, padding: "1px 4px" }}>
-                                {s}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-        )}
-      </div>
         </div>
         <aside className="live-trading-details" aria-label="Trading activity beside chart">
       {/* ── Manage positions, then inspect the bot's activity ─────────────── */}
@@ -1336,6 +1239,103 @@ export function LiveTrading() {
 
       </details>
         </aside>
+      {/* ── News feed ───────────────────────────────────────────────────────── */}
+      <div className="card overflow-hidden" style={{ gridColumn: "1 / -1" }} data-testid="market-context-panel">
+        <button
+          type="button"
+          className="w-full px-3 py-2.5 flex flex-wrap items-center gap-2 text-left hover:bg-muted transition-colors"
+          onClick={() => setNewsExpanded((open) => !open)}
+          aria-expanded={newsExpanded}
+        >
+          <Newspaper size={14} style={{ color: "var(--ink-muted)" }} />
+          <span className="text-xs font-semibold uppercase tracking-wider"
+                style={{ color: "var(--ink-muted)" }}>Market Context</span>
+          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+            {newsArticles.length} headline{newsArticles.length === 1 ? "" : "s"} for {newsSymbols}
+          </span>
+          {!newsExpanded && newsArticles[0]?.headline && (
+            <span className="text-xs truncate ml-2" style={{ color: "var(--ink-muted)", flex: 1 }}>
+              {newsArticles[0].headline}
+            </span>
+          )}
+          <span className="text-[10px] ml-auto" style={{ color: "var(--ink-faint)" }}>via Alpaca</span>
+          <ChevronDown size={14} style={{
+            color: "var(--ink-muted)",
+            transform: newsExpanded ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 160ms ease",
+          }} />
+        </button>
+        {newsExpanded && (
+        <div className="flex flex-col divide-y border-t" style={{ borderColor: "var(--border)" }}>
+          {newsArticles.length === 0 ? (
+            <p className="px-3 py-3 text-xs" style={{ color: "var(--ink-muted)" }}>
+              No recent news is available for {ticker} right now.
+            </p>
+          ) : (
+            newsArticles.map((article, i) => {
+              // Format timestamp as "Jul 12, 9:34 AM"
+              const ts = article.created_at
+                ? new Date(article.created_at).toLocaleString("en-US", {
+                    month: "short", day: "numeric",
+                    hour: "numeric", minute: "2-digit",
+                  })
+                : "";
+              return (
+                <div key={article.id ?? i} className="px-3 py-2">
+                  <div className="flex items-start gap-2">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {article.url ? (
+                        <a
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium hover:underline"
+                          style={{ color: "var(--ink)", lineHeight: 1.4, display: "block" }}
+                        >
+                          {article.headline}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-medium" style={{ color: "var(--ink)", lineHeight: 1.4, display: "block" }}>
+                          {article.headline}
+                        </span>
+                      )}
+                      <div className="mt-2 space-y-1 text-sm" style={{ color: "var(--ink-muted)", lineHeight: 1.6 }}>
+                        {article.explanation?.status === "ready" ? <>
+                          <p><strong>What happened:</strong> {article.explanation.what_happened}</p>
+                          <p><strong>What it means for {article.explanation.ticker}:</strong> {article.explanation.ticker_meaning}</p>
+                          <p className="text-xs">AI explanation based on {article.explanation.basis === "headline_only" ? "the headline only" : "the headline and publisher summary"}. Full article not reviewed.</p>
+                        </> : <p className="text-xs">{article.explanation?.status === "pending" ? "Preparing a plain-English explanation…" : "AI explanation is unavailable right now. Read the source for details."}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {article.source && (
+                          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+                            {article.source}
+                          </span>
+                        )}
+                        {ts && (
+                          <span className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+                            {ts}
+                          </span>
+                        )}
+                        {article.symbols?.length > 0 && (
+                          <div className="flex gap-1">
+                            {article.symbols.slice(0, 4).map((s) => (
+                              <span key={s} className="badge badge-blue" style={{ fontSize: 9, padding: "1px 4px" }}>
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        )}
+      </div>
       </div>
     </div>
 
