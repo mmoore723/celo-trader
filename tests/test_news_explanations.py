@@ -38,7 +38,7 @@ class NewsExplanationTests(unittest.TestCase):
     def test_headline_only_and_cache_reuse(self):
         article = {'headline':'Sales increased', 'summary':''}
         source = {'ticker':'AMZN', **article}
-        key = news.hashlib.sha256(('v2:' + news.json.dumps(source, sort_keys=True)).encode()).hexdigest()
+        key = news.hashlib.sha256((news._PROMPT + news.json.dumps(source, sort_keys=True)).encode()).hexdigest()
         with patch('ai_reasoning.client.call_claude', return_value=SimpleNamespace(text='```json\n{"what_happened":"Sales rose.","ticker_meaning":"The headline alone does not explain profits."}\n```')):
             news._generate(key, source)
         with patch.object(news._pool, 'submit') as submit:
@@ -46,3 +46,15 @@ class NewsExplanationTests(unittest.TestCase):
             submit.assert_not_called()
         self.assertEqual(result[0]['explanation']['basis'], 'headline_only')
         self.assertEqual(result[0]['explanation']['status'], 'ready')
+
+    def test_new_wording_does_not_reuse_old_explanation(self):
+        article = {'headline': 'Prices rising', 'summary': ''}
+        source = {'ticker': 'SPY', **article}
+        old_key = news.hashlib.sha256(('v2:' + news.json.dumps(source, sort_keys=True)).encode()).hexdigest()
+        with news._db() as db:
+            db.execute('INSERT INTO explanations VALUES (?, ?, ?)', (old_key, '{"status":"ready","what_happened":"Old jargon"}', news.time.time() + 86400))
+        with patch.object(news._pool, 'submit') as submit:
+            result = news.explain_news([article], 'SPY')
+            self.assertEqual(result[0]['explanation']['status'], 'pending')
+            submit.assert_called_once()
+        news._pending.clear()
