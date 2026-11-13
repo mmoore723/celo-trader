@@ -19,9 +19,9 @@ test('learning links preserve the exact strategy ticker and version',()=>{
  const html=render();
  for(const view of ['lesson','reference','practice']) assert.ok(html.includes(`strategy=test&amp;ticker=SPY&amp;version=v1&amp;view=${view}`));
 });
-test('overview presents isolated actual metrics and two descriptive charts',()=>{
+test('overview presents strategy umbrellas and keeps metrics inside ticker details',()=>{
  const html=render();
- for(const text of ['$120.00','75.0%','2.00','Realized P&amp;L by pair','Wins versus other closed trades','v1','Journal results only']) assert.ok(html.includes(text),text);
+ for(const text of ['$120.00','75.0%','2.00','Your strategies','Ticker details','Manage this strategy','v1','Journal results only']) assert.ok(html.includes(text),text);
  assert.doesNotMatch(html,/<details open/);
 });
 test('version, mode, errors and zero trades never become winning evidence',()=>{
@@ -29,4 +29,13 @@ test('version, mode, errors and zero trades never become winning evidence',()=>{
    const html=render(props); assert.doesNotMatch(html,/\$120.00|75.0%/);
  }
  assert.match(render({strategies:[]}),/No enabled trading pairs/);
+});
+
+test('SPY and QQQ are branches of one Trend Continuation strategy',()=>{
+ const variants=[{...strategy,strategy_id:'V2_SPY_TREND_CONT',display_name:'SPY Trend Continuation'}, {...strategy,strategy_id:'RESEARCH_QQQ_TREND_V2',display_name:'QQQ Trend V2',trading_tickers:['QQQ']}];
+ const html=render({strategies:variants});
+ assert.equal((html.match(/aria-label="Trend Continuation strategy"/g)||[]).length,1);
+ assert.match(html,/1 strategies/);assert.match(html,/Trading on SPY, QQQ/);
+ assert.doesNotMatch(html,/<table|Selected pair performance|Realized P&amp;L by pair/);
+ for(const id of ['V2_SPY_TREND_CONT','RESEARCH_QQQ_TREND_V2']) assert.ok(html.includes(`strategy=${id}`));
 });

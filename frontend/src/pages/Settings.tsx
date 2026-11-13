@@ -19,7 +19,7 @@ import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggl
 import { StrategyExitNotice } from "../components/settings/StrategyExitNotice";
 import { StrategyIdentity } from "../components/settings/StrategyIdentity";
 import { WeeklyExitAuditProvider } from "../components/settings/WeeklyExitAudit";
-import { strategyName } from "../lib/strategyIdentity.js";
+import { strategyName, groupStrategies } from "../lib/strategyIdentity.js";
 import { StrategyRemoval, ResearchTargetTickers } from "../components/settings/StrategyRemoval";
 
 const DEFAULT: AppSettings = {
@@ -844,7 +844,7 @@ export function Settings() {
       {strategyView === "paused" && <section aria-label="Automatically paused strategies" className="card p-4" style={{ border: "2px solid var(--warning)" }}>
         <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Automatically paused</h3>
         {(strategyCatalog?.strategies ?? []).some(strategy => strategy.automatic_pauses?.length)
-          ? <div className="settings-card-grid">{(strategyCatalog?.strategies ?? []).filter(strategy => strategy.automatic_pauses?.length).map(strategyControl)}</div>
+          ? <div className="settings-card-grid">{groupStrategies((strategyCatalog?.strategies ?? []).filter(strategy => strategy.automatic_pauses?.length)).map(group => <section className="card p-4" key={group.name}><h4 className="font-semibold mb-3">{group.name}</h4>{group.strategies.map(strategy => <details className="mt-2" key={strategy.strategy_id}><summary className="cursor-pointer text-sm">{strategy.automatic_pauses?.map(pause => pause.ticker).join(", ")} · Version {strategy.version}</summary>{strategyControl(strategy)}</details>)}</section>)}</div>
           : <p className="text-sm" style={{ color: "var(--ink-muted)" }}>{strategyCatalog ? "No automatically paused strategies in this account mode." : "Loading pause status..."}</p>}
       </section>}
       {/* Strategies */}
@@ -876,7 +876,7 @@ export function Settings() {
           On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} New matches need 20 non-overlapping completed tests and passing profit checks—not a minimum number of days.
         </p>
         <div className="settings-card-grid">
-        {(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.automatic_pauses?.length && (strategy.observation_only || !form[strategy.setting_key] || !(strategy.trading_tickers?.length))).map(strategyControl)}
+        {groupStrategies((strategyCatalog?.strategies ?? []).filter(strategy => !strategy.automatic_pauses?.length && (strategy.observation_only || !form[strategy.setting_key] || !(strategy.trading_tickers?.length)))).map(group => <section className="card p-4" key={group.name}><h4 className="font-semibold mb-3">{group.name}</h4>{group.strategies.map(strategy => <details className="mt-2" key={strategy.strategy_id}><summary className="cursor-pointer text-sm">{strategy.observation_only ? "Research settings" : strategy.tickers.join(", ") || "Ticker settings"} · Version {strategy.version}</summary>{strategyControl(strategy)}</details>)}</section>)}
         <TestedStrategies
           embedded
           researchIds={form.research_strategy_ids ?? []}

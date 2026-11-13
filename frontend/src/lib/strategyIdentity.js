@@ -55,3 +55,14 @@ export function strategyVariant(id) {
 export function strategyVersion(version) {
   return version ? `v${version.replace(/^v/, "")}` : "";
 }
+
+// Presentation grouping only. Never merge execution IDs, settings or evidence.
+export function groupStrategies(strategies) {
+  const groups = new Map();
+  for (const strategy of strategies) {
+    const name = names[strategy.strategy_id] ?? strategyName(strategy.display_name);
+    if (!groups.has(name)) groups.set(name, { name, strategies: [] });
+    groups.get(name).strategies.push(strategy);
+  }
+  return [...groups.values()];
+}
