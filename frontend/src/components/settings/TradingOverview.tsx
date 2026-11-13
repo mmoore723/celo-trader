@@ -1,8 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { ClosedTradeEvidence, ReviewedStrategyCatalogEntry } from '../../lib/api';
 import { groupStrategies } from '../../lib/strategyIdentity.js';
-import { Link } from 'react-router-dom';
-import { learningLink } from '../../lib/learningLinks';
 
 const money = (value: number | null | undefined) => value == null ? 'Unavailable' : value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
@@ -46,9 +44,6 @@ export function TradingOverview({ strategies, evidence, loading, failed, mode, c
                   <div><span className="text-xs text-ink-muted block">Profit factor</span>{count && record?.profit_factor != null ? record.profit_factor === 'infinite' ? 'No gross losses' : record.profit_factor.toFixed(2) : 'Not available'}</div>
                 </div>
                 <p className="text-xs text-ink-muted">{record?.first_entry_date && record.last_exit_date ? `Recorded period: ${record.first_entry_date} to ${record.last_exit_date}.` : 'No dated results for this version.'} Journal results only. Results stay separate for each ticker and version.</p>
-                <nav className="flex gap-2 flex-wrap" aria-label={`Learn ${group.name} for ${ticker}`}>
-                  {['Lesson','Reference','Practice'].map(label => <Link className="btn btn-sm btn-ghost" key={label} to={learningLink(strategy.strategy_id,ticker,strategy.version,label.toLowerCase())}>{label}</Link>)}
-                </nav>
               </div>
             </details>;
           }))}
