@@ -108,7 +108,8 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
             bars = with_history(bars, native, cutoff)
         if not bars:
             return None
-        engine = library.factory()
+        from config.engine_parameters import configure_engine
+        engine = configure_engine(library.factory())
         candidate = _latest_candidate(engine, bars, research_strategy_id=spec.source)
         if candidate is None or (library.allowed_sides is not None and candidate.side not in library.allowed_sides):
             return None

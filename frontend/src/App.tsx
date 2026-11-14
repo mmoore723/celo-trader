@@ -1,3 +1,4 @@
+import {RunAsBanner} from './components/RunAsBanner';
 import { limitedAccess, learningAccess } from "./lib/access";
 /**
  * App.tsx — Root component. Wires router, auth, WebSocket, React Query, layout shell.
@@ -103,6 +104,7 @@ function AppShell() {
       <Topbar />
       <Sidebar limited={limited} />
       <main className="app-main" style={{ paddingBottom: 36 }}>
+        <RunAsBanner />
         <button className="btn btn-ghost tour-launch" onClick={()=>setShowTour(true)}>Take a tour</button>
         {!limited&&<div className="app-alerts">
           <BrokerAlertBanner />
@@ -174,16 +176,18 @@ function AuthGate() {
   if (!isAuthenticated) return location.pathname === "/" ? <Landing /> : <Login />;
   if (location.pathname === "/login") return <Navigate to="/" replace />;
 
+  if (user?.support_session?.expired) return <RunAsBanner />;
+
   // Logged in but ToS not accepted (or older version) → show Terms gate
-  if (!user?.terms_accepted) return <Terms />;
+  if (!user?.terms_accepted) return <><RunAsBanner /><Terms /></>;
 
   // Maintenance mode active → non-admin users see the maintenance screen
   if (maint?.active && !user?.is_admin) {
     return (
-      <Maintenance
+      <><RunAsBanner /><Maintenance
         mode="maintenance"
         message={maint.message || "We'll be back soon. No trades are affected."}
-      />
+      /></>
     );
   }
 

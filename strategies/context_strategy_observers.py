@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 import math
+from config.engine_parameters import parameter
 import statistics
 from typing import Callable, Sequence
 
@@ -139,7 +140,7 @@ def _orb_candidate(
             continue
         average_volume = float(rows.iloc[index - 20:index]["volume"].mean())
         volume_ratio = float(bar["volume"]) / average_volume if average_volume > 0 else 0.0
-        if volume_ratio <= 1.5:
+        if volume_ratio <= parameter('volume_ratio_minimum',1.5):
             continue
         direction = None
         if float(bar["close"]) > or_high:
@@ -170,21 +171,21 @@ def _orb_candidate(
 
 
 def _nr7_inside_gate(days: list[dict]) -> tuple[bool, dict]:
-    if len(days) < 7:
+    if len(days) < parameter('narrow_range_days',7):
         return False, {}
     prior = days[-1]
     prior_range = prior["high"] - prior["low"]
-    nr7 = prior_range <= min(day["high"] - day["low"] for day in days[-7:]) + 1e-12
+    nr7 = prior_range <= min(day["high"] - day["low"] for day in days[-parameter('narrow_range_days',7):]) + 1e-12
     inside = len(days) >= 2 and prior["high"] <= days[-2]["high"] and prior["low"] >= days[-2]["low"]
     return nr7 or inside, {"nr7": nr7, "inside_day": inside, "prior_range": round(prior_range, 6)}
 
 
 def _atr10_gate(days: list[dict]) -> tuple[bool, dict]:
-    if len(days) < 10:
+    if len(days) < parameter('daily_atr_period',10):
         return False, {}
     prior = days[-1]
-    recent = days[-10:]
-    offset = len(days) - 10
+    recent = days[-parameter('daily_atr_period',10):]
+    offset = len(days) - parameter('daily_atr_period',10)
     ranges = [
         _true_range(day, days[offset + index - 1] if offset + index else None)
         for index, day in enumerate(recent)
@@ -270,11 +271,11 @@ def _vwap_candidate(today: pd.DataFrame, *, ticker: str, strategy_id: str, execu
     displacement = False
     for index, bar in enumerate(session):
         if bar.timestamp.time() == time(10, 25):
-            displacement = bar.close >= vwaps[index] * 1.01
+            displacement = bar.close >= vwaps[index] * (1+parameter('displacement_fraction',.01))
         if index < 1 or bar.timestamp.time() < time(9, 45):
             continue
-        closes = [item.close for item in session[max(0, index - 8):index + 1]]
-        ema9 = _ema(closes, 9)
+        closes = [item.close for item in session[max(0, index - parameter('reclaim_ema_period',9)+1):index + 1]]
+        ema9 = _ema(closes, parameter('reclaim_ema_period',9))
         previous_close, previous_vwap = session[index - 1].close, vwaps[index - 1]
         current_vwap = vwaps[index]
         touch_reclaim = previous_close > previous_vwap and bar.low <= current_vwap and bar.close > ema9
@@ -283,8 +284,8 @@ def _vwap_candidate(today: pd.DataFrame, *, ticker: str, strategy_id: str, execu
             continue
         visible_at = pd.Timestamp(bar.timestamp) + timedelta(minutes=5)
         hourly = _hourly(history, visible_at)
-        ker = _kaufman([item["close"] for item in hourly], 10)
-        context_ok = ker is not None and ker > 0.60 if strategy_id == VWAP_KER10_LONG else displacement and bar.timestamp.time() >= time(10, 30)
+        ker = _kaufman([item["close"] for item in hourly], parameter('efficiency_period',10))
+        context_ok = ker is not None and ker > parameter('efficiency_minimum',.60) if strategy_id == VWAP_KER10_LONG else displacement and bar.timestamp.time() >= time(10, 30)
         if not context_ok:
             continue
         key = (_execution_scope(execution_scope), ticker, strategy_id, visible_at.isoformat())
@@ -295,7 +296,7 @@ def _vwap_candidate(today: pd.DataFrame, *, ticker: str, strategy_id: str, execu
             confidence=0.80, strategy_id=strategy_id, direction="bullish", rvol=0.0,
             trigger_bar=visible_at,
             meta={
-                "vwap": round(current_vwap, 6), "ema9": round(ema9, 6),
+                "vwap": round(current_vwap, 6), "ema9": round(ema9, 6), "reclaim_ema_period":parameter("reclaim_ema_period",9),
                 "previous_high": round(previous_high, 6),
                 "ker_1h_10": round(float(ker or 0.0), 6),
                 "displacement_at_1030": displacement,
@@ -336,12 +337,12 @@ def evaluate_squeeze_macd(today: pd.DataFrame, ticker: str = "", execution_scope
     if cutoff.tzinfo is not None:
         cutoff = cutoff.tz_convert("America/New_York").tz_localize(None)
     hourly = _hourly(history, cutoff)
-    if len(hourly) < 36:
+    if len(hourly) < max(36,parameter('macd_slow',26)+parameter('macd_signal',9)+1,parameter('band_period',20)+1):
         return None
     closes = [item["close"] for item in hourly]
-    ema12, ema26 = _ema_series(closes, 12), _ema_series(closes, 26)
+    ema12, ema26 = _ema_series(closes, parameter('macd_fast',12)), _ema_series(closes, parameter('macd_slow',26))
     macd = [fast - slow for fast, slow in zip(ema12, ema26)]
-    macd_signal = _ema_series(macd, 9)
+    macd_signal = _ema_series(macd, parameter('macd_signal',9))
     hist = [value - signal for value, signal in zip(macd, macd_signal)]
     true_ranges: list[float] = []
     previous_close = None
@@ -352,15 +353,15 @@ def evaluate_squeeze_macd(today: pd.DataFrame, ticker: str = "", execution_scope
             )
         )
         previous_close = bar["close"]
-    ema20 = _ema_series(closes, 20)
+    ema20 = _ema_series(closes, parameter('band_period',20))
     squeeze, upper, basis = [False] * len(hourly), [0.0] * len(hourly), [0.0] * len(hourly)
-    for index in range(19, len(hourly)):
-        window = closes[index - 19:index + 1]
+    for index in range(parameter('band_period',20)-1, len(hourly)):
+        window = closes[index - parameter('band_period',20)+1:index + 1]
         middle = statistics.fmean(window)
         deviation = math.sqrt(statistics.fmean([(value - middle) ** 2 for value in window]))
-        bb_upper, bb_lower = middle + 2 * deviation, middle - 2 * deviation
-        atr20 = statistics.fmean(true_ranges[index - 19:index + 1])
-        kc_upper, kc_lower = ema20[index] + 1.5 * atr20, ema20[index] - 1.5 * atr20
+        bb_upper, bb_lower = middle + parameter('band_deviations',2.0) * deviation, middle - parameter('band_deviations',2.0) * deviation
+        atr20 = statistics.fmean(true_ranges[index - parameter('band_period',20)+1:index + 1])
+        kc_upper, kc_lower = ema20[index] + parameter('channel_atr_multiple',1.5) * atr20, ema20[index] - parameter('channel_atr_multiple',1.5) * atr20
         basis[index], upper[index] = middle, bb_upper
         squeeze[index] = bb_upper < kc_upper and bb_lower > kc_lower
     index = len(hourly) - 1
@@ -376,13 +377,13 @@ def evaluate_squeeze_macd(today: pd.DataFrame, ticker: str = "", execution_scope
         confidence=0.80, strategy_id=SQUEEZE_MACD_LONG, direction="bullish", rvol=0.0,
         trigger_bar=trigger,
         meta={
-            "bb_length": 20, "bb_stddev": 2.0, "kc_length": 20,
-            "kc_atr_multiple": 1.5, "prior_hour_squeezed": True,
+            "bb_length": parameter("band_period",20), "bb_stddev": parameter("band_deviations",2.0), "kc_length": parameter("band_period",20),
+            "kc_atr_multiple": parameter("channel_atr_multiple",1.5), "prior_hour_squeezed": True,
             "bb_upper": round(upper[index], 6), "sma20": round(basis[index], 6),
             "macd_histogram": round(hist[index], 6),
             "prior_macd_histogram": round(hist[index - 1], 6),
             "required_dte": "3_to_5",
-            "exit_plan": "150% premium target or hourly close back inside 20-SMA",
+            "exit_plan": f"150% premium target or hourly close back inside {parameter('band_period',20)}-SMA",
             "observation_only": True,
         },
     )

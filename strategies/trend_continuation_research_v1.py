@@ -32,7 +32,8 @@ def evaluate(
     bars = _research_bars(frame, now, 5)
     if not bars:
         return None
-    strategy = TrendContinuation(TrendContinuationConfig())
+    from config.engine_parameters import configured
+    strategy = TrendContinuation(configured(TrendContinuationConfig()))
     candidate = _latest_candidate(strategy, bars, research_strategy_id=STRATEGY_ID)
     if candidate is None:
         return None

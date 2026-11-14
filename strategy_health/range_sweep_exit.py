@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """Observe the call setup's original sweep stop and frozen entry VWAP."""
 from dataclasses import asdict
 from datetime import time
@@ -29,13 +30,13 @@ def engine_hash():
 
 
 def entry_state(strategy):
-    return {'engine_hash':engine_hash(),
+    return stamp({'engine_hash':engine_hash(),
             'config':{k:v.isoformat() if isinstance(v,time) else v for k,v in asdict(strategy.config).items()},
-            'session_policy':'completed1m_frozen_vwap_or_close_1600_v1'}
+            'session_policy':'completed1m_frozen_vwap_or_close_1600_v1'}, strategy)
 
 
 def first_exit(frame, *, seed, **kwargs):
-    if seed != entry_state(RangeSweepReclaim(research_config())):
+    if not valid(seed, entry_state(RangeSweepReclaim(research_config())), (RangeSweepReclaim(research_config())).config):
         return et(kwargs['entry_at']),'missing_exit_state'
     # The deployed research adapter exposes calls only; reject mismatched evidence.
     if kwargs['direction'] != 'bullish':

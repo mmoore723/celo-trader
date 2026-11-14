@@ -1,3 +1,6 @@
+from dataclasses import asdict, replace
+from config.engine_parameters import normalize
+from strategy_health.configured_seed import stamp, valid
 """Continue the exact SuperTrend engine from the state at its entry signal.
 
 The original reversal simulator fills an opposite flip at the next bar open.
@@ -25,7 +28,7 @@ def engine_hash():
 
 def entry_state(strategy):
     """Save only the sufficient RMA state, not hundreds of historical bars."""
-    return {
+    result = {
         "engine_hash": engine_hash(), "bar_time": et(strategy._last_timestamp).isoformat(),
         "atr": strategy._atr_value, "close": strategy._last_close,
         "up": strategy._up, "down": strategy._down, "trend": strategy._trend,
@@ -33,11 +36,21 @@ def entry_state(strategy):
         "rma": strategy.config.use_rma_atr,
     }
 
+    if getattr(strategy,"_configuration_revision",None):
+        result["config"]=asdict(strategy.config)
+        if not strategy.config.use_rma_atr:result["tr_values"]=list(strategy._tr_values)
+    return stamp(result,strategy)
 
 def restored(seed, entry, direction):
     try:
-        if (seed["engine_hash"] != engine_hash() or seed["period"] != 10
-                or seed["multiplier"] != 3 or seed["rma"] is not True
+        strategy=SuperTrendReversal()
+        if seed.get('configured_revision'):
+            expected={k:v for k,v in seed.items() if k not in ('configured_revision','configured_digest')}
+            expected['config']=asdict(strategy.config);expected['engine_hash']=engine_hash()
+            if not valid(seed,expected,strategy.config):return None
+            strategy=SuperTrendReversal(replace(strategy.config,**normalize(seed['config'],asdict(strategy.config))))
+        if (seed["engine_hash"] != engine_hash() or seed["period"] != strategy.config.atr_period
+                or seed["multiplier"] != strategy.config.multiplier or seed["rma"] is not strategy.config.use_rma_atr
                 or seed["trend"] != (1 if direction == "bullish" else -1)
                 or et(seed["bar_time"]) + timedelta(minutes=5) != entry):
             return None
@@ -45,12 +58,16 @@ def restored(seed, entry, direction):
             return None
         if seed["atr"] <= 0 or seed["close"] <= 0:
             return None
-        strategy = SuperTrendReversal()
         strategy._atr_value, strategy._last_close = seed["atr"], seed["close"]
         strategy._up, strategy._down, strategy._trend = seed["up"], seed["down"], seed["trend"]
-        strategy._last_timestamp, strategy._seen = et(seed["bar_time"]), 10
+        strategy._last_timestamp, strategy._seen = et(seed["bar_time"]), strategy.config.atr_period
         # Warm-up is already complete. RMA needs its last value, not old TRs.
-        strategy._tr_values = [0.0] * 10
+        if strategy.config.use_rma_atr:
+            strategy._tr_values = [0.0] * strategy.config.atr_period
+        else:
+            values=seed.get("tr_values",[])
+            if len(values)!=strategy.config.atr_period or not all(math.isfinite(float(v)) and float(v)>=0 for v in values):return None
+            strategy._tr_values = list(values)
         return strategy
     except (KeyError, TypeError, ValueError, AttributeError):
         return None

@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """Generic FVG structural-exit evidence, separate from tradable SPY FVG."""
 from dataclasses import asdict
 from functools import lru_cache
@@ -23,11 +24,10 @@ def engine_hash():
 
 
 def entry_state(strategy):
-    return {'engine_hash': engine_hash(), 'config': asdict(strategy.config)}
+    return stamp({'engine_hash': engine_hash(), 'config': asdict(strategy.config)}, strategy)
 
 
 def first_exit(frame, *, seed, **kwargs):
-    if (not isinstance(seed, dict) or seed.get('engine_hash') != engine_hash()
-            or seed.get('config') != asdict(FairValueGapConfig())):
+    if (not valid(seed, {'engine_hash':engine_hash(),'config':asdict(FairValueGapConfig())}, FairValueGapConfig())):
         return et(kwargs['entry_at']), 'missing_exit_state'
     return structural_exit(frame, **kwargs, max_hold_bars=75, time_cap_reason='time_cap_75bars')

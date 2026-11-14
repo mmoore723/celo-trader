@@ -58,6 +58,18 @@ async def require_auth(request: Request) -> None:
         if source and not origin_is_trusted(source):
             raise HTTPException(status_code=403, detail="Untrusted request origin")
 
+    from auth.run_as import resolve, COOKIE as RUN_AS_COOKIE, audit
+    try:
+        user, support = resolve(user, token, request.cookies.get(RUN_AS_COOKIE))
+    except JWTError as exc:
+        raise HTTPException(403, 'Run as user expired. Return to Admin to continue.') from exc
+    expected_user=request.headers.get('x-celo-account-user')
+    if expected_user and expected_user != user['user_id']:
+        raise HTTPException(409, 'Account changed in another tab. Reload before continuing.')
+    request.state.support_session = support
+    if support and request.method.upper() not in {'GET', 'HEAD', 'OPTIONS'}:
+        audit(support['actor_id'], user['user_id'], 'run_as_request', method=request.method, path=request.url.path)
+
     from auth.customer_access import enforce_customer_access
     enforce_customer_access(user, request.method, request.url.path)
 

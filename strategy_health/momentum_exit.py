@@ -1,3 +1,6 @@
+from dataclasses import asdict, replace
+from config.engine_parameters import encode, normalize
+from strategy_health.configured_seed import stamp, valid
 """Frozen Opening Momentum trail; one-minute stop observations, not stop fills.
 
 Preserves Simulator ordering: skip entry candle; inspect the old stop first;
@@ -31,13 +34,16 @@ def engine_hash():
 
 
 def entry_state(strategy, *, fingerprint=None):
-    return {
+    result = {
         "engine_hash": fingerprint or engine_hash(), "atr_period": strategy.config.atr_bars,
         "trail_multiple": strategy.config.atr_trail_multiple,
         "history": [[et(b.timestamp).isoformat(), b.open, b.high, b.low, b.close]
-                    for b in strategy._history[-15:]],
+                    for b in strategy._history[-(strategy.config.atr_bars+1 if getattr(strategy,"_configuration_revision",None) else 15):]],
     }
 
+    if getattr(strategy,"_configuration_revision",None):
+        result["config"]={k:encode(v) for k,v in asdict(strategy.config).items()}
+    return stamp(result,strategy)
 
 def valid_bar(stamp, values):
     o, high, low, close = (float(v) for v in values)
@@ -48,14 +54,21 @@ def valid_bar(stamp, values):
 
 def restored(seed, entry, *, engine_factory=OpeningMomentumRTH, fingerprint=None):
     try:
-        if seed["engine_hash"] != (fingerprint or engine_hash()) or seed["atr_period"] != 14 or seed["trail_multiple"] != 2:
+        engine=engine_factory()
+        if seed.get('configured_revision'):
+            expected={k:v for k,v in seed.items() if k not in ('configured_revision','configured_digest')}
+            expected['config']={k:encode(v) for k,v in asdict(engine.config).items()}
+            expected['engine_hash']=fingerprint or engine_hash()
+            if not valid(seed,expected,engine.config):return None
+            engine=engine_factory(replace(engine.config,**normalize(seed['config'],asdict(engine.config))))
+            if seed['atr_period']!=engine.config.atr_bars or seed['trail_multiple']!=engine.config.atr_trail_multiple:return None
+        elif seed["engine_hash"] != (fingerprint or engine_hash()) or seed["atr_period"] != 14 or seed["trail_multiple"] != 2:
             return None
         bars = [valid_bar(row[0], row[1:]) for row in seed["history"]]
-        if len(bars) != 15 or bars[-1].timestamp + timedelta(minutes=5) != entry:
+        if len(bars) != engine.config.atr_bars+1 or bars[-1].timestamp + timedelta(minutes=5) != entry:
             return None
         if any(a.timestamp >= b.timestamp for a, b in zip(bars, bars[1:])):
             return None
-        engine = engine_factory()
         engine._history = bars
         return engine
     except (TypeError, ValueError, KeyError, AttributeError, IndexError):

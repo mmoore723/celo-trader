@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """Confirmed ORB's original 1.5R structural exit, observation only."""
 from dataclasses import asdict
 from datetime import time
@@ -27,12 +28,11 @@ def config_proof(config):
 
 
 def entry_state(strategy):
-    return {'engine_hash':engine_hash(),'config':config_proof(strategy.config)}
+    return stamp({'engine_hash':engine_hash(),'config':config_proof(strategy.config)}, strategy)
 
 
 def first_exit(frame, *, seed, **kwargs):
-    if (not isinstance(seed,dict) or seed.get('engine_hash') != engine_hash()
-            or seed.get('config') != config_proof(OpeningRangeBreakoutConfig())):
+    if (not valid(seed, {'engine_hash':engine_hash(),'config':config_proof(OpeningRangeBreakoutConfig())}, OpeningRangeBreakoutConfig())):
         return et(kwargs['entry_at']),'missing_exit_state'
     event=structural_exit(frame,**kwargs,max_hold_bars=75,time_cap_reason='time_cap_75bars')
     # The shared observer compares the exact frozen price, not a reward ratio.

@@ -11,6 +11,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export interface AuthUser {
+  support_session?: {actor_name:string;target_name:string;expires_at:number;expired?:boolean};
   email:          string;
   name:           string;
   user_id?:       string;
@@ -41,6 +42,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]       = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    const changed = (event: StorageEvent) => { if (event.key === 'celo-account-switch') window.location.reload(); };
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.user_id) return;
+    const nativeFetch=window.fetch;
+    const expectedUser=user.user_id;
+    window.fetch=(input,init)=>{
+      const url=new URL(input instanceof Request?input.url:String(input),window.location.href);
+      if(url.origin!==window.location.origin || !url.pathname.startsWith('/api/')) return nativeFetch(input,init);
+      const headers=new Headers(input instanceof Request?input.headers:undefined);
+      new Headers(init?.headers).forEach((value,key)=>headers.set(key,value));
+      headers.set('X-Celo-Account-User',expectedUser);
+      return nativeFetch(input,{...init,headers});
+    };
+    return ()=>{window.fetch=nativeFetch;};
+  },[user?.user_id]);
+
   // ── Check session on mount ─────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
@@ -49,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (r.ok) {
           const data = await r.json();
           setUser({
+            support_session: data.support_session,
             email:          data.username || data.email || "user",
             name:           data.username || data.name  || data.email || "user",
             user_id:        data.user_id,

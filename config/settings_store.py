@@ -80,7 +80,8 @@ def get_settings(user_id: str | None = None) -> dict:
     except Exception:
         # Settings must remain available during an incomplete deploy.
         pass
-    return settings
+    from config.engine_parameters import sizing_settings
+    return sizing_settings(settings, uid) if user_id is None else settings
 
 
 def save_settings(updates: dict, user_id: str | None = None) -> None:

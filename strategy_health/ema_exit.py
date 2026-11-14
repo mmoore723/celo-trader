@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """EMA Pullback's 15-minute structural exits with an explicit RTH close correction."""
 from dataclasses import asdict
 from datetime import time
@@ -26,12 +27,12 @@ def config_proof(config):
 
 
 def entry_state(strategy):
-    return {'engine_hash':engine_hash(),'config':config_proof(strategy.config),
-            'timeframe_minutes':15,'session_policy':'final_15m_bar_close_1600_v1'}
+    return stamp({'engine_hash':engine_hash(),'config':config_proof(strategy.config),
+            'timeframe_minutes':15,'session_policy':'final_15m_bar_close_1600_v1'}, strategy)
 
 
 def first_exit(frame, *, seed, **kwargs):
-    if seed != entry_state(EMAPullbackRTH()):
+    if not valid(seed, entry_state(EMAPullbackRTH()), (EMAPullbackRTH()).config):
         return et(kwargs['entry_at']),'missing_exit_state'
     event=structural_exit(frame,**kwargs,max_hold_bars=75,time_cap_reason='time_cap_75bars',timeframe_minutes=15,
                          source_minutes=frame.attrs.get('source_minutes',1))

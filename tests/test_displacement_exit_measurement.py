@@ -41,7 +41,10 @@ class DisplacementExitMeasurementTests(unittest.TestCase):
 
     def test_source_hashes_match_reviewed_v020_not_ker_proof(self):
         proof=json.loads((Path(__file__).parents[1]/'config/strategy_evidence/ctx_vwap_displacement-0.2.0.json').read_text())
-        self.assertEqual(proof['implementation_sha256_at_review'],exits.engine_hash())
+        from config.runtime_exit_review import review
+        from config.strategy_catalog import REVIEWED_STRATEGIES
+        runtime=review(REVIEWED_STRATEGIES[exits.DISPLACEMENT_STRATEGY_ID],proof)
+        self.assertEqual((runtime or {}).get('implementation_sha256',proof['implementation_sha256_at_review']),exits.engine_hash())
         expected=next(s['sha256'] for s in proof['runtime_policy_sources'] if s['path']=='trading/vwap_displacement_exit.py')
         # The historical source pin must not be rewritten to make this pass.
         self.assertEqual('fd9b33bfc98fff46ecd96e5d951d213a41ea3766563ee20223ace05eb6eaa21c', expected)

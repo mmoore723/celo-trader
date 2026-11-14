@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """Generic VWAP Pullback's structural-exit research observer, never orders."""
 from dataclasses import asdict
 from functools import lru_cache
@@ -22,13 +23,12 @@ def engine_hash():
 
 
 def entry_state(strategy):
-    return {'engine_hash': engine_hash(), 'config': asdict(strategy.config)}
+    return stamp({'engine_hash': engine_hash(), 'config': asdict(strategy.config)}, strategy)
 
 
 def first_exit(frame, *, seed, **kwargs):
     # Preserve the signal's original levels; no VWAP recalculation or trailing
     # stop can silently replace them after the option entry has been recorded.
-    if (not isinstance(seed, dict) or seed.get('engine_hash') != engine_hash()
-            or seed.get('config') != asdict(VWAPPullbackConfig())):
+    if (not valid(seed, {'engine_hash':engine_hash(),'config':asdict(VWAPPullbackConfig())}, VWAPPullbackConfig())):
         return et(kwargs['entry_at']), 'missing_exit_state'
     return structural_exit(frame, **kwargs, max_hold_bars=75, time_cap_reason='time_cap_75bars')

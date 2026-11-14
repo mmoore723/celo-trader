@@ -622,3 +622,13 @@ account isolation or core navigation fails. Preserve learning databases and the
 additive user-disabled column. If disabled accounts exist, retain the disabled
 checks in auth, HTTP middleware and WebSocket auth during rollback. Never restore
 a database backup over new user progress or change account trading settings.
+
+### Strategy configuration and Admin support access
+
+Settings keeps one strategy with its tickers underneath. Open **Ticker details > Configure** to load the actual entry parameters, account-scoped position sizing, supported contract/time-limit choices, and an already assigned paper partial-profit exit. Saves are scoped to user, broker account, paper/live mode, strategy, ticker and code version. An explicit confirmation is required. Opening Settings, deploying this feature or starting a support session does not change saved values, enable a pair or place an order. Existing positions retain their recorded exit policy.
+
+The registry covers the 39 reviewed execution routes. Only connected inputs are editable. Fixed native exit mechanics and unsupported contract selectors remain visible/read-only; this release does not turn every internal code constant into a setting. Learning material stays in the Learning Portal.
+
+Admin **Users > Run as user** opens an active non-Admin account with that user's permissions, for up to 30 minutes. A banner identifies the account and returns to Admin. Support actions are audited with the Admin and target IDs. Sessions are bound to both account session versions and the Admin login. Expired/revoked sessions fail closed; stale tabs cannot save into a different account. Supporting an account does not accept its terms on the user's behalf.
+
+Rollback: before any custom-configured entry exists, revert this release through deploy.sh while retaining settings and audit records. Once a position has a configured frozen policy, preserve these policy readers and recovery handlers until it closes. Use a forward correction rather than reverting to code that cannot manage that position. Never erase the configuration store or change trading switches during rollback.

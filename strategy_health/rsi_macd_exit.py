@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """Observe bearish ORB RSI/MACD's frozen midpoint stop and 1.5R target."""
 from dataclasses import asdict
 from datetime import date, time
@@ -27,12 +28,12 @@ def config_proof(config):
 
 
 def entry_state(strategy):
-    return {'engine_hash':engine_hash(),'config':config_proof(strategy.config),
-            'session_policy':'intraday_completed5m_close_1600_v1'}
+    return stamp({'engine_hash':engine_hash(),'config':config_proof(strategy.config),
+            'session_policy':'intraday_completed5m_close_1600_v1'}, strategy)
 
 
 def first_exit(frame, *, seed, **kwargs):
-    if seed != entry_state(ORBRsiMacdShort()):
+    if not valid(seed, entry_state(ORBRsiMacdShort()), (ORBRsiMacdShort()).config):
         return et(kwargs['entry_at']),'missing_exit_state'
     if kwargs['direction'] != 'bearish':
         return et(kwargs['entry_at']),'invalid_levels'

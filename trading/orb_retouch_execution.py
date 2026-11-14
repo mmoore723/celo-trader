@@ -6,6 +6,8 @@ the bot from entering on a breakout close or waiting for an extra candle close.
 """
 from __future__ import annotations
 
+from config.engine_parameters import parameter
+
 from datetime import datetime, time
 from typing import MutableMapping
 
@@ -77,7 +79,7 @@ def update_one_minute_orb_retouch(
     if state.get("terminal"):
         return None, str(state["terminal"])
 
-    context = first_close_confirmed_breakout(bars, entry_deadline=ENTRY_DEADLINE)
+    context = first_close_confirmed_breakout(bars, entry_deadline=parameter('entry_deadline', ENTRY_DEADLINE))
     if context is None:
         return None, "building_or_waiting_for_breakout"
     if context.side is not VALIDATED_SIDE:
@@ -89,10 +91,10 @@ def update_one_minute_orb_retouch(
     state["breakout_time"] = context.breakout_time.isoformat()
     state["side"] = context.side.value
     state["retouch_level"] = context.retouch_level
-    if now.time() > ENTRY_DEADLINE:
+    if now.time() > parameter('entry_deadline', ENTRY_DEADLINE):
         state["terminal"] = "entry_window_expired"
         return None, "entry_window_expired"
-    status = retouch_status(context, float(quote_price), tolerance_pct=RETOUCH_TOLERANCE_PCT)
+    status = retouch_status(context, float(quote_price), tolerance_pct=parameter('retouch_tolerance_pct', RETOUCH_TOLERANCE_PCT))
     if status == "ready":
         return None, "armed_waiting_for_first_retouch"
     if status == "failed":

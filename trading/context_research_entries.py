@@ -6,6 +6,7 @@ Only the newest completed bar can trigger; old signals are never repriced now.
 """
 from datetime import time, timedelta
 import math
+from config.engine_parameters import parameter
 import pandas as pd
 
 from strategies import context_strategy_observers as source
@@ -37,7 +38,7 @@ def _orb(today, strategy_id, now, history):
         return None
     average = float(rows.iloc[-21:-1]['volume'].mean())
     ratio = float(bar['volume']) / average if average > 0 else 0.0
-    if ratio <= 1.5:
+    if ratio <= parameter('volume_ratio_minimum',1.5):
         return None
     high, low = float(opening['high'].max()), float(opening['low'].min())
     direction = ('bullish' if float(bar['close']) > high else
@@ -68,7 +69,7 @@ def _vwap(today, strategy_id, now, history):
     bar = session[index]
     if index < 1 or bar.timestamp.time() < time(9,45):
         return None
-    ema9 = source._ema([item.close for item in session[max(0,index-8):index+1]],9)
+    ema9 = source._ema([item.close for item in session[max(0,index-parameter('reclaim_ema_period',9)+1):index+1]],parameter('reclaim_ema_period',9))
     vwap = vwaps[index]
     if not (session[index-1].close > vwaps[index-1] and bar.low <= vwap and bar.close > ema9):
         return None
@@ -76,15 +77,15 @@ def _vwap(today, strategy_id, now, history):
     if previous_high <= bar.close:
         return None
     visible = pd.Timestamp(bar.timestamp)+timedelta(minutes=5)
-    ker = source._kaufman([item['close'] for item in source._hourly(history,visible)],10)
-    displacement = any(item.timestamp.time() == time(10,25) and item.close >= vwaps[i]*1.01
+    ker = source._kaufman([item['close'] for item in source._hourly(history,visible)],parameter('efficiency_period',10))
+    displacement = any(item.timestamp.time() == time(10,25) and item.close >= vwaps[i]*(1+parameter('displacement_fraction',.01))
                        for i,item in enumerate(session))
-    allowed = (ker is not None and ker > .60 if strategy_id == source.VWAP_KER10_LONG
+    allowed = (ker is not None and ker > parameter('efficiency_minimum',.60) if strategy_id == source.VWAP_KER10_LONG
                else displacement and bar.timestamp.time() >= time(10,30))
     if not allowed:
         return None
     return Signal(confidence=.8,strategy_id=strategy_id,direction='bullish',rvol=0.0,
-        trigger_bar=visible,meta={'vwap':round(vwap,6),'ema9':round(ema9,6),
+        trigger_bar=visible,meta={'vwap':round(vwap,6),'ema9':round(ema9,6),'reclaim_ema_period':parameter('reclaim_ema_period',9),
             'previous_high':round(previous_high,6),'ker_1h_10':round(float(ker or 0),6),
             'displacement_at_1030':displacement,
             'entry_timing':'completed_5m_touch_reclaim_then_next_quote',

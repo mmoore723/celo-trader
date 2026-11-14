@@ -40,6 +40,8 @@ class RegisterRequest(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _issue_session(response: Response, user: dict, stay: bool) -> dict:
+    from auth.run_as import COOKIE as RUN_AS_COOKIE
+    response.delete_cookie(RUN_AS_COOKIE, path='/', secure=True, httponly=True, samesite='lax')
     from auth.users import CURRENT_TERMS_VERSION
     duration = SESSION_LONG if stay else SESSION_SHORT
     now      = datetime.now(timezone.utc)
@@ -102,14 +104,23 @@ async def auth_me(request: Request):
         raise HTTPException(401, "Not authenticated")
     try:
         p, u = _current_session_user(token)
+        from auth.run_as import resolve, COOKIE as RUN_AS_COOKIE
+        try:
+            u, support = resolve(u, token, request.cookies.get(RUN_AS_COOKIE))
+        except JWTError:
+            return {"ok": True, "username": "Support session ended", "is_admin": False,
+                    "access_profile": "watch", "terms_accepted": False,
+                    "support_session": {"expired": True, "actor_name": u["username"], "expires_at": 0}}
+
         from auth.users import get_user, CURRENT_TERMS_VERSION
         # JWT layer: terms_version baked in when user accepted (re-issued cookie).
         # DB layer: fallback for sessions issued before this feature was added.
         # Either source matching CURRENT_TERMS_VERSION = user has accepted.
-        jwt_terms = p.get("terms_version")
+        jwt_terms = None if support else p.get("terms_version")
         db_terms  = u.get("terms_version")
         accepted_v = jwt_terms if jwt_terms == CURRENT_TERMS_VERSION else db_terms
         return {
+            "support_session": support,
             "ok":                    True,
             "user_id":               u["user_id"],
             "username":              u["username"],
@@ -141,6 +152,9 @@ async def auth_accept_terms(request: Request, response: Response):
         p, u = _current_session_user(token)
     except JWTError:
         raise HTTPException(401, "Session expired — please sign in again")
+    from auth.run_as import COOKIE as RUN_AS_COOKIE
+    if request.cookies.get(RUN_AS_COOKIE):
+        raise HTTPException(403, "The user must accept their own terms. Return to Admin.")
     from auth.users import accept_terms, CURRENT_TERMS_VERSION
     # Write to DB (primary storage)
     ok = accept_terms(u["user_id"], CURRENT_TERMS_VERSION)
@@ -168,6 +182,8 @@ async def auth_accept_terms(request: Request, response: Response):
 
 @router.post("/logout")
 async def auth_logout(response: Response):
+    from auth.run_as import COOKIE as RUN_AS_COOKIE
+    response.delete_cookie(RUN_AS_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
     response.delete_cookie(
         COOKIE_NAME, path="/", secure=True, httponly=True, samesite="lax"
     )
@@ -184,3 +200,54 @@ async def auth_register(body: RegisterRequest, response: Response):
         raise HTTPException(400, str(e))
     logger.info("New user registered via invite: %s", user["username"])
     return _issue_session(response, user, stay=True)
+
+
+class RunAsRequest(BaseModel):
+    user_id: str
+
+
+def _support_actor(request):
+    from auth.security import origin_is_trusted
+    source = request.headers.get('origin') or request.headers.get('referer')
+    if not source or not origin_is_trusted(source):
+        raise HTTPException(403, 'A trusted browser origin is required')
+    token = request.cookies.get(COOKIE_NAME)
+    try:
+        _, actor = _current_session_user(token or '')
+    except JWTError as exc:
+        raise HTTPException(401, 'Sign in as an administrator') from exc
+    if not actor.get('is_admin'):
+        raise HTTPException(403, 'Administrator access required')
+    return actor, token
+
+
+@router.post('/run-as')
+async def start_run_as(body: RunAsRequest, request: Request, response: Response):
+    from auth.run_as import COOKIE, DURATION, issue, audit
+    from auth.users import get_user
+    actor, token = _support_actor(request)
+    if request.cookies.get(COOKIE):
+        raise HTTPException(409, 'Return to Admin before switching to another user')
+    target = get_user(body.user_id)
+    if not target: raise HTTPException(404, 'User not found')
+    try: support = issue(actor, target, token)
+    except ValueError as exc: raise HTTPException(422, str(exc)) from exc
+    audit(actor['user_id'], target['user_id'], 'run_as_started')
+    response.set_cookie(COOKIE, support, httponly=True, secure=True, samesite='lax', max_age=int(SESSION_LONG.total_seconds()), path='/')
+    return {'ok': True}
+
+
+@router.post('/run-as/stop')
+async def stop_run_as(request: Request, response: Response):
+    from auth.run_as import COOKIE, audit
+    actor, token = _support_actor(request)
+    from auth.run_as import resolve
+    target_id=None
+    try:
+        target, support = resolve(actor, token, request.cookies.get(COOKIE))
+        if support:target_id=target['user_id']
+    except Exception:
+        pass  # Expired or revoked support sessions must still be clearable.
+    audit(actor['user_id'], target_id, 'run_as_stopped')
+    response.delete_cookie(COOKIE, path='/', secure=True, httponly=True, samesite='lax')
+    return {'ok': True}

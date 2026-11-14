@@ -357,7 +357,10 @@ def route_signals(
                     strategy_id in (enabled_strategies or ()) and _authorized_for_order(strategy_id, ticker)
                 ) else None
                 try:
-                    sig = fn(today, ticker=ticker)
+                    from config.engine_parameters import for_pair, attach
+                    from config import get_settings
+                    with for_pair(get_settings(), strategy_id, ticker):
+                        sig = attach(fn(today, ticker=ticker))
                 except Exception as exc:
                     capture('finish', ticket, None, error=type(exc).__name__)
                     raise

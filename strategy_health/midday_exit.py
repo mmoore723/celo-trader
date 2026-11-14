@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """Midday Breakdown's original short-only structural exit observation."""
 from dataclasses import asdict
 from datetime import time
@@ -28,12 +29,11 @@ def config_proof(config):
 
 
 def entry_state(strategy):
-    return {'engine_hash': engine_hash(), 'config': config_proof(strategy.config)}
+    return stamp({'engine_hash': engine_hash(), 'config': config_proof(strategy.config)}, strategy)
 
 
 def first_exit(frame, *, seed, **kwargs):
-    if (not isinstance(seed,dict) or seed.get('engine_hash') != engine_hash()
-            or seed.get('config') != config_proof(MiddayBreakdownConfig())):
+    if (not valid(seed, {'engine_hash':engine_hash(),'config':config_proof(MiddayBreakdownConfig())}, MiddayBreakdownConfig())):
         return et(kwargs['entry_at']), 'missing_exit_state'
     # A bullish row cannot have come from this reviewed short-only strategy.
     if kwargs.get('direction') != 'bearish':

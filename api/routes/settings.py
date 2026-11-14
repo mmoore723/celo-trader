@@ -701,3 +701,49 @@ def connection_health(request: Request) -> dict:
         get_settings(user_id=str(user_id)),
         get_api_keys(user_id=str(user_id)),
     )
+
+class EngineConfigurationUpdate(BaseModel):
+    version: str
+    scope: str
+    revision: str
+    entry: dict
+    risk: dict = Field(default_factory=dict)
+    profit: dict | None = None
+    contract_timer: dict | None = None
+
+
+@router.get('/strategies/{strategy_id}/{ticker}/configuration')
+def strategy_configuration(strategy_id: str, ticker: str, version: str):
+    from config import get_settings
+    from config.engine_parameters import describe, scope_key
+    settings = get_settings()
+    try:
+        result = describe(settings, strategy_id, ticker, version)
+        result['scope'] = scope_key(settings, strategy_id, ticker, version)
+        return result
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.put('/strategies/{strategy_id}/{ticker}/configuration')
+def save_strategy_configuration(strategy_id: str, ticker: str, body: EngineConfigurationUpdate, request: Request):
+    from config import get_settings, save_settings, get_user_data_dir
+    from config.atomic_files import _lock_for
+    from config.engine_parameters import save, scope_key
+    with _lock_for(get_user_data_dir() / 'settings.json'):
+        current = get_settings()
+        if body.scope != scope_key(current, strategy_id, ticker, body.version):
+            raise HTTPException(409, 'Account or mode changed. Reload this panel before saving.')
+        try:
+            updates = save(current, strategy_id, ticker, body.version, body.revision, body.entry, request.state.user_id, body.risk, body.profit, body.contract_timer)
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        from auth.run_as import audit
+        support = getattr(request.state, 'support_session', None)
+        actor = support['actor_id'] if support else request.state.user_id
+        audit(actor, request.state.user_id, 'engine_configuration_saved', strategy=strategy_id,
+              ticker=ticker, version=body.version, fields=sorted(body.entry), previous_revision=body.revision)
+        save_settings(updates)
+    return strategy_configuration(strategy_id, ticker, body.version)

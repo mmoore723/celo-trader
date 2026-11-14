@@ -7,7 +7,7 @@ import math
 
 from strategies.context_strategy_observers import VWAP_KER10_LONG, VWAP_DISPLACEMENT_LONG
 from trading import vwap_displacement_exit as displacement_source
-from strategy_health.context_orb_exit import engine_hash
+from strategy_health.context_orb_exit import engine_hash, compatible_state
 from strategy_health.impulse_exit import et
 
 STRATEGY_ID = VWAP_KER10_LONG
@@ -36,7 +36,7 @@ def metadata(strategy_id):
 def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strategy_id=STRATEGY_ID):
     entry, now = et(entry_at), et(now)
     expected = metadata(strategy_id)
-    if not expected or meta.get('authored_exit_state') != expected['authored_exit_state']:
+    if not expected or not compatible_state(meta.get('authored_exit_state'),expected['authored_exit_state']):
         return entry,'missing_exit_state'
     opening, cap = entry.replace(hour=9,minute=30), entry.replace(hour=15,minute=55)
     if entry.minute%5 or entry.second or entry.microsecond or not opening<=entry<cap:

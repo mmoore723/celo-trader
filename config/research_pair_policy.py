@@ -33,6 +33,10 @@ def validate(policy, sid, ticker, version):
 
 
 def selected(settings, sid, ticker, version):
+    from config.engine_parameters import KEY, scope_key
+    configured=(settings.get(KEY) or {}).get(scope_key(settings,sid,ticker,version),{}).get('contract_timer')
+    if configured is not None:
+        return validate(configured,sid,ticker,version)
     grant = (settings.get('admin_strategy_overrides') or {}).get(f'{sid}:{ticker}') or {}
     policy = grant.get('selected_test_policy')
     if not policy or not grant.get('enabled') or grant.get('strategy_version') != version:

@@ -148,6 +148,9 @@ logger = logging.getLogger("celo_trader.trading_logic")
 
 # ── Per-tick evaluation ───────────────────────────────────────────────────────
 
+from config.engine_parameters import entry_cycle
+
+@entry_cycle
 def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
           scan_ticker: str | None = None, execution_only: bool = False) -> None:
     # FIX: _risk used to be a `global _risk` module attribute in this file,
@@ -912,6 +915,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     direction   = _top.direction      # "bullish" | "bearish"
     entry_rvol  = _top.rvol           # Entry_Volume_Multiplier for audit log
     strategy_id = _top.strategy_id
+    from config.engine_parameters import select_sizing
+    settings = select_sizing(settings, strategy_id, ticker)
     from trading.entry.data_parity import live_data_refusal
     _data_refusal = live_data_refusal(strategy_id, settings)
     if _data_refusal:

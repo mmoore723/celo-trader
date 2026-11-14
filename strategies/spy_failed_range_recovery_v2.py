@@ -8,6 +8,8 @@ not change the signal, and the router may attempt the signal only once.
 """
 from __future__ import annotations
 
+from config.engine_parameters import parameter
+
 from datetime import time
 
 import pandas as pd
@@ -78,28 +80,28 @@ def _candidate_from_completed_bars(bars: tuple[Bar, ...]) -> tuple[Side, Bar, fl
         if clock < time(9, 45):
             continue
         if breakout_side is None:
-            if clock > BREAKOUT_DEADLINE:
+            if clock > parameter('breakout_deadline', BREAKOUT_DEADLINE):
                 return None
-            excursion = width * MINIMUM_EXCURSION_RANGE
+            excursion = width * parameter('minimum_excursion_range', MINIMUM_EXCURSION_RANGE)
             if bar.close >= range_high + excursion:
                 breakout_side, breakout_bar = Side.LONG, bar
             elif bar.close <= range_low - excursion:
                 breakout_side, breakout_bar = Side.SHORT, bar
             continue
-        if clock > FAILURE_DEADLINE:
+        if clock > parameter('failure_deadline', FAILURE_DEADLINE):
             return None
         assert breakout_bar is not None
         prefix = bars[: index + 1]
         vwap = _session_vwap(prefix)
-        room = width * MINIMUM_VWAP_ROOM_RANGE
+        room = width * parameter('minimum_vwap_room_range', MINIMUM_VWAP_ROOM_RANGE)
         if breakout_side is Side.LONG and bar.close <= range_high and bar.close < bar.open:
             if bar.close - vwap >= room:
-                stop = max(breakout_bar.high, bar.high) + width * STOP_BUFFER_RANGE
+                stop = max(breakout_bar.high, bar.high) + width * parameter('stop_buffer_range', STOP_BUFFER_RANGE)
                 return Side.SHORT, bar, stop, vwap, range_high, range_low
             return None
         if breakout_side is Side.SHORT and bar.close >= range_low and bar.close > bar.open:
             if vwap - bar.close >= room:
-                stop = min(breakout_bar.low, bar.low) - width * STOP_BUFFER_RANGE
+                stop = min(breakout_bar.low, bar.low) - width * parameter('stop_buffer_range', STOP_BUFFER_RANGE)
                 return Side.LONG, bar, stop, vwap, range_high, range_low
             return None
     return None

@@ -1,6 +1,7 @@
 """Observe each distinct long breakout/retouch episode; never place orders."""
 import hashlib
 import math
+from config.engine_parameters import parameter
 import pandas as pd
 from strategies.base import Signal
 from strategies.market_structure import OpeningRangeBreakoutContext, Side, _opening_range, _atr, _ema, retouch_status
@@ -18,9 +19,9 @@ def latest_episode(bars):
         return None
     high,low = opening
     context, previous_side = None, 0
-    tolerance = max(high*source.RETOUCH_TOLERANCE_PCT,.01)
+    tolerance = max(high*parameter('retouch_tolerance_pct', source.RETOUCH_TOLERANCE_PCT),.01)
     for bar in bars:
-        if not pd.Timestamp('09:45').time() <= bar.timestamp.time() <= source.ENTRY_DEADLINE:
+        if not pd.Timestamp('09:45').time() <= bar.timestamp.time() <= parameter('entry_deadline', source.ENTRY_DEADLINE):
             continue
         side = 1 if bar.close > high else -1 if bar.close < low else 0
         if side and side != previous_side:
@@ -37,7 +38,7 @@ def update(state,today,*,ticker,quote,now,scope):
         raise ValueError('ORB expansion is restricted to the research worker')
     now = pd.Timestamp(now)
     now = now.tz_localize('America/New_York') if now.tzinfo is None else now.tz_convert('America/New_York')
-    if now.time()>source.ENTRY_DEADLINE:
+    if now.time()>parameter('entry_deadline', source.ENTRY_DEADLINE):
         return None,'entry_window_expired'
     prices = pd.DataFrame(today)
     if prices.empty or not {'time','open','high','low','close'}.issubset(prices.columns):
@@ -73,7 +74,7 @@ def update(state,today,*,ticker,quote,now,scope):
     except (KeyError,TypeError,ValueError):
         return None,'quote_unavailable'
     price = (ask+bid)/2
-    status = retouch_status(context,price,tolerance_pct=source.RETOUCH_TOLERANCE_PCT)
+    status = retouch_status(context,price,tolerance_pct=parameter('retouch_tolerance_pct', source.RETOUCH_TOLERANCE_PCT))
     if status == 'ready':
         return None,'armed_waiting_for_first_retouch'
     consumed.add(anchor)

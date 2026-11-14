@@ -1,5 +1,6 @@
 """Fresh two-leg episodes for research only; reviewed order code is untouched."""
 import math
+from config.engine_parameters import parameter
 import pandas as pd
 from strategies.base import Signal
 from trading import two_leg_trend_pullback_execution as source
@@ -15,18 +16,18 @@ def latest_candidate(bars):
     reference = source._reference_close(list(bars))
     leg = None
     for index,current in enumerate(bars):
-        if not source.ENTRY_START <= current.timestamp.time() <= source.ENTRY_END or index+1 < max(source.SLOW_EMA,source.ATR_BARS+1) or reference is None:
+        if not parameter('entry_start', source.ENTRY_START) <= current.timestamp.time() <= parameter('entry_end', source.ENTRY_END) or index+1 < max(parameter('slow_ema', source.SLOW_EMA),parameter('atr_bars', source.ATR_BARS)+1) or reference is None:
             continue
         history = list(bars[:index+1])
-        closes = [b.close for b in history[-source.SLOW_EMA:]]
-        fast = source._ema(closes[-source.FAST_EMA:],source.FAST_EMA)
-        slow = source._ema(closes,source.SLOW_EMA)
-        atr, vwap = source._atr(history,source.ATR_BARS), source._vwap(history)
+        closes = [b.close for b in history[-parameter('slow_ema', source.SLOW_EMA):]]
+        fast = source._ema(closes[-parameter('fast_ema', source.FAST_EMA):],parameter('fast_ema', source.FAST_EMA))
+        slow = source._ema(closes,parameter('slow_ema', source.SLOW_EMA))
+        atr, vwap = source._atr(history,parameter('atr_bars', source.ATR_BARS)), source._vwap(history)
         if atr <= 0:
             continue
         had_leg = leg is not None
         if leg is not None:
-            if index-leg.impulse_index > source.PULLBACK_LIMIT_BARS:
+            if index-leg.impulse_index > parameter('pullback_limit_bars', source.PULLBACK_LIMIT_BARS):
                 leg = None
             else:
                 bullish = leg.direction == 'bullish'
@@ -35,10 +36,10 @@ def latest_candidate(bars):
                                        else min(leg.impulse_extreme,current.low))
                 retrace = leg.impulse_extreme-current.low if bullish else current.high-leg.impulse_extreme
                 invalid = (current.close <= vwap or fast <= slow) if bullish else (current.close >= vwap or fast >= slow)
-                if invalid or retrace > source.PULLBACK_MAX_ATR*atr:
+                if invalid or retrace > parameter('pullback_max_atr', source.PULLBACK_MAX_ATR)*atr:
                     leg = None
                 elif leg.pullback_extreme is None:
-                    if retrace >= source.PULLBACK_MIN_ATR*atr and (current.low <= fast if bullish else current.high >= fast):
+                    if retrace >= parameter('pullback_min_atr', source.PULLBACK_MIN_ATR)*atr and (current.low <= fast if bullish else current.high >= fast):
                         leg.pullback_extreme = current.low if bullish else current.high
                 else:
                     leg.pullback_extreme = (min(leg.pullback_extreme,current.low) if bullish
@@ -61,17 +62,17 @@ def latest_candidate(bars):
                                     'pullback_low' if bullish else 'pullback_high':round(leg.pullback_extreme,6),
                                     'reclaim_level':round(previous.high if bullish else previous.low,6),
                                     'v2_entry_reference':round(current.close,6),'v2_stop':round(stop,6),
-                                    'v2_target':round(current.close+(1 if bullish else -1)*source.REWARD_RISK*risk,6),
-                                    'pullback_min_atr':source.PULLBACK_MIN_ATR,'pullback_max_atr':source.PULLBACK_MAX_ATR,
+                                    'v2_target':round(current.close+(1 if bullish else -1)*parameter('reward_risk', source.REWARD_RISK)*risk,6),
+                                    'pullback_min_atr':parameter('pullback_min_atr', source.PULLBACK_MIN_ATR),'pullback_max_atr':parameter('pullback_max_atr', source.PULLBACK_MAX_ATR),
                                     'research_episode_anchor':bars[leg.impulse_index].timestamp.isoformat()})
                         # A completed reclaim consumes this episode, even if
                         # confirmation failed. A later candle must start a NEW
                         # impulse; it cannot rescue the rejected reclaim.
                         leg = None
         if leg is None and not had_leg:
-            if current.close > vwap and fast > slow and current.close-reference >= source.IMPULSE_ATR*atr:
+            if current.close > vwap and fast > slow and current.close-reference >= parameter('impulse_atr', source.IMPULSE_ATR)*atr:
                 leg = source._Leg('bullish',current.high,index)
-            elif current.close < vwap and fast < slow and reference-current.close >= source.IMPULSE_ATR*atr:
+            elif current.close < vwap and fast < slow and reference-current.close >= parameter('impulse_atr', source.IMPULSE_ATR)*atr:
                 leg = source._Leg('bearish',current.low,index)
     return None
 

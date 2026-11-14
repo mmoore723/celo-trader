@@ -67,7 +67,8 @@ def evaluate(
     if ticker.strip().upper() not in VALIDATED_TICKERS:
         return None
     bars = _complete_five_minute_bars(today)
-    config = TrendContinuationConfig()
+    from config.engine_parameters import configured
+    config = configured(TrendContinuationConfig())
     minimum = max(config.slow_ema, config.atr_bars + 1, config.breakout_bars + 1)
     if len(bars) < minimum:
         return None

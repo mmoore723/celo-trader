@@ -50,6 +50,8 @@ export function strategyName(name) {
 export function exitReason(reason) {
   if (!reason) return 'Exit reason not recorded';
   const key = reason.split(/[\s(]/)[0];
+  const adverse = key.match(/^adverse_(\d+)x5m_([0-9.]+)pct_loss$/);
+  if (adverse) return `${adverse[1]}-Candle / ${adverse[2]}% Loss Fail-Safe`;
   const premium = key.match(/^premium_(\d+)pct$/);
   if (premium) return `${premium[1]}% Premium Gain`;
   const giveback = key.match(/^giveback_(\d+)pct$/);

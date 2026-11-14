@@ -17,6 +17,8 @@ handled by ``v2_orb_paper_exit``.  No incomplete candle is ever a signal.
 """
 from __future__ import annotations
 
+from config.engine_parameters import parameter
+
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import MutableMapping
@@ -117,7 +119,7 @@ def _vwap(bars: list[_Bar]) -> float:
 
 def _reference_close(bars: list[_Bar]) -> float | None:
     for bar in bars:
-        if bar.timestamp.time() == REFERENCE_TIME:
+        if bar.timestamp.time() == parameter('reference_time', REFERENCE_TIME):
             return bar.close
     return None
 
@@ -149,33 +151,33 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
     reference = _reference_close(today)
     leg: _Leg | None = None
     latest_signal: Signal | None = None
-    minimum = max(SLOW_EMA, ATR_BARS + 1)
+    minimum = max(parameter('slow_ema', SLOW_EMA), parameter('atr_bars', ATR_BARS) + 1)
     for index, current in enumerate(today):
         clock = current.timestamp.time()
-        if not (ENTRY_START <= clock <= ENTRY_END) or index + 1 < minimum or reference is None:
+        if not (parameter('entry_start', ENTRY_START) <= clock <= parameter('entry_end', ENTRY_END)) or index + 1 < minimum or reference is None:
             continue
         history = today[:index + 1]
-        closes = [bar.close for bar in history[-SLOW_EMA:]]
-        fast = _ema(closes[-FAST_EMA:], FAST_EMA)
-        slow = _ema(closes, SLOW_EMA)
-        atr = _atr(history, ATR_BARS)
+        closes = [bar.close for bar in history[-parameter('slow_ema', SLOW_EMA):]]
+        fast = _ema(closes[-parameter('fast_ema', FAST_EMA):], parameter('fast_ema', FAST_EMA))
+        slow = _ema(closes, parameter('slow_ema', SLOW_EMA))
+        atr = _atr(history, parameter('atr_bars', ATR_BARS))
         vwap = _vwap(history)
         if atr <= 0:
             continue
         had_leg = leg is not None
         if leg is not None:
             elapsed = index - leg.impulse_index
-            if elapsed > PULLBACK_LIMIT_BARS:
+            if elapsed > parameter('pullback_limit_bars', PULLBACK_LIMIT_BARS):
                 leg = None
             else:
                 previous = today[index - 1]
                 if leg.direction == "bullish":
                     leg.impulse_extreme = max(leg.impulse_extreme, current.high)
                     retrace = leg.impulse_extreme - current.low
-                    if current.close <= vwap or fast <= slow or retrace > PULLBACK_MAX_ATR * atr:
+                    if current.close <= vwap or fast <= slow or retrace > parameter('pullback_max_atr', PULLBACK_MAX_ATR) * atr:
                         leg = None
                     elif leg.pullback_extreme is None:
-                        if retrace >= PULLBACK_MIN_ATR * atr and current.low <= fast:
+                        if retrace >= parameter('pullback_min_atr', PULLBACK_MIN_ATR) * atr and current.low <= fast:
                             leg.pullback_extreme = current.low
                             leg.pullback_prior_high = previous.high
                     else:
@@ -204,8 +206,8 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                         "impulse_extreme": round(leg.impulse_extreme, 6),
                                         "pullback_low": round(leg.pullback_extreme, 6),
                                         "reclaim_level": round(previous.high, 6), "v2_entry_reference": round(current.close, 6),
-                                        "v2_stop": round(stop, 6), "v2_target": round(current.close + REWARD_RISK * risk, 6),
-                                        "pullback_min_atr": PULLBACK_MIN_ATR, "pullback_max_atr": PULLBACK_MAX_ATR,
+                                        "v2_stop": round(stop, 6), "v2_target": round(current.close + parameter('reward_risk', REWARD_RISK) * risk, 6),
+                                        "pullback_min_atr": parameter('pullback_min_atr', PULLBACK_MIN_ATR), "pullback_max_atr": parameter('pullback_max_atr', PULLBACK_MAX_ATR),
                                     },
                                 )
                                 leg = None
@@ -214,10 +216,10 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                 else:
                     leg.impulse_extreme = min(leg.impulse_extreme, current.low)
                     retrace = current.high - leg.impulse_extreme
-                    if current.close >= vwap or fast >= slow or retrace > PULLBACK_MAX_ATR * atr:
+                    if current.close >= vwap or fast >= slow or retrace > parameter('pullback_max_atr', PULLBACK_MAX_ATR) * atr:
                         leg = None
                     elif leg.pullback_extreme is None:
-                        if retrace >= PULLBACK_MIN_ATR * atr and current.high >= fast:
+                        if retrace >= parameter('pullback_min_atr', PULLBACK_MIN_ATR) * atr and current.high >= fast:
                             leg.pullback_extreme = current.high
                             leg.pullback_prior_low = previous.low
                     else:
@@ -246,8 +248,8 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                         "impulse_extreme": round(leg.impulse_extreme, 6),
                                         "pullback_high": round(leg.pullback_extreme, 6),
                                         "reclaim_level": round(previous.low, 6), "v2_entry_reference": round(current.close, 6),
-                                        "v2_stop": round(stop, 6), "v2_target": round(current.close - REWARD_RISK * risk, 6),
-                                        "pullback_min_atr": PULLBACK_MIN_ATR, "pullback_max_atr": PULLBACK_MAX_ATR,
+                                        "v2_stop": round(stop, 6), "v2_target": round(current.close - parameter('reward_risk', REWARD_RISK) * risk, 6),
+                                        "pullback_min_atr": parameter('pullback_min_atr', PULLBACK_MIN_ATR), "pullback_max_atr": parameter('pullback_max_atr', PULLBACK_MAX_ATR),
                                     },
                                 )
                                 leg = None
@@ -256,9 +258,9 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
         # An invalidated active leg cannot be reinterpreted as a new opposite
         # impulse on that same candle; a later completed candle may start one.
         if leg is None and not had_leg:
-            if current.close > vwap and fast > slow and current.close - reference >= IMPULSE_ATR * atr:
+            if current.close > vwap and fast > slow and current.close - reference >= parameter('impulse_atr', IMPULSE_ATR) * atr:
                 leg = _Leg("bullish", current.high, index)
-            elif current.close < vwap and fast < slow and reference - current.close >= IMPULSE_ATR * atr:
+            elif current.close < vwap and fast < slow and reference - current.close >= parameter('impulse_atr', IMPULSE_ATR) * atr:
                 leg = _Leg("bearish", current.low, index)
     if latest_signal is None or latest_signal.trigger_bar != today[-1].timestamp:
         return None
@@ -291,7 +293,7 @@ def update_two_leg_trend_pullback(
         return None, "already_emitted"
     if _reference_close(list(bars)) is None:
         return None, "waiting_for_0945_reference"
-    if bars[-1].timestamp.time() > ENTRY_END:
+    if bars[-1].timestamp.time() > parameter('entry_end', ENTRY_END):
         return None, "entry_window_expired"
     signal = _signal_at_latest_bar(bars)
     if signal is None:

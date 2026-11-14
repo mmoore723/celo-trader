@@ -1,3 +1,4 @@
+import { StrategyConfiguration } from '../components/settings/StrategyConfiguration';
 import { BrokerKeyGuide } from "../components/BrokerKeyGuide";
 /**
  * Settings.tsx — Bot configuration form + API credentials.
@@ -408,6 +409,7 @@ export function Settings() {
           onChange={(v) => set(strategy.setting_key, v)}
           disabled={strategy.integrity_errors.length > 0}
       >
+        {strategyView !== "trading" && (strategy.tickers ?? []).map(ticker => <StrategyConfiguration key={ticker} strategy={strategy.strategy_id} ticker={ticker} version={strategy.version} />)}
         <StrategyIdentity id={strategy.strategy_id} version={strategy.version}
           activity={tradingTickers.length ? "trading" : "research"}
           tickers={strategy.observation_only ? [] : tradingTickers}
@@ -835,7 +837,7 @@ export function Settings() {
       </section>
 
       </div>
-      {activeTab === "strategies" && !isAdmin && <section id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-3"><h2>Strategy templates</h2><p className="text-sm">Choose a template, then save your settings. New accounts start with every template off.</p>{groupStrategies((strategyCatalog?.strategies ?? []).filter(row => !row.observation_only)).map(group => <section className="card p-4" key={group.name}><h3 className="font-semibold">{group.name}</h3>{group.strategies.map(row => <div key={row.strategy_id} className="py-3"><Toggle label={`${row.tickers.join(", ")} · ${row.version}`} checked={!!form[row.setting_key]} disabled={!data || row.integrity_errors.length > 0} onChange={value => set(row.setting_key, value)} /><p className="text-xs">{row.integrity_errors.length ? "Temporarily unavailable. The execution checks need attention." : "Applies to your account only. Existing positions keep their entry-time rules."}</p></div>)}</section>)}</section>}
+      {activeTab === "strategies" && !isAdmin && <section id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-3"><h2>Strategy templates</h2><p className="text-sm">Choose a template, then save your settings. New accounts start with every template off.</p>{groupStrategies((strategyCatalog?.strategies ?? []).filter(row => !row.observation_only)).map(group => <section className="card p-4" key={group.name}><h3 className="font-semibold">{group.name}</h3>{group.strategies.map(row => <div key={row.strategy_id} className="py-3"><Toggle label={`${row.tickers.join(", ")} · ${row.version}`} checked={!!form[row.setting_key]} disabled={!data || row.integrity_errors.length > 0} onChange={value => set(row.setting_key, value)} /><p className="text-xs">{row.integrity_errors.length ? "Temporarily unavailable. The execution checks need attention." : "Applies to your account only. Existing positions keep their entry-time rules."}</p>{Array.from(new Set([...row.tickers,...(row.trading_tickers??[])])).map(ticker=><StrategyConfiguration key={`${row.strategy_id}:${row.version}:${ticker}`} strategy={row.strategy_id} ticker={ticker} version={row.version}/>)}</div>)}</section>)}</section>}
       {activeTab === "strategies" && isAdmin && <div id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-4">
       {strategyResearch?.snapshot?.refreshing && <p role="status" className="text-xs">
         Showing saved research from {new Date(strategyResearch.snapshot.updated_at * 1000).toLocaleString()}. Refreshing in the background.

@@ -42,7 +42,10 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
                     evidence = orb_evidence.begin(slot, frame, now=decision_now,
                         price=price, quote=quote, settings=settings)
                 try:
-                    signal, status = evaluate(slot, frame, ticker=ticker, quote_price=price, now=decision_now)
+                    from config.engine_parameters import for_pair, attach
+                    with for_pair(settings if ORB in enabled else {}, ORB, ticker):
+                        signal, status = evaluate(slot, frame, ticker=ticker, quote_price=price, now=decision_now)
+                        attach(signal)
                 except Exception as exc:
                     orb_evidence.finish(evidence, slot, None, 'evaluation_error', error=type(exc).__name__)
                     raise
@@ -67,7 +70,10 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
                 if TWO_LEG in enabled and ticker.upper() == 'TSLA':
                     evidence = two_leg_evidence.begin(slot, frame, now=decision_now, settings=settings)
                 try:
-                    signal, status = evaluate(slot, frame, ticker=ticker, now=decision_now)
+                    from config.engine_parameters import for_pair, attach
+                    with for_pair(settings if TWO_LEG in enabled else {}, TWO_LEG, ticker):
+                        signal, status = evaluate(slot, frame, ticker=ticker, now=decision_now)
+                        attach(signal)
                 except Exception as exc:
                     two_leg_evidence.finish(evidence, slot, None, 'evaluation_error', error=type(exc).__name__)
                     raise
@@ -93,11 +99,13 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
                 quote = alpaca.get_latest_quote(ticker)
                 record_underlying_quote(ticker, quote, observed_at=_now_et(),
                                         broker_account_id=settings.get('active_broker_account_id') or None)
-            signal, status = update(state.setdefault('approved_retouch', {}), frame,
-                ticker=ticker, quote=quote, now=_now_et(),
-                scope='research_worker:approved_order:' + str(settings.get('active_broker_account_id') or 'default'))
+            from config.engine_parameters import for_pair, attach
+            with for_pair(settings,sid,ticker):
+                signal, status = update(state.setdefault('approved_retouch', {}), frame,
+                    ticker=ticker, quote=quote, now=_now_et(),
+                    scope='research_worker:approved_order:' + str(settings.get('active_broker_account_id') or 'default'))
+                signal = attach(finalize(signal,sid,ticker))
             statuses[sid] = status
-            signal = finalize(signal, sid, ticker)
             if signal is not None:
                 signals.append(signal)
         except Exception:

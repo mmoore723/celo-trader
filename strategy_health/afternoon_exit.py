@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """Original Afternoon Reversal exit evidence; no order or entry-rule changes."""
 from dataclasses import asdict
 from datetime import time
@@ -30,11 +31,10 @@ def config_proof(config):
 
 
 def entry_state(strategy):
-    return {'engine_hash': engine_hash(), 'config': config_proof(strategy.config)}
+    return stamp({'engine_hash': engine_hash(), 'config': config_proof(strategy.config)}, strategy)
 
 
 def first_exit(frame, *, seed, **kwargs):
-    if (not isinstance(seed, dict) or seed.get('engine_hash') != engine_hash()
-            or seed.get('config') != config_proof(AfternoonReversalConfig())):
+    if (not valid(seed, {'engine_hash':engine_hash(),'config':config_proof(AfternoonReversalConfig())}, AfternoonReversalConfig())):
         return et(kwargs['entry_at']), 'missing_exit_state'
     return structural_exit(frame, **kwargs, max_hold_bars=75, time_cap_reason='time_cap_75bars')

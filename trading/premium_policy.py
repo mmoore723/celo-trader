@@ -32,6 +32,8 @@ def freeze_selection(settings, strategy, ticker, version):
             or assignment.get('fingerprint')!=fingerprint(assignment)
             or not assignment.get('approval_id')):
         raise ValueError('Invalid approved premium policy; entry refused')
+    from config.engine_parameters import profit_selection
+    assignment = profit_selection(settings,strategy,ticker,version,assignment)
     if assignment.get('rule') == TREND_RULE and (strategy, ticker) not in PAIRS:
         raise ValueError('Trend profit exit is restricted to approved pairs')
     if assignment.get('replace_native_exit'):
@@ -76,7 +78,7 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
         if spec:
             from trading.adverse_candle_exit import apply
             state, protection=apply(state,trade=trade,quantity=int(current[0]),sold=sold_quantity(conn,trade),
-                                   quote=quote,now=now,frame=five_minute_bars)
+                                   quote=quote,now=now,frame=five_minute_bars,spec=spec)
             if protection: decision=protection
     else:
         state=advance(policy['rule'],previous,entry=float(trade['entry_price']),

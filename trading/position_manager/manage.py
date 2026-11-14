@@ -71,7 +71,8 @@ def _resolve_latched_exit(
     `_close_position` removes the position state only after a confirmed fill.
     """
     pending_reason = str(position_state.get("exit_pending_reason") or "").strip()
-    if pending_reason in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback','adverse_3x5m_10pct_loss') and should_exit and reason not in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback','adverse_3x5m_10pct_loss'):
+    from trading.adverse_candle_exit import is_failsafe_reason
+    if (is_failsafe_reason(pending_reason) or pending_reason in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback','adverse_3x5m_10pct_loss')) and should_exit and not is_failsafe_reason(reason) and reason not in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback','adverse_3x5m_10pct_loss'):
         position_state['exit_pending_reason'] = reason
         return True, reason
     if pending_reason and should_exit and reason == 'research_session_close':

@@ -208,7 +208,8 @@ def evaluate_tested_research(
         if not bars:
             continue
         try:
-            strategy = spec.factory()
+            from config.engine_parameters import configure_engine
+            strategy = configure_engine(spec.factory())
             candidate = _latest_candidate(strategy, bars, research_strategy_id=spec.strategy_id)
         except Exception:
             logger.warning("Tested strategy research failed for %s/%s", strategy_id, ticker, exc_info=True)

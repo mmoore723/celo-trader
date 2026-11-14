@@ -7,6 +7,8 @@ signal window.  A signal becomes eligible on the following one-minute bar.
 """
 from __future__ import annotations
 
+from config.engine_parameters import parameter
+
 from datetime import time
 from typing import Sequence
 
@@ -55,31 +57,31 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
         return None
     current_date = bars[-1].timestamp.date()
     today = tuple(bar for bar in bars if bar.timestamp.date() == current_date)
-    minimum = max(_SLOW_EMA, _ATR_BARS + 1, 6)
+    minimum = max(parameter('slow_ema', _SLOW_EMA), parameter('atr_bars', _ATR_BARS) + 1, 6)
     if len(today) < minimum:
         return None
     current = today[-1]
-    if not (_START <= current.timestamp.time() < _END):
+    if not (parameter('start', _START) <= current.timestamp.time() < parameter('end', _END)):
         return None
-    atr = _atr(today, _ATR_BARS)
+    atr = _atr(today, parameter('atr_bars', _ATR_BARS))
     if atr <= 0:
         return None
-    closes = [bar.close for bar in today[-_SLOW_EMA:]]
-    fast = _ema(closes[-_FAST_EMA:], _FAST_EMA)
-    slow = _ema(closes, _SLOW_EMA)
+    closes = [bar.close for bar in today[-parameter('slow_ema', _SLOW_EMA):]]
+    fast = _ema(closes[-parameter('fast_ema', _FAST_EMA):], parameter('fast_ema', _FAST_EMA))
+    slow = _ema(closes, parameter('slow_ema', _SLOW_EMA))
     vwap = _session_vwap(today)
     price_action = describe_price_action(
         today, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
     ).features()
     newest = len(today) - 3
-    oldest = max(1, newest - _SCAN_BARS + 1)
+    oldest = max(1, newest - parameter('scan_bars', _SCAN_BARS) + 1)
 
     for middle in range(newest, oldest - 1, -1):
         before, after = today[middle - 1], today[middle + 1]
         intervening = today[middle + 2:-1]
         if before.high < after.low:
             lower, upper = before.high, after.low
-            if upper - lower < _MIN_GAP_ATR * atr or not (
+            if upper - lower < parameter('min_gap_atr', _MIN_GAP_ATR) * atr or not (
                 fast > slow and current.close > vwap
                 and _trigger_close_confirms_direction("bullish", current.close, fast)
             ):
@@ -110,7 +112,7 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                     )
         elif before.low > after.high:
             lower, upper = after.high, before.low
-            if upper - lower < _MIN_GAP_ATR * atr or not (
+            if upper - lower < parameter('min_gap_atr', _MIN_GAP_ATR) * atr or not (
                 fast < slow and current.close < vwap
                 and _trigger_close_confirms_direction("bearish", current.close, fast)
             ):

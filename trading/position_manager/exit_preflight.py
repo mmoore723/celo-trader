@@ -1,5 +1,6 @@
 """Retry decided full exits without depending on price or candle availability."""
 import math
+from trading.adverse_candle_exit import is_failsafe_reason
 
 from database.helpers import _to_et_datetime
 from trading.v2_orb_paper_exit import evaluate_v2_orb_paper_exit
@@ -12,7 +13,7 @@ TIMED_ROUTES = frozenset({
 
 def full_exit_reason(trade, state, now):
     pending = state.get('exit_pending_reason')
-    if pending and not pending.startswith('stage1') and pending not in ('trend_profit_giveback','adverse_3x5m_10pct_loss'):
+    if pending and not pending.startswith('stage1') and not is_failsafe_reason(pending) and pending not in ('trend_profit_giveback','adverse_3x5m_10pct_loss'):
         return pending
     from trading.trend_profit_exit import replacement_policy
     replacement = replacement_policy(trade)
@@ -27,7 +28,7 @@ def full_exit_reason(trade, state, now):
         due, reason = evaluate_v2_orb_paper_exit(entry, now, trade['strategy_id'])
         if due:
             return reason
-    return pending if pending in ('trend_profit_giveback','adverse_3x5m_10pct_loss') else None
+    return pending if is_failsafe_reason(pending) or pending in ('trend_profit_giveback','adverse_3x5m_10pct_loss') else None
 
 
 def executable_quote(market, symbol):

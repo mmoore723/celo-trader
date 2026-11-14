@@ -1,3 +1,4 @@
+import { StrategyConfiguration } from './StrategyConfiguration';
 import { useState, type ReactNode } from 'react';
 import type { ClosedTradeEvidence, ReviewedStrategyCatalogEntry } from '../../lib/api';
 import { groupStrategies } from '../../lib/strategyIdentity.js';
@@ -43,6 +44,7 @@ export function TradingOverview({ strategies, evidence, loading, failed, mode, c
                   <div><span className="text-xs text-ink-muted block">Win rate</span>{count ? `${(100 * record!.wins / count).toFixed(1)}%` : 'Not available'}</div>
                   <div><span className="text-xs text-ink-muted block">Profit factor</span>{count && record?.profit_factor != null ? record.profit_factor === 'infinite' ? 'No gross losses' : record.profit_factor.toFixed(2) : 'Not available'}</div>
                 </div>
+                <StrategyConfiguration strategy={strategy.strategy_id} ticker={ticker} version={strategy.version} />
                 <p className="text-xs text-ink-muted">{record?.first_entry_date && record.last_exit_date ? `Recorded period: ${record.first_entry_date} to ${record.last_exit_date}.` : 'No dated results for this version.'} Journal results only. Results stay separate for each ticker and version.</p>
               </div>
             </details>;

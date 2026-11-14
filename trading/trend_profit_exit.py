@@ -60,6 +60,14 @@ def advance(state, *, entry, quantity, sold, quote, now, symbol, gain_pct=25, gi
     return out, (False, 'hold')
 
 
+def valid_thresholds(policy):
+    import math
+    if policy.get('configuration_editor') != 1:
+        return policy.get('gain_pct') == 10 and policy.get('giveback_pct') == 10
+    return all(type(policy.get(k)) in (int,float) and math.isfinite(policy[k]) and 0<policy[k]<=limit
+               for k,limit in [('gain_pct',1000),('giveback_pct',99)])
+
+
 def replacement_policy(trade):
     """Only a validated, entry-frozen paper assignment can replace native exits."""
     import json
@@ -77,7 +85,7 @@ def replacement_policy(trade):
             or policy.get('account') != trade.get('broker_account_id')
             or (policy.get('strategy'), policy.get('ticker')) != (trade.get('strategy_id'), trade.get('ticker'))
             or (trade.get('strategy_id'), trade.get('ticker')) not in PAIRS
-            or policy.get('gain_pct') != 10 or policy.get('giveback_pct') != 10
+            or not valid_thresholds(policy)
             or policy.get('fingerprint') != fingerprint(policy)):
         raise ValueError('Invalid frozen replacement profit policy')
     from trading.adverse_candle_exit import validate
@@ -90,5 +98,6 @@ def policy_label(policy):
     giveback = policy.get('giveback_pct', 25)
     suffix = '; no 30/90-minute timer' if policy.get('replace_native_exit') else '; native exit remains active'
     if policy.get('adverse_candle_failsafe'):
-        suffix += '; before +10%, sell all after 3 adverse completed 5-minute candles AND 10% option loss'
+        spec=policy['adverse_candle_failsafe']
+        suffix += f"; before +{gain}%, sell all after {spec['consecutive_candles']} adverse completed 5-minute candles AND {spec['loss_pct']}% option loss"
     return f'Take half at +{gain}%, then {giveback}% peak-profit giveback'+suffix

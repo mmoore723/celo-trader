@@ -12,6 +12,9 @@ def baseline_spec(settings, sid, ticker, version):
     selection=selected(settings,sid,ticker,version) if sid in SPECS else None
     policy_settings={k:v for k,v in settings.items() if any(word in k.lower() for word in
         ('risk','stop','exit','trailing','profit','loss','session','premium_exit'))}
+    from config.engine_parameters import KEY,scope_key
+    custom=(settings.get(KEY) or {}).get(scope_key(settings,sid,ticker,version))
+    if custom:policy_settings['engine_configuration']=custom
     body=dict(strategy=sid,ticker=ticker,version=version,runtime=REVISION,
               policy_settings_digest=sha256(json.dumps(policy_settings,sort_keys=True,default=str).encode()).hexdigest(),
               selected_test_policy=selection,scope='native exits plus mandatory account and session protection')

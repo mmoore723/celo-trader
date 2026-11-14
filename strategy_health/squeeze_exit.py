@@ -3,7 +3,7 @@ from datetime import timedelta
 import math
 
 from strategies.context_strategy_observers import SQUEEZE_MACD_LONG
-from strategy_health.context_orb_exit import engine_hash
+from strategy_health.context_orb_exit import engine_hash, compatible_state
 from strategy_health.impulse_exit import et
 
 STRATEGY_ID = SQUEEZE_MACD_LONG
@@ -20,7 +20,7 @@ def metadata(strategy_id):
 
 def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now):
     entry,now=et(entry_at),et(now)
-    if meta.get('authored_exit_state') != metadata(STRATEGY_ID)['authored_exit_state']:
+    if not compatible_state(meta.get('authored_exit_state'),metadata(STRATEGY_ID)['authored_exit_state']):
         return entry,'missing_exit_state'
     cap=entry.replace(hour=15,minute=55)
     if entry.minute!=30 or entry.second or entry.microsecond or not entry.replace(hour=10,minute=30)<=entry<cap:

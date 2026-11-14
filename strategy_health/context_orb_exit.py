@@ -34,7 +34,7 @@ def metadata(strategy_id):
 def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strategy_id=STRATEGY_ID):
     entry, now = et(entry_at), et(now)
     expected = metadata(strategy_id)
-    if not expected or meta.get('authored_exit_state') != expected['authored_exit_state']:
+    if not expected or not compatible_state(meta.get('authored_exit_state'),expected['authored_exit_state']):
         return entry, 'missing_exit_state'
     if strategy_id == ATR10_STRATEGY_ID and direction != 'bullish':
         return entry, 'invalid_direction'
@@ -73,3 +73,11 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strateg
             return decision,'eod_1555_cap'
         start=decision
     return None
+
+
+# Entry inputs changed in the settings release; authored exit algorithms did not.
+PREVIOUS_ENTRY_HASH = '9b4c36afa8f65ea5841f520fd9a18238802b77681f80ccc583ed5439f98327ff'
+def compatible_state(actual, expected):
+    if actual==expected:return True
+    if not isinstance(actual,dict) or actual.get('engine_hash')!=PREVIOUS_ENTRY_HASH:return False
+    return {**actual,'engine_hash':expected.get('engine_hash')}==expected

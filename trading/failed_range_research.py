@@ -6,6 +6,7 @@ The original excursion, time, colour, stop and target rules are unchanged.
 """
 from datetime import time, timedelta
 import math
+from config.engine_parameters import parameter
 import pandas as pd
 
 from strategies import spy_failed_range_recovery_v2 as source
@@ -37,26 +38,26 @@ def latest_candidate(bars):
         if clock < time(9,45):
             continue
         if side is None:
-            if clock > source.BREAKOUT_DEADLINE:
+            if clock > parameter('breakout_deadline', source.BREAKOUT_DEADLINE):
                 continue
-            excursion = width*source.MINIMUM_EXCURSION_RANGE
+            excursion = width*parameter('minimum_excursion_range', source.MINIMUM_EXCURSION_RANGE)
             if bar.close >= high+excursion:
                 side, anchor = Side.LONG, bar
             elif bar.close <= low-excursion:
                 side, anchor = Side.SHORT, bar
             continue
-        if clock > source.FAILURE_DEADLINE:
+        if clock > parameter('failure_deadline', source.FAILURE_DEADLINE):
             continue
         failed_up = side is Side.LONG and bar.close <= high and bar.close < bar.open
         failed_down = side is Side.SHORT and bar.close >= low and bar.close > bar.open
         if not (failed_up or failed_down):
             continue
-        vwap, room = pv/volume, width*source.MINIMUM_VWAP_ROOM_RANGE
+        vwap, room = pv/volume, width*parameter('minimum_vwap_room_range', source.MINIMUM_VWAP_ROOM_RANGE)
         if failed_up and bar.close-vwap >= room:
-            stop = max(anchor.high,bar.high)+width*source.STOP_BUFFER_RANGE
+            stop = max(anchor.high,bar.high)+width*parameter('stop_buffer_range', source.STOP_BUFFER_RANGE)
             candidate = (Side.SHORT,bar,stop,vwap,high,low,anchor)
         elif failed_down and vwap-bar.close >= room:
-            stop = min(anchor.low,bar.low)-width*source.STOP_BUFFER_RANGE
+            stop = min(anchor.low,bar.low)-width*parameter('stop_buffer_range', source.STOP_BUFFER_RANGE)
             candidate = (Side.LONG,bar,stop,vwap,high,low,anchor)
         side = anchor = None
     return candidate

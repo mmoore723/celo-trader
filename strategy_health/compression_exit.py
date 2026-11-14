@@ -1,3 +1,4 @@
+from strategy_health.configured_seed import stamp, valid
 """Measure Compression's frozen exits on completed one-minute candles."""
 from dataclasses import asdict
 from datetime import time, timedelta
@@ -30,13 +31,13 @@ def engine_hash():
 
 
 def entry_state(strategy):
-    return {'engine_hash':engine_hash(),
+    return stamp({'engine_hash':engine_hash(),
             'config':{k:v.isoformat() if isinstance(v,time) else v for k,v in asdict(strategy.config).items()},
-            'session_policy':'completed1m_stop_target_or_close_1600_v1'}
+            'session_policy':'completed1m_stop_target_or_close_1600_v1'}, strategy)
 
 
 def first_exit(frame, *, seed, repair_lookup=None, **kwargs):
-    if seed != entry_state(AfternoonCompressionBreakout(research_config())):
+    if not valid(seed, entry_state(AfternoonCompressionBreakout(research_config())), (AfternoonCompressionBreakout(research_config())).config):
         return et(kwargs['entry_at']),'missing_exit_state'
     # No arbitrary 75-bar timer: the original entry supplies only stop/target.
     # 390 exceeds every remaining intraday window; 16:00 is the explicit fallback.
