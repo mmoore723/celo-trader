@@ -34,6 +34,10 @@ def freeze_selection(settings, strategy, ticker, version):
         raise ValueError('Invalid approved premium policy; entry refused')
     if assignment.get('rule') == TREND_RULE and (strategy, ticker) not in PAIRS:
         raise ValueError('Trend profit exit is restricted to approved pairs')
+    if assignment.get('replace_native_exit'):
+        from trading.trend_profit_exit import replacement_policy
+        replacement_policy(dict(paper=True,broker_account_id=account,strategy_id=strategy,ticker=ticker,
+                                strategy_context_json={'premium_exit_policy':assignment}))
     return {'premium_exit_policy':json.loads(json.dumps(assignment))}
 
 
@@ -65,7 +69,8 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
         from trading.trend_profit_exit import advance as trend_advance, sold_quantity
         current=conn.execute('SELECT contracts FROM trades WHERE id=?', (trade['id'],)).fetchone()
         state, decision=trend_advance(previous,entry=float(trade['entry_price']),
-            quantity=int(current[0]),sold=sold_quantity(conn,trade),quote=quote,now=now,symbol=trade['contract_symbol'])
+            quantity=int(current[0]),sold=sold_quantity(conn,trade),quote=quote,now=now,symbol=trade['contract_symbol'],
+            gain_pct=policy.get('gain_pct',25),giveback_pct=policy.get('giveback_pct',25))
     else:
         state=advance(policy['rule'],previous,entry=float(trade['entry_price']),
                       quantity=int(trade['contracts']),quote=quote,received=now,symbol=trade['contract_symbol'])

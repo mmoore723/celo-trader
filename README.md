@@ -500,3 +500,8 @@ quote. An unavailable trigger quote is shown as unavailable, not formatted as
 a number. This prevents a post-fill logging error; exit policies are unchanged.
 Rollback: revert this reporting release through deploy.sh to f37ddbe, restoring
 the matching runtime review. No settings or database migration is required.
+
+### Approved paper profit replacement, November 13
+New entry-frozen assignments for SPY/QQQ Trend Continuation, TSLA Two-Leg, TSLA Opening-Range Pullback, and SPY Afternoon FVG support half at +10% option bid, then 10% peak-profit giveback. Both native timers and legacy strategy profit overlays are replaced only for explicitly assigned new paper entries. Account safety and session liquidation remain; no initial loss stop is added. Existing positions keep their frozen policies. Live assignments are unsupported. Historical replay is incomplete and does not validate profitability.
+
+Rollback: restore the previous future-entry assignment map; open positions must retain this implementation until closed. Do not roll back executable code beneath open replacement-policy positions. After they close, revert this release via deploy.sh to 071329ebff37663a0f524be90b1ce474d1e814e9 if needed. No historical trade records are rewritten.

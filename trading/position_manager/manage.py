@@ -150,6 +150,14 @@ def _evaluate_reviewed_strategy_exit(
             deadline = min(deadline, et(entry_time).replace(hour=15, minute=55, second=0, microsecond=0))
         if et(now_et) >= deadline:
             return True, 'research_session_close'
+    from trading.trend_profit_exit import replacement_policy
+    if replacement_policy(trade):
+        if entry_time is None:
+            return True, 'missing_entry_time_safety'
+        from database.helpers import _to_et_datetime
+        if now_et >= _to_et_datetime(entry_time).replace(hour=15,minute=55,second=0,microsecond=0):
+            return True, 'research_session_close'
+        return False, 'hold'
     from config.research_order_specs import SPECS
     if strategy_id in SPECS:
         from trading.research_order_exit import evaluate_exit
@@ -231,7 +239,9 @@ def _manage_open_position(
                 _close_position(alpaca, trade, float(trade['entry_price']), guard_reason)
                 return
 
-        if (trade.get('strategy_id') in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2', 'V2_VWAP_PULLBACK')
+        from trading.trend_profit_exit import replacement_policy
+        _replacement_profit = replacement_policy(trade)
+        if not _replacement_profit and (trade.get('strategy_id') in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2', 'V2_VWAP_PULLBACK')
                 or str(trade.get('strategy_id', '')).startswith('APPROVED_') and trade.get('strategy_id') in SPECS):
             from trading.research_order_exit import evaluate_exit
             deadline_now = _now_et()
@@ -248,7 +258,7 @@ def _manage_open_position(
                 from trading.position_manager.close import _close_position
                 _close_position(alpaca, trade, None, deadline_reason, pricing_unavailable=True)
                 return
-        if trade.get('strategy_id') == 'V2_TSLA_TWO_LEG_TREND_PULLBACK':
+        if not _replacement_profit and trade.get('strategy_id') == 'V2_TSLA_TWO_LEG_TREND_PULLBACK':
             from database.helpers import _to_et_datetime
             from trading.tsla_giveback_exit import evaluate_tsla_giveback
             deadline_now = _now_et()
@@ -738,7 +748,7 @@ def _manage_open_position(
         if _reviewed_exit is not None:
             _risk_branch = 'reviewed'
             should_exit, reason = _reviewed_exit
-            if not should_exit:
+            if not should_exit and not _replacement_profit:
                 from trading.tsla_giveback_exit import evaluate_tsla_giveback
                 _giveback_exit = evaluate_tsla_giveback(
                     trade, entry_time, now_et, quote,
@@ -970,7 +980,7 @@ def _manage_open_position(
                 "INFO", "trading_logic",
                 f"🟢 Took 50% profit — sold {_sold_qty} contract"
                 f"{'s' if _sold_qty != 1 else ''} at ${fill_price:.2f} "
-                f"(+${partial_pnl:.2f}). " + ("25% peak-profit giveback manages the remainder after the half-sale completes." if reason == 'stage1_trend_profit' else "ATR/swing trailing stop now active on remainder."),
+                f"(+${partial_pnl:.2f}). " + ("The entry-time peak-profit giveback manages the remainder after the half-sale completes." if reason == 'stage1_trend_profit' else "ATR/swing trailing stop now active on remainder."),
             )
 
             try:

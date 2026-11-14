@@ -17,6 +17,10 @@ def reviewed_exit_description(trade: dict, position: dict, now: object) -> str |
     Return None for the existing generic manager. Use the same strategy
     classification and timer catalog as the actual exit dispatcher.
     """
+    from trading.trend_profit_exit import replacement_policy, policy_label
+    policy = replacement_policy(trade)
+    if policy:
+        return policy_label(policy)+'. Account safety and session close remain active. No separate initial loss stop is added.'
     strategy = str(trade.get("strategy_id") or "").strip().upper()
     if not uses_v2_orb_execution_profile(strategy):
         return None

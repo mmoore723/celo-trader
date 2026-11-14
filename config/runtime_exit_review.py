@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'close-fill-reporting-20261113.1'
+REVISION = 'paper-profit-replacement-20261113.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

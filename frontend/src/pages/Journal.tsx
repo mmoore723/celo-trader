@@ -172,7 +172,7 @@ function TradeDetail({ t, onViewChart }: { t: Trade; onViewChart: () => void }) 
             <div>Hold time: <strong style={{ color: "var(--ink)" }}>
               {fmtDuration(t.entry_time, t.exit_time)}
             </strong></div>
-            {t.premium_exit_policy && <div>Profit-taking policy: <strong>{t.premium_exit_policy.label}</strong> ({t.premium_exit_policy.version}). Supplements original exit.</div>}
+            {t.premium_exit_policy && <div>Profit-taking policy: <strong>{t.premium_exit_policy.label}</strong> ({t.premium_exit_policy.version}).</div>}
             {/* Keep the recorded reason available in details. */}
             <div>Exit reason: <strong style={{ color: "var(--ink)", wordBreak: "break-all" }}>
               {exitReason(t.exit_reason)}

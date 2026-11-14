@@ -14,7 +14,15 @@ def full_exit_reason(trade, state, now):
     pending = state.get('exit_pending_reason')
     if pending and not pending.startswith('stage1') and pending != 'trend_profit_giveback':
         return pending
-    if trade.get('strategy_id') in TIMED_ROUTES:
+    from trading.trend_profit_exit import replacement_policy
+    replacement = replacement_policy(trade)
+    if replacement:
+        entry = _to_et_datetime(trade['entry_time']) if trade.get('entry_time') else None
+        if entry is None:
+            return 'missing_entry_time_safety'
+        if now >= entry.replace(hour=15,minute=55,second=0,microsecond=0):
+            return 'research_session_close'
+    if not replacement and trade.get('strategy_id') in TIMED_ROUTES:
         entry = _to_et_datetime(trade['entry_time']) if trade.get('entry_time') else None
         due, reason = evaluate_v2_orb_paper_exit(entry, now, trade['strategy_id'])
         if due:

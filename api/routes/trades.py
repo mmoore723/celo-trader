@@ -25,7 +25,7 @@ def _premium_policy(raw):
         if not isinstance(policy,dict):
             return None
         return {**{k:policy.get(k) for k in ('rule','version','mode','approved_at')},
-                'label':('Take half at +25%, then 25% profit giveback' if policy.get('rule') == 'trend_partial_profit' else RULES.get(policy.get('rule'),'Unknown recorded policy'))}
+                'label':(__import__('trading.trend_profit_exit',fromlist=['policy_label']).policy_label(policy) if policy.get('rule') == 'trend_partial_profit' else RULES.get(policy.get('rule'),'Unknown recorded policy'))}
     except (ValueError,TypeError,AttributeError):
         return None
 
