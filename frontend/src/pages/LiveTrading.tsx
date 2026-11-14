@@ -29,11 +29,6 @@ type Period = "1D" | "5D" | "1M" | "3M";
 // PERIOD_MS was used by KChart for windowing; TradingChart handles it internally
 
 function chartExitDescription(reason?: string | null): string {
-  if (!reason) return "Exit reason not recorded";
-  if (reason.includes("session_close") || reason.includes("session_flatten")) return "Closed before the market session ended";
-  if (reason.startsWith("stage1_")) return "Sold part of the position to take profit";
-  const timer = reason.match(/(?:markout_|selected_test_)(\d+)m/);
-  if (timer) return `Closed after the ${timer[1]}-minute holding limit`;
   return exitReason(reason);
 }
 
@@ -904,7 +899,7 @@ export function LiveTrading() {
                     </div>
                     <div className="text-[10px] leading-relaxed" style={{ color: "var(--ink)" }}>
                       <div><b>Symbol:</b> {opportunity.ticker} &nbsp; <b>Strategy:</b> {strategyName}</div>
-                      {lifecycleText.badge === "CLOSED" && <div><b>Closed P&amp;L:</b> <PnlBadge value={trade.pnl ?? undefined} />{trade.exit_reason && <span> · Exit: {trade.exit_reason === "research_missing_bars" ? "required market candles were missing" : trade.exit_reason}</span>}</div>}
+                      {lifecycleText.badge === "CLOSED" && <div><b>Closed P&amp;L:</b> <PnlBadge value={trade.pnl ?? undefined} />{trade.exit_reason && <span> · Exit: {exitReason(trade.exit_reason)}</span>}</div>}
                       <div><b>Position:</b> {String(optionType).toUpperCase()}{strike != null ? ` $${Number(strike).toFixed(0)}` : ""}</div>
                       {expiry && <div><b>Expiration:</b> {fmtExp(expiry)}</div>}
                       {(quantity != null || estimatedEntry != null) && (

@@ -1,3 +1,4 @@
+import { exitReason } from "../lib/strategyIdentity.js";
 /**
  * Backtest.tsx — Run historical strategy backtests.
  */
@@ -416,7 +417,7 @@ export function Backtest() {
                   return (
                     <div key={reason} className="card px-3 py-1.5 text-xs num">
                       <span style={{ color: "var(--ink)" }}>{count}×</span>{" "}
-                      <span style={{ color: "var(--ink-muted)" }}>{reason}</span>
+                      <span style={{ color: "var(--ink-muted)" }}>{exitReason(reason)}</span>
                       {pnl !== undefined && (
                         <span style={{ color: pnl >= 0 ? posColor : negColor, marginLeft: 4 }}>
                           {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
@@ -468,7 +469,7 @@ export function Backtest() {
                         const qty    = raw.contracts   as number ?? 1;
                         const dir    = (raw.direction  as string ?? raw.option_type as string ?? "").toLowerCase();
                         const strat  = raw.strategy_id as string ?? "—";
-                        const reason = raw.exit_reason as string ?? "—";
+                        const reason = exitReason(raw.exit_reason as string);
                         const date   = (raw.date as string ?? raw.entry_time as string ?? "").slice(0, 10);
                         const isLong = dir === "long" || dir === "call";
                         return (

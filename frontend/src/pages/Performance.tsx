@@ -34,19 +34,13 @@ type ExitGroup = "target" | "timecap" | "signal" | "stop" | "cutoff" | "other";
 
 function categoriseExit(raw: string): { label: string; group: ExitGroup } {
   const key = (raw || "").split(/[\s(]/)[0];
-  if (['premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit_profit_take','trend_profit_giveback'].includes(key)) return {label:exitReason(key),group:'target'};
-  if (key.startsWith("stage1"))               return { label: "Stage 1 Target",   group: "target"  };
-  if (key.startsWith("vwap_breach"))          return { label: "VWAP Breach Exit", group: "target"  };
-  if (key.startsWith("peak_giveback"))        return { label: "Peak Giveback",     group: "stop"    };
-  if (key.startsWith("time_cap"))             return { label: "Time Cap (60 min)", group: "timecap" };
-  if (key.startsWith("session_hard_cutoff"))  return { label: "Session Cutoff",    group: "cutoff"  };
-  if (key === "momentum_dead_exit")           return { label: "Dead Momentum",     group: "signal"  };
-  if (key === "atr_trail_stop" || key === "trail_stop") return { label: "ATR Trail Stop", group: "stop" };
-  if (key.startsWith("structural_stop"))      return { label: "Structural Stop",   group: "stop"    };
-  if (key.startsWith("early_momentum"))       return { label: "Early Stop",        group: "stop"    };
-  if (key.startsWith("vwap_trend"))           return { label: "VWAP Trend Dead",   group: "stop"    };
-  if (key === "manual_journal" || key === "panic") return { label: "Manual/Panic", group: "other"   };
-  return { label: key.replace(/_/g, " "), group: "other" };
+  const label = exitReason(raw);
+  if (/premium_|giveback|stage1_/.test(key)) return {label, group: 'target'};
+  if (/time_cap|markout_|selected_test_|timebox_|failed_range_30m/.test(key)) return {label, group: 'timecap'};
+  if (/session_/.test(key)) return {label, group: 'cutoff'};
+  if (/stop|adverse_|kill_lock/.test(key)) return {label, group: 'stop'};
+  if (/momentum|vwap/.test(key)) return {label, group: 'signal'};
+  return {label, group: 'other'};
 }
 
 const GROUP_COLOR: Record<ExitGroup, string> = {

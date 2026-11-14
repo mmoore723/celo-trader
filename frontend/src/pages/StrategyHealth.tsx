@@ -1,3 +1,4 @@
+import { exitReason } from "../lib/strategyIdentity.js";
 /**
  * StrategyHealth.tsx — built-in strategy audit dashboard.
  *
@@ -369,7 +370,7 @@ function RiskMathTable({ perStrategy }: { perStrategy: Record<string, StrategyRi
           {rows.map(([sid, row]) => {
             const topReasons = Object.entries(row.exit_reasons)
               .sort((a, b) => b[1] - a[1]).slice(0, 2)
-              .map(([r, n]) => `${r} (${n})`).join(", ");
+              .map(([r, n]) => `${exitReason(r)} (${n})`).join(", ");
             return (
               <tr key={sid} style={{ borderBottom: "1px solid var(--border)" }}>
                 <td style={{ padding: "6px 8px", fontWeight: 600 }}>

@@ -1,3 +1,4 @@
+import { exitReason } from "../../lib/strategyIdentity.js";
 /**
  * chartMarkers.ts — builds the marker set (trade entry/exit, swing structure
  * + BOS/CHoCH, bot signal/veto markers) for one candle series. Split out of
@@ -41,7 +42,7 @@ export function buildAndApplyMarkers(
       const buy = option === "CALL" || option === "PUT" ? `BUY ${option}` : "BUY";
       markers.push({ time: toEpochTime(t.entry_time), position: "belowBar", color: P.up, shape: "arrowUp", text: input.compactMarkers ? "Buy" : grade ? `${buy} · prior candle: ${grade.grade}` : buy, size: 2 });
     }
-    if (t.exit_time) markers.push({ time: toEpochTime(t.exit_time), position: "aboveBar", color: P.down, shape: "arrowDown", text: input.compactMarkers ? "Sell" : t.exit_reason ?? "SELL", size: 2 });
+    if (t.exit_time) markers.push({ time: toEpochTime(t.exit_time), position: "aboveBar", color: P.down, shape: "arrowDown", text: input.compactMarkers ? "Sell" : exitReason(t.exit_reason), size: 2 });
   }
 
   if (input.showSwings) {

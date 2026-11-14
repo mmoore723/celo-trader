@@ -587,7 +587,7 @@ function exportCsv(trades: Trade[], mode: string) {
     t.entry_price, t.exit_price ?? "",
     t.mfe_pct ?? "", t.mae_pct ?? "", t.exit_efficiency_pct ?? "",
     t.pnl ?? "", t.status,
-    (t.exit_reason ?? "").replace(/,/g, ";"),   // escape commas in reason
+    exitReason(t.exit_reason).replace(/,/g, ";"),   // escape commas in reason
     t.entry_time ?? "", t.exit_time ?? "",
   ]);
   const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");

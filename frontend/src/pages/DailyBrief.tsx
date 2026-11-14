@@ -1,3 +1,4 @@
+import { exitReason } from "../lib/strategyIdentity.js";
 /**
  * DailyBrief.tsx — Daily session hub with Pre-Market scout and Post-Market recap.
  * Pre-Market tab : rich premarket report from /api/market/premarket — ALL watchlist tickers.
@@ -45,16 +46,8 @@ function gradeBg(g: string): string {
 }
 
 /** Translate raw exit_reason to a plain sentence. */
-function simpleExit(reason?: string, pnl?: number): string {
-  if (!reason) return (pnl ?? 0) > 0 ? "hit the profit goal" : "cut the losses";
-  if (reason.includes("stage1"))                                return "hit the profit target 🎯";
-  if (reason.includes("atr_trail") || reason.includes("stage2")) return "price started pulling back — locked in the gains";
-  if (reason.includes("hard_stop") || reason.includes("stop"))  return "price dropped too much — the safety net kicked in ⛔";
-  if (reason.includes("vwap"))                                   return "momentum died — got out early";
-  if (reason.includes("time_cap"))                               return "hit the time limit ⏱";
-  if (reason.includes("peak_giveback"))                          return "gave back too much of the gain — took what was left";
-  if (reason.includes("momentum_dead"))                          return "trade went nowhere — cut it loose";
-  return "exit signal triggered";
+function simpleExit(reason?: string, _pnl?: number): string {
+  return exitReason(reason);
 }
 
 /** Day grade based on net P&L. */
@@ -722,7 +715,7 @@ export function DailyBrief() {
                             {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
                           </td>
                           <td className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                            {t.exit_reason ?? (t.status === "open" ? "OPEN" : "—")}
+                            {t.status === "open" ? "Open" : exitReason(t.exit_reason)}
                           </td>
                         </tr>
                       );

@@ -45,9 +45,43 @@ export function strategyName(name) {
   return names[name] ?? (name || "Not recorded");
 }
 
+// Event names describe the recorded event. Percentages shared by several
+// policies must come from the frozen policy, never from today's settings.
 export function exitReason(reason) {
-  return ({premium_2pct:'2% Premium Gain',premium_25pct:'25% Premium Gain',
-    adverse_3x5m_10pct_loss:'Protective exit: 3 adverse 5-minute candles and 10% option loss',giveback_25pct:'25% Peak-Profit Giveback',trend_partial_profit:'Take half at +25%, then 25% profit giveback',stage1_trend_profit_profit_take:'Half sold at +25%',trend_profit_giveback:'Remaining contracts: 25% profit giveback'})[reason] ?? reason ?? 'Not recorded';
+  if (!reason) return 'Exit reason not recorded';
+  const key = reason.split(/[\s(]/)[0];
+  const premium = key.match(/^premium_(\d+)pct$/);
+  if (premium) return `${premium[1]}% Premium Gain`;
+  const giveback = key.match(/^giveback_(\d+)pct$/);
+  if (giveback) return `${giveback[1]}% Peak-Profit Giveback`;
+  const timer = key.match(/(?:markout_|selected_test_|time_cap_(?:loser_)?|timebox_|failed_range_)(\d+)m/);
+  if (timer) return `${timer[1]}-Minute Time Limit`;
+  const early = key.match(/^early_momentum_stop_(\d+)pct/);
+  if (early) return `${early[1]}% Early Loss Stop`;
+  const labels = {
+    adverse_3x5m_10pct_loss: '3-Candle / 10% Loss Fail-Safe',
+    trend_partial_profit: 'Half Profit Take + Peak-Profit Giveback',
+    stage1_trend_profit_profit_take: 'Half Profit Take',
+    trend_profit_giveback: 'Remaining Contracts: Peak-Profit Giveback',
+    tsla_giveback_65_35: '$65 Profit Activation / 35% Peak-Profit Giveback',
+    momentum_dead_exit: 'Momentum Exit', atr_trail_stop: 'ATR Trailing Stop',
+    trail_stop: 'Trailing Stop', research_atr_trailing_stop: 'ATR Trailing Stop',
+    structural_stop_bar_high: 'Structural Stop', trend_cont_underlying_stop: 'Structural Stop',
+    trend_cont_underlying_2r_target: '2R Price Target', research_underlying_2r_target: '2R Price Target',
+    vwap_breach_profitable: 'VWAP Breach', vwap_trend_dead: 'VWAP Trend Exit',
+    peak_giveback: 'Peak-Profit Giveback', manual_journal: 'Manually Recorded Exit',
+    panic: 'Panic Close', kill_lock_force_close: 'Account Safety Exit',
+    simplified_chandelier_3atr: '3-ATR Chandelier Stop', simplified_hard_stop: 'Hard Stop',
+    research_late_entry_quote: 'Late Entry Quote', research_missing_bars: 'Missing Candles',
+    trend_cont_missing_bars: 'Missing Candles',
+    auto_reconciled_no_broker_position: 'Reconciled: No Broker Position',
+    reconciliation_never_filled: 'Reconciled: Entry Never Filled',
+    broker_reconciled_replacement_fill: 'Reconciled Replacement Fill',
+  };
+  if (labels[key]) return labels[key];
+  if (/session_(?:close|flatten|hard_cutoff)/.test(key)) return 'Session Close';
+  if (key.startsWith('stage1_')) return 'Partial Profit Take';
+  return key.replace(/^research_/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 // Normalize presentation fields only. IDs, versions, evidence and submitted
