@@ -1,3 +1,4 @@
+import { BrokerKeyGuide } from "../components/BrokerKeyGuide";
 /**
  * Settings.tsx — Bot configuration form + API credentials.
  */
@@ -221,7 +222,7 @@ function AlpacaCredentialsPanel() {
         <h3 className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Alpaca</h3>
       </div>
       <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-        Same key pair for paper and live — only the URL changes when you toggle modes. Saving
+        Paper and live accounts use different keys. This key pair must match your selected account mode. Saving
         here never touches your Tradier keys.
       </p>
       <CredentialField label="Alpaca API Key" name="alpaca_key"
@@ -820,6 +821,7 @@ export function Settings() {
       {/* API Credentials — two independent panels, see the comment above
           AlpacaCredentialsPanel for why they're structurally separate now */}
       <section className="flex flex-col gap-3" aria-label="API credentials">
+      <BrokerKeyGuide/>
       <p className="text-xs font-semibold px-1" style={{ color: "var(--ink-muted)" }}>
         API Credentials — each saves independently
       </p>

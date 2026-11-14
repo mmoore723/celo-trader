@@ -141,6 +141,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         ("terms_version",     "TEXT"),
         ("session_version",   "INTEGER NOT NULL DEFAULT 1"),
         ("access_profile", "TEXT NOT NULL DEFAULT 'legacy'"),
+        ("disabled", "INTEGER NOT NULL DEFAULT 0"),
     ]:
         if col not in existing:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
@@ -216,7 +217,7 @@ def _initialize_member_templates(uid: str) -> None:
 def create_user(username: str, password: str, is_admin: bool = False,
                 user_id: Optional[str] = None, access_profile: str = "legacy") -> dict:
     """Create a new user. Returns the user dict. Raises ValueError on duplicate or weak password."""
-    if access_profile not in {"legacy", "watch", "learning"}:
+    if access_profile not in {"legacy", "watch", "learning", "learning_discord", "trading"}:
         raise ValueError("Unknown access profile")
     validate_password(password)          # raises ValueError if requirements not met
     normalized = normalize_username(username)
@@ -250,7 +251,7 @@ def authenticate(username: str, password: str) -> Optional[dict]:
         "SELECT * FROM users WHERE username = ?", (username.strip().lower(),)
     ).fetchone()
     conn.close()
-    if not row:
+    if not row or row["disabled"]:
         return None
     try:
         if not _verify_pw(password, row["pw_hash"]):
@@ -275,6 +276,7 @@ def get_user(user_id: str) -> Optional[dict]:
         "terms_version": row["terms_version"],  # None if never accepted
         "session_version": int(row["session_version"]),
         "access_profile": row["access_profile"],
+        "disabled": bool(row["disabled"]),
     }
 
 
@@ -294,11 +296,11 @@ def accept_terms(user_id: str, version: str = CURRENT_TERMS_VERSION) -> bool:
 def list_users() -> list[dict]:
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, username, is_admin, created_at, access_profile FROM users ORDER BY created_at"
+        "SELECT id, username, is_admin, created_at, access_profile, disabled FROM users ORDER BY created_at"
     ).fetchall()
     conn.close()
     return [{"user_id": r["id"], "username": r["username"],
-             "is_admin": bool(r["is_admin"]), "created_at": r["created_at"], "access_profile": r["access_profile"]} for r in rows]
+             "is_admin": bool(r["is_admin"]), "created_at": r["created_at"], "access_profile": r["access_profile"], "disabled": bool(r["disabled"])} for r in rows]
 
 
 def reset_password(user_id: str, new_password: str) -> bool:
@@ -330,8 +332,8 @@ def delete_user(user_id: str) -> bool:
 
 def create_invite(created_by: str, hours: int = 48, access_profile: str = "watch") -> str:
     """Create a single-use invite token valid for `hours` hours."""
-    if access_profile not in {"watch", "learning"}:
-        raise ValueError("Invites support Watch-only or Learning access")
+    if access_profile not in {"watch", "learning", "learning_discord", "trading"}:
+        raise ValueError("Choose Watch, Learning, Learning + Discord or Trading access")
     if not 1 <= int(hours) <= 168:
         raise ValueError("Invite validity must be between 1 and 168 hours")
     token      = str(uuid.uuid4())
@@ -418,3 +420,34 @@ def create_user_from_invite(token: str, username: str, password: str) -> dict:
     (_DATA / uid).mkdir(parents=True, exist_ok=True)
     logger.info("User registered: id=%s username=%s", uid, normalized)
     return {"user_id": uid, "username": normalized, "is_admin": False, "session_version": 1, "access_profile": row["access_profile"]}
+
+
+def update_account(actor_id: str, user_id: str, *, username: str, access_profile: str,
+                   is_admin: bool, disabled: bool, revoke_sessions: bool = False) -> dict:
+    """Explicit admin account edit. Never changes broker settings or submits orders."""
+    if access_profile not in {'legacy','watch','learning','learning_discord','trading'}:
+        raise ValueError('Unknown access tier')
+    username = normalize_username(username)
+    conn = get_db()
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        actor = conn.execute('SELECT * FROM users WHERE id=?',(actor_id,)).fetchone()
+        old = conn.execute('SELECT * FROM users WHERE id=?',(user_id,)).fetchone()
+        if not actor or not actor['is_admin'] or actor['disabled']:
+            raise ValueError('An active administrator is required')
+        if not old: raise ValueError('User not found')
+        if (actor_id == user_id or user_id == 'admin') and (disabled or not is_admin):
+            raise ValueError('You cannot disable or remove your own or the primary administrator access')
+        # No implicit access escalation from changing a display label.
+        changes = {k:v for k,v in dict(username=username,access_profile=access_profile,is_admin=int(is_admin),disabled=int(disabled)).items() if old[k]!=v}
+        bump = int(bool(changes) or revoke_sessions)
+        conn.execute('UPDATE users SET username=?,access_profile=?,is_admin=?,disabled=?,session_version=session_version+? WHERE id=?',
+                     (username,access_profile,int(is_admin),int(disabled),bump,user_id))
+        conn.execute('CREATE TABLE IF NOT EXISTS account_audit (at TEXT,actor TEXT,target TEXT,changes TEXT)')
+        import json
+        conn.execute('INSERT INTO account_audit VALUES(?,?,?,?)',(_now(),actor_id,user_id,json.dumps({'fields':changes,'sessions_revoked':bool(bump)})))
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        conn.rollback(); raise ValueError('That username is already in use') from exc
+    finally: conn.close()
+    return get_user(user_id)

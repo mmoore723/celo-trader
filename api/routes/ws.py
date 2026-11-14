@@ -68,7 +68,7 @@ def _authenticate_ws(ws: WebSocket) -> str | None:
         return None
     from auth.users import get_user
     user = get_user(user_id)
-    if not user or int(payload.get("session_version", 0)) != int(user["session_version"]):
+    if not user or user.get("disabled", False) or int(payload.get("session_version", 0)) != int(user["session_version"]):
         return None
     from auth.customer_access import is_customer
     if is_customer(user):
@@ -282,6 +282,9 @@ async def websocket_live(ws: WebSocket) -> None:
 
     try:
         while True:
+            if _authenticate_ws(ws) != user_id:
+                await ws.close(code=4401, reason="Session access changed")
+                break
             # 1. Bot state update
             state = _read_state(user_id)
             # The WebSocket is the dashboard's primary status source. Apply

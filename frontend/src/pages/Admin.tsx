@@ -1,3 +1,5 @@
+import { AdminUserControls } from "../components/AdminUserControls";
+import "./admin.css";
 /**
  * Admin.tsx — User management + Emergency Controls (admin only). Mobile-responsive.
  */
@@ -20,6 +22,8 @@ interface User {
   username:   string;
   is_admin:   boolean;
   created_at: string;
+  access_profile?: string;
+  disabled?: boolean;
 }
 
 export function Admin() {
@@ -31,7 +35,7 @@ export function Admin() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
 
-  const [newUser, setNewUser]   = useState({ username: "", password: "", is_admin: false });
+  const [newUser, setNewUser]   = useState({ username: "", password: "", is_admin: false, access_profile: "watch" });
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -174,7 +178,7 @@ export function Admin() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Create failed");
       setCreateMsg({ ok: true, msg: `User "${newUser.username}" created.` });
-      setNewUser({ username: "", password: "", is_admin: false });
+      setNewUser({ username: "", password: "", is_admin: false, access_profile: "watch" });
       loadUsers();
     } catch (e: any) {
       setCreateMsg({ ok: false, msg: e.message || "Create failed" });
@@ -245,7 +249,7 @@ export function Admin() {
   }
 
   return (
-    <div className="p-4 flex flex-col gap-4" style={{ maxWidth: 1600, width: "100%" }}>
+    <div className="p-4 flex flex-col gap-4" style={{ width: "100%", minWidth: 0 }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div><h2 className="text-lg font-semibold" style={{ color: "var(--ink)" }}>Admin</h2><p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>System status and account access</p></div>
@@ -254,7 +258,7 @@ export function Admin() {
         </button>
       </div>
 
-      <div role="tablist" aria-label="Admin sections" className="flex gap-2">
+      <div role="tablist" aria-label="Admin sections" className="flex flex-wrap gap-2">
         <button id="admin-overview-tab" role="tab" aria-selected={adminTab === "overview"}
           aria-controls="admin-overview-panel" className={`btn ${adminTab === "overview" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setAdminTab("overview")}>Overview</button>
@@ -267,7 +271,7 @@ export function Admin() {
       {adminTab === "launch" && user?.is_admin && <LaunchWaitlistAdmin />}
       {adminTab === "journal" && user?.is_admin && <div id="admin-journal-panel" role="tabpanel" aria-labelledby="admin-journal-tab"><AdminTradeJournal /></div>}
       <div id="admin-overview-panel" role="tabpanel" aria-labelledby="admin-overview-tab" hidden={adminTab !== "overview"}>
-      <div className="flex flex-col gap-4" style={{ maxWidth: 600 }}>
+      <div className="flex flex-col gap-4" style={{ width: "100%", minWidth: 0 }}>
       {user?.is_admin && <AdminActivityLog />}
       <RemovedStrategies />
       <section className="card px-3 py-2" aria-label="Machine learning readiness">
@@ -533,6 +537,7 @@ export function Admin() {
                   </div>
                 </div>
 
+                <AdminUserControls user={u} onSaved={loadUsers}/>
                 {/* Inline reset password — shown below user row on all screen sizes */}
                 {resetState?.uid === u.user_id && (
                   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -592,6 +597,7 @@ export function Admin() {
               onChange={e => setNewUser(n => ({ ...n, password: e.target.value }))}
             />
           </div>
+          <label>Tier <select className="select" value={newUser.access_profile} onChange={e=>setNewUser({...newUser,access_profile:e.target.value})}><option value="watch">Watch</option><option value="learning">Learning</option><option value="learning_discord">Learning + Discord</option><option value="trading">Trading</option></select></label>
           <PasswordChecklist password={newUser.password} style={{ paddingLeft: 2 }} />
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -618,10 +624,10 @@ export function Admin() {
         <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>Create an invite link</summary>
         <div className="mt-3">
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          Create a customer preview account. Watch-only provides charts. Learning adds guided chart practice. Neither can connect a broker or place orders. Existing accounts stay unchanged.
+          Choose the invited user’s access. Watch provides charts; Learning adds lessons. Trading gives account controls but does not enable strategies or live trading. Discord service and paid billing are not connected.
         </p>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <label className="text-sm">Access <select className="select" value={inviteProfile} onChange={e => setInviteProfile(e.target.value)}><option value="watch">Watch-only preview</option><option value="learning">Learning preview</option></select></label>
+          <label className="text-sm">Access <select className="select" value={inviteProfile} onChange={e => setInviteProfile(e.target.value)}><option value="watch">Watch</option><option value="learning">Learning</option><option value="learning_discord">Learning + Discord</option><option value="trading">Trading</option></select></label>
           <label className="text-sm" style={{ color: "var(--ink)" }}>Expires in</label>
           <select
             className="select"

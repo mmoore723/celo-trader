@@ -1,3 +1,5 @@
+import { useAuth } from "../../contexts/AuthContext";
+import { limitedAccess } from "../../lib/access";
 /**
  * Topbar — brand + live bot status strip + theme toggle.
  */
@@ -32,7 +34,9 @@ function fmt(n: number, prefix = "$") {
   return `${prefix}${abs}`;
 }
 
-export function Topbar() {
+export function Topbar(){const {user}=useAuth();return limitedAccess(user)?<LimitedTopbar profile={user?.access_profile}/>:<TradingTopbar/>;}
+function LimitedTopbar({profile}:{profile?:string}){const {toggleMobileSidebar}=useUIStore();return <header className="app-topbar flex flex-wrap items-center px-3 py-2 gap-3 border-b" style={{background:"var(--surface)",borderColor:"var(--border)"}}><button className="hamburger-btn btn btn-ghost btn-sm" aria-label="Menu" onClick={toggleMobileSidebar}><Menu size={18}/></button><span className="font-bold" style={{color:"var(--accent)"}}>CELO</span><span className="font-semibold tracking-widest">TRADER</span><span className="text-xs" style={{color:"var(--ink-muted)"}}>{profile==="watch"?"Watch":profile==="learning_discord"?"Learning + Discord":"Learning"}</span><span className="ml-auto text-xs">Viewing only · No order access</span><ThemeToggle/></header>;}
+function TradingTopbar() {
   const halt = useTradingHalt();
   const { status, connected } = useBotStore();
   const { toggleMobileSidebar } = useUIStore();

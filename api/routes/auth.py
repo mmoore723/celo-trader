@@ -71,7 +71,7 @@ def _current_session_user(token: str) -> tuple[dict, dict]:
     payload = decode_session(token)
     from auth.users import get_user
     user = get_user(str(payload.get("sub") or ""))
-    if not user or int(payload.get("session_version", 0)) != int(user["session_version"]):
+    if not user or user.get("disabled", False) or int(payload.get("session_version", 0)) != int(user["session_version"]):
         raise JWTError("revoked session")
     return payload, user
 

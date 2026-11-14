@@ -1,3 +1,4 @@
+import { visibleTab } from "../../lib/access";
 /**
  * Sidebar — navigation + bot start/stop controls.
  */
@@ -30,7 +31,7 @@ const NAV: NavItem[] = [
   { label: "Admin",         to: "/admin",       icon: <ShieldCheck size={16} />, adminOnly: true },
 ];
 
-export function Sidebar() {
+export function Sidebar({limited=false}:{limited?:boolean}) {
   const { status, connected } = useBotStore();
   const { mobileSidebarOpen, closeMobileSidebar } = useUIStore();
   const { user, logout } = useAuth();
@@ -42,7 +43,7 @@ export function Sidebar() {
   const [busy, setBusy] = useState(false);
   const [controlMessage, setControlMessage] = useState("");
   const entryPermission = useQuery({queryKey:["entry-permission",user?.user_id],
-    queryFn:api.bot.entryPermission,refetchInterval:10_000,retry:false});
+    enabled:!limited, queryFn:api.bot.entryPermission,refetchInterval:10_000,retry:false});
   async function togglePaperEntries() {
     const permission = entryPermission.data;
     if (!permission || !permission.paper) return;
@@ -59,7 +60,8 @@ export function Sidebar() {
     localStorage.getItem("celo-opportunities-seen-at") ?? ""
   );
   const { data: opportunityData } = useQuery({
-    queryKey: ["sidebar-trade-setups"],
+    queryKey: ["sidebar-trade-setups",user?.user_id],
+    enabled: !limited,
     queryFn: () => api.signals.opportunities({ feed: "operational", limit: 50 }),
     refetchInterval: 15_000,
     retry: false,
@@ -108,9 +110,10 @@ export function Sidebar() {
     >
       {/* Nav links */}
       <nav className="flex-1 py-3 px-2 flex flex-col gap-0.5">
-        {NAV.filter(item => !item.adminOnly || user?.is_admin).map((item) => (
+        {NAV.filter(item => visibleTab(item.to,user)).map((item) => (
           <NavLink
             key={item.to}
+            data-tour={item.to}
             to={item.to}
             end={item.to === "/"}
             onClick={() => {
@@ -132,7 +135,7 @@ export function Sidebar() {
           >
             {item.icon}
             {item.label}
-            {item.to === "/journal" && newSetupCount > 0 && (
+            {!limited && item.to === "/journal" && newSetupCount > 0 && (
               <span className="ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold"
                     style={{ background: "var(--accent)", color: "white" }}>
                 {newSetupCount > 99 ? "99+" : `${newSetupCount} NEW`}
@@ -171,7 +174,7 @@ export function Sidebar() {
       </div>
 
       {/* Bot controls */}
-      <div
+      {!limited && <div
         className="px-3 py-4 flex flex-col gap-2 border-t"
         style={{ borderColor: "var(--border)" }}
       >
@@ -220,7 +223,8 @@ export function Sidebar() {
           <Skull size={14} />
           Panic Close
         </button>
-      </div>
+      </div>}
+      {limited&&<p className="p-3 text-xs" style={{color:"var(--ink-muted)"}}>Your tier controls which tabs are available. This account cannot place orders.</p>}
     </aside>
     </>
   );

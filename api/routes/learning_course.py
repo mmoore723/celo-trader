@@ -59,7 +59,7 @@ def answer(body: Submission, request: Request):
     if len(body.choices)!=len(questions) or any(c<0 or c>=len(q['choices']) for c,q in zip(body.choices,questions)):
         raise HTTPException(422,'Answer each question using its choices.')
     with closing(connect()) as conn:
-        if body.lesson=='final' and not all(progress_for(conn,request.state.user_id).get(l['id'],{}).get('passed') for l in LESSONS):
+        if body.lesson=='final' and not all(progress_for(conn,request.state.user_id).get(l['id'],{}).get('passed') for l in LESSONS[:20]):
             raise HTTPException(409,'Complete the lesson checks before the final knowledge check.')
         results=[dict(correct=c==q['correct'],explanation=q['explanation']) for c,q in zip(body.choices,questions)]
         score=round(100*sum(r['correct'] for r in results)/len(results))

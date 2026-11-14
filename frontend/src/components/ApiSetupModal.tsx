@@ -5,6 +5,7 @@
  * 3 steps: Alpaca keys → Tradier key → Done.
  * User can skip any step and come back via Settings → API Credentials.
  */
+import { BrokerKeyGuide } from "./BrokerKeyGuide";
 import { useState } from "react";
 import { Eye, EyeOff, X, CheckCircle2, ChevronRight } from "lucide-react";
 import { buildCredentialStepPayload } from "../lib/credentialPayload";
@@ -110,7 +111,7 @@ export function ApiSetupModal({ onClose }: Props) {
           background: "var(--surface)",
           border: "1px solid var(--border)",
           borderRadius: "12px",
-          overflow: "hidden",
+          overflowY: "auto", maxHeight: "90dvh",
         }}
       >
         {/* Header */}
@@ -152,6 +153,7 @@ export function ApiSetupModal({ onClose }: Props) {
         {/* Step body */}
         <div style={{ padding: "1.25rem" }}>
 
+          {step === 0 && <BrokerKeyGuide/>}
           {step === 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div style={{
@@ -162,7 +164,7 @@ export function ApiSetupModal({ onClose }: Props) {
                 display: "flex", gap: 8, alignItems: "flex-start",
               }}>
                 <span style={{ fontSize: 13, color: "var(--accent)", lineHeight: 1.5 }}>
-                  ℹ️ Alpaca uses the same key pair for paper and live trading. Switch modes in Settings.
+                  ℹ️ Alpaca paper and live accounts use different keys. Use keys for the account mode selected in Settings.
                 </span>
               </div>
               <Field
@@ -205,9 +207,9 @@ export function ApiSetupModal({ onClose }: Props) {
           {step === 2 && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0 0.25rem" }}>
               <CheckCircle2 size={40} style={{ color: "var(--accent)" }} />
-              <p style={{ fontSize: 15, fontWeight: 500, color: "var(--ink)", margin: 0 }}>You're all set</p>
+              <p style={{ fontSize: 15, fontWeight: 500, color: "var(--ink)", margin: 0 }}>Setup reviewed</p>
               <p style={{ fontSize: 13, color: "var(--ink-muted)", margin: 0, textAlign: "center" }}>
-                Your credentials are saved. You can update them any time in Settings → API Credentials.
+                Any steps you saved have been submitted. Skipped steps remain unchanged. Check connection status in Settings before allowing entries.
               </p>
             </div>
           )}
@@ -243,7 +245,7 @@ export function ApiSetupModal({ onClose }: Props) {
             </button>
           ) : (
             <button className="btn btn-primary" style={{ fontSize: 13 }} onClick={onClose}>
-              Start trading
+              Return to workspace
             </button>
           )}
         </div>

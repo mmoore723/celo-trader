@@ -29,17 +29,15 @@ def _require_admin(request: Request) -> None:
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
-from typing import Literal
-
 class CreateUserRequest(BaseModel):
     username: str
     password: str
     is_admin: bool = False
-    access_profile: Literal["watch", "learning"] = "watch"
+    access_profile: Literal["watch", "learning", "learning_discord", "trading"] = "watch"
 
 
 class InviteRequest(BaseModel):
-    access_profile: Literal["watch", "learning"] = "watch"
+    access_profile: Literal["watch", "learning", "learning_discord", "trading"] = "watch"
     hours: int = Field(default=48, ge=1, le=168)   # link validity window
 
 
@@ -263,3 +261,98 @@ async def create_invite(request: Request, body: InviteRequest):
     link     = f"{base_url}/#/register?token={token}"
     logger.info("Invite created by %s (valid %s hours)", request.state.username, body.hours)
     return {"ok": True, "token": token, "link": link, "expires_hours": body.hours, "access_profile": body.access_profile}
+
+class AccountUpdate(BaseModel):
+    username: str
+    access_profile: Literal['legacy','watch','learning','learning_discord','trading']
+    is_admin: bool
+    disabled: bool = False
+    revoke_sessions: bool = False
+
+
+@router.patch('/users/{user_id}')
+def update_user_account(user_id: str, body: AccountUpdate, request: Request):
+    _require_admin(request)
+    from auth.users import update_account
+    try:
+        return {'user':update_account(request.state.user_id,user_id,**body.model_dump())}
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+
+
+from contextlib import contextmanager
+
+@contextmanager
+def _target_user(user_id: str):
+    from auth.users import get_user
+    from auth.context import _user_id_var, _username_var, _is_admin_var
+    user = get_user(user_id)
+    if not user: raise HTTPException(404,'User not found')
+    tokens = [(_user_id_var,_user_id_var.set(user_id)),(_username_var,_username_var.set(user['username'])),(_is_admin_var,_is_admin_var.set(True))]
+    try: yield user
+    finally:
+        for var,token in reversed(tokens):var.reset(token)
+
+
+def _settings_revision(value):
+    import hashlib,json
+    return hashlib.sha256(json.dumps(value,sort_keys=True,default=str).encode()).hexdigest()
+
+
+@router.get('/users/{user_id}/configuration')
+def user_configuration(user_id: str, request: Request):
+    _require_admin(request)
+    from api.routes.settings import get_settings_endpoint, get_credentials
+    from api.models import Settings
+    with _target_user(user_id):
+        settings = get_settings_endpoint().model_dump()
+        return {'settings':settings,'revision':_settings_revision(settings),'schema':Settings.model_json_schema(),
+                'credentials':get_credentials()}
+
+
+class UserSettingsUpdate(BaseModel):
+    revision: str
+    changes: dict
+    confirm_user_id: str
+
+
+@router.post('/users/{user_id}/configuration')
+def update_user_configuration(user_id: str, body: UserSettingsUpdate, request: Request):
+    _require_admin(request)
+    if body.confirm_user_id != user_id: raise HTTPException(422,'Confirm the selected user before saving')
+    from api.models import Settings
+    from api.routes.settings import get_settings_endpoint, save_settings_endpoint
+    from config.atomic_files import _lock_for
+    from config import get_user_data_dir
+    from types import SimpleNamespace
+    from pydantic import ValidationError
+    with _target_user(user_id):
+        with _lock_for(get_user_data_dir() / 'settings.json'):
+            current=get_settings_endpoint().model_dump()
+            if body.revision!=_settings_revision(current):raise HTTPException(409,'Settings changed. Reload before saving.')
+            if not body.changes:return {'settings':current,'revision':_settings_revision(current)}
+            if set(body.changes)-set(Settings.model_fields):raise HTTPException(422,'Unknown setting')
+            try:payload=Settings.model_validate(current|body.changes)
+            except ValidationError as exc:raise HTTPException(422,'One or more settings are outside the allowed values') from exc
+            result=save_settings_endpoint(payload,SimpleNamespace(state=SimpleNamespace(user_id=user_id,is_admin=True)))
+            logger.info('admin_user_settings actor=%s target=%s fields=%s',request.state.user_id,user_id,','.join(sorted(body.changes)))
+            return {'settings':result.model_dump(),'revision':_settings_revision(result.model_dump())}
+
+from api.routes.settings import CredentialsPayload
+
+class UserCredentialsUpdate(BaseModel):
+    confirm_user_id: str
+    credentials: CredentialsPayload
+
+
+@router.post('/users/{user_id}/credentials')
+def update_user_credentials(user_id: str, body: UserCredentialsUpdate, request: Request):
+    _require_admin(request)
+    if body.confirm_user_id != user_id:
+        raise HTTPException(422,'Confirm the selected user before saving')
+    from api.routes.settings import save_credentials
+    from types import SimpleNamespace
+    with _target_user(user_id):
+        result = save_credentials(body.credentials,SimpleNamespace(state=SimpleNamespace(user_id=user_id,is_admin=True)))
+    logger.info('admin_user_credentials actor=%s target=%s fields=%s',request.state.user_id,user_id,','.join(sorted(body.credentials.model_fields_set)))
+    return result

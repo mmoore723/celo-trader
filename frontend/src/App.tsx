@@ -1,3 +1,4 @@
+import { limitedAccess, learningAccess } from "./lib/access";
 /**
  * App.tsx — Root component. Wires router, auth, WebSocket, React Query, layout shell.
  *
@@ -20,6 +21,8 @@ import { Landing } from "./pages/Landing";
 import { Login }           from "./pages/Login";
 import { Terms }           from "./pages/Terms";
 import { Maintenance }     from "./pages/Maintenance";
+import { WelcomeGuide } from "./components/WelcomeGuide";
+import { guideSeen } from "./lib/guide";
 import { ApiSetupModal }   from "./components/ApiSetupModal";
 import { ErrorBoundary }   from "./components/ErrorBoundary";
 import { BrokerAlertBanner } from "./components/BrokerAlertBanner";
@@ -61,14 +64,17 @@ const qc = new QueryClient({
 // ── Inner shell — only rendered when authenticated ─────────────────────────────
 function AppShell() {
   // Connect WebSocket on mount; feeds Zustand bot store
-  useWebSocket();
+  const { user } = useAuth();
+  const limited = limitedAccess(user);
+  useWebSocket(!limited);
 
   // Show API setup modal for new users who have no credentials yet.
   // Use localStorage so it only ever appears once per user, even if
   // credentials aren't migrated yet from the old config format.
-  const { user } = useAuth();
   const [showSetup, setShowSetup] = useState(false);
+  const [showTour, setShowTour] = useState(()=>limited&&!guideSeen(user?.user_id??"preview"));
   useEffect(() => {
+    if(limited) return;
     const dismissedKey = `celo_setup_done_${user?.user_id ?? "admin"}`;
     if (localStorage.getItem(dismissedKey)) return; // already seen
     fetch("/api/settings/credentials", { credentials: "include" })
@@ -78,10 +84,10 @@ function AppShell() {
       })
       .then((d) => {
         const empty = d.has_alpaca === false && d.has_tradier === false && d.has_tradier_market === false;
-        if (empty) setShowSetup(true);
+        if (empty) { setShowSetup(true); if (!guideSeen(user?.user_id ?? "admin")) setShowTour(true); }
       })
       .catch(() => {});
-  }, [user?.user_id]);
+  }, [user?.user_id, limited]);
 
   function closeSetup() {
     const dismissedKey = `celo_setup_done_${user?.user_id ?? "admin"}`;
@@ -91,18 +97,20 @@ function AppShell() {
 
   return (
     <div className="app-shell">
-      {showSetup && <ApiSetupModal onClose={closeSetup} />}
-      {!showSetup && user?.is_admin && <StrategyRecommendationModal />}
+      {showTour && <WelcomeGuide userId={user?.user_id ?? "admin"} onClose={()=>setShowTour(false)} customer={limited} learning={learningAccess(user?.access_profile)}/>}
+      {showSetup && !showTour && <ApiSetupModal onClose={closeSetup} />}
+      {!showSetup && !showTour && user?.is_admin && <StrategyRecommendationModal />}
       <Topbar />
-      <Sidebar />
+      <Sidebar limited={limited} />
       <main className="app-main" style={{ paddingBottom: 36 }}>
-        <div className="app-alerts">
+        <button className="btn btn-ghost tour-launch" onClick={()=>setShowTour(true)}>Take a tour</button>
+        {!limited&&<div className="app-alerts">
           <BrokerAlertBanner />
           <TradingHaltBanner />
-        </div>
+        </div>}
         <ErrorBoundary>
         <Suspense fallback={<PageLoader label="Loading workspace" />}>
-        <Routes>
+        {limited ? <CustomerWorkspace/> : <Routes>
           <Route path="/"            element={<DailyBrief />} />
           <Route path="/trading"     element={<LiveTrading />} />
           <Route path="/performance" element={<Performance />} />
@@ -116,11 +124,11 @@ function AppShell() {
           <Route path="/admin"       element={<AdminGuard />} />
           {/* Read-only terms view for already-accepted users */}
           <Route path="/terms"       element={<Terms viewOnly />} />
-        </Routes>
+        </Routes>}
         </Suspense>
         </ErrorBoundary>
       </main>
-      <TickerBar />
+      {!limited&&<TickerBar />}
     </div>
   );
 }
@@ -145,7 +153,7 @@ function AuthGate() {
   // Admins always see the full app so they can clear the maintenance flag.
   const [maint, setMaint] = useState<{ active: boolean; message: string } | null>(null);
   useEffect(() => {
-    if (!isAuthenticated || user?.is_admin || (user?.access_profile && user.access_profile !== "legacy")) return;
+    if (!isAuthenticated || user?.is_admin || (user?.access_profile && !['legacy','trading'].includes(user.access_profile))) return;
     function check() {
       fetch("/api/bot/status", { credentials: "include" })
         .then(r => (r.ok ? r.json() : null))
@@ -180,9 +188,6 @@ function AuthGate() {
   }
 
   // Authenticated + ToS accepted → full app
-  if (!user?.is_admin && user?.access_profile && user.access_profile !== "legacy") {
-    return <ErrorBoundary><Suspense fallback={<PageLoader label="Opening your workspace" />}><CustomerWorkspace /></Suspense></ErrorBoundary>;
-  }
   return <AppShell />;
 }
 

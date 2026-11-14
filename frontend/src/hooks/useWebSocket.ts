@@ -9,7 +9,7 @@ const WS_URL =
   import.meta.env.VITE_WS_URL ??
   `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/live`;
 
-export function useWebSocket() {
+export function useWebSocket(enabled = true) {
   const wsRef      = useRef<WebSocket | null>(null);
   // Track whether this is the initial connect vs a reconnect after a drop.
   // On reconnect we clear the stale log list before the server sends history
@@ -18,6 +18,8 @@ export function useWebSocket() {
   const { setStatus, addLog, clearLogs, setConnected } = useBotStore();
 
   useEffect(() => {
+    if (!enabled) return;
+    let disposed = false;
     let retryTimer: ReturnType<typeof setTimeout>;
 
     function connect() {
@@ -46,7 +48,7 @@ export function useWebSocket() {
 
       ws.onclose = () => {
         setConnected(false);
-        retryTimer = setTimeout(connect, 3000); // reconnect after 3s
+        if (!disposed) retryTimer = setTimeout(connect, 3000); // reconnect after 3s
       };
 
       ws.onerror = () => {
@@ -57,8 +59,9 @@ export function useWebSocket() {
     connect();
 
     return () => {
+      disposed = true;
       clearTimeout(retryTimer);
       wsRef.current?.close();
     };
-  }, [setStatus, addLog, clearLogs, setConnected]);
+  }, [enabled, setStatus, addLog, clearLogs, setConnected]);
 }

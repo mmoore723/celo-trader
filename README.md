@@ -596,3 +596,29 @@ Settings. Trading, account permissions, risk and execution logic are unchanged.
 Rollback: revert this UI/course release through deploy.sh while retaining both
 learning databases and the customer-access guards from b8392a1. Do not roll back
 to a release that exposes trading controls to customer preview accounts.
+
+
+### Customer workspace and Learning Portal (November 14, 2026)
+
+All tiers use the CELO header and sidebar. Watch sees charts; Learning and
+Learning + Discord also see the Learning Portal. Trading retains the existing
+non-admin workspace. Server permissions remain authoritative. Assigning a tier
+does not start a bot or change broker/risk settings. Discord delivery is not yet connected.
+
+Admin user controls support tier/role changes, disabling sign-in, session
+revocation, password reset, selected-account settings and broker-key replacement.
+Changes are explicitly reviewed, account-scoped and checked through the existing
+settings/credential guards. Existing secret keys are never revealed. Disabling
+sign-in does not stop an existing bot or close positions.
+
+The Learning Portal includes 50 lessons, a course catalog, three-step lessons,
+seven illustrative candle challenges, and an interactive long-option expiration
+lab. Coach Celo supports explanations. Original progress remains intact. The
+foundation review still follows the original 20 lessons. Lab prices are invented,
+exclude fees, and are not market signals or executable orders.
+
+Release rollback: revert the application release through deploy.sh if sign-in,
+account isolation or core navigation fails. Preserve learning databases and the
+additive user-disabled column. If disabled accounts exist, retain the disabled
+checks in auth, HTTP middleware and WebSocket auth during rollback. Never restore
+a database backup over new user progress or change account trading settings.

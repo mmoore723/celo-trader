@@ -539,8 +539,8 @@ def get_credentials() -> dict:
 def save_credentials(payload: CredentialsPayload, request: Request) -> dict:
     """
     Save Alpaca + Tradier API keys for the current user (encrypted at rest).
-    Note: Alpaca uses the SAME key pair for both paper and live trading.
-    The paper vs live routing is controlled by the Paper/Live toggle, not the keys.
+    Alpaca paper and live accounts use different keys. The stored key pair
+    must match the selected account mode.
 
     FIX 2026-07-31 — real incident: GET /credentials returns MASKED display
     values (e.g. "abcd…wxyz"), which the Settings.tsx form loads as its

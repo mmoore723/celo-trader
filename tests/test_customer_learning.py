@@ -125,7 +125,7 @@ class LearningCourseTests(CustomerLearningTests):
         self.course_path.stop();super().tearDown()
     def test_course_has_complete_content_without_answer_keys(self):
         r=self.request(self.user(),'GET','/api/learning/course');self.assertEqual(200,r.status_code)
-        payload=r.json();self.assertEqual(20,len(payload['lessons']));self.assertEqual(10,len({l['unit'] for l in payload['lessons']}))
+        payload=r.json();self.assertEqual(50,len(payload['lessons']));self.assertEqual(18,len({l['unit'] for l in payload['lessons']}))
         self.assertEqual(10,len(payload['final']['questions']))
         for l in payload['lessons']:
             for k in ['teach','example','watch']:self.assertTrue(l[k])

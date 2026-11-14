@@ -45,7 +45,7 @@ async def require_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid session")
     from auth.users import get_user
     user = get_user(str(user_id))
-    if not user or int(payload.get("session_version", 0)) != int(user["session_version"]):
+    if not user or user.get("disabled", False) or int(payload.get("session_version", 0)) != int(user["session_version"]):
         raise HTTPException(
             status_code=401,
             detail="Session is no longer valid — please sign in again",
