@@ -25,7 +25,7 @@ const NAV: NavItem[] = [
   { label: "Live Trading",  to: "/trading",     icon: <Activity size={16} /> },
   { label: "Performance",   to: "/performance", icon: <BarChart2 size={16} /> },
   { label: "Trade Journal", to: "/journal",     icon: <BookOpen size={16} /> },
-  { label: "Learning Hub", to: "/playbooks",   icon: <Newspaper size={16} /> },
+  { label: "Learning Portal", to: "/playbooks",   icon: <Newspaper size={16} /> },
   { label: "Settings",      to: "/settings",    icon: <Settings size={16} /> },
   { label: "Admin",         to: "/admin",       icon: <ShieldCheck size={16} />, adminOnly: true },
 ];

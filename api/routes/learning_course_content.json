@@ -1,0 +1,390 @@
+[
+  {
+    "id": "lesson-1",
+    "unit": "Start here",
+    "title": "A share and an option are different",
+    "teach": "A share is a small piece of ownership in a company. An option is a contract with a deadline. Buying an option does not mean you already own the shares. An ETF is a basket of investments traded like a stock.",
+    "example": "Buying one share for $40 costs $40. Buying a standard stock option quoted at $2 normally costs $200 because it represents 100 shares. These are different purchases.",
+    "watch": "An option buyer can lose the entire amount paid. Practice with pretend money first.",
+    "questions": [
+      {
+        "prompt": "Which purchase normally costs $200?",
+        "choices": [
+          "One share quoted at $2",
+          "One standard option quoted at $2"
+        ],
+        "correct": 1,
+        "explanation": "Buying one share for $40 costs $40. Buying a standard stock option quoted at $2 normally costs $200 because it represents 100 shares. These are different purchases. An option buyer can lose the entire amount paid. Practice with pretend money first."
+      }
+    ]
+  },
+  {
+    "id": "lesson-2",
+    "unit": "Start here",
+    "title": "Build a practice routine",
+    "teach": "Learning is a skill, not a race to make money. Start with a question, write a prediction, then check what happened. Paper trading uses pretend money. Real orders can behave differently.",
+    "example": "Before a practice trade, write: I think price may rise because it held a previous low. I will leave if my written exit condition happens. Afterward, compare the result to the plan.",
+    "watch": "A winning practice trade can still be a poorly planned trade. Judge the process as well as the result.",
+    "questions": [
+      {
+        "prompt": "Which is the better learning habit?",
+        "choices": [
+          "Record the reason and review the outcome",
+          "Erase losing practice trades"
+        ],
+        "correct": 0,
+        "explanation": "Before a practice trade, write: I think price may rise because it held a previous low. I will leave if my written exit condition happens. Afterward, compare the result to the plan. A winning practice trade can still be a poorly planned trade. Judge the process as well as the result."
+      }
+    ]
+  },
+  {
+    "id": "lesson-3",
+    "unit": "Contracts",
+    "title": "Calls: the right to buy",
+    "teach": "A call gives its buyer the right to buy shares at a stated price, called the strike, by the contract deadline. The expiration is that deadline. Buying a call often expresses a rising-price view, but a rising stock does not guarantee a profitable call.",
+    "example": "A $50 call lets its holder buy at $50 under the contract terms. If the stock is $54 at expiration, the call has $4 per share of intrinsic value. If you paid $5, that is still a loss before costs.",
+    "watch": "The strike is not the price you pay for the option. The premium is.",
+    "questions": [
+      {
+        "prompt": "What is the strike?",
+        "choices": [
+          "The option purchase price",
+          "The contract’s stated share purchase price"
+        ],
+        "correct": 1,
+        "explanation": "A $50 call lets its holder buy at $50 under the contract terms. If the stock is $54 at expiration, the call has $4 per share of intrinsic value. If you paid $5, that is still a loss before costs. The strike is not the price you pay for the option. The premium is."
+      }
+    ]
+  },
+  {
+    "id": "lesson-4",
+    "unit": "Contracts",
+    "title": "Puts: the right to sell",
+    "teach": "A put gives its buyer the right to sell shares at the strike by expiration. A purchased put often expresses a falling-price view. Buying a put is different from selling shares short.",
+    "example": "A $50 put has $4 per share of intrinsic value when the stock is $46 at expiration. If its premium was $2, its expiration value exceeds that premium by $2 per share before costs.",
+    "watch": "Selling a put to open a position creates an obligation. That is not the same as buying a put.",
+    "questions": [
+      {
+        "prompt": "Which contract gives its buyer the right to sell at the strike?",
+        "choices": [
+          "A put",
+          "A call"
+        ],
+        "correct": 0,
+        "explanation": "A $50 put has $4 per share of intrinsic value when the stock is $46 at expiration. If its premium was $2, its expiration value exceeds that premium by $2 per share before costs. Selling a put to open a position creates an obligation. That is not the same as buying a put."
+      }
+    ]
+  },
+  {
+    "id": "lesson-5",
+    "unit": "Option prices",
+    "title": "Read the contract before the chart",
+    "teach": "Check the ticker, call or put, strike, expiration, premium and multiplier. A standard equity option usually represents 100 shares. Adjusted contracts can differ, so check rather than assume.",
+    "example": "Two standard contracts at $1.80 cost 2 × $1.80 × 100 = $360 before fees. Buying twice as many contracts doubles the money exposed to the same price move.",
+    "watch": "A cheap-looking quote can still represent a large total cost.",
+    "questions": [
+      {
+        "prompt": "Three standard contracts at $2 cost how much before fees?",
+        "choices": [
+          "$6",
+          "$600",
+          "$200"
+        ],
+        "correct": 1,
+        "explanation": "Two standard contracts at $1.80 cost 2 × $1.80 × 100 = $360 before fees. Buying twice as many contracts doubles the money exposed to the same price move. A cheap-looking quote can still represent a large total cost."
+      }
+    ]
+  },
+  {
+    "id": "lesson-6",
+    "unit": "Option prices",
+    "title": "Breakeven and profit",
+    "teach": "At expiration, a purchased call’s breakeven is strike plus premium; a purchased put’s is strike minus premium, before fees. Before expiration you can sell the option itself. Its sale price determines the result then.",
+    "example": "Buy one standard call at $2 and sell at $2.40: ($2.40 − $2) × 100 = $40 before fees. A $50 strike call bought at $2 breaks even at a $52 stock price at expiration before fees.",
+    "watch": "Expiration breakeven is not a requirement for selling an option at a profit earlier.",
+    "questions": [
+      {
+        "prompt": "Buy at $3 and sell at $2.50. One standard contract loses what before fees?",
+        "choices": [
+          "$0.50",
+          "$50",
+          "$300"
+        ],
+        "correct": 1,
+        "explanation": "Buy one standard call at $2 and sell at $2.40: ($2.40 − $2) × 100 = $40 before fees. A $50 strike call bought at $2 breaks even at a $52 stock price at expiration before fees. Expiration breakeven is not a requirement for selling an option at a profit earlier."
+      }
+    ]
+  },
+  {
+    "id": "lesson-7",
+    "unit": "Read the chart",
+    "title": "Candles tell a finished price story",
+    "teach": "Each candle has an open, high, low and close. The body connects open and close. Wicks reach the high and low. A completed candle cannot tell you the next candle’s price. Use the Chart workshop to reveal examples one candle at a time.",
+    "example": "Open $100, high $105, low $99, close $102: price finished $2 above its open, but did not stay at $105.",
+    "watch": "A candle still forming can change shape and color. Do not describe it as a confirmed close.",
+    "questions": [
+      {
+        "prompt": "Which value says where a completed candle finished?",
+        "choices": [
+          "High",
+          "Close",
+          "Open"
+        ],
+        "correct": 1,
+        "explanation": "Open $100, high $105, low $99, close $102: price finished $2 above its open, but did not stay at $105. A candle still forming can change shape and color. Do not describe it as a confirmed close."
+      }
+    ]
+  },
+  {
+    "id": "lesson-8",
+    "unit": "Read the chart",
+    "title": "Timeframes and missing context",
+    "teach": "A one-minute candle summarizes one minute. A one-hour candle summarizes an hour. They can tell different parts of the same story. A short bounce can happen inside a larger decline.",
+    "example": "The last three one-minute closes rise from $100 to $101. The hour began at $105. Both a short bounce and an hourly decline can be true.",
+    "watch": "Check session time and data timestamps. An empty section may be missing data, not a quiet market.",
+    "questions": [
+      {
+        "prompt": "Can short-term rising candles occur inside a falling hour?",
+        "choices": [
+          "Yes",
+          "No"
+        ],
+        "correct": 0,
+        "explanation": "The last three one-minute closes rise from $100 to $101. The hour began at $105. Both a short bounce and an hourly decline can be true. Check session time and data timestamps. An empty section may be missing data, not a quiet market."
+      }
+    ]
+  },
+  {
+    "id": "lesson-9",
+    "unit": "Price structure",
+    "title": "Higher highs and higher lows",
+    "teach": "A higher high exceeds an earlier swing high. A higher low stays above an earlier swing low. Lower highs and lower lows mirror this. A swing is a turning area; a rule may need later candles to confirm it.",
+    "example": "Lows of $100 then $102 and highs of $104 then $106 describe rising structure. The turning point may not have been knowable at the exact lowest price.",
+    "watch": "Do not use a later-confirmed arrow as if it was visible earlier.",
+    "questions": [
+      {
+        "prompt": "A low at $102 after a low at $100 is what?",
+        "choices": [
+          "A higher low",
+          "A lower high"
+        ],
+        "correct": 0,
+        "explanation": "Lows of $100 then $102 and highs of $104 then $106 describe rising structure. The turning point may not have been knowable at the exact lowest price. Do not use a later-confirmed arrow as if it was visible earlier."
+      }
+    ]
+  },
+  {
+    "id": "lesson-10",
+    "unit": "Price structure",
+    "title": "Support, resistance and breaks",
+    "teach": "Support is an area where buying previously helped stop a decline. Resistance is where selling previously slowed a rise. Neither is a wall. A break means price moved through a level; whether a strategy needs a touch or a close is a separate rule.",
+    "example": "Price reaches above $102 but closes at $101. A rule needing a close above $102 has not passed. A rule based on an intrabar touch is different.",
+    "watch": "A line drawn on a chart is not automatically an active stop order.",
+    "questions": [
+      {
+        "prompt": "Does every chart support line automatically sell your option?",
+        "choices": [
+          "Yes",
+          "No"
+        ],
+        "correct": 1,
+        "explanation": "Price reaches above $102 but closes at $101. A rule needing a close above $102 has not passed. A rule based on an intrabar touch is different. A line drawn on a chart is not automatically an active stop order."
+      }
+    ]
+  },
+  {
+    "id": "lesson-11",
+    "unit": "Chart tools",
+    "title": "Averages and VWAP",
+    "teach": "A simple moving average averages recent prices. A 9 SMA uses nine bars; a 200 SMA uses 200. VWAP weights prices by traded volume during its defined session. These describe price context, not guaranteed future moves.",
+    "example": "On a five-minute chart, nine bars cover 45 minutes of bar intervals. The same nine-bar average on a one-minute chart covers nine minutes.",
+    "watch": "The number of bars and the timeframe both matter.",
+    "questions": [
+      {
+        "prompt": "Does a 9 SMA describe the same time span on 1m and 5m charts?",
+        "choices": [
+          "Yes",
+          "No"
+        ],
+        "correct": 1,
+        "explanation": "On a five-minute chart, nine bars cover 45 minutes of bar intervals. The same nine-bar average on a one-minute chart covers nine minutes. The number of bars and the timeframe both matter."
+      }
+    ]
+  },
+  {
+    "id": "lesson-12",
+    "unit": "Chart tools",
+    "title": "RSI, MACD and volume",
+    "teach": "RSI summarizes recent gains relative to losses on a scale from 0 to 100. MACD compares moving averages; its signal line smooths MACD, and its histogram shows their difference. Volume counts shares traded. None can promise a reversal.",
+    "example": "RSI below 30 is often called oversold. Price can still keep falling. A MACD cross describes a change in its averages, not an order instruction by itself.",
+    "watch": "An indicator only becomes an execution trigger if the active strategy explicitly uses it.",
+    "questions": [
+      {
+        "prompt": "Does low RSI guarantee a rebound?",
+        "choices": [
+          "Yes",
+          "No"
+        ],
+        "correct": 1,
+        "explanation": "RSI below 30 is often called oversold. Price can still keep falling. A MACD cross describes a change in its averages, not an order instruction by itself. An indicator only becomes an execution trigger if the active strategy explicitly uses it."
+      }
+    ]
+  },
+  {
+    "id": "lesson-13",
+    "unit": "Orders and liquidity",
+    "title": "Bid, ask and spread",
+    "teach": "The bid is a displayed buying price. The ask is a displayed selling price. The spread is the gap between them. For a purchased option, a bid can help estimate a sale, but its size and age matter.",
+    "example": "An option bid is $2.00 and ask $2.20. Buying at the ask and immediately selling at the bid loses $20 per standard contract before fees, even without a market move.",
+    "watch": "A quote is not a fill. A small displayed size may not cover all your contracts.",
+    "questions": [
+      {
+        "prompt": "What is the before-fee spread cost in the example?",
+        "choices": [
+          "$0",
+          "$20",
+          "$200"
+        ],
+        "correct": 1,
+        "explanation": "An option bid is $2.00 and ask $2.20. Buying at the ask and immediately selling at the bid loses $20 per standard contract before fees, even without a market move. A quote is not a fill. A small displayed size may not cover all your contracts."
+      }
+    ]
+  },
+  {
+    "id": "lesson-14",
+    "unit": "Orders and liquidity",
+    "title": "Market orders, limits and fills",
+    "teach": "A market order prioritizes execution but does not guarantee price. A limit order sets a price boundary but may not fill. A partial fill means only some contracts traded. Track the remaining quantity before sending another order.",
+    "example": "You try to sell four contracts with a $2 minimum. Two fill at $2.05; two remain open. You have sold two, not four.",
+    "watch": "Sending a duplicate sell can create unintended exposure. Check order status first.",
+    "questions": [
+      {
+        "prompt": "Two of four contracts filled. How many remain?",
+        "choices": [
+          "Zero",
+          "Two",
+          "Four"
+        ],
+        "correct": 1,
+        "explanation": "You try to sell four contracts with a $2 minimum. Two fill at $2.05; two remain open. You have sold two, not four. Sending a duplicate sell can create unintended exposure. Check order status first."
+      }
+    ]
+  },
+  {
+    "id": "lesson-15",
+    "unit": "Time and volatility",
+    "title": "Why direction can be right and the option lose",
+    "teach": "Option value depends on more than stock direction. Time remaining and expected future movement also matter. Intrinsic value is the value of exercising now; time value is premium above intrinsic value.",
+    "example": "A call bought before news can lose value afterward even if the stock rises slightly, because expectations of future movement fall.",
+    "watch": "A correct stock prediction is not enough to prove a profitable option trade.",
+    "questions": [
+      {
+        "prompt": "Can a call lose value while its stock rises?",
+        "choices": [
+          "Yes",
+          "No"
+        ],
+        "correct": 0,
+        "explanation": "A call bought before news can lose value afterward even if the stock rises slightly, because expectations of future movement fall. A correct stock prediction is not enough to prove a profitable option trade."
+      }
+    ]
+  },
+  {
+    "id": "lesson-16",
+    "unit": "Time and volatility",
+    "title": "Meet the Greeks",
+    "teach": "Delta estimates option-price sensitivity to a small stock move. Gamma describes how delta changes. Theta estimates time-decay sensitivity. Vega estimates sensitivity to implied volatility. These are estimates that change with conditions.",
+    "example": "A delta of 0.50 suggests roughly a $0.50 option move for a $1 stock move, with other factors held constant. It is not a promise.",
+    "watch": "Delta is not a guaranteed profit or a guaranteed chance of winning.",
+    "questions": [
+      {
+        "prompt": "Which Greek describes sensitivity to time passing?",
+        "choices": [
+          "Theta",
+          "Vega",
+          "Gamma"
+        ],
+        "correct": 0,
+        "explanation": "A delta of 0.50 suggests roughly a $0.50 option move for a $1 stock move, with other factors held constant. It is not a promise. Delta is not a guaranteed profit or a guaranteed chance of winning."
+      }
+    ]
+  },
+  {
+    "id": "lesson-17",
+    "unit": "Plan the risk",
+    "title": "Size from a defined risk plan",
+    "teach": "First define how the trade will be exited. Then estimate loss per contract, including costs and execution uncertainty. A stop is not a guaranteed sale price. If reliable stop risk cannot be established, do not pretend it is known.",
+    "example": "In a paper example, entry $2 and planned exit $1.50 imply $50 per standard contract before costs. A $100 risk allowance fits two only before adding costs and uncertainty. It does not guarantee a $100 maximum loss.",
+    "watch": "Buying more contracts because the premium looks cheap can increase risk sharply.",
+    "questions": [
+      {
+        "prompt": "Do fees and slippage need room in a risk estimate?",
+        "choices": [
+          "Yes",
+          "No"
+        ],
+        "correct": 0,
+        "explanation": "In a paper example, entry $2 and planned exit $1.50 imply $50 per standard contract before costs. A $100 risk allowance fits two only before adding costs and uncertainty. It does not guarantee a $100 maximum loss. Buying more contracts because the premium looks cheap can increase risk sharply."
+      }
+    ]
+  },
+  {
+    "id": "lesson-18",
+    "unit": "Plan the risk",
+    "title": "Profit targets, trails and safety exits",
+    "teach": "A target exits at a specified gain. A trailing exit follows a peak and gives back part of that gain. A time exit and a safety exit serve different purposes. Read the actual policy; teaching examples do not change CELO settings.",
+    "example": "Buy at $2, peak at $2.40: peak profit is $40 per contract. A 25% giveback of profit is $10, so the reference exit is $2.30 before costs, not $1.80.",
+    "watch": "A gap or stale quote can prevent execution at the reference level.",
+    "questions": [
+      {
+        "prompt": "25% of a $40 peak profit is how much?",
+        "choices": [
+          "$10",
+          "$25",
+          "$30"
+        ],
+        "correct": 0,
+        "explanation": "Buy at $2, peak at $2.40: peak profit is $40 per contract. A 25% giveback of profit is $10, so the reference exit is $2.30 before costs, not $1.80. A gap or stale quote can prevent execution at the reference level."
+      }
+    ]
+  },
+  {
+    "id": "lesson-19",
+    "unit": "Build a paper plan",
+    "title": "Separate setup, trigger and permission",
+    "teach": "A setup is a pattern worth watching. A trigger is the specific condition for acting. Permission includes available buying power, acceptable quotes and safety checks. A pattern alone does not mean an order should be placed.",
+    "example": "For an illustrative pullback: watch a return to a level, wait for the written recovery condition, check the contract and risk, then record a pretend entry. If a check fails, record why you skipped.",
+    "watch": "Do not mix different entry and exit rules just because their separate results looked good.",
+    "questions": [
+      {
+        "prompt": "Does a good-looking setup mean all order checks passed?",
+        "choices": [
+          "Yes",
+          "No"
+        ],
+        "correct": 1,
+        "explanation": "For an illustrative pullback: watch a return to a level, wait for the written recovery condition, check the contract and risk, then record a pretend entry. If a check fails, record why you skipped. Do not mix different entry and exit rules just because their separate results looked good."
+      }
+    ]
+  },
+  {
+    "id": "lesson-20",
+    "unit": "Build a paper plan",
+    "title": "Review a whole trade honestly",
+    "teach": "Record the setup, contract, quantity, entry, planned exits, actual exits and costs. Compare what you planned with what happened. Keep losses and missing data visible. Several wins are not proof of a dependable method.",
+    "example": "Buy two standard contracts at $2 and sell at $2.20: gross profit $40. With $6 total costs, net profit is $34. Review whether the entry and exit followed the plan, not just the green number.",
+    "watch": "Practice completion shows knowledge, not readiness for real-money trading or guaranteed returns.",
+    "questions": [
+      {
+        "prompt": "What is the example’s net profit?",
+        "choices": [
+          "$40",
+          "$34",
+          "$6"
+        ],
+        "correct": 1,
+        "explanation": "Buy two standard contracts at $2 and sell at $2.20: gross profit $40. With $6 total costs, net profit is $34. Review whether the entry and exit followed the plan, not just the green number. Practice completion shows knowledge, not readiness for real-money trading or guaranteed returns."
+      }
+    ]
+  }
+]

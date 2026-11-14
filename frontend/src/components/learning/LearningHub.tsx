@@ -184,10 +184,10 @@ export function LearningHub({ activeLessonIds, strategyCatalog }: { activeLesson
 
   return <div className="flex flex-col gap-4">
     <header className="card p-5" style={{ background: "linear-gradient(125deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), var(--surface) 70%)" }}>
-      <p className="text-xs uppercase tracking-[.16em] font-semibold" style={{ color: "var(--accent)" }}>Learning Hub</p>
+      <p className="text-xs uppercase tracking-[.16em] font-semibold" style={{ color: "var(--accent)" }}>Learning Portal</p>
       <h2 className="text-2xl font-bold mt-1" style={{ color: "var(--ink)" }}>Learn the rule. Practice the decision. Replay the outcome.</h2>
       <p className="text-sm mt-2" style={{ color: "var(--ink-muted)" }}>{catalog?.grounding ?? "Loading recorded evidence…"}</p>
-      <div className="flex gap-2 mt-4 flex-wrap" role="tablist" aria-label="Learning Hub modes">
+      <div className="flex gap-2 mt-4 flex-wrap" role="tablist" aria-label="Learning Portal modes">
         {TABS.map(({ id, label, icon: Icon }) => <button key={id} className={`btn btn-sm ${tab === id ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab(id)}><Icon size={15} />{label}</button>)}
       </div>
     </header>

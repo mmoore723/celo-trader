@@ -569,3 +569,30 @@ has no preview-access guard. Keep users.db and learning_foundations.db; do not
 remove customer or progress records. Existing operator settings must remain
 unchanged. Roll back if customer access reaches a trading/private API or normal
 operator access fails. Do not treat this preview as a completed paid launch.
+
+### Learning Portal and four-tier launch page
+
+The public page displays the four planned tiers from the business documents:
+Watch-only $29, Learning $69, Learning + Discord $99, Trading $149 per month.
+All plan buttons join the free waitlist. They do not collect payment, grant
+trading access or change existing accounts. Upcoming capabilities are labeled.
+
+The Learning Portal has 20 foundation lessons across 10 units, worked examples,
+lesson checks, a 10-question review (80% passing), and the existing three candle
+workshops. Progress is stored per account and curriculum version in
+`user_data/learning_portal.db`, independently of the original chart progress.
+It is a foundation course, not an accredited university, professional credential
+or proof that a learner is ready to trade. Family study uses a parent/guardian
+account and simulated examples. No child accounts or financial access are added.
+Lesson content is in `api/routes/learning_course_content.json`; grading and
+progress are in `api/routes/learning_course.py`. Answers are graded server-side.
+Customers with Watch-only access cannot retrieve or submit course assessments.
+
+Content uses original examples with links to OIC, Investor.gov and Schwab.
+The curriculum proceeds from contract basics to charts, liquidity, time and
+volatility, risk and paper-trade review. Strategy lessons remain separate from
+Settings. Trading, account permissions, risk and execution logic are unchanged.
+
+Rollback: revert this UI/course release through deploy.sh while retaining both
+learning databases and the customer-access guards from b8392a1. Do not roll back
+to a release that exposes trading controls to customer preview accounts.

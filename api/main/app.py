@@ -92,3 +92,6 @@ app.include_router(tickers.router,         dependencies=_auth)
 
 from api.routes import learning_foundations
 app.include_router(learning_foundations.router, dependencies=_auth)
+
+from api.routes import learning_course
+app.include_router(learning_course.router, dependencies=_auth)

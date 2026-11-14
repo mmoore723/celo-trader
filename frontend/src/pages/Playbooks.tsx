@@ -1,6 +1,7 @@
+import { LearningPortal } from "../components/learning/LearningPortal";
 import { Foundations } from "../components/learning/Foundations";
 /**
- * Learning Hub plus the strategy and operations reference material.
+ * Learning Portal plus the strategy and operations reference material.
  */
 
 import { useState, useMemo } from "react";
@@ -170,7 +171,7 @@ const LOG_CATEGORIES: { key: string; label: string; emoji: string }[] = [
 export function Playbooks() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') ?? 'playbooks';
+  const tab = params.get('tab') ?? 'course';
   const setTab = (value: string) => setParams({tab: value});
   const [search,        setSearch]        = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -206,16 +207,17 @@ export function Playbooks() {
       {params.has('strategy') ? <PairLearning strategyCatalog={strategyCatalog?.strategies ?? []} /> : <>
       {/* Tab bar */}
       <div className="flex gap-2 border-b pb-2" style={{ borderColor: "var(--border)" }}>
-        {(["playbooks", "foundations", "glossary", "log-guide", "how-it-works"] as const).map((t) => (
+        {(["course", "playbooks", "foundations", "glossary", "log-guide", "how-it-works"] as const).map((t) => (
           <button
             key={t}
             className={`btn btn-sm ${tab === t ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setTab(t)}
           >
-            {t === "foundations" ? "Chart basics" : t === "playbooks" ? "Learning Hub" : t === "glossary" ? "Trading Glossary" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
+            {t === "course" ? "Learning path" : t === "foundations" ? "Chart basics" : t === "playbooks" ? "Strategy lessons" : t === "glossary" ? "Trading Glossary" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
           </button>
         ))}
       </div>
+      {tab === 'course' && <LearningPortal />}
       {tab === 'foundations' && <Foundations />}
       {tab === 'glossary' && <section className="card p-5"><h2 className="text-xl font-semibold mb-4">Trading concepts</h2><dl className="space-y-4">{['VWAP','FVG','ATR','RSI','MACD','SMA','EMA','RVOL'].map(term => <div key={term}><dt className="font-semibold">{term}</dt><dd className="text-sm mt-1">{GLOSSARY[term]}</dd></div>)}</dl></section>}
       {tab === 'playbooks' && <EnabledLearningPairs strategies={strategyCatalog?.strategies ?? []} />}

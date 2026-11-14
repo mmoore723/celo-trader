@@ -67,10 +67,17 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(0, conn.execute('SELECT COUNT(*) FROM waitlist').fetchone()[0])
         conn.close()
 
+    def test_all_four_plan_interests_are_saved_without_creating_accounts(self):
+        for interest in ['watch','learning','learning_discord','trading']:
+            self.assertEqual(200,self.join(email=f'{interest}@example.com',interest=interest).status_code)
+        conn=launch.connect()
+        self.assertEqual({'watch','learning','learning_discord','trading'},{r[0] for r in conn.execute('SELECT interest FROM waitlist')})
+        conn.close()
+
     def test_validation_origin_and_honeypot(self):
         self.assertEqual(422, self.join(consent=False).status_code)
         self.assertEqual(422, self.join(email='not-email').status_code)
-        self.assertEqual(422, self.join(interest='trading').status_code)
+        self.assertEqual(422, self.join(interest='unsupported').status_code)
         result = self.client.post('/api/launch/waitlist', headers={'origin':'https://evil.example'}, json={'email':'test@example.com','consent':True})
         self.assertEqual(403, result.status_code)
         self.assertEqual(200, self.join(website='spam').status_code)

@@ -113,3 +113,44 @@ class CustomerLearningTests(unittest.TestCase):
                 self.assertGreaterEqual(h,max(o,c));self.assertLessEqual(l,min(o,c))
 
 if __name__=='__main__':unittest.main()
+
+class LearningCourseTests(CustomerLearningTests):
+    def setUp(self):
+        super().setUp()
+        from api.routes import learning_course
+        self.course=learning_course
+        self.course_path=patch.object(learning_course,'DB_PATH',self.root/'course.db');self.course_path.start()
+        self.app.include_router(learning_course.router,dependencies=[Depends(require_auth)])
+    def tearDown(self):
+        self.course_path.stop();super().tearDown()
+    def test_course_has_complete_content_without_answer_keys(self):
+        r=self.request(self.user(),'GET','/api/learning/course');self.assertEqual(200,r.status_code)
+        payload=r.json();self.assertEqual(20,len(payload['lessons']));self.assertEqual(10,len({l['unit'] for l in payload['lessons']}))
+        self.assertEqual(10,len(payload['final']['questions']))
+        for l in payload['lessons']:
+            for k in ['teach','example','watch']:self.assertTrue(l[k])
+            for q in l['questions']:self.assertNotIn('correct',q);self.assertNotIn('explanation',q)
+    def test_course_progress_isolated_and_final_requires_practice(self):
+        a=self.user('alice');b=self.user('bob')
+        final=[self.course.LESSONS[i]['questions'][0]['correct'] for i in self.course.FINAL_IDS]
+        self.assertEqual(409,self.request(a,'POST','/api/learning/course/answer',json={'lesson':'final','choices':final}).status_code)
+        for l in self.course.LESSONS:
+            correct=l['questions'][0]['correct']
+            wrong=(correct+1)%len(l['questions'][0]['choices'])
+            r=self.request(a,'POST','/api/learning/course/answer',json={'lesson':l['id'],'choices':[wrong]})
+            self.assertFalse(r.json()['passed'])
+            r=self.request(a,'POST','/api/learning/course/answer',json={'lesson':l['id'],'choices':[correct]})
+            self.assertTrue(r.json()['passed'])
+        r=self.request(a,'POST','/api/learning/course/answer',json={'lesson':'final','choices':final});self.assertEqual(100,r.json()['score'])
+        with self.course.connect() as conn:
+            self.assertTrue(self.course.progress_for(conn,a['user_id'])['final']['passed'])
+            self.assertEqual({},self.course.progress_for(conn,b['user_id']))
+        self.assertTrue(self.request(a,'GET','/api/learning/course').json()['final']['progress']['passed'])
+    def test_course_rejects_invalid_answers_and_watch_access(self):
+        a=self.user()
+        for body in [{'lesson':'fake','choices':[0]},{'lesson':'lesson-1','choices':[-1]},{'lesson':'lesson-1','choices':[100]},{'lesson':'lesson-1','choices':[0,1]}]:
+            self.assertEqual(422,self.request(a,'POST','/api/learning/course/answer',json=body).status_code)
+        watch=self.user('watch','watch')
+        self.assertEqual(403,self.request(watch,'GET','/api/learning/course').status_code)
+        self.assertEqual(403,self.request(watch,'POST','/api/learning/course/answer',json={'lesson':'lesson-1','choices':[1]}).status_code)
+        self.assertEqual(403,self.request(a,'POST','/api/bot/start').status_code)

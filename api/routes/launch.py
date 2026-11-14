@@ -59,8 +59,8 @@ def join_waitlist(body: Interest, request: Request):
         raise HTTPException(422, 'Enter a valid email address.')
     if not body.consent:
         raise HTTPException(422, 'Please agree to receive launch updates.')
-    if body.interest not in {'watch', 'learning', 'undecided'}:
-        raise HTTPException(422, 'Choose Watch-only, Learning, or Not sure yet.')
+    if body.interest not in {'watch', 'learning', 'learning_discord', 'trading', 'undecided'}:
+        raise HTTPException(422, 'Choose one of the four plans, or Not sure yet.')
     # Use the ASGI client, never trust a caller-supplied forwarding header.
     client = request.client.host if request.client else 'unknown'
     client_hash = hashlib.sha256(client.encode()).hexdigest()
