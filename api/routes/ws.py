@@ -70,6 +70,9 @@ def _authenticate_ws(ws: WebSocket) -> str | None:
     user = get_user(user_id)
     if not user or int(payload.get("session_version", 0)) != int(user["session_version"]):
         return None
+    from auth.customer_access import is_customer
+    if is_customer(user):
+        return None  # Customer charts never receive private account or trading logs.
     return user_id
 
 

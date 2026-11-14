@@ -59,6 +59,7 @@ def _issue_session(response: Response, user: dict, stay: bool) -> dict:
     )
     return {"ok": True, "user_id": user["user_id"], "username": user["username"],
             "is_admin": user["is_admin"],
+            "access_profile": user.get("access_profile", "legacy"),
             "terms_accepted": user.get("terms_version") == CURRENT_TERMS_VERSION}
 
 
@@ -114,6 +115,7 @@ async def auth_me(request: Request):
             "username":              u["username"],
             "is_admin":              bool(u["is_admin"]),
             "email":                 u["username"],
+            "access_profile":        u.get("access_profile", "legacy"),
             "terms_accepted":        accepted_v == CURRENT_TERMS_VERSION,
             "current_terms_version": CURRENT_TERMS_VERSION,
         }

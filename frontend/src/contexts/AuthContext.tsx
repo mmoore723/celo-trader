@@ -15,6 +15,7 @@ export interface AuthUser {
   name:           string;
   user_id?:       string;
   is_admin?:      boolean;
+  access_profile?: string;
   terms_accepted?: boolean;   // true = user accepted the current ToS version
 }
 
@@ -52,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name:           data.username || data.name  || data.email || "user",
             user_id:        data.user_id,
             is_admin:       !!data.is_admin,
+            access_profile: data.access_profile ?? "legacy",
             terms_accepted: !!data.terms_accepted,
           });
         }

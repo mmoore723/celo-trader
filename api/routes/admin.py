@@ -29,13 +29,17 @@ def _require_admin(request: Request) -> None:
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
+from typing import Literal
+
 class CreateUserRequest(BaseModel):
     username: str
     password: str
     is_admin: bool = False
+    access_profile: Literal["watch", "learning"] = "watch"
 
 
 class InviteRequest(BaseModel):
+    access_profile: Literal["watch", "learning"] = "watch"
     hours: int = Field(default=48, ge=1, le=168)   # link validity window
 
 
@@ -133,7 +137,7 @@ async def create_user(request: Request, body: CreateUserRequest):
     # Password complexity enforced inside create_user() via validate_password()
     from auth.users import create_user as _create
     try:
-        user = _create(body.username, body.password, is_admin=body.is_admin)
+        user = _create(body.username, body.password, is_admin=body.is_admin, access_profile=body.access_profile)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True, "user": user}
@@ -253,9 +257,9 @@ async def create_invite(request: Request, body: InviteRequest):
     """Generate a single-use invite link valid for `hours` hours."""
     _require_admin(request)
     from auth.users import create_invite as _invite
-    token    = _invite(created_by=request.state.user_id, hours=body.hours)
+    token    = _invite(created_by=request.state.user_id, hours=body.hours, access_profile=body.access_profile)
     # Build the link using the request's host (works on both local + EC2)
     base_url = str(request.base_url).rstrip("/")
     link     = f"{base_url}/#/register?token={token}"
     logger.info("Invite created by %s (valid %s hours)", request.state.username, body.hours)
-    return {"ok": True, "token": token, "link": link, "expires_hours": body.hours}
+    return {"ok": True, "token": token, "link": link, "expires_hours": body.hours, "access_profile": body.access_profile}

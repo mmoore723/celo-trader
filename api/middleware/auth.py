@@ -58,6 +58,9 @@ async def require_auth(request: Request) -> None:
         if source and not origin_is_trusted(source):
             raise HTTPException(status_code=403, detail="Untrusted request origin")
 
+    from auth.customer_access import enforce_customer_access
+    enforce_customer_access(user, request.method, request.url.path)
+
     # Inject current DB truth, not role/name claims cached in the JWT.
     from auth.context import set_current_user
     set_current_user(

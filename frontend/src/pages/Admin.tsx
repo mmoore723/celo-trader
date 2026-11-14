@@ -39,6 +39,7 @@ export function Admin() {
   const [resetMsg,   setResetMsg]   = useState<{ ok: boolean; msg: string } | null>(null);
 
   const [inviteUrl, setInviteUrl]   = useState<string | null>(null);
+  const [inviteProfile, setInviteProfile] = useState("watch");
   const [inviteExp, setInviteExp]   = useState<number>(48);
   const [inviting, setInviting]     = useState(false);
   const [copied, setCopied]         = useState(false);
@@ -223,7 +224,7 @@ export function Admin() {
       const r = await fetch("/api/admin/invite", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expires_hours: inviteExp }),
+        body: JSON.stringify({ hours: inviteExp, access_profile: inviteProfile }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Failed");
@@ -617,10 +618,10 @@ export function Admin() {
         <summary className="text-sm font-semibold cursor-pointer" style={{ color: "var(--ink)" }}>Create an invite link</summary>
         <div className="mt-3">
         <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          Send this link to someone so they can create their own account and connect their
-          own Alpaca/Tradier API keys. The link expires after the chosen period.
+          Create a customer preview account. Watch-only provides charts. Learning adds guided chart practice. Neither can connect a broker or place orders. Existing accounts stay unchanged.
         </p>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <label className="text-sm">Access <select className="select" value={inviteProfile} onChange={e => setInviteProfile(e.target.value)}><option value="watch">Watch-only preview</option><option value="learning">Learning preview</option></select></label>
           <label className="text-sm" style={{ color: "var(--ink)" }}>Expires in</label>
           <select
             className="select"

@@ -536,3 +536,36 @@ this release through `deploy.sh` to the preceding verified commit, retaining all
 `user_data` files including the waitlist. Do not roll back account data or change
 trading policies to repair a page. Verify GitHub, server commit and served assets
 match after either deployment or rollback.
+
+### Customer preview access and chart foundations (November 14, 2026)
+
+New Admin invitations and new non-admin accounts created through the Admin API
+use **Watch-only** or **Learning** access. Invitations store the selected access
+and expiry on the server. Existing accounts retain their previous access and
+trading settings. This is preview access, not a paid subscription or billing system.
+
+Watch-only can request stock candles through the existing Yahoo Finance chart
+endpoint. Learning also provides three guided chart-basics lessons and saved,
+account-specific practice progress. The examples are invented teaching candles,
+not real trades, research performance, AI predictions or execution signals.
+Existing users can open Learning Hub > Chart basics. Customer previews have a
+separate workspace without broker onboarding or trading controls.
+
+The server checks current database access on every protected HTTP request.
+Customer APIs are allowlisted; private trading WebSocket access and automatic
+bot restart are denied for customer profiles. Unknown profiles fail closed.
+Research, account details, credentials, orders and settings are not available to
+customer previews. The complete Watch-only bot-thinking feed, AI pattern
+callouts, billing and approved template descriptions remain unfinished roadmap
+items. Launch ticker selection remains deferred.
+
+Validation covers invite persistence, old-schema migration, forged role claims,
+order denial, WebSocket denial, origin checks, learning answer validation and
+progress isolation. No existing trading policy or account setting is migrated.
+
+Rollback: prefer a forward fix through deploy.sh. If reverting this release,
+**first disable sign-in for newly created preview accounts** because older code
+has no preview-access guard. Keep users.db and learning_foundations.db; do not
+remove customer or progress records. Existing operator settings must remain
+unchanged. Roll back if customer access reaches a trading/private API or normal
+operator access fails. Do not treat this preview as a completed paid launch.

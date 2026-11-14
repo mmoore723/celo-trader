@@ -140,9 +140,12 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         ("terms_accepted_at", "TEXT"),
         ("terms_version",     "TEXT"),
         ("session_version",   "INTEGER NOT NULL DEFAULT 1"),
+        ("access_profile", "TEXT NOT NULL DEFAULT 'legacy'"),
     ]:
         if col not in existing:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
+    if "access_profile" not in {r[1] for r in conn.execute("PRAGMA table_info(invites)")}:
+        conn.execute("ALTER TABLE invites ADD COLUMN access_profile TEXT NOT NULL DEFAULT 'watch'")
     conn.commit()
 
 
@@ -211,8 +214,10 @@ def _initialize_member_templates(uid: str) -> None:
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 def create_user(username: str, password: str, is_admin: bool = False,
-                user_id: Optional[str] = None) -> dict:
+                user_id: Optional[str] = None, access_profile: str = "legacy") -> dict:
     """Create a new user. Returns the user dict. Raises ValueError on duplicate or weak password."""
+    if access_profile not in {"legacy", "watch", "learning"}:
+        raise ValueError("Unknown access profile")
     validate_password(password)          # raises ValueError if requirements not met
     normalized = normalize_username(username)
     uid     = user_id or str(uuid.uuid4())[:8]
@@ -220,9 +225,9 @@ def create_user(username: str, password: str, is_admin: bool = False,
     conn    = get_db()
     try:
         conn.execute(
-            "INSERT INTO users (id, username, pw_hash, is_admin, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (uid, normalized, pw_hash, 1 if is_admin else 0, _now()),
+            "INSERT INTO users (id, username, pw_hash, is_admin, created_at, access_profile) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (uid, normalized, pw_hash, 1 if is_admin else 0, _now(), access_profile),
         )
         if not is_admin:
             _initialize_member_templates(uid)
@@ -235,7 +240,7 @@ def create_user(username: str, password: str, is_admin: bool = False,
     # Create the user's data directory
     (_DATA / uid).mkdir(parents=True, exist_ok=True)
     logger.info("User created: id=%s username=%s admin=%s", uid, normalized, is_admin)
-    return {"user_id": uid, "username": normalized, "is_admin": is_admin, "session_version": 1}
+    return {"user_id": uid, "username": normalized, "is_admin": is_admin, "session_version": 1, "access_profile": access_profile}
 
 
 def authenticate(username: str, password: str) -> Optional[dict]:
@@ -254,7 +259,7 @@ def authenticate(username: str, password: str) -> Optional[dict]:
         return None
     return {"user_id": row["id"], "username": row["username"],
             "is_admin": bool(row["is_admin"]), "session_version": int(row["session_version"]),
-            "terms_version": row["terms_version"]}
+            "terms_version": row["terms_version"], "access_profile": row["access_profile"]}
 
 
 def get_user(user_id: str) -> Optional[dict]:
@@ -269,6 +274,7 @@ def get_user(user_id: str) -> Optional[dict]:
         "is_admin":      bool(row["is_admin"]),
         "terms_version": row["terms_version"],  # None if never accepted
         "session_version": int(row["session_version"]),
+        "access_profile": row["access_profile"],
     }
 
 
@@ -288,11 +294,11 @@ def accept_terms(user_id: str, version: str = CURRENT_TERMS_VERSION) -> bool:
 def list_users() -> list[dict]:
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, username, is_admin, created_at FROM users ORDER BY created_at"
+        "SELECT id, username, is_admin, created_at, access_profile FROM users ORDER BY created_at"
     ).fetchall()
     conn.close()
     return [{"user_id": r["id"], "username": r["username"],
-             "is_admin": bool(r["is_admin"]), "created_at": r["created_at"]} for r in rows]
+             "is_admin": bool(r["is_admin"]), "created_at": r["created_at"], "access_profile": r["access_profile"]} for r in rows]
 
 
 def reset_password(user_id: str, new_password: str) -> bool:
@@ -322,16 +328,18 @@ def delete_user(user_id: str) -> bool:
 
 # ── Invite tokens ─────────────────────────────────────────────────────────────
 
-def create_invite(created_by: str, hours: int = 48) -> str:
+def create_invite(created_by: str, hours: int = 48, access_profile: str = "watch") -> str:
     """Create a single-use invite token valid for `hours` hours."""
+    if access_profile not in {"watch", "learning"}:
+        raise ValueError("Invites support Watch-only or Learning access")
     if not 1 <= int(hours) <= 168:
         raise ValueError("Invite validity must be between 1 and 168 hours")
     token      = str(uuid.uuid4())
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
     conn       = get_db()
     conn.execute(
-        "INSERT INTO invites (token, created_by, expires_at) VALUES (?, ?, ?)",
-        (token, created_by, expires_at),
+        "INSERT INTO invites (token, created_by, expires_at, access_profile) VALUES (?, ?, ?, ?)",
+        (token, created_by, expires_at, access_profile),
     )
     conn.commit()
     conn.close()
@@ -378,7 +386,7 @@ def create_user_from_invite(token: str, username: str, password: str) -> dict:
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT expires_at FROM invites WHERE token = ? AND used_by IS NULL", (token,)
+            "SELECT expires_at, access_profile FROM invites WHERE token = ? AND used_by IS NULL", (token,)
         ).fetchone()
         if not row:
             raise ValueError("Invalid or expired invite link")
@@ -388,8 +396,8 @@ def create_user_from_invite(token: str, username: str, password: str) -> dict:
         if datetime.now(timezone.utc) >= expires:
             raise ValueError("Invalid or expired invite link")
         conn.execute(
-            "INSERT INTO users (id, username, pw_hash, is_admin, created_at) VALUES (?, ?, ?, 0, ?)",
-            (uid, normalized, pw_hash, _now()),
+            "INSERT INTO users (id, username, pw_hash, is_admin, created_at, access_profile) VALUES (?, ?, ?, 0, ?, ?)",
+            (uid, normalized, pw_hash, _now(), row["access_profile"]),
         )
         _initialize_member_templates(uid)
         used = conn.execute(
@@ -409,4 +417,4 @@ def create_user_from_invite(token: str, username: str, password: str) -> dict:
         conn.close()
     (_DATA / uid).mkdir(parents=True, exist_ok=True)
     logger.info("User registered: id=%s username=%s", uid, normalized)
-    return {"user_id": uid, "username": normalized, "is_admin": False, "session_version": 1}
+    return {"user_id": uid, "username": normalized, "is_admin": False, "session_version": 1, "access_profile": row["access_profile"]}

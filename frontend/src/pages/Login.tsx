@@ -55,7 +55,7 @@ export function Login() {
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || "Login failed");
       login({ email: data.username || username, name: data.username || username,
-              user_id: data.user_id, is_admin: !!data.is_admin,
+              user_id: data.user_id, is_admin: !!data.is_admin, access_profile: data.access_profile ?? "legacy",
               terms_accepted: data.terms_accepted === true });
     } catch (e: any) {
       setError(e.message || "Login failed");

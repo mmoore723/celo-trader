@@ -89,3 +89,6 @@ app.include_router(ai_reasoning.router,    dependencies=_auth)
 app.include_router(learning.router,        dependencies=_auth)
 app.include_router(signals.router,         dependencies=_auth)
 app.include_router(tickers.router,         dependencies=_auth)
+
+from api.routes import learning_foundations
+app.include_router(learning_foundations.router, dependencies=_auth)

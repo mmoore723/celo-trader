@@ -32,6 +32,7 @@ import { lazy, Suspense, useState, useEffect } from "react";
 // libraries are by far the largest dependency; keeping them out of the login,
 // daily brief, and journal bundles makes first load faster and reduces the
 // blast radius of a page-specific rendering failure.
+const CustomerWorkspace = lazy(() => import("./pages/CustomerWorkspace").then(m => ({default: m.CustomerWorkspace})));
 const LiveTrading = lazy(() => import("./pages/LiveTrading").then((module) => ({ default: module.LiveTrading })));
 const Performance = lazy(() => import("./pages/Performance").then((module) => ({ default: module.Performance })));
 const Journal = lazy(() => import("./pages/Journal").then((module) => ({ default: module.Journal })));
@@ -144,7 +145,7 @@ function AuthGate() {
   // Admins always see the full app so they can clear the maintenance flag.
   const [maint, setMaint] = useState<{ active: boolean; message: string } | null>(null);
   useEffect(() => {
-    if (!isAuthenticated || user?.is_admin) return;
+    if (!isAuthenticated || user?.is_admin || (user?.access_profile && user.access_profile !== "legacy")) return;
     function check() {
       fetch("/api/bot/status", { credentials: "include" })
         .then(r => (r.ok ? r.json() : null))
@@ -156,7 +157,7 @@ function AuthGate() {
     check();
     const t = setInterval(check, 30_000);
     return () => clearInterval(t);
-  }, [isAuthenticated, user?.is_admin]);
+  }, [isAuthenticated, user?.is_admin, user?.access_profile]);
 
   // Still checking session cookie → branded loading screen
   if (loading) return <Maintenance mode="connecting" />;
@@ -179,6 +180,9 @@ function AuthGate() {
   }
 
   // Authenticated + ToS accepted → full app
+  if (!user?.is_admin && user?.access_profile && user.access_profile !== "legacy") {
+    return <ErrorBoundary><Suspense fallback={<PageLoader label="Opening your workspace" />}><CustomerWorkspace /></Suspense></ErrorBoundary>;
+  }
   return <AppShell />;
 }
 

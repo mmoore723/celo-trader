@@ -85,7 +85,8 @@ def _auto_start_bot_if_needed() -> None:
         from trading.loop import run_trading_loop
 
         try:
-            user_ids = [u["user_id"] for u in list_users()]
+            from auth.customer_access import is_customer
+            user_ids = [u["user_id"] for u in list_users() if not is_customer(u)]
         except Exception:
             # users table may not exist yet on a very first boot — fall back
             # to just admin so a fresh install still auto-resumes correctly.
