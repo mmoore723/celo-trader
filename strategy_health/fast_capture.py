@@ -122,11 +122,14 @@ class Registry:
             self.db.execute('INSERT OR IGNORE INTO polling(symbol) VALUES (?)',(symbol,))
         return identity
 
-    def due(self, now):
+    def due(self, now, deferred=None):
+        deferred = deferred or {}
+        excluded = [symbol for symbol, until in deferred.items() if until > now.timestamp()]
+        exclusion = " AND p.symbol NOT IN (" + ",".join("?" for _ in excluded) + ")" if excluded else ""
         return [r[0] for r in self.db.execute('''SELECT p.symbol FROM polling p
             WHERE p.next_at<=? AND substr(p.symbol,-15,6)>=? AND EXISTS (SELECT 1 FROM registrations r
               WHERE r.symbol=p.symbol AND r.until_at>=? AND r.entry_at<=?)
-            ORDER BY p.next_at,p.symbol LIMIT ?''',(now.timestamp(),now.astimezone(ET).strftime('%y%m%d'),now.isoformat(),now.isoformat(),BATCH))]
+            ''' + exclusion + ' ORDER BY p.next_at,p.symbol LIMIT ?', (now.timestamp(),now.astimezone(ET).strftime('%y%m%d'),now.isoformat(),now.isoformat(),*excluded,BATCH))]
 
     def record(self, symbols, payload, requested, received):
         if shutil.disk_usage(self.root).free < 1024**3:
@@ -365,6 +368,8 @@ def main():
     # Native entries must not wait behind large or failing research scans.
     native_background=None if args.once else DiscoveryTask(broker_only=True)
     native_at=0.; native_scope=None; native_discovery={}
+    from strategy_health.capture_spool import ReceiptSpool
+    spool = None if args.once else ReceiptSpool(registry.root)
     while True:
         now=datetime.now(timezone.utc); state='waiting_for_market'; error=None
         try:
@@ -416,7 +421,7 @@ def main():
                 state='collecting'
                 if time.monotonic()>=max(feed.next_request,next_batch):
                     started=time.monotonic()
-                    symbols=registry.due(now)
+                    symbols=registry.due(now, spool.next_due if spool else None)
                     timings['due_query_seconds']=time.monotonic()-started
                     if symbols:
                         next_batch=time.monotonic()+BATCH_INTERVAL
@@ -426,7 +431,10 @@ def main():
                             payload,received=feed.quotes(symbols)
                             timings['request_seconds']=time.monotonic()-started
                             started=time.monotonic()
-                            registry.record(symbols,payload,requested,received)
+                            if spool:
+                                spool.enqueue(symbols,payload,requested,received)
+                            else:
+                                registry.record(symbols,payload,requested,received)
                             timings['persist_seconds']=time.monotonic()-started
                             timings['last_batch_at']=received.isoformat()
                             timings['last_batch_contracts']=len(symbols)
@@ -437,11 +445,16 @@ def main():
         except Exception as exc:
             state='blocked'; error=str(exc) if isinstance(exc,ValueError) else type(exc).__name__
         if time.monotonic()>=publish_at or args.once:
+            writer_health = spool.health() if spool else {'synchronous':True}
+            if spool and (writer_health['error'] or not writer_health['worker_alive']):
+                state='capture_persistence_delayed'
+                error=writer_health['error'] or 'receipt_worker_not_running'
             report={'heartbeat_at':datetime.now(timezone.utc).isoformat(),'status':state,'error':error,
                 'discovery':discovery,'discovery_scope':discovery_scope,'scopes':registry.health(datetime.now(timezone.utc)),
                 'batch_size':BATCH,'request_interval_seconds':BATCH_INTERVAL,
                 'per_contract_target_seconds':CADENCE,'capture_only':True,
                 'processing_timings':dict(timings),
+                'receipt_writer':writer_health,
                 'discovery_worker':background.health() if background else {'running':False,'running_seconds':0},
                 'native_discovery':native_discovery,'native_discovery_scope':native_scope,
                 'native_discovery_worker':native_background.health() if native_background else {'running':False},
