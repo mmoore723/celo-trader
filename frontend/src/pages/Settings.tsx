@@ -2,6 +2,7 @@
  * Settings.tsx — Bot configuration form + API credentials.
  */
 import { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
@@ -296,6 +297,8 @@ function TradierCredentialsPanel({ provider, paper }: { provider: string; paper:
 }
 
 export function Settings() {
+  const {user} = useAuth();
+  const isAdmin = !!user?.is_admin;
   const [strategyView, setStrategyView] = useState<"trading" | "paused" | "research">("trading");
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") === "strategies" ? "strategies" : "general";
@@ -331,9 +334,9 @@ export function Settings() {
     refetchInterval: 60_000,
   });
   const { data: strategyResearch } = useQuery({
-    queryKey: ["strategy-research-matrix"],
+    queryKey: ["strategy-research-matrix", user?.user_id],
     queryFn: () => api.strategyHealth.researchMatrix(90),
-    enabled: activeTab === "strategies",
+    enabled: isAdmin && activeTab === "strategies",
     retry: false,
     refetchInterval: 60_000,
   });
@@ -343,9 +346,9 @@ export function Settings() {
     enabled: activeTab === "strategies",
   });
   const { data: strategyRecommendations, isPending: recommendationsLoading, isError: recommendationsFailed, refetch: refreshRecommendations } = useQuery({
-    queryKey: ["strategy-recommendations"],
+    queryKey: ["strategy-recommendations", user?.user_id],
     queryFn: api.settings.recommendations,
-    enabled: activeTab === "general",
+    enabled: isAdmin && activeTab === "general",
     retry: false,
     refetchInterval: activeTab === "general" ? 60000 : false,
   });
@@ -485,15 +488,15 @@ export function Settings() {
             document.getElementById(`settings-tab-${next}`)?.focus();
           }}
           className={`btn ${activeTab === tab ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategies"}</button>)}
+          onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategy templates"}</button>)}
       </div>
       <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "flex flex-col gap-4" : "hidden"}>
-      <div className="settings-paired-grid">
+      {isAdmin && <div className="settings-paired-grid">
       {recommendationsFailed ? <div className="card p-4 text-sm" role="alert">Recommendations could not load. <button className="btn btn-ghost" onClick={() => refreshRecommendations()}>Try again</button></div> : recommendationsLoading ? <p role="status" className="text-sm">Checking strategy recommendations…</p> : <StrategyRecommendations
         recommendations={strategyRecommendations?.recommendations ?? []}
         onDecision={decideRecommendation}
       />}
-      </div>
+      </div>}
       <div className="settings-paired-grid settings-general-columns">
       <section className="settings-control-stack" aria-label="Trading preferences">
       {/* Trading Mode */}
@@ -830,7 +833,8 @@ export function Settings() {
       </section>
 
       </div>
-      {activeTab === "strategies" && <div id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-4">
+      {activeTab === "strategies" && !isAdmin && <section id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-3"><h2>Strategy templates</h2><p className="text-sm">Choose a template, then save your settings. New accounts start with every template off.</p>{groupStrategies((strategyCatalog?.strategies ?? []).filter(row => !row.observation_only)).map(group => <section className="card p-4" key={group.name}><h3 className="font-semibold">{group.name}</h3>{group.strategies.map(row => <div key={row.strategy_id} className="py-3"><Toggle label={`${row.tickers.join(", ")} · ${row.version}`} checked={!!form[row.setting_key]} disabled={!data || row.integrity_errors.length > 0} onChange={value => set(row.setting_key, value)} /><p className="text-xs">{row.integrity_errors.length ? "Temporarily unavailable. The execution checks need attention." : "Applies to your account only. Existing positions keep their entry-time rules."}</p></div>)}</section>)}</section>}
+      {activeTab === "strategies" && isAdmin && <div id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-4">
       {strategyResearch?.snapshot?.refreshing && <p role="status" className="text-xs">
         Showing saved research from {new Date(strategyResearch.snapshot.updated_at * 1000).toLocaleString()}. Refreshing in the background.
       </p>}

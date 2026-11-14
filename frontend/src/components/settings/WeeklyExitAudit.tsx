@@ -58,10 +58,11 @@ export function WeeklyExitAuditProvider({ settings, children }: { settings?: App
   const { user } = useAuth();
   const scope = `${user?.user_id ?? user?.email}:${settings?.active_broker_account_id}:${settings?.paper_trading}`;
   const summaries = useQuery({ queryKey: ["weekly-exit-audits", scope],
-    queryFn: () => read<{ audits: Summary[] }>(""), enabled: !!user && !!settings,
+    queryFn: () => read<{ audits: Summary[] }>(""), enabled: !!user?.is_admin && !!settings,
     staleTime: 300000, placeholderData: undefined });
   const [selected, setSelected] = useState<number | null>(null);
   useEffect(() => { setSelected(null); }, [scope]);
+  if (!user?.is_admin) return <>{children}</>;
   return <AuditContext.Provider value={{ audits: summaries.data?.audits ?? [],
     pending: summaries.isPending, error: summaries.isError, retry: () => { void summaries.refetch(); }, select: setSelected }}>
     {children}

@@ -192,6 +192,22 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _initialize_member_templates(uid: str) -> None:
+    """Only new member accounts get an explicit all-off template selection."""
+    from config.atomic_files import atomic_write_json
+    from config.defaults import _DEFAULTS
+    from config.strategy_catalog import REVIEWED_STRATEGIES
+    target = _DATA / uid / 'settings.json'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        return
+    updates = {key: False for key in _DEFAULTS
+               if key.startswith(('strategy_', 'observe_')) and key.endswith('_enabled')}
+    updates.update({rule.setting_key: False for rule in REVIEWED_STRATEGIES.values()})
+    updates.update(strategy_pair_approvals={}, strategy_ticker_consents={}, research_strategy_ids=[])
+    atomic_write_json(target, updates)
+
+
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 def create_user(username: str, password: str, is_admin: bool = False,
@@ -208,6 +224,8 @@ def create_user(username: str, password: str, is_admin: bool = False,
             "VALUES (?, ?, ?, ?, ?)",
             (uid, normalized, pw_hash, 1 if is_admin else 0, _now()),
         )
+        if not is_admin:
+            _initialize_member_templates(uid)
         conn.commit()
     except sqlite3.IntegrityError:
         raise ValueError(f"Username '{username}' is already taken")
@@ -373,6 +391,7 @@ def create_user_from_invite(token: str, username: str, password: str) -> dict:
             "INSERT INTO users (id, username, pw_hash, is_admin, created_at) VALUES (?, ?, ?, 0, ?)",
             (uid, normalized, pw_hash, _now()),
         )
+        _initialize_member_templates(uid)
         used = conn.execute(
             "UPDATE invites SET used_by = ?, used_at = ? WHERE token = ? AND used_by IS NULL",
             (uid, _now(), token),

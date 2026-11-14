@@ -7,7 +7,7 @@
  *  3. If unauthenticated → show <Login />.
  *  4. If authenticated → show AppShell with all routes.
  */
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useWebSocket }    from "./hooks/useWebSocket";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -15,6 +15,8 @@ import { Topbar }          from "./components/layout/Topbar";
 import { Sidebar }         from "./components/layout/Sidebar";
 import { TickerBar }       from "./components/layout/TickerBar";
 import { Register }        from "./pages/Register";
+import { WaitlistRemove } from "./components/LaunchWaitlist";
+import { Landing } from "./pages/Landing";
 import { Login }           from "./pages/Login";
 import { Terms }           from "./pages/Terms";
 import { Maintenance }     from "./pages/Maintenance";
@@ -32,7 +34,6 @@ import { lazy, Suspense, useState, useEffect } from "react";
 // blast radius of a page-specific rendering failure.
 const LiveTrading = lazy(() => import("./pages/LiveTrading").then((module) => ({ default: module.LiveTrading })));
 const Performance = lazy(() => import("./pages/Performance").then((module) => ({ default: module.Performance })));
-const Research = lazy(() => import("./pages/Research").then((module) => ({ default: module.Research })));
 const Journal = lazy(() => import("./pages/Journal").then((module) => ({ default: module.Journal })));
 const Settings = lazy(() => import("./pages/Settings").then((module) => ({ default: module.Settings })));
 const Backtest = lazy(() => import("./pages/Backtest").then((module) => ({ default: module.Backtest })));
@@ -90,7 +91,7 @@ function AppShell() {
   return (
     <div className="app-shell">
       {showSetup && <ApiSetupModal onClose={closeSetup} />}
-      {!showSetup && <StrategyRecommendationModal />}
+      {!showSetup && user?.is_admin && <StrategyRecommendationModal />}
       <Topbar />
       <Sidebar />
       <main className="app-main" style={{ paddingBottom: 36 }}>
@@ -106,8 +107,8 @@ function AppShell() {
           <Route path="/performance" element={<Performance />} />
           <Route path="/journal"     element={<Journal />} />
           <Route path="/opportunities" element={<Navigate to="/journal?tab=decisions" replace />} />
-          <Route path="/research"    element={<Research />} />
-          <Route path="/backtest"    element={<Backtest />} />
+          <Route path="/research" element={user?.is_admin ? <Navigate to="/admin?tab=research" replace /> : <Navigate to="/" replace />} />
+          <Route path="/backtest" element={user?.is_admin ? <Backtest /> : <Navigate to="/" replace />} />
           <Route path="/ai-reasoning" element={<AiReasoning />} />
           <Route path="/playbooks"   element={<Playbooks />} />
           <Route path="/settings"    element={<Settings />} />
@@ -137,6 +138,7 @@ function AdminGuard() {
 // ── Auth gate — decides what to render based on session state ──────────────────
 function AuthGate() {
   const { isAuthenticated, loading, user } = useAuth();
+  const location = useLocation();
 
   // Poll /api/bot/status to detect maintenance mode for non-admin users.
   // Admins always see the full app so they can clear the maintenance flag.
@@ -160,7 +162,8 @@ function AuthGate() {
   if (loading) return <Maintenance mode="connecting" />;
 
   // Not logged in → login page (register has its own public route below)
-  if (!isAuthenticated) return <Login />;
+  if (!isAuthenticated) return location.pathname === "/" ? <Landing /> : <Login />;
+  if (location.pathname === "/login") return <Navigate to="/" replace />;
 
   // Logged in but ToS not accepted (or older version) → show Terms gate
   if (!user?.terms_accepted) return <Terms />;
@@ -189,6 +192,8 @@ export default function App() {
         <HashRouter>
           <Routes>
             {/* Public routes — no auth required */}
+            <Route path="/about" element={<Landing />} />
+            <Route path="/waitlist-remove" element={<WaitlistRemove />} />
             <Route path="/register" element={<Register />} />
             {/* Terms page public so the login-page ToS link works without being logged in */}
             <Route path="/terms"    element={<Terms viewOnly />} />

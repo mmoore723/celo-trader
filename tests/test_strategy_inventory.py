@@ -102,15 +102,16 @@ class StrategyInventoryEndpointTests(unittest.TestCase):
                        "root_path": ""}, receive, send)
             return messages[0]["status"], json.loads(b"".join(m.get("body", b"") for m in messages))
         self.assertEqual(401, asyncio.run(request())[0])
-        for user in ("alice", "bob"):
+        for user, is_admin in (("alice", False), ("bob", False), ("admin", True)):
                 with patch.dict("sys.modules", {"auth.users": users}), \
                      patch("api.middleware.auth.jwt.decode", return_value={"sub": user, "session_version": 1}), \
                      patch("api.middleware.auth.jwt_secret", return_value="test-only-secret"), \
-                     patch.object(users, "get_user", return_value={"user_id": user, "username": user, "session_version": 1, "is_admin": False}), \
+                     patch.object(users, "get_user", return_value={"user_id": user, "username": user, "session_version": 1, "is_admin": is_admin}), \
                      patch("config.save_settings") as save, patch("config.get_api_keys") as keys:
                     status, body = asyncio.run(request(cookie=True))
-                    self.assertEqual(200, status)
-                    self.assertIn("strategies", body)
+                    self.assertEqual(200 if is_admin else 403, status)
+                    if is_admin:
+                        self.assertIn("strategies", body)
                     save.assert_not_called()
                     keys.assert_not_called()
         self.assertEqual(405, asyncio.run(request("POST"))[0])

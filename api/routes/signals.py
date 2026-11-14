@@ -17,7 +17,9 @@ import json
 from collections import Counter
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+
+from api.middleware.research_access import require_research_admin, scoped_opportunity_feed
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 logger = logging.getLogger("celo_trader.api.signals")
@@ -310,7 +312,7 @@ def get_scanner_opportunities(
     ticker: str | None = None,
     strategy: str | None = None,
     outcome: str | None = Query(None, description="pending | blocked | observed_only | entered"),
-    feed: str | None = None,
+    feed: str | None = Depends(scoped_opportunity_feed),
     limit: int = Query(500, ge=1, le=1000),
 ) -> dict:
     """A day-by-day audit of every scanner candidate the router evaluated.
@@ -559,6 +561,8 @@ def get_scanner_opportunities(
     entries.sort(key=lambda entry: str(entry.get("observed_at") or ""), reverse=True)
     if outcome:
         entries = [entry for entry in entries if entry.get("outcome") == outcome]
+    if not isinstance(feed, (str, type(None))):
+        feed = None
     if feed == "operational":
         entries = [entry for entry in entries if entry.get("lifecycle") != "research"]
     elif feed == "research":
@@ -608,7 +612,7 @@ def get_scanner_opportunities(
     }
 
 
-@router.get("/gate-scorecard")
+@router.get("/gate-scorecard", dependencies=[Depends(require_research_admin)])
 def get_gate_scorecard(days: int = Query(30, ge=1, le=365)) -> dict:
     """Counterfactual evidence for decision gates, grouped by strategy.
 

@@ -14,17 +14,17 @@ const FEATURES = [
   {
     icon: "📡",
     title: "Pre-Market Intelligence",
-    body:  "Scans 30+ tickers every morning for gap plays, relative-volume spikes, and momentum setups — so you never miss the morning's best opportunities.",
+    body:  "Review the tickers your enabled strategies can trade, with market context and recorded setup checks.",
   },
   {
     icon: "⚡",
     title: "Automated Execution",
-    body:  "Instant order entry with professional position sizing, dynamic targets, and trailing stops. The bot manages the trade so you don't have to stare at a screen.",
+    body:  "Follow automated entries and position management using your configured strategy rules and account limits.",
   },
   {
     icon: "📊",
     title: "Actionable Analytics",
-    body:  "Every trade logged — win rate by strategy, entry hour, and ticker. See exactly what's working and tune your edge over time.",
+    body:  "Review saved trades, results and decision records by strategy and ticker. Keep research comparisons separate from broker fills.",
   },
 ];
 
@@ -107,13 +107,12 @@ export function Login() {
 
           {/* Headline */}
           <h1 style={s.headline}>
-            Algorithmic Options Trading —{" "}
-            <span style={{ color:"#00c853" }}>Built for Serious Traders</span>
+            Your trading workspace.{" "}
+            <span style={{ color:"#00c853" }}>Built for Clarity</span>
           </h1>
           <p style={s.sub}>
-            A full-stack trading system that scans the market, spots high-probability setups,
-            and executes options trades with professional risk management — all on your own
-            brokerage account.
+            Bring strategy research, automated options trading and practical learning together.
+            Sign in to review your settings, follow decisions and understand your results.
           </p>
 
           {/* Feature cards + disclaimer — hidden on very small screens */}
@@ -161,6 +160,7 @@ export function Login() {
 
             <h2 style={s.cardTitle}>Welcome Back</h2>
             <p style={s.cardSub}>Sign in to your trading dashboard</p>
+            <a href="/#/about" style={{ color: "#94a3b8", marginBottom: 18 }}>About CELO Trader</a>
 
             {error && (
               <div style={s.errorBanner}>

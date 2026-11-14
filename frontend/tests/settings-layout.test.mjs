@@ -32,7 +32,7 @@ test('Settings uses available page width and one/two/three content-width columns
 
 test('Both tabs retain accessible panels and independent credential saves', () => {
   assert.match(source, /hidden=\{activeTab !== "general"\}[^\n]*flex flex-col gap-4/);
-  assert.match(source, /activeTab === "strategies" && <div[^\n]*role="tabpanel"/);
+  assert.match(source, /activeTab === "strategies" && isAdmin && <div[^\n]*role="tabpanel"/);
   assert.match(source, /<TestedStrategies\s+embedded/);
   assert.match(source, /settings-paired-grid[\s\S]*<AlpacaCredentialsPanel \/>[\s\S]*<TradierCredentialsPanel/);
   assert.doesNotMatch(css, /grid-auto-flow:\s*dense/);
@@ -45,7 +45,7 @@ test('Audit summary is shared and full dialog mounts only on demand', () => {
   const badge = audit.slice(audit.indexOf('export function WeeklyExitAudit('), audit.indexOf('const AuditContext'));
   assert.doesNotMatch(badge, /useQuery|<dialog/);
   assert.match(audit, /showGrid && <Results/);
-  assert.match(source, /queryFn: \(\) => api.strategyHealth.researchMatrix\(90\),\s+enabled: activeTab === "strategies"/);
+  assert.match(source, /queryFn: \(\) => api.strategyHealth.researchMatrix\(90\),\s+enabled: isAdmin && activeTab === "strategies"/);
 });
 
 test('General groups related controls into two independent vertical stacks', () => {

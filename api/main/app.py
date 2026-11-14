@@ -14,6 +14,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.middleware.auth import require_auth
+from api.middleware.research_access import require_research_admin, require_internal_review
 from api.main.lifespan import _lifespan
 from auth.security import (
     allowed_browser_origins, is_production, validate_security_configuration,
@@ -64,7 +65,10 @@ from api.routes import bot, market, trades, settings, ws, backtest, admin, strat
 import api.routes.auth as auth_routes
 
 _auth = [Depends(require_auth)]
+_research = [Depends(require_research_admin)]
 
+from api.routes import launch
+app.include_router(launch.router)
 app.include_router(auth_routes.router)                              # public
 app.include_router(bot.router,      dependencies=_auth)
 app.include_router(market.router,   dependencies=_auth)
@@ -73,14 +77,14 @@ app.include_router(option_chart.router, dependencies=_auth)
 app.include_router(settings.router, dependencies=_auth)
 app.include_router(admin.router,    dependencies=_auth)             # admin — auth required
 app.include_router(ws.router)                                       # WebSocket — no cookie auth
-app.include_router(backtest.router,        dependencies=_auth)
-app.include_router(strategy_health.router, dependencies=_auth)
+app.include_router(backtest.router,        dependencies=_research)
+app.include_router(strategy_health.router, dependencies=[Depends(require_internal_review)])
 from api.routes import weekly_exit_audit
-app.include_router(weekly_exit_audit.router, dependencies=_auth)
+app.include_router(weekly_exit_audit.router, dependencies=_research)
 from api.routes import exit_lab
-app.include_router(exit_lab.router, dependencies=_auth)
+app.include_router(exit_lab.router, dependencies=_research)
 from api.routes import session_capture
-app.include_router(session_capture.router, dependencies=_auth)
+app.include_router(session_capture.router, dependencies=_research)
 app.include_router(ai_reasoning.router,    dependencies=_auth)
 app.include_router(learning.router,        dependencies=_auth)
 app.include_router(signals.router,         dependencies=_auth)

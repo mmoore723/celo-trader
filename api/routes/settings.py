@@ -4,9 +4,10 @@ api/routes/settings.py — Settings read/write endpoints + API credentials.
 from __future__ import annotations
 from typing import Optional
 import json
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel, Field
 from api.models import Settings
+from api.middleware.research_access import require_research_admin
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -54,10 +55,18 @@ def get_strategy_catalog_endpoint() -> dict:
     """Expose the same reviewed registry used by order routing."""
     from config import get_settings
     from config.strategy_catalog import public_strategy_catalog
-    return {"strategies": [row for row in public_strategy_catalog(get_settings()) if not row['removed']]}
+    rows = [row for row in public_strategy_catalog(get_settings()) if not row['removed']]
+    from auth.context import get_current_is_admin
+    if not get_current_is_admin():
+        allowed = {'strategy_id', 'display_name', 'version', 'tickers', 'trading_tickers',
+                   'setting_key', 'enabled', 'paper_only', 'observation_only', 'integrity_errors',
+                   'execution_enabled', 'account_mode', 'eligible_in_current_mode', 'removed'}
+        rows = [{key: value for key, value in row.items() if key in allowed}
+                for row in rows if not row['observation_only']]
+    return {"strategies": rows}
 
 
-@router.get("/strategies/tested")
+@router.get("/strategies/tested", dependencies=[Depends(require_research_admin)])
 def get_tested_strategy_inventory() -> dict:
     from config import get_settings
     from config.strategy_inventory import tested_strategy_inventory
@@ -173,7 +182,7 @@ def set_admin_strategy_override(payload: AdminStrategyOverridePayload, request: 
     return {'ok': True, 'enabled': payload.enabled}
 
 
-@router.get("/strategies/recommendations")
+@router.get("/strategies/recommendations", dependencies=[Depends(require_research_admin)])
 def get_strategy_recommendations() -> dict:
     from config import get_settings
     from strategy_health.pair_recommendations import recommendations
@@ -196,7 +205,7 @@ def get_strategy_recommendations() -> dict:
     return result
 
 
-@router.post("/strategies/recommendations/{strategy_id}/{ticker}")
+@router.post("/strategies/recommendations/{strategy_id}/{ticker}", dependencies=[Depends(require_research_admin)])
 def set_strategy_recommendation_consent(strategy_id: str, ticker: str, payload: StrategyConsentPayload) -> dict:
     from config import get_settings, save_settings
     if payload.decision == 'research_only':

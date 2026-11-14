@@ -505,3 +505,34 @@ the matching runtime review. No settings or database migration is required.
 New entry-frozen assignments for SPY/QQQ Trend Continuation, TSLA Two-Leg, TSLA Opening-Range Pullback, and SPY Afternoon FVG support half at +10% option bid, then 10% peak-profit giveback. Both native timers and legacy strategy profit overlays are replaced only for explicitly assigned new paper entries. Account safety and session liquidation remain; no initial loss stop is added. Existing positions keep their frozen policies. Live assignments are unsupported. Historical replay is incomplete and does not validate profitability.
 
 Rollback: restore the previous future-entry assignment map; open positions must retain this implementation until closed. Do not roll back executable code beneath open replacement-policy positions. After they close, revert this release via deploy.sh to 071329ebff37663a0f524be90b1ce474d1e814e9 if needed. No historical trade records are rewritten.
+
+### Launch preparation (November 14, 2026)
+
+The public `/` (signed out) and `/#/about` page describes the planned Watch-only
+and Learning offering. Prices are planned, subscriptions are not open, and the
+waitlist creates neither a user nor a broker connection. Ticker selection is
+explicitly deferred. Existing trading/research universes and account settings
+are unchanged.
+
+The launch waitlist persists consent, email and interest in
+`user_data/launch_waitlist.db`. Admin > Launch waitlist lists signups. No email
+provider is connected and no messages are sent. New signups receive a private
+removal link. Back up this database with runtime data; never commit it. The
+public endpoint validates consent/input/origin and limits requests per client.
+Research is under Admin; internal research APIs enforce administrator access.
+New non-admin accounts start with strategy templates off. Existing accounts are
+not migrated. Templates are grouped by strategy with ticker variants beneath.
+
+Roadmap status: launch page, interest collection, initial admin research boundary
+and new-account defaults implemented. Paid subscription entitlements, payments,
+email delivery, customer onboarding, complete template-setting audit, approved
+template descriptions, legal/data redistribution review and launch security
+review remain unfinished. This release is preparation, not authorization for
+paid customer access or live trading. Monday capture verification remains a
+separate scheduled task. No live-account behavior or risk changes are included.
+
+Rollback: if signup, sign-in, access checks or existing workspace fail, revert
+this release through `deploy.sh` to the preceding verified commit, retaining all
+`user_data` files including the waitlist. Do not roll back account data or change
+trading policies to repair a page. Verify GitHub, server commit and served assets
+match after either deployment or rollback.

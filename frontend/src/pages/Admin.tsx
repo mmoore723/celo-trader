@@ -1,7 +1,7 @@
 /**
  * Admin.tsx — User management + Emergency Controls (admin only). Mobile-responsive.
  */
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { UserPlus, Link2, Trash2, RefreshCw, KeyRound, AlertTriangle, CheckCircle2, BrainCircuit, HardDrive, Cpu } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
@@ -10,6 +10,10 @@ import { api } from "../lib/api";
 import { RemovedStrategies } from "../components/settings/StrategyRemoval";
 import { AdminActivityLog } from "../components/AdminActivityLog";
 import { AdminTradeJournal } from "../components/AdminTradeJournal";
+
+import { useSearchParams } from "react-router-dom";
+import { LaunchWaitlistAdmin } from "../components/LaunchWaitlist";
+const Research = lazy(() => import("./Research").then(m => ({default:m.Research})));
 
 interface User {
   user_id:    string;
@@ -20,7 +24,9 @@ interface User {
 
 export function Admin() {
   const { user }      = useAuth();
-  const [adminTab, setAdminTab] = useState<"overview" | "journal">("overview");
+  const [params, setParams] = useSearchParams();
+  const adminTab = params.get("tab") ?? "overview";
+  const setAdminTab = (tab: string) => setParams({tab}, {replace:true});
   const [users, setUsers]       = useState<User[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
@@ -255,6 +261,9 @@ export function Admin() {
           aria-controls="admin-journal-panel" className={`btn ${adminTab === "journal" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setAdminTab("journal")}>Trade journal</button>
       </div>
+      <div className="flex gap-2"><button className={`btn ${adminTab === "research" ? "btn-primary" : "btn-ghost"}`} onClick={() => setAdminTab("research")}>Research</button><button className={`btn ${adminTab === "launch" ? "btn-primary" : "btn-ghost"}`} onClick={() => setAdminTab("launch")}>Launch waitlist</button></div>
+      {adminTab === "research" && user?.is_admin && <Suspense fallback={<p>Loading research...</p>}><Research /></Suspense>}
+      {adminTab === "launch" && user?.is_admin && <LaunchWaitlistAdmin />}
       {adminTab === "journal" && user?.is_admin && <div id="admin-journal-panel" role="tabpanel" aria-labelledby="admin-journal-tab"><AdminTradeJournal /></div>}
       <div id="admin-overview-panel" role="tabpanel" aria-labelledby="admin-overview-tab" hidden={adminTab !== "overview"}>
       <div className="flex flex-col gap-4" style={{ maxWidth: 600 }}>
