@@ -73,7 +73,7 @@ def _close_position(
     if paper:
         logger.info("[PAPER] SELL %s reference=%s (%s)", trade["contract_symbol"], exit_price, reason)
     _urgent_exit = any(token in (reason or "").lower() for token in (
-        "hard_stop", "initial_atr_stop", "structural_stop", "panic",
+        "hard_stop", "initial_atr_stop", "structural_stop", "panic", "adverse_3x5m_10pct_loss",
         "kill_lock", "daily_loss", "session_hard_cutoff", "research_session_close",
     ))
     from trading.tsla_giveback_exit import use_giveback_market_order

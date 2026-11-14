@@ -47,7 +47,7 @@ export function strategyName(name) {
 
 export function exitReason(reason) {
   return ({premium_2pct:'2% Premium Gain',premium_25pct:'25% Premium Gain',
-    giveback_25pct:'25% Peak-Profit Giveback',trend_partial_profit:'Take half at +25%, then 25% profit giveback',stage1_trend_profit_profit_take:'Half sold at +25%',trend_profit_giveback:'Remaining contracts: 25% profit giveback'})[reason] ?? reason ?? 'Not recorded';
+    adverse_3x5m_10pct_loss:'Protective exit: 3 adverse 5-minute candles and 10% option loss',giveback_25pct:'25% Peak-Profit Giveback',trend_partial_profit:'Take half at +25%, then 25% profit giveback',stage1_trend_profit_profit_take:'Half sold at +25%',trend_profit_giveback:'Remaining contracts: 25% profit giveback'})[reason] ?? reason ?? 'Not recorded';
 }
 
 // Normalize presentation fields only. IDs, versions, evidence and submitted

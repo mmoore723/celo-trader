@@ -71,7 +71,7 @@ def _resolve_latched_exit(
     `_close_position` removes the position state only after a confirmed fill.
     """
     pending_reason = str(position_state.get("exit_pending_reason") or "").strip()
-    if pending_reason in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback') and should_exit and reason not in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback'):
+    if pending_reason in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback','adverse_3x5m_10pct_loss') and should_exit and reason not in ('premium_2pct','premium_25pct','giveback_25pct','stage1_trend_profit','trend_profit_giveback','adverse_3x5m_10pct_loss'):
         position_state['exit_pending_reason'] = reason
         return True, reason
     if pending_reason and should_exit and reason == 'research_session_close':
@@ -433,6 +433,10 @@ def _manage_open_position(
                 logger.debug("Bar fetch for position management failed (%s): %s", ticker, _be)
 
         _5m_bar_key = now_et.strftime("%Y-%m-%d %H:") + str(now_et.minute // 5)
+        from trading.trend_profit_exit import replacement_policy
+        _replacement = replacement_policy(trade)
+        if _replacement and _replacement.get('adverse_candle_failsafe'):
+            _5m_bar_key = _minute_key  # Retry late closed bars without a five-minute blind window.
         df_5m: Optional[pd.DataFrame] = ps.get("cached_5m_df")
         if ps.get("last_5m_fetch_key") != _5m_bar_key:
             try:
@@ -787,7 +791,7 @@ def _manage_open_position(
         # Supplemental approved paper exit. Native and safety exits have priority.
         if not should_exit:
             from trading.premium_policy import evaluate_position
-            should_exit, reason = evaluate_position(trade, quote, now_et)
+            should_exit, reason = evaluate_position(trade, quote, now_et, five_minute_bars=df_5m)
 
         # Classification follows the selected branch; it never selects an exit.
         # Persist separately so a display failure cannot interrupt protection.

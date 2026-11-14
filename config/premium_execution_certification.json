@@ -9,14 +9,15 @@
     "strategy_health/premium_research.py": "6ddf4bf0051955a396acc41a18fa74fffff41e073e5f968b7236645a3c4388e8",
     "strategy_health/premium_native.py": "723fb42005ce953afba07a65dcf230209b97d0802ce174d14cb17704662c1ada",
     "strategy_health/premium_approval.py": "390fba942f726f6f946993a11c6200597d4c2d2d6032274849bb564693dd6c05",
-    "trading/premium_policy.py": "a41542bf81bfd7e6e8b4199dbef8864c6cf616bab40446244207876b0d275840",
-    "trading/position_manager/close.py": "93468bceaa143abc35ea36f24e22fb7b2ad882682d07ca4898fdc9d761fb5e72",
-    "trading/position_manager/manage.py": "a6f611d324e43671aa4eef2ce73953407541033a8056848a3231cb83503f5f8c",
+    "trading/premium_policy.py": "8ddc8c4f14f8eeca46914ba8837648474c519a57eee16ad0d2d95e14afe7af5a",
+    "trading/position_manager/close.py": "9718a959fbfce3fd9e3f880f9908d31a00432547c4a15d4ac561bc5e87d30128",
+    "trading/position_manager/manage.py": "ddb98b20f284e026d4cb440665ba6567c50cd14df47e8ba9e1d82abcf605b5b2",
     "trading/entry/tick.py": "1d4eab1ba8ad183010c6a01022be14cc1f6fccb791580cc0ea9e6ed59d18e110",
     "broker/alpaca_orders.py": "887c38ebf184bdf8a2723ed69bfac4bda92c7bfc25639eedda0a511c767cfd17",
     "broker/tradier_execution.py": "ebf07a9e45111e92558b97a1082a8a67161dfbf1601bbbe9a4b60b4747b9d642",
-    "trading/trend_profit_exit.py": "408dfaf8ff456df5bc8b81739e602a8cb4fe353d49a8069fccf3417fa2624de0",
+    "trading/trend_profit_exit.py": "a4f7a3c71908f7ae70eecf16b4aa23677fd5bd565490d701d0c249af6c7db4a6",
     "trading/recovery_state.py": "325fed6389593d1adad2bbd041252fd8e6068c049210aa7467ffd29631b1e286",
-    "trading/position_manager/exit_preflight.py": "e42b7c5ad36f90212846d3fef48f9f84ac67e7c42f6ccf1989718c8eec6f60e1"
+    "trading/position_manager/exit_preflight.py": "091f1be2770d6fe860b7dfe7e63231a800d8c509d43a11e8ff525293e20ed6c8",
+    "trading/adverse_candle_exit.py": "556aa843b1a64f518ae59364971ec10d6b1d968447bd8556072a4c0b2fec016a"
   }
 }

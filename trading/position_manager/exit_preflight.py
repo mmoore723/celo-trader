@@ -12,7 +12,7 @@ TIMED_ROUTES = frozenset({
 
 def full_exit_reason(trade, state, now):
     pending = state.get('exit_pending_reason')
-    if pending and not pending.startswith('stage1') and pending != 'trend_profit_giveback':
+    if pending and not pending.startswith('stage1') and pending not in ('trend_profit_giveback','adverse_3x5m_10pct_loss'):
         return pending
     from trading.trend_profit_exit import replacement_policy
     replacement = replacement_policy(trade)
@@ -27,7 +27,7 @@ def full_exit_reason(trade, state, now):
         due, reason = evaluate_v2_orb_paper_exit(entry, now, trade['strategy_id'])
         if due:
             return reason
-    return pending if pending == 'trend_profit_giveback' else None
+    return pending if pending in ('trend_profit_giveback','adverse_3x5m_10pct_loss') else None
 
 
 def executable_quote(market, symbol):

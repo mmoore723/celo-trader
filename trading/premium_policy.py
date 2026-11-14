@@ -41,7 +41,7 @@ def freeze_selection(settings, strategy, ticker, version):
     return {'premium_exit_policy':json.loads(json.dumps(assignment))}
 
 
-def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'):
+def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold', five_minute_bars=None):
     """Native/safety exits always win. Durable state is scoped to the open trade."""
     if native_exit:
         return True,native_reason
@@ -62,6 +62,8 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
         raise ValueError('Entry-frozen premium policy scope mismatch')
     if clock(now)<=clock(trade['entry_time']):
         return False,'hold'
+    from trading.adverse_candle_exit import validate as validate_failsafe
+    spec=validate_failsafe(policy)
     previous=context.get('premium_exit_state') or {}
     if policy['rule'] == TREND_RULE:
         if (trade.get('strategy_id'), trade.get('ticker')) not in PAIRS:
@@ -71,6 +73,11 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
         state, decision=trend_advance(previous,entry=float(trade['entry_price']),
             quantity=int(current[0]),sold=sold_quantity(conn,trade),quote=quote,now=now,symbol=trade['contract_symbol'],
             gain_pct=policy.get('gain_pct',25),giveback_pct=policy.get('giveback_pct',25))
+        if spec:
+            from trading.adverse_candle_exit import apply
+            state, protection=apply(state,trade=trade,quantity=int(current[0]),sold=sold_quantity(conn,trade),
+                                   quote=quote,now=now,frame=five_minute_bars)
+            if protection: decision=protection
     else:
         state=advance(policy['rule'],previous,entry=float(trade['entry_price']),
                       quantity=int(trade['contracts']),quote=quote,received=now,symbol=trade['contract_symbol'])
@@ -82,7 +89,7 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
     return decision
 
 
-def evaluate_position(trade, quote, now):
+def evaluate_position(trade, quote, now, *, five_minute_bars=None):
     # Skip even a database read for every existing, unassigned position.
     if trade.get('paper') not in (True,1):
         return False,'hold'
@@ -93,4 +100,4 @@ def evaluate_position(trade, quote, now):
     from database import get_conn
     with get_conn() as conn:
         conn.execute('BEGIN IMMEDIATE')
-        return evaluate(conn,trade,quote,now)
+        return evaluate(conn,trade,quote,now,five_minute_bars=five_minute_bars)

@@ -80,6 +80,8 @@ def replacement_policy(trade):
             or policy.get('gain_pct') != 10 or policy.get('giveback_pct') != 10
             or policy.get('fingerprint') != fingerprint(policy)):
         raise ValueError('Invalid frozen replacement profit policy')
+    from trading.adverse_candle_exit import validate
+    validate(policy)
     return policy
 
 
@@ -87,4 +89,6 @@ def policy_label(policy):
     gain = policy.get('gain_pct', 25)
     giveback = policy.get('giveback_pct', 25)
     suffix = '; no 30/90-minute timer' if policy.get('replace_native_exit') else '; native exit remains active'
+    if policy.get('adverse_candle_failsafe'):
+        suffix += '; before +10%, sell all after 3 adverse completed 5-minute candles AND 10% option loss'
     return f'Take half at +{gain}%, then {giveback}% peak-profit giveback'+suffix

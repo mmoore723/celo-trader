@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'durable-quote-capture-20261114.1'
+REVISION = 'approved-adverse-failsafe-20261114.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 
