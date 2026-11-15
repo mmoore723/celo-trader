@@ -456,11 +456,11 @@ export const settingHelp = {
     "detail": "Enter a fraction: 0.01 means 1%."
   },
   "touch_tolerance_pct": {
-    "label": "VWAP touch allowance (fraction)",
-    "meaning": "Distance from VWAP that still counts as a touch. Enter a fraction: 0.01 means 1%.",
-    "effect": "Higher accepts touches farther from VWAP.",
-    "summary": "Distance from VWAP that still counts as a touch.",
-    "detail": "Enter a fraction: 0.01 means 1%."
+    "label": "How close price must get to VWAP",
+    "meaning": "How near the candle must get to the VWAP line to count as a touch.",
+    "effect": "A higher number lets price stay farther from VWAP. A lower number requires price to get closer. The other entry checks still need to pass.",
+    "summary": "How near the candle must get to the VWAP line to count as a touch.",
+    "detail": "Example: with 0.0015 entered (0.15%) and VWAP at $200, price must come within 30 cents of VWAP, between $199.70 and $200.30. For a call setup, the bot checks the previous candle’s low; for a put setup, its high. The dollar distance changes with VWAP."
   },
   "max_compression_pct": {
     "label": "Maximum tight-range width (fraction)",
