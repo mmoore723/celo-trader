@@ -27,3 +27,21 @@ test('lesson starts with one idea and optional explanations without losing exact
  assert.match(html,/Wait for a finished candle/);
  assert.doesNotMatch(html,/<details|Explain more|Research baseline|broker fill|policy/);
 });
+let workshopCode=ts.transpileModule(read('components/learning/LessonWorkshop.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
+workshopCode=workshopCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
+for(const name of ['react','react/jsx-runtime']) workshopCode=workshopCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
+const {LessonWorkshop}=await import('data:text/javascript;base64,'+Buffer.from(workshopCode).toString('base64'));
+const lessons=JSON.parse(readFileSync(new URL('../../api/routes/learning_course_content.json',import.meta.url),'utf8'));
+test('opening lessons teach distinct steps and test a new application without replacing saved progress',()=>{
+ for(const lesson of lessons.slice(0,4)){
+  const w=lesson.workshop;assert.equal(w.steps.length,4);assert.equal(new Set(w.steps.map(s=>s.title)).size,4);
+  assert.ok(w.steps.every(s=>s.explain.length>120&&s.example.length>100));
+  assert.ok(w.challenge.correct>=0&&w.challenge.correct<w.challenge.choices.length);
+  assert.notEqual(w.challenge.prompt,lesson.questions[0].prompt);
+  const html=renderToStaticMarkup(createElement(LessonWorkshop,{workshop:w,onReview:()=>{}}));
+  assert.match(html,/By the end:/);assert.match(html,/Walk through it/);assert.match(html,/Try a new situation/);
+  assert.ok(html.includes(w.steps[0].title));assert.ok(!html.includes(w.steps[3].explain));
+ }
+ assert.match(read('components/learning/LearningPortal.tsx'),/current\.workshop/);
+ assert.equal(lessons.length,50);
+});

@@ -16,7 +16,43 @@
         "correct": 1,
         "explanation": "Buying one share for $40 costs $40. Buying a standard stock option quoted at $2 normally costs $200 because it represents 100 shares. These are different purchases. An option buyer can lose the entire amount paid. Practice with pretend money first."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Explain what you own, read an option quote, and calculate what one contract costs.",
+      "steps": [
+        {
+          "title": "Start with the thing you are buying",
+          "explain": "A share is ownership. If you buy one share of a company, you own a small part of it. A purchased option is a contract giving you a particular right for a limited time. Buying the contract does not put the shares into your account.",
+          "example": "One share at $40 costs $40. One standard option quoted at $2 costs $200 before fees. The $2 is a price per share covered by the contract, not the price for the whole contract."
+        },
+        {
+          "title": "Read the contract like a product label",
+          "explain": "The ticker tells you the investment. Call or put tells you the right. Strike tells you the agreed share price. Expiration tells you the deadline. Premium is the price of the contract, quoted per share. You need all five pieces to know what you are buying.",
+          "example": "XYZ $50 call, expiring June 18, quoted at $2: XYZ is the investment, call is the right to buy, $50 is the strike, June 18 is expiration, and $2 is the premium. This is a made-up teaching contract."
+        },
+        {
+          "title": "Separate the purchase from the right",
+          "explain": "For a standard 100-share call, paying $200 buys the contract. It does not buy 100 shares for $200. Using the right to buy shares is called exercising and requires paying the strike price for those shares.",
+          "example": "Exercising that $50 call normally requires $5,000 to purchase 100 shares. That is separate from the $200 already paid for the option."
+        },
+        {
+          "title": "Know how the purchase can end",
+          "explain": "An option buyer can sell the contract to close it before expiration, if a buyer is available. Exercising is different from selling the option. If the contract expires worthless, the buyer loses the entire premium paid, plus costs.",
+          "example": "Buy one contract for $200 and later sell it for $250: the difference is $50 before fees. If it becomes worthless instead, the loss is $200 before fees. These are examples, not predictions."
+        }
+      ],
+      "mistake": "The $50 strike is not a $50 option price. Do not multiply the strike to calculate what buying the option costs. Use the premium and the contract multiplier.",
+      "challenge": {
+        "prompt": "A standard option is quoted at $1.25. You buy two contracts. What do you pay before fees?",
+        "choices": [
+          "$2.50",
+          "$125",
+          "$250"
+        ],
+        "correct": 2,
+        "explanation": "$1.25 × 100 × 2 = $250. The 100 converts the per-share quote to one standard contract. The 2 is the number of contracts. Check the multiplier because adjusted contracts can differ."
+      }
+    }
   },
   {
     "id": "lesson-2",
@@ -35,7 +71,43 @@
         "correct": 0,
         "explanation": "Before a practice trade, write: I think price may rise because it held a previous low. I will leave if my written exit condition happens. Afterward, compare the result to the plan. A winning practice trade can still be a poorly planned trade. Judge the process as well as the result."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Write a testable paper-trade plan and judge the decision separately from its outcome.",
+      "steps": [
+        {
+          "title": "Choose one skill to practice",
+          "explain": "Do not try to learn contract selection, chart patterns and fast execution all at once. Pick a specific skill, such as calculating contract cost or recognizing a completed candle. Paper trading is a practice environment using simulated money.",
+          "example": "Today’s task: before every pretend purchase, calculate its total premium cost. Record your calculation before looking at the platform total."
+        },
+        {
+          "title": "Write the observation, then the decision",
+          "explain": "An observation describes what you can see. A prediction describes what you think may happen. Keep them separate so you can later check whether the decision followed the evidence.",
+          "example": "Observation: two completed candles stayed above $50. Prediction: buyers may defend $50 again. Neither sentence proves that the next candle will rise."
+        },
+        {
+          "title": "Make the plan specific enough to check",
+          "explain": "Before a paper entry, record the contract, entry price, quantity, reason, exit condition and maximum money exposed. “Leave if it looks bad” cannot be tested consistently. These example rules are exercises, not recommended trading settings.",
+          "example": "Practice example: one contract bought at $2.00; close the simulated position if its bid reaches $1.80 or at the chosen practice end time. A $1.80 sale would lose $20 before fees. An actual exit can be worse if the price jumps or the order cannot fill."
+        },
+        {
+          "title": "Review the process before the score",
+          "explain": "Compare the actions with the plan. A gain does not prove a good process, and a loss does not prove that a rule is useless. Keep losing examples so you can identify repeated mistakes.",
+          "example": "If the plan said one contract but you bought five and made money, the sizing decision still broke the plan. Record both facts. Paper fills also do not prove the same order would fill in a real account."
+        }
+      ],
+      "mistake": "Do not change the explanation after you know the outcome. Write what you saw and intended before revealing the next candle.",
+      "challenge": {
+        "prompt": "Your paper plan allowed one contract. You bought four and made $80. What should your review say?",
+        "choices": [
+          "The gain proves the plan worked",
+          "Profitable outcome, but quantity broke the plan",
+          "Delete the trade because it was not planned"
+        ],
+        "correct": 1,
+        "explanation": "Keep the result and the mistake. The gain is real within the simulation, but it does not validate buying four contracts. Review why the quantity changed before repeating the exercise."
+      }
+    }
   },
   {
     "id": "lesson-3",
@@ -54,7 +126,43 @@
         "correct": 1,
         "explanation": "A $50 call lets its holder buy at $50 under the contract terms. If the stock is $54 at expiration, the call has $4 per share of intrinsic value. If you paid $5, that is still a loss before costs. The strike is not the price you pay for the option. The premium is."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Distinguish a call’s strike, premium and expiration value, then calculate a simple result.",
+      "steps": [
+        {
+          "title": "Understand the right",
+          "explain": "A purchased call gives its holder the right to buy the underlying shares at the strike under the contract’s terms. A standard equity call usually covers 100 shares. Buying a call does not force the stock to rise.",
+          "example": "A $50 call gives a right to buy at $50. The $50 is the share price in the agreement, not the amount paid for the call."
+        },
+        {
+          "title": "Pay attention to the price of that right",
+          "explain": "The premium is what you pay for the option. A call can become more useful as the stock rises, yet still leave you with a loss if you paid too much relative to what you receive when you exit.",
+          "example": "One call quoted at $3 costs $300 before fees. Selling that same contract at $2.50 returns $250, a $50 loss before fees, even if the stock rose slightly."
+        },
+        {
+          "title": "Work through expiration",
+          "explain": "At expiration, the call’s intrinsic value per share is the stock price minus the strike, with a minimum of zero. Intrinsic value means the value of the right itself at that point. Subtract the premium paid to find the simplified expiration result.",
+          "example": "Stock $54, strike $50: intrinsic value $4. Pay $3 originally and the simplified result is ($4 − $3) × 100 = $100 before fees. Pay $5 instead and it is a $100 loss."
+        },
+        {
+          "title": "Do not confuse expiration math with today’s sale price",
+          "explain": "Before expiration, the option can also have value from time remaining and uncertainty about future prices. Use an actual option quote to estimate a sale, not just the stock price minus strike. Exercising involves separate funding and broker rules.",
+          "example": "If the stock is $51, a $50 call might be quoted above $1 before expiration. You cannot calculate its exact bid from those two stock prices alone."
+        }
+      ],
+      "mistake": "“The stock went up” and “my call made money” are different statements. Compare the option purchase and sale prices, including costs.",
+      "challenge": {
+        "prompt": "At expiration, a $60 call has a stock price of $64. You paid a $5 premium for one standard contract. What is the simplified result before fees?",
+        "choices": [
+          "$400 profit",
+          "$100 loss",
+          "$100 profit"
+        ],
+        "correct": 1,
+        "explanation": "Intrinsic value is $64 − $60 = $4 per share, or $400 per contract. You paid $500, so the result is a $100 loss. The call has value, but not enough to recover its cost."
+      }
+    }
   },
   {
     "id": "lesson-4",
@@ -73,7 +181,43 @@
         "correct": 0,
         "explanation": "A $50 put has $4 per share of intrinsic value when the stock is $46 at expiration. If its premium was $2, its expiration value exceeds that premium by $2 per share before costs. Selling a put to open a position creates an obligation. That is not the same as buying a put."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Explain a purchased put and calculate its result without confusing it with selling a put.",
+      "steps": [
+        {
+          "title": "Understand what the put lets you do",
+          "explain": "A put gives its buyer the right to sell the underlying shares at the strike under the contract’s terms. A purchased put often benefits from a falling stock price, but direction alone does not guarantee a profit.",
+          "example": "If the market price is $46, the right to sell at $50 has value. The put’s strike is $50, regardless of the premium you paid."
+        },
+        {
+          "title": "Calculate the purchase cost",
+          "explain": "Use the option premium, multiplier and quantity. A standard equity put usually uses 100 shares, just as a standard call does. The word put does not change this cost calculation.",
+          "example": "One put quoted at $2 costs $200 before fees. Two cost $400. This buys contracts, not a short position in 200 shares."
+        },
+        {
+          "title": "Calculate the simplified expiration result",
+          "explain": "At expiration, a put’s intrinsic value per share is strike minus stock price, with a minimum of zero. Subtract what you paid, then multiply by 100 for a standard contract.",
+          "example": "Strike $50, stock $46, premium paid $2: ($50 − $46 − $2) × 100 = $200 before fees. If the stock is $49 instead, the result is ($1 − $2) × 100 = a $100 loss."
+        },
+        {
+          "title": "Separate closing from opening",
+          "explain": "Selling a put that you already bought closes that long position. Selling a put to open a new short position is different: it creates an obligation if assigned. The lessons here are not permission to sell uncovered options.",
+          "example": "Buy one put at $2 and sell that same one at $2.60: you have closed it for $60 before fees. You did not open a new short put merely because the closing button says Sell."
+        }
+      ],
+      "mistake": "Calls and puts are types of contracts. Buy and sell are actions. A put position can start with a Buy and end with a Sell.",
+      "challenge": {
+        "prompt": "You bought one standard put at $2.40 and sold that same contract at $3.10. What happened?",
+        "choices": [
+          "You opened a short put",
+          "You closed the purchased put for $70 before fees",
+          "You closed it for $0.70 before fees"
+        ],
+        "correct": 1,
+        "explanation": "The price difference is $0.70 per share. $0.70 × 100 = $70 before fees. Selling the contract you own closes the position."
+      }
+    }
   },
   {
     "id": "lesson-5",
