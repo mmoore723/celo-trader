@@ -43,3 +43,15 @@ test('unassigned research strategies do not create empty Settings cards',()=>{
  assert.doesNotMatch(html,/aria-label="Test strategy strategy"/);
  assert.match(html,/No strategies are available/);
 });
+
+const {SettingHelp}=await import(`data:text/javascript;base64,${Buffer.from(configCode).toString('base64')}`);
+test('setting help keeps examples and effects collapsed by default',()=>{
+ const html=renderToStaticMarkup(createElement(SettingHelp,{name:'giveback_pct'}));
+ const [visible,expanded]=html.split('<details');
+ assert.match(visible,/How much of the highest profit/);
+ assert.doesNotMatch(visible,/Example:|Changing it:/);
+ assert.doesNotMatch(expanded,/^ open/);
+ assert.match(expanded,/Learn more about Peak profit/);
+ assert.match(expanded,/10% of \$30 peak profit is \$3/);
+ assert.match(expanded,/Changing it:/);
+});
