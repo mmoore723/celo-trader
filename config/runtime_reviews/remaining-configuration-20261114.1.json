@@ -3,7 +3,7 @@
   "runtime_revision": "remaining-configuration-20261114.1",
   "status": "runtime_correctness_reviewed",
   "profitability_validated": false,
-  "base_revision": "2df82898257e0c6fd6d9347e93a6c029cbc76eb7",
+  "base_revision": "ef7ee257a46bb8680be65090472c865e92d479ee",
   "purpose": "Scoped explicit-save engine configuration and Admin support sessions. Unconfigured defaults, enabled switches, account risk limits and existing entry-frozen exits preserved. No new assignments or live enablement.",
   "runtime_sources": [
     {
@@ -464,7 +464,7 @@
     },
     {
       "path": "trading/tested_strategy_research.py",
-      "sha256": "7e4be1dba6c49fff9a600ffa6b47b881b5b258b841f02dc2ade61712bcef5709"
+      "sha256": "7c2ca39d6e58d32af92c105f9c85fb72cd0ad4e593e72b1c85e91cf0720259bf"
     },
     {
       "path": "trading/trend_continuation_research_exit.py",

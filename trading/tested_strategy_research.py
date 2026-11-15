@@ -238,7 +238,7 @@ def evaluate_tested_research(
                 "implementation": spec.implementation or strategy.__class__.__module__,
                 "research_library": True,
                 "timeframe_minutes": parameter("entry_timeframe_minutes", spec.timeframe_minutes),
-                "entry_timing": f"completed_{parameter("entry_timeframe_minutes", spec.timeframe_minutes)}m_signal_then_next_quote",
+                "entry_timing": f"completed_{parameter('entry_timeframe_minutes', spec.timeframe_minutes)}m_signal_then_next_quote",
                 "underlying_stop": candidate.stop,
                 "underlying_target": candidate.target,
                 "exit_plan": f"same-contract bid after {spec.exit_minutes} minutes",
