@@ -36,7 +36,13 @@ visualCode=visualCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"]
 for(const name of ['react','react/jsx-runtime']) visualCode=visualCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
 const visualModule='data:text/javascript;base64,'+Buffer.from(visualCode).toString('base64');
 const {VisualPractice,TeachingDiagram,practiceChoices,RetestComparison,freshRetestPair,retestPassed,RetestSkills,retestSequence,gradeRetestSequence}=await import(visualModule);
+let historicalCode=ts.transpileModule(read('components/learning/HistoricalRetests.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
+historicalCode=historicalCode.replace(/import examples from ['"]\.\/historicalRetests.json['"];?/, 'const examples='+read('components/learning/historicalRetests.json')+';');
+historicalCode=historicalCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
+for(const name of ['react','react/jsx-runtime']) historicalCode=historicalCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
+const historicalModule='data:text/javascript;base64,'+Buffer.from(historicalCode).toString('base64');
 let workshopCode=ts.transpileModule(read('components/learning/LessonWorkshop.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
+workshopCode=workshopCode.replaceAll("'./HistoricalRetests'",JSON.stringify(historicalModule)).replaceAll('"./HistoricalRetests"',JSON.stringify(historicalModule));
 workshopCode=workshopCode.replaceAll("'./VisualPractice'",JSON.stringify(visualModule)).replaceAll('"./VisualPractice"',JSON.stringify(visualModule));
 workshopCode=workshopCode.replaceAll("'./CandlePractice'",JSON.stringify(candleModule)).replaceAll('"./CandlePractice"',JSON.stringify(candleModule));
 workshopCode=workshopCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
