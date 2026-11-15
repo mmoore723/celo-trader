@@ -13,6 +13,10 @@ VERSION = 'options-foundations-1'
 LESSONS = json.loads(Path(__file__).with_name('learning_course_content.json').read_text())
 FINAL_IDS = [2,3,4,5,7,9,12,13,17,19]
 SOURCES = [
+    {'title':'OIC: Debit call spreads', 'url':'https://www.optionseducation.org/strategies/all-strategies/bull-call-spread-debit-call-spread'},
+    {'title':'OIC: Covered calls', 'url':'https://www.optionseducation.org/strategies/all-strategies/covered-call-buy-write'},
+    {'title':'FINRA: Exercise and assignment', 'url':'https://www.finra.org/investors/insights/trading-options-understanding-assignment'},
+    {'title':'Investor.gov: Order types', 'url':'https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-14'},
     {'title':'Options Industry Council: Getting started', 'url':'https://www.optionseducation.org/optionsoverview/getting-started-with-options'},
     {'title':'Investor.gov: An introduction to options', 'url':'https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-63'},
     {'title':'Schwab: Options Greeks', 'url':'https://www.schwab.com/options/options-greeks'},

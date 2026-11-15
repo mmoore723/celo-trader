@@ -45,3 +45,51 @@ test('opening lessons teach distinct steps and test a new application without re
  assert.match(read('components/learning/LearningPortal.tsx'),/current\.workshop/);
  assert.equal(lessons.length,50);
 });
+
+test('all remaining lessons teach the skill with a distinct worked example and two practice tasks',()=>{
+ const prompts=new Set();
+ for(const lesson of lessons.slice(4)){
+  const w=lesson.workshop;
+  assert.equal(w.steps.length,3,lesson.id);
+  assert.ok(w.steps.every(s=>s.title&&s.explain.length>100&&s.example.length>75),lesson.id);
+  assert.ok(w.goal&&w.mistake&&w.application.prompt&&w.application.answer);
+  assert.ok(!prompts.has(w.challenge.prompt));prompts.add(w.challenge.prompt);
+  assert.notEqual(w.challenge.prompt,lesson.questions[0].prompt);
+  assert.ok(w.challenge.correct>=0&&w.challenge.correct<w.challenge.choices.length);
+  assert.ok(w.visual);
+  const html=renderToStaticMarkup(createElement(LessonWorkshop,{workshop:w,onReview:()=>{}}));
+  assert.match(html,/Illustrative teaching example/);
+  assert.doesNotMatch(html,/NaN|undefined|Infinity/);
+  assert.ok(!html.includes(w.application.answer),'answer stays hidden until practice');
+ }
+});
+const {LessonVisual,revealedCandles}=await import('data:text/javascript;base64,'+Buffer.from(workshopCode).toString('base64'));
+test('visual data and incremental candle bounds do not disclose later observations',()=>{
+ for(const lesson of lessons.slice(4)){
+  const v=lesson.workshop.visual;
+  if(v.kind==='table'){assert.ok(v.rows.every(r=>r.length===v.headers.length));continue;}
+  if(v.kind==='line'){assert.equal(v.labels.length,v.values.length);assert.ok(v.values.every(Number.isFinite));continue;}
+  assert.equal(v.bars.length,v.labels.length);assert.equal(v.notes.length,v.bars.length);
+  assert.ok(v.bars.every(b=>b.high>=Math.max(b.open,b.close)&&b.low<=Math.min(b.open,b.close)));
+  const visible=revealedCandles(v,1);assert.equal(visible.bars.length,1);
+  const altered={...v,bars:[v.bars[0],{open:9000,high:9001,low:8999,close:9000}]};
+  assert.deepEqual(revealedCandles(altered,1),visible,'future data does not change displayed scale');
+  const html=renderToStaticMarkup(createElement(LessonVisual,{visual:v}));
+  assert.ok(html.includes(v.notes[0]));assert.ok(!html.includes(v.notes.at(-1)));
+  assert.match(html,/Next candle/);
+  assert.doesNotMatch(html,/NaN|undefined|Infinity/);
+ }
+ // Candle fundamentals have no invented support level or zero-price axis.
+ const plain=revealedCandles(lessons[6].workshop.visual,1);
+ assert.equal(plain.minimum,49);assert.equal(plain.maximum,52);
+});
+test('worked expiration payoffs match contract math and the shared practice has no account writes',()=>{
+ const call=lessons[5].workshop.visual;
+ assert.deepEqual(call.values,[49,50,51,52,53,54].map(s=>(Math.max(s-50,0)-2)*100));
+ const spread=lessons[44].workshop.visual;
+ assert.deepEqual(spread.values,[48,50,52,53,55,57].map(s=>(Math.max(s-50,0)-Math.max(s-55,0)-3)*100));
+ const covered=lessons[45].workshop.visual;
+ assert.deepEqual(covered.values,[40,45,48,50,55,65].map(s=>(s-50+2-Math.max(s-55,0))*100));
+ assert.doesNotMatch(read('components/learning/LessonWorkshop.tsx'),/fetch\(|api\.post|localStorage|sessionStorage/);
+ assert.match(read('components/learning/LessonWorkshop.tsx'),/self-check practice/);
+});

@@ -128,6 +128,10 @@ class LearningCourseTests(CustomerLearningTests):
         payload=r.json();self.assertEqual(50,len(payload['lessons']));self.assertEqual(18,len({l['unit'] for l in payload['lessons']}))
         self.assertEqual(10,len(payload['final']['questions']))
         for l in payload['lessons']:
+            self.assertTrue(l['workshop']['steps'])
+            if int(l['id'].split('-')[-1]) > 4:
+                self.assertTrue(l['workshop']['visual'])
+                self.assertTrue(l['workshop']['application']['answer'])
             for k in ['teach','example','watch']:self.assertTrue(l[k])
             for q in l['questions']:self.assertNotIn('correct',q);self.assertNotIn('explanation',q)
     def test_course_progress_isolated_and_final_requires_practice(self):

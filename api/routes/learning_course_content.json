@@ -237,7 +237,84 @@
         "correct": 1,
         "explanation": "Two standard contracts at $1.80 cost 2 × $1.80 × 100 = $360 before fees. Buying twice as many contracts doubles the money exposed to the same price move. A cheap-looking quote can still represent a large total cost."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Read an option ticket and calculate the total purchase before pressing Buy.",
+      "steps": [
+        {
+          "title": "Identify the exact product",
+          "explain": "A ticker alone is not a contract. The same stock can have many strikes, expiration dates and both calls and puts. Read those fields together. Otherwise you can buy a different exposure from the one you intended.",
+          "example": "XYZ June 18 $50 call and XYZ June 18 $50 put share a ticker and strike, but give different rights. A July contract also has a different deadline."
+        },
+        {
+          "title": "Turn the quote into dollars",
+          "explain": "The premium is quoted per share. Multiply it by the contract multiplier and quantity to find the purchase cost. A standard equity contract normally uses 100. Adjusted contracts can differ, so verify the contract details.",
+          "example": "Two standard contracts at $1. 80 cost $1. 80 × 100 × 2 = $360 before fees. A $50 strike does not make this a $50 purchase."
+        },
+        {
+          "title": "Check the order one last time",
+          "explain": "Before a practice order, say the ticker, type, expiration, strike, quantity and price aloud. Check the estimated total and fees. A correct calculation cannot rescue an order for the wrong contract.",
+          "example": "If the ticket shows three contracts instead of two, the cost at $1. 80 becomes $540 before fees. Correct the quantity before submitting, not after a fill."
+        }
+      ],
+      "mistake": "A low premium is not automatically good value. It may reflect a small chance of finishing with value or very little time remaining.",
+      "challenge": {
+        "prompt": "Four standard contracts have an ask of $1. 25. What is the purchase before fees?",
+        "choices": [
+          "$500",
+          "$5",
+          "$125"
+        ],
+        "correct": 0,
+        "explanation": "$1. 25 × 100 × 4 = $500. $125 is only one contract; $5 forgets the multiplier."
+      },
+      "application": {
+        "prompt": "Two contracts cost $1. 80 each per share. Assume a made-up entry fee of $0. 65 per contract. What is the entry debit?",
+        "answer": "$360 + 2 × $0. 65 = $361. 30. Selling fees would be a separate cost later. These fees are illustrative, not your broker’s quoted rate."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Read this teaching ticket",
+        "headers": [
+          "Field",
+          "Recorded choice"
+        ],
+        "rows": [
+          [
+            "Ticker",
+            "XYZ"
+          ],
+          [
+            "Type",
+            "Call"
+          ],
+          [
+            "Expiration",
+            "June 18, example year"
+          ],
+          [
+            "Strike",
+            "$50"
+          ],
+          [
+            "Ask",
+            "$1. 80 per share"
+          ],
+          [
+            "Multiplier",
+            "100"
+          ],
+          [
+            "Quantity",
+            "2"
+          ],
+          [
+            "Premium cost",
+            "$360 before fees"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-6",
@@ -257,7 +334,64 @@
         "correct": 1,
         "explanation": "Buy one standard call at $2 and sell at $2.40: ($2.40 − $2) × 100 = $40 before fees. A $50 strike call bought at $2 breaks even at a $52 stock price at expiration before fees. Expiration breakeven is not a requirement for selling an option at a profit earlier."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Separate expiration breakeven from the profit you can make by selling earlier.",
+      "steps": [
+        {
+          "title": "Name the time you are calculating",
+          "explain": "Breakeven at expiration asks what stock price would recover the option premium if valued at expiration. It is not the same as the stock price needed to sell the option for a profit today.",
+          "example": "For a $50 call bought at $2, expiration breakeven is $52 before costs. For a $50 put bought at $2, it is $48."
+        },
+        {
+          "title": "Calculate a sale from the option prices",
+          "explain": "When you close a purchased option, subtract its entry premium from its sale premium, multiply by 100 and by contracts, then subtract costs. Use the actual sale price for a completed trade.",
+          "example": "Buy one call at $2 and sell at $2. 40: $0. 40 × 100 = $40 before fees. This can happen before the stock reaches the expiration breakeven."
+        },
+        {
+          "title": "Include the losing outcomes",
+          "explain": "A contract can have value and still lose money compared with its purchase cost. At expiration a $50 call with stock at $51 is worth $1 per share intrinsically; paying $2 produces a loss.",
+          "example": "At stock $51, intrinsic value $100 minus purchase $200 = a $100 loss before costs. At stock $52, the simplified result is zero before costs, not after costs."
+        }
+      ],
+      "mistake": "Breakeven is a calculation, not an order that automatically closes your trade.",
+      "challenge": {
+        "prompt": "Buy two standard options at $2. 00 and sell both at $2. 30 before expiration. What is the result before fees?",
+        "choices": [
+          "Unknown until expiration",
+          "$30 gain",
+          "$60 gain"
+        ],
+        "correct": 2,
+        "explanation": "($2. 30 − $2. 00) × 100 × 2 = $60. A completed sale determines the result without waiting for expiration."
+      },
+      "application": {
+        "prompt": "A $70 put costs $3. What is its expiration breakeven before fees?",
+        "answer": "$70 − $3 = $67. Below $67 its simplified expiration value exceeds the premium paid; costs lower the net result."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "One $50 call bought at $2: expiration result",
+        "labels": [
+          "Stock $49",
+          "$50",
+          "$51",
+          "$52",
+          "$53",
+          "$54"
+        ],
+        "values": [
+          -200,
+          -200,
+          -100,
+          0,
+          100,
+          200
+        ],
+        "unit": "Dollars before fees",
+        "caption": "A payoff diagram at expiration, not an intraday option quote. Standard 100-share contract."
+      }
+    }
   },
   {
     "id": "lesson-7",
@@ -277,7 +411,70 @@
         "correct": 1,
         "explanation": "Open $100, high $105, low $99, close $102: price finished $2 above its open, but did not stay at $105. A candle still forming can change shape and color. Do not describe it as a confirmed close."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Read open, high, low and close, and separate a finished candle from one still changing.",
+      "steps": [
+        {
+          "title": "Read the body first",
+          "explain": "A candle summarizes prices over a chosen period. The body runs from the opening price to the closing price. In this lesson green means close above open and red means close below open. Color does not tell you the whole path.",
+          "example": "Open $50, close $51: the body shows a $1 rise during the period. It does not mean every trade between open and close moved upward."
+        },
+        {
+          "title": "Read the wicks next",
+          "explain": "The thin lines show the highest and lowest traded prices within that period. Compare the close with those extremes. A close well below the high tells you the price did not stay at its high through the end.",
+          "example": "Open $50, high $52, low $49, close $51: total range is $3, body is $1, and the close is $1 below the high."
+        },
+        {
+          "title": "Wait for the information you need",
+          "explain": "A forming candle can change color, high, low and close. If a rule calls for a completed close, its result is not knowable before the period ends. Historical finished candles hide that uncertainty.",
+          "example": "A 10: 00 five-minute candle covers 10: 00 up to 10: 05 in an open-time labeling system. A breakout at 10: 03 can disappear before 10: 05. Check how your chart labels bars."
+        }
+      ],
+      "mistake": "One candle does not reveal the exact order in which the high and low happened.",
+      "challenge": {
+        "prompt": "A candle opens at $100, reaches $103, falls to $99 and closes at $101. Which is true?",
+        "choices": [
+          "Its body is $4",
+          "Its range is $4 and body is $1",
+          "It rose continuously"
+        ],
+        "correct": 1,
+        "explanation": "High minus low is $103 − $99 = $4. Close minus open is $101 − $100 = $1. The summary cannot prove a continuous rise."
+      },
+      "application": {
+        "prompt": "A candle is green at 10: 04, but its five-minute period ends at 10: 05. Can you call its final close bullish yet?",
+        "answer": "No. The price can change before 10: 05. Record the live observation as provisional and evaluate a close-based rule only when the bar is complete."
+      },
+      "visual": {
+        "kind": "candles",
+        "title": "Inspect finished candles",
+        "bars": [
+          {
+            "open": 50,
+            "high": 52,
+            "low": 49,
+            "close": 51
+          },
+          {
+            "open": 51,
+            "high": 51.5,
+            "low": 49.5,
+            "close": 50
+          }
+        ],
+        "labels": [
+          "10: 00",
+          "10: 05"
+        ],
+        "level": null,
+        "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
+        "notes": [
+          "Open $50, close $51: the $1 body is green. The full high-to-low range is $3, from $49 to $52. We do not know the exact path between those prices.",
+          "Open $51, close $50: the $1 body is red. Its $2 range runs from $49. 50 to $51. 50. Candle color compares its own open and close, not the prior candle."
+        ]
+      }
+    }
   },
   {
     "id": "lesson-8",
@@ -296,7 +493,66 @@
         "correct": 0,
         "explanation": "The last three one-minute closes rise from $100 to $101. The hour began at $105. Both a short bounce and an hourly decline can be true. Check session time and data timestamps. An empty section may be missing data, not a quiet market."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Compare timeframes without mistaking a short bounce for a larger reversal.",
+      "steps": [
+        {
+          "title": "Understand what changes when you zoom out",
+          "explain": "A five-minute candle combines five one-minute periods when all five are available. Its open is the first open, high the highest high, low the lowest low, and close the last close. It is not the average of five closes.",
+          "example": "One-minute closes of 100, 101, 100. 5, 99. 5 and 100. 2 end the five-minute period at 100. 2. They do not show every high or low inside it."
+        },
+        {
+          "title": "Ask two different questions",
+          "explain": "A small timeframe shows recent movement. A larger timeframe shows a longer sequence. Both can be correct when they disagree. Describe the recent move within the bigger context instead of forcing one label onto both.",
+          "example": "The last three minutes rise from $98 to $99 while the prior hour fell from $104. That is a short bounce inside the longer decline until more evidence changes the description."
+        },
+        {
+          "title": "Check the window and missing bars",
+          "explain": "Keep the ticker, timezone, session and last completed timestamp consistent. Missing bars or different session settings can create apparent disagreements. A forming hourly candle is not a finished hour of evidence.",
+          "example": "At 10: 17, a chart whose hourly bars start at 9: 30 has not completed its 9: 30 bar. Use the last completed hour if your rule needs completed candles."
+        }
+      ],
+      "mistake": "Changing chart timeframe changes the view, not the historical facts or your trade’s existing rules.",
+      "challenge": {
+        "prompt": "The last three one-minute closes rise, but the completed hourly trend falls. What can you conclude?",
+        "choices": [
+          "A short bounce can exist within a longer decline",
+          "A reversal is guaranteed",
+          "The hour must be wrong"
+        ],
+        "correct": 0,
+        "explanation": "The two charts summarize different lengths of time. The bounce alone does not establish that the larger decline has ended."
+      },
+      "application": {
+        "prompt": "Five-minute closes are present at 10: 00 and 10: 10 but 10: 05 is absent. Should you treat the gap as a flat candle?",
+        "answer": "No. Mark missing data. A flat candle would invent an open, high, low and close that were never observed."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "A bounce inside a decline",
+        "labels": [
+          "Earlier",
+          "Then",
+          "Then",
+          "Recent low",
+          "Minute 1",
+          "Minute 2",
+          "Minute 3"
+        ],
+        "values": [
+          104,
+          102,
+          100,
+          98,
+          98.3,
+          98.6,
+          99
+        ],
+        "unit": "Stock dollars",
+        "caption": "Illustrative observations at unequal time spacing. The last three points rise, but remain below the earlier prices."
+      }
+    }
   },
   {
     "id": "lesson-9",
@@ -315,7 +571,102 @@
         "correct": 0,
         "explanation": "Lows of $100 then $102 and highs of $104 then $106 describe rising structure. The turning point may not have been knowable at the exact lowest price. Do not use a later-confirmed arrow as if it was visible earlier."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Identify an upward structure from confirmed swing points rather than one green candle.",
+      "steps": [
+        {
+          "title": "Find turning points",
+          "explain": "A swing high is a local peak and a swing low is a local valley under a chosen rule. You need later observations to confirm a turn. The moment a price makes a high is not automatically the moment it becomes a confirmed swing.",
+          "example": "For this exercise, a high must have a lower high on each side. The right-side candle must finish before you can label the middle candle."
+        },
+        {
+          "title": "Compare like with like",
+          "explain": "Compare the new confirmed high with the preceding high, and the new confirmed low with the preceding low. Higher highs and higher lows describe an upward sequence. Comparing a low to a high tells you something different.",
+          "example": "Highs $101 then $103 and lows $99 then $100 form a rising structure. A single close at $102 does not supply all four swing points."
+        },
+        {
+          "title": "Keep the conclusion proportional",
+          "explain": "Structure describes what has happened; it does not guarantee continuation. If a higher low breaks, investigate whether the upward description still fits. Do not move the old low to protect your prediction.",
+          "example": "A later completed close below the recorded $100 higher low is adverse evidence. Whether it triggers an exit depends on the written policy, not the chart label alone."
+        }
+      ],
+      "mistake": "Do not backdate a swing label to claim a signal was available before its confirming candle.",
+      "challenge": {
+        "prompt": "Confirmed highs are $105 then $107; lows are $102 then $103. Which description fits?",
+        "choices": [
+          "No movement",
+          "Higher highs and higher lows",
+          "Lower highs and lower lows"
+        ],
+        "correct": 1,
+        "explanation": "Compare highs with highs: 107 exceeds 105. Compare lows with lows: 103 exceeds 102. Both parts of the structure rise."
+      },
+      "application": {
+        "prompt": "A peak at 10: 05 requires the 10: 06 candle to confirm it. When may a rule using that peak first act?",
+        "answer": "After the 10: 06 candle is complete and received. The marker can point at 10: 05, but the information became knowable later."
+      },
+      "visual": {
+        "kind": "candles",
+        "title": "Follow the rising sequence",
+        "bars": [
+          {
+            "open": 98.85,
+            "high": 99.1,
+            "low": 98.75,
+            "close": 99
+          },
+          {
+            "open": 100.85,
+            "high": 101.1,
+            "low": 100.75,
+            "close": 101
+          },
+          {
+            "open": 100.15,
+            "high": 100.25,
+            "low": 99.9,
+            "close": 100
+          },
+          {
+            "open": 102.85,
+            "high": 103.1,
+            "low": 102.75,
+            "close": 103
+          },
+          {
+            "open": 102.15,
+            "high": 102.25,
+            "low": 101.9,
+            "close": 102
+          },
+          {
+            "open": 103.85,
+            "high": 104.1,
+            "low": 103.75,
+            "close": 104
+          }
+        ],
+        "labels": [
+          "Bar 1",
+          "Bar 2",
+          "Bar 3",
+          "Bar 4",
+          "Bar 5",
+          "Bar 6"
+        ],
+        "level": 100,
+        "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
+        "notes": [
+          "One candle is not a trend. There is no confirmed middle turning point yet.",
+          "This is a new high, but the next completed candle is still needed to confirm a local peak.",
+          "Bar 3 has a lower high than bar 2. With bar 1 also lower, bar 2’s $101. 10 high is now a confirmed local peak.",
+          "Bar 4 confirms bar 3’s $99. 90 valley. Bar 4’s own high is not yet confirmed.",
+          "Bar 5 confirms bar 4’s $103. 10 peak, higher than $101. 10. The new valley still needs its right-side candle.",
+          "Bar 6 confirms bar 5’s $101. 90 valley, higher than $99. 90. Both confirmed highs and lows now rise. Bar 6’s peak remains unconfirmed."
+        ]
+      }
+    }
   },
   {
     "id": "lesson-10",
@@ -334,7 +685,102 @@
         "correct": 1,
         "explanation": "Price reaches above $102 but closes at $101. A rule needing a close above $102 has not passed. A rule based on an intrabar touch is different. A line drawn on a chart is not automatically an active stop order."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Draw a price reference from prior reactions and distinguish a touch from a confirmed break.",
+      "steps": [
+        {
+          "title": "Treat levels as areas of interest",
+          "explain": "Support is an area where falling price previously found buying. Resistance is where rising price previously stalled. Several reactions can make a level worth watching, but do not make it an invisible wall.",
+          "example": "If price repeatedly turns near $50. 00 to $50. 15, record a zone rather than pretending every reversal happens at exactly $50. 00."
+        },
+        {
+          "title": "Write what counts as a break",
+          "explain": "A brief trade through a level, a completed close beyond it and multiple closes beyond it are different rules. Choose one before looking at the outcome. A more demanding confirmation usually arrives later.",
+          "example": "Practice rule: a completed close below $50 counts as a support break. A low of $49. 80 followed by a $50. 20 close does not meet that specific rule."
+        },
+        {
+          "title": "Keep references separate from orders",
+          "explain": "A support line is information. It only becomes a protective stop when the execution policy monitors and acts on it. Even a triggered stop does not guarantee the intended sale price.",
+          "example": "A chart can show $50 support while the active policy exits on an option-premium condition. Read the actual policy before assuming the line limits your loss."
+        }
+      ],
+      "mistake": "A broken support area can later act as resistance, but that reaction must be observed rather than assumed.",
+      "challenge": {
+        "prompt": "Your practice rule requires a close below $80. Low is $79. 70 and close is $80. 10. Did the rule trigger?",
+        "choices": [
+          "Yes, any touch counts",
+          "No, the completed close stayed above $80",
+          "Only if the candle is red"
+        ],
+        "correct": 1,
+        "explanation": "The rule uses the close, not the low or color. $80. 10 is above $80, so this candle does not satisfy it."
+      },
+      "application": {
+        "prompt": "Write two different rules for breaking $50 support and explain their timing.",
+        "answer": "A real-time trade below $50 can trigger during a candle. A completed close below $50 waits for the candle to finish. Neither is automatically better; they create different decisions."
+      },
+      "visual": {
+        "kind": "candles",
+        "title": "Touch versus close below support",
+        "bars": [
+          {
+            "open": 50.85,
+            "high": 51.1,
+            "low": 50.75,
+            "close": 51
+          },
+          {
+            "open": 50.55,
+            "high": 50.65,
+            "low": 50.3,
+            "close": 50.4
+          },
+          {
+            "open": 50.35,
+            "high": 50.45,
+            "low": 50.1,
+            "close": 50.2
+          },
+          {
+            "open": 50.25,
+            "high": 50.35,
+            "low": 50.0,
+            "close": 50.1
+          },
+          {
+            "open": 49.85,
+            "high": 49.95,
+            "low": 49.6,
+            "close": 49.7
+          },
+          {
+            "open": 50.15,
+            "high": 50.4,
+            "low": 50.05,
+            "close": 50.3
+          }
+        ],
+        "labels": [
+          "Bar 1",
+          "Bar 2",
+          "Bar 3",
+          "Bar 4",
+          "Bar 5",
+          "Bar 6"
+        ],
+        "level": 50,
+        "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
+        "notes": [
+          "Price closed above the $50 reference. This candle alone does not prove the level will hold later.",
+          "The close remains above $50 as price moves toward the reference.",
+          "The low is $50. 10, still above the reference. Neither a touch nor a close below has occurred.",
+          "The wick touches $50, but the close is $50. 10. A touch rule and a close-below rule produce different answers here.",
+          "The close is $49. 70, below $50. This is the first completed close below the recorded level in this sequence.",
+          "The close recovered to $50. 30. That later recovery does not undo the information available at bar 5."
+        ]
+      }
+    }
   },
   {
     "id": "lesson-11",
@@ -353,7 +799,78 @@
         "correct": 1,
         "explanation": "On a five-minute chart, nine bars cover 45 minutes of bar intervals. The same nine-bar average on a one-minute chart covers nine minutes. The number of bars and the timeframe both matter."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Explain what a moving average and VWAP summarize, without treating either as a prediction.",
+      "steps": [
+        {
+          "title": "Average a fixed number of observations",
+          "explain": "A simple moving average adds the last N closes and divides by N. As each new completed close arrives, the oldest one drops out. An exponential average puts more weight on recent observations. They are different calculations.",
+          "example": "Closes $10, $12 and $11 give a three-close SMA of $11. Add a $13 close and drop $10: the new SMA is $12."
+        },
+        {
+          "title": "Understand volume weighting",
+          "explain": "VWAP gives larger-volume trades more influence on an average price. A session VWAP commonly restarts each session; an anchored VWAP starts from a chosen event. Identify the anchor and price/volume source before comparing lines.",
+          "example": "In a simplified two-trade example, 100 shares at $10 and 300 at $12 give ($1,000 + $3,600) ÷ 400 = $11. 50 VWAP, not $11."
+        },
+        {
+          "title": "Use location and slope carefully",
+          "explain": "Price above an average says where price is relative to its history. Slope describes how the average changes. Neither condition guarantees the next candle. Warmup, timeframe and session boundaries affect the result.",
+          "example": "A 200-period average on one-minute candles is not the same as a 200-period average on hourly candles. They summarize very different lengths of history."
+        }
+      ],
+      "mistake": "A VWAP touch is not an automatic entry. The strategy may also require direction, candle shape, volume and execution checks.",
+      "challenge": {
+        "prompt": "100 shares trade at $20 and 300 shares at $22. What is the simplified VWAP?",
+        "choices": [
+          "$21. 50",
+          "$22",
+          "$21"
+        ],
+        "correct": 0,
+        "explanation": "Total value is $2,000 + $6,600 = $8,600. Divide by 400 shares to get $21. 50. The larger trade gets more weight."
+      },
+      "application": {
+        "prompt": "A three-close SMA uses 20, 21, 22. The next close is 26. What is the new SMA?",
+        "answer": "Drop 20. (21 + 22 + 26) ÷ 3 = 23. The old average was 21. The line responds after new price information arrives."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Simple average versus volume-weighted average",
+        "headers": [
+          "Observation",
+          "Price",
+          "Shares",
+          "Price × shares"
+        ],
+        "rows": [
+          [
+            "1",
+            "$20",
+            "100",
+            "$2,000"
+          ],
+          [
+            "2",
+            "$22",
+            "300",
+            "$6,600"
+          ],
+          [
+            "SMA",
+            "$21",
+            "Equal weight",
+            "(20 + 22) ÷ 2"
+          ],
+          [
+            "VWAP",
+            "$21. 50",
+            "400 total",
+            "$8,600 ÷ 400"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-12",
@@ -372,7 +889,78 @@
         "correct": 1,
         "explanation": "RSI below 30 is often called oversold. Price can still keep falling. A MACD cross describes a change in its averages, not an order instruction by itself. An indicator only becomes an execution trigger if the active strategy explicitly uses it."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Read momentum and participation as context, and state what an indicator cannot tell you.",
+      "steps": [
+        {
+          "title": "Read RSI as a recent-movement summary",
+          "explain": "RSI compares recent upward and downward price changes on a scale from 0 to 100. Its value depends on the lookback and calculation method. A high reading can persist during a strong rise rather than forcing an immediate fall.",
+          "example": "An RSI above 70 is often called overbought. That is a description of the indicator, not proof that selling now will make money."
+        },
+        {
+          "title": "Separate MACD’s three parts",
+          "explain": "MACD commonly subtracts a slower exponential average from a faster one. Its signal is a smoothed MACD line. The histogram is MACD minus signal. A cross describes a change between those lines, not a guaranteed change in profit.",
+          "example": "MACD 0. 30 minus signal 0. 20 gives histogram +0. 10. If MACD becomes 0. 15 while signal stays 0. 20, the histogram is −0. 05."
+        },
+        {
+          "title": "Ask whether activity supports the story",
+          "explain": "Volume measures how much traded over a period. Compare similar session times and durations. Indicators and price must use matching candles; mixing an hourly RSI with a one-minute chart can mislead you.",
+          "example": "A quiet lunch candle should not be judged against the opening minute without context. High volume alone also does not reveal whether the next move will rise or fall."
+        }
+      ],
+      "mistake": "RSI, MACD and volume can disagree. Describe the disagreement instead of inventing certainty or a universal buy signal.",
+      "challenge": {
+        "prompt": "MACD is 0. 12 and signal is 0. 18. What is the histogram?",
+        "choices": [
+          "+0. 06",
+          "+0. 30",
+          "−0. 06"
+        ],
+        "correct": 2,
+        "explanation": "Subtract signal from MACD: 0. 12 −0. 18 = −0. 06. This is a relationship between lines, not a forecast of an option’s return."
+      },
+      "application": {
+        "prompt": "RSI is 75 while price keeps making higher lows. Must the next candle fall?",
+        "answer": "No. RSI can stay elevated. Inspect the actual price sequence and your written rule; the reading alone cannot establish an immediate reversal."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Read the same completed candle",
+        "headers": [
+          "Measure",
+          "Recorded value",
+          "What it says"
+        ],
+        "rows": [
+          [
+            "RSI(14)",
+            "75",
+            "Recent gains outweigh losses in this calculation"
+          ],
+          [
+            "MACD",
+            "0. 12",
+            "Fast average above slow"
+          ],
+          [
+            "Signal",
+            "0. 18",
+            "MACD below its smoothed line"
+          ],
+          [
+            "Histogram",
+            "−0. 06",
+            "MACD minus signal"
+          ],
+          [
+            "Volume",
+            "2,000 shares",
+            "Participation in this period, not direction"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-13",
@@ -392,7 +980,73 @@
         "correct": 1,
         "explanation": "An option bid is $2.00 and ask $2.20. Buying at the ask and immediately selling at the bid loses $20 per standard contract before fees, even without a market move. A quote is not a fill. A small displayed size may not cover all your contracts."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Estimate the cost of crossing the spread and recognize a quote that needs checking.",
+      "steps": [
+        {
+          "title": "Know which side you can trade against",
+          "explain": "The bid is an advertised buying price; the ask is an advertised selling price. A buyer seeking immediate execution often pays near the ask, while a seller often receives near the bid. Quotes can change before an order reaches them.",
+          "example": "Bid $2. 00, ask $2. 20: buying at $2. 20 and immediately selling at $2. 00 loses $20 per standard contract before fees."
+        },
+        {
+          "title": "Do not spend the midpoint on paper",
+          "explain": "The midpoint is halfway between bid and ask. It is a useful reference, not a promised fill. A limit at the midpoint may wait, partially fill or never fill.",
+          "example": "The midpoint of $2. 00/$2. 20 is $2. 10. Marking a purchased option at $2. 10 does not prove somebody would buy your entire position there."
+        },
+        {
+          "title": "Check timestamp and size",
+          "explain": "A fresh quote with enough displayed size is more informative than an old last trade. A crossed quote, where bid exceeds ask, needs validation. Never quietly replace a missing bid with a convenient price to claim a profit.",
+          "example": "A $2. 50 last trade from 20 minutes ago cannot establish your sale proceeds now. Find a current bid for the exact contract and check available size."
+        }
+      ],
+      "mistake": "The spread is already reflected when you model entry at ask and exit at bid. Do not subtract the same spread again.",
+      "challenge": {
+        "prompt": "Buy at $1. 60 ask and sell at $1. 50 bid with no price change. What is one contract’s result before fees?",
+        "choices": [
+          "$10 loss",
+          "$10 gain",
+          "Zero"
+        ],
+        "correct": 0,
+        "explanation": "($1. 50 − $1. 60) × 100 = − $10. The quoted spread created the loss even though the market did not move."
+      },
+      "application": {
+        "prompt": "The bid is missing but midpoint is $2. 10. Can you report a sell at $2. 10?",
+        "answer": "No. Mark the sale unpriced or wait for usable data. A midpoint is not a confirmed executable bid or a fill."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "A quote is two sides",
+        "headers": [
+          "Side",
+          "Price",
+          "Illustrative size"
+        ],
+        "rows": [
+          [
+            "Bid",
+            "$2. 00",
+            "3 contracts wanted"
+          ],
+          [
+            "Ask",
+            "$2. 20",
+            "5 contracts offered"
+          ],
+          [
+            "Midpoint",
+            "$2. 10",
+            "No promised quantity"
+          ],
+          [
+            "Spread",
+            "$0. 20",
+            "$20 per standard contract"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-14",
@@ -412,7 +1066,73 @@
         "correct": 1,
         "explanation": "You try to sell four contracts with a $2 minimum. Two fill at $2.05; two remain open. You have sold two, not four. Sending a duplicate sell can create unintended exposure. Check order status first."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Choose between price control and execution urgency, then verify what actually filled.",
+      "steps": [
+        {
+          "title": "A market order prioritizes execution",
+          "explain": "A market order requests execution at available prices. It does not lock the price displayed when you click. Fast movement, wide spreads and small size can make the average fill worse than expected.",
+          "example": "You see an ask of $2. 00, but it disappears before arrival. A market buy may fill at $2. 10 or another available price."
+        },
+        {
+          "title": "A limit order controls acceptable price",
+          "explain": "A buy limit sets the highest price you accept. A sell limit sets the lowest. It may fill at the limit or better, but it may not fill at all. A stop and a stop-limit introduce different trigger and execution behavior.",
+          "example": "A buy limit of $2. 00 cannot intentionally pay $2. 10. If no seller offers $2. 00 or less, the order remains unfilled under its time-in-force rules."
+        },
+        {
+          "title": "Reconcile the result",
+          "explain": "Submitted, accepted, partially filled and filled are separate states. Before sending another order, check the existing order and position. Otherwise a retry can accidentally double the quantity.",
+          "example": "You request 5 contracts and 2 fill. You own 2, while 3 may still be working. A second request for 5 could eventually leave you with 10, not 5."
+        }
+      ],
+      "mistake": "A cancellation request is not proof that an order was canceled before a fill occurred.",
+      "challenge": {
+        "prompt": "A buy limit is $2. 00 and the lowest ask is $2. 10. What can happen?",
+        "choices": [
+          "The order waits without filling",
+          "It must pay $2. 10",
+          "Guaranteed fill at $2. 00"
+        ],
+        "correct": 0,
+        "explanation": "The limit prevents paying above $2. 00. Execution is not guaranteed while sellers ask more."
+      },
+      "application": {
+        "prompt": "You requested 6 contracts and the broker confirms 4 filled. What should your position count show?",
+        "answer": "4 filled contracts, plus a separate record of the remaining 2 working or canceled. Do not count all 6 as owned until confirmed."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Follow an order",
+        "headers": [
+          "Event",
+          "Owned",
+          "Still working"
+        ],
+        "rows": [
+          [
+            "Submit 5",
+            "0",
+            "5 requested"
+          ],
+          [
+            "Broker accepts",
+            "0",
+            "5"
+          ],
+          [
+            "Partial fill 2",
+            "2",
+            "3"
+          ],
+          [
+            "Remaining 3 fill",
+            "5",
+            "0"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-15",
@@ -431,7 +1151,58 @@
         "correct": 0,
         "explanation": "A call bought before news can lose value afterward even if the stock rises slightly, because expectations of future movement fall. A correct stock prediction is not enough to prove a profitable option trade."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Explain why getting stock direction right may still produce an option loss.",
+      "steps": [
+        {
+          "title": "The option has more than one influence",
+          "explain": "An option’s price responds to the underlying, remaining time, expected future movement and other inputs. A call can lose value while its stock rises if other influences outweigh that move.",
+          "example": "Stock rises 1%, but a call bought for $3 can still bid $2. 70 later. The stock chart alone does not determine the option’s current sale price."
+        },
+        {
+          "title": "Time and expectations matter",
+          "explain": "The value beyond immediate exercise value can shrink as expiration approaches or expected volatility falls. Implied volatility is the market’s pricing of uncertainty, not a promise of how far price will move.",
+          "example": "Before an announcement, buyers may pay for a large possible move. After a small move, uncertainty can fall and the option premium can shrink."
+        },
+        {
+          "title": "Diagnose using the contract’s own record",
+          "explain": "Compare entry and exit option quotes, timestamp, spread, days remaining and volatility context. Do not call every loss a bad chart signal without checking whether the contract was expensive or hard to sell.",
+          "example": "If the entry was $3. 00 ask and later bid $2. 70, the result is − $30 per contract before costs. A rising stock does not reverse that arithmetic."
+        }
+      ],
+      "mistake": "Use “may have contributed” when the record cannot isolate time, volatility and price effects. Do not invent exact causes from a chart alone.",
+      "challenge": {
+        "prompt": "A call was bought at $4. 00 and later sold at $3. 80 while the stock rose. What is true?",
+        "choices": [
+          "It made money because the stock rose",
+          "The recorded option loss is impossible",
+          "It lost $20 per standard contract before fees"
+        ],
+        "correct": 2,
+        "explanation": "Sale minus entry is − $0. 20, or − $20 per contract. Several inputs affect option value, so stock direction alone does not settle profitability."
+      },
+      "application": {
+        "prompt": "What three records would help explain that loss?",
+        "answer": "The exact contract’s timestamped entry/exit quotes and fills; time remaining to expiration; and available volatility/spread context. Missing inputs should remain missing."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "An option can lose during a stock rise",
+        "labels": [
+          "Entry option",
+          "Later bid",
+          "Sale"
+        ],
+        "values": [
+          4,
+          3.9,
+          3.8
+        ],
+        "unit": "Option dollars per share",
+        "caption": "Illustrative option prices. Separately, the stock rose from $100 to $101. The two instruments did not move proportionally."
+      }
+    }
   },
   {
     "id": "lesson-16",
@@ -451,7 +1222,73 @@
         "correct": 0,
         "explanation": "A delta of 0.50 suggests roughly a $0.50 option move for a $1 stock move, with other factors held constant. It is not a promise. Delta is not a guaranteed profit or a guaranteed chance of winning."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Use the Greeks as estimates of different risks, not as guarantees.",
+      "steps": [
+        {
+          "title": "Delta and gamma concern stock movement",
+          "explain": "Delta estimates how much option premium changes for a small $1 underlying move, holding other inputs fixed. Gamma estimates how delta itself changes. A call’s delta is usually positive and a purchased put’s usually negative.",
+          "example": "A call delta 0. 40 suggests about $0. 40 premium change for a small $1 stock rise, or $40 per standard contract. That estimate can change as price moves."
+        },
+        {
+          "title": "Theta and vega concern time and uncertainty",
+          "explain": "Theta estimates the effect of time passing; vega estimates sensitivity to a one-percentage-point change in implied volatility. Units matter. These estimates hold other inputs constant, which a real market rarely does.",
+          "example": "Theta −0. 05 suggests roughly $5 per contract for a day under the model. Vega 0. 10 suggests about $10 per contract for a one-point volatility change."
+        },
+        {
+          "title": "Combine the story without pretending precision",
+          "explain": "A favorable delta effect can be offset by time, volatility and trading costs. Large moves need a fresh estimate. Do not add rough one-factor calculations and label the result a guaranteed executable quote.",
+          "example": "A model suggests +$20 from price and − $15 from volatility: the rough net is +$5 before other effects and costs. The actual bid remains the sale reference."
+        }
+      ],
+      "mistake": "Delta is not a literal percent chance of making a profitable trade. Profit also depends on the amount paid and when you exit.",
+      "challenge": {
+        "prompt": "A call has delta 0. 30. For a small $1 stock rise, all else fixed, what is its rough premium change per standard contract?",
+        "choices": [
+          "$0. 30",
+          "$30",
+          "$300"
+        ],
+        "correct": 1,
+        "explanation": "0. 30 × $1 × 100 = about $30. It is a sensitivity estimate, not a promised fill or profit."
+      },
+      "application": {
+        "prompt": "Which estimate addresses the passage of time rather than a stock move?",
+        "answer": "Theta. A negative daily theta describes modeled premium erosion with other inputs fixed; actual changes also include market movement and other factors."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Four different questions",
+        "headers": [
+          "Greek",
+          "Question",
+          "Illustrative unit"
+        ],
+        "rows": [
+          [
+            "Delta",
+            "What if stock moves $1?",
+            "Premium per $1 stock move"
+          ],
+          [
+            "Gamma",
+            "How might delta change?",
+            "Delta change per $1"
+          ],
+          [
+            "Theta",
+            "What if a day passes?",
+            "Premium per day"
+          ],
+          [
+            "Vega",
+            "What if implied volatility changes 1 point?",
+            "Premium per volatility point"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-17",
@@ -470,7 +1307,68 @@
         "correct": 0,
         "explanation": "In a paper example, entry $2 and planned exit $1.50 imply $50 per standard contract before costs. A $100 risk allowance fits two only before adding costs and uncertainty. It does not guarantee a $100 maximum loss. Buying more contracts because the premium looks cheap can increase risk sharply."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Distinguish a planned loss from money actually exposed, and round quantities down.",
+      "steps": [
+        {
+          "title": "Start with a dollar budget",
+          "explain": "Convert an account percentage into dollars before considering quantity. A budget is a limit you choose, not a forecast of the loss. Different positions can consume the same account budget at the same time.",
+          "example": "A $10,000 practice account with a 2% budget has $200 available under that rule. This example is not a recommended percentage or a change to your settings."
+        },
+        {
+          "title": "Choose a defensible per-contract assumption",
+          "explain": "A stop-based loss estimate only makes sense when the stop is actually monitored and executable, and even then gaps can make losses worse. For a purchased option, the full premium plus costs is a more conservative exposure assumption.",
+          "example": "At $2 per share and an illustrative $1. 30 round-trip fee, full-cost exposure is $201. 30 per contract. A $200 budget cannot cover one contract under that assumption."
+        },
+        {
+          "title": "Apply every limit",
+          "explain": "Divide the budget by the assumed per-contract exposure and round down. Then apply purchase-cost, buying-power, contract and account limits. The smallest valid quantity wins. Zero is a valid answer.",
+          "example": "A $500 budget divided by $201. 30 permits 2 contracts, not 3. A separate purchase cap permitting only 1 makes the final ceiling 1."
+        }
+      ],
+      "mistake": "Do not size from a support line that the execution engine does not enforce. A reference line cannot promise a small loss.",
+      "challenge": {
+        "prompt": "Budget $450, full cost plus modeled fees $151. 30 per contract. What is the maximum under this budget alone?",
+        "choices": [
+          "3",
+          "4",
+          "2"
+        ],
+        "correct": 2,
+        "explanation": "2 cost $302. 60; 3 cost $453. 90 and exceed $450. Always round down rather than rounding to the nearest whole number."
+      },
+      "application": {
+        "prompt": "Risk budget allows 3 contracts but purchase cap allows 2. Which quantity is the ceiling?",
+        "answer": "2. Both limits must hold. Other checks may reduce that further or block the trade."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Which limit wins?",
+        "headers": [
+          "Limit",
+          "Calculation",
+          "Ceiling"
+        ],
+        "rows": [
+          [
+            "Risk budget",
+            "$500 ÷ $201. 30",
+            "2 contracts"
+          ],
+          [
+            "Purchase cap",
+            "$300 ÷ $201. 30",
+            "1 contract"
+          ],
+          [
+            "Final ceiling",
+            "Smaller allowance",
+            "1 contract"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-18",
@@ -490,7 +1388,62 @@
         "correct": 0,
         "explanation": "Buy at $2, peak at $2.40: peak profit is $40 per contract. A 25% giveback of profit is $10, so the reference exit is $2.30 before costs, not $1.80. A gap or stale quote can prevent execution at the reference level."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Explain targets, trailing profit rules and safety exits without mixing their purposes.",
+      "steps": [
+        {
+          "title": "A target reacts to reaching a level",
+          "explain": "A fixed premium-gain target compares current option price with entry. It can sell all or part of a position. State the price basis and fraction sold; “take profit at 10%” is incomplete without them.",
+          "example": "An option bought at $2 reaches a 10% gain at $2. 20. Selling 3 of 6 contracts there locks in $60 before fees on those 3 only."
+        },
+        {
+          "title": "A giveback follows the profit peak",
+          "explain": "A peak-profit giveback compares current profit with the highest observed profit after the rule arms. Giving back 10% of profit is not the same as falling 10% from the option’s peak price.",
+          "example": "Entry $2, peak bid $2. 50: peak profit $50 per contract. A 10% profit giveback is $5, placing the theoretical threshold at $2. 45, not $2. 25."
+        },
+        {
+          "title": "Safety exits solve different problems",
+          "explain": "A loss stop, a time limit, a session-close rule and an emergency response have different triggers. Read which are actually active. A profit rule that never arms cannot protect a trade before it becomes profitable.",
+          "example": "If a target requires +10% and the option only declines, that target never activates. The existing loss and safety rules must determine what happens next."
+        }
+      ],
+      "mistake": "A threshold is a signal, not a guaranteed sale price. Quotes, available size and order fills determine actual proceeds.",
+      "challenge": {
+        "prompt": "Entry $3, peak bid $3. 60, giveback 25% of peak profit. What is the theoretical threshold?",
+        "choices": [
+          "$3. 35",
+          "$2. 70",
+          "$3. 45"
+        ],
+        "correct": 2,
+        "explanation": "Peak profit is $60 per contract. 25% is $15. Retained profit $45 means $3. 45 option price. This ignores execution costs and gaps."
+      },
+      "application": {
+        "prompt": "If six contracts are held and half sell, how many still need management?",
+        "answer": "Three. Record the first sale and keep monitoring the remaining three. A partial sale does not mean the whole position is closed."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "A profit trail follows the peak",
+        "labels": [
+          "Entry",
+          "Arms",
+          "Peak",
+          "Pullback",
+          "Threshold"
+        ],
+        "values": [
+          2,
+          2.2,
+          2.5,
+          2.47,
+          2.45
+        ],
+        "unit": "Option bid per share",
+        "caption": "Illustrative 10% peak-profit giveback after arming. This shows signal math, not confirmed sales."
+      }
+    }
   },
   {
     "id": "lesson-19",
@@ -509,7 +1462,78 @@
         "correct": 1,
         "explanation": "For an illustrative pullback: watch a return to a level, wait for the written recovery condition, check the contract and risk, then record a pretend entry. If a check fails, record why you skipped. Do not mix different entry and exit rules just because their separate results looked good."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Separate a chart opportunity from an approved executable order.",
+      "steps": [
+        {
+          "title": "A setup describes a situation",
+          "explain": "A setup is a pattern or context worth watching. It does not mean every entry condition passed. Give it a precise name and record the observations that created interest.",
+          "example": "Price is near VWAP after a pullback. That may be a setup, while the strategy still waits for a completed rejection candle."
+        },
+        {
+          "title": "A trigger completes the chart condition",
+          "explain": "The trigger is the specific event the chart rule requires. Record its time and the candle used. A trigger is still separate from checks on the option contract and the account.",
+          "example": "The rejection candle closes at 10: 35. The chart trigger becomes available then, not halfway through the candle."
+        },
+        {
+          "title": "Permission and execution come afterward",
+          "explain": "The account may reject an otherwise valid chart trigger for stale prices, wide spread, insufficient buying power, position limits or a safety halt. Only broker fills establish ownership.",
+          "example": "A chart passes but the exact option has no valid bid/ask. The bot should explain that pricing blocked entry rather than pretend the strategy never saw a setup."
+        }
+      ],
+      "mistake": "“Chart passed” does not mean “order filled.” Keep each stage visible and traceable.",
+      "challenge": {
+        "prompt": "A setup triggered, but the broker has not filled the submitted order. How many contracts are confirmed owned?",
+        "choices": [
+          "The requested quantity",
+          "Only the confirmed filled quantity",
+          "At least one"
+        ],
+        "correct": 1,
+        "explanation": "An order request is not a position. Use confirmed fills, including partial fills, to establish ownership."
+      },
+      "application": {
+        "prompt": "Write a useful reason for a skipped setup with a stale quote.",
+        "answer": "“The chart trigger passed at 10: 35, but the option quote was 4 minutes old. Entry was skipped because the pricing check required a fresher quote.” Example limit only."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "The entry chain",
+        "headers": [
+          "Stage",
+          "Question",
+          "Possible result"
+        ],
+        "rows": [
+          [
+            "Setup",
+            "Is the pattern developing?",
+            "Watch"
+          ],
+          [
+            "Trigger",
+            "Did the required chart event finish?",
+            "Chart passed"
+          ],
+          [
+            "Permission",
+            "Do contract/account checks pass?",
+            "Allowed or skipped"
+          ],
+          [
+            "Order",
+            "Did the broker accept it?",
+            "Working"
+          ],
+          [
+            "Fill",
+            "What actually executed?",
+            "Owned quantity"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-20",
@@ -529,7 +1553,78 @@
         "correct": 1,
         "explanation": "Buy two standard contracts at $2 and sell at $2.20: gross profit $40. With $6 total costs, net profit is $34. Review whether the entry and exit followed the plan, not just the green number. Practice completion shows knowledge, not readiness for real-money trading or guaranteed returns."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Reconstruct a trade from records and separate a good decision from a good outcome.",
+      "steps": [
+        {
+          "title": "Start at entry, not the best-looking later candle",
+          "explain": "Save the information available when the decision was made: candle time, contract, entry quote, quantity and rules. A later chart can make an earlier decision look more obvious than it was.",
+          "example": "If a swing was confirmed at 10: 12, it cannot justify an entry at 10: 10. Keep the event time and the time information became available."
+        },
+        {
+          "title": "Explain each change in the position",
+          "explain": "Record partial sales, remaining quantity, quote timestamps and reasons. Separate a hypothetical better exit from what the broker actually filled. Use fees consistently when calculating results.",
+          "example": "Buy 4 at $2. 00; sell 2 at $2. 20 and 2 at $1. 80. The first sale gains $40 and the second loses $40, so total is zero before fees."
+        },
+        {
+          "title": "Choose one improvement to test",
+          "explain": "Classify the problem: entry, contract selection, sizing, exit, execution or missing evidence. A single loss cannot prove which rule is best. Test an explicit change on comparable trades and keep incomplete ones labeled.",
+          "example": "If an exit was late because the worker stopped, fix execution first. Changing a strategy threshold does not diagnose the stalled worker."
+        }
+      ],
+      "mistake": "The best price visible afterward is hindsight. Do not describe it as an exit the bot could necessarily have taken.",
+      "challenge": {
+        "prompt": "Buy 4 at $2, sell 2 at $2. 50 and 2 at $1. 75. What is total profit before fees?",
+        "choices": [
+          "$50",
+          "$100",
+          "$25"
+        ],
+        "correct": 0,
+        "explanation": "First half gains $100. Second half loses $50. Combined result is +$50 before costs, not the first sale’s profit alone."
+      },
+      "application": {
+        "prompt": "A quote is missing at a proposed exit time. Can you claim that alternate exit won?",
+        "answer": "No. Mark the result incomplete. Recover properly timestamped data if available, preserving its source; do not substitute the later peak."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Reconcile every contract",
+        "headers": [
+          "Action",
+          "Quantity",
+          "Price",
+          "Before-fee result"
+        ],
+        "rows": [
+          [
+            "Buy",
+            "4",
+            "$2. 00",
+            "Cost $800"
+          ],
+          [
+            "Sell first half",
+            "2",
+            "$2. 50",
+            "+$100"
+          ],
+          [
+            "Sell remainder",
+            "2",
+            "$1. 75",
+            "− $50"
+          ],
+          [
+            "Total closed",
+            "4",
+            "Mixed exits",
+            "+$50"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-21",
@@ -549,7 +1644,78 @@
         "correct": 1,
         "explanation": "The complete identity prevents a different expiration, strike or option type from being mistaken for your intended contract."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Decode a contract name and catch a wrong-contract mistake before an order.",
+      "steps": [
+        {
+          "title": "Read from identity to terms",
+          "explain": "Start with ticker, then expiration, then call or put, then strike. Each field changes what you own. A familiar company name does not make every contract interchangeable.",
+          "example": "XYZ June 18 $50 call is different from XYZ June 18 $55 call. The latter requires a higher stock price for intrinsic value at expiration."
+        },
+        {
+          "title": "Separate the contract name from its quote",
+          "explain": "The name identifies the instrument. Bid and ask describe current prices for that instrument. The strike stays fixed under normal terms while the quote changes during trading.",
+          "example": "A $50 call can have a $2. 10 ask at one moment and $2. 30 later. Neither quote changes its $50 strike."
+        },
+        {
+          "title": "Verify the multiplier and action",
+          "explain": "Check standard versus adjusted terms, quantity, and whether the action opens or closes a position. Do not infer a ticker from a shortened label if the full contract is available.",
+          "example": "Buying to open one put and selling to close that same put are two actions on one instrument. Selling to open would create a different position."
+        }
+      ],
+      "mistake": "Always match the exact contract in entry records, quotes and exit orders. Same ticker is not enough.",
+      "challenge": {
+        "prompt": "Which pair describes the same contract?",
+        "choices": [
+          "Same premium, different ticker",
+          "Same ticker and strike, different expiration",
+          "Same ticker, expiration, type and strike with matching terms"
+        ],
+        "correct": 2,
+        "explanation": "Identity depends on the full contract terms, not its premium. Expiration and type are essential even when the ticker and strike match."
+      },
+      "application": {
+        "prompt": "Your plan says July $60 put, but the ticket says July $60 call. What needs correction?",
+        "answer": "The option type. Stop and select the put before ordering. A call does not become equivalent because its premium is similar."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Spot the mismatch",
+        "headers": [
+          "Field",
+          "Plan",
+          "Ticket"
+        ],
+        "rows": [
+          [
+            "Ticker",
+            "XYZ",
+            "XYZ"
+          ],
+          [
+            "Expiration",
+            "July example date",
+            "July example date"
+          ],
+          [
+            "Type",
+            "Put",
+            "Call"
+          ],
+          [
+            "Strike",
+            "$60",
+            "$60"
+          ],
+          [
+            "Decision",
+            "Do not submit",
+            "Correct the type"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-22",
@@ -569,7 +1735,68 @@
         "correct": 1,
         "explanation": "A contract must still exist when your planned move might happen. Enough time is necessary, not a promise of a good trade."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Choose an expiration by the time the idea needs, while recognizing its tradeoffs.",
+      "steps": [
+        {
+          "title": "Count the time available",
+          "explain": "Expiration is the contract’s deadline, not the planned exit time. A trade intended to last 30 minutes can use a contract expiring later. The plan still needs an exit if the move does not happen.",
+          "example": "A Friday-expiring contract held on Thursday gives less time than one expiring next month, even if both have the same strike."
+        },
+        {
+          "title": "Compare price and sensitivity",
+          "explain": "Longer-dated options often cost more because they contain more time value. Short-dated options may look cheaper but can change quickly and lose remaining time value rapidly. Cheap is not the same as forgiving.",
+          "example": "A $1 near-expiry option and a $4 later-expiry option expose different dollars and sensitivities. Do not compare them as if only price changed."
+        },
+        {
+          "title": "Plan around the deadline",
+          "explain": "Know broker cutoff and settlement procedures before approaching expiration. Corporate events and market closures can affect the practical timeline. Do not assume a chart remaining open means an option can still be traded.",
+          "example": "A plan to “check tomorrow” is unsuitable if the contract expires today. Review the contract and broker instructions before the deadline, not afterward."
+        }
+      ],
+      "mistake": "Days to expiration alone cannot tell you which contract will earn more. Compare the actual quotes, liquidity and intended holding period.",
+      "challenge": {
+        "prompt": "A trade plan needs several days to develop, but the option expires today. What is the main mismatch?",
+        "choices": [
+          "The ticker must be wrong",
+          "The contract deadline may arrive before the idea can develop",
+          "The option cannot lose value"
+        ],
+        "correct": 1,
+        "explanation": "The contract may end before the planned move has time to happen. The expiration must fit the plan; it does not extend itself."
+      },
+      "application": {
+        "prompt": "Does buying a later expiration require holding until that date?",
+        "answer": "No. A purchased option can be sold to close earlier when trading is available. Expiration and planned holding time are separate."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Two deadlines in one plan",
+        "headers": [
+          "Clock",
+          "Meaning",
+          "Example"
+        ],
+        "rows": [
+          [
+            "Planned holding time",
+            "When the strategy expects to exit",
+            "Before today’s close"
+          ],
+          [
+            "Contract expiration",
+            "When the contractual right ends",
+            "Next month"
+          ],
+          [
+            "Broker cutoff",
+            "Deadline for particular instructions",
+            "Verify with your broker"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-23",
@@ -589,7 +1816,78 @@
         "correct": 1,
         "explanation": "The call has immediate exercise value, but profit depends on the price paid, sale price and costs."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Determine whether a call or put has intrinsic value without confusing that with profit.",
+      "steps": [
+        {
+          "title": "Compare stock with strike",
+          "explain": "A call is in the money when stock is above strike. A put is in the money when stock is below strike. At the money usually means stock is near strike. Out of the money means no immediate intrinsic value.",
+          "example": "At stock $52, a $50 call is in the money and a $50 put is out of the money. The direction of the comparison reverses for puts."
+        },
+        {
+          "title": "Calculate intrinsic value",
+          "explain": "For a call, use max(stock −strike,0). For a put, use max(strike −stock,0). Multiply by 100 for a standard contract. Before expiration, the premium can exceed intrinsic value.",
+          "example": "At stock $52, the $50 call has $2 per share of intrinsic value. If quoted at $3, the extra $1 is value beyond immediate exercise value."
+        },
+        {
+          "title": "Calculate profit separately",
+          "explain": "In the money describes a relationship between stock and strike. Profit compares what you receive with what you paid, including costs. An in-the-money option can still be a losing purchase.",
+          "example": "Pay $4 for the call and value it at $2 at expiration: the simplified loss is $200 per contract before fees despite being in the money."
+        }
+      ],
+      "mistake": "Out of the money before expiration does not mean an option has a zero market price.",
+      "challenge": {
+        "prompt": "Stock $45, put strike $50. What is intrinsic value per share?",
+        "choices": [
+          "$5",
+          "$50",
+          "$0"
+        ],
+        "correct": 0,
+        "explanation": "A right to sell at $50 when stock is $45 has $5 per share of intrinsic value. Profit still depends on premium paid."
+      },
+      "application": {
+        "prompt": "A $50 call is worth $3 at expiration after you paid $4. Is it profitable?",
+        "answer": "No. Its $300 value is $100 below the $400 purchase cost per standard contract before fees."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Stock price $52",
+        "headers": [
+          "Contract",
+          "Intrinsic per share",
+          "Relationship"
+        ],
+        "rows": [
+          [
+            "$50 call",
+            "$2",
+            "In the money"
+          ],
+          [
+            "$52 call",
+            "$0",
+            "At the money"
+          ],
+          [
+            "$55 call",
+            "$0",
+            "Out of the money"
+          ],
+          [
+            "$55 put",
+            "$3",
+            "In the money"
+          ],
+          [
+            "$50 put",
+            "$0",
+            "Out of the money"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-24",
@@ -609,7 +1907,68 @@
         "correct": 2,
         "explanation": "The stock must be $2 above the strike at expiration to cover the $2 premium, before fees."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Keep an expiration calculation separate from an active exit instruction.",
+      "steps": [
+        {
+          "title": "Calculate breakeven in its proper setting",
+          "explain": "Expiration breakeven for a purchased call is strike plus premium; for a purchased put it is strike minus premium, before costs. It assumes expiration valuation rather than a sale at an earlier market quote.",
+          "example": "A $100 call bought for $4 has a $104 expiration breakeven before fees. That number does not tell the platform when to exit."
+        },
+        {
+          "title": "Define the actual stop",
+          "explain": "A stop specifies an observable trigger and the action to take. It might use stock price, option bid or another rule. It must be configured and enforced to do anything.",
+          "example": "“Sell if option bid falls to $3” is a rule about the option. “Expiration breakeven $104” is a stock-price calculation. They are not substitutes."
+        },
+        {
+          "title": "Separate signal from proceeds",
+          "explain": "When a stop triggers, the final sale can differ because of spread, gaps, size or delay. A stop-limit adds a price restriction but may remain unfilled. Monitor the position until fills confirm it is closed.",
+          "example": "A $3 trigger does not guarantee a $3 sale. If the next available bid is $2. 70, a market exit can realize a larger loss."
+        }
+      ],
+      "mistake": "Do not wait for a breakeven stock price merely because it appears on the contract screen. Follow the approved exit plan.",
+      "challenge": {
+        "prompt": "A contract screen displays breakeven $104. No exit order or monitored rule exists. What happens automatically at $104?",
+        "choices": [
+          "Losses become impossible",
+          "The position must close",
+          "Nothing is implied by that number alone"
+        ],
+        "correct": 2,
+        "explanation": "Breakeven is information, not an order. An explicit execution rule is needed to act."
+      },
+      "application": {
+        "prompt": "Call strike $80, entry premium $3, option stop bid $2. 40. Name the two different numbers.",
+        "answer": "Expiration breakeven is stock $83 before costs. The stop watches option bid $2. 40. A sale at that bid would lose $60 per standard contract before fees."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Same trade, different purposes",
+        "headers": [
+          "Number",
+          "Instrument",
+          "Purpose"
+        ],
+        "rows": [
+          [
+            "$80 strike",
+            "Stock contract term",
+            "Exercise price"
+          ],
+          [
+            "$83 breakeven",
+            "Stock at expiration",
+            "Recover $3 premium before costs"
+          ],
+          [
+            "$2. 40 stop bid",
+            "Option",
+            "Possible configured exit trigger"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-25",
@@ -629,7 +1988,118 @@
         "correct": 1,
         "explanation": "The confirming candles must exist before the rule can act."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Track the sequence of highs and lows and recognize what would weaken it.",
+      "steps": [
+        {
+          "title": "Make swing confirmation explicit",
+          "explain": "Use one fixed swing rule when comparing examples. For this exercise a turning point needs a completed candle on both sides with lower highs for a peak or higher lows for a valley. Flat ties are not confirmed by this strict rule.",
+          "example": "A high at bar 3 is confirmed only after bar 4 closes with a lower high. Label the point at bar 3, but record bar 4 as the confirmation time."
+        },
+        {
+          "title": "Build the sequence",
+          "explain": "List confirmed highs and lows separately. An upward structure requires progress in both lists. A higher high with a lower low can indicate expansion or conflict rather than a clean rising sequence.",
+          "example": "Highs 101→104 and lows 99→102 rise together. Highs 101→104 but lows 99→98 do not describe the same orderly structure."
+        },
+        {
+          "title": "Identify the level that matters next",
+          "explain": "The latest confirmed higher low is a reference for the current structure. A breach may weaken the bullish description, but the execution rule must specify how to act. Do not retrospectively select whichever low looks best.",
+          "example": "In the chart exercise, bar 5 has a $101. 90 low. After bar 6 confirms it as a higher low, record that level. Bar 8 later closes at $101. 50, below that already-known reference."
+        }
+      ],
+      "mistake": "A sequence label is a description, not a probability of winning or a command to buy.",
+      "challenge": {
+        "prompt": "Highs rise from $101 to $104 but lows fall from $99 to $98. Is that a clean higher-high/higher-low sequence?",
+        "choices": [
+          "Yes, only highs matter",
+          "No, the lows disagree",
+          "Yes, because the last candle is green"
+        ],
+        "correct": 1,
+        "explanation": "The highs are higher but the lows are lower. Both lists must rise to describe higher highs and higher lows."
+      },
+      "application": {
+        "prompt": "Write the reference before the next candle appears.",
+        "answer": "Use the most recent already-confirmed higher low. Record its price and confirmation time. Do not choose a new low after seeing whether the trade wins."
+      },
+      "visual": {
+        "kind": "candles",
+        "title": "Trace the sequence, then the challenge",
+        "bars": [
+          {
+            "open": 98.85,
+            "high": 99.1,
+            "low": 98.75,
+            "close": 99
+          },
+          {
+            "open": 100.85,
+            "high": 101.1,
+            "low": 100.75,
+            "close": 101
+          },
+          {
+            "open": 100.15,
+            "high": 100.25,
+            "low": 99.9,
+            "close": 100
+          },
+          {
+            "open": 103.85,
+            "high": 104.1,
+            "low": 103.75,
+            "close": 104
+          },
+          {
+            "open": 102.15,
+            "high": 102.25,
+            "low": 101.9,
+            "close": 102
+          },
+          {
+            "open": 104.85,
+            "high": 105.1,
+            "low": 104.75,
+            "close": 105
+          },
+          {
+            "open": 103.15,
+            "high": 103.25,
+            "low": 102.9,
+            "close": 103
+          },
+          {
+            "open": 101.65,
+            "high": 101.75,
+            "low": 101.4,
+            "close": 101.5
+          }
+        ],
+        "labels": [
+          "Bar 1",
+          "Bar 2",
+          "Bar 3",
+          "Bar 4",
+          "Bar 5",
+          "Bar 6",
+          "Bar 7",
+          "Bar 8"
+        ],
+        "level": 101.9,
+        "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
+        "notes": [
+          "Start by observing. One bar supplies no confirmed local swing under the one-neighbor rule.",
+          "The high is rising. Wait for a completed right-side neighbor before calling this a swing.",
+          "Bar 2’s $101. 10 high is now confirmed. Bar 3’s low is still provisional.",
+          "Bar 3’s $99. 90 valley is confirmed. The new high remains provisional.",
+          "Bar 4’s $104. 10 high is confirmed and exceeds the prior peak.",
+          "Bar 5’s $101. 90 low is now confirmed and exceeds $99. 90. This is the latest confirmed higher low.",
+          "Bar 6’s $105. 10 peak is now confirmed. Bar 7’s close remains above the recorded $101. 90 higher low.",
+          "The $101. 50 close is below the already-confirmed $101. 90 higher low. The close-based example condition becomes knowable now."
+        ]
+      }
+    }
   },
   {
     "id": "lesson-26",
@@ -649,7 +2119,110 @@
         "correct": 0,
         "explanation": "A sequence of lower swing highs and lower swing lows describes falling structure."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Describe falling structure and avoid treating every upward candle as a reversal.",
+      "steps": [
+        {
+          "title": "Read the highs and lows in order",
+          "explain": "A lower high peaks below the preceding confirmed high. A lower low falls below the preceding confirmed low. Together they describe downward structure over the chosen window.",
+          "example": "Highs $106 then $104; lows $102 then $100: both turn lists move downward. This is different from merely seeing one red candle."
+        },
+        {
+          "title": "Distinguish a bounce from a break",
+          "explain": "A bounce can rise for several candles while remaining below the last confirmed lower high. The larger falling structure may still be intact. Define what would contradict it before watching the next candles.",
+          "example": "From $100, price bounces to $103 while the lower high is $104. That is upward movement, but it has not exceeded the recorded high."
+        },
+        {
+          "title": "Mirror the interpretation, not every detail",
+          "explain": "For bearish trades, movement above a recorded lower high is adverse structure evidence. The exact threshold, timeframe and confirmation rule still matter. A stock rise does not map one-to-one to an option loss.",
+          "example": "A close above $104 can challenge the falling pattern. To price a put exit at that moment, you still need the exact option’s timestamped bid."
+        }
+      ],
+      "mistake": "A put is purchased with a Buy action. Bearish direction does not mean the entry action is Sell.",
+      "challenge": {
+        "prompt": "Last confirmed lower high $104. Price bounces from $100 to $103. What is supported?",
+        "choices": [
+          "A guaranteed trend reversal",
+          "Proof a put will profit",
+          "A bounce still below the lower high"
+        ],
+        "correct": 2,
+        "explanation": "The move is upward but below $104. It neither proves a reversal nor guarantees option profit."
+      },
+      "application": {
+        "prompt": "Highs 110→108 and lows 106→104 are followed by a close 109. What should you investigate?",
+        "answer": "The close moved above the recorded 108 lower high. Check the specified confirmation rule and available data; the previous falling structure may be changing."
+      },
+      "visual": {
+        "kind": "candles",
+        "title": "A bounce inside falling structure",
+        "bars": [
+          {
+            "open": 105.85,
+            "high": 106.1,
+            "low": 105.75,
+            "close": 106
+          },
+          {
+            "open": 102.15,
+            "high": 102.25,
+            "low": 101.9,
+            "close": 102
+          },
+          {
+            "open": 103.85,
+            "high": 104.1,
+            "low": 103.75,
+            "close": 104
+          },
+          {
+            "open": 100.15,
+            "high": 100.25,
+            "low": 99.9,
+            "close": 100
+          },
+          {
+            "open": 102.85,
+            "high": 103.1,
+            "low": 102.75,
+            "close": 103
+          },
+          {
+            "open": 101.15,
+            "high": 101.25,
+            "low": 100.9,
+            "close": 101
+          },
+          {
+            "open": 99.15,
+            "high": 99.25,
+            "low": 98.9,
+            "close": 99
+          }
+        ],
+        "labels": [
+          "Bar 1",
+          "Bar 2",
+          "Bar 3",
+          "Bar 4",
+          "Bar 5",
+          "Bar 6",
+          "Bar 7"
+        ],
+        "level": 104.1,
+        "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
+        "notes": [
+          "A single candle does not establish falling structure.",
+          "Price has moved lower, but a valley needs a finished right neighbor.",
+          "Bar 2’s $101. 90 low is confirmed by the bounce. Bar 3’s high is still provisional.",
+          "Bar 3’s $104. 10 high is confirmed. This is the recorded high to compare with a later bounce.",
+          "Bar 4’s $99. 90 low is confirmed, lower than $101. 90. Bar 5’s bounce is still below $104. 10.",
+          "Bar 5’s $103. 10 high is confirmed, lower than $104. 10. Both the confirmed highs and lows are falling.",
+          "Price closes lower again. The latest candle’s low is not yet a confirmed swing because its right-side neighbor is unavailable."
+        ]
+      }
+    }
   },
   {
     "id": "lesson-27",
@@ -669,7 +2242,102 @@
         "correct": 1,
         "explanation": "Only the completed close below the defined level satisfies that exact rule."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "State when a structure break becomes knowable and prevent hindsight from entering the decision.",
+      "steps": [
+        {
+          "title": "Freeze the reference first",
+          "explain": "A break of structure compares new price with an already identified swing level. CHoCH, or change of character, is commonly used for an initial break against the prior trend, but definitions vary. Specify the rule rather than rely on the acronym.",
+          "example": "Exercise rule: an upward sequence is challenged by a completed close below its latest confirmed higher low of $100."
+        },
+        {
+          "title": "Wait only for the confirmation your rule requires",
+          "explain": "A real-time breach, one close and two closes are different tests. The confirmation time is when all required information is available. A chart may draw a marker at an earlier swing without making it tradable then.",
+          "example": "If the 5-minute candle ends 10: 15 and first closes below $100, a one-close signal is knowable at 10: 15 after receipt. Two-close confirmation waits for the next completed bar."
+        },
+        {
+          "title": "Price the action after the signal",
+          "explain": "To test an exit, use a subsequent usable option quote and realistic costs. Do not sell at the best price earlier in the candle. Keep an unpriced signal separate from a completed hypothetical result.",
+          "example": "A 10: 15 signal with the next valid bid at 10: 15: 02 must use that later observation under the test’s rules. A 10: 14: 30 bid was available before the signal existed."
+        }
+      ],
+      "mistake": "The candle with the highest price is not automatically a bearish structure-change signal.",
+      "challenge": {
+        "prompt": "A rule requires two 5-minute closes below $100. They finish 10: 15 and 10: 20. When is confirmation first knowable?",
+        "choices": [
+          "10: 20 after receipt",
+          "10: 10",
+          "10: 15"
+        ],
+        "correct": 0,
+        "explanation": "The second required close does not exist until 10: 20. Acting at 10: 15 would test a different one-close rule."
+      },
+      "application": {
+        "prompt": "The best bid occurred at 10: 14 but confirmation came 10: 20. Can the backtest use the 10: 14 bid?",
+        "answer": "No. Use an eligible quote after the actual confirmation time. Otherwise the test uses information and prices from incompatible moments."
+      },
+      "visual": {
+        "kind": "candles",
+        "title": "One close versus two",
+        "bars": [
+          {
+            "open": 100.85,
+            "high": 101.1,
+            "low": 100.75,
+            "close": 101
+          },
+          {
+            "open": 101.85,
+            "high": 102.1,
+            "low": 101.75,
+            "close": 102
+          },
+          {
+            "open": 101.55,
+            "high": 101.65,
+            "low": 101.3,
+            "close": 101.4
+          },
+          {
+            "open": 100.65,
+            "high": 100.75,
+            "low": 100.4,
+            "close": 100.5
+          },
+          {
+            "open": 99.95,
+            "high": 100.05,
+            "low": 99.7,
+            "close": 99.8
+          },
+          {
+            "open": 99.75,
+            "high": 99.85,
+            "low": 99.5,
+            "close": 99.6
+          }
+        ],
+        "labels": [
+          "Bar 1",
+          "Bar 2",
+          "Bar 3",
+          "Bar 4",
+          "Bar 5",
+          "Bar 6"
+        ],
+        "level": 100,
+        "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
+        "notes": [
+          "For this exercise, $100 is a higher low recorded before this sequence. The current close is above it.",
+          "The new close is above the reference. A later chart peak cannot be used as an earlier exit signal.",
+          "The close falls, but remains above $100. A red candle alone is not the stated break condition.",
+          "The close is $100. 50. Neither the one-close nor the two-close rule has triggered.",
+          "The first close below $100 is now known at $99. 80. A one-close rule can signal now; a two-close rule still waits.",
+          "The second consecutive close below $100 is now known at $99. 60. Only now is the two-close condition complete."
+        ]
+      }
+    }
   },
   {
     "id": "lesson-28",
@@ -689,7 +2357,110 @@
         "correct": 1,
         "explanation": "A retest adds evidence about the boundary. It does not remove risk."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Separate a breakout, a retest and a continuation, and handle a failed retest.",
+      "steps": [
+        {
+          "title": "Define the level before the breakout",
+          "explain": "Choose resistance from prior observations and state whether a close beyond it is required. A level drawn after the rally is not a fair test of the decision.",
+          "example": "Exercise resistance is $50. A completed close at $50. 40 breaks above it under this example’s close-based rule."
+        },
+        {
+          "title": "Observe the return to the area",
+          "explain": "A retest is a later return toward the broken level. Price may hold, cross or fail there. The return alone is not proof that resistance became support.",
+          "example": "Price drops from $50. 80 toward $50. 10. A later close at $50. 50 offers different evidence from a close at $49. 70."
+        },
+        {
+          "title": "Specify the entry and invalidation separately",
+          "explain": "A retest strategy needs a trigger after the return and a condition that invalidates the idea. Waiting can improve clarity but may miss a move that never retests. Neither approach always wins.",
+          "example": "Example trigger: a completed candle closes back above the retest candle’s high. Example invalidation: a close below the recorded zone. These are exercises, not changes to CELO."
+        }
+      ],
+      "mistake": "Do not label every pullback a successful retest. The outcome must still be observed.",
+      "challenge": {
+        "prompt": "Resistance $50 breaks, price returns and closes $49. 70. What is the honest description?",
+        "choices": [
+          "Successful support hold guaranteed",
+          "The return closed back below the level",
+          "The breakout never occurred"
+        ],
+        "correct": 1,
+        "explanation": "The earlier breakout occurred, but the later close is below the level. Record both events rather than erase the failed follow-through."
+      },
+      "application": {
+        "prompt": "What must be recorded before testing a retest entry?",
+        "answer": "The prior resistance, breakout rule, retest zone, entry trigger and invalidation rule, each with the time it became known."
+      },
+      "visual": {
+        "kind": "candles",
+        "title": "Break, return, then continuation",
+        "bars": [
+          {
+            "open": 49.25,
+            "high": 49.5,
+            "low": 49.15,
+            "close": 49.4
+          },
+          {
+            "open": 49.65,
+            "high": 49.9,
+            "low": 49.55,
+            "close": 49.8
+          },
+          {
+            "open": 50.25,
+            "high": 50.5,
+            "low": 50.15,
+            "close": 50.4
+          },
+          {
+            "open": 50.65,
+            "high": 50.9,
+            "low": 50.55,
+            "close": 50.8
+          },
+          {
+            "open": 50.25,
+            "high": 50.35,
+            "low": 50.0,
+            "close": 50.1
+          },
+          {
+            "open": 50.35,
+            "high": 50.6,
+            "low": 50.25,
+            "close": 50.5
+          },
+          {
+            "open": 50.85,
+            "high": 51.1,
+            "low": 50.75,
+            "close": 51
+          }
+        ],
+        "labels": [
+          "Bar 1",
+          "Bar 2",
+          "Bar 3",
+          "Bar 4",
+          "Bar 5",
+          "Bar 6",
+          "Bar 7"
+        ],
+        "level": 50,
+        "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
+        "notes": [
+          "The $50 resistance was defined before this example. The first close is below it.",
+          "The second close is still below resistance. Do not label a breakout before it occurs.",
+          "The close at $50. 40 breaks above $50. A future retest is not yet known.",
+          "Price continues above the level. A strategy requiring a retest still has no return to evaluate.",
+          "The low touches $50 and the close is $50. 10. This is a return to the area, not proof of future continuation.",
+          "The close at $50. 50 exceeds the retest candle’s $50. 35 high. That satisfies this example’s continuation trigger now.",
+          "The later rise is follow-through. It was not information available at the initial breakout."
+        ]
+      }
+    }
   },
   {
     "id": "lesson-29",
@@ -709,7 +2480,102 @@
         "correct": 0,
         "explanation": "The specified reclaim must already have happened before its confirmation can justify an entry."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Recognize a failed break without assuming the recovery guarantees a profitable reversal.",
+      "steps": [
+        {
+          "title": "Observe the break first",
+          "explain": "A failed break begins with price moving beyond a prior level. Decide what counts as a break and recovery using the same timestamp conventions. A wick and a close can tell different stories.",
+          "example": "Support $50 is crossed and a completed candle closes $49. 60. Under the example rule, that is a downside break."
+        },
+        {
+          "title": "Look for the recovery",
+          "explain": "A later close back above the level can show that sellers did not hold the break. It does not prove all sellers are finished. The recovery can itself fail.",
+          "example": "The next candle closes $50. 20. That is a recovery above $50, not proof that price will reach $52."
+        },
+        {
+          "title": "Connect the idea to a testable entry",
+          "explain": "Specify whether entry waits for recovery, a retest or another confirmation. Freeze the reference low before comparing results. Check the contract and account conditions separately from the chart.",
+          "example": "If entry requires the recovery close, the trade cannot enter at the earlier $49. 60 low merely because it looks attractive later."
+        }
+      ],
+      "mistake": "A failed downward break can suggest a bullish setup, but it does not automatically make a call cheap or liquid.",
+      "challenge": {
+        "prompt": "A recovery entry requires a close above $50. Low was $49. 20 and later close $50. 10. Which entry time is defensible?",
+        "choices": [
+          "After the recovery close is known",
+          "Before the break",
+          "At the earlier low using hindsight"
+        ],
+        "correct": 0,
+        "explanation": "The recovery condition becomes known only after the close. The earlier low cannot be selected with knowledge of the later recovery."
+      },
+      "application": {
+        "prompt": "Price recovers $50 and then closes $49. 80 again. What should the journal say?",
+        "answer": "Recovery occurred, then failed to hold. Apply the written management rule and keep both observations in the record."
+      },
+      "visual": {
+        "kind": "candles",
+        "title": "A break that returns inside the range",
+        "bars": [
+          {
+            "open": 50.35,
+            "high": 50.6,
+            "low": 50.25,
+            "close": 50.5
+          },
+          {
+            "open": 50.25,
+            "high": 50.35,
+            "low": 50.0,
+            "close": 50.1
+          },
+          {
+            "open": 49.75,
+            "high": 49.85,
+            "low": 49.5,
+            "close": 49.6
+          },
+          {
+            "open": 50.05,
+            "high": 50.3,
+            "low": 49.95,
+            "close": 50.2
+          },
+          {
+            "open": 50.45,
+            "high": 50.7,
+            "low": 50.35,
+            "close": 50.6
+          },
+          {
+            "open": 50.45,
+            "high": 50.55,
+            "low": 50.2,
+            "close": 50.3
+          }
+        ],
+        "labels": [
+          "Bar 1",
+          "Bar 2",
+          "Bar 3",
+          "Bar 4",
+          "Bar 5",
+          "Bar 6"
+        ],
+        "level": 50,
+        "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
+        "notes": [
+          "Support is defined at $50 before the observation. Price closes above it.",
+          "Price moves toward support and closes at $50. 10.",
+          "The $49. 60 close is below support. A recovery has not occurred yet.",
+          "Price closes back above support at $50. 20. The recovery is knowable now, not on the prior candle.",
+          "The next close rises further. This is follow-through, not proof the recovery was certain.",
+          "Price pulls back but closes above $50. Keep recording what happens rather than assuming every recovery succeeds."
+        ]
+      }
+    }
   },
   {
     "id": "lesson-30",
@@ -729,7 +2595,68 @@
         "correct": 0,
         "explanation": "Short moves can oppose the broader trend. Timeframe and confirmation timing matter."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Write a precise account of conflicting timeframes instead of forcing a single direction.",
+      "steps": [
+        {
+          "title": "Name each timeframe’s job",
+          "explain": "A higher timeframe can provide context while a lower one times a setup. The role must be defined in advance. Do not keep changing which timeframe matters after a losing entry.",
+          "example": "The hour may describe a decline while the last five minutes show a bounce. Record both rather than calling the market simply bullish."
+        },
+        {
+          "title": "Align the observation times",
+          "explain": "Compare completed bars available at the decision time. An hourly candle that closes later is future information. Session alignment and gaps also matter when building larger candles.",
+          "example": "At 10: 20, a 9: 30-to 10: 30 hourly candle is still forming. Its final 10: 30 close cannot be used to justify a 10: 20 decision."
+        },
+        {
+          "title": "Make conflict a rule, not a feeling",
+          "explain": "An entry policy may allow a countertrend setup or veto it. Protective exits may follow their own priorities. The lesson is to specify the behavior and test it, not to claim every timeframe must agree.",
+          "example": "A rule might block new bullish entries during a confirmed hourly decline. That does not imply it should delay an existing position’s protective exit."
+        }
+      ],
+      "mistake": "Two timeframes disagreeing is not necessarily a data error. First check alignment, then interpret the different windows.",
+      "challenge": {
+        "prompt": "At 10: 20, an hourly bar ends 10: 30. Can its eventual bearish close be used in the 10: 20 backtest?",
+        "choices": [
+          "Only for winning trades",
+          "Yes, it is the same hour",
+          "No, that close was not available yet"
+        ],
+        "correct": 2,
+        "explanation": "The 10: 30 close is future information at 10: 20. Use the last completed bar or a clearly defined forming-bar rule."
+      },
+      "application": {
+        "prompt": "Write the conflict without predicting an outcome.",
+        "answer": "“Completed hourly structure is falling. Recent one-minute closes are rising within that decline. The entry policy decides whether this countertrend setup is allowed.”"
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Context and timing",
+        "headers": [
+          "Window",
+          "Known at decision",
+          "Interpretation"
+        ],
+        "rows": [
+          [
+            "Last completed hour",
+            "Lower highs/lows",
+            "Falling context"
+          ],
+          [
+            "Recent completed minutes",
+            "Higher closes",
+            "Short bounce"
+          ],
+          [
+            "Current unfinished hour",
+            "Close unknown",
+            "Provisional only"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-31",
@@ -749,7 +2676,58 @@
         "correct": 0,
         "explanation": "The estimated $0.40 option-share move is multiplied by 100 for a standard contract."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Translate delta into a small-move estimate and explain its limits.",
+      "steps": [
+        {
+          "title": "Read the sign",
+          "explain": "Positive delta means a small stock rise tends to increase theoretical option value, all else fixed. Negative delta means the opposite. Purchased calls generally have positive delta and purchased puts negative delta.",
+          "example": "Call delta +0. 40 suggests about +$0. 40 premium for a $1 stock rise. Put delta −0. 40 suggests about − $0. 40 for the same rise."
+        },
+        {
+          "title": "Scale to contracts",
+          "explain": "Delta is typically quoted per share of option premium. Multiply the estimated premium change by 100 and quantity for standard contracts. Keep the stock move’s sign in the calculation.",
+          "example": "A put with delta −0. 40 and stock move − $0. 50 has approximate premium change +$0. 20. For 2 contracts, that is roughly +$40 before other effects."
+        },
+        {
+          "title": "Recalculate as conditions change",
+          "explain": "Delta changes with price, time and volatility. It is a local sensitivity, not a fixed relationship over a large move. Use observed option quotes to determine actual sale results.",
+          "example": "Multiplying today’s delta by a $20 stock move can be misleading. The delta along that path is unlikely to remain unchanged."
+        }
+      ],
+      "mistake": "Delta alone does not measure the chance of a profitable exit, because price paid, timing and costs matter.",
+      "challenge": {
+        "prompt": "Call delta 0. 60, stock rises $0. 50,2 standard contracts. Approximate value change with all else fixed?",
+        "choices": [
+          "+$30",
+          "+$60",
+          "+$600"
+        ],
+        "correct": 1,
+        "explanation": "0. 60 × $0. 50 × 100 × 2 = about +$60. This is an estimate before other inputs and execution costs."
+      },
+      "application": {
+        "prompt": "A put delta is −0. 30 and stock rises $1. What is the direction of the estimated premium change?",
+        "answer": "About − $0. 30 per share, or − $30 per standard contract. The negative delta means a stock rise is adverse under the local estimate."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "Local estimate for a 0. 50-delta call",
+        "labels": [
+          "Stock − $0. 50",
+          "Unchanged",
+          "Stock +$0. 50"
+        ],
+        "values": [
+          -25,
+          0,
+          25
+        ],
+        "unit": "Contract value change",
+        "caption": "One standard contract, all other inputs fixed. This is a local model illustration, not a quote or fill."
+      }
+    }
   },
   {
     "id": "lesson-32",
@@ -769,7 +2747,68 @@
         "correct": 0,
         "explanation": "Gamma describes a changing delta. Time and volatility also affect the option."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Explain why an option’s sensitivity can accelerate as the stock moves.",
+      "steps": [
+        {
+          "title": "Start with delta",
+          "explain": "Delta describes the current sensitivity to a small underlying move. Gamma describes how that sensitivity is estimated to change for a $1 underlying move. It is a change in delta, not a dollar profit by itself.",
+          "example": "Delta 0. 40 and gamma 0. 08 suggest delta might become about 0. 48 after a $1 stock rise, holding other inputs fixed."
+        },
+        {
+          "title": "Distinguish the first move from the next",
+          "explain": "When delta changes, the next similar stock move can affect the option differently. This is why a straight-line estimate can fail over a large path. Gamma itself can also change.",
+          "example": "The first small move might be described with delta near 0. 40; a later move may use a higher delta. Do not assume each $1 rise always adds exactly $0. 40."
+        },
+        {
+          "title": "Understand why timing matters",
+          "explain": "Near expiration and near the strike, sensitivity can change rapidly. This can magnify both opportunity and management difficulty. A small premium does not mean a small or slow-changing risk.",
+          "example": "An option near its strike may react very differently before and after a sharp stock move. Refresh the quote rather than trusting an old Greek snapshot."
+        }
+      ],
+      "mistake": "Gamma is not an extra guaranteed return to add to delta on every candle.",
+      "challenge": {
+        "prompt": "Delta 0. 35, gamma 0. 05, stock rises $1. What is the rough new delta, all else fixed?",
+        "choices": [
+          "0. 40",
+          "5. 35",
+          "0. 30"
+        ],
+        "correct": 0,
+        "explanation": "0. 35 +0. 05 = about 0. 40. Gamma estimates a change in delta. The actual new delta depends on the updated market inputs."
+      },
+      "application": {
+        "prompt": "Why is using one delta for a large stock move unreliable?",
+        "answer": "Because delta changes along the move, partly described by gamma. Time and volatility may also change, so a fresh option quote is needed."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Sensitivity can change",
+        "headers": [
+          "Stage",
+          "Illustrative delta",
+          "Meaning"
+        ],
+        "rows": [
+          [
+            "Before move",
+            "0. 35",
+            "Local starting sensitivity"
+          ],
+          [
+            "After +$1 with gamma 0. 05",
+            "About 0. 40",
+            "New approximate sensitivity"
+          ],
+          [
+            "Further movement",
+            "Recalculate",
+            "Neither delta nor gamma is fixed"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-33",
@@ -789,7 +2828,60 @@
         "correct": 0,
         "explanation": "Time value and expected uncertainty can change even if the stock stays nearly still."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Recognize time-value erosion without assuming a fixed daily charge.",
+      "steps": [
+        {
+          "title": "Separate intrinsic and remaining value",
+          "explain": "An option premium can contain intrinsic value plus value from remaining time and uncertainty. At expiration the extra time value is gone. Before then, market changes can increase or decrease the total premium.",
+          "example": "A call quoted $3 with $1 intrinsic value has $2 beyond intrinsic value. That $2 is not a guaranteed amount you can recover later."
+        },
+        {
+          "title": "Interpret theta in units",
+          "explain": "Theta estimates the premium effect of a day passing with other inputs held fixed. A negative theta is common for purchased options. It is not a cash fee charged to your account and is not constant each day.",
+          "example": "Theta −0. 04 suggests about − $4 per standard contract over a day in that model, before changes in stock price or volatility."
+        },
+        {
+          "title": "Connect the clock to the trade thesis",
+          "explain": "If the expected move is slow or delayed, the option can lose value while waiting. A time-based exit may express a plan that the move should happen soon. Its usefulness must be tested rather than assumed.",
+          "example": "A stock stays flat for several days while a short-dated option gets cheaper. The entry direction was never disproved, but the timing may not fit the contract."
+        }
+      ],
+      "mistake": "Do not multiply one theta reading by many days and call the result exact. Sensitivities and market prices change.",
+      "challenge": {
+        "prompt": "Theta −0. 06 for one standard purchased option. What does it roughly describe?",
+        "choices": [
+          "A guaranteed $6 loss tomorrow",
+          "A $6 broker fee",
+          "$6 of modeled daily value erosion, all else fixed"
+        ],
+        "correct": 2,
+        "explanation": "−0. 06 × 100 = − $6 in the model. It is neither a billed fee nor a prediction that ignores other price influences."
+      },
+      "application": {
+        "prompt": "The stock is unchanged but the option bid fell. What should you check besides direction?",
+        "answer": "Remaining time, implied volatility, spread and quote freshness. The record must support the explanation; theta alone cannot prove the exact cause."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "Illustrative time value with unchanged other inputs",
+        "labels": [
+          "Earlier",
+          "Later",
+          "Near expiration",
+          "At expiration"
+        ],
+        "values": [
+          2,
+          1.5,
+          0.7,
+          0
+        ],
+        "unit": "Time value per share",
+        "caption": "Schematic only. Real erosion is not a fixed straight-line schedule and market inputs do not stay constant."
+      }
+    }
   },
   {
     "id": "lesson-34",
@@ -809,7 +2901,73 @@
         "correct": 1,
         "explanation": "A favorable stock move can be outweighed by falling time value or implied volatility."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Understand how an expected announcement can be priced into an option before it happens.",
+      "steps": [
+        {
+          "title": "Distinguish news from expectations",
+          "explain": "Markets respond to what happened compared with what was expected. Good business news can coincide with a falling stock or option if buyers had already priced in a better outcome.",
+          "example": "A company reports growth, but less growth than investors expected. The headline sounds positive while the market reaction is negative."
+        },
+        {
+          "title": "Consider uncertainty before and after",
+          "explain": "Before an event, options can reflect a wide range of possible outcomes. Once the event occurs, implied volatility may fall. That can reduce option premium even if the stock moves in your predicted direction.",
+          "example": "A call bought at $5 before an event might bid $4. 50 after a small stock rise. Reduced uncertainty may contribute, but verify quotes and volatility data before assigning cause."
+        },
+        {
+          "title": "Compare the actual contract path",
+          "explain": "Review entry premium, post-event bid, strike, expiration and spread. A correct forecast of the headline is not enough. The move must compensate for what the option cost and how it changed.",
+          "example": "Two contracts bought at $5 and sold at $4. 50 lose $100 before fees. The result is determined by those prices, not by whether the headline was favorable."
+        }
+      ],
+      "mistake": "An event-related volatility drop is a possible explanation, not something you can measure exactly from a stock chart alone.",
+      "challenge": {
+        "prompt": "A call gains $0. 40 from a rough stock-move estimate but loses $0. 70 from a rough volatility estimate. Net before other effects?",
+        "choices": [
+          "+$1. 10",
+          "− $0. 30",
+          "+$0. 30"
+        ],
+        "correct": 1,
+        "explanation": "+$0. 40 − $0. 70 = − $0. 30 per share in the simplified illustration. Actual sale prices must still come from quotes or fills."
+      },
+      "application": {
+        "prompt": "What would make “good news caused a loss” a more useful review?",
+        "answer": "State the expected outcome, actual stock reaction, option entry/exit prices and volatility/spread evidence. Separate observed facts from possible explanations."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Same event, different observations",
+        "headers": [
+          "Item",
+          "Before",
+          "After"
+        ],
+        "rows": [
+          [
+            "Stock",
+            "100",
+            "101"
+          ],
+          [
+            "Call premium/bid",
+            "Entry 5. 00",
+            "Bid 4. 50"
+          ],
+          [
+            "Two-contract result",
+            "Cost 1,000",
+            "Sale 900 before fees"
+          ],
+          [
+            "Conclusion",
+            "Direction favorable",
+            "Option still lost 100"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-35",
@@ -829,7 +2987,73 @@
         "correct": 0,
         "explanation": "The 20-cent loss per option share is multiplied by 100."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Price a hypothetical exit from the appropriate side of a fresh exact-contract quote.",
+      "steps": [
+        {
+          "title": "Use the selling side",
+          "explain": "A purchased option is sold to close. A current bid is a practical reference for a hypothetical sale, but it is not a broker-confirmed fill. The ask is what sellers request, not what buyers necessarily pay you.",
+          "example": "Bid $2. 30, ask $2. 50: valuing a sale at $2. 50 assumes someone pays the ask. That is not established by the quote alone."
+        },
+        {
+          "title": "Account for time and costs",
+          "explain": "Match the quote to the decision time, using the next eligible observation after the signal. Include fees and modeled slippage consistently. Do not reuse a quote from before the signal simply because it improves the result.",
+          "example": "A signal at 10: 15: 00 followed by a valid bid at 10: 15: 02 can support a hypothetical exit at that observation under the test rules. It still is not a fill."
+        },
+        {
+          "title": "Label the result honestly",
+          "explain": "Separate live fills, paper broker fills and hypothetical quote-based results. Report missing sizes or timestamps. A calculated profit is useful only when the reader knows what evidence supports it.",
+          "example": "“Hypothetical +$30 using bid $2. 30 after entry $2. 00, before costs” is different from “Sold for +$30.” The latter requires execution evidence."
+        }
+      ],
+      "mistake": "Never call an unfilled limit order or a midpoint valuation a completed profitable sale.",
+      "challenge": {
+        "prompt": "Entry $2. 00, next eligible bid $2. 30, ask $2. 50. One-contract hypothetical result before costs using the bid?",
+        "choices": [
+          "+$30",
+          "A confirmed +$30 fill",
+          "+$50"
+        ],
+        "correct": 0,
+        "explanation": "($2. 30 − $2. 00) × 100 = +$30 hypothetically. The quote does not prove an order filled at that price."
+      },
+      "application": {
+        "prompt": "If the only quote after the signal is crossed, what should you report?",
+        "answer": "The signal time can be reported, but the priced result is unavailable until a valid quote is found under the test’s rules. Do not silently use the crossed price."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Signal and quote chronology",
+        "headers": [
+          "Time",
+          "Observation",
+          "Can price this signal?"
+        ],
+        "rows": [
+          [
+            "10: 14: 59",
+            "Bid 2. 40",
+            "No, before signal"
+          ],
+          [
+            "10: 15: 00",
+            "Exit condition known",
+            "Signal only"
+          ],
+          [
+            "10: 15: 02",
+            "Valid bid 2. 30",
+            "Hypothetical reference"
+          ],
+          [
+            "Later",
+            "Broker execution record",
+            "Actual fill if confirmed"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-36",
@@ -849,7 +3073,72 @@
         "correct": 1,
         "explanation": "The visible size is smaller than the proposed sale. Larger execution is uncertain."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Explain why a quoted price may not be available for your entire order.",
+      "steps": [
+        {
+          "title": "Read price and quantity together",
+          "explain": "The bid tells you a price buyers are displaying. Bid size tells you how many contracts are displayed there. Neither promises that the quote will remain available when your order arrives. A small spread alone does not prove there is enough size for your trade.",
+          "example": "You own 8 contracts. The best bid is $2. 40 with size 3. That quote does not establish that all 8 can sell for $2. 40."
+        },
+        {
+          "title": "Walk through more than one price",
+          "explain": "An order can fill in pieces at different prices. Calculate proceeds from each piece, then divide by the total contracts to find the average price. Displayed depth is still only a snapshot, not a promise.",
+          "example": "If 3 sell at $2. 40 and 5 sell at $2. 35, proceeds are $720 + $1,175 = $1,895. The average is $2. 36875 per share before costs."
+        },
+        {
+          "title": "Distinguish activity from available buyers",
+          "explain": "Volume counts contracts traded during a period. Open interest counts outstanding contracts. Neither tells you exactly how many contracts you can sell right now. Check the current quote, size, age and actual fills.",
+          "example": "A contract can have high daily volume while its current bid size is only 1. Do not replace the size check with a popular-contract label."
+        }
+      ],
+      "mistake": "A quote is an opportunity to attempt a trade, not proof of a completed trade.",
+      "challenge": {
+        "prompt": "You own 6 contracts and the bid shows size 2. What is established?",
+        "choices": [
+          "You cannot sell any contracts",
+          "All 6 will fill at the bid",
+          "Only 2 contracts are currently displayed at that bid"
+        ],
+        "correct": 2,
+        "explanation": "The displayed size is 2. More liquidity may appear, but you cannot assume it in advance."
+      },
+      "application": {
+        "prompt": "Four contracts sell: 1 at $1. 90 and 3 at $1. 80. Calculate proceeds and average price before fees.",
+        "answer": "$190 + $540 = $730. Divide by 400 shares represented to get a $1. 825 average option price."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Illustrative sale of 8 contracts",
+        "headers": [
+          "Piece",
+          "Contracts",
+          "Price",
+          "Proceeds"
+        ],
+        "rows": [
+          [
+            "First",
+            "3",
+            "$2. 40",
+            "$720"
+          ],
+          [
+            "Second",
+            "5",
+            "$2. 35",
+            "$1,175"
+          ],
+          [
+            "Total",
+            "8",
+            "$2. 36875 average",
+            "$1,895 before fees"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-37",
@@ -869,7 +3158,73 @@
         "correct": 0,
         "explanation": "The market may never offer your limit price."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Choose an order type by understanding what it controls and what it cannot promise.",
+      "steps": [
+        {
+          "title": "Separate urgency from price control",
+          "explain": "A market order asks for execution at available prices. A limit order sets a worst acceptable price, but may not fill. For selling, the limit is the minimum acceptable price. For buying, it is the maximum.",
+          "example": "The bid is $1. 80 and ask is $2. 00. A sell limit at $1. 95 may wait. A market sell can fill near the available bid or worse if prices move."
+        },
+        {
+          "title": "Understand what a stop becomes",
+          "explain": "A stop order generally becomes a market order when its trigger is reached. A stop-limit becomes a limit order. Triggering is not the same as filling. Brokers differ in supported option orders and trigger definitions.",
+          "example": "A sell stop at $1. 80 cannot guarantee a $1. 80 sale. If the market jumps to $1. 60, a triggered market order may sell there. A $1. 75 limit could remain unfilled."
+        },
+        {
+          "title": "Confirm cancellation before replacement",
+          "explain": "An order can fill while a cancellation request is traveling. Read the final order status and remaining position before sending a replacement. Otherwise you can accidentally send more orders than intended.",
+          "example": "You ask to cancel a 4-contract order. Two contracts fill before cancellation completes. A replacement must account for those 2, not assume the original 4 are still available."
+        }
+      ],
+      "mistake": "“Submitted,” “triggered,” “cancel requested” and “filled” describe different events.",
+      "challenge": {
+        "prompt": "A sell limit at $2. 10 faces a best bid of $2. 00. What should you expect?",
+        "choices": [
+          "A guaranteed $2. 10 fill",
+          "It may wait or never fill",
+          "It must become a market order"
+        ],
+        "correct": 1,
+        "explanation": "The limit controls the minimum sale price. It does not force a buyer to pay it."
+      },
+      "application": {
+        "prompt": "A 5-contract sell order fills 2 before the remaining order is canceled. How many are left to sell?",
+        "answer": "3 contracts, assuming the original position was 5 and no other fills occurred. Verify both order status and position before replacing it."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Price control versus execution certainty",
+        "headers": [
+          "Order",
+          "What it requests",
+          "Main limitation"
+        ],
+        "rows": [
+          [
+            "Market",
+            "Execute at available prices",
+            "Price can move"
+          ],
+          [
+            "Limit",
+            "Execute only at limit or better",
+            "May not fill"
+          ],
+          [
+            "Stop",
+            "Trigger a market order",
+            "Stop price is not a guaranteed fill"
+          ],
+          [
+            "Stop-limit",
+            "Trigger a limit order",
+            "Can remain unfilled after trigger"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-38",
@@ -889,7 +3244,73 @@
         "correct": 2,
         "explanation": "Only the filled contract is removed. Requested but unfilled quantities still need tracking."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Reconcile partial sales without confusing an order request with your remaining position.",
+      "steps": [
+        {
+          "title": "Track requested, filled and remaining",
+          "explain": "A partial fill means only part of an order executed. Position size changes by the filled quantity, not the requested quantity. Keep the remaining open order separate from the remaining position.",
+          "example": "You own 10 and request a sale of 5. Only 2 fill. You still own 8, and 3 contracts remain on that order unless canceled or filled later."
+        },
+        {
+          "title": "Make odd quantities explicit",
+          "explain": "You cannot sell half of a standard contract. A half-sale rule needs a stated rounding rule for odd quantities. Learn what your saved policy does rather than assuming all systems round the same way.",
+          "example": "Half of 5 is 2. 5. A round-down policy sells 2 and leaves 3. A round-up policy sells 3 and leaves 2. This lesson changes neither choice."
+        },
+        {
+          "title": "Add realized and unrealized results correctly",
+          "explain": "Profit on sold contracts is realized. The value of remaining contracts still changes. Count each filled contract once and keep fees attached to the actual executions.",
+          "example": "Buy 6 at $2. Sell 3 at $2. 40: realized gross profit is $120. The other 3 marked at $1. 80 have an unrealized $60 loss. Combined gross result at that mark is $60."
+        }
+      ],
+      "mistake": "A planned half-sale is not a completed half-sale until the fills confirm it.",
+      "challenge": {
+        "prompt": "You own 7. A sell order for 3 fills only 1. How many do you still own?",
+        "choices": [
+          "6",
+          "3",
+          "4"
+        ],
+        "correct": 0,
+        "explanation": "Only 1 actually sold. You still own 6; the order may still have 2 waiting."
+      },
+      "application": {
+        "prompt": "Buy 4 at $3. Sell 2 at $3. 50 and 2 at $2. 75. What is gross profit?",
+        "answer": "First sale: +$100. Second sale: -$50. Total +$50 before fees, not +$200 from applying the first sale price to all 4."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "A partial fill changes two counts",
+        "headers": [
+          "Event",
+          "Position owned",
+          "Still waiting on sell order"
+        ],
+        "rows": [
+          [
+            "Start with 10",
+            "10",
+            "0"
+          ],
+          [
+            "Request sale of 5",
+            "10",
+            "5"
+          ],
+          [
+            "2 fill",
+            "8",
+            "3"
+          ],
+          [
+            "Remaining 3 fill",
+            "5",
+            "0"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-39",
@@ -909,7 +3330,62 @@
         "correct": 1,
         "explanation": "Peak profit is $0.40 per share. Retaining 75% leaves $0.30 above entry."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Tell a fixed profit target from a trail that follows the highest profit reached.",
+      "steps": [
+        {
+          "title": "A target sells at a defined threshold",
+          "explain": "A fixed target says when to attempt a sale based on the gain from entry. It does not need a reversal first. The actual sale price depends on the order and available market.",
+          "example": "Entry $2. A 10% premium-gain target is $2. 20. On 1 standard contract that is $20 gross profit if it sells at that price."
+        },
+        {
+          "title": "A profit trail measures the retreat from a peak",
+          "explain": "Peak-profit giveback is a percentage of profit above entry, not a percentage of the entire option price. As a new peak is reached, the dollar threshold rises. The rule also needs a stated activation condition.",
+          "example": "Entry $2, peak $2. 50: peak profit is $50 per contract. Giving back 20% means surrendering $10, so the threshold is $2. 40."
+        },
+        {
+          "title": "Combine stages without double counting",
+          "explain": "A staged rule can sell some contracts at a target and trail the remainder. Keep the quantities and prices separate. A tiny initial peak makes the first trailing distance tiny as well.",
+          "example": "Buy 4 at $2. Sell 2 at $2. 20 for $40 gross profit. If the remaining 2 later sell at $2. 40, they add $80. Total is $120 before fees."
+        }
+      ],
+      "mistake": "A 20% giveback of profit is not a 20% drop in the option price.",
+      "challenge": {
+        "prompt": "Entry $4, peak $5. A 25% peak-profit giveback threshold is what?",
+        "choices": [
+          "$4. 25",
+          "$3. 75",
+          "$4. 75"
+        ],
+        "correct": 2,
+        "explanation": "Peak profit is $1 per share. Giving back 25 cents leaves a $4. 75 threshold."
+      },
+      "application": {
+        "prompt": "Entry $2 and first peak $2. 20. What is a 10% giveback of that profit?",
+        "answer": "Peak profit is $20 per contract. A 10% giveback is just $2, or 2 cents in premium. The threshold is $2. 18, before execution costs."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "The trail rises with the peak",
+        "labels": [
+          "Entry",
+          "Target",
+          "New peak",
+          "Pullback",
+          "Trail level"
+        ],
+        "values": [
+          2,
+          2.2,
+          2.5,
+          2.45,
+          2.4
+        ],
+        "unit": "Option price ($)",
+        "caption": "Illustrative 20% giveback after a $2. 50 peak from $2 entry. This is an example, not your saved policy."
+      }
+    }
   },
   {
     "id": "lesson-40",
@@ -929,7 +3405,68 @@
         "correct": 1,
         "explanation": "Subtract total costs from the gross gain."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Calculate whether a small gross gain survives the costs of trading.",
+      "steps": [
+        {
+          "title": "Start with actual purchase and sale prices",
+          "explain": "Subtract the entry price from the exit price, multiply by 100 for a standard contract, then multiply by quantity. This gives gross trading profit before fees.",
+          "example": "Buy at $2. 00 and sell at $2. 04: 4 cents × 100 = $4 gross profit per contract. A 2% gain does not mean $2 profit."
+        },
+        {
+          "title": "Subtract costs once",
+          "explain": "If you already use the actual ask paid and bid received, the spread is already reflected in that difference. Add actual fees, or explicit modeled fees and slippage for a simulation. Do not subtract the spread twice.",
+          "example": "An illustrative $4 gain minus $1. 30 round-trip fees and $2 modeled slippage leaves $0. 70. Those are example costs, not a promise about your broker."
+        },
+        {
+          "title": "Include losses in the same comparison",
+          "explain": "A system with many small wins can still lose money if occasional losses are larger. Apply costs consistently to wins and losses, including partial sales.",
+          "example": "Four gross $4 wins and one gross $20 loss total -$4 before costs. At $3. 30 modeled costs per trade, the five-trade net becomes -$20. 50."
+        }
+      ],
+      "mistake": "Gross profit, after-fee profit and a hypothetical after-cost estimate are different numbers.",
+      "challenge": {
+        "prompt": "One contract gains $6 gross and modeled round-trip costs are $3. 30. Net?",
+        "choices": [
+          "$6",
+          "$2. 70",
+          "$9. 30"
+        ],
+        "correct": 1,
+        "explanation": "$6 - $3. 30 = $2. 70. State the cost assumptions alongside the result."
+      },
+      "application": {
+        "prompt": "A quote-based test already buys at ask and sells at bid. Should it subtract the full spread again?",
+        "answer": "No. That price difference already contains the spread. Separately account for fees and any additional modeled slippage without counting the same cost twice."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "A small gain after example costs",
+        "headers": [
+          "Item",
+          "Per standard contract"
+        ],
+        "rows": [
+          [
+            "Gross price gain",
+            "$4. 00"
+          ],
+          [
+            "Example round-trip fees",
+            "-$1. 30"
+          ],
+          [
+            "Additional modeled slippage",
+            "-$2. 00"
+          ],
+          [
+            "Hypothetical net",
+            "$0. 70"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-41",
@@ -949,7 +3486,72 @@
         "correct": 0,
         "explanation": "Round down: $100 divided by $40 is 2.5, so two fit the planned budget."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Size a trade using a loss assumption you can actually defend.",
+      "steps": [
+        {
+          "title": "Choose the risk assumption before quantity",
+          "explain": "For a purchased option, the full premium plus costs is a conservative loss basis. A smaller planned-stop loss is only an estimate and depends on monitoring, execution and gaps. A reference line alone is not an enforced stop.",
+          "example": "At $2 premium and $1. 30 example round-trip fees, full-cost risk is $201. 30 per standard contract. A chart line does not automatically reduce that to $20."
+        },
+        {
+          "title": "Calculate both budget limits",
+          "explain": "Divide the allowed risk budget by risk per contract and round down. Separately check purchase-cost limits and available buying power. Use the smallest permitted quantity, not whichever calculation gives more contracts.",
+          "example": "A $10,000 account with a 5% example risk budget allows $500. $500 ÷ $201. 30 permits 2 contracts. A $300 purchase cap would reduce that to 1."
+        },
+        {
+          "title": "Recalculate when the contract changes",
+          "explain": "A new premium, multiplier, fee schedule or account balance changes the calculation. Do not reuse a quantity from a cheaper contract. Zero contracts is a valid result when one contract exceeds the limit.",
+          "example": "A $100 budget cannot buy a $150 standard option plus fees under a full-cost cap. Rounding up to 1 would exceed the budget."
+        }
+      ],
+      "mistake": "A percentage setting is not a contract count. The contract cost and enforceable risk assumption matter.",
+      "challenge": {
+        "prompt": "Risk budget $400, full cost $151. 30 per contract, purchase cap $250. Maximum contracts?",
+        "choices": [
+          "1",
+          "3",
+          "2"
+        ],
+        "correct": 0,
+        "explanation": "Risk permits 2, but the purchase cap permits only 1. The tighter limit controls."
+      },
+      "application": {
+        "prompt": "With a $500 budget, compare contracts costing $201. 30 and $301. 30 including example costs.",
+        "answer": "The first permits 2 contracts: $402. 60. The second permits 1: $301. 30. Rounding down keeps each within $500."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "The tighter limit wins",
+        "headers": [
+          "Limit",
+          "Budget",
+          "Per contract",
+          "Contracts"
+        ],
+        "rows": [
+          [
+            "Risk budget",
+            "$500",
+            "$201. 30",
+            "2"
+          ],
+          [
+            "Purchase cap",
+            "$300",
+            "$201. 30",
+            "1"
+          ],
+          [
+            "Final maximum",
+            "Both must pass",
+            "Illustrative full-cost basis",
+            "1"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-42",
@@ -969,7 +3571,73 @@
         "correct": 1,
         "explanation": "Separate positions can lose at the same time."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Recognize when different positions depend on the same market move.",
+      "steps": [
+        {
+          "title": "Count shared exposure, not just ticker names",
+          "explain": "Different tickers can move together because they share a sector, index or economic driver. Several bullish positions can all lose during the same broad decline. Separate tickets do not guarantee separate risks.",
+          "example": "Calls on three large technology companies may all suffer when the technology sector drops. Owning three names is not automatically three independent bets."
+        },
+        {
+          "title": "Add the dollars at risk",
+          "explain": "Look at total committed premium and the loss assumptions across open positions. A per-trade limit can be respected while the combined account exposure is still large.",
+          "example": "Three purchased-option positions each cost $600. Together they commit $1,800 before costs. On a $10,000 account, that is 18% of the account."
+        },
+        {
+          "title": "Review the combined scenario",
+          "explain": "Ask what happens if the shared reason for the trades fails. Avoid assuming that one position must offset another unless its exposure and size actually support that claim.",
+          "example": "A tiny put position does not necessarily balance several large call positions. Write down the scenario and dollar exposure instead of calling it hedged by appearance."
+        }
+      ],
+      "mistake": "More tickers can still mean more of the same risk.",
+      "challenge": {
+        "prompt": "Three positions each commit $400. What is the combined premium exposure?",
+        "choices": [
+          "Zero if tickers differ",
+          "$400 because each has a limit",
+          "$1,200"
+        ],
+        "correct": 2,
+        "explanation": "The dollars add to $1,200. Different symbols do not remove that exposure."
+      },
+      "application": {
+        "prompt": "Two calls follow the same sector. What question belongs in your review before adding a third?",
+        "answer": "What would happen to all three during a sector-wide decline, and would the combined loss fit the account plan? This is a scenario check, not a prediction."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Different names, shared scenario",
+        "headers": [
+          "Position",
+          "Premium committed",
+          "Common concern"
+        ],
+        "rows": [
+          [
+            "Company A call",
+            "$600",
+            "Sector decline"
+          ],
+          [
+            "Company B call",
+            "$600",
+            "Sector decline"
+          ],
+          [
+            "Company C call",
+            "$600",
+            "Sector decline"
+          ],
+          [
+            "Combined",
+            "$1,800",
+            "18% of a $10,000 account before costs"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-43",
@@ -989,7 +3657,68 @@
         "correct": 1,
         "explanation": "The strike is per share, normally for 100 shares on a standard equity contract."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Distinguish selling an option from using its right or meeting a seller’s obligation.",
+      "steps": [
+        {
+          "title": "The buyer has a right",
+          "explain": "Exercise uses the contract right. For a standard physically settled stock call, the holder buys 100 shares at the strike. For a put, the holder sells 100 shares at the strike. Product terms can differ.",
+          "example": "One $50 stock call exercised means buying 100 shares for $5,000, not merely paying the option premium again. The account needs to handle that stock transaction."
+        },
+        {
+          "title": "The seller can receive an obligation",
+          "explain": "Assignment is the seller’s side of exercise. A short call can require delivery of shares; a short put can require buying shares. American-style options can be exercised before expiration, so obligations are not limited to the final day.",
+          "example": "A short $50 put assigned on a standard contract generally requires buying 100 shares for $5,000. Premium received does not remove that obligation."
+        },
+        {
+          "title": "Compare closing with exercising",
+          "explain": "Selling to close transfers the option and ends that long option position after it fills. Exercising may sacrifice remaining time value and create stock exposure. Check your broker’s rules and the exact product rather than assuming exercise is the normal way to exit.",
+          "example": "A call with $3 intrinsic value and a $3. 40 sale value has 40 cents of additional value. Exercising captures the intrinsic economics but can forfeit that extra value."
+        }
+      ],
+      "mistake": "A long option position and a short option obligation are not interchangeable.",
+      "challenge": {
+        "prompt": "One standard $60 call is exercised. What stock purchase does that represent?",
+        "choices": [
+          "1 share for $60",
+          "100 shares for $6,000",
+          "100 shares for the premium only"
+        ],
+        "correct": 1,
+        "explanation": "The standard multiplier is 100. Exercise at a $60 strike means $6,000 of stock purchase, subject to the product and broker rules."
+      },
+      "application": {
+        "prompt": "You sell your long option to close and the order fills. Is that the same as exercising?",
+        "answer": "No. You sold the contract. Exercising uses the right to transact in the underlying under the contract terms."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Four different actions",
+        "headers": [
+          "Action",
+          "Meaning"
+        ],
+        "rows": [
+          [
+            "Buy to open",
+            "Acquire an option position"
+          ],
+          [
+            "Sell to close",
+            "Exit that long option through a sale"
+          ],
+          [
+            "Exercise",
+            "Use the holder’s contractual right"
+          ],
+          [
+            "Assignment",
+            "Seller must meet the corresponding obligation"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-44",
@@ -1009,7 +3738,72 @@
         "correct": 1,
         "explanation": "Expiration handling can change the type and size of your exposure."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Plan an exit before expiration creates obligations you did not intend.",
+      "steps": [
+        {
+          "title": "Expiration is a deadline, not an exit plan",
+          "explain": "An option can lose remaining time value quickly as expiration approaches. In-the-money positions may be exercised under broker and clearing procedures. Do not assume doing nothing means a harmless automatic close.",
+          "example": "A long stock call that finishes in the money may lead to stock ownership if exercised. That is different from the cash result of selling the option earlier."
+        },
+        {
+          "title": "Check the broker’s actual cutoff",
+          "explain": "Trading hours, exercise instructions, automatic-exercise handling and risk liquidation can differ by product and broker. Some contracts settle in cash; others deliver shares. Learn those terms before the final session.",
+          "example": "Your review should identify the exact contract, last trading time, instruction deadline and settlement method. A generic “options expire Friday” reminder is not enough."
+        },
+        {
+          "title": "Verify the position after the deadline",
+          "explain": "A closing order that never filled does not remove the position. Review fills, account holdings and any resulting stock or cash settlement. Do not rely only on an order-submitted notification.",
+          "example": "A sell limit remains open at the close. The option was not sold. You still need to check the broker’s expiration treatment and the resulting account position."
+        }
+      ],
+      "mistake": "An unfilled closing order is not protection from expiration handling.",
+      "challenge": {
+        "prompt": "You submitted an exit order before expiration but it never filled. What is true?",
+        "choices": [
+          "You must check the remaining position and expiration treatment",
+          "The broker must pay your limit price",
+          "The position is safely closed"
+        ],
+        "correct": 0,
+        "explanation": "Submission alone does not close a trade. Check fills and the actual account position."
+      },
+      "application": {
+        "prompt": "Name four facts to record before holding an option near expiration.",
+        "answer": "Exact contract identity, settlement method, final trading time, and broker exercise/instruction deadlines. Also confirm your funds, holdings and intended exit plan."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Expiration preparation",
+        "headers": [
+          "Before final session",
+          "What to verify"
+        ],
+        "rows": [
+          [
+            "Contract",
+            "Expiry, strike, type and multiplier"
+          ],
+          [
+            "Settlement",
+            "Shares or cash"
+          ],
+          [
+            "Broker",
+            "Instruction cutoff and risk handling"
+          ],
+          [
+            "Exit order",
+            "Filled, partly filled or still open"
+          ],
+          [
+            "Afterward",
+            "Actual account holdings and obligations"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-45",
@@ -1029,7 +3823,64 @@
         "correct": 0,
         "explanation": "Width minus debit is $2 per share, normally $200."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Calculate the cost, maximum profit and maximum loss of a simple debit call spread.",
+      "steps": [
+        {
+          "title": "Build the two legs",
+          "explain": "A bull call debit spread buys a lower-strike call and sells a higher-strike call on the same underlying with the same expiration and equal quantities. The short call reduces the purchase cost but caps the expiration upside.",
+          "example": "Buy a $50 call for $4 and sell a $55 call for $1. Net debit is $3 per share, or $300 for one standard spread before fees."
+        },
+        {
+          "title": "Work out the expiration boundaries",
+          "explain": "For this example, maximum expiration loss is the $300 debit. Maximum expiration profit is strike width minus debit: ($5 - $3) × 100 = $200. Breakeven is lower strike plus debit: $53.",
+          "example": "At expiration with stock $52, the long call is worth $2 and the short call $0. The spread is worth $200, so the $300 purchase has a $100 loss before costs."
+        },
+        {
+          "title": "Respect the two-leg execution risk",
+          "explain": "The neat payoff assumes the matched spread is maintained and settlement handled correctly. Early assignment of the short leg, closing one leg alone, fees and execution prices can complicate the account result.",
+          "example": "Selling the long call while leaving the short call open removes the original protection. Do not treat the remaining short option as if it still has the spread’s capped risk."
+        }
+      ],
+      "mistake": "The maximum-profit formula is an expiration payoff for the matched position, not a guaranteed sale price today.",
+      "challenge": {
+        "prompt": "A $5-wide debit spread costs $2. What is maximum expiration profit for one standard spread before costs?",
+        "choices": [
+          "$500",
+          "$200",
+          "$300"
+        ],
+        "correct": 2,
+        "explanation": "Width $5 minus debit $2 = $3 per share, or $300. Maximum loss is the $200 debit."
+      },
+      "application": {
+        "prompt": "For the $50/$55 spread costing $3, calculate expiration P&L at stock $50, $53 and $57.",
+        "answer": "At $50: -$300. At $53: $0. At $57: +$200. Above $55 the two calls offset additional stock gains, so profit is capped."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "Expiration payoff of the $50/$55 example",
+        "labels": [
+          "$48",
+          "$50",
+          "$52",
+          "$53",
+          "$55",
+          "$57"
+        ],
+        "values": [
+          -300,
+          -300,
+          -100,
+          0,
+          200,
+          200
+        ],
+        "unit": "P&L ($)",
+        "caption": "One standard spread, $300 debit, before fees. These are expiration outcomes, not present-day quotes."
+      }
+    }
   },
   {
     "id": "lesson-46",
@@ -1049,7 +3900,64 @@
         "correct": 1,
         "explanation": "The premium is limited while the shares can fall much further."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Explain the protection a covered call provides and the stock risk it leaves behind.",
+      "steps": [
+        {
+          "title": "Identify what covers the call",
+          "explain": "A covered call holds enough shares to deliver against the short call. For a standard contract, that is usually 100 shares for each call sold. Covered describes the delivery obligation, not protection from a stock decline.",
+          "example": "Buy 100 shares at $50 and sell a $55 call for $2. You receive $200 premium, but you still own $5,000 of stock exposure."
+        },
+        {
+          "title": "Calculate the downside honestly",
+          "explain": "Premium received reduces the effective cost, but most stock downside remains. In this example, stock dropping to $40 at expiration loses $1,000 on shares, partly offset by $200 premium.",
+          "example": "Combined result is -$800 before costs. Calling the trade covered does not turn that loss into a small fixed amount."
+        },
+        {
+          "title": "Recognize the capped upside",
+          "explain": "If shares are delivered at the $55 strike, the stock gain is $500 plus $200 premium, for $700 before costs. A much larger stock rise does not add the same upside while the short call remains. Assignment can also occur early.",
+          "example": "At stock $65 at expiration, the matched covered call still has roughly the $700 capped payoff in this example, rather than the $1,500 gain from simply holding the shares."
+        }
+      ],
+      "mistake": "Covered calls exchange some upside for premium; they do not eliminate stock risk.",
+      "challenge": {
+        "prompt": "Stock cost $50, call premium received $2. Stock ends at $45 and the call expires worthless. Combined result on 100 shares?",
+        "choices": [
+          "+$200",
+          "-$300",
+          "-$500"
+        ],
+        "correct": 1,
+        "explanation": "Stock loss is $500, reduced by $200 premium: -$300 before costs."
+      },
+      "application": {
+        "prompt": "Using the $50 stock and $55 call with $2 premium, what is the expiration breakeven before costs?",
+        "answer": "$48 per share: $50 stock cost minus $2 premium. Below that, the combined position loses money despite being covered."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "Covered-call expiration outcome",
+        "labels": [
+          "$40",
+          "$45",
+          "$48",
+          "$50",
+          "$55",
+          "$65"
+        ],
+        "values": [
+          -800,
+          -300,
+          0,
+          200,
+          700,
+          700
+        ],
+        "unit": "P&L ($)",
+        "caption": "100 shares bought at $50 plus one $55 call sold for $2, before costs. Downside remains; upside is capped."
+      }
+    }
   },
   {
     "id": "lesson-47",
@@ -1069,7 +3977,72 @@
         "correct": 1,
         "explanation": "$80 minus $120 is a $40 loss."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Judge results using both win size and loss size instead of win rate alone.",
+      "steps": [
+        {
+          "title": "Count outcomes first",
+          "explain": "Win rate is winning trades divided by all completed trades in the group. It says how often trades won, not how much they won. Keep the definition of a win consistent, preferably after the costs used in the report.",
+          "example": "Eight wins out of ten is 80%. That sounds strong, but the dollar sizes still decide the final result."
+        },
+        {
+          "title": "Add dollars, then compare",
+          "explain": "Average win and average loss show whether small wins can pay for larger losses. Profit factor divides total winning dollars by the absolute total losing dollars. With no losses it is undefined or shown as no losses, not proof of unlimited quality.",
+          "example": "Eight $10 wins total $80. Two $60 losses total $120. Net is -$40 and profit factor is $80 ÷ $120 = 0. 67 before any additional costs."
+        },
+        {
+          "title": "Look beyond a short streak",
+          "explain": "A few trades can produce unstable statistics. Review different sessions and conditions and keep individual strategies, versions and account modes identifiable. A striking percentage from two trades is weak evidence.",
+          "example": "Two wins out of two produce 100% win rate, but reveal little about rare losses. More completed observations are needed to understand the pattern."
+        }
+      ],
+      "mistake": "A high win rate can coexist with a losing account.",
+      "challenge": {
+        "prompt": "Six wins of $20 and four losses of $40. Total result before costs?",
+        "choices": [
+          "-$40",
+          "+$40",
+          "+$120"
+        ],
+        "correct": 0,
+        "explanation": "Wins total $120 and losses $160. Net is -$40 despite a 60% win rate."
+      },
+      "application": {
+        "prompt": "Three wins total $300 and two losses total $150. Find net profit and profit factor.",
+        "answer": "Net is $150. Profit factor is $300 ÷ $150 = 2. 0. Both need the trade count, period and cost basis to be meaningful."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "An 80% win rate can still lose",
+        "headers": [
+          "Outcome",
+          "Count",
+          "Each",
+          "Total"
+        ],
+        "rows": [
+          [
+            "Wins",
+            "8",
+            "+$10",
+            "+$80"
+          ],
+          [
+            "Losses",
+            "2",
+            "-$60",
+            "-$120"
+          ],
+          [
+            "Overall",
+            "10",
+            "80% win rate",
+            "-$40 before further costs"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-48",
@@ -1089,7 +4062,60 @@
         "correct": 1,
         "explanation": "$2,000 divided by the remaining $8,000 is 25%."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Measure a drop from an account peak and understand the recovery required.",
+      "steps": [
+        {
+          "title": "Measure from the previous peak",
+          "explain": "Drawdown is the decline from a prior high to a later low in the chosen account or strategy value series. It is different from one trade’s loss or the change since the start of today.",
+          "example": "A series rises from $10,000 to $12,000, then falls to $9,000. The drawdown from the $12,000 peak is $3,000, or 25%."
+        },
+        {
+          "title": "Recovery uses a smaller starting base",
+          "explain": "After a loss, the same percentage gain does not restore the original amount. Calculate recovery from the reduced balance. Larger drawdowns demand disproportionately larger percentage gains.",
+          "example": "From $9,000 back to $12,000 requires $3,000 ÷ $9,000 = 33. 3%. A 25% gain from $9,000 reaches only $11,250."
+        },
+        {
+          "title": "Use a consistent series",
+          "explain": "Closed-trade equity and account equity including open positions can show different drawdowns. Deposits and withdrawals also affect the account. Label the series and do not mix them without adjustment.",
+          "example": "An open position may be down $500 while the closed-trade curve is flat. That does not mean the account experienced no drawdown."
+        }
+      ],
+      "mistake": "A recovery percentage must use the balance after the loss as its denominator.",
+      "challenge": {
+        "prompt": "An account falls from $10,000 to $8,000. What gain returns it to $10,000?",
+        "choices": [
+          "10%",
+          "20%",
+          "25%"
+        ],
+        "correct": 2,
+        "explanation": "It needs $2,000 on an $8,000 base: 25%."
+      },
+      "application": {
+        "prompt": "A sequence is $10,000, $10,500, $9,500, $10,200. What is the largest peak-to-trough dollar drop?",
+        "answer": "$1,000, from $10,500 to $9,500. The later $10,200 recovery does not erase the earlier drawdown."
+      },
+      "visual": {
+        "kind": "line",
+        "title": "Peak, drawdown and partial recovery",
+        "labels": [
+          "Start",
+          "Peak",
+          "Low",
+          "Recovery"
+        ],
+        "values": [
+          10000,
+          12000,
+          9000,
+          11000
+        ],
+        "unit": "Account value ($)",
+        "caption": "Illustrative account series without deposits or withdrawals. The last point is still below the prior peak."
+      }
+    }
   },
   {
     "id": "lesson-49",
@@ -1109,7 +4135,78 @@
         "correct": 0,
         "explanation": "Matching the inputs helps isolate the effect of the exit rule."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Compare exit rules fairly without changing the trades underneath the comparison.",
+      "steps": [
+        {
+          "title": "Hold the entry fixed",
+          "explain": "To study an exit, use the same entry time, contract, entry price and quantity for both rules. Change only the exit being tested. Otherwise a better result may come from easier entries or different contracts.",
+          "example": "Rule A and rule B both start with the same 2 contracts at $3. One sells earlier. Comparing that with a different strike bought for $1 does not isolate the exit."
+        },
+        {
+          "title": "Use information available at the decision",
+          "explain": "A signal cannot act before it becomes knowable. Price the hypothetical sale using eligible subsequent quotes and explicit costs. Missing quote data is a limitation, not a zero-dollar outcome or permission to invent a price.",
+          "example": "A candle closes at 10: 15. A bid from 10: 14 cannot price that close-based signal. Use the next valid observation allowed by the test, and label it hypothetical."
+        },
+        {
+          "title": "Reserve newer trades for confirmation",
+          "explain": "Trying many rules increases the chance that one looks good by luck. Record every variant, freeze the selected rule and test it on newer unseen trades. Report missing comparisons and uncertainty instead of only the best-looking total.",
+          "example": "If you pick a threshold because it saved yesterday’s loss, yesterday is fitting evidence. A fresh group of trades is needed before claiming the rule repeats."
+        }
+      ],
+      "mistake": "An attractive backtest is not the same as a proven improvement or a broker fill.",
+      "challenge": {
+        "prompt": "Candidate profit is $80 on trade A and baseline profit is $50 on that same trade. Paired difference?",
+        "choices": [
+          "+$130",
+          "+$30",
+          "80%"
+        ],
+        "correct": 1,
+        "explanation": "$80 - $50 = +$30. Repeat this subtraction for each identical eligible trade."
+      },
+      "application": {
+        "prompt": "Three trades have baseline results $20, -$40, $30. Candidate results are $10, -$20, missing. What can you compare?",
+        "answer": "Use the same first two trades: baseline -$20, candidate -$10, paired improvement +$10. Report the third as missing. Do not compare the candidate’s two trades with all three baseline trades."
+      },
+      "visual": {
+        "kind": "table",
+        "title": "Only matched trades support the total",
+        "headers": [
+          "Trade",
+          "Baseline",
+          "Candidate",
+          "Difference"
+        ],
+        "rows": [
+          [
+            "A",
+            "+$20",
+            "+$10",
+            "-$10"
+          ],
+          [
+            "B",
+            "-$40",
+            "-$20",
+            "+$20"
+          ],
+          [
+            "C",
+            "+$30",
+            "Missing",
+            "Excluded from paired total"
+          ],
+          [
+            "Matched total",
+            "-$20",
+            "-$10",
+            "+$10"
+          ]
+        ]
+      }
+    }
   },
   {
     "id": "lesson-50",
@@ -1129,6 +4226,71 @@
         "correct": 1,
         "explanation": "The comparison shows whether the problem was the idea, the execution, the exit or missing evidence."
       }
-    ]
+    ],
+    "workshop": {
+      "goal": "Build a review that explains the decision, the execution and the lesson separately.",
+      "steps": [
+        {
+          "title": "Record the plan before seeing the outcome",
+          "explain": "Write the setup, exact contract, entry trigger, invalidation, sizing basis and intended exit. Record what information was known then. This lets you distinguish following a bad plan from failing to follow a reasonable plan.",
+          "example": "Example plan: buy 2 standard calls at a maximum $2 premium after a completed range breakout. Record the actual range and confirmation time rather than writing “looked bullish” afterward."
+        },
+        {
+          "title": "Reconcile what actually happened",
+          "explain": "Compare requested orders with confirmed fills. Calculate each sale separately, subtract known fees and identify missing information. Include why the trade ended and whether that reason matched the entry-time plan.",
+          "example": "Buy 2 at $2. Sell 1 at $2. 30 and 1 at $1. 90: +$30 - $10 = +$20 gross. With $2. 60 total example fees, net is $17. 40."
+        },
+        {
+          "title": "Choose one next experiment",
+          "explain": "Separate observations from explanations you have not proved. A profitable outcome can come from poor process and a loss can occur despite following the plan. Choose one specific improvement to test rather than rewriting everything from one trade.",
+          "example": "Observation: the second sale occurred later than planned. Next test: verify whether the decision was delayed or the order waited for a fill. Do not immediately assume a tighter stop fixes both."
+        }
+      ],
+      "mistake": "A useful review explains what was known, what was done and what is still uncertain.",
+      "challenge": {
+        "prompt": "A trade lost money but followed its recorded plan. What does that prove?",
+        "choices": [
+          "Only that this outcome lost; more evidence is needed about the rule",
+          "The broker caused it",
+          "The plan is always wrong"
+        ],
+        "correct": 0,
+        "explanation": "One loss does not establish the cause or the long-run quality. Check the entry, execution, exit and costs against the recorded plan."
+      },
+      "application": {
+        "prompt": "Write a five-line review for the example: entry, first sale, second sale, net result and one next question.",
+        "answer": "Entry: 2 at $2. First sale: 1 at $2. 30. Second sale: 1 at $1. 90. Net: $17. 40 after $2. 60 example fees. Next question: did both sale decisions and fills follow the recorded plan?"
+      },
+      "visual": {
+        "kind": "table",
+        "title": "A review you can complete",
+        "headers": [
+          "Part",
+          "Evidence to record"
+        ],
+        "rows": [
+          [
+            "Before entry",
+            "Setup, levels, contract, quantity, exit plan"
+          ],
+          [
+            "During trade",
+            "Decision times, prices and order status"
+          ],
+          [
+            "After exit",
+            "Actual fill prices, quantities and fees"
+          ],
+          [
+            "Result",
+            "Gross and net, with missing fields marked"
+          ],
+          [
+            "Next step",
+            "One question to test on additional trades"
+          ]
+        ]
+      }
+    }
   }
 ]
