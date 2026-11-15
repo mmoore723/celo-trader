@@ -55,6 +55,8 @@ from trading.position_manager.helpers import _reconcile_if_phantom
 logger = logging.getLogger("celo_trader.trading_logic")
 
 
+from config.execution_parameters import trade_controls, exit_value
+
 @decision
 def _resolve_latched_exit(
     position_state: dict,
@@ -128,6 +130,7 @@ def _exit_latch_snapshot(position_state: dict) -> dict:
 
 
 @decision
+@trade_controls
 def _evaluate_reviewed_strategy_exit(
     trade: dict,
     entry_time: datetime | str | None,
@@ -187,6 +190,7 @@ def _evaluate_reviewed_strategy_exit(
 
 
 @position_cycle
+@trade_controls
 def _manage_open_position(
     alpaca: "AlpacaClient",
     tradier: "TradierClient",
@@ -250,8 +254,8 @@ def _manage_open_position(
                 trade, trade.get('entry_time'), deadline_now, None,
                 session_close=research_session_close,
             )
-            if due and deadline_reason in {'research_failed_range_30m', 'research_qqq_trend_30m', 'research_session_close',
-                                           'selected_test_30m', 'selected_test_60m', 'selected_test_90m', 'selected_test_120m'}:
+            if due and (deadline_reason.startswith(('configured_hold_','selected_test_')) or deadline_reason in {'research_failed_range_30m', 'research_qqq_trend_30m', 'research_session_close',
+                                           'selected_test_30m', 'selected_test_60m', 'selected_test_90m', 'selected_test_120m'}):
                 deadline_state = _US.setdefault('positions', {}).setdefault(trade['id'], {})
                 _resolve_latched_exit(deadline_state, True, deadline_reason, deadline_now)
                 deadline_state['exit_attempts'] = int(deadline_state.get('exit_attempts') or 0) + 1

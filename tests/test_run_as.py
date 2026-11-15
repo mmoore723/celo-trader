@@ -65,11 +65,13 @@ class RunAsTests(CustomerLearningTests):
         url=f'/api/settings/strategies/{sid}/SPY/configuration'
         with patch('config.get_settings',side_effect=read),patch('config.save_settings',side_effect=write),patch('config.get_user_data_dir',side_effect=folder):
             view=self.call(admin,'GET',url+'?version='+v,support).json()
-            body=dict(version=v,scope=view['scope'],revision=view['revision'],entry={'fast_ema':7},risk={})
+            body=dict(version=v,scope=view['scope'],revision=view['revision'],entry={'fast_ema':7},risk={},execution={'contract':{'maximum_dte':25},'native_exit':{'hold_minutes':45}})
             self.assertEqual(409,self.call(admin,'PUT',url,support,json=body,headers={'X-Celo-Account-User':'admin'}).status_code)
             saved=self.call(admin,'PUT',url,support,json=body,headers={'X-Celo-Account-User':target['user_id']})
             self.assertEqual(200,saved.status_code,saved.text)
             self.assertEqual(7,next(x['value'] for x in saved.json()['entry'] if x['key']=='fast_ema'))
+            self.assertEqual(25,saved.json()['execution']['contract']['maximum_dte'])
+            self.assertEqual(45,saved.json()['execution']['native_exit']['hold_minutes'])
             self.assertNotIn('strategy_engine_parameters',store['admin'])
             self.assertEqual('preserve',store[target['user_id']]['sentinel'])
             self.assertEqual(409,self.call(admin,'PUT',url,support,json=body).status_code)

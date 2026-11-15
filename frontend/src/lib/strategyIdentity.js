@@ -56,8 +56,12 @@ export function exitReason(reason) {
   if (premium) return `${premium[1]}% Premium Gain`;
   const giveback = key.match(/^giveback_(\d+)pct$/);
   if (giveback) return `${giveback[1]}% Peak-Profit Giveback`;
-  const timer = key.match(/(?:markout_|selected_test_|time_cap_(?:loser_)?|timebox_|failed_range_)(\d+)m/);
+  const timer = key.match(/(?:markout_|selected_test_|configured_hold_|time_cap_(?:loser_)?|timebox_|failed_range_)(\d+)m/);
   if (timer) return `${timer[1]}-Minute Time Limit`;
+  const legacyGiveback=key.match(/^tsla_giveback_([0-9.]+)_([0-9.]+)$/);
+  if(legacyGiveback)return `$${legacyGiveback[1]} Profit Activation / ${legacyGiveback[2]}% Peak-Profit Giveback`;
+  const finalTarget=key.match(/^research_(?:atr10|squeeze)_target_([0-9.]+)$/);
+  if(finalTarget)return `${finalTarget[1]}% Premium Gain`;
   const early = key.match(/^early_momentum_stop_(\d+)pct/);
   if (early) return `${early[1]}% Early Loss Stop`;
   const labels = {

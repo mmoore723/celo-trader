@@ -26,6 +26,10 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
     Missing input is explicitly unmeasurable, not a made-up stop or a win.
     Five minutes are allowed for delayed bars before closing that evidence gap.
     """
+    from config.execution_parameters import exit_value
+    configured_bars=exit_value('max_hold_bars',max_hold_bars)
+    if configured_bars!=max_hold_bars:time_cap_reason=f'configured_time_cap_{configured_bars*timeframe_minutes}m'
+    max_hold_bars=configured_bars
     entry, now = et(entry_at), et(now)
     if timeframe_minutes not in {1, 5, 15} or source_minutes not in {1,timeframe_minutes}:
         return entry, "invalid_entry"

@@ -710,6 +710,7 @@ class EngineConfigurationUpdate(BaseModel):
     risk: dict = Field(default_factory=dict)
     profit: dict | None = None
     contract_timer: dict | None = None
+    execution: dict | None = None
 
 
 @router.get('/strategies/{strategy_id}/{ticker}/configuration')
@@ -735,7 +736,7 @@ def save_strategy_configuration(strategy_id: str, ticker: str, body: EngineConfi
         if body.scope != scope_key(current, strategy_id, ticker, body.version):
             raise HTTPException(409, 'Account or mode changed. Reload this panel before saving.')
         try:
-            updates = save(current, strategy_id, ticker, body.version, body.revision, body.entry, request.state.user_id, body.risk, body.profit, body.contract_timer)
+            updates = save(current, strategy_id, ticker, body.version, body.revision, body.entry, request.state.user_id, body.risk, body.profit, body.contract_timer, body.execution)
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:

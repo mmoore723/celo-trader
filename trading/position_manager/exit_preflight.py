@@ -11,6 +11,9 @@ TIMED_ROUTES = frozenset({
 })
 
 
+from config.execution_parameters import trade_controls, exit_value
+
+@trade_controls
 def full_exit_reason(trade, state, now):
     pending = state.get('exit_pending_reason')
     if pending and not pending.startswith('stage1') and not is_failsafe_reason(pending) and pending not in ('trend_profit_giveback','adverse_3x5m_10pct_loss'):

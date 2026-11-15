@@ -8,11 +8,16 @@ STATE_KEY = "tsla_giveback_65_35_v1"
 EXIT_REASON = "tsla_giveback_65_35"
 
 
+from config.execution_parameters import trade_controls, exit_value
+
+def configured_reason():
+    return f"tsla_giveback_{exit_value('legacy_arm_dollars',65):g}_{exit_value('legacy_giveback_pct',35):g}"
+
 def use_giveback_market_order(trade, reason, paper):
     return bool(trade.get("paper") in (True, False, 0, 1) and bool(trade["paper"]) == bool(paper)
                 and str(trade.get("ticker") or "").upper() == "TSLA"
                 and str(trade.get("strategy_id") or "").upper() == "V2_TSLA_TWO_LEG_TREND_PULLBACK"
-                and reason == EXIT_REASON)
+                and str(reason).startswith('tsla_giveback_'))
 
 
 @decision
@@ -20,7 +25,7 @@ def giveback_exit(state, entry_price, bid, now):
     if now.tzinfo is None:
         raise ValueError("Aware clock required")
     if state.get("pending"):
-        return True, EXIT_REASON
+        return True, configured_reason()
     minute = now.replace(second=0, microsecond=0).isoformat()
     previous = state.get("minute")
     if previous and datetime.fromisoformat(minute) <= datetime.fromisoformat(previous):
@@ -33,19 +38,20 @@ def giveback_exit(state, entry_price, bid, now):
         return False, "hold"
     gain = (value - entry) * 100
     state["minute"] = minute
-    if gain >= Decimal("65"):
+    if gain >= Decimal(str(exit_value('legacy_arm_dollars',65))):
         state["armed"] = True
     if not state.get("armed"):
         return False, "hold"
     peak = max(Decimal(state.get("peak", str(gain))), gain)
     state["peak"] = str(peak)
-    if gain < peak * Decimal("0.65"):
+    if gain < peak * (1-Decimal(str(exit_value('legacy_giveback_pct',35)))/100):
         state["pending"] = True
-        return True, EXIT_REASON
+        return True, configured_reason()
     return False, "hold"
 
 
 @decision
+@trade_controls
 def evaluate_tsla_giveback(trade, entry_time, now, quote):
     if (str(trade.get("strategy_id") or "").upper() != "V2_TSLA_TWO_LEG_TREND_PULLBACK"
             or str(trade.get("ticker") or "").upper() != "TSLA"
@@ -66,7 +72,7 @@ def evaluate_tsla_giveback(trade, entry_time, now, quote):
         state = dict(context.get(STATE_KEY) or {})
         note('giveback_persisted_state_read',state)
         if state.get("pending"):
-            return True, EXIT_REASON
+            return True, configured_reason()
         if not quote or quote.get("symbol") != trade["contract_symbol"]:
             note('giveback_quote_rejected',{'reason':'missing_or_wrong_contract'})
             return False, "hold"

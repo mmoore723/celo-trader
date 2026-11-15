@@ -11,7 +11,7 @@ both call sites verified to still resolve correctly after this split.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Optional, Tuple
 
@@ -333,11 +333,16 @@ def select_reviewed_v2_contract(
     ticker = ticker.strip().upper()
     from config.research_order_specs import SPECS
     sid = str(strategy_id or '').strip().upper()
-    if sid == "V2_TREND_CONT" or sid in SPECS:
+    from config.execution_parameters import saved
+    controls=saved(get_settings(),sid,ticker).get('contract',{})
+    if sid == "V2_TREND_CONT" or sid in SPECS or controls:
         from trading.research_contract_selection import select_research_contract
         if (sid == 'V2_TREND_CONT' and ticker not in {"SPY", "QQQ"}) or max_spend <= 0:
             return None, {"reason": "invalid_selection_input"}
-        extra = {}
+        if controls:
+            controls=dict(controls)
+            controls['primary_policy']={'reviewed_nearest_expiry_otm':'nearest_weekly_150_1000','reviewed_target_150_250':'target_150_250'}.get(controls['primary_policy'],controls['primary_policy'])
+        extra = {'profile_override':controls} if controls else {}
         if selected_test_policy is not None:
             from config.research_pair_policy import validate
             policy = validate(selected_test_policy, sid, ticker, SPECS[sid].version)
@@ -347,6 +352,7 @@ def select_reviewed_v2_contract(
             return None, {**detail, "reason": "over_budget", "cheapest_cost": float(selected["ask"]) * 100}
         return selected, detail
     profile = reviewed_contract_profile(strategy_id, ticker)
+    if controls:profile=replace(profile,**{k:v for k,v in controls.items() if k in profile.__dataclass_fields__})
     info: dict = {
         "reason": "no_chain_data",
         "selection_model": profile.selection_model,

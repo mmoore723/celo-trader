@@ -140,20 +140,21 @@ def describe(settings,sid,ticker,version):
         policy_warning=str(exc)
         clean={**settings,KEY:{**(settings.get(KEY) or {}),scope_key(settings,sid,ticker,version):{k:v for k,v in saved.items() if k!='profit'}}}
         policy=freeze_selection(clean,sid,ticker,version).get('premium_exit_policy')
+    from config.execution_parameters import describe_execution
     from config.research_pair_policy import selected
     from config.strategy_catalog import reviewed_exit_summary
     return {'strategy_id':sid,'ticker':ticker,'version':version,'mode':'paper' if settings.get('paper_trading',True) else 'live',
             'revision':revision(saved),'entry':[{'key':k,'label':k.replace('_',' ').capitalize(),
              'value':encode(v),'default':encode(defaults[k]),'type':'boolean' if isinstance(v,bool) else 'time' if isinstance(v,time) else 'date' if isinstance(v,date) else 'number'} for k,v in current.items()],
-            'policy_warning':policy_warning,'exit_policy':policy,'selected_contract_timer':selected(settings,sid,ticker,version),
-            'native_exit':reviewed_exit_summary(sid),
+            'execution':describe_execution(settings,sid,ticker,policy), 'execution_overrides':saved.get('execution',{}), 'policy_warning':policy_warning,'exit_policy':policy,'selected_contract_timer':selected(settings,sid,ticker,version),
+            'native_exit':('Custom native parameters below apply to new entries. Existing positions keep their saved rules.' if saved.get('execution',{}).get('native_exit') else reviewed_exit_summary(sid)),
             'profit_overrides':None if policy_warning else saved.get('profit'), 'contract_timer_overrides':saved.get('contract_timer'),
             'contract_editable':sid in SPECS,
             'account_risk':{k:settings.get(k) for k in RISK_KEYS},
             'risk': {k: saved.get('risk',{}).get(k,settings.get(k)) for k in RISK_KEYS}, 'risk_overrides':saved.get('risk',{}),
             'entry_editable':bool(defaults)}
 
-def save(settings,sid,ticker,version,expected,entry,actor,risk=None,profit=None,contract_timer=None):
+def save(settings,sid,ticker,version,expected,entry,actor,risk=None,profit=None,contract_timer=None,execution=None):
     view=describe(settings,sid,ticker,version)
     if view['revision']!=expected:raise RuntimeError('Settings changed in another session. Reload before saving.')
     parsed=normalize(entry,definition(sid))
@@ -174,6 +175,11 @@ def save(settings,sid,ticker,version,expected,entry,actor,risk=None,profit=None,
         if view['exit_policy'] and view['exit_policy'].get('replace_native_exit') and contract_timer.get('exit_minutes') is not None:
             raise ValueError('The active profit exit replaces the timer. Do not add another timer.')
         content['contract_timer']=build(sid,ticker,version,contract_timer.get('exit_minutes'),contract_timer.get('contract_policy'))
+    from config.execution_parameters import validate
+    previous=(stored.get(key) or {}).get('execution',{})
+    content['execution']=validate(sid,ticker,execution if execution is not None else previous)
+    if view['exit_policy'] and view['exit_policy'].get('replace_native_exit') and content['execution'].get('native_exit'):
+        raise ValueError('Native exits are replaced by the assigned profit policy; edit the active profit controls instead.')
     content['revision']=revision(content)
     stored[key]=content
     return {KEY:stored}
@@ -254,7 +260,7 @@ def validate_engine(sid, values):
     """Run the engine's own validation before accepting a saved configuration."""
     from config.research_order_specs import SPECS
     spec=SPECS.get(sid)
-    if spec and spec.adapter=='library':
+    if spec and spec.adapter=='library' and spec.source not in CONTEXT_DEFAULTS:
         from trading.tested_strategy_research import strategy_details
         engine=strategy_details(spec.source).factory()
         replace(engine.config,**values)

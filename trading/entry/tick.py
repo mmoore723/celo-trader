@@ -934,8 +934,10 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         # entry to crash after contract selection at ``_time.strftime``.
         from datetime import time as _datetime_time
         from trading.v2_orb_paper_exit import reviewed_entry_fits_session
+        from config.execution_parameters import saved as execution_parameters
+        _execution_hold=execution_parameters(settings,strategy_id,ticker).get('native_exit',{}).get('hold_minutes')
         _entry_fits, _entry_fit_reason = reviewed_entry_fits_session(
-            _now_et(), strategy_id, cutoff=_datetime_time(*SESSION_HARD_CUTOFF_HM),
+            _now_et(), strategy_id, cutoff=_datetime_time(*SESSION_HARD_CUTOFF_HM), configured_hold_minutes=_execution_hold,
         )
         if not _entry_fits:
             log_event("INFO", "trading_logic", f"🟡 [{ticker}] {strategy_id} skipped — {_entry_fit_reason}.")
@@ -961,6 +963,11 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     _reviewed_contract_profile = (
         reviewed_contract_profile(strategy_id, ticker) if _reviewed_recipe else None
     )
+    from config.execution_parameters import saved as execution_parameters
+    _contract_controls=execution_parameters(settings,strategy_id,ticker).get('contract',{})
+    if _reviewed_contract_profile and _contract_controls:
+        from dataclasses import replace
+        _reviewed_contract_profile=replace(_reviewed_contract_profile,**{k:v for k,v in _contract_controls.items() if k in _reviewed_contract_profile.__dataclass_fields__})
     _contract_recipe = {
         "option_type": "CALL" if direction == "bullish" else "PUT",
         "strike_rule": "closest out-of-the-money strike to the underlying at selection",
@@ -974,7 +981,7 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
             if _reviewed_contract_profile
             else "first broker-listed expiration with a qualifying contract"
         ),
-        "spread_rule": "bid/ask spread no wider than 8% of mid" if _reviewed_recipe else f"bid/ask spread no wider than {float(settings.get('spread_gate_pct', 8) or 8):.0f}% of mid",
+        "spread_rule": f"bid/ask spread no wider than {_contract_controls.get('maximum_spread_pct',.08)*100:g}% of mid" if _reviewed_recipe else f"bid/ask spread no wider than {float(settings.get('spread_gate_pct', 8) or 8):.0f}% of mid",
         "liquidity_rule": "broker-returned liquid chain" if _reviewed_recipe else f"open interest of at least {MIN_OPEN_INTEREST}",
         "maximum_cost": round(_recipe_max_spend, 2),
         "selection_model": (
@@ -1698,6 +1705,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         # historical strategy into a different one. The contract selector has
         # already applied this same threshold before reaching this point.
         _spread_max = 0.08 if _reviewed_paid_profile else float(settings.get("spread_gate_pct", 8)) / 100.0
+        if _reviewed_paid_profile:
+            from config.execution_parameters import saved as execution_parameters
+            _spread_max=execution_parameters(settings,strategy_id,ticker).get('contract',{}).get('maximum_spread_pct',_spread_max)
         if _spread_pct > _spread_max:   # user-configurable via Settings → Trade Parameters
             log_event("INFO", "bar_eval",
                       f"🟡 [{ticker}] Skipping — bid-ask spread is "
@@ -1965,6 +1975,8 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
         _current_rule.version if _current_rule is not None else None))
     from trading.entry.audit_evidence import entry_greeks
     _strategy_context.update(entry_greeks(_fresh_quote, contract['symbol'], _now_et()))
+    from config.execution_parameters import freeze as freeze_execution
+    _strategy_context.update(freeze_execution(settings,strategy_id,ticker))
     from trading.entry.exit_deadline import capture_policy
     _strategy_context.pop('exit_deadline', None)
     _strategy_context.update(capture_policy(strategy_id, alpaca, _now_et()))

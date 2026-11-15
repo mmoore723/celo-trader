@@ -30,11 +30,13 @@ def reviewed_entry_fits_session(
     strategy_id: object,
     *,
     cutoff: time = time(15, 55),
+    configured_hold_minutes: int | None = None,
 ) -> tuple[bool, str]:
     """Return whether a reviewed fixed-hold entry can exit before cutoff."""
     normalized = str(strategy_id or "").strip().upper()
     rule = REVIEWED_STRATEGIES.get(normalized)
     hold_minutes = V2_EXIT_MINUTES_BY_STRATEGY.get(normalized)
+    if configured_hold_minutes is not None:hold_minutes=configured_hold_minutes
     minimum_session_minutes = int(rule.minimum_session_minutes) if rule is not None else 0
     required_minutes = hold_minutes or minimum_session_minutes
     if required_minutes <= 0:
@@ -63,6 +65,8 @@ def evaluate_v2_orb_paper_exit(
     hold_minutes = V2_EXIT_MINUTES_BY_STRATEGY.get(
         normalized_strategy_id, V2_ORB_PAID_MARKOUT_MINUTES,
     )
+    from config.execution_parameters import exit_value
+    hold_minutes = exit_value('hold_minutes',hold_minutes)
     elapsed_minutes = (now - entry_time).total_seconds() / 60
     if elapsed_minutes >= hold_minutes:
         prefix = {

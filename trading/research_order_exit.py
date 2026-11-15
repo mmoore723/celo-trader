@@ -8,6 +8,8 @@ from strategy_health.exit_protocols import PROTOCOLS, first_exit
 ATR10 = 'RESEARCH_CTX_ORB_ATR10_V2'
 
 
+from config.execution_parameters import trade_controls, exit_value
+
 def context(trade):
     raw = trade.get('strategy_context_json') or {}
     return json.loads(raw) if isinstance(raw, str) else dict(raw)
@@ -26,6 +28,7 @@ def partial_remaining(trade):
     return max(0, max(1, original // 2) - sold)
 
 
+@trade_controls
 def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=None, compression_bars_lookup=None):
     sid = trade.get('strategy_id')
     spec = SPECS[sid]
@@ -46,14 +49,19 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
             from config.research_pair_policy import validate
             selected = validate(selected, sid, trade.get('ticker'), spec.version)
             if selected['exit_minutes'] is not None:
+                selected={**selected,'exit_minutes':exit_value('hold_minutes',selected['exit_minutes'])}
                 return ((True, f"selected_test_{selected['exit_minutes']}m")
                         if current >= filled + timedelta(minutes=selected['exit_minutes']) else (False, 'hold'))
         if spec.adapter in ('native_trend', 'native_fvg', 'retouch', 'two_leg'):
-            minutes = spec.reference_minutes
+            minutes = exit_value('hold_minutes',spec.reference_minutes)
             return ((True, f'selected_test_{minutes}m') if current >= filled + timedelta(minutes=minutes) else (False, 'hold'))
         if sid in ('RESEARCH_FAILED_RANGE_V2', 'RESEARCH_QQQ_TREND_V2'):
+            minutes=exit_value('hold_minutes',30)
             reason = 'research_qqq_trend_30m' if sid == 'RESEARCH_QQQ_TREND_V2' else 'research_failed_range_30m'
-            return (True, reason) if current >= filled + timedelta(minutes=30) else (False, 'hold')
+            return (True, reason if minutes==30 else f'configured_hold_{minutes}m') if current >= filled + timedelta(minutes=minutes) else (False, 'hold')
+        explicit_hold=exit_value('hold_minutes',None)
+        if explicit_hold is not None:
+            return (True,f'configured_hold_{explicit_hold}m') if current>=filled+timedelta(minutes=explicit_hold) else (False,'hold')
         if frame is None or frame.empty:
             return False, 'waiting_for_bars'
         logical_entry = meta.get('trigger_bar') or entry_time
@@ -88,10 +96,10 @@ def evaluate_exit(trade, entry_time, now, frame, quote=None, *, session_close=No
             if priced:
                 bid = priced[0]
                 if spec.adapter == 'squeeze':
-                    return (True, 'research_squeeze_target_150') if bid >= float(trade['entry_price']) * 2.5 else (False, 'hold')
-                if bid >= float(trade['entry_price']) * 2:
-                    return True, 'research_atr10_target_100'
-                if bid >= float(trade['entry_price']) * 1.30 and partial_remaining(trade) > 0:
+                    return (True, f"research_squeeze_target_{exit_value('final_gain_pct',150):g}") if bid >= float(trade['entry_price']) * (1+exit_value('final_gain_pct',150)/100) else (False, 'hold')
+                if bid >= float(trade['entry_price']) * (1+exit_value('final_gain_pct',100)/100):
+                    return True, f"research_atr10_target_{exit_value('final_gain_pct',100):g}"
+                if bid >= float(trade['entry_price']) * (1+exit_value('partial_gain_pct',30)/100) and partial_remaining(trade) > 0:
                     return True, 'stage1_research_atr10'
         return False, 'hold'
     except (KeyError, TypeError, ValueError):

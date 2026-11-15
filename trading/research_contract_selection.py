@@ -158,9 +158,10 @@ def _leaderboard(
 
 def select_research_contract(
     tradier: Any, ticker: str, direction: str, current_price: float,
-    strategy_id: object, *, policy_override: str | None = None,
+    strategy_id: object, *, policy_override: str | None = None, profile_override: dict | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     """Read current chains and choose/order-free policy winners up to $1,000."""
+    execution_cost_cap = profile_override["maximum_premium"] * 100 if profile_override else RESEARCH_MAX_CONTRACT_DOLLARS
     ticker = str(ticker or "").strip().upper()
     direction = str(direction or "").strip().lower()
     profile = research_contract_profile(strategy_id)
@@ -169,6 +170,7 @@ def select_research_contract(
         if policy_override not in CONTRACTS:
             return None, {'reason': 'unsupported_selected_contract_policy'}
         profile = replace(profile, primary_policy=policy_override)
+    if profile_override:profile=replace(profile,**{k:v for k,v in profile_override.items() if k in profile.__dataclass_fields__})
     # Workers expose bound reads on a SimpleNamespace instance, not its type.
     # Static lookup also avoids treating auto-created mock/proxy attributes as
     # an explicitly supplied capability.
@@ -186,7 +188,7 @@ def select_research_contract(
             "max_premium": profile.maximum_premium,
             "max_spread_pct": profile.maximum_spread_pct,
             "primary_policy": profile.primary_policy,
-            "maximum_contract_dollars": RESEARCH_MAX_CONTRACT_DOLLARS,
+            "maximum_contract_dollars": execution_cost_cap,
             "basis": profile.basis,
         },
         "upstream_chain_liquidity_filtered": not callable(research_reader),
@@ -259,6 +261,19 @@ def select_research_contract(
             if not all(math.isfinite(v) and v > 0 for v in (strike, ask)):
                 screen['invalid_price'] += 1
                 continue
+            if profile_override:
+                minimum_oi=profile_override.get('minimum_open_interest',0)
+                dollar_limit=profile_override.get('maximum_spread_dollars',0)
+                try:bid=float(contract.get('bid') or 0)
+                except (TypeError,ValueError):bid=0
+                if not math.isfinite(bid) or not 0<bid<=ask:
+                    screen['invalid_price']+=1
+                    continue
+                try:oi=float(contract.get('open_interest') or 0)
+                except (ValueError,TypeError):oi=0
+                if oi<minimum_oi or dollar_limit and ask-bid>dollar_limit:
+                    screen['execution_liquidity_filtered']=screen.get('execution_liquidity_filtered',0)+1
+                    continue
             is_otm = strike > current_price if option_type == "call" else strike < current_price
             if not is_otm:
                 screen['not_otm'] += 1
@@ -292,7 +307,8 @@ def select_research_contract(
         return None, info
 
     leaderboard, selected_policy = _leaderboard(candidates, profile)
-    if policy_override is not None and selected_policy != policy_override:
+    requested=profile.primary_policy if profile_override else policy_override
+    if requested is not None and selected_policy != requested:
         return None, {**info, 'reason': 'selected_contract_policy_unavailable'}
     selected_row = next(
         row for row in leaderboard if selected_policy in row["policy_winner_for"]

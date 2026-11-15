@@ -121,8 +121,10 @@ def evaluate_vwap_displacement_exit(
         return True, reason
     if current >= cap:
         return True, "vwap_displacement_eod_1555"
-    if current - entry >= timedelta(minutes=FALLBACK_HOLD_MINUTES) and (
+    from config.execution_parameters import exit_value
+    fallback=exit_value('missing_structure_hold_minutes',FALLBACK_HOLD_MINUTES)
+    if current - entry >= timedelta(minutes=fallback) and (
         target is None or one.empty or five.empty
     ):
-        return True, "vwap_displacement_missing_structure_90m_safety"
+        return True, f"vwap_displacement_missing_structure_{fallback}m_safety"
     return False, "hold"

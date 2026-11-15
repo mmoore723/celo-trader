@@ -46,6 +46,11 @@ def freeze_at_fill(raw_context, fill_time):
             selected = validate(selected, policy['strategy_id'], selected.get('ticker'), policy['strategy_version'])
             if selected['exit_minutes'] is not None:
                 policy = dict(policy, hold_minutes=selected['exit_minutes'], selected_policy_version=selected['policy_version'])
+        controls=(context.get('execution_controls') or {}).get('values',{}).get('native_exit',{})
+        if 'hold_minutes' in controls:
+            policy=dict(policy,hold_minutes=controls['hold_minutes'])
+        if (context.get('premium_exit_policy') or {}).get('replace_native_exit'):
+            policy=dict(policy,hold_minutes=None)
         filled = datetime.fromisoformat(str(fill_time).replace('Z', '+00:00'))
         cap = datetime.fromisoformat(policy['session_cap'])
         if filled.tzinfo is None or cap.tzinfo is None or filled >= cap:
