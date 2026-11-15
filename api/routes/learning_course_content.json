@@ -473,7 +473,33 @@
           "Open $50, close $51: the $1 body is green. The full high-to-low range is $3, from $49 to $52. We do not know the exact path between those prices.",
           "Open $51, close $50: the $1 body is red. Its $2 range runs from $49.50 to $51.50. Candle color compares its own open and close, not the prior candle."
         ]
-      }
+      },
+      "candlePractice": [
+        {
+          "open": 100,
+          "high": 103,
+          "low": 99,
+          "close": 101
+        },
+        {
+          "open": 54,
+          "high": 55,
+          "low": 49,
+          "close": 51
+        },
+        {
+          "open": 72,
+          "high": 79,
+          "low": 70,
+          "close": 76
+        },
+        {
+          "open": 125,
+          "high": 129,
+          "low": 121,
+          "close": 123
+        }
+      ]
     }
   },
   {

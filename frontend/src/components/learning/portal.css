@@ -23,3 +23,10 @@
 .workshop-application label { display:grid; gap:.65rem; }
 .workshop-application textarea { width:100%; box-sizing:border-box; padding:.8rem; background:var(--surface, #fff); color:inherit; border:1px solid var(--border, #d5dfed); border-radius:10px; font:inherit; resize:vertical; margin-bottom:.75rem; }
 @media(max-width:600px){.workshop-visual{padding:.65rem}.workshop-chart-controls .btn{font-size:.8rem;padding:.5rem}.workshop-visual th,.workshop-visual td{padding:.45rem}}
+
+.candle-anatomy{margin:1rem 0;padding:1rem;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
+.candle-anatomy figcaption{font-size:.85rem;color:var(--ink-muted)}
+.candle-anatomy svg{display:block;width:100%;max-width:560px;height:auto;margin:auto}
+.candle-practice h3,.candle-practice h4{font-weight:650}.candle-practice p{line-height:1.7}
+.candle-feedback-heading{border-left:3px solid #3159db;padding:.7rem 1rem;background:color-mix(in srgb,var(--surface),#3159db 6%)}
+.candle-practice button:focus-visible{outline:3px solid #3159db;outline-offset:3px}

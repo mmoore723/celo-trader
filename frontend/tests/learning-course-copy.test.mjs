@@ -27,7 +27,12 @@ test('lesson starts with one idea and optional explanations without losing exact
  assert.match(html,/Wait for a finished candle/);
  assert.doesNotMatch(html,/<details|Explain more|Research baseline|broker fill|policy/);
 });
+let candleCode=ts.transpileModule(read('components/learning/CandlePractice.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
+for(const name of ['react','react/jsx-runtime']) candleCode=candleCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
+const candleModule='data:text/javascript;base64,'+Buffer.from(candleCode).toString('base64');
+const {CandlePractice,CandleAnatomy,candleParts,candleAnswers,candleWalkthrough}=await import(candleModule);
 let workshopCode=ts.transpileModule(read('components/learning/LessonWorkshop.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
+workshopCode=workshopCode.replaceAll("'./CandlePractice'",JSON.stringify(candleModule)).replaceAll('"./CandlePractice"',JSON.stringify(candleModule));
 workshopCode=workshopCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
 for(const name of ['react','react/jsx-runtime']) workshopCode=workshopCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
 const {LessonWorkshop}=await import('data:text/javascript;base64,'+Buffer.from(workshopCode).toString('base64'));
@@ -95,4 +100,30 @@ test('worked expiration payoffs match contract math and the shared practice has 
 });
 test('lesson numbers and timestamps retain readable decimal and clock formatting',()=>{
  for(const l of lessons.slice(4))assert.doesNotMatch(JSON.stringify(l.workshop),/\d[.:] \d/,l.id);
+});
+
+test('candle practice teaches correct body and wick geometry on green and red candles',()=>{
+ const candles=lessons[6].workshop.candlePractice;
+ assert.equal(candles.length,4);
+ assert.ok(candles.some(c=>c.close>c.open)&&candles.some(c=>c.close<c.open));
+ candles.forEach((c,i)=>{
+  const p=candleParts(c),answers=candleAnswers(c,i);
+  assert.ok(p.upper>0&&p.lower>0&&p.body>0);
+  assert.equal(p.upper+p.body+p.lower,p.range);
+  assert.equal(answers.filter(a=>a.correct).length,1);
+  assert.equal(new Set(answers.map(a=>a.text)).size,3);
+  assert.ok(candleWalkthrough(c).every(s=>s.title&&s.text.length>100));
+  for(let focus=-1;focus<=3;focus++){
+   const html=renderToStaticMarkup(createElement(CandleAnatomy,{candle:c,focus}));
+   assert.doesNotMatch(html,/NaN|undefined|Infinity/);
+   for(const [part,index] of [['body',0],['upper-wick',1],['lower-wick',2]])
+    assert.equal(html.includes('data-part="'+part+'"'),focus===index||focus===3);
+   for(const n of [c.open,c.high,c.low,c.close])assert.ok(html.includes('$'+n.toFixed(2)));
+  }
+ });
+ assert.deepEqual(candleParts(candles[1]),{body:3,upper:1,lower:2,range:6});
+ const html=renderToStaticMarkup(createElement(CandlePractice,{candles}));
+ assert.match(html,/Read this candle/);assert.match(html,/How big is the body/);
+ assert.doesNotMatch(html,/data-part=|trace the parts/,'initial question has no answer highlights');
+ assert.doesNotMatch(read('components/learning/CandlePractice.tsx'),/fetch\(|api\.post|localStorage|sessionStorage/);
 });
