@@ -55,3 +55,34 @@ export function VisualPractice({scenes,startWithWalkthrough=false}:{scenes:Teach
  </>}
  </div></div></section>;
 }
+
+export function retestPassed(scene:TeachingScene){
+ const bars=scene.visual.bars;
+ return !!bars?.length&&scene.visual.reference!==undefined&&bars[bars.length-1].close>scene.visual.reference;
+}
+export function freshRetestPair(round:number):TeachingScene[]{
+ return [0,1].map(i=>{
+  const level=round%2===0?(i===0?120:35):(i===0?60:95);
+  const held=(round+i)%2===0;
+  const offsets=[[-2,0,-2.4,-.6],[-.6,-.3,-2.1,-1.8],[-1.8,-.05,-2,-.4],[-.4,-.2,-1.7,-1.4],[-1.4,-.1,-1.5,-.3],[-.3,.9,-.4,.6],held?[.5,.65,-.1,.2]:[-.5,.2,-.7,-.3]];
+  return {title:`Chart ${i===0?'A':'B'}: $${level} level`,prompt:'Did the retest hold above the old resistance?',choices:['Passed','Failed'],correct:held?0:1,visual:{kind:'candles',labels:['Touch 1','Pullback','Touch 2','Pullback','Before','Break','Retest'],bars:offsets.map(([open,high,low,close])=>({open:level+open,high:level+high,low:level+low,close:level+close})),reference:level,referenceAt:4,unit:'stock price in dollars'},steps:[{title:'Where the level came from',text:'Two earlier approaches reached this area and pulled back.',focus:[0,2]},{title:'The breakout',text:'The breakout candle closed above the earlier resistance.',focus:[5]},{title:'Check the retest close',text:`The retest closed $${(level+(held?.2:-.3)).toFixed(2)}, ${held?'above':'below'} $${level.toFixed(2)}.`,focus:[6]}]};
+ });
+}
+export function RetestComparison({scenes}:{scenes:TeachingScene[]}){
+ const id=useId();const [round,setRound]=useState(-1);const [stage,setStage]=useState(2);
+ const [answers,setAnswers]=useState<(boolean|null)[]>([null,null]);const [checked,setChecked]=useState(false);
+ const worked=round<0,pair=worked?scenes.slice(0,2):freshRetestPair(round);
+ function next(){setRound(round+1);setAnswers([null,null]);setChecked(false);setStage(2);}
+ return <section className="retest-comparison" aria-label="Compare two retests">
+ <h3>{worked?'Same idea, two different retests':'Your turn: judge both retests'}</h3>
+ <p>For this exercise, a retest passes when its completed candle closes above the old resistance. A close below it fails. Passing does not guarantee the next price move.</p>
+ {worked&&<div className="workshop-controls" aria-label="Reveal the setup">{['How resistance formed','The breakout','The retest'].map((label,i)=><button key={label} className="btn btn-ghost" aria-pressed={stage===i} onClick={()=>setStage(i)}>{label}</button>)}</div>}
+ <div className="retest-pair">{pair.map((scene,i)=>{const passed=retestPassed(scene),level=scene.visual.reference!,close=scene.visual.bars!.at(-1)!.close;return <article key={`${round}-${i}`}>
+ <TeachingDiagram scene={scene} step={worked?stage:checked?2:-1} revealCount={worked?[4,6,7][stage]:7}/>
+ {!worked&&<fieldset disabled={checked}><legend>Chart {i===0?'A':'B'}: did the retest pass or fail?</legend>{[true,false].map(value=><label key={String(value)}><input type="radio" name={`${id}-${i}`} checked={answers[i]===value} onChange={()=>setAnswers(answers.map((a,n)=>n===i?value:a))}/>{value?'Passed: closed above the level':'Failed: closed below the level'}</label>)}</fieldset>}
+ {(worked||checked)&&<CoachCelo><p><strong>{worked?(stage===2?(passed?'Retest passed.':'Retest failed.'):'Follow the highlighted candles.'):(answers[i]===passed?'You got this one right.':'Let’s look again.')}</strong> {worked&&stage<2?scene.steps[stage].text:`Follow the blue outline to the retest candle. Its close is $${close.toFixed(2)}. Compare that with the $${level.toFixed(2)} line: the close is ${passed?'above it, so the old resistance held as support in this example':'below it, so the breakout did not hold on this retest'}. The wick can cross the line; this exercise judges the close, not the candle’s color.`}</p></CoachCelo>}
+ </article>})}</div>
+ {!worked&&!checked&&<button className="btn btn-primary" disabled={answers.some(a=>a===null)} onClick={()=>setChecked(true)}>Have Coach Celo explain my answers</button>}
+ {(worked||checked)&&<button className="btn btn-primary" onClick={next}>{worked?'Try a different pair':'Try another pair'}</button>}
+ </section>;
+}

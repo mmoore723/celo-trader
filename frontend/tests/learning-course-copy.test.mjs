@@ -35,7 +35,7 @@ let visualCode=ts.transpileModule(read('components/learning/VisualPractice.tsx')
 visualCode=visualCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
 for(const name of ['react','react/jsx-runtime']) visualCode=visualCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
 const visualModule='data:text/javascript;base64,'+Buffer.from(visualCode).toString('base64');
-const {VisualPractice,TeachingDiagram,practiceChoices}=await import(visualModule);
+const {VisualPractice,TeachingDiagram,practiceChoices,RetestComparison,freshRetestPair,retestPassed}=await import(visualModule);
 let workshopCode=ts.transpileModule(read('components/learning/LessonWorkshop.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
 workshopCode=workshopCode.replaceAll("'./VisualPractice'",JSON.stringify(visualModule)).replaceAll('"./VisualPractice"',JSON.stringify(visualModule));
 workshopCode=workshopCode.replaceAll("'./CandlePractice'",JSON.stringify(candleModule)).replaceAll('"./CandlePractice"',JSON.stringify(candleModule));
@@ -222,4 +222,24 @@ test('chart setup practice reveals context before signals and hides future candl
   }
   const html=renderToStaticMarkup(createElement(VisualPractice,{scenes:[s]}));assert.match(html,/Build the setup first/);assert.doesNotMatch(html,/type="radio"/);
  }
+});
+
+test('retest comparison shows worked pair and fresh balanced exercises',()=>{
+ for(let round=0;round<4;round++){
+  const pair=freshRetestPair(round);
+  assert.equal(pair.filter(retestPassed).length,1);
+  assert.equal(retestPassed(pair[0]),round%2===0);
+  for(const scene of pair){
+   const {bars,reference}=scene.visual;
+   assert.equal(bars.length,7);
+   assert.ok(bars[5].close>reference);
+   assert.ok(bars[0].high===reference&&bars[2].high<reference);
+   bars.forEach(b=>assert.ok(b.low<=Math.min(b.open,b.close)&&b.high>=Math.max(b.open,b.close)));
+   assert.doesNotMatch(scene.title,/passed|failed|held/i);
+  }
+ }
+ const html=renderToStaticMarkup(createElement(RetestComparison,{scenes:freshRetestPair(0)}));
+ assert.match(html,/Try a different pair/);
+ assert.match(html,/Retest passed/);assert.match(html,/Retest failed/);
+ assert.match(html,/How resistance formed/);assert.match(html,/candle’s color/);
 });

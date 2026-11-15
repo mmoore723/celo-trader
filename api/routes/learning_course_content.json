@@ -6381,7 +6381,8 @@
             }
           ]
         }
-      ]
+      ],
+      "retestComparison": true
     }
   },
   {

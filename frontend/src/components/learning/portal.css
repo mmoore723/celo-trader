@@ -45,3 +45,5 @@
 
 @container(min-width:660px){.visual-practice-layout{grid-template-columns:minmax(0,1.1fr) minmax(260px,1fr)}}
 @media(max-width:1100px){.portal-layout{grid-template-columns:1fr}.portal-map{max-height:320px;overflow:auto}}
+
+.retest-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:18px 0}.retest-pair>article{min-width:0;border:1px solid var(--border,#d3dfef);border-radius:16px;padding:14px}.retest-pair .teaching-diagram{margin:0}.retest-pair fieldset{border:0;padding:12px 0}.retest-pair fieldset label{display:block;padding:8px 0}.retest-pair input{margin-right:8px}.retest-comparison>.btn{margin-top:12px}@media(max-width:900px){.retest-pair{grid-template-columns:1fr}}
