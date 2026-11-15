@@ -518,7 +518,7 @@ export function Settings() {
             <div className="flex items-center gap-1"><input type="number" step="1" min="5" max="100" value={form.max_position_dollars_pct ?? 15} onChange={(e) => set("max_position_dollars_pct", parseFloat(e.target.value))} className="input w-20" /><span className="text-sm">%</span></div>
           </div>
           <SettingHelp name="max_position_dollars_pct"/>
-          <SizingComparison riskFraction={form.risk_auto?null:form.risk_pct/100} costPercent={form.max_position_dollars_pct??15}/>
+          <p className="text-sm">For your actual account balance and option quote, open Strategies, choose a ticker, then use Your account and option price.</p><details><summary className="cursor-pointer text-sm">See the $10,000 example</summary><SizingComparison riskFraction={form.risk_auto?null:form.risk_pct/100} costPercent={form.max_position_dollars_pct??15}/></details>
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
               Maximum open trades

@@ -748,3 +748,16 @@ def save_strategy_configuration(strategy_id: str, ticker: str, body: EngineConfi
               ticker=ticker, version=body.version, fields=sorted(body.entry), previous_revision=body.revision)
         save_settings(updates)
     return strategy_configuration(strategy_id, ticker, body.version)
+
+
+@router.get('/strategies/{strategy_id}/{ticker}/sizing-preview')
+def strategy_sizing_preview(request: Request, strategy_id: str, ticker: str, version: str, symbol: str, scope: str):
+    if not getattr(request.state, 'user_id', None):
+        raise HTTPException(401, 'Not authenticated')
+    from api.sizing_preview import preview
+    try:
+        return preview(strategy_id, ticker, version, symbol.strip().upper(), scope)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception:
+        raise HTTPException(503, 'The account balance or option quote could not be refreshed. Try again.') from None
