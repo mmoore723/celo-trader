@@ -93,3 +93,6 @@ test('worked expiration payoffs match contract math and the shared practice has 
  assert.doesNotMatch(read('components/learning/LessonWorkshop.tsx'),/fetch\(|api\.post|localStorage|sessionStorage/);
  assert.match(read('components/learning/LessonWorkshop.tsx'),/self-check practice/);
 });
+test('lesson numbers and timestamps retain readable decimal and clock formatting',()=>{
+ for(const l of lessons.slice(4))assert.doesNotMatch(JSON.stringify(l.workshop),/\d[.:] \d/,l.id);
+});
