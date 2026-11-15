@@ -1628,43 +1628,43 @@
       },
       "visual": {
         "kind": "candles",
-        "title": "Touch versus close below support",
+        "title": "Watch support form before it breaks",
         "bars": [
           {
-            "open": 50.85,
-            "high": 51.1,
-            "low": 50.75,
-            "close": 51
+            "open": 82,
+            "high": 82.3,
+            "low": 80,
+            "close": 80.5
           },
           {
-            "open": 50.55,
-            "high": 50.65,
-            "low": 50.3,
-            "close": 50.4
+            "open": 80.5,
+            "high": 82.2,
+            "low": 80.4,
+            "close": 82
           },
           {
-            "open": 50.35,
-            "high": 50.45,
-            "low": 50.1,
-            "close": 50.2
+            "open": 82,
+            "high": 82.1,
+            "low": 80.05,
+            "close": 80.4
           },
           {
-            "open": 50.25,
-            "high": 50.35,
-            "low": 50.0,
-            "close": 50.1
+            "open": 80.4,
+            "high": 81.8,
+            "low": 80.3,
+            "close": 81.5
           },
           {
-            "open": 49.85,
-            "high": 49.95,
-            "low": 49.6,
-            "close": 49.7
+            "open": 81.5,
+            "high": 81.6,
+            "low": 79.7,
+            "close": 80.2
           },
           {
-            "open": 50.15,
-            "high": 50.4,
-            "low": 50.05,
-            "close": 50.3
+            "open": 80.2,
+            "high": 80.3,
+            "low": 79.2,
+            "close": 79.4
           }
         ],
         "labels": [
@@ -1675,112 +1675,227 @@
           "Bar 5",
           "Bar 6"
         ],
-        "level": 50,
+        "level": 80,
         "caption": "Synthetic completed candles for this exercise. Read the explanation for each revealed bar. No orders or trading settings are affected.",
         "notes": [
-          "Price closed above the $50 reference. This candle alone does not prove the level will hold later.",
-          "The close remains above $50 as price moves toward the reference.",
-          "The low is $50.10, still above the reference. Neither a touch nor a close below has occurred.",
-          "The wick touches $50, but the close is $50.10. A touch rule and a close-below rule produce different answers here.",
-          "The close is $49.70, below $50. This is the first completed close below the recorded level in this sequence.",
-          "The close recovered to $50.30. That later recovery does not undo the information available at bar 5."
-        ]
+          "Price reaches $80 and closes above it. One reaction is only a clue; we have not drawn support yet.",
+          "Price moves up from the first reaction. Watch what happens if it returns.",
+          "Price returns to $80.05, near the earlier $80 low. We still need to see whether it moves away.",
+          "Price moves up again. Two separate reactions now suggest a support area near $80. We draw the reference from those earlier lows, before the later test.",
+          "Price dips to $79.70 but closes at $80.20. The wick crossed support, but the close did not.",
+          "The close is $79.40, below the support area. This meets our close-based break rule; it does not guarantee more falling prices."
+        ],
+        "levelAfter": 4
       },
       "visualPractice": [
         {
-          "title": "A wick is not a close",
-          "prompt": "The rule needs a completed close below $80.00. Did this candle meet it?",
+          "title": "How support forms, then breaks",
+          "prompt": "Our example rule needs a completed close below $80. Which candle first meets it?",
           "choices": [
-            "No, close stayed above",
-            "Any wick touch always qualifies",
-            "Color alone decides"
+            "Candle 6",
+            "Candle 5, because its wick crossed",
+            "Candle 3, because it touched the level"
           ],
           "correct": 0,
           "visual": {
             "kind": "candles",
             "labels": [
-              "Completed"
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6"
             ],
-            "unit": "Stock price",
-            "reference": 80,
             "bars": [
               {
-                "open": 80.2,
-                "high": 80.4,
+                "open": 82,
+                "high": 82.3,
+                "low": 80,
+                "close": 80.5
+              },
+              {
+                "open": 80.5,
+                "high": 82.2,
+                "low": 80.4,
+                "close": 82
+              },
+              {
+                "open": 82,
+                "high": 82.1,
+                "low": 80.05,
+                "close": 80.4
+              },
+              {
+                "open": 80.4,
+                "high": 81.8,
+                "low": 80.3,
+                "close": 81.5
+              },
+              {
+                "open": 81.5,
+                "high": 81.6,
                 "low": 79.7,
-                "close": 80.1
+                "close": 80.2
+              },
+              {
+                "open": 80.2,
+                "high": 80.3,
+                "low": 79.2,
+                "close": 79.4
               }
-            ]
+            ],
+            "reference": 80,
+            "referenceAt": 4,
+            "unit": "Stock dollars · consecutive completed 5-minute candles"
           },
+          "buildup": [
+            {
+              "count": 2,
+              "text": "Candle 1 reaches $80; candle 2 moves away. One reaction is a clue, not a proven barrier. No level is drawn yet."
+            },
+            {
+              "count": 4,
+              "text": "Candles 1 and 3 show lows near $80, followed by moves up. After candle 4 moves away again, we mark the area near $80 as support. The dashed line is a simple reference through that area, not an exact wall."
+            },
+            {
+              "count": 5,
+              "text": "Now candle 5 tests the area. Compare its wick and its closing price with the line. Has the close crossed yet?"
+            },
+            {
+              "count": 6,
+              "text": "Now candle 6 is complete. Compare the last two candles and choose the first one that meets the close-based rule."
+            }
+          ],
           "steps": [
             {
-              "title": "Find the level",
-              "text": "The purple dashed reference is $80.00. The rule specifically requires the close below it.",
+              "title": "Where the level came from",
+              "text": "Follow candles 1 through 4. There are two separate lows near $80, followed by moves up. Those earlier reactions are why we drew support here, before the later test or break.",
               "focus": [
-                0
+                0,
+                1,
+                2,
+                3
               ]
             },
             {
-              "title": "Follow the body",
-              "text": "The candle opened $80.20, dipped to $79.70, and closed $80.10. The lower wick is not the close.",
+              "title": "A test is not a close beyond",
+              "text": "Candle 5 reaches $79.70, but closes $80.20. Its wick crossed $80; its close did not finish below. That is why candle 5 is not the answer.",
               "focus": [
-                0
+                4
               ]
             },
             {
-              "title": "Apply the exact rule",
-              "text": "The close is above the reference, so the rule did not trigger. A red candle alone would not answer this.",
+              "title": "The break arrives later",
+              "text": "Candle 6 closes at $79.40, below $80. It is the first completed close meeting this example rule. A break can still fail later; it is not a promise of the next move.",
               "focus": [
-                0
+                5
               ]
             }
           ]
         },
         {
-          "title": "A wick is not a close",
-          "prompt": "The rule needs a completed close below $50.00. Did this candle meet it?",
+          "title": "How resistance forms, then breaks",
+          "prompt": "Our example rule needs a completed close above $50. Which candle first meets it?",
           "choices": [
-            "Yes, close finished below",
-            "Any wick touch always qualifies",
-            "Color alone decides"
+            "Candle 6",
+            "Candle 5, because its wick crossed",
+            "Candle 3, because it touched the level"
           ],
           "correct": 0,
           "visual": {
             "kind": "candles",
             "labels": [
-              "Completed"
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6"
             ],
-            "unit": "Stock price",
-            "reference": 50,
             "bars": [
               {
-                "open": 50.2,
-                "high": 50.400000000000006,
-                "low": 49.7,
+                "open": 48,
+                "high": 50,
+                "low": 47.7,
+                "close": 49.5
+              },
+              {
+                "open": 49.5,
+                "high": 49.6,
+                "low": 47.8,
+                "close": 48
+              },
+              {
+                "open": 48,
+                "high": 49.95,
+                "low": 47.9,
+                "close": 49.6
+              },
+              {
+                "open": 49.6,
+                "high": 49.7,
+                "low": 48.2,
+                "close": 48.5
+              },
+              {
+                "open": 48.5,
+                "high": 50.3,
+                "low": 48.4,
                 "close": 49.8
+              },
+              {
+                "open": 49.8,
+                "high": 50.8,
+                "low": 49.7,
+                "close": 50.6
               }
-            ]
+            ],
+            "reference": 50,
+            "referenceAt": 4,
+            "unit": "Stock dollars · consecutive completed 5-minute candles"
           },
+          "buildup": [
+            {
+              "count": 2,
+              "text": "Candle 1 reaches $50; candle 2 moves away. One reaction is a clue, not a proven barrier. No level is drawn yet."
+            },
+            {
+              "count": 4,
+              "text": "Candles 1 and 3 show highs near $50, followed by moves down. After candle 4 moves away again, we mark the area near $50 as resistance. The dashed line is a simple reference through that area, not an exact wall."
+            },
+            {
+              "count": 5,
+              "text": "Now candle 5 tests the area. Compare its wick and its closing price with the line. Has the close crossed yet?"
+            },
+            {
+              "count": 6,
+              "text": "Now candle 6 is complete. Compare the last two candles and choose the first one that meets the close-based rule."
+            }
+          ],
           "steps": [
             {
-              "title": "Find the level",
-              "text": "The purple dashed reference is $50.00. The rule specifically requires the close below it.",
+              "title": "Where the level came from",
+              "text": "Follow candles 1 through 4. There are two separate highs near $50, followed by moves down. Those earlier reactions are why we drew resistance here, before the later test or break.",
               "focus": [
-                0
+                0,
+                1,
+                2,
+                3
               ]
             },
             {
-              "title": "Follow the body",
-              "text": "The candle opened $50.20, dipped to $49.70, and closed $49.80. The lower wick is not the close.",
+              "title": "A test is not a close beyond",
+              "text": "Candle 5 reaches $50.30, but closes $49.80. Its wick crossed $50; its close did not finish above. That is why candle 5 is not the answer.",
               "focus": [
-                0
+                4
               ]
             },
             {
-              "title": "Apply the exact rule",
-              "text": "The close is below the reference, so the rule did trigger. A red candle alone would not answer this.",
+              "title": "The break arrives later",
+              "text": "Candle 6 closes at $50.60, above $50. It is the first completed close meeting this example rule. A break can still fail later; it is not a promise of the next move.",
               "focus": [
-                0
+                5
               ]
             }
           ]

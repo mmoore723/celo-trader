@@ -158,7 +158,7 @@ test('every lesson has distinct visual practice, step highlights and a fresh ret
    }
   }
   const html=renderToStaticMarkup(createElement(VisualPractice,{scenes}));
-  assert.match(html,/Show me why/);assert.doesNotMatch(html,/Not quite|Next highlight/);
+  assert.match(html,/Show me why|Reveal next candles/);assert.doesNotMatch(html,/Not quite|Next highlight/);
   const coaching=renderToStaticMarkup(createElement(VisualPractice,{scenes,startWithWalkthrough:true}));
   assert.match(coaching,/same idea in a worked example|Next highlight/);
  }
@@ -168,7 +168,7 @@ test('visual practice money and reference examples have consistent independent a
  const s=n=>lessons[n-1].workshop.visualPractice;
  assert.deepEqual(s(1).map(x=>x.visual.values),[[125,250],[250,750]]);
  assert.deepEqual(s(3).map(x=>x.visual.values),[[500,400],[200,300]]);
- assert.deepEqual(s(10).map(x=>[x.visual.bars[0].close>x.visual.reference,x.correct]),[[true,0],[false,0]]);
+ assert.deepEqual(s(10).map(x=>[x.visual.bars[5].close>x.visual.reference,x.correct]),[[false,0],[true,0]]);
  assert.deepEqual(s(17).map(x=>x.visual.values.map(v=>v<x.visual.reference)),[[true,false],[true,false]]);
  for(const n of [18,39]) for(const x of s(n)){const [entry,peak,trail]=x.visual.values;assert.ok(Math.abs(trail-(entry+(peak-entry)*.75))<1e-10);}
  for(const n of [20,40,46,47])for(const x of s(n)){const [a,b,net]=x.visual.values;assert.ok(Math.abs(a+b-net)<1e-8);}
@@ -195,3 +195,18 @@ test('missed saved checks and chart challenges connect to visual coaching, witho
  assert.match(css,/@container\(min-width:660px\)/);
  assert.match(css,/@media\(max-width:1100px\)\{\.portal-layout\{grid-template-columns:1fr/);
  });
+
+test('support and resistance form before later candles are revealed',()=>{
+ for(const s of lessons[9].workshop.visualPractice){
+  assert.deepEqual(s.buildup.map(b=>b.count),[2,4,5,6]);
+  assert.equal(s.visual.referenceAt,4);
+  const early=renderToStaticMarkup(createElement(TeachingDiagram,{scene:s,revealCount:2}));
+  assert.doesNotMatch(early,/Reference |<th scope="row">[3456]<\/th>/);
+  const established=renderToStaticMarkup(createElement(TeachingDiagram,{scene:s,revealCount:4}));
+  assert.match(established,/Reference /);
+  assert.doesNotMatch(established,/<th scope="row">[56]<\/th>/);
+  const v=s.visual; const support=v.reference===80;
+  assert.ok(support?v.bars[4].close>v.reference:v.bars[4].close<v.reference);
+  assert.ok(support?v.bars[5].close<v.reference:v.bars[5].close>v.reference);
+ }
+});
