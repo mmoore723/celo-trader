@@ -210,3 +210,16 @@ test('support and resistance form before later candles are revealed',()=>{
   assert.ok(support?v.bars[5].close<v.reference:v.bars[5].close>v.reference);
  }
 });
+
+test('chart setup practice reveals context before signals and hides future candle values',()=>{
+ for(const n of [8,9,10,11,12,19,25,26,27,28,29,30])for(const s of lessons[n-1].workshop.visualPractice){
+  assert.equal(s.visual.kind,'candles');assert.ok(s.visual.bars.length>=4);
+  assert.ok(s.buildup.length>=3);assert.equal(s.buildup.at(-1).count,s.visual.bars.length);
+  let last=0;for(const stage of s.buildup){assert.ok(stage.count>last);last=stage.count;assert.ok(stage.text.length>40);
+   const html=renderToStaticMarkup(createElement(TeachingDiagram,{scene:s,revealCount:stage.count}));
+   assert.equal((html.match(/scope="row"/g)||[]).length,stage.count);
+   if(s.visual.referenceAt&&stage.count<s.visual.referenceAt)assert.doesNotMatch(html,/>Reference /);
+  }
+  const html=renderToStaticMarkup(createElement(VisualPractice,{scenes:[s]}));assert.match(html,/Build the setup first/);assert.doesNotMatch(html,/type="radio"/);
+ }
+});
