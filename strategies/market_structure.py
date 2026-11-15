@@ -170,8 +170,10 @@ def _opening_range(bars: Sequence[Bar]) -> tuple[float, float] | None:
     day = bars[-1].timestamp.date()
     session = [bar for bar in bars if bar.timestamp.date() == day]
     anchor = session[-1].timestamp.replace(hour=9, minute=30, second=0, microsecond=0)
-    expected = [anchor + timedelta(minutes=index) for index in range(15)]
-    opening = [bar for bar in session if time(9, 30) <= bar.timestamp.time() < OPENING_END]
+    from config.engine_parameters import parameter
+    from config.strategy_inputs import opening_end
+    expected = [anchor + timedelta(minutes=index) for index in range(parameter("opening_range_minutes",15))]
+    opening = [bar for bar in session if time(9, 30) <= bar.timestamp.time() < opening_end()]
     if [bar.timestamp for bar in opening] != expected:
         return None
     return max(bar.high for bar in opening), min(bar.low for bar in opening)
@@ -180,13 +182,14 @@ def _opening_range(bars: Sequence[Bar]) -> tuple[float, float] | None:
 def first_close_confirmed_breakout(
     bars: Sequence[Bar], *, entry_deadline: time = time(11, 0),
 ) -> OpeningRangeBreakoutContext | None:
+    from config.strategy_inputs import opening_end
     opening = _opening_range(bars)
     if opening is None:
         return None
     high, low = opening
     day = bars[-1].timestamp.date()
     for bar in bars:
-        if bar.timestamp.date() != day or not (OPENING_END <= bar.timestamp.time() <= entry_deadline):
+        if bar.timestamp.date() != day or not (opening_end() <= bar.timestamp.time() <= entry_deadline):
             continue
         if bar.close > high:
             return OpeningRangeBreakoutContext(Side.LONG, high, low, bar.timestamp, bar.close)
@@ -202,7 +205,8 @@ def retouch_status(
     if price <= 0 or not 0.0 <= tolerance_pct < 0.01:
         raise ValueError("price must be positive and tolerance_pct must be in [0, 0.01)")
     level = context.retouch_level
-    tolerance = max(level * tolerance_pct, 0.01)
+    from config.engine_parameters import parameter
+    tolerance = max(level * tolerance_pct, parameter("minimum_retouch_dollars",0.01))
     if context.side is Side.LONG:
         if price < level - tolerance:
             return "failed"

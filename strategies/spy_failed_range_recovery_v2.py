@@ -9,6 +9,7 @@ not change the signal, and the router may attempt the signal only once.
 from __future__ import annotations
 
 from config.engine_parameters import parameter
+from config.strategy_inputs import opening_end
 
 from datetime import time
 
@@ -77,7 +78,7 @@ def _candidate_from_completed_bars(bars: tuple[Bar, ...]) -> tuple[Side, Bar, fl
     breakout_bar: Bar | None = None
     for index, bar in enumerate(bars):
         clock = bar.timestamp.time()
-        if clock < time(9, 45):
+        if clock < opening_end():
             continue
         if breakout_side is None:
             if clock > parameter('breakout_deadline', BREAKOUT_DEADLINE):
@@ -92,7 +93,7 @@ def _candidate_from_completed_bars(bars: tuple[Bar, ...]) -> tuple[Side, Bar, fl
             return None
         assert breakout_bar is not None
         prefix = bars[: index + 1]
-        vwap = _session_vwap(prefix)
+        vwap = bar.close + (_session_vwap(prefix)-bar.close)*parameter("vwap_target_fraction",1.)
         room = width * parameter('minimum_vwap_room_range', MINIMUM_VWAP_ROOM_RANGE)
         if breakout_side is Side.LONG and bar.close <= range_high and bar.close < bar.open:
             if bar.close - vwap >= room:
@@ -116,7 +117,8 @@ def evaluate(
     ticker = ticker.strip().upper()
     if ticker not in VALIDATED_TICKERS:
         return None
-    bars = _completed_one_minute_bars(today, now=now)
+    from config.strategy_inputs import aggregate_entry_bars
+    bars = aggregate_entry_bars(_completed_one_minute_bars(today, now=now),keep_opening=True)
     candidate = _candidate_from_completed_bars(bars)
     if candidate is None:
         return None

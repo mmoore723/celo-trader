@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from config.engine_parameters import parameter, configure_engine
 
 import pandas as pd
 
@@ -29,11 +30,11 @@ def evaluate(
     symbol = ticker.strip().upper()
     if symbol not in SUPPORTED_TICKERS:
         return None
-    bars = _research_bars(frame, now, 5)
+    bars = _research_bars(frame, now, parameter("entry_timeframe_minutes",5))
     if not bars:
         return None
     from config.engine_parameters import configured
-    strategy = TrendContinuation(configured(TrendContinuationConfig()))
+    strategy = configure_engine(TrendContinuation())
     candidate = _latest_candidate(strategy, bars, research_strategy_id=STRATEGY_ID)
     if candidate is None:
         return None
@@ -42,7 +43,7 @@ def evaluate(
     cutoff = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="America/New_York")
     if cutoff.tzinfo is not None:
         cutoff = cutoff.tz_convert("America/New_York").tz_localize(None)
-    trigger = pd.Timestamp(candidate.timestamp) + timedelta(minutes=5)
+    trigger = pd.Timestamp(candidate.timestamp) + timedelta(minutes=parameter("entry_timeframe_minutes",5))
     if not trigger <= cutoff < trigger + timedelta(minutes=1):
         return None
     key = (scope, symbol, candidate.timestamp.isoformat())
@@ -54,7 +55,7 @@ def evaluate(
         direction="bullish" if candidate.side is Side.LONG else "bearish",
         confidence=0.70,
         rvol=0.0,
-        trigger_bar=pd.Timestamp(candidate.timestamp) + timedelta(minutes=5),
+        trigger_bar=pd.Timestamp(candidate.timestamp) + timedelta(minutes=parameter("entry_timeframe_minutes",5)),
         meta={
             **dict(candidate.features),
             "strategy_version": VERSION,
@@ -63,6 +64,6 @@ def evaluate(
             "underlying_target": float(candidate.target),
             "authored_exit_protocol": "trend_cont_structural_2r_75bars_completed5m_v1",
             "authored_exit_state": entry_state(strategy),
-            "timeframe_minutes": 5,
+            "timeframe_minutes": parameter("entry_timeframe_minutes",5),
         },
     )

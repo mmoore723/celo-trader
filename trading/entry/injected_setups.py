@@ -45,7 +45,7 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
                     from config.engine_parameters import for_pair, attach
                     with for_pair(settings if ORB in enabled else {}, ORB, ticker):
                         signal, status = evaluate(slot, frame, ticker=ticker, quote_price=price, now=decision_now)
-                        attach(signal)
+                        signal = attach(signal)
                 except Exception as exc:
                     orb_evidence.finish(evidence, slot, None, 'evaluation_error', error=type(exc).__name__)
                     raise
@@ -73,7 +73,7 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
                     from config.engine_parameters import for_pair, attach
                     with for_pair(settings if TWO_LEG in enabled else {}, TWO_LEG, ticker):
                         signal, status = evaluate(slot, frame, ticker=ticker, now=decision_now)
-                        attach(signal)
+                        signal = attach(signal)
                 except Exception as exc:
                     two_leg_evidence.finish(evidence, slot, None, 'evaluation_error', error=type(exc).__name__)
                     raise

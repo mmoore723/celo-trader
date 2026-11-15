@@ -27,17 +27,20 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
     Five minutes are allowed for delayed bars before closing that evidence gap.
     """
     from config.execution_parameters import exit_value
+    from config.engine_parameters import parameter
+    entry_minutes=parameter('entry_timeframe_minutes',timeframe_minutes)
+    timeframe_minutes=exit_value('structural_timeframe_minutes',timeframe_minutes)
     configured_bars=exit_value('max_hold_bars',max_hold_bars)
     if configured_bars!=max_hold_bars:time_cap_reason=f'configured_time_cap_{configured_bars*timeframe_minutes}m'
     max_hold_bars=configured_bars
     entry, now = et(entry_at), et(now)
-    if timeframe_minutes not in {1, 5, 15} or source_minutes not in {1,timeframe_minutes}:
+    if timeframe_minutes not in {1,2,3,4,5,10,15,20,30,60} or source_minutes not in {1,timeframe_minutes}:
         return entry, "invalid_entry"
     interval = timedelta(minutes=timeframe_minutes)
-    if (entry.minute % timeframe_minutes or entry.second or entry.microsecond
+    if (int((entry-entry.replace(hour=9,minute=30,second=0,microsecond=0)).total_seconds()/60) % entry_minutes or entry.second or entry.microsecond
             or not entry.replace(hour=9, minute=30) <= entry < entry.replace(hour=16, minute=0)):
         return entry, "invalid_entry"
-    if not entry <= et(entry_quote_at) < entry + timedelta(minutes=min(timeframe_minutes, 5)):
+    if not entry <= et(entry_quote_at) < entry + timedelta(minutes=min(entry_minutes, 5)):
         return entry, "late_entry_quote"
     try:
         stop, target = float(stop), float(target)
@@ -54,8 +57,11 @@ def first_exit(frame, *, entry_at, entry_quote_at, stop, target, direction, now,
         if stamp in rows:
             return entry, "duplicate_bars"
         rows[stamp] = row
-    bar_start = entry + interval
-    deadline = min(entry + interval*(max_hold_bars+1), entry.replace(hour=16, minute=0))
+    opening=entry.replace(hour=9,minute=30,second=0,microsecond=0)
+    earliest=entry+timedelta(minutes=entry_minutes)
+    steps=math.ceil((earliest-opening).total_seconds()/interval.total_seconds())
+    bar_start=opening+steps*interval
+    deadline = min(bar_start + interval*max_hold_bars, entry.replace(hour=16, minute=0))
     while bar_start + interval <= min(now, deadline):
         decision = bar_start + interval
         bucket = [rows.get(bar_start + timedelta(minutes=i)) for i in range(0,timeframe_minutes,source_minutes)]

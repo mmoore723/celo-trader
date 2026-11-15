@@ -44,6 +44,9 @@ class ResearchContractProfile:
     maximum_spread_pct: float
     primary_policy: str
     basis: str
+    target_minimum_premium: float = 1.5
+    target_maximum_premium: float = 2.5
+    target_premium: float = 2.0
 
 
 def research_contract_profile(strategy_id: object) -> ResearchContractProfile:
@@ -118,13 +121,13 @@ def _leaderboard(
     }
     target_candidates = [
         item for item in candidates
-        if 1.50 <= float(item[4].get("ask") or 0) <= 2.50
+        if profile.target_minimum_premium <= float(item[4].get("ask") or 0) <= profile.target_maximum_premium
     ]
     if target_candidates:
         policies["target_150_250"] = (
             target_candidates,
             lambda item: (
-                abs(float(item[4].get("ask") or 0) - 2.0),
+                abs(float(item[4].get("ask") or 0) - profile.target_premium),
                 item[1], item[0], item[2], item[3],
             ),
         )

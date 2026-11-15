@@ -23,7 +23,11 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now):
     if not compatible_state(meta.get('authored_exit_state'),metadata(STRATEGY_ID)['authored_exit_state']):
         return entry,'missing_exit_state'
     cap=entry.replace(hour=15,minute=55)
-    if entry.minute!=30 or entry.second or entry.microsecond or not entry.replace(hour=10,minute=30)<=entry<cap:
+    from config.execution_parameters import exit_value
+    from config.engine_parameters import parameter
+    interval=exit_value('structural_timeframe_minutes',60)
+    entry_interval=parameter('entry_timeframe_minutes',60)
+    if int((entry-entry.replace(hour=9,minute=30)).total_seconds()/60)%entry_interval or entry.second or entry.microsecond or not entry.replace(hour=9,minute=30)+timedelta(minutes=entry_interval)<=entry<cap:
         return entry,'invalid_entry'
     if direction!='bullish':
         return entry,'invalid_direction'
@@ -44,9 +48,9 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now):
             return entry,'duplicate_bars'
         rows[stamp]=row
     start=entry
-    while start+timedelta(hours=1)<=min(now,cap):
-        decision=start+timedelta(hours=1)
-        bucket=[rows.get(start+timedelta(minutes=i)) for i in range(60)]
+    while start+timedelta(minutes=interval)<=min(now,cap):
+        decision=start+timedelta(minutes=interval)
+        bucket=[rows.get(start+timedelta(minutes=i)) for i in range(interval)]
         if any(row is None for row in bucket):
             return decision,'missing_bars' if now>decision+timedelta(minutes=5) else 'waiting_for_bars'
         for row in bucket:

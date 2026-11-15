@@ -1,3 +1,5 @@
+from config.engine_parameters import parameter
+from config.execution_parameters import exit_value
 from dataclasses import asdict, replace
 from config.engine_parameters import normalize
 from strategy_health.configured_seed import stamp, valid
@@ -52,7 +54,7 @@ def restored(seed, entry, direction):
         if (seed["engine_hash"] != engine_hash() or seed["period"] != strategy.config.atr_period
                 or seed["multiplier"] != strategy.config.multiplier or seed["rma"] is not strategy.config.use_rma_atr
                 or seed["trend"] != (1 if direction == "bullish" else -1)
-                or et(seed["bar_time"]) + timedelta(minutes=5) != entry):
+                or et(seed["bar_time"]) + timedelta(minutes=parameter("entry_timeframe_minutes",5)) != entry):
             return None
         if not all(math.isfinite(float(seed[k])) for k in ("atr", "close", "up", "down")):
             return None
@@ -75,11 +77,11 @@ def restored(seed, entry, direction):
 
 def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, now):
     entry, now = et(entry_at), et(now)
-    if direction not in {"bullish", "bearish"} or entry.minute % 5 or entry.second or entry.microsecond:
+    if direction not in {"bullish", "bearish"} or int((entry-entry.replace(hour=9,minute=30,second=0,microsecond=0)).total_seconds()/60) % parameter("entry_timeframe_minutes",5) or entry.second or entry.microsecond:
         return entry, "invalid_entry"
     if not entry.replace(hour=9, minute=30) <= entry < entry.replace(hour=15, minute=55):
         return entry, "entry_after_session_cutoff"
-    if not entry <= et(entry_quote_at) < entry + timedelta(minutes=5):
+    if not entry <= et(entry_quote_at) < entry + timedelta(minutes=parameter("entry_timeframe_minutes",5)):
         return entry, "late_entry_quote"
     engine = restored(seed, entry, direction)
     if engine is None:
@@ -93,9 +95,9 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, now):
     start = entry
     closing_bar = entry.replace(hour=15, minute=55)
     side = Side.LONG if direction == "bullish" else Side.SHORT
-    while start < closing_bar and start + timedelta(minutes=5) <= now:
-        decision = start + timedelta(minutes=5)
-        bucket = [rows.get(start + timedelta(minutes=i)) for i in range(5)]
+    while start < closing_bar and min(start + timedelta(minutes=exit_value("structural_timeframe_minutes",5)), entry.replace(hour=16,minute=0)) <= now:
+        decision = min(start + timedelta(minutes=exit_value("structural_timeframe_minutes",5)), entry.replace(hour=16,minute=0))
+        bucket = [rows.get(start + timedelta(minutes=i)) for i in range(int((decision-start).total_seconds()/60))]
         if any(r is None for r in bucket):
             return (decision, "missing_bars") if now > decision + timedelta(minutes=5) else None
         values = [[float(r[k]) for k in ("open", "high", "low", "close")] for r in bucket]

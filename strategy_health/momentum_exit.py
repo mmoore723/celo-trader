@@ -1,3 +1,5 @@
+from config.engine_parameters import parameter
+from config.execution_parameters import exit_value
 from dataclasses import asdict, replace
 from config.engine_parameters import encode, normalize
 from strategy_health.configured_seed import stamp, valid
@@ -65,7 +67,7 @@ def restored(seed, entry, *, engine_factory=OpeningMomentumRTH, fingerprint=None
         elif seed["engine_hash"] != (fingerprint or engine_hash()) or seed["atr_period"] != 14 or seed["trail_multiple"] != 2:
             return None
         bars = [valid_bar(row[0], row[1:]) for row in seed["history"]]
-        if len(bars) != engine.config.atr_bars+1 or bars[-1].timestamp + timedelta(minutes=5) != entry:
+        if len(bars) != engine.config.atr_bars+1 or bars[-1].timestamp + timedelta(minutes=parameter("entry_timeframe_minutes",5)) != entry:
             return None
         if any(a.timestamp >= b.timestamp for a, b in zip(bars, bars[1:])):
             return None
@@ -78,10 +80,10 @@ def restored(seed, entry, *, engine_factory=OpeningMomentumRTH, fingerprint=None
 def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, stop, target, now,
                short_low_water=False, restore_engine=None, strategy_id=STRATEGY_ID):
     entry, now = et(entry_at), et(now)
-    if (direction not in {"bullish", "bearish"} or entry.minute % 5 or entry.second or entry.microsecond
+    if (direction not in {"bullish", "bearish"} or int((entry-entry.replace(hour=9,minute=30,second=0,microsecond=0)).total_seconds()/60) % parameter("entry_timeframe_minutes",5) or entry.second or entry.microsecond
             or not entry.replace(hour=9, minute=30) <= entry < entry.replace(hour=16, minute=0)):
         return entry, "invalid_entry"
-    if not entry <= et(entry_quote_at) < entry + timedelta(minutes=5):
+    if not entry <= et(entry_quote_at) < entry + timedelta(minutes=parameter("entry_timeframe_minutes",5)):
         return entry, "late_entry_quote"
     engine = (restore_engine or restored)(seed, entry)
     if engine is None:
@@ -90,7 +92,7 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, stop, target
         side = Side.LONG if direction == "bullish" else Side.SHORT
         if not all(math.isfinite(float(v)) for v in (stop, target)):
             raise ValueError("Invalid levels")
-        signal = Signal(strategy_id, side, entry-timedelta(minutes=5), engine._history[-1].close,
+        signal = Signal(strategy_id, side, entry-timedelta(minutes=parameter("entry_timeframe_minutes",5)), engine._history[-1].close,
                         stop, target, {"no_profit_target": True})
     except (TypeError, ValueError):
         return entry, "invalid_levels"
@@ -103,7 +105,7 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, stop, target
     start, position = entry, None
     while start < entry.replace(hour=16, minute=0):
         minutes = []
-        for i in range(5):
+        for i in range(min(exit_value("structural_timeframe_minutes",5),int((entry.replace(hour=16,minute=0)-start).total_seconds()/60))):
             stamp = start + timedelta(minutes=i)
             observed = stamp + timedelta(minutes=1)
             if observed > now:
@@ -121,7 +123,7 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, stop, target
                 if touched:
                     return observed, "atr_trailing_stop"
         bar = Bar(start, minutes[0].open, max(b.high for b in minutes), min(b.low for b in minutes), minutes[-1].close)
-        completed_at = start + timedelta(minutes=5)
+        completed_at = start + timedelta(minutes=len(minutes))
         if position is None:
             # Preserve the frozen simulator's reference entry anchor, but not
             # its allocation limit: every research play gets measured.
@@ -130,9 +132,9 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, stop, target
         else:
             position.best_price = max(position.best_price, bar.high)
             position.worst_price = min(position.worst_price, bar.low)
-            if (start-entry).total_seconds() >= 75*300:
+            if (start-entry).total_seconds() >= exit_value("max_hold_bars",75)*exit_value("structural_timeframe_minutes",5)*60:
                 return completed_at, "time_cap_75bars"
-            if start.hour == 15 and start.minute == 55:
+            if completed_at >= entry.replace(hour=16,minute=0):
                 return completed_at, "session_flatten"
             if short_low_water and side is Side.SHORT:
                 candidate = engine.trailing_stop(signal, position.active_stop, bar, position.worst_price)
@@ -140,6 +142,6 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, seed, stop, target
                     position.active_stop = candidate
             else:
                 Simulator._tighten_trailing_stop(engine, position, bar)
-        engine._history = (engine._history + [bar])[-15:]
+        engine._history = (engine._history + [bar])[-(engine.config.atr_bars+1):]
         start = completed_at
     return (start, "end_of_available_session") if now >= start else None

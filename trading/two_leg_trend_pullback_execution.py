@@ -82,7 +82,7 @@ def _completed_bars(today: pd.DataFrame, now: datetime) -> tuple[_Bar, ...]:
     elif source_tz is not None:
         cutoff = cutoff.tz_convert(source_tz)
     rows = rows.loc[(rows["time"] < cutoff) & (rows["time"].dt.time >= time(9, 30)) & (rows["time"].dt.time <= time(15, 59))]
-    return tuple(
+    raw = tuple(
         _Bar(
             timestamp=pd.Timestamp(row.time), open=float(row.open), high=float(row.high),
             low=float(row.low), close=float(row.close), volume=float(getattr(row, "volume", 0.0) or 0.0),
@@ -90,6 +90,10 @@ def _completed_bars(today: pd.DataFrame, now: datetime) -> tuple[_Bar, ...]:
         )
         for row in rows.itertuples(index=False)
     )
+    from config.strategy_inputs import aggregate_entry_bars
+    if parameter('entry_timeframe_minutes',1)==1:return raw
+    return tuple(_Bar(pd.Timestamp(b.timestamp),b.open,b.high,b.low,b.close,b.volume,0.) for b in aggregate_entry_bars(raw))
+
 
 
 def _ema(values: list[float], length: int) -> float:
@@ -186,10 +190,10 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                             context = describe_price_action(
                                 history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
                             )
-                            if not _has_directional_confirmation(context, "bullish"):
+                            if not (not parameter("require_directional_confirmation",True) or _has_directional_confirmation(context, "bullish")):
                                 leg = None
                                 continue
-                            stop = min(leg.pullback_extreme, current.close - atr)
+                            stop = min(leg.pullback_extreme, current.close - parameter("stop_atr_multiple",1.)*atr)
                             risk = current.close - stop
                             if risk > 0:
                                 latest_signal = Signal(
@@ -200,7 +204,7 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                         "v2_hypothesis": "two_leg_impulse_vwap_hold_pullback_1m_reclaim",
                                         "validated_entry_rule": "after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_directionally_confirmed_completed_1m_reclaim",
                                         "entry_timing": "completed_1m_reclaim_then_next_1m_option_ask",
-                                        "directional_confirmation": True,
+                                        "directional_confirmation": _has_directional_confirmation(context, leg.direction),
                                         "reference_945": round(reference, 6), "vwap": round(vwap, 6),
                                         "fast_ema": round(fast, 6), "slow_ema": round(slow, 6), "atr": round(atr, 6),
                                         "impulse_extreme": round(leg.impulse_extreme, 6),
@@ -228,10 +232,10 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                             context = describe_price_action(
                                 history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
                             )
-                            if not _has_directional_confirmation(context, "bearish"):
+                            if not (not parameter("require_directional_confirmation",True) or _has_directional_confirmation(context, "bearish")):
                                 leg = None
                                 continue
-                            stop = max(leg.pullback_extreme, current.close + atr)
+                            stop = max(leg.pullback_extreme, current.close + parameter("stop_atr_multiple",1.)*atr)
                             risk = stop - current.close
                             if risk > 0:
                                 latest_signal = Signal(
@@ -242,7 +246,7 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                                         "v2_hypothesis": "two_leg_impulse_vwap_hold_pullback_1m_reclaim",
                                         "validated_entry_rule": "after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_directionally_confirmed_completed_1m_reclaim",
                                         "entry_timing": "completed_1m_reclaim_then_next_1m_option_ask",
-                                        "directional_confirmation": True,
+                                        "directional_confirmation": _has_directional_confirmation(context, leg.direction),
                                         "reference_945": round(reference, 6), "vwap": round(vwap, 6),
                                         "fast_ema": round(fast, 6), "slow_ema": round(slow, 6), "atr": round(atr, 6),
                                         "impulse_extreme": round(leg.impulse_extreme, 6),
@@ -298,7 +302,7 @@ def update_two_leg_trend_pullback(
     signal = _signal_at_latest_bar(bars)
     if signal is None:
         return None, "waiting_for_impulse_pullback_reclaim"
-    if not signal.trigger_bar + pd.Timedelta(minutes=1) <= now < signal.trigger_bar + pd.Timedelta(minutes=2):
+    if not signal.trigger_bar + pd.Timedelta(minutes=parameter("entry_timeframe_minutes",1)) <= now < signal.trigger_bar + pd.Timedelta(minutes=parameter("entry_timeframe_minutes",1)+1):
         return None, "stale_reclaim"
     state["emitted_bar"] = signal.trigger_bar.isoformat()
     state.pop("emitted", None)

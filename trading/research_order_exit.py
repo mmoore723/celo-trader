@@ -15,6 +15,7 @@ def context(trade):
     return json.loads(raw) if isinstance(raw, str) else dict(raw)
 
 
+@trade_controls
 def partial_remaining(trade):
     from database import get_conn
     with get_conn() as conn:
@@ -25,7 +26,7 @@ def partial_remaining(trade):
         ).fetchone()
     sold = int(row[0])
     original = int(trade['contracts']) + sold
-    return max(0, max(1, original // 2) - sold)
+    return max(0, max(1, int(original * exit_value("partial_sell_pct",50.) / 100)) - sold)
 
 
 @trade_controls

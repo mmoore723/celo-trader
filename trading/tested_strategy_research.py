@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from config.engine_parameters import parameter
 from datetime import time, timedelta
 import logging
 from typing import Callable, Iterable
@@ -191,15 +192,15 @@ def evaluate_tested_research(
         spec = strategy_details(strategy_id)
         if spec is None:
             continue
-        if spec.timeframe_minutes not in bars_by_timeframe:
-            bars_by_timeframe[spec.timeframe_minutes] = _research_bars(
-                frame, now, spec.timeframe_minutes,
+        if parameter("entry_timeframe_minutes", spec.timeframe_minutes) not in bars_by_timeframe:
+            bars_by_timeframe[parameter("entry_timeframe_minutes", spec.timeframe_minutes)] = _research_bars(
+                frame, now, parameter("entry_timeframe_minutes", spec.timeframe_minutes),
             )
-        bars = bars_by_timeframe[spec.timeframe_minutes]
-        if spec.strategy_id == 'V2_GAP_FILL_RTH':
+        bars = bars_by_timeframe[parameter("entry_timeframe_minutes", spec.timeframe_minutes)]
+        if spec.strategy_id == 'V2_GAP_FILL_RTH' and parameter('entry_timeframe_minutes',spec.timeframe_minutes)==5:
             from trading.gap_fill_history import with_history
             bars = with_history(bars, history_5m, now or pd.Timestamp.now(tz='America/New_York'))
-        if spec.strategy_id == "V2_EMA_PULLBACK_RTH":
+        if spec.strategy_id == "V2_EMA_PULLBACK_RTH" and parameter("entry_timeframe_minutes",spec.timeframe_minutes)==15:
             from trading.research_ema_history import with_ema_history
             bars = with_ema_history(bars, history_5m, now)
             if history_15m is not None:
@@ -228,16 +229,16 @@ def evaluate_tested_research(
             direction="bullish" if candidate.side is Side.LONG else "bearish",
             confidence=0.70,
             rvol=0.0,
-            trigger_bar=pd.Timestamp(candidate.timestamp) + timedelta(minutes=spec.timeframe_minutes),
+            trigger_bar=pd.Timestamp(candidate.timestamp) + timedelta(minutes=parameter("entry_timeframe_minutes", spec.timeframe_minutes)),
             meta={
                 **dict(candidate.features),
-                **entry_levels(spec.strategy_id, candidate, bars, strategy, spec.timeframe_minutes),
+                **entry_levels(spec.strategy_id, candidate, bars, strategy, parameter("entry_timeframe_minutes", spec.timeframe_minutes)),
                 "strategy_version": spec.version,
                 "research_emission_policy": EMISSION_POLICY,
                 "implementation": spec.implementation or strategy.__class__.__module__,
                 "research_library": True,
-                "timeframe_minutes": spec.timeframe_minutes,
-                "entry_timing": f"completed_{spec.timeframe_minutes}m_signal_then_next_quote",
+                "timeframe_minutes": parameter("entry_timeframe_minutes", spec.timeframe_minutes),
+                "entry_timing": f"completed_{parameter("entry_timeframe_minutes", spec.timeframe_minutes)}m_signal_then_next_quote",
                 "underlying_stop": candidate.stop,
                 "underlying_target": candidate.target,
                 "exit_plan": f"same-contract bid after {spec.exit_minutes} minutes",

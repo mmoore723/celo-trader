@@ -68,7 +68,8 @@ def update_one_minute_orb_retouch(
     """
     if ticker.strip().upper() != TICKER or quote_price is None or quote_price <= 0:
         return None, "not_applicable"
-    bars = _completed_bars(today, now)
+    from config.strategy_inputs import aggregate_entry_bars
+    bars = aggregate_entry_bars(_completed_bars(today, now),keep_opening=True)
     if not bars:
         return None, "waiting_for_bars"
     trading_day = bars[-1].timestamp.date().isoformat()
@@ -82,7 +83,7 @@ def update_one_minute_orb_retouch(
     context = first_close_confirmed_breakout(bars, entry_deadline=parameter('entry_deadline', ENTRY_DEADLINE))
     if context is None:
         return None, "building_or_waiting_for_breakout"
-    if context.side is not VALIDATED_SIDE:
+    if not parameter("allow_long" if context.side is Side.LONG else "allow_short", context.side is VALIDATED_SIDE):
         # The first clean break defines the session's ORB sequence.  A short
         # break is deliberately not turned into a later long setup: the paid
         # TSLA rule that passed was calls-only.
@@ -104,13 +105,14 @@ def update_one_minute_orb_retouch(
     # A quote can only trigger after a completed breakout minute.  The entry
     # is the quote at first retouch—not its minute's later close.
     state["terminal"] = "emitted"
-    stop = context.range_low if context.side is Side.LONG else context.range_high
+    width=context.range_high-context.range_low
+    stop = (context.range_high-parameter("stop_range_fraction",1.)*width if context.side is Side.LONG else context.range_low+parameter("stop_range_fraction",1.)*width)
     risk = abs(float(quote_price) - stop)
     if risk <= 0:
         state["terminal"] = "invalid_risk"
         return None, "invalid_risk"
     direction = "bullish" if context.side is Side.LONG else "bearish"
-    target = float(quote_price) + 2 * risk if context.side is Side.LONG else float(quote_price) - 2 * risk
+    target = float(quote_price) + parameter("reward_risk",2.) * risk if context.side is Side.LONG else float(quote_price) - parameter("reward_risk",2.) * risk
     session_bars = [bar for bar in bars if bar.timestamp.date() == context.breakout_time.date()]
     price_action: dict[str, float | str | bool] = {}
     if len(session_bars) >= 20:

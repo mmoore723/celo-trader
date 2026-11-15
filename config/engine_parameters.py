@@ -26,7 +26,7 @@ def revision(value):
 def scope_key(settings,sid,ticker,version):
     return json.dumps([settings.get('active_broker_account_id') or '', 'paper' if settings.get('paper_trading',True) else 'live',sid,ticker.upper(),version],separators=(',',':'))
 
-def definition(sid):
+def _definition(sid):
     from config.research_order_specs import SPECS
     from config.strategy_catalog import REVIEWED_STRATEGIES
     if sid not in REVIEWED_STRATEGIES: raise ValueError('Unknown strategy')
@@ -55,8 +55,13 @@ def definition(sid):
         obj=lib.factory().config if lib else None
     else: obj=None
     if obj is not None and is_dataclass(obj):
-        return {f.name:getattr(obj,f.name) for f in fields(obj) if isinstance(getattr(obj,f.name),(int,float,bool,time,date))}
+        return {f.name:getattr(obj,f.name) for f in fields(obj) if (isinstance(getattr(obj,f.name),(int,float,bool,time,date)) or (f.name=='active_date' and getattr(obj,f.name) is None))}
     return {}
+
+def definition(sid):
+    from config.strategy_inputs import defaults
+    return {**_definition(sid), **defaults(sid)}
+
 
 def normalize(values,defaults):
     if set(values)-set(defaults): raise ValueError('Unknown engine setting')
@@ -72,6 +77,10 @@ def normalize(values,defaults):
         elif isinstance(default,date):
             try:value=date.fromisoformat(value)
             except (ValueError,TypeError):raise ValueError(f'{name}: use YYYY-MM-DD')
+        elif default is None:
+            if value is not None:
+                try:value=date.fromisoformat(value)
+                except (ValueError,TypeError):raise ValueError(f'{name}: use YYYY-MM-DD or leave empty')
         elif isinstance(default,(int,float)):
             if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value): raise ValueError(f'{name}: enter a finite number')
             if isinstance(default,int):
@@ -116,7 +125,21 @@ def attach(signal):
     state=_current.get()
     if signal is not None and state and state.get('revision'):
         signal.meta['engine_configuration']={'revision':state['revision'],'entry':{k:encode(v) for k,v in state['entry'].items()}}
+        if 'entry_timeframe_minutes' in state['entry']:signal.meta['timeframe_minutes']=state['entry']['entry_timeframe_minutes']
+    if signal is not None:
+        from config.strategy_inputs import allows
+        if not allows(signal.direction):return None
     return signal
+
+@contextmanager
+def frozen_entry(meta):
+    snapshot=meta.get('engine_configuration') or {}
+    raw=snapshot.get('entry') or {}
+    # Entry values were validated before saving. Restore time/date types for exit readers.
+    values={k:(time.fromisoformat(v) if isinstance(v,str) and ':' in v and 'T' not in v else v) for k,v in raw.items()}
+    token=_current.set({'entry':values,'revision':snapshot.get('revision')})
+    try:yield
+    finally:_current.reset(token)
 
 def describe(settings,sid,ticker,version):
     from config.strategy_catalog import REVIEWED_STRATEGIES
@@ -145,7 +168,7 @@ def describe(settings,sid,ticker,version):
     from config.strategy_catalog import reviewed_exit_summary
     return {'strategy_id':sid,'ticker':ticker,'version':version,'mode':'paper' if settings.get('paper_trading',True) else 'live',
             'revision':revision(saved),'entry':[{'key':k,'label':k.replace('_',' ').capitalize(),
-             'value':encode(v),'default':encode(defaults[k]),'type':'boolean' if isinstance(v,bool) else 'time' if isinstance(v,time) else 'date' if isinstance(v,date) else 'number'} for k,v in current.items()],
+             'value':encode(v),'default':encode(defaults[k]),'type':'boolean' if isinstance(v,bool) else 'time' if isinstance(v,time) else 'date' if isinstance(v,date) else 'date' if defaults[k] is None else 'number'} for k,v in current.items()],
             'execution':describe_execution(settings,sid,ticker,policy), 'execution_defaults':execution_defaults(sid,ticker), 'execution_overrides':saved.get('execution',{}), 'policy_warning':policy_warning,'exit_policy':policy,'selected_contract_timer':selected(settings,sid,ticker,version),
             'native_exit':('Custom native parameters below apply to new entries. Existing positions keep their saved rules.' if saved.get('execution',{}).get('native_exit') else reviewed_exit_summary(sid)),
             'profit_overrides':None if policy_warning else saved.get('profit'), 'contract_timer_overrides':saved.get('contract_timer'),
@@ -260,6 +283,10 @@ def validate_engine(sid, values):
     """Run the engine's own validation before accepting a saved configuration."""
     from config.research_order_specs import SPECS
     spec=SPECS.get(sid)
+    all_values=values
+    values={k:v for k,v in values.items() if k in _definition(sid)}
+    from config.strategy_inputs import validate_inputs
+    validate_inputs(sid,{**_definition(sid),**all_values})
     if spec and spec.adapter=='library' and spec.source not in CONTEXT_DEFAULTS and sid not in ('RESEARCH_QQQ_TREND_V2','RESEARCH_FAILED_RANGE_V2'):
         from trading.tested_strategy_research import strategy_details
         library=strategy_details(spec.source)

@@ -7,6 +7,7 @@ The original excursion, time, colour, stop and target rules are unchanged.
 from datetime import time, timedelta
 import math
 from config.engine_parameters import parameter
+from config.strategy_inputs import opening_end
 import pandas as pd
 
 from strategies import spy_failed_range_recovery_v2 as source
@@ -35,7 +36,7 @@ def latest_candidate(bars):
         volume += weight
         candidate = None  # Only a failure on the newest completed bar can emit.
         clock = bar.timestamp.time()
-        if clock < time(9,45):
+        if clock < opening_end():
             continue
         if side is None:
             if clock > parameter('breakout_deadline', source.BREAKOUT_DEADLINE):
@@ -52,7 +53,7 @@ def latest_candidate(bars):
         failed_down = side is Side.SHORT and bar.close >= low and bar.close > bar.open
         if not (failed_up or failed_down):
             continue
-        vwap, room = pv/volume, width*parameter('minimum_vwap_room_range', source.MINIMUM_VWAP_ROOM_RANGE)
+        vwap, room = bar.close+(pv/volume-bar.close)*parameter("vwap_target_fraction",1.), width*parameter('minimum_vwap_room_range', source.MINIMUM_VWAP_ROOM_RANGE)
         if failed_up and bar.close-vwap >= room:
             stop = max(anchor.high,bar.high)+width*parameter('stop_buffer_range', source.STOP_BUFFER_RANGE)
             candidate = (Side.SHORT,bar,stop,vwap,high,low,anchor)
@@ -78,7 +79,8 @@ def evaluate(today, *, ticker, scope, now=None):
     prices = prices.assign(time=times)
     prices = prices.loc[(times.dt.date == cutoff.date()) & (times < cutoff.floor('min'))]
     try:
-        bars = source._completed_one_minute_bars(prices, now=cutoff)
+        from config.strategy_inputs import aggregate_entry_bars
+        bars = aggregate_entry_bars(source._completed_one_minute_bars(prices, now=cutoff),keep_opening=True)
         if any(not all(math.isfinite(x) for x in (b.open,b.high,b.low,b.close,b.volume))
                or not (0 < b.low <= min(b.open,b.close) <= max(b.open,b.close) <= b.high and b.volume >= 0)
                for b in bars):
@@ -90,7 +92,7 @@ def evaluate(today, *, ticker, scope, now=None):
         return None
     side, trigger, stop, target, high, low, anchor = candidate
     stamp = pd.Timestamp(trigger.timestamp)
-    visible = stamp+timedelta(minutes=1)
+    visible = stamp+timedelta(minutes=parameter("entry_timeframe_minutes",1))
     if not visible <= cutoff < visible+timedelta(minutes=1):
         return None
     key = (scope,ticker.strip().upper())

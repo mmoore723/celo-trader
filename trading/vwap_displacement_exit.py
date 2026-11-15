@@ -104,7 +104,24 @@ def evaluate_vwap_displacement_exit(
         if not reached.empty:
             choices.append((pd.Timestamp(reached.iloc[0]["visible_at"]), "vwap_displacement_prior_high_target"))
 
-    five = _completed_bars(five_minute_bars, now=decision_cutoff, minutes=5)
+    from config.execution_parameters import exit_value
+    interval=exit_value('structural_timeframe_minutes',5)
+    if interval==5:
+        five = _completed_bars(five_minute_bars, now=decision_cutoff, minutes=5)
+    else:
+        # Use actual minute observations. Missing minutes never create a bar.
+        raw=_completed_bars(one_minute_bars,now=decision_cutoff,minutes=1)
+        chunks=[]
+        if not raw.empty:
+            offsets=(raw['time']-raw['time'].dt.normalize()-pd.Timedelta(hours=9,minutes=30)).dt.total_seconds()/60
+            raw['bucket']=(offsets//interval).astype(int)
+            for _,group in raw.groupby('bucket',sort=True):
+                start=group.iloc[0]['time'].normalize()+pd.Timedelta(minutes=570+int(group.iloc[0]['bucket'])*interval)
+                if list(group['time'])!=list(pd.date_range(start,periods=interval,freq='min')):continue
+                end=start+pd.Timedelta(minutes=interval)
+                if end>decision_cutoff:continue
+                chunks.append(dict(time=start,high=group.high.max(),low=group.low.min(),close=group.iloc[-1]['close'],volume=group.volume.sum(),visible_at=end))
+        five=pd.DataFrame(chunks)
     if not five.empty:
         weights = five["volume"].clip(lower=1.0)
         typical = (five["high"] + five["low"] + five["close"]) / 3.0
@@ -114,7 +131,7 @@ def evaluate_vwap_displacement_exit(
             & (five["close"] < five["session_vwap"])
         ]
         if not failed.empty:
-            choices.append((pd.Timestamp(failed.iloc[0]["visible_at"]), "vwap_displacement_5m_close_below_vwap"))
+            choices.append((pd.Timestamp(failed.iloc[0]["visible_at"]), f"vwap_displacement_{interval}m_close_below_vwap"))
 
     if choices:
         _when, reason = min(choices, key=lambda item: item[0])

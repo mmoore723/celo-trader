@@ -55,16 +55,21 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strateg
         if stamp in rows:
             return entry,'duplicate_bars'
         rows[stamp]=row
-    start=entry+timedelta(minutes=1)
-    while start+timedelta(minutes=1)<=min(now,cap):
-        decision=start+timedelta(minutes=1)
-        row=rows.get(start)
+    from config.execution_parameters import exit_value
+    interval=exit_value('structural_timeframe_minutes',1)
+    opening=entry.replace(hour=9,minute=30,second=0,microsecond=0)
+    start=opening+timedelta(minutes=(int((entry-opening).total_seconds()/60)//interval+1)*interval)
+    while start+timedelta(minutes=interval)<=min(now,cap):
+        decision=start+timedelta(minutes=interval)
+        bucket=[rows.get(start+timedelta(minutes=i)) for i in range(interval)]
+        row=bucket[-1] if all(b is not None for b in bucket) else None
         if row is None:
             return decision,'missing_bars' if now>decision+timedelta(minutes=5) else 'waiting_for_bars'
         try:
-            o,h,low,c=[float(row[k]) for k in ('open','high','low','close')]
-            if not all(math.isfinite(v) and v>0 for v in (o,h,low,c)) or not low<=min(o,c)<=max(o,c)<=h:
-                raise ValueError('invalid OHLC')
+            for item in bucket:
+                o,h,low,c=[float(item[k]) for k in ('open','high','low','close')]
+                if not all(math.isfinite(v) and v>0 for v in (o,h,low,c)) or not low<=min(o,c)<=max(o,c)<=h:
+                    raise ValueError('invalid OHLC')
         except (KeyError,TypeError,ValueError):
             return decision,'invalid_bars'
         if c<=midpoint if direction=='bullish' else c>=midpoint:
@@ -79,5 +84,8 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strateg
 PREVIOUS_ENTRY_HASH = '9b4c36afa8f65ea5841f520fd9a18238802b77681f80ccc583ed5439f98327ff'
 def compatible_state(actual, expected):
     if actual==expected:return True
-    if not isinstance(actual,dict) or actual.get('engine_hash')!=PREVIOUS_ENTRY_HASH:return False
-    return {**actual,'engine_hash':expected.get('engine_hash')}==expected
+    if not isinstance(actual,dict) or actual.get('engine_hash') not in (PREVIOUS_ENTRY_HASH,'6c30c61af5541dd908b31be05514db821fdc79d63a80d1a3e13f7624830fb500'):return False
+    revised={**actual,'engine_hash':expected.get('engine_hash')}
+    if revised.get('execution_exit_hash')=='153aa9353db78113c7b8f9a186ae0e2998782d353121234e59fa9f29c0518221':
+        revised['execution_exit_hash']=expected.get('execution_exit_hash')
+    return revised==expected

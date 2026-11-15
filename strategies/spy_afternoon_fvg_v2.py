@@ -86,11 +86,11 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                 and _trigger_close_confirms_direction("bullish", current.close, fast)
             ):
                 continue
-            if any(bar.low <= upper and bar.high >= lower for bar in intervening):
+            if parameter("require_first_retest",True) and any(bar.low <= upper and bar.high >= lower for bar in intervening):
                 continue
             midpoint = (lower + upper) / 2.0
-            if current.low <= upper and current.high >= lower and current.close > midpoint:
-                stop = min(current.low, current.close - atr)
+            if current.low <= upper and current.high >= lower and (not parameter("require_midpoint_close",True) or current.close > midpoint):
+                stop = min(current.low, current.close - parameter("stop_atr_multiple",1.) * atr)
                 risk = current.close - stop
                 if risk > 0:
                     return Signal(
@@ -106,7 +106,7 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                             "ema_fast": round(fast, 6), "ema_slow": round(slow, 6),
                             "trigger_close_confirmed_ema8": True,
                             "trigger": "upward_gap_retest", "v2_entry_reference": current.close,
-                            "v2_stop": stop, "v2_target": current.close + 2.0 * risk,
+                            "v2_stop": stop, "v2_target": current.close + parameter("reward_risk",2.) * risk,
                             "entry_bar_low": stop, "entry_bar_high": None,
                         },
                     )
@@ -117,11 +117,11 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                 and _trigger_close_confirms_direction("bearish", current.close, fast)
             ):
                 continue
-            if any(bar.low <= upper and bar.high >= lower for bar in intervening):
+            if parameter("require_first_retest",True) and any(bar.low <= upper and bar.high >= lower for bar in intervening):
                 continue
             midpoint = (lower + upper) / 2.0
-            if current.low <= upper and current.high >= lower and current.close < midpoint:
-                stop = max(current.high, current.close + atr)
+            if current.low <= upper and current.high >= lower and (not parameter("require_midpoint_close",True) or current.close < midpoint):
+                stop = max(current.high, current.close + parameter("stop_atr_multiple",1.) * atr)
                 risk = stop - current.close
                 if risk > 0:
                     return Signal(
@@ -137,7 +137,7 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                             "ema_fast": round(fast, 6), "ema_slow": round(slow, 6),
                             "trigger_close_confirmed_ema8": True,
                             "trigger": "downward_gap_retest", "v2_entry_reference": current.close,
-                            "v2_stop": stop, "v2_target": current.close - 2.0 * risk,
+                            "v2_stop": stop, "v2_target": current.close - parameter("reward_risk",2.) * risk,
                             "entry_bar_low": None, "entry_bar_high": stop,
                         },
                     )

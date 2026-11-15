@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 import math
 from config.engine_parameters import parameter
+from config.strategy_inputs import opening_end
 import statistics
 from typing import Callable, Sequence
 
@@ -119,26 +120,27 @@ def _orb_candidate(
         return None
     opening = rows.loc[
         (rows["time"].dt.time >= time(9, 30))
-        & (rows["time"].dt.time < time(9, 45))
+        & (rows["time"].dt.time < opening_end())
     ]
     expected = [
         opening.iloc[0]["time"].replace(hour=9, minute=30, second=0, microsecond=0)
         + timedelta(minutes=index)
-        for index in range(15)
+        for index in range(parameter("opening_range_minutes",15))
     ] if not opening.empty else []
-    if len(opening) != 15 or opening["time"].tolist() != expected:
+    if len(opening) != parameter("opening_range_minutes",15) or opening["time"].tolist() != expected:
         return None
     days = _daily_context(history, rows.iloc[-1]["time"].date())
     allowed, context = context_gate(days)
     if not allowed:
         return None
     or_high, or_low = float(opening["high"].max()), float(opening["low"].min())
-    midpoint = (or_high + or_low) / 2.0
+    midpoint = or_low+(or_high-or_low)*parameter("midpoint_fraction",.5)
+    rows = configured_frame(rows,now)
     for index, bar in rows.iterrows():
         clock = bar["time"].time()
-        if not time(9, 45) <= clock <= time(11, 0) or index < 20:
+        if not parameter("entry_start",opening_end()) <= clock <= parameter("entry_end",time(11,0)) or index < parameter("volume_lookback_bars",20):
             continue
-        average_volume = float(rows.iloc[index - 20:index]["volume"].mean())
+        average_volume = float(rows.iloc[index - parameter("volume_lookback_bars",20):index]["volume"].mean())
         volume_ratio = float(bar["volume"]) / average_volume if average_volume > 0 else 0.0
         if volume_ratio <= parameter('volume_ratio_minimum',1.5):
             continue
@@ -149,7 +151,7 @@ def _orb_candidate(
             direction = "bearish"
         if direction is None:
             continue
-        trigger = pd.Timestamp(bar["time"]) + timedelta(minutes=1)
+        trigger = pd.Timestamp(bar["time"]) + timedelta(minutes=parameter("entry_timeframe_minutes",1))
         key = (_execution_scope(execution_scope), ticker, strategy_id, trigger.isoformat())
         if key in _emitted:
             return None
@@ -220,18 +222,18 @@ def _hourly(history: pd.DataFrame, visible_at: pd.Timestamp) -> list[dict]:
     rows["session"] = rows["time"].dt.date
     rows["minute"] = rows["time"].dt.hour * 60 + rows["time"].dt.minute - (9 * 60 + 30)
     rows = rows.loc[(rows["minute"] >= 0) & (rows["minute"] < 390)]
-    rows["bucket"] = (rows["minute"] // 60).astype(int)
+    rows["bucket"] = (rows["minute"] // parameter("context_timeframe_minutes",parameter("entry_timeframe_minutes",60))).astype(int)
     output: list[dict] = []
     for (_session, bucket), group in rows.groupby(["session", "bucket"], sort=True):
         group = group.sort_values("time").drop_duplicates("time")
         offsets = group["minute"].astype(int).tolist()
-        if len(offsets) < 2:
+        if not offsets:
             continue
         deltas = [right - left for left, right in zip(offsets, offsets[1:]) if right > left]
-        cadence = int(statistics.median(deltas)) if deltas else 0
-        start = int(bucket) * 60
-        expected = list(range(start, start + 60, cadence)) if cadence in {1, 5} else []
-        if not expected or offsets != expected:
+        cadence = int(statistics.median(deltas)) if deltas else int(history["time"].diff().dt.total_seconds().dropna().median()/60) if len(history)>1 else 0
+        start = int(bucket) * parameter("context_timeframe_minutes",parameter("entry_timeframe_minutes",60))
+        expected = list(range(start, start + parameter("context_timeframe_minutes",parameter("entry_timeframe_minutes",60)), cadence)) if cadence in {1, 5} else []
+        if not expected or offsets != expected or pd.Timestamp(group.iloc[-1]["time"])+timedelta(minutes=cadence)>visible_at:
             continue
         output.append({
             "timestamp": pd.Timestamp(group.iloc[0]["time"]),
@@ -270,22 +272,22 @@ def _vwap_candidate(today: pd.DataFrame, *, ticker: str, strategy_id: str, execu
         vwaps.append(price_volume / volume)
     displacement = False
     for index, bar in enumerate(session):
-        if bar.timestamp.time() == time(10, 25):
+        if bar.timestamp.time() == (datetime.combine(bar.timestamp.date(),parameter("displacement_checkpoint",time(10,30)))-timedelta(minutes=parameter("entry_timeframe_minutes",5))).time():
             displacement = bar.close >= vwaps[index] * (1+parameter('displacement_fraction',.01))
-        if index < 1 or bar.timestamp.time() < time(9, 45):
+        if index < 1 or not parameter("entry_start",time(9,45)) <= bar.timestamp.time() < parameter("entry_end",time(16)):
             continue
         closes = [item.close for item in session[max(0, index - parameter('reclaim_ema_period',9)+1):index + 1]]
         ema9 = _ema(closes, parameter('reclaim_ema_period',9))
         previous_close, previous_vwap = session[index - 1].close, vwaps[index - 1]
         current_vwap = vwaps[index]
         touch_reclaim = previous_close > previous_vwap and bar.low <= current_vwap and bar.close > ema9
-        previous_high = max(item.high for item in session[:index])
+        previous_high = max(item.high for item in session[max(0,index-parameter("prior_extreme_lookback_bars",2000)):index])
         if not touch_reclaim or previous_high <= bar.close:
             continue
-        visible_at = pd.Timestamp(bar.timestamp) + timedelta(minutes=5)
+        visible_at = pd.Timestamp(bar.timestamp) + timedelta(minutes=parameter("entry_timeframe_minutes",5))
         hourly = _hourly(history, visible_at)
         ker = _kaufman([item["close"] for item in hourly], parameter('efficiency_period',10))
-        context_ok = ker is not None and ker > parameter('efficiency_minimum',.60) if strategy_id == VWAP_KER10_LONG else displacement and bar.timestamp.time() >= time(10, 30)
+        context_ok = ker is not None and ker > parameter('efficiency_minimum',.60) if strategy_id == VWAP_KER10_LONG else displacement and bar.timestamp.time() >= parameter("displacement_checkpoint",time(10,30))
         if not context_ok:
             continue
         key = (_execution_scope(execution_scope), ticker, strategy_id, visible_at.isoformat())
@@ -368,7 +370,7 @@ def evaluate_squeeze_macd(today: pd.DataFrame, ticker: str = "", execution_scope
     bar = hourly[index]
     if not (squeeze[index - 1] and bar["close"] > upper[index] and hist[index] > 0 and hist[index] > hist[index - 1]):
         return None
-    trigger = pd.Timestamp(bar["timestamp"]) + timedelta(minutes=60)
+    trigger = pd.Timestamp(bar["timestamp"]) + timedelta(minutes=parameter("entry_timeframe_minutes",60))
     key = (_execution_scope(execution_scope), ticker, SQUEEZE_MACD_LONG, trigger.isoformat())
     if key in _emitted:
         return None
@@ -396,3 +398,11 @@ ACTIVE_OBSERVERS = (
     (VWAP_DISPLACEMENT_LONG, evaluate_vwap_displacement),
     (SQUEEZE_MACD_LONG, evaluate_squeeze_macd),
 )
+
+
+def configured_frame(rows, now):
+    n=parameter('entry_timeframe_minutes',1)
+    if n==1:return rows
+    from trading.tested_strategy_research import _research_bars
+    bars=_research_bars(rows,now,n)
+    return pd.DataFrame([dict(time=pd.Timestamp(b.timestamp),open=b.open,high=b.high,low=b.low,close=b.close,volume=b.volume) for b in bars],columns=['time','open','high','low','close','volume'])

@@ -7,6 +7,7 @@ Only the newest completed bar can trigger; old signals are never repriced now.
 from datetime import time, timedelta
 import math
 from config.engine_parameters import parameter
+from config.strategy_inputs import opening_end
 import pandas as pd
 
 from strategies import context_strategy_observers as source
@@ -24,19 +25,20 @@ def _orb(today, strategy_id, now, history):
     if rows.empty or history.empty:
         return None
     opening = rows.loc[(rows['time'].dt.time >= time(9,30)) &
-                       (rows['time'].dt.time < time(9,45))]
+                       (rows['time'].dt.time < opening_end())]
     expected = [opening.iloc[0]['time'].replace(hour=9,minute=30,second=0,microsecond=0)
-                + timedelta(minutes=i) for i in range(15)] if not opening.empty else []
-    if len(opening) != 15 or opening['time'].tolist() != expected:
+                + timedelta(minutes=i) for i in range(parameter("opening_range_minutes",15))] if not opening.empty else []
+    if len(opening) != parameter("opening_range_minutes",15) or opening['time'].tolist() != expected:
         return None
     gate = source._nr7_inside_gate if strategy_id == source.ORB_NR7_INSIDE else source._atr10_gate
     allowed, context = gate(source._daily_context(history, rows.iloc[-1]['time'].date()))
-    if not allowed or len(rows) < 21:
+    rows = source.configured_frame(rows,now)
+    if not allowed or len(rows) < parameter("volume_lookback_bars",20)+1:
         return None
     bar = rows.iloc[-1]
-    if not time(9,45) <= bar['time'].time() <= time(11):
+    if not parameter('entry_start',opening_end()) <= bar['time'].time() <= parameter('entry_end',time(11)):
         return None
-    average = float(rows.iloc[-21:-1]['volume'].mean())
+    average = float(rows.iloc[-(parameter("volume_lookback_bars",20)+1):-1]['volume'].mean())
     ratio = float(bar['volume']) / average if average > 0 else 0.0
     if ratio <= parameter('volume_ratio_minimum',1.5):
         return None
@@ -46,9 +48,9 @@ def _orb(today, strategy_id, now, history):
     if direction is None:
         return None
     return Signal(confidence=.8, strategy_id=strategy_id, direction=direction,
-        rvol=float(bar.get('rvol',0) or 0), trigger_bar=pd.Timestamp(bar['time'])+timedelta(minutes=1),
+        rvol=float(bar.get('rvol',0) or 0), trigger_bar=pd.Timestamp(bar['time'])+timedelta(minutes=parameter('entry_timeframe_minutes',1)),
         meta={**context, 'or_high':round(high,6), 'or_low':round(low,6),
-              'or_midpoint':round((high+low)/2,6), 'volume_ratio_20':round(ratio,6),
+              'or_midpoint':round(low+(high-low)*parameter("midpoint_fraction",.5),6), 'volume_ratio_20':round(ratio,6),
               'entry_timing':'completed_1m_breakout_then_next_quote',
               'exit_plan':'30% partial, 100% runner, or 1m close through opening-range midpoint'})
 
@@ -67,21 +69,21 @@ def _vwap(today, strategy_id, now, history):
         vwaps.append(pv/volume)
     index = len(session)-1
     bar = session[index]
-    if index < 1 or bar.timestamp.time() < time(9,45):
+    if index < 1 or not parameter("entry_start",time(9,45)) <= bar.timestamp.time() < parameter("entry_end",time(16)):
         return None
     ema9 = source._ema([item.close for item in session[max(0,index-parameter('reclaim_ema_period',9)+1):index+1]],parameter('reclaim_ema_period',9))
     vwap = vwaps[index]
     if not (session[index-1].close > vwaps[index-1] and bar.low <= vwap and bar.close > ema9):
         return None
-    previous_high = max(item.high for item in session[:index])
+    previous_high = max(item.high for item in session[max(0,index-parameter("prior_extreme_lookback_bars",2000)):index])
     if previous_high <= bar.close:
         return None
-    visible = pd.Timestamp(bar.timestamp)+timedelta(minutes=5)
+    visible = pd.Timestamp(bar.timestamp)+timedelta(minutes=parameter("entry_timeframe_minutes",5))
     ker = source._kaufman([item['close'] for item in source._hourly(history,visible)],parameter('efficiency_period',10))
-    displacement = any(item.timestamp.time() == time(10,25) and item.close >= vwaps[i]*(1+parameter('displacement_fraction',.01))
+    displacement = any(item.timestamp.time() == (pd.Timestamp.combine(bar.timestamp.date(),parameter("displacement_checkpoint",time(10,30)))-timedelta(minutes=parameter("entry_timeframe_minutes",5))).time() and item.close >= vwaps[i]*(1+parameter('displacement_fraction',.01))
                        for i,item in enumerate(session))
     allowed = (ker is not None and ker > parameter('efficiency_minimum',.60) if strategy_id == source.VWAP_KER10_LONG
-               else displacement and bar.timestamp.time() >= time(10,30))
+               else displacement and bar.timestamp.time() >= parameter("displacement_checkpoint",time(10,30)))
     if not allowed:
         return None
     return Signal(confidence=.8,strategy_id=strategy_id,direction='bullish',rvol=0.0,

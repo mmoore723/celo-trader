@@ -48,14 +48,14 @@ def latest_candidate(bars):
                                else current.close < previous.low and current.close < fast)
                     if reclaim:
                         context = source.describe_price_action(history,atr=atr,fast_ema=fast,slow_ema=slow,vwap=vwap)
-                        stop = min(leg.pullback_extreme,current.close-atr) if bullish else max(leg.pullback_extreme,current.close+atr)
+                        stop = min(leg.pullback_extreme,current.close-parameter("stop_atr_multiple",1.)*atr) if bullish else max(leg.pullback_extreme,current.close+parameter("stop_atr_multiple",1.)*atr)
                         risk = current.close-stop if bullish else stop-current.close
-                        if source._has_directional_confirmation(context,leg.direction) and risk > 0 and index == len(bars)-1:
+                        if (not parameter("require_directional_confirmation",True) or source._has_directional_confirmation(context,leg.direction)) and risk > 0 and index == len(bars)-1:
                             return Signal(confidence=.8,strategy_id=STRATEGY_ID,direction=leg.direction,rvol=current.rvol,
                                 trigger_bar=current.timestamp,meta={**context.features(),
                                     'v2_hypothesis':'two_leg_impulse_vwap_hold_pullback_1m_reclaim',
                                     'validated_entry_rule':'after_0945_vwap_ema_aligned_1atr_impulse_pullback_fast_ema_then_directionally_confirmed_completed_1m_reclaim',
-                                    'entry_timing':'completed_1m_reclaim_then_next_1m_option_ask','directional_confirmation':True,
+                                    'entry_timing':'completed_1m_reclaim_then_next_1m_option_ask','directional_confirmation':source._has_directional_confirmation(context,leg.direction),
                                     'reference_945':round(reference,6),'vwap':round(vwap,6),
                                     'fast_ema':round(fast,6),'slow_ema':round(slow,6),'atr':round(atr,6),
                                     'impulse_extreme':round(leg.impulse_extreme,6),
@@ -95,7 +95,7 @@ def update(state,today,*,ticker,now,scope):
     signal = latest_candidate(bars)
     if signal is None:
         return None,'waiting_for_impulse_pullback_reclaim'
-    visible = signal.trigger_bar+pd.Timedelta(minutes=1)
+    visible = signal.trigger_bar+pd.Timedelta(minutes=parameter("entry_timeframe_minutes",1))
     if not visible <= cutoff < visible+pd.Timedelta(minutes=1):
         return None,'stale_reclaim'
     key = (scope,ticker.strip().upper())

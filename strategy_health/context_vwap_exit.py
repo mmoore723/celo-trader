@@ -39,7 +39,10 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strateg
     if not expected or not compatible_state(meta.get('authored_exit_state'),expected['authored_exit_state']):
         return entry,'missing_exit_state'
     opening, cap = entry.replace(hour=9,minute=30), entry.replace(hour=15,minute=55)
-    if entry.minute%5 or entry.second or entry.microsecond or not opening<=entry<cap:
+    from config.execution_parameters import exit_value
+    from config.engine_parameters import parameter
+    interval=exit_value('structural_timeframe_minutes',5)
+    if int((entry-opening).total_seconds()/60)%parameter('entry_timeframe_minutes',5) or entry.second or entry.microsecond or not opening<=entry<cap:
         return entry,'invalid_entry'
     if direction != 'bullish':
         return entry,'invalid_direction'
@@ -77,7 +80,7 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strateg
             return decision,'invalid_bars'
         bucket.append((h,low,c,v))
         reached=start>entry and h>=target
-        if decision.minute%5==0:
+        if int((decision-opening).total_seconds()/60)%interval==0:
             weight=max(sum(item[3] for item in bucket),1.0)
             typical=(max(item[0] for item in bucket)+min(item[1] for item in bucket)+c)/3
             price_volume+=typical*weight
@@ -85,7 +88,7 @@ def first_exit(frame, *, entry_at, entry_quote_at, direction, meta, now, strateg
             bucket=[]
             # Equal-time target/stop uses the saved replay's target-first tie.
             if decision>entry and not reached and c<price_volume/volume:
-                return decision,'five_minute_close_below_vwap'
+                return decision,'five_minute_close_below_vwap' if interval==5 else f'{interval}_minute_close_below_vwap'
         if reached:
             return decision,'prior_high_target'
         if decision==cap:

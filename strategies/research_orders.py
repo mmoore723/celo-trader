@@ -1,3 +1,4 @@
+from config.engine_parameters import parameter
 from datetime import timedelta
 from functools import partial
 import pandas as pd
@@ -79,7 +80,7 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
         signal = native(frame, ticker='SPY', execution_scope='approved_qqq_trend:' + scope + ':' + symbol)
         if signal is not None:
             signal.meta.update(underlying_stop=signal.meta['v2_stop'], underlying_target=signal.meta['v2_target'],
-                               timeframe_minutes=5)
+                               timeframe_minutes=parameter("entry_timeframe_minutes",5))
     elif strategy_id == 'RESEARCH_FAILED_RANGE_V2':
         from trading.failed_range_research import evaluate as native
         signal = native(frame, ticker=symbol, scope='research_worker:approved_order:' + scope, now=cutoff)
@@ -100,8 +101,8 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
         history = load_scanner_candles(symbol, broker_account_id=get_settings().get('active_broker_account_id') or None,
                                        timeframe='1Min', limit=10_000, required_source=FEED_POLICY)
         source = pd.concat([history, pd.DataFrame(frame)], ignore_index=True) if not history.empty else frame
-        bars = _research_bars(source, cutoff, spec.timeframe)
-        if strategy_id == 'V2_GAP_FILL_RTH':
+        bars = _research_bars(source, cutoff, parameter("entry_timeframe_minutes", spec.timeframe))
+        if strategy_id == 'V2_GAP_FILL_RTH' and parameter('entry_timeframe_minutes',spec.timeframe)==5:
             from trading.gap_fill_history import with_history
             native = load_scanner_candles(symbol, broker_account_id=get_settings().get('active_broker_account_id') or None,
                                           timeframe='5Min', limit=1500, required_source=FEED_POLICY)
@@ -113,17 +114,17 @@ def evaluate(frame, ticker='', execution_scope=None, now=None, *, strategy_id):
         candidate = _latest_candidate(engine, bars, research_strategy_id=spec.source)
         if candidate is None or (library.allowed_sides is not None and candidate.side not in library.allowed_sides):
             return None
-        trigger = pd.Timestamp(candidate.timestamp) + timedelta(minutes=spec.timeframe)
+        trigger = pd.Timestamp(candidate.timestamp) + timedelta(minutes=parameter("entry_timeframe_minutes", spec.timeframe))
         if not trigger <= cutoff < trigger + timedelta(minutes=1):
             return None
         from strategy_health.structural_capture import entry_levels
         signal = Signal(strategy_id=strategy_id, direction='bullish' if candidate.side is Side.LONG else 'bearish',
                         confidence=.70, rvol=0.0, trigger_bar=trigger,
                         meta={**dict(candidate.features), 'underlying_stop': float(candidate.stop),
-                              **entry_levels(spec.source, candidate, bars, engine, spec.timeframe),
+                              **entry_levels(spec.source, candidate, bars, engine, parameter("entry_timeframe_minutes", spec.timeframe)),
                               'underlying_target': float(candidate.target),
-                              'timeframe_minutes': spec.timeframe,
-                              'entry_timing': f'completed_{spec.timeframe}m_signal_then_next_quote',
+                              'timeframe_minutes': parameter("entry_timeframe_minutes", spec.timeframe),
+                              'entry_timing': f'completed_{parameter("entry_timeframe_minutes", spec.timeframe)}m_signal_then_next_quote',
                               **candidate_metadata(spec.source, engine)})
     signal = finalize(signal, strategy_id, symbol)
     if signal is not None:

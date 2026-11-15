@@ -14,6 +14,7 @@ import pandas as pd
 
 from strategies.market_structure import Bar, Side, TrendContinuation, TrendContinuationConfig, resample_regular_session
 from strategies.base import Signal
+from config.engine_parameters import parameter
 
 
 STRATEGY_ID = "V2_SPY_TREND_CONT"
@@ -58,7 +59,7 @@ def _complete_five_minute_bars(
     )
     # The resampler rejects an unfinished 5-minute bucket.  This protects the
     # live adapter from treating a forming bar as the closed bar used in study.
-    return resample_regular_session(one_minute, source_minutes=1, target_minutes=5)
+    return resample_regular_session(one_minute, source_minutes=1, target_minutes=parameter("entry_timeframe_minutes",5))
 
 
 def evaluate(
