@@ -188,3 +188,10 @@ test('missed saved checks and chart challenges connect to visual coaching, witho
  assert.match(visual,/setAnswer\(null\);setChecked\(false\);setStep\(0\)/);
  assert.match(visual,/useId/);
 });
+
+ test('visual coaching responds to available panel width, not just screen width', () => {
+ const css=readFileSync(new URL('../src/components/learning/portal.css',import.meta.url),'utf8');
+ assert.match(css,/container-type:inline-size/);
+ assert.match(css,/@container\(min-width:660px\)/);
+ assert.match(css,/@media\(max-width:1100px\)\{\.portal-layout\{grid-template-columns:1fr/);
+ });
