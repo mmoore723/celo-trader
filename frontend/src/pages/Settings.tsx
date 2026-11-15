@@ -1,3 +1,4 @@
+import {SettingHelp} from '../components/settings/StrategyConfiguration';
 import { BrokerKeyGuide } from "../components/BrokerKeyGuide";
 /**
  * Settings.tsx — Bot configuration form + API credentials.
@@ -510,7 +511,7 @@ export function Settings() {
               className="input w-20"
             /><span className="text-sm">%</span></div>
           </div>}
-          <p className="text-xs" style={{ color: "var(--ink-muted)" }}>For strategies without a premium stop, the full option cost uses this budget. This is a sizing limit, not an automatic exit.</p>
+          <SettingHelp name="risk_per_trade"/>
 
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>
@@ -530,6 +531,7 @@ export function Settings() {
             <label className="text-sm" style={{ color: "var(--ink)" }}>Maximum contract cost<span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>Percent of account balance</span></label>
             <div className="flex items-center gap-1"><input type="number" step="1" min="5" max="100" value={form.max_position_dollars_pct ?? 15} onChange={(e) => set("max_position_dollars_pct", parseFloat(e.target.value))} className="input w-20" /><span className="text-sm">%</span></div>
           </div>
+          <SettingHelp name="max_position_dollars_pct"/>
           <div className="flex items-center justify-between gap-4">
             <label className="text-sm" style={{ color: "var(--ink)" }}>Daily loss stop<span className="block text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>Pauses new entries for the day</span></label>
             <div className="flex items-center gap-1"><input type="number" step="1" min="3" max="30" value={form.daily_loss_hard_cap_pct ?? 10} onChange={(e) => set("daily_loss_hard_cap_pct", parseFloat(e.target.value))} className="input w-20" /><span className="text-sm">%</span></div>

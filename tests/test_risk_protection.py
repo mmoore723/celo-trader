@@ -90,3 +90,14 @@ class ProtectionTests(unittest.TestCase):
     def test_bad_fee_assumption_rejected(self):
         with patch('config.COMMISSION_PER_CONTRACT',float('nan')):
             with self.assertRaises(ValueError): full_debit_risk(1)
+
+    @patch('config.COMMISSION_PER_CONTRACT', .65)
+    @patch('risk.sizing.get_settings', return_value={'risk_per_trade': .20, 'max_position_dollars_pct': 40, 'growth_mode': False})
+    def test_published_sizing_help_example_matches_engine(self, _settings):
+        r = RiskManager(10000)
+        r.effective_risk_pct = lambda _: .20
+        self.assertEqual(full_debit_risk(2), 201.30)
+        self.assertEqual(r.calculate_contracts(2, 10000), 9)
+        self.assertGreater(10 * full_debit_risk(2), 2000)
+        with patch('risk.sizing.get_settings', return_value={'risk_per_trade': .20, 'max_position_dollars_pct': 10}):
+            self.assertEqual(r.calculate_contracts(2, 10000), 5)

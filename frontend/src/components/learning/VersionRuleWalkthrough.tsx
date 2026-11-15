@@ -21,8 +21,8 @@ export function VersionRuleWalkthrough({version, steps, exit, selectedPolicy}: {
     {name:'Size', title:'Choose the budget before the contracts.',
       idea:'A standard stock-option contract represents 100 shares. A $2 option costs $200 per contract, before fees.',
       why:'For these bot strategies, the sizing calculation budgets the whole option cost. It does not assume a support-line stop guarantees a smaller loss.',
-      example:'Practice budget: $10,000 account × 2% = $200. At $2 per option, that fits one contract. Two would cost $400. These are example numbers, not your saved settings.',
-      detail:['Bot calculation: account value × risk percentage ÷ (planned option price × 100). Round down to whole contracts.', 'The spending cap and available buying power can reduce that number. If the budget cannot cover one contract, skip the trade.', 'Only a plan with a defined option-price stop can use entry premium minus stop premium to estimate planned loss. A stock support level alone cannot tell you the option’s sale price. Even a stop can slip.']},
+      example:'Practice budget: $10,000 account × 20% = $2,000. A $2 option costs $200 plus $1.30 modeled buying and selling fees, or $201.30 per contract. Nine fit; ten cost $2,013 and do not. These are examples, not your saved settings.',
+      detail:['Bot calculation: account value × risk percentage ÷ (planned option price × 100 + configured buying and selling fees). Round down to whole contracts.', 'The spending cap and available buying power can reduce that number. If the budget cannot cover one contract, skip the trade.', 'The bot does not use a promised stop price to buy more contracts. It budgets the full option cost plus fees even when a stop is active.']},
   ];
   const lesson = lessons[stage];
   return <section className="rounded-xl border p-4 space-y-3" aria-label="Entry exit stops and sizing">

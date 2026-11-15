@@ -69,3 +69,16 @@ test('every setting has a short summary and collapsed practical help',async()=>{
   assert.match(expanded,/Learn more/,name);
  }
 });
+
+test('sizing help explains full debit and fees without assumed stop credit',async()=>{
+ const {settingHelp}=await import('../src/lib/strategySettingHelp.js');
+ const html=renderToStaticMarkup(createElement(SettingHelp,{name:'risk_per_trade'}));
+ assert.match(html,/\$201\.30/);
+ assert.match(html,/rounds down to 9 contracts/);
+ assert.match(html,/stop does not earn extra contracts/);
+ assert.doesNotMatch(html,/estimated \$25/);
+ assert.match(settingHelp.max_position_dollars_pct.detail,/smaller number/);
+ const settings=readFileSync(new URL('../src/pages/Settings.tsx',import.meta.url),'utf8');
+ assert.match(settings,/<SettingHelp name="risk_per_trade"/);
+ assert.match(settings,/<SettingHelp name="max_position_dollars_pct"/);
+});

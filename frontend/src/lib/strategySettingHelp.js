@@ -716,17 +716,17 @@ export const settingHelp = {
   },
   "risk_per_trade": {
     "label": "Risk budget for one trade (%)",
-    "meaning": "Sets the account amount used to calculate how many contracts to buy. Example: 1% of a $10,000 account is a $100 risk budget. At an estimated $25 risk per contract, that allows four contracts before other limits. Actual losses can exceed the estimate.",
-    "effect": "Higher can buy more contracts and increase losses. The risk estimate is not a guaranteed maximum loss.",
-    "summary": "Sets the account amount used to calculate how many contracts to buy.",
-    "detail": "Example: 1% of a $10,000 account is a $100 risk budget. At an estimated $25 risk per contract, that allows four contracts before other limits. Actual losses can exceed the estimate."
+    "meaning": "Budgets the full option cost plus modeled buying and selling fees. Example only: a $10,000 account at 20% gives a $2,000 budget. A $2 option costs $200 per standard contract. With modeled fees of $0.65 to buy and $0.65 to sell, budget $201.30 per contract. $2,000 divided by $201.30 rounds down to 9 contracts. Ten would need $2,013, which exceeds the budget. The bot uses the planned entry price and configured fees. A stop does not earn extra contracts by assuming a smaller loss. If one contract does not fit, the bot buys none. Other account checks can reduce or prevent the order.",
+    "effect": "Higher can buy more contracts and put more money at risk. This sizes the trade; it does not create a stop or guarantee an exit price.",
+    "summary": "Budgets the full option cost plus modeled buying and selling fees.",
+    "detail": "Example only: a $10,000 account at 20% gives a $2,000 budget. A $2 option costs $200 per standard contract. With modeled fees of $0.65 to buy and $0.65 to sell, budget $201.30 per contract. $2,000 divided by $201.30 rounds down to 9 contracts. Ten would need $2,013, which exceeds the budget. The bot uses the planned entry price and configured fees. A stop does not earn extra contracts by assuming a smaller loss. If one contract does not fit, the bot buys none. Other account checks can reduce or prevent the order."
   },
   "max_position_dollars_pct": {
     "label": "Most of the account to spend on one trade (%)",
-    "meaning": "Caps how much you can pay for one position. Example: 10% of a $10,000 account is $1,000. A $2 option costs $200 per standard contract, so that cap allows at most five before fees and other limits.",
+    "meaning": "Adds a separate cap on the option purchase cost. Using the same example: 40% of a $10,000 account is a $4,000 purchase-cost cap. At $200 per contract that cap allows 20, but the $2,000 risk budget including fees allows only 9. The bot uses the smaller number, then applies available buying power and other checks. These are example values, not a change to your settings.",
     "effect": "Higher permits a more expensive position; other sizing and buying-power limits still apply.",
-    "summary": "Caps how much you can pay for one position.",
-    "detail": "Example: 10% of a $10,000 account is $1,000. A $2 option costs $200 per standard contract, so that cap allows at most five before fees and other limits."
+    "summary": "Adds a separate cap on the option purchase cost.",
+    "detail": "Using the same example: 40% of a $10,000 account is a $4,000 purchase-cost cap. At $200 per contract that cap allows 20, but the $2,000 risk budget including fees allows only 9. The bot uses the smaller number, then applies available buying power and other checks. These are example values, not a change to your settings."
   },
   "partial_sell_pct": {
     "label": "How much to sell at the first target (%)",

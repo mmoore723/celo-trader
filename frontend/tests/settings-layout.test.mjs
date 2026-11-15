@@ -16,7 +16,7 @@ test('Manual risk is visible and accepts the same 100-percent ceiling as the API
   assert.match(source, /Automatic: \$\{form.risk_pct\}%/);
   assert.match(source, /Your choice: \$\{form.risk_pct\}%/);
   assert.match(source, /id="trade-risk-percent"[\s\S]*?max="100"[\s\S]*?value=\{form.risk_pct\}/);
-  assert.match(source, /full option cost uses this budget/);
+  assert.match(source, /<SettingHelp name="risk_per_trade"/);
 });
 
 test('Settings uses available page width and one/two/three content-width columns', () => {
