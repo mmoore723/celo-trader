@@ -119,6 +119,6 @@ def describe_execution(settings,sid,ticker,policy=None):
     overrides=saved(settings,sid,ticker)
     current={k:{**v,**overrides.get(k,{})} for k,v in baseline.items()}
     if chosen and chosen.get('contract_policy') and not overrides.get('contract'):current['contract']['primary_policy']=chosen['contract_policy']
-    if chosen and chosen.get('exit_minutes') is not None and not overrides.get('native_exit'):current['native_exit']['hold_minutes']=chosen['exit_minutes']
+    if chosen and chosen.get('exit_minutes') is not None and 'hold_minutes' not in overrides.get('native_exit',{}):current['native_exit']['hold_minutes']=chosen['exit_minutes']
     if policy and policy.get('replace_native_exit'):current['native_exit']={}
     return current

@@ -140,13 +140,13 @@ def describe(settings,sid,ticker,version):
         policy_warning=str(exc)
         clean={**settings,KEY:{**(settings.get(KEY) or {}),scope_key(settings,sid,ticker,version):{k:v for k,v in saved.items() if k!='profit'}}}
         policy=freeze_selection(clean,sid,ticker,version).get('premium_exit_policy')
-    from config.execution_parameters import describe_execution
+    from config.execution_parameters import describe_execution, defaults as execution_defaults
     from config.research_pair_policy import selected
     from config.strategy_catalog import reviewed_exit_summary
     return {'strategy_id':sid,'ticker':ticker,'version':version,'mode':'paper' if settings.get('paper_trading',True) else 'live',
             'revision':revision(saved),'entry':[{'key':k,'label':k.replace('_',' ').capitalize(),
              'value':encode(v),'default':encode(defaults[k]),'type':'boolean' if isinstance(v,bool) else 'time' if isinstance(v,time) else 'date' if isinstance(v,date) else 'number'} for k,v in current.items()],
-            'execution':describe_execution(settings,sid,ticker,policy), 'execution_overrides':saved.get('execution',{}), 'policy_warning':policy_warning,'exit_policy':policy,'selected_contract_timer':selected(settings,sid,ticker,version),
+            'execution':describe_execution(settings,sid,ticker,policy), 'execution_defaults':execution_defaults(sid,ticker), 'execution_overrides':saved.get('execution',{}), 'policy_warning':policy_warning,'exit_policy':policy,'selected_contract_timer':selected(settings,sid,ticker,version),
             'native_exit':('Custom native parameters below apply to new entries. Existing positions keep their saved rules.' if saved.get('execution',{}).get('native_exit') else reviewed_exit_summary(sid)),
             'profit_overrides':None if policy_warning else saved.get('profit'), 'contract_timer_overrides':saved.get('contract_timer'),
             'contract_editable':sid in SPECS,
@@ -260,9 +260,11 @@ def validate_engine(sid, values):
     """Run the engine's own validation before accepting a saved configuration."""
     from config.research_order_specs import SPECS
     spec=SPECS.get(sid)
-    if spec and spec.adapter=='library' and spec.source not in CONTEXT_DEFAULTS:
+    if spec and spec.adapter=='library' and spec.source not in CONTEXT_DEFAULTS and sid not in ('RESEARCH_QQQ_TREND_V2','RESEARCH_FAILED_RANGE_V2'):
         from trading.tested_strategy_research import strategy_details
-        engine=strategy_details(spec.source).factory()
+        library=strategy_details(spec.source)
+        if library is None:raise ValueError('This strategy has no configurable library engine')
+        engine=library.factory()
         replace(engine.config,**values)
     elif sid=='V2_TREND_CONT':
         from research.engine.strategies.trend_continuation import TrendContinuationConfig
@@ -271,6 +273,8 @@ def validate_engine(sid, values):
         from strategies.market_structure import TrendContinuationConfig
         replace(TrendContinuationConfig(),**values)
     merged={**definition(sid),**values}
+    if 'retouch_tolerance_pct' in merged and not 0<=merged['retouch_tolerance_pct']<.01:
+        raise ValueError('Retouch tolerance must be a fraction from 0 up to, but not including, 0.01 (1%)')
     for key,value in merged.items():
         if isinstance(value,bool):continue
         if key in ('efficiency_minimum','displacement_fraction') and not 0<value<1:

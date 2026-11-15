@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'partial-configuration-20261114.1'
+REVISION = 'configuration-audit-20261114.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

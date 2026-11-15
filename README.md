@@ -634,3 +634,7 @@ Admin **Users > Run as user** opens an active non-Admin account with that user's
 Rollback: before any custom-configured entry exists, revert this release through deploy.sh while retaining settings and audit records. Once a position has a configured frozen policy, preserve these policy readers and recovery handlers until it closes. Use a forward correction rather than reverting to code that cannot manage that position. Never erase the configuration store or change trading switches during rollback.
 
 Configuration controls also expose the first profit-sale percentage (above 0 and below 100, rounded down to whole contracts) and fail-safe candle timeframe (1, 2, 3, 4, 5, 10, 15, 20, 30 or 60 minutes). Defaults remain 50% and 5 minutes. Custom intervals are built only from complete, contiguous one-minute candles on clock-aligned boundaries. A missing minute prevents the affected candle from qualifying. The chosen values freeze at entry; existing positions and saved account settings are not migrated.
+
+### Strategy configuration audit
+
+The [November 14 configuration audit](docs/audits/2026-11-14-strategy-configuration.md) lists the 39 execution routes, connected controls, remaining fixed rules and save-to-execution checks. The configuration panel does not make every algorithm choice editable. Current account values are preserved; changes require an explicit save and apply to future entries.

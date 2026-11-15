@@ -1,0 +1,1 @@
+export function effectiveExecution(defaults:Record<string,Record<string,number|string|boolean>>,overrides:Record<string,Record<string,number|string|boolean>>,selected:{exit_minutes:number|null;contract_policy:string|null}|null|undefined,replacement?:boolean):Record<string,Record<string,number|string|boolean>>;
