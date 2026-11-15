@@ -1,0 +1,2 @@
+import{y as e}from"./index-B1X6_g7i.js";var t=e(`pause`,[[`rect`,{x:`14`,y:`3`,width:`5`,height:`18`,rx:`1`,key:`kaeet6`}],[`rect`,{x:`5`,y:`3`,width:`5`,height:`18`,rx:`1`,key:`1wsw3u`}]]);export{t};
+//# sourceMappingURL=pause-BF2cw0mE.js.map

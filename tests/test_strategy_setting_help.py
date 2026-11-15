@@ -13,8 +13,8 @@ class SettingHelpTests(unittest.TestCase):
             for key in definition(sid):
                 with self.subTest(strategy=sid, key=key):
                     self.assertIn(key, help_text)
-                    for field in ('label', 'meaning', 'effect'):
+                    for field in ('label', 'meaning', 'effect', 'summary', 'detail'):
                         self.assertTrue(help_text[key][field])
-        self.assertIn('0.01 means 1%', help_text['minimum_risk_pct']['meaning'])
+        self.assertIn('Enter 0.01 for 1%', help_text['minimum_risk_pct']['meaning'])
         self.assertIn('not an account risk', help_text['minimum_risk_pct']['effect'])
         self.assertIn('not option-price', help_text['giveback_pct']['effect'])

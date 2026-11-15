@@ -55,3 +55,17 @@ test('setting help keeps examples and effects collapsed by default',()=>{
  assert.match(expanded,/10% of \$30 peak profit is \$3/);
  assert.match(expanded,/Changing it:/);
 });
+
+test('every setting has a short summary and collapsed practical help',async()=>{
+ const {settingHelp}=await import('../src/lib/strategySettingHelp.js');
+ for(const [name,help] of Object.entries(settingHelp)){
+  assert.ok(help.detail.trim(),`${name}: missing example or explanation`);
+  assert.ok(help.summary.length<=180,`${name}: summary too long`);
+  assert.doesNotMatch(help.label,/fraction|allowance|lookback/i,`${name}: technical label`);
+  const html=renderToStaticMarkup(createElement(SettingHelp,{name}));
+  const [visible,expanded]=html.split('<details');
+  assert.doesNotMatch(visible,/Example:|Changing it:/,name);
+  assert.doesNotMatch(expanded,/^ open/,name);
+  assert.match(expanded,/Learn more/,name);
+ }
+});
