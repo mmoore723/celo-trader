@@ -74,7 +74,7 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
         current=conn.execute('SELECT contracts FROM trades WHERE id=?', (trade['id'],)).fetchone()
         state, decision=trend_advance(previous,entry=float(trade['entry_price']),
             quantity=int(current[0]),sold=sold_quantity(conn,trade),quote=quote,now=now,symbol=trade['contract_symbol'],
-            gain_pct=policy.get('gain_pct',25),giveback_pct=policy.get('giveback_pct',25))
+            gain_pct=policy.get('gain_pct',25),giveback_pct=policy.get('giveback_pct',25),partial_sell_pct=policy.get('partial_sell_pct',50))
         if spec:
             from trading.adverse_candle_exit import apply
             state, protection=apply(state,trade=trade,quantity=int(current[0]),sold=sold_quantity(conn,trade),

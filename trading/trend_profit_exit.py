@@ -24,10 +24,21 @@ def partial_remaining(trade):
         sold = sold_quantity(conn, trade)
         row = conn.execute("SELECT contracts FROM trades WHERE id=? AND status='open' AND paper=1 AND broker_account_id IS ?",
                            (trade['id'], trade.get('broker_account_id'))).fetchone()
-        return max(0, (int(row[0])+sold)//2-sold) if row else 0
+        if not row:return 0
+        import json
+        frozen=conn.execute('SELECT strategy_context_json FROM trades WHERE id=?',(trade['id'],)).fetchone()
+        policy=json.loads(frozen[0] or '{}').get('premium_exit_policy',{})
+        return max(0, partial_target(int(row[0])+sold,policy.get('partial_sell_pct',50))-sold)
 
 
-def advance(state, *, entry, quantity, sold, quote, now, symbol, gain_pct=25, giveback_pct=25):
+def partial_target(original, percent=50):
+    # Round down to whole contracts, preserving the old odd-lot behavior.
+    if isinstance(percent,bool) or not 0 < Decimal(str(percent)) < 100:
+        raise ValueError('Partial sale must be above 0% and below 100%')
+    return int(Decimal(original)*Decimal(str(percent))/100)
+
+
+def advance(state, *, entry, quantity, sold, quote, now, symbol, gain_pct=25, giveback_pct=25, partial_sell_pct=50):
     """Use confirmed child fills, not attempted orders, to complete stage one."""
     gain = Decimal(str(gain_pct))/100
     keep = 1-Decimal(str(giveback_pct))/100
@@ -35,7 +46,7 @@ def advance(state, *, entry, quantity, sold, quote, now, symbol, gain_pct=25, gi
         raise ValueError("Invalid profit policy thresholds")
     out = dict(state)
     original = quantity+sold
-    target = original//2
+    target = partial_target(original,partial_sell_pct)
     out.update(original_quantity=original, partial_target=target, partial_filled=sold)
     if sold >= target:
         out.pop('partial_signal', None)
@@ -64,6 +75,8 @@ def valid_thresholds(policy):
     import math
     if policy.get('configuration_editor') != 1:
         return policy.get('gain_pct') == 10 and policy.get('giveback_pct') == 10
+    partial=policy.get('partial_sell_pct',50)
+    if type(partial) not in (int,float) or not math.isfinite(partial) or not 0<partial<100:return False
     return all(type(policy.get(k)) in (int,float) and math.isfinite(policy[k]) and 0<policy[k]<=limit
                for k,limit in [('gain_pct',1000),('giveback_pct',99)])
 
@@ -99,5 +112,6 @@ def policy_label(policy):
     suffix = '; no 30/90-minute timer' if policy.get('replace_native_exit') else '; native exit remains active'
     if policy.get('adverse_candle_failsafe'):
         spec=policy['adverse_candle_failsafe']
-        suffix += f"; before +{gain}%, sell all after {spec['consecutive_candles']} adverse completed 5-minute candles AND {spec['loss_pct']}% option loss"
-    return f'Take half at +{gain}%, then {giveback}% peak-profit giveback'+suffix
+        suffix += f"; before +{gain}%, sell all after {spec['consecutive_candles']} adverse completed {spec['timeframe_minutes']}-minute candles AND {spec['loss_pct']}% option loss"
+    amount='half' if policy.get('partial_sell_pct',50)==50 else str(policy['partial_sell_pct'])+'%'
+    return f'Take {amount} at +{gain}%, then {giveback}% peak-profit giveback'+suffix

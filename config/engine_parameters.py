@@ -224,10 +224,10 @@ def validate_risk(values):
 def validate_profit(values):
     from trading.trend_profit_exit import valid_thresholds
     from trading.adverse_candle_exit import validate
-    if not isinstance(values,dict) or set(values) != {'gain_pct','giveback_pct','adverse_candle_failsafe'}:
+    if not isinstance(values,dict) or not {'gain_pct','giveback_pct','adverse_candle_failsafe'}<=set(values) or set(values)-{'gain_pct','giveback_pct','adverse_candle_failsafe','partial_sell_pct'}:
         raise ValueError('Profit settings must include gain, giveback and the candle fail-safe')
     policy={**values,'configuration_editor':1}
-    if not valid_thresholds(policy):raise ValueError('Profit gain must be above 0% and at most 1000%; giveback above 0% and at most 99%')
+    if not valid_thresholds(policy):raise ValueError('Profit gain must be above 0% and at most 1000%; giveback above 0% and at most 99%; first-sale amount above 0% and below 100%')
     validate(policy)
     return values
 

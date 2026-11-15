@@ -454,6 +454,12 @@ def _manage_open_position(
             except Exception as _e5m:
                 logger.debug("5m bar fetch failed (%s): %s", ticker, _e5m)
 
+        from trading.adverse_candle_exit import configured_frame
+        import json as _policy_json
+        _policy_context=trade.get('strategy_context_json') or {}
+        if isinstance(_policy_context,str):_policy_context=_policy_json.loads(_policy_context)
+        _failsafe_frame = configured_frame(alpaca,ticker,_policy_context.get('premium_exit_policy'),now_et,ps,df_5m)
+
         _15m_bar_key = now_et.strftime("%Y-%m-%d %H:") + str(now_et.minute // 15)
         df_15m: Optional[pd.DataFrame] = ps.get("cached_15m_df")
         if ps.get("last_15m_fetch_key") != _15m_bar_key:
@@ -796,7 +802,7 @@ def _manage_open_position(
         # Supplemental approved paper exit. Native and safety exits have priority.
         if not should_exit:
             from trading.premium_policy import evaluate_position
-            should_exit, reason = evaluate_position(trade, quote, now_et, five_minute_bars=df_5m)
+            should_exit, reason = evaluate_position(trade, quote, now_et, five_minute_bars=_failsafe_frame)
 
         # Classification follows the selected branch; it never selects an exit.
         # Persist separately so a display failure cannot interrupt protection.
@@ -989,7 +995,7 @@ def _manage_open_position(
                 "INFO", "trading_logic",
                 f"🟢 Took 50% profit — sold {_sold_qty} contract"
                 f"{'s' if _sold_qty != 1 else ''} at ${fill_price:.2f} "
-                f"(+${partial_pnl:.2f}). " + ("The entry-time peak-profit giveback manages the remainder after the half-sale completes." if reason == 'stage1_trend_profit' else "ATR/swing trailing stop now active on remainder."),
+                f"(+${partial_pnl:.2f}). " + ("The entry-time peak-profit giveback manages the remainder after the configured first sale completes." if reason == 'stage1_trend_profit' else "ATR/swing trailing stop now active on remainder."),
             )
 
             try:

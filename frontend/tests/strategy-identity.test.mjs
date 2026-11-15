@@ -16,3 +16,9 @@ test("different Trend Continuation rules remain distinguishable", () => {
   assert.equal(strategyVersion("2.1.0"), "v2.1.0");
   assert.equal(strategyVersion(), "");
 });
+
+test('fail-safe labels use the recorded candle interval', async () => {
+  const { exitReason } = await import('../src/lib/strategyIdentity.js');
+  assert.equal(exitReason('adverse_3x4m_10pct_loss'), '3-Candle / 10% Loss Fail-Safe (4-minute candles)');
+  assert.equal(exitReason('adverse_3x5m_10pct_loss'), '3-Candle / 10% Loss Fail-Safe');
+});
