@@ -31,7 +31,13 @@ let candleCode=ts.transpileModule(read('components/learning/CandlePractice.tsx')
 for(const name of ['react','react/jsx-runtime']) candleCode=candleCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
 const candleModule='data:text/javascript;base64,'+Buffer.from(candleCode).toString('base64');
 const {CandlePractice,CandleAnatomy,candleParts,candleAnswers,candleWalkthrough}=await import(candleModule);
+let visualCode=ts.transpileModule(read('components/learning/VisualPractice.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
+visualCode=visualCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
+for(const name of ['react','react/jsx-runtime']) visualCode=visualCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
+const visualModule='data:text/javascript;base64,'+Buffer.from(visualCode).toString('base64');
+const {VisualPractice,TeachingDiagram,practiceChoices}=await import(visualModule);
 let workshopCode=ts.transpileModule(read('components/learning/LessonWorkshop.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
+workshopCode=workshopCode.replaceAll("'./VisualPractice'",JSON.stringify(visualModule)).replaceAll('"./VisualPractice"',JSON.stringify(visualModule));
 workshopCode=workshopCode.replaceAll("'./CandlePractice'",JSON.stringify(candleModule)).replaceAll('"./CandlePractice"',JSON.stringify(candleModule));
 workshopCode=workshopCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
 for(const name of ['react','react/jsx-runtime']) workshopCode=workshopCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
@@ -126,4 +132,59 @@ test('candle practice teaches correct body and wick geometry on green and red ca
  assert.match(html,/Read this candle/);assert.match(html,/How big is the body/);
  assert.doesNotMatch(html,/data-part=|trace the parts/,'initial question has no answer highlights');
  assert.doesNotMatch(read('components/learning/CandlePractice.tsx'),/fetch\(|api\.post|localStorage|sessionStorage/);
+});
+
+
+test('every lesson has distinct visual practice, step highlights and a fresh retry',()=>{
+ for(const lesson of lessons){
+  const scenes=lesson.workshop.visualPractice;assert.equal(scenes.length,2,lesson.id);
+  assert.notDeepEqual(scenes[0],scenes[1],lesson.id);
+  for(const [index,s] of scenes.entries()){
+   assert.equal(new Set(s.choices).size,3);assert.ok(s.correct>=0&&s.correct<s.choices.length);
+   assert.equal(practiceChoices(s,index).filter(a=>a.correct).length,1);
+   const v=s.visual;assert.ok(v.labels.length>0);assert.equal(s.steps.length,3);
+   assert.ok(s.steps.every(st=>st.text.length>20&&st.focus.length&&st.focus.every(i=>i>=0&&i<v.labels.length)),lesson.id);
+   if(v.kind!=='flow'){
+    assert.equal((v.values??v.bars).length,v.labels.length);
+    assert.ok((v.values??v.bars.flatMap(b=>Object.values(b))).every(Number.isFinite));
+    if(v.bars)assert.ok(v.bars.every(b=>b.high>=Math.max(b.open,b.close)&&b.low<=Math.min(b.open,b.close)));
+   }
+   const initial=renderToStaticMarkup(createElement(TeachingDiagram,{scene:s}));
+   assert.doesNotMatch(initial,/data-highlighted="true"|NaN|undefined|Infinity/);
+   for(let step=0;step<s.steps.length;step++){
+    const html=renderToStaticMarkup(createElement(TeachingDiagram,{scene:s,step}));
+    assert.equal((html.match(/data-highlighted="true"/g)??[]).length,s.steps[step].focus.length);
+    assert.doesNotMatch(html,/NaN|undefined|Infinity/);
+   }
+  }
+  const html=renderToStaticMarkup(createElement(VisualPractice,{scenes}));
+  assert.match(html,/Show me why/);assert.doesNotMatch(html,/Not quite|Next highlight/);
+  const coaching=renderToStaticMarkup(createElement(VisualPractice,{scenes,startWithWalkthrough:true}));
+  assert.match(coaching,/same idea in a worked example|Next highlight/);
+ }
+});
+
+test('visual practice money and reference examples have consistent independent arithmetic',()=>{
+ const s=n=>lessons[n-1].workshop.visualPractice;
+ assert.deepEqual(s(1).map(x=>x.visual.values),[[125,250],[250,750]]);
+ assert.deepEqual(s(3).map(x=>x.visual.values),[[500,400],[200,300]]);
+ assert.deepEqual(s(10).map(x=>[x.visual.bars[0].close>x.visual.reference,x.correct]),[[true,0],[false,0]]);
+ assert.deepEqual(s(17).map(x=>x.visual.values.map(v=>v<x.visual.reference)),[[true,false],[true,false]]);
+ for(const n of [18,39]) for(const x of s(n)){const [entry,peak,trail]=x.visual.values;assert.ok(Math.abs(trail-(entry+(peak-entry)*.75))<1e-10);}
+ for(const n of [20,40,46,47])for(const x of s(n)){const [a,b,net]=x.visual.values;assert.ok(Math.abs(a+b-net)<1e-8);}
+ for(const x of s(49)){const [baseline,candidate,difference]=x.visual.values;assert.equal(candidate-baseline,difference);}
+ assert.deepEqual(s(41).map(x=>x.visual.values),[[2,1],[3,2]]);
+ assert.deepEqual(s(38).map(x=>x.visual.values),[[7,3,1,6],[5,2,1,4]]);
+});
+
+test('missed saved checks and chart challenges connect to visual coaching, without changing scoring',()=>{
+ const portal=read('components/learning/LearningPortal.tsx'),foundations=read('components/learning/Foundations.tsx'),visual=read('components/learning/VisualPractice.tsx');
+ assert.match(portal,/!r.correct&&related\?\.workshop\?\.visualPractice/);
+ assert.match(portal,/q.prompt===item.questions\[i\].prompt/);
+ assert.match(portal,/startWithWalkthrough/);
+ assert.match(foundations,/feedback&&i===step/);
+ assert.match(foundations,/Try a different example of this skill/);
+ assert.doesNotMatch(visual,/fetch\(|localStorage|sessionStorage|api\.|setInterval|setTimeout/);
+ assert.match(visual,/setAnswer\(null\);setChecked\(false\);setStep\(0\)/);
+ assert.match(visual,/useId/);
 });

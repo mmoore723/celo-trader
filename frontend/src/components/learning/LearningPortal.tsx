@@ -1,3 +1,4 @@
+import {VisualPractice} from './VisualPractice';
 import { LessonWorkshop, type Workshop } from './LessonWorkshop';
 import { CoachCelo } from './CoachCelo';
 import { useState } from 'react';
@@ -53,7 +54,7 @@ export function LearningPortal(){
      <button className="btn btn-primary" disabled={saving||item.questions.some((_,i)=>choices[i]===undefined)}>{saving?'Saving...':'Check my answer'+(final?'s':'')}</button>
     </form>}
     {saveError&&<p role="alert">{saveError}</p>}
-    {(final||stage===2)&&feedback&&<section aria-live="polite" className="portal-feedback"><h3>{feedback.passed?'You’ve got it.':'Let’s look at that again.'} {final?`${feedback.score}%`:''}</h3>{feedback.results.map((r,i)=><p key={i}>{final?`Question ${i+1}: `:''}{r.correct?'Correct. ':'Try again. '}{r.explanation}</p>)}{!final&&feedback.passed&&<button className="btn btn-primary mt-3" onClick={()=>choose(data.lessons[data.lessons.findIndex(l=>l.id===selected)+1]?.id??'final')}>Continue</button>}</section>}
+    {(final||stage===2)&&feedback&&<section aria-live="polite" className="portal-feedback"><h3>{feedback.passed?'You’ve got it.':'Let’s look at that again.'} {final?`${feedback.score}%`:''}</h3>{feedback.results.map((r,i)=>{const related=final?data.lessons.find(l=>l.questions.some(q=>q.prompt===item.questions[i].prompt)):current;return <div key={i}><p>{final?`Question ${i+1}: `:''}{r.correct?'Correct. ':'Try again. '}{r.explanation}</p>{!r.correct&&related?.workshop?.visualPractice&&<VisualPractice key={`${selected}:${i}:${feedback.score}`} scenes={related.workshop.visualPractice} startWithWalkthrough/>}</div>;})}{!final&&feedback.passed&&<button className="btn btn-primary mt-3" onClick={()=>choose(data.lessons[data.lessons.findIndex(l=>l.id===selected)+1]?.id??'final')}>Continue</button>}</section>}
    </article>}
   </div>}
   <footer className="portal-sources"><p>{data.disclaimer}</p><p>Continue learning with trusted resources: {data.sources.map(s=><a key={s.url} href={s.url} target="_blank" rel="noreferrer">{s.title}</a>)}</p></footer>

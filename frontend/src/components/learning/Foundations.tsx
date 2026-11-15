@@ -1,3 +1,4 @@
+import {VisualPractice, type TeachingScene} from './VisualPractice';
 import { CoachCelo } from './CoachCelo';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,17 +15,21 @@ export function Foundations() {
   const qc = useQueryClient();
   const key = ['chart-foundations', user?.user_id];
   const {data, isPending, error, refetch} = useQuery({queryKey:key, queryFn:()=>read<{source:string;lessons:Lesson[]}>('/api/learning/foundations')});
+  const {data:course}=useQuery({queryKey:['learning-course',user?.user_id],queryFn:()=>read<{lessons:{id:string;workshop?:{visualPractice?:TeachingScene[]}}[]}>('/api/learning/course')});
   const [selected,setSelected] = useState('candle');
   const [step,setStep] = useState(0);
   const [feedback,setFeedback] = useState<{correct:boolean;explanation:string}|null>(null);
   const [saving,setSaving] = useState(false);
   const [saveError,setSaveError] = useState('');
   const lesson = data?.lessons.find(l=>l.id===selected);
+  const practiceId:Record<string,string>={candle:'lesson-7',level:'lesson-10',pullback:'lesson-29','failed-break':'lesson-28','higher-low':'lesson-9','lower-high':'lesson-26',retest:'lesson-28'};
+  const retryScenes=course?.lessons.find(l=>l.id===practiceId[selected])?.workshop?.visualPractice;
   async function answer(choice:number) {
     if (!lesson || saving) return;
     setSaving(true); setSaveError('');
     try {
       setFeedback(await read('/api/learning/foundations/answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lesson:lesson.id,choice})}));
+      setStep(0);
       await qc.invalidateQueries({queryKey:key});
     } catch(e) {setSaveError((e as Error).message);} finally {setSaving(false);}
   }
@@ -41,8 +46,8 @@ export function Foundations() {
       <div>
         <svg viewBox="0 0 520 330" role="img" aria-label={`${lesson.title}. ${step+1} completed example candles revealed.`} style={{width:'100%',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12}}>
           {[99,101,103,105].map(p=><g key={p}><line x1="35" x2="465" y1={y(p)} y2={y(p)} stroke="var(--border)"/><text x="470" y={y(p)+4} fill="var(--ink-muted)" fontSize="12">${p}</text></g>)}
-          {selected==='level' && <g><line x1="35" x2="465" y1={y(102)} y2={y(102)} stroke="#3159db" strokeDasharray="6 5"/><text x="40" y={y(102)-10} fill="#3159db" fontSize="13">Example level $102</text></g>}
-          {lesson.candles.slice(0,step+1).map(([o,h,l,c],i)=>{const x=65+i*(370/Math.max(1,lesson.candles.length-1));const color=c>=o?'#12805c':'#bd3d54';return <g key={i}><line x1={x} x2={x} y1={y(h)} y2={y(l)} stroke={color} strokeWidth="2"/><rect x={x-15} y={y(Math.max(o,c))} width="30" height={Math.max(2,Math.abs(y(o)-y(c)))} fill={color}/><text x={x} y="310" textAnchor="middle" fill="var(--ink-muted)" fontSize="12">Candle {i+1}</text></g>;})}
+          {['level','retest','failed-break'].includes(selected) && <g><line x1="35" x2="465" y1={y(selected==='failed-break'?103:102)} y2={y(selected==='failed-break'?103:102)} stroke="#3159db" strokeDasharray="6 5"/><text x="40" y={y(selected==='failed-break'?103:102)-10} fill="#3159db" fontSize="13">Example level ${selected==='failed-break'?103:102}</text></g>}
+          {lesson.candles.slice(0,step+1).map(([o,h,l,c],i)=>{const x=65+i*(370/Math.max(1,lesson.candles.length-1));const color=c>=o?'#12805c':'#bd3d54';return <g key={i}>{feedback&&i===step&&<rect x={x-23} y="25" width="46" height="265" rx="8" fill="#3159db" fillOpacity=".12" stroke="#3159db" strokeWidth="2" strokeDasharray="4 3"/>}<line x1={x} x2={x} y1={y(h)} y2={y(l)} stroke={color} strokeWidth="2"/><rect x={x-15} y={y(Math.max(o,c))} width="30" height={Math.max(2,Math.abs(y(o)-y(c)))} fill={color}/><text x={x} y="310" textAnchor="middle" fill="var(--ink-muted)" fontSize="12">Candle {i+1}</text></g>;})}
         </svg>
         <div className="flex gap-2 mt-3"><button className="btn btn-ghost" disabled={step===0} onClick={()=>setStep(s=>s-1)}>Back</button><button className="btn btn-primary" disabled={step===lesson.candles.length-1} onClick={()=>setStep(s=>s+1)}>Next candle</button><span className="self-center text-sm">{step+1} of {lesson.candles.length}</span></div>
       </div>
@@ -50,8 +55,10 @@ export function Foundations() {
         <CoachCelo><p>Reveal the next candle when you are ready. Notice what is known now and what you still cannot know.</p></CoachCelo>
         <p className="mt-3 leading-relaxed" aria-live="polite">{lesson.notes[step]}</p>
         <p className="text-sm mt-4" style={{color:'var(--ink-muted)'}}>Open: ${lesson.candles[step][0]} · High: ${lesson.candles[step][1]} · Low: ${lesson.candles[step][2]} · Close: ${lesson.candles[step][3]}</p>
-        {step===lesson.candles.length-1 && <div className="mt-5"><h4 className="font-semibold">Your turn</h4><p className="my-2">{lesson.question}</p><div className="flex flex-col gap-2">{lesson.choices.map((choice,i)=><button key={choice} className="btn btn-ghost" style={{textAlign:'left',whiteSpace:'normal'}} disabled={saving} onClick={()=>answer(i)}>{choice}</button>)}</div>{feedback && <p role="status" className="mt-3"><strong>{feedback.correct?'That’s right.':'Try again. '}</strong> {feedback.explanation}</p>}{saveError && <p role="alert">{saveError}</p>}<p className="text-sm mt-3">{lesson.progress.passed?'Understanding checked.':'Complete the question to save your progress.'}</p></div>}
+        {(step===lesson.candles.length-1||feedback) && <div className="mt-5"><h4 className="font-semibold">Your turn</h4><p className="my-2">{lesson.question}</p><div className="flex flex-col gap-2">{lesson.choices.map((choice,i)=><button key={choice} className="btn btn-ghost" style={{textAlign:'left',whiteSpace:'normal'}} disabled={saving} onClick={()=>answer(i)}>{choice}</button>)}</div>{feedback && <p role="status" className="mt-3"><strong>{feedback.correct?'That’s right.':'Try again. '}</strong> {feedback.explanation}</p>}{saveError && <p role="alert">{saveError}</p>}<p className="text-sm mt-3">{lesson.progress.passed?'Understanding checked.':'Complete the question to save your progress.'}</p></div>}
       </aside>
     </div>
+    {feedback&&<p className="mt-3">Use Next candle to follow the blue highlight. Read the explanation alongside each candle before trying a different example.</p>}
+    {feedback&&retryScenes&&<details className="mt-4"><summary>Try a different example of this skill</summary><VisualPractice key={selected} scenes={retryScenes}/></details>}
   </section>;
 }

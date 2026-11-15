@@ -30,3 +30,15 @@
 .candle-practice h3,.candle-practice h4{font-weight:650}.candle-practice p{line-height:1.7}
 .candle-feedback-heading{border-left:3px solid #3159db;padding:.7rem 1rem;background:color-mix(in srgb,var(--surface),#3159db 6%)}
 .candle-practice button:focus-visible{outline:3px solid #3159db;outline-offset:3px}
+
+.visual-practice{margin:1rem 0;padding:1rem;border:1px solid var(--border);border-radius:16px;background:var(--surface)}
+.visual-practice-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(260px,1fr);gap:1.25rem;align-items:start}
+.teaching-diagram{margin:0;min-width:0;padding:.8rem;border:1px solid var(--border);border-radius:12px}
+.teaching-diagram figcaption span{display:block;color:var(--ink-muted);font-size:.82rem;margin:.3rem 0}
+.teaching-diagram svg{width:100%;height:auto;display:block}
+.teaching-legend{font-size:.85rem;color:var(--ink-muted)}
+.teaching-flow{list-style:none;padding:0;display:grid;gap:.7rem}
+.teaching-flow li{display:flex;align-items:center;gap:.7rem;padding:1rem;border:1px solid var(--border);border-radius:9px}
+.teaching-flow li[data-highlighted=true]{border:2px dashed #3159db;background:color-mix(in srgb,var(--surface),#3159db 10%)}
+.teaching-look{font-size:.75rem;margin-left:auto}.visual-practice .coach-celo{position:static}
+@media(max-width:850px){.visual-practice-layout{grid-template-columns:1fr}.visual-practice{padding:.65rem}}
