@@ -82,3 +82,17 @@ test('sizing help explains full debit and fees without assumed stop credit',asyn
  assert.match(settings,/<SettingHelp name="risk_per_trade"/);
  assert.match(settings,/<SettingHelp name="max_position_dollars_pct"/);
 });
+
+const {SizingComparison}=await import(`data:text/javascript;base64,${Buffer.from(configCode).toString('base64')}`);
+test('sizing comparison identifies risk, purchase cap, ties and unavailable inputs',()=>{
+ const show=(riskFraction,costPercent)=>renderToStaticMarkup(createElement(SizingComparison,{riskFraction,costPercent}));
+ assert.match(show(.2,40),/9 contracts: risk budget is the limit/);
+ assert.match(show(.2,40),/\$1,811.70 budgeted/);
+ assert.match(show(.2,10),/5 contracts: purchase-cost cap is the limit/);
+ assert.match(show(.2,10),/\$1,006.50 budgeted/);
+ assert.match(show(.2,18),/9 contracts: both limits tie/);
+ assert.match(show(.01,40),/0 contracts: risk budget is the limit/);
+ for(const value of [null,undefined,NaN,-1,2])assert.match(show(value,40),/Automatic or incomplete/);
+ assert.match(show(.2,40),/Not an order estimate/);
+ assert.doesNotMatch(show(.2,40),/<input|<button/);
+});
