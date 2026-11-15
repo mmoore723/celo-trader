@@ -1,29 +1,18 @@
-import { StrategyConfiguration } from '../components/settings/StrategyConfiguration';
 import { BrokerKeyGuide } from "../components/BrokerKeyGuide";
 /**
  * Settings.tsx — Bot configuration form + API credentials.
  */
 import { useEffect, useState } from "react";
-import { useAuth } from "../contexts/AuthContext";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Eye, EyeOff, Key, CheckCircle, AlertTriangle } from "lucide-react";
-import { api, type AppSettings, type ReviewedStrategyCatalogEntry } from "../lib/api";
+import { api, type AppSettings } from "../lib/api";
 import { loadCredentialDisplay, maskCredentialForDisplay } from "../lib/credentialDisplay.js";
 import { needsTradierSandbox } from "../lib/connectionHealthView.js";
-import { TestedStrategies } from "../components/settings/TestedStrategies";
-import { StrategyRecommendations, type PairDecision } from "../components/settings/StrategyRecommendations";
-import type { StrategyTickerRecommendation } from "../lib/api";
-import { PairEvidence } from "../components/settings/PairEvidence";
-import { AdminStrategyControls } from "../components/settings/AdminStrategyControls";
-import { ClosedTradeEvidence } from "../components/settings/ClosedTradeEvidence";
 import { TradingOverview } from "../components/settings/TradingOverview";
-import { StrategyToggleCard, Toggle } from "../components/settings/StrategyToggleCard";
+import { Toggle } from "../components/settings/StrategyToggleCard";
 import { StrategyExitNotice } from "../components/settings/StrategyExitNotice";
-import { StrategyIdentity } from "../components/settings/StrategyIdentity";
 import { WeeklyExitAuditProvider } from "../components/settings/WeeklyExitAudit";
-import { strategyName, groupStrategies } from "../lib/strategyIdentity.js";
-import { StrategyRemoval, ResearchTargetTickers } from "../components/settings/StrategyRemoval";
 
 const DEFAULT: AppSettings = {
   broker_provider: "alpaca",
@@ -80,10 +69,6 @@ const TIMEZONES = [
   { value: "America/Phoenix",     label: "Arizona (MST, no DST)" },
   { value: "UTC",                 label: "UTC" },
 ];
-
-const evidenceDate = (value?: string) => value
-  ? new Date(`${value}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-  : "";
 
 // ── Credentials panel ──────────────────────────────────────────────────────
 function CredentialField({
@@ -299,9 +284,6 @@ function TradierCredentialsPanel({ provider, paper }: { provider: string; paper:
 }
 
 export function Settings() {
-  const {user} = useAuth();
-  const isAdmin = !!user?.is_admin;
-  const [strategyView, setStrategyView] = useState<"trading" | "paused" | "research">("trading");
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") === "strategies" ? "strategies" : "general";
   function setActiveTab(tab: "general" | "strategies") {
@@ -320,7 +302,7 @@ export function Settings() {
     queryKey: ["settings"],
     queryFn: api.settings.get,
   });
-  const { data: strategyCatalog } = useQuery({
+  const { data: strategyCatalog, isError: catalogFailed, refetch: reloadCatalog } = useQuery({
     queryKey: ["strategy-catalog"],
     queryFn: api.settings.strategies,
     enabled: activeTab === "strategies",
@@ -329,45 +311,12 @@ export function Settings() {
   // the user may still discard.
   const actualAccountMode = (data?.paper_trading ?? form.paper_trading) ? "paper" : "live";
   const actualBrokerProvider = data?.broker_provider ?? form.broker_provider ?? "alpaca";
-  const { data: closedTradeEvidence, isPending: closedTradesLoading, isError: closedTradesFailed } = useQuery({
-    queryKey: ["settings-closed-trades", actualAccountMode, actualBrokerProvider],
-    queryFn: api.settings.closedStrategyTrades,
-    enabled: Boolean(data) && activeTab === "strategies",
-    refetchInterval: 60_000,
-  });
-  const { data: strategyResearch } = useQuery({
-    queryKey: ["strategy-research-matrix", user?.user_id],
-    queryFn: () => api.strategyHealth.researchMatrix(90),
-    enabled: isAdmin && activeTab === "strategies",
-    retry: false,
-    refetchInterval: 60_000,
-  });
-  const { data: strategyHistory } = useQuery({
-    queryKey: ["strategy-setting-history"],
-    queryFn: () => api.settings.strategyHistory(12),
-    enabled: activeTab === "strategies",
-  });
-  const { data: strategyRecommendations, isPending: recommendationsLoading, isError: recommendationsFailed, refetch: refreshRecommendations } = useQuery({
-    queryKey: ["strategy-recommendations", user?.user_id],
-    queryFn: api.settings.recommendations,
-    enabled: isAdmin && activeTab === "general",
-    retry: false,
-    refetchInterval: activeTab === "general" ? 60000 : false,
-  });
   const { data: brokerReadiness, refetch: refreshBrokerReadiness, isFetching: checkingBroker } = useQuery({
     queryKey: ["broker-readiness", form.paper_trading ?? true],
     queryFn: () => api.settings.brokerReadiness(form.paper_trading ?? true),
     refetchOnWindowFocus: false,
     enabled: (form.broker_provider ?? "alpaca") === "tradier",
   });
-
-  async function decideRecommendation(item: StrategyTickerRecommendation, decision: PairDecision) {
-    await api.settings.decidePair(item, decision);
-    qc.invalidateQueries({ queryKey: ["strategy-recommendations"] });
-    qc.invalidateQueries({ queryKey: ["strategy-research-matrix"] });
-    qc.invalidateQueries({ queryKey: ["strategy-catalog"] });
-    qc.invalidateQueries({ queryKey: ["settings"] });
-  }
 
   useEffect(() => {
     if (data) {
@@ -380,76 +329,6 @@ export function Settings() {
   function set<K extends keyof AppSettings>(key: K, val: AppSettings[K]) {
     setForm((f) => ({ ...f, [key]: val }));
     setSaved(false);
-  }
-
-  function strategyControl(strategy: ReviewedStrategyCatalogEntry) {
-    if (strategy.removed) return null;
-    const switchEnabled = Boolean(form[strategy.setting_key]);
-    const tradingTickers = switchEnabled ? (strategy.trading_tickers ?? []) : [];
-    const pf = strategy.backtest?.profit_factor;
-    const pfLabel = typeof pf === "number" ? pf.toFixed(2) : (pf || "not recorded");
-    const target = strategy.backtest?.target_profit_factor ?? 1.5;
-    const reliableTarget = strategy.backtest?.meets_target && strategy.evidence_grade === "passed_declared_holdout";
-    const matrixStrategy = strategyResearch?.strategies.find(item => item.strategy_id === (strategy.research_source_strategy_id ?? strategy.strategy_id) && item.version === strategy.version);
-    const currentPairs = (matrixStrategy?.pairs ?? []).filter(pair => strategy.tickers.includes(pair.ticker) || pair.tradable);
-    const pairProof = currentPairs.length
-      ? currentPairs.map(pair => {
-          const factor = pair.profit_factor === "infinite" ? "∞" : typeof pair.profit_factor === "number" ? pair.profit_factor.toFixed(2) : "—";
-          const pnl = `${pair.net_one_contract_pnl >= 0 ? "+" : "-"}$${Math.abs(pair.net_one_contract_pnl).toFixed(2)}`;
-          return `${pair.ticker} PF ${factor} · ${pair.option_results} option result${pair.option_results === 1 ? "" : "s"} · ${pnl}`;
-        }).join(" · ")
-      : `PF — · 0 option results`;
-    return (
-      <StrategyToggleCard
-        key={strategy.strategy_id}
-        separated={false}
-        activity={strategy.automatic_pauses?.length ? "paused" : tradingTickers.length ? "trading" : "research"}
-          label={strategyName(strategy.display_name)}
-          checked={switchEnabled}
-          onChange={(v) => set(strategy.setting_key, v)}
-          disabled={strategy.integrity_errors.length > 0}
-      >
-        {strategyView !== "trading" && (strategy.tickers ?? []).map(ticker => <StrategyConfiguration key={ticker} strategy={strategy.strategy_id} ticker={ticker} version={strategy.version} />)}
-        <StrategyIdentity id={strategy.strategy_id} version={strategy.version}
-          activity={tradingTickers.length ? "trading" : "research"}
-          tickers={strategy.observation_only ? [] : tradingTickers}
-          label={strategy.observation_only ? "Research · All collected tickers" : tradingTickers.length ? "Trading on" : "No tickers enabled"} />
-        <p className="text-xs" style={{ color: "var(--ink-muted)" }}>Last recorded switch on: {strategyHistory?.changes.find(change => change.strategy_id === strategy.strategy_id && change.new_enabled)
-          ? new Date(strategyHistory.changes.find(change => change.strategy_id === strategy.strategy_id && change.new_enabled)!.changed_at).toLocaleString()
-          : "Not available in loaded history"}</p>
-        {!strategy.observation_only && <ClosedTradeEvidence data={closedTradeEvidence}
-          strategyId={strategy.strategy_id} failed={closedTradesFailed} loading={closedTradesLoading} />}
-        {strategy.automatic_pauses?.map(pause => <p key={pause.ticker} className="text-xs pb-2" style={{ color: "var(--warning)" }}>{pause.ticker}: automatically moved to research only. Closed-trade PF {pause.profit_factor.toFixed(2)} across {pause.completed_trades} trades. Existing positions keep their exits.</p>)}
-        <details className="strategy-card-evidence text-xs" style={{ color: "var(--ink-muted)" }}>
-        <summary className="cursor-pointer font-medium">Research results and test evidence</summary>
-        <p className="text-xs pb-1 mt-2" style={{ color: "var(--ink-muted)" }}>
-          <strong style={{ color: reliableTarget ? "var(--positive)" : "var(--warning)" }}>{strategy.backtest?.historical_test_through ? `Tests through ${evidenceDate(strategy.backtest.historical_test_through)}` : "Recorded test"}: PF {pfLabel}</strong>{strategy.backtest?.trades != null ? ` · ${strategy.backtest.trades} results` : ""}
-        </p>
-        {!strategy.observation_only ? (
-          <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
-            <strong>Current research · strategy exits:</strong> {pairProof}
-          </p>
-        ) : <p className="text-xs pb-1" style={{ color: "var(--ink-muted)" }}>
-          <strong>{matrixStrategy?.exit_measurement?.pf_label ?? "Current PF"} {matrixStrategy?.current_evidence.profit_factor === "infinite" ? "∞" : typeof matrixStrategy?.current_evidence.profit_factor === "number" ? matrixStrategy.current_evidence.profit_factor.toFixed(2) : "—"}</strong> · {matrixStrategy?.current_evidence.option_results ?? 0} option results across all collected tickers
-        </p>}
-        <PairEvidence strategy={matrixStrategy} tradingTickers={tradingTickers} />
-        <details className="text-xs pb-3" style={{ color: "var(--ink-muted)" }}>
-          <summary className="cursor-pointer">Test dates and proof</summary>
-          <p className="mt-1">Goal PF {target.toFixed(1)}{!strategy.observation_only ? ` · ${actualBrokerProvider === "tradier" ? "Tradier" : "Alpaca"} ${actualAccountMode} orders only on ${strategy.tickers.join(", ")}.` : ""}</p>
-          <p className="mt-1">{strategy.backtest?.comparison || strategy.evidence}</p>
-          {currentPairs.some(pair => pair.previous_version_rows > 0) && <p className="mt-1">Earlier-version setups remain saved but are not mixed into the current PF.</p>}
-        </details>
-        </details>
-        {strategy.integrity_errors.length > 0 && (
-          <p className="text-xs pb-3" style={{ color: "#f87171" }}>
-            Disabled because its code no longer matches the reviewed evidence.
-          </p>
-        )}
-        <details className="text-xs"><summary className="cursor-pointer">Manage strategy</summary>
-          <StrategyRemoval id={strategy.strategy_id} version={strategy.version} name={strategy.display_name} />
-        </details>
-      </StrategyToggleCard>
-    );
   }
 
   // True when the form has been changed since the last save/load
@@ -491,15 +370,9 @@ export function Settings() {
             document.getElementById(`settings-tab-${next}`)?.focus();
           }}
           className={`btn ${activeTab === tab ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategy templates"}</button>)}
+          onClick={() => setActiveTab(tab)}>{tab === "general" ? "General" : "Strategies"}</button>)}
       </div>
       <div hidden={activeTab !== "general"} id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" className={activeTab === "general" ? "flex flex-col gap-4" : "hidden"}>
-      {isAdmin && <div className="settings-paired-grid">
-      {recommendationsFailed ? <div className="card p-4 text-sm" role="alert">Recommendations could not load. <button className="btn btn-ghost" onClick={() => refreshRecommendations()}>Try again</button></div> : recommendationsLoading ? <p role="status" className="text-sm">Checking strategy recommendations…</p> : <StrategyRecommendations
-        recommendations={strategyRecommendations?.recommendations ?? []}
-        onDecision={decideRecommendation}
-      />}
-      </div>}
       <div className="settings-paired-grid settings-general-columns">
       <section className="settings-control-stack" aria-label="Trading preferences">
       {/* Trading Mode */}
@@ -837,65 +710,16 @@ export function Settings() {
       </section>
 
       </div>
-      {activeTab === "strategies" && !isAdmin && <section id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-3"><h2>Strategy templates</h2><p className="text-sm">Choose a template, then save your settings. New accounts start with every template off.</p>{groupStrategies((strategyCatalog?.strategies ?? []).filter(row => !row.observation_only)).map(group => <section className="card p-4" key={group.name}><h3 className="font-semibold">{group.name}</h3>{group.strategies.map(row => <div key={row.strategy_id} className="py-3"><Toggle label={`${row.tickers.join(", ")} · ${row.version}`} checked={!!form[row.setting_key]} disabled={!data || row.integrity_errors.length > 0} onChange={value => set(row.setting_key, value)} /><p className="text-xs">{row.integrity_errors.length ? "Temporarily unavailable. The execution checks need attention." : "Applies to your account only. Existing positions keep their entry-time rules."}</p>{Array.from(new Set([...row.tickers,...(row.trading_tickers??[])])).map(ticker=><StrategyConfiguration key={`${row.strategy_id}:${row.version}:${ticker}`} strategy={row.strategy_id} ticker={ticker} version={row.version}/>)}</div>)}</section>)}</section>}
-      {activeTab === "strategies" && isAdmin && <div id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies" className="flex flex-col gap-4">
-      {strategyResearch?.snapshot?.refreshing && <p role="status" className="text-xs">
-        Showing saved research from {new Date(strategyResearch.snapshot.updated_at * 1000).toLocaleString()}. Refreshing in the background.
-      </p>}
-      <div className="flex flex-wrap gap-2" aria-label="Strategy status filter">
-        {(["trading", "paused", "research"] as const).map(view => <button key={view} type="button"
-          className={`btn ${strategyView === view ? "btn-primary" : "btn-ghost"}`}
-          aria-pressed={strategyView === view} onClick={() => setStrategyView(view)}>
-          {view === "trading" ? "Trading now" : view === "paused" ? "Paused" : "Research / off"}
-        </button>)}
-      </div>
-      {strategyView === "paused" && <section aria-label="Automatically paused strategies" className="card p-4" style={{ border: "2px solid var(--warning)" }}>
-        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Automatically paused</h3>
-        {(strategyCatalog?.strategies ?? []).some(strategy => strategy.automatic_pauses?.length)
-          ? <div className="settings-card-grid">{groupStrategies((strategyCatalog?.strategies ?? []).filter(strategy => strategy.automatic_pauses?.length)).map(group => <section className="card p-4" key={group.name}><h4 className="font-semibold mb-3">{group.name}</h4>{group.strategies.map(strategy => <details className="mt-2" key={strategy.strategy_id}><summary className="cursor-pointer text-sm">{strategy.automatic_pauses?.map(pause => pause.ticker).join(", ")} · Version {strategy.version}</summary>{strategyControl(strategy)}</details>)}</section>)}</div>
-          : <p className="text-sm" style={{ color: "var(--ink-muted)" }}>{strategyCatalog ? "No automatically paused strategies in this account mode." : "Loading pause status..."}</p>}
+      {activeTab === "strategies" && <section id="settings-panel-strategies" role="tabpanel" aria-labelledby="settings-tab-strategies">
+        {catalogFailed && <p role="alert">Your strategies could not load. <button className="btn btn-ghost" onClick={()=>reloadCatalog()}>Try again</button></p>}
+        <TradingOverview strategies={(strategyCatalog?.strategies ?? []).filter(row => !row.removed && !row.observation_only)}
+          mode={actualAccountMode} loading={!strategyCatalog && !catalogFailed} failed={false}
+          controls={strategy => <div className="space-y-2">
+            <Toggle label={`Allow new entries: ${Array.from(new Set([...strategy.tickers, ...(strategy.trading_tickers ?? [])])).join(", ")}`} checked={!!form[strategy.setting_key]} disabled={!data || strategy.integrity_errors.length > 0} onChange={value => set(strategy.setting_key, value)} />
+            <p className="text-xs text-ink-muted">This switch applies to the tickers listed above. Use Save Settings below to apply a switch change. Existing positions keep their rules.</p>
+            {strategy.integrity_errors.length > 0 && <p role="alert">Execution checks need attention before this strategy can be enabled.</p>}
+          </div>} />
       </section>}
-      {/* Strategies */}
-      {strategyView === "trading" && <section>
-        <TradingOverview strategies={(strategyCatalog?.strategies ?? []).filter(strategy => !strategy.removed && !strategy.observation_only && strategy.enabled && (strategy.trading_tickers?.length ?? 0) > 0)}
-          evidence={closedTradeEvidence} mode={actualAccountMode} loading={closedTradesLoading || !strategyCatalog}
-          failed={closedTradesFailed} controls={strategyControl} />
-        {(strategyHistory?.changes.length ?? 0) > 0 && (
-          <details className="mt-3 text-xs" style={{ color: "var(--ink-muted)" }}>
-            <summary className="cursor-pointer font-medium" style={{ color: "var(--ink)" }}>Recent strategy switch history</summary>
-            <div className="mt-2 flex flex-col gap-1">
-              {strategyHistory!.changes.map((change, index) => (
-                <div key={`${change.changed_at}-${change.strategy_id}-${index}`}>
-                  {new Date(change.changed_at).toLocaleString()} · {change.strategy_id} · {change.previous_enabled ? "ON" : "OFF"} → {change.new_enabled ? "ON" : "OFF"}
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
-      </section>}
-
-      {strategyView === "research" && <section>
-        <details><summary className="cursor-pointer">Add strategies and research tickers</summary>
-          <AdminStrategyControls />
-          <ResearchTargetTickers />
-        </details>
-        <h3 className="text-base font-semibold" style={{ color: "var(--ink)" }}>Research only</h3>
-        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
-          On means keep testing every collected ticker. {strategyResearch?.collection_started_on ? `Data collected since ${evidenceDate(strategyResearch.collection_started_on)} · ${strategyResearch.collected_market_days} market days · ${strategyResearch.ticker_count} tickers.` : "No market data collected yet."} New matches need 20 non-overlapping completed tests and passing profit checks—not a minimum number of days.
-        </p>
-        <div className="settings-card-grid">
-        {groupStrategies((strategyCatalog?.strategies ?? []).filter(strategy => !strategy.automatic_pauses?.length && (strategy.observation_only || !form[strategy.setting_key] || !(strategy.trading_tickers?.length)))).map(group => <section className="card p-4" key={group.name}><h4 className="font-semibold mb-3">{group.name}</h4>{group.strategies.map(strategy => <details className="mt-2" key={strategy.strategy_id}><summary className="cursor-pointer text-sm">{strategy.observation_only ? "Research settings" : strategy.tickers.join(", ") || "Ticker settings"} · Version {strategy.version}</summary>{strategyControl(strategy)}</details>)}</section>)}
-        <TestedStrategies
-          embedded
-          researchIds={form.research_strategy_ids ?? []}
-          onResearchIdsChange={ids => set("research_strategy_ids", ids)}
-          researchMatrix={strategyResearch}
-        />
-        </div>
-      </section>}
-      </div>
-
-      }
       {/* Save / Discard */}
       <div className="flex gap-2">
         {hasChanges && (

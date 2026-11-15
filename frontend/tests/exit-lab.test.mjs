@@ -6,7 +6,7 @@ const research = readFileSync(new URL('../src/pages/Research.tsx', import.meta.u
 
 test('Exit Lab is lazy and mounts only its selected subtab', () => {
   assert.match(research, /lazy\(\(\) => import\('\.\/ExitLab'\)/);
-  assert.match(research, /tab === 'results' \? <Results[^\n]+: tab === 'exits' \? <Lab \/> : <Coverage \/>/);
+  assert.match(research, /tab === 'results' \? <Results[^\n]+: tab === 'exits' \? <Lab \/> : tab === 'coverage' \? <Coverage \/> : <ResearchControls \/>/);
   assert.match(research, /lazy\(\(\) => import\('\.\/CaptureCoverage'\)/);
 });
 

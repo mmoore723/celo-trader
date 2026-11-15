@@ -51,15 +51,7 @@ test("research results distinguish dated tests from the current strategy version
   assert.match(source, /Earlier-version setups kept separate/);
 });
 
-test("strategy settings use distinct cards and explicit evidence dates", () => {
-  assert.match(settingsSource, /Current research · strategy exits/);
-  assert.match(settingsSource, /Tests through/);
-  assert.match(settingsSource, /option result/);
-  assert.match(settingsSource, /settings-card-grid/);
-  assert.doesNotMatch(settingsSource, /Past test/);
-  assert.doesNotMatch(settingsSource, /May place orders on the tickers above/);
-  assert.doesNotMatch(settingsSource, /RESEARCH ONLY · No orders/);
-  assert.doesNotMatch(settingsSource, /Tests every collected ticker; cannot place orders/);
-  assert.match(settingsSource, /Data collected since/);
-  assert.match(settingsSource, /20 non-overlapping completed tests/);
+test("research evidence stays in Research, not Settings", () => {
+ assert.doesNotMatch(settingsSource, /Research results and test evidence|ResearchTargetTickers|TestedStrategies|researchMatrix/);
+ assert.match(settingsSource, /<TradingOverview/);
 });

@@ -7,7 +7,7 @@ const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
 
 test('Approved ticker badges come from the execution catalog without waiting for research refresh', () => {
   assert.match(source, /strategy\.trading_tickers \?\? \[\]/);
-  assert.match(source, /tickers=\{strategy\.observation_only \? \[\] : tradingTickers\}/);
+  assert.match(source, /!row.observation_only/);
   assert.match(source, /\["strategy-catalog"\]/);
 });
 
@@ -32,8 +32,8 @@ test('Settings uses available page width and one/two/three content-width columns
 
 test('Both tabs retain accessible panels and independent credential saves', () => {
   assert.match(source, /hidden=\{activeTab !== "general"\}[^\n]*flex flex-col gap-4/);
-  assert.match(source, /activeTab === "strategies" && isAdmin && <div[^\n]*role="tabpanel"/);
-  assert.match(source, /<TestedStrategies\s+embedded/);
+  assert.match(source, /activeTab === "strategies" && <section[^\n]*role="tabpanel"/);
+  assert.doesNotMatch(source, /<TestedStrategies/);
   assert.match(source, /settings-paired-grid[\s\S]*<AlpacaCredentialsPanel \/>[\s\S]*<TradierCredentialsPanel/);
   assert.doesNotMatch(css, /grid-auto-flow:\s*dense/);
 });
@@ -45,7 +45,7 @@ test('Audit summary is shared and full dialog mounts only on demand', () => {
   const badge = audit.slice(audit.indexOf('export function WeeklyExitAudit('), audit.indexOf('const AuditContext'));
   assert.doesNotMatch(badge, /useQuery|<dialog/);
   assert.match(audit, /showGrid && <Results/);
-  assert.match(source, /queryFn: \(\) => api.strategyHealth.researchMatrix\(90\),\s+enabled: isAdmin && activeTab === "strategies"/);
+  assert.doesNotMatch(source, /researchMatrix/);
 });
 
 test('General groups related controls into two independent vertical stacks', () => {

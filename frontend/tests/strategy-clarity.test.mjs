@@ -8,10 +8,10 @@ test('unknown strategy IDs are not asserted to be retired', () => {
   assert.doesNotMatch(source, /Retired historical strategy/);
   assert.match(source, /RESEARCH_FAILED_RANGE_V2: "Failed-Range Recovery"/);
 });
-test('strategy page defaults to trading and hides other groups', () => {
-  const source = readFileSync(new URL('../src/pages/Settings.tsx', import.meta.url), 'utf8');
-  assert.match(source, /useState<"trading" \| "paused" \| "research">\("trading"\)/);
-  for (const group of ['trading', 'paused', 'research']) assert.ok(source.includes(`strategyView === "${group}" && <section`));
+test('strategy page uses one account settings flow, not research groups', () => {
+ const source=readFileSync(new URL('../src/pages/Settings.tsx', import.meta.url),'utf8');
+ assert.match(source, /<TradingOverview/);
+ assert.doesNotMatch(source,/Research \/ off|Manage this strategy|strategyView/);
 });
 test('recorded previews do not claim a check is still running', () => {
   const entry = { lifecycle: 'pricing', entry_plan: { trigger: 'raw strategy setup detected' } };

@@ -15,8 +15,9 @@ const { StrategyExitNotice } = await import(`data:text/javascript;base64,${Buffe
 test("exit rules are explanatory, not a switch or input", () => {
   const html = renderToStaticMarkup(createElement(StrategyExitNotice));
   assert.match(html, /Strategy exit rules/);
-  assert.match(html, /tested version/);
-  assert.match(html, /account risk and daily loss/);
+  assert.match(html, /choose a ticker to view or change its exit rules/);
+  assert.match(html, /Open positions keep their entry-time rules/);
+  assert.match(html, /Account risk and daily loss/);
   assert.doesNotMatch(html, /<input|<button|role="switch"|<select/);
 });
 

@@ -20,23 +20,25 @@ const render = (props={}) => renderToStaticMarkup(createElement(MemoryRouter,{},
 test('settings keeps lessons reference and practice in the Learning Hub',()=>{
  assert.doesNotMatch(render(),/playbooks|Lesson|Reference|Practice|Learn Test/);
 });
-test('overview presents strategy umbrellas and keeps metrics inside ticker details',()=>{
+test('one settings entry per ticker with no duplicate management or research controls',()=>{
  const html=render();
- for(const text of ['$120.00','75.0%','2.00','Your strategies','Ticker details','Manage this strategy','v1','Journal results only']) assert.ok(html.includes(text),text);
- assert.doesNotMatch(html,/<details open/);
-});
-test('version, mode, errors and zero trades never become winning evidence',()=>{
- for(const props of [{strategies:[{...strategy,version:'v2'}]},{mode:'live'},{failed:true},{evidence:{...evidence,available:false}}]){
-   const html=render(props); assert.doesNotMatch(html,/\$120.00|75.0%/);
- }
- assert.match(render({strategies:[]}),/No enabled trading pairs/);
+ assert.match(html,/Your strategies/);assert.match(html,/SPY/);assert.match(html,/Settings/);
+ assert.doesNotMatch(html,/Manage this strategy|Configure SPY|Ticker details|Journal results|\$120.00|Research/);
+ assert.match(html,/aria-expanded="false"/);
+ assert.match(render({strategies:[]}),/No strategies are available/);
 });
 
 test('SPY and QQQ are branches of one Trend Continuation strategy',()=>{
  const variants=[{...strategy,strategy_id:'V2_SPY_TREND_CONT',display_name:'SPY Trend Continuation'}, {...strategy,strategy_id:'RESEARCH_QQQ_TREND_V2',display_name:'QQQ Trend V2',trading_tickers:['QQQ']}];
  const html=render({strategies:variants});
  assert.equal((html.match(/aria-label="Trend Continuation strategy"/g)||[]).length,1);
- assert.match(html,/1 strategies/);assert.match(html,/Trading on SPY, QQQ/);
+ assert.match(html,/1 strategies/);
  assert.doesNotMatch(html,/<table|Selected pair performance|Realized P&amp;L by pair/);
  assert.match(html,/>SPY</); assert.match(html,/>QQQ</);
+});
+
+test('unassigned research strategies do not create empty Settings cards',()=>{
+ const html=render({strategies:[{...strategy,tickers:[],trading_tickers:[]}]});
+ assert.doesNotMatch(html,/aria-label="Test strategy strategy"/);
+ assert.match(html,/No strategies are available/);
 });

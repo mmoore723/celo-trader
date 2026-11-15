@@ -4,9 +4,9 @@ export function StrategyExitNotice() {
       style={{ background: "var(--surface-raised)", border: "1px solid var(--border)" }}>
       <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>Strategy exit rules</h3>
       <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-        Exits follow each strategy&apos;s tested version. Proposed changes are compared
-        separately in research, not switched here. Your account risk and daily loss
-        limits remain under your control.
+        Open Strategies and choose a ticker to view or change its exit rules. Saved changes
+        apply to new entries. Open positions keep their entry-time rules. Account risk
+        and daily loss limits still apply.
       </p>
     </section>
   );
