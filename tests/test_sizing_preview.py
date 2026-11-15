@@ -61,5 +61,5 @@ class SizingPreviewTests(unittest.TestCase):
         from fastapi import HTTPException
         from types import SimpleNamespace
         with self.assertRaises(HTTPException) as caught:
-            strategy_sizing_preview(SimpleNamespace(state=SimpleNamespace()),self.sid,'SPY',self.version,self.symbol,'scope')
+            strategy_sizing_preview(SimpleNamespace(state=SimpleNamespace()),self.sid,'SPY',self.version,'scope')
         self.assertEqual(caught.exception.status_code,401)

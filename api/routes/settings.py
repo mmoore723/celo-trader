@@ -751,12 +751,12 @@ def save_strategy_configuration(strategy_id: str, ticker: str, body: EngineConfi
 
 
 @router.get('/strategies/{strategy_id}/{ticker}/sizing-preview')
-def strategy_sizing_preview(request: Request, strategy_id: str, ticker: str, version: str, symbol: str, scope: str):
+def strategy_sizing_preview(request: Request, strategy_id: str, ticker: str, version: str, scope: str):
     if not getattr(request.state, 'user_id', None):
         raise HTTPException(401, 'Not authenticated')
-    from api.sizing_preview import preview
+    from api.sizing_preview import automatic_preview
     try:
-        return preview(strategy_id, ticker, version, symbol.strip().upper(), scope)
+        return automatic_preview(strategy_id, ticker, version, scope)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except Exception:

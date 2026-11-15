@@ -98,8 +98,8 @@ test('sizing comparison identifies risk, purchase cap, ties and unavailable inpu
 });
 
 const {LiveSizingPreview}=await import(`data:text/javascript;base64,${Buffer.from(configCode).toString('base64')}`);
-test('actual sizing preview requires an exact contract and cannot save or order',()=>{
+test('actual sizing preview automatically reads the bot candidate without typing or ordering',()=>{
  const html=renderToStaticMarkup(createElement(LiveSizingPreview,{strategy:'V2_SPY_TREND_CONT',ticker:'SPY',version:'2.1.0',scope:'paper:test'}));
- assert.match(html,/Your account and option price/);assert.match(html,/Option contract symbol/);
- assert.match(html,/disabled=""/);assert.doesNotMatch(html,/Save|Buy|Sell|9 contracts/);
+ assert.match(html,/Your account and option price/);assert.match(html,/Automatically uses the option/);
+ assert.match(html,/Refresh preview/);assert.doesNotMatch(html,/<input/);assert.doesNotMatch(html,/\bSave\b|\bBuy\b|\bSell\b|9 contracts/);
 });

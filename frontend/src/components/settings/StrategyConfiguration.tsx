@@ -37,18 +37,19 @@ export function SizingComparison({riskFraction,costPercent}:{riskFraction:number
  </aside>;
 }
 export function LiveSizingPreview({strategy,ticker,version,scope}:{strategy:string;ticker:string;version:string;scope:string}) {
- const [symbol,setSymbol]=useState('');const [result,setResult]=useState<Record<string,any>|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
- useEffect(()=>{setResult(null);setError('');setSymbol('');},[strategy,ticker,version,scope]);
- async function refresh(){setBusy(true);setError('');setResult(null);try{
- const q=new URLSearchParams({version,symbol,scope});const r=await fetch(`/api/settings/strategies/${encodeURIComponent(strategy)}/${encodeURIComponent(ticker)}/sizing-preview?${q}`,{credentials:'include'});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Preview unavailable');setResult(d);
- }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ const [result,setResult]=useState<Record<string,any>|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [refreshKey,setRefreshKey]=useState(0);
+ useEffect(()=>{let cancelled=false;let timer:ReturnType<typeof setTimeout>;const controller=new AbortController();setResult(null);setError('');
+ async function refresh(){if(document.hidden){timer=setTimeout(refresh,15000);return;}setBusy(true);try{
+ const q=new URLSearchParams({version,scope});const r=await fetch(`/api/settings/strategies/${encodeURIComponent(strategy)}/${encodeURIComponent(ticker)}/sizing-preview?${q}`,{credentials:'include',signal:controller.signal});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Preview unavailable');if(!cancelled){setResult(d);setError('');}
+ }catch(e){if(!cancelled){setResult(null);setError((e as Error).message);}}finally{if(!cancelled){setBusy(false);timer=setTimeout(refresh,15000);}}}
+ void refresh();return()=>{cancelled=true;controller.abort();clearTimeout(timer);};},[strategy,ticker,version,scope,refreshKey]);
  const dollars=(n:number)=>n.toLocaleString('en-US',{style:'currency',currency:'USD'});
  return <aside className="rounded-lg border border-line p-3 mt-3 space-y-2" aria-label="Actual account sizing preview"><strong>Your account and option price</strong>
- <p className="text-xs text-ink-muted">Enter the exact option contract symbol from a setup or trade. Strike and expiration matter. This only reads prices and saved settings.</p>
- <label className="block text-sm">Option contract symbol<input className="input w-full" disabled={busy} value={symbol} onChange={e=>{setSymbol(e.target.value.toUpperCase());setResult(null);setError('');}} placeholder="Paste the full option symbol"/></label>
- <button type="button" className="btn btn-ghost" disabled={busy||!symbol.trim()} onClick={refresh}>{busy?'Checking account and quote...':'Check contract count'}</button>
+ <p className="text-xs text-ink-muted">Automatically uses the option the bot is considering for this strategy and ticker. Checks every 15 seconds while this page is visible. Saved settings only.</p>
+ <button type="button" className="btn btn-ghost" disabled={busy} onClick={()=>setRefreshKey(n=>n+1)}>{busy?'Checking the bot’s current contract...':'Refresh preview'}</button>
+ {result?.status==='waiting'&&<p role="status" className="text-sm">{result.reason}</p>}
  {error&&<p role="alert" className="text-sm text-red-600">{error}</p>}
- {result&&<div role="status" className="space-y-2 text-sm"><p>{result.mode} account: <strong>{dollars(result.balance)}</strong> · {result.symbol}</p><p>Ask {dollars(result.ask)} → entry cushion included: {dollars(result.maximum_entry)} per share. Buying and selling fees: {dollars(result.fees_per_contract)} per contract.</p>
+ {result?.status==='ready'&&<div role="status" className="space-y-2 text-sm"><p className="text-xs">{result.selection_stage} · Setup {new Date(result.observed_at).toLocaleTimeString()}</p><p>{result.mode} account: <strong>{dollars(result.balance)}</strong> · {result.symbol}</p><p>Ask {dollars(result.ask)} → entry cushion included: {dollars(result.maximum_entry)} per share. Buying and selling fees: {dollars(result.fees_per_contract)} per contract.</p>
  <div className="grid sm:grid-cols-2 gap-2"><p className="border border-line rounded p-2">Risk budget: {dollars(result.risk_budget)}<br/><strong>{result.risk_contracts} contracts including fees</strong></p><p className="border border-line rounded p-2">Purchase-cost cap: {dollars(result.purchase_cap)}<br/><strong>{result.cost_contracts} contracts</strong></p></div>
  <p className="font-semibold">Up to {result.contracts} contracts. {result.limiting} sets the limit.</p><p>Total budget including fees: {dollars(result.total_with_fees)}.</p>
  <p className="text-xs text-ink-muted">Checked {new Date(result.as_of).toLocaleString()}. Quote was {Math.round(result.quote_age_seconds)} seconds old. Refresh for a new estimate. {result.notice}</p></div>}
