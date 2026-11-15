@@ -12,6 +12,7 @@ code = code.replace("'../../lib/strategyIdentity.js'", JSON.stringify(new URL('.
 let configCode = ts.transpileModule(readFileSync(new URL('../src/components/settings/StrategyConfiguration.tsx', import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
 for(const name of ['react','react/jsx-runtime']) configCode=configCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll(`'${name}'`,JSON.stringify(import.meta.resolve(name)));
 configCode=configCode.replace("'../../lib/strategyConfiguration'",JSON.stringify(new URL('../src/lib/strategyConfiguration.js',import.meta.url).href));
+configCode=configCode.replace("'../../lib/strategySettingHelp'",JSON.stringify(new URL('../src/lib/strategySettingHelp.js',import.meta.url).href));
 code=code.replace("'./StrategyConfiguration'",JSON.stringify(`data:text/javascript;base64,${Buffer.from(configCode).toString('base64')}`));
 const { TradingOverview } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 const strategy = {strategy_id:'test',display_name:'Test strategy',version:'v1',trading_tickers:['SPY'],integrity_errors:[]};
