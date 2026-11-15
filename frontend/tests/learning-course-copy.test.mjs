@@ -35,7 +35,7 @@ let visualCode=ts.transpileModule(read('components/learning/VisualPractice.tsx')
 visualCode=visualCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
 for(const name of ['react','react/jsx-runtime']) visualCode=visualCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
 const visualModule='data:text/javascript;base64,'+Buffer.from(visualCode).toString('base64');
-const {VisualPractice,TeachingDiagram,practiceChoices,RetestComparison,freshRetestPair,retestPassed}=await import(visualModule);
+const {VisualPractice,TeachingDiagram,practiceChoices,RetestComparison,freshRetestPair,retestPassed,RetestSkills,retestSequence,gradeRetestSequence}=await import(visualModule);
 let workshopCode=ts.transpileModule(read('components/learning/LessonWorkshop.tsx'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText;
 workshopCode=workshopCode.replaceAll("'./VisualPractice'",JSON.stringify(visualModule)).replaceAll('"./VisualPractice"',JSON.stringify(visualModule));
 workshopCode=workshopCode.replaceAll("'./CandlePractice'",JSON.stringify(candleModule)).replaceAll('"./CandlePractice"',JSON.stringify(candleModule));
@@ -242,4 +242,24 @@ test('retest comparison shows worked pair and fresh balanced exercises',()=>{
  assert.match(html,/Try a different pair/);
  assert.match(html,/Retest passed/);assert.match(html,/Retest failed/);
  assert.match(html,/How resistance formed/);assert.match(html,/candle’s color/);
+});
+
+test('independent practice withholds levels and coaching until the learner answers',()=>{
+ const html=renderToStaticMarkup(createElement(RetestSkills));
+ assert.match(html,/Full sequence/);assert.match(html,/Mixed candles/);
+ assert.match(html,/Have Coach Celo explain/);assert.match(html,/disabled/);
+ assert.doesNotMatch(html,/Candles 2 and 4 reached|Reference 40|Try a different example/);
+});
+test('sequence keys use completed closes, including the deceptive wick',()=>{
+ for(let round=0;round<9;round++){
+  const k=retestSequence(round),bars=k.scene.visual.bars;
+  assert.ok(bars.every(b=>b.low<=Math.min(b.open,b.close)&&b.high>=Math.max(b.open,b.close)));
+  assert.equal(bars.findIndex(b=>b.close>k.level)+1,k.breakout);
+  assert.equal(bars[k.retest-1].close>k.level,k.passed);
+  const a=[String(k.level),k.touches.join(', '),String(k.breakout),String(k.retest),String(k.close),k.passed?'passed':'failed'];
+  assert.ok(gradeRetestSequence(round,a).every(Boolean));
+  assert.ok(gradeRetestSequence(round,Array(6).fill('')).every(v=>!v));
+ }
+ const k=retestSequence(2);assert.ok(k.scene.visual.bars[7].high>85);assert.ok(k.scene.visual.bars[7].close<85);
+ assert.equal(gradeRetestSequence(2,['85','2, 6','8','11','85.2','passed'])[2],false);
 });
