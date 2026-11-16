@@ -47,7 +47,7 @@ workshopCode=workshopCode.replaceAll("'./VisualPractice'",JSON.stringify(visualM
 workshopCode=workshopCode.replaceAll("'./CandlePractice'",JSON.stringify(candleModule)).replaceAll('"./CandlePractice"',JSON.stringify(candleModule));
 workshopCode=workshopCode.replace(/import \{ CoachCelo \} from ['"]\.\/CoachCelo['"];?/,"const CoachCelo=({children})=>children;");
 for(const name of ['react','react/jsx-runtime']) workshopCode=workshopCode.replaceAll(JSON.stringify(name),JSON.stringify(import.meta.resolve(name))).replaceAll("'"+name+"'",JSON.stringify(import.meta.resolve(name)));
-const {LessonWorkshop}=await import('data:text/javascript;base64,'+Buffer.from(workshopCode).toString('base64'));
+const {LessonWorkshop,readingTime}=await import('data:text/javascript;base64,'+Buffer.from(workshopCode).toString('base64'));
 const lessons=JSON.parse(readFileSync(new URL('../../api/routes/learning_course_content.json',import.meta.url),'utf8'));
 test('opening lessons teach distinct steps and test a new application without replacing saved progress',()=>{
  for(const lesson of lessons.slice(0,4)){
@@ -280,4 +280,10 @@ test('higher-high teaching candles have visible bodies without changing confirme
  assert.equal(v.bars[4].low,101.9);
  assert.ok(v.bars[4].low<v.bars[3].low);
  assert.equal(v.bars[7].close,101.5);
+});
+
+
+test('continuous lesson gives reading time proportional to explanation length',()=>{
+ assert.equal(readingTime('Short explanation.'),6000);
+ assert.equal(readingTime(Array(100).fill('word').join(' ')),35000);
 });

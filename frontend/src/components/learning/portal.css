@@ -55,3 +55,5 @@
 .coach-local-anchor{position:absolute;right:16px;top:10px;width:104px;height:166px;pointer-events:none}
 .workshop-chart-controls{flex-wrap:wrap;gap:10px}
 @media(max-width:620px){.workshop-observation{min-height:130px;padding-right:94px!important;padding-left:12px!important}.coach-local-anchor{width:68px;height:109px;right:12px}}
+
+.workshop-playback{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:16px 0}.workshop-playback span{font-size:.9rem;color:var(--ink-muted)}

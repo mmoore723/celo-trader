@@ -1,6 +1,6 @@
 import {HistoricalRetests} from './HistoricalRetests';
 import {RetestSkills, RetestComparison, VisualPractice, type TeachingScene} from './VisualPractice';
-import {useEffect,useState} from 'react';
+import {useCallback,useEffect,useState} from 'react';
 import {CoachCelo} from './CoachCelo';
 import {CandlePractice, type PracticeCandle} from './CandlePractice';
 type Candle = {open:number;high:number;low:number;close:number};
@@ -12,12 +12,26 @@ export type Workshop = {retestComparison?:boolean;visualPractice?:TeachingScene[
 export function LessonWorkshop({workshop,onReview}:{workshop:Workshop;onReview:()=>void}){
  const [step,setStep]=useState(0);const [choice,setChoice]=useState<number|null>(null);const [checked,setChecked]=useState(false);
  const [premium,setPremium]=useState(2);const [quantity,setQuantity]=useState(1);
+ const [lessonPlaying,setLessonPlaying]=useState(false);
  const current=workshop.steps[step];const practice=step===workshop.steps.length;
- function move(index:number){setStep(index);setChoice(null);setChecked(false);}
+ const advance=useCallback(()=>{setStep(i=>Math.min(i+1,workshop.steps.length));if(step+1>=workshop.steps.length)setLessonPlaying(false);},[step,workshop.steps.length]);
+ const introductionMs=readingTime(current?current.explain+' '+current.example:'');
+ useEffect(()=>{
+  const pause=()=>{if(document.hidden)setLessonPlaying(false);};
+  document.addEventListener('visibilitychange',pause);
+  return()=>document.removeEventListener('visibilitychange',pause);
+ },[]);
+ useEffect(()=>{
+  if(!lessonPlaying||practice||workshop.visual?.kind==='candles')return;
+  const timer=setTimeout(advance,introductionMs+readingTime(workshop.visual?.kind==='line'?workshop.visual.caption:workshop.mistake));
+  return()=>clearTimeout(timer);
+ },[lessonPlaying,practice,workshop,introductionMs,advance]);
+ function move(index:number){setLessonPlaying(false);setStep(index);setChoice(null);setChecked(false);}
  return <section className="lesson-workshop" aria-label="Guided lesson">
+ {!practice&&<div className="workshop-playback"><button type="button" className="btn btn-primary" aria-pressed={lessonPlaying} onClick={()=>setLessonPlaying(!lessonPlaying)}>{lessonPlaying?'Pause lesson':'Play lesson'}</button><span>{lessonPlaying?'Coach will explain each section, then pause for your practice answer.':'Read at your pace, or play the guided lesson. You can pause anytime.'}</span></div>}
  <p className="workshop-goal"><strong>By the end:</strong> {workshop.goal}</p>
  <nav className="workshop-route" aria-label="Teaching steps">{workshop.steps.map((s,i)=><button key={s.title} className={step===i?'selected':''} aria-current={step===i?'step':undefined} onClick={()=>move(i)}>{i+1}. {s.title}</button>)}<button className={practice?'selected':''} aria-current={practice?'step':undefined} onClick={()=>move(workshop.steps.length)}>Try a new situation</button></nav>
- {!practice&&current?<div className="workshop-columns"><div><p className="portal-eyebrow">STEP {step+1} OF {workshop.steps.length}</p><h3>{current.title}</h3><p>{current.explain}</p><section className="workshop-example"><h4>Walk through it</h4><p>{current.example}</p></section>{workshop.visual&&<LessonVisual key={step} visual={workshop.visual}/>}</div><CoachCelo><p><strong>Keep these separate:</strong> {workshop.mistake}</p></CoachCelo></div>:<section><h3>Use the idea in a different situation</h3><p>Practice only. This does not place an order or change your saved lesson score.</p>{workshop.candlePractice?<CandlePractice candles={workshop.candlePractice}/>:workshop.retestComparison&&workshop.visualPractice?<><RetestComparison scenes={workshop.visualPractice}/><RetestSkills/><HistoricalRetests/></>:workshop.visualPractice?<VisualPractice scenes={workshop.visualPractice}/>:<><fieldset className="portal-question"><legend>{workshop.challenge.prompt}</legend>{workshop.challenge.choices.map((c,i)=><label key={c}><input type="radio" name="workshop-choice" checked={choice===i} onChange={()=>{setChoice(i);setChecked(false);}}/>{c}</label>)}</fieldset><button className="btn btn-primary" disabled={choice===null} onClick={()=>setChecked(true)}>Explain my answer</button>{checked&&<div className="portal-feedback" role="status"><h4>{choice===workshop.challenge.correct?'Correct. Here is the reasoning.':'Not quite. Let’s work it out.'}</h4><p>{workshop.challenge.explanation}</p></div>}
+ {!practice&&current?<div className="workshop-columns"><div><p className="portal-eyebrow">STEP {step+1} OF {workshop.steps.length}</p><h3>{current.title}</h3><p>{current.explain}</p><section className="workshop-example"><h4>Walk through it</h4><p>{current.example}</p></section>{workshop.visual&&<LessonVisual key={step} visual={workshop.visual} guidedPlaying={lessonPlaying} introductionMs={introductionMs} onGuidedToggle={()=>setLessonPlaying(v=>!v)} onGuidedPause={()=>setLessonPlaying(false)} onComplete={advance}/>}</div><CoachCelo><p><strong>Keep these separate:</strong> {workshop.mistake}</p></CoachCelo></div>:<section><h3>Use the idea in a different situation</h3><p>Practice only. This does not place an order or change your saved lesson score.</p>{workshop.candlePractice?<CandlePractice candles={workshop.candlePractice}/>:workshop.retestComparison&&workshop.visualPractice?<><RetestComparison scenes={workshop.visualPractice}/><RetestSkills/><HistoricalRetests/></>:workshop.visualPractice?<VisualPractice scenes={workshop.visualPractice}/>:<><fieldset className="portal-question"><legend>{workshop.challenge.prompt}</legend>{workshop.challenge.choices.map((c,i)=><label key={c}><input type="radio" name="workshop-choice" checked={choice===i} onChange={()=>{setChoice(i);setChecked(false);}}/>{c}</label>)}</fieldset><button className="btn btn-primary" disabled={choice===null} onClick={()=>setChecked(true)}>Explain my answer</button>{checked&&<div className="portal-feedback" role="status"><h4>{choice===workshop.challenge.correct?'Correct. Here is the reasoning.':'Not quite. Let’s work it out.'}</h4><p>{workshop.challenge.explanation}</p></div>}
  </>}
  {workshop.application&&<ApplicationPractice application={workshop.application}/>}
  {!workshop.visual&&<details className="workshop-experiment"><summary>Try the contract-cost calculator</summary><p>Change the quote and contract count. These are practice numbers, not your account or a market quote. Standard 100-share contracts only.</p><label>Option quote per share: ${premium.toFixed(2)}<input aria-label="Practice option premium" type="range" min="0.5" max="5" step="0.25" value={premium} onChange={e=>setPremium(Number(e.target.value))}/></label><label>Contracts: {quantity}<input aria-label="Practice contract count" type="range" min="1" max="5" step="1" value={quantity} onChange={e=>setQuantity(Number(e.target.value))}/></label><output aria-live="polite">${premium.toFixed(2)} × 100 × {quantity} = ${(premium*100*quantity).toFixed(2)} before fees</output><p>Doubling the contract count doubles the purchase cost. This calculator does not estimate a stop loss or recommend a quantity.</p></details>}
@@ -37,18 +51,26 @@ export function revealedCandles(visual:Extract<LessonVisualData,{kind:'candles'}
  const bars=visual.bars.slice(0,Math.max(1,Math.min(count,visual.bars.length)));
  return {bars,minimum:Math.min(...level,...bars.map(b=>b.low)),maximum:Math.max(...level,...bars.map(b=>b.high))};
 }
-export function LessonVisual({visual}:{visual:LessonVisualData}){
+export function readingTime(text:string){return Math.max(6000,text.trim().split(/\s+/).filter(Boolean).length*350);}
+export function LessonVisual({visual,guidedPlaying,introductionMs=0,onGuidedToggle,onGuidedPause,onComplete}:{visual:LessonVisualData;guidedPlaying?:boolean;introductionMs?:number;onGuidedToggle?:()=>void;onGuidedPause?:()=>void;onComplete?:()=>void}){
  const [count,setCount]=useState(1);
  const [point,setPoint]=useState(0);
- const [playing,setPlaying]=useState(false);
+ const [localPlaying,setLocalPlaying]=useState(false);
+ const playing=guidedPlaying??localPlaying;
+ const [introduced,setIntroduced]=useState(false);
+ const pausePlayback=()=>{setLocalPlaying(false);onGuidedPause?.();};
  useEffect(()=>{
   if(!playing||visual.kind!=='candles')return;
-  const pause=()=>{if(document.hidden)setPlaying(false);};
+  const pause=()=>{if(document.hidden){setLocalPlaying(false);onGuidedPause?.();}};
   document.addEventListener('visibilitychange',pause);
-  const words=visual.notes[count-1]?.split(/\s+/).length??0;
-  const timer=window.setTimeout(()=>{if(count<visual.bars.length)setCount(c=>c+1);else setPlaying(false);},Math.max(6000,words*300));
+  const delay=guidedPlaying&&!introduced?introductionMs:readingTime(visual.notes[count-1]??'');
+  const timer=window.setTimeout(()=>{
+   if(guidedPlaying&&!introduced){setIntroduced(true);return;}
+   if(count<visual.bars.length)setCount(c=>c+1);
+   else {setLocalPlaying(false);onComplete?.();}
+  },delay);
   return()=>{clearTimeout(timer);document.removeEventListener('visibilitychange',pause);};
- },[playing,count,visual]);
+ },[playing,count,visual,guidedPlaying,introduced,introductionMs,onComplete]);
  if(visual.kind==='table')return <figure className="workshop-visual"><figcaption><strong>{visual.title}</strong><span>Illustrative teaching example</span></figcaption><div className="workshop-table-scroll"><table><thead><tr>{visual.headers.map(h=><th scope="col" key={h}>{h}</th>)}</tr></thead><tbody>{visual.rows.map((r,i)=><tr key={i}>{r.map((c,j)=>j===0?<th scope="row" key={j}>{c}</th>:<td key={j}>{c}</td>)}</tr>)}</tbody></table></div></figure>;
  const candle=visual.kind==='candles';
  const state=candle?revealedCandles(visual,count):null;
@@ -71,7 +93,7 @@ export function LessonVisual({visual}:{visual:LessonVisualData}){
  </>:<><polyline points={values.map((v,i)=>`${x(i)},${y(v)}`).join(' ')} fill="none" stroke="#4263d5" strokeWidth="3"/>{values.map((v,i)=><circle data-coach-focus={point===i?"true":undefined} data-coach-key={`${visual.title}:${i}`} key={i} cx={x(i)} cy={y(v)} r={point===i?6:3} fill="#4263d5"/>)}</>}
  {labels.map((l,i)=><text key={i} x={x(i)} y="247" textAnchor="middle" className="workshop-axis">{l}</text>)}
  </svg>
- {candle?<><p className="workshop-chart-key">Green: close at or above open. Red: close below open. {visual.level!==null&&count>=(visual.levelAfter??1)?`Dashed line: $${number(visual.level)} reference.`:''}</p><div className="workshop-chart-controls"><button type="button" className="btn btn-primary" aria-pressed={playing} onClick={()=>{if(count===visual.bars.length)setCount(1);setPlaying(!playing);}}>{playing?'Pause walkthrough':count===visual.bars.length?'Replay walkthrough':'Play walkthrough'}</button><button className="btn btn-ghost" disabled={count===1} onClick={()=>{setPlaying(false);setCount(count-1);}}>Previous candle</button><output aria-live="polite">Candle {count} of {visual.bars.length}</output><button className="btn btn-primary" disabled={count===visual.bars.length} onClick={()=>{setPlaying(false);setCount(count+1);}}>Next candle</button></div><p className="workshop-observation" aria-live="polite"><span className="coach-local-anchor" aria-hidden="true"/><strong>Coach Celo · {labels[count-1]}:</strong> Open ${number(current!.open)} · High ${number(current!.high)} · Low ${number(current!.low)} · Close ${number(current!.close)}. {visual.notes[count-1]}</p></>:<><label className="workshop-chart-picker">Inspect an example point<select value={point} onChange={e=>setPoint(Number(e.target.value))}>{visual.labels.map((l,i)=><option value={i} key={i}>{l}</option>)}</select></label><output className="workshop-observation" aria-live="polite">{visual.labels[point]}: {number(visual.values[point])} · {visual.unit}</output></>}
+ {candle?<><p className="workshop-chart-key">Green: close at or above open. Red: close below open. {visual.level!==null&&count>=(visual.levelAfter??1)?`Dashed line: $${number(visual.level)} reference.`:''}</p><div className="workshop-chart-controls"><button type="button" className="btn btn-primary" aria-pressed={playing} onClick={()=>{if(!playing&&count===visual.bars.length)setCount(1);if(onGuidedToggle)onGuidedToggle();else setLocalPlaying(!playing);}}>{playing?'Pause lesson':guidedPlaying!==undefined?'Play lesson':count===visual.bars.length?'Replay walkthrough':'Play walkthrough'}</button><button className="btn btn-ghost" disabled={count===1} onClick={()=>{pausePlayback();setCount(count-1);}}>Previous candle</button><output aria-live="polite">Candle {count} of {visual.bars.length}</output><button className="btn btn-primary" disabled={count===visual.bars.length} onClick={()=>{pausePlayback();setCount(count+1);}}>Next candle</button></div><p className="workshop-observation" aria-live="polite"><span className="coach-local-anchor" aria-hidden="true"/><strong>Coach Celo · {labels[count-1]}:</strong> Open ${number(current!.open)} · High ${number(current!.high)} · Low ${number(current!.low)} · Close ${number(current!.close)}. {visual.notes[count-1]}</p></>:<><label className="workshop-chart-picker">Inspect an example point<select value={point} onChange={e=>setPoint(Number(e.target.value))}>{visual.labels.map((l,i)=><option value={i} key={i}>{l}</option>)}</select></label><output className="workshop-observation" aria-live="polite">{visual.labels[point]}: {number(visual.values[point])} · {visual.unit}</output></>}
  <p>{visual.caption}{!candle&&' Points are example categories, not a uniformly spaced time or price axis.'}</p><details><summary>Read the chart values</summary><div className="workshop-table-scroll"><table><thead><tr>{(candle?['Completed candle','Open','High','Low','Close']:['Example point',visual.unit]).map(h=><th scope="col" key={h}>{h}</th>)}</tr></thead><tbody>{candle?state!.bars.map((b,i)=><tr key={i}><th scope="row">{labels[i]}</th>{[b.open,b.high,b.low,b.close].map((v,j)=><td key={j}>{number(v)}</td>)}</tr>):visual.values.map((v,i)=><tr key={i}><th scope="row">{labels[i]}</th><td>{number(v)}</td></tr>)}</tbody></table></div></details>
  </figure>;
 }
