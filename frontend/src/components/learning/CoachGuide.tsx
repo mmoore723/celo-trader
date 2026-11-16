@@ -7,7 +7,7 @@ type Spot={x:number;y:number;tx:number;ty:number;width:number;height:number;visi
 const empty:Spot={x:0,y:0,tx:0,ty:0,width:0,height:0,visible:false,chart:false,key:''};
 const scopeSelector='.teaching-diagram,.workshop-visual,.candle-practice,.visual-practice,.option-lab,.portal-lesson,.portal-resume';
 // Presentation only: follows rendered teaching targets. Never advances lessons or changes focus.
-export function CoachGuide({children}:{children:React.ReactNode}){
+export function CoachGuide({children,enabled=true}:{children:React.ReactNode;enabled?:boolean}){
  const root=useRef<HTMLDivElement>(null),previous=useRef<Spot>(empty);
  const [spot,setSpot]=useState(empty),[paused,setPaused]=useState(false),[hidden,setHidden]=useState(false);
  const [reduced,setReduced]=useState(false),[phase,setPhase]=useState<CoachMotion>('idle');
@@ -16,7 +16,7 @@ export function CoachGuide({children}:{children:React.ReactNode}){
   const el=root.current;if(!el)return;let raf=0,active:Element|null=null;
   const visible=(node:Element)=>{const b=node.getBoundingClientRect();return b.width>0&&b.height>0&&b.bottom>90&&b.top<window.innerHeight-60&&!node.closest('[hidden]');};
   const update=()=>{
-   raf=0;if(hidden||document.hidden){setSpot(s=>s.visible?{...s,visible:false}:s);return;}
+   raf=0;if(!enabled||hidden||document.hidden){setSpot(s=>s.visible?{...s,visible:false}:s);return;}
    if(active&&!el.contains(active))active=null;
    const inScope=active??el;
    const targets=[...inScope.querySelectorAll('[data-coach-focus="true"]')].filter(visible);
@@ -38,7 +38,7 @@ export function CoachGuide({children}:{children:React.ReactNode}){
   const resize=new ResizeObserver(schedule);resize.observe(el);
   el.addEventListener('click',follow);el.addEventListener('focusin',follow);window.addEventListener('scroll',schedule,true);window.addEventListener('resize',schedule);document.addEventListener('visibilitychange',schedule);schedule();
   return()=>{cancelAnimationFrame(raf);observer.disconnect();resize.disconnect();el.removeEventListener('click',follow);el.removeEventListener('focusin',follow);window.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule);document.removeEventListener('visibilitychange',schedule);};
- },[hidden]);
+ },[hidden,enabled]);
  useEffect(()=>{
   const old=previous.current;previous.current=spot;
   if(!spot.visible){setPhase('idle');return;}
@@ -51,10 +51,10 @@ export function CoachGuide({children}:{children:React.ReactNode}){
   return()=>{clearTimeout(turn);clearTimeout(point);clearTimeout(rest);};
  },[spot.key,spot.visible,paused,reduced]);
  const size=typeof window!=='undefined'&&window.innerWidth<620?68:104;
- return <div ref={root} className="coach-guided" data-motion={paused||reduced?'off':'on'}>
-  <details className="coach-guide-options" data-guide-ui><summary>Coach options</summary><div className="coach-guide-tools"><button type="button" onClick={()=>setPaused(!paused)} aria-pressed={paused}>{paused?'Resume movement':'Pause movement'}</button><button type="button" onClick={()=>setHidden(!hidden)} aria-pressed={hidden}>{hidden?'Show Coach':'Hide Coach'}</button></div></details>
+ return <div ref={root} className={enabled?"coach-guided":"coach-guide-inactive"} data-motion={paused||reduced?'off':'on'}>
+  {enabled&&<details className="coach-guide-options" data-guide-ui><summary>Coach options</summary><div className="coach-guide-tools"><button type="button" onClick={()=>setPaused(!paused)} aria-pressed={paused}>{paused?'Resume movement':'Pause movement'}</button><button type="button" onClick={()=>setHidden(!hidden)} aria-pressed={hidden}>{hidden?'Show Coach':'Hide Coach'}</button></div></details>}
   <div className="coach-guided-content">{children}</div>
-  {!hidden&&spot.visible&&<div data-guide-ui className="coach-guide-layer" aria-hidden="true">
+  {enabled&&!hidden&&spot.visible&&<div data-guide-ui className="coach-guide-layer" aria-hidden="true">
    <svg className="coach-guide-pointer" width="100%" height="100%">{phase!=='walking'&&<><path d={`M ${spot.x+size*.13} ${spot.y+size*.3} Q ${spot.x-12} ${spot.ty}, ${spot.tx} ${spot.ty}`} fill="none" stroke="var(--accent,#3159db)" strokeWidth="1.5" strokeDasharray="4 5" opacity=".45"/><circle cx={spot.tx} cy={spot.ty} r={spot.chart?9:16} fill="none" stroke="var(--accent,#3159db)" strokeWidth="2" className="coach-guide-ring"/></>}</svg>
    <div className="coach-guide-traveler" data-phase={phase} style={{transform:`translate(${spot.x}px,${spot.y}px)`,width:size,height:size*1.6}}><CoachRig phase={phase} motion={!paused&&!reduced} aim={(Math.atan2(spot.ty-(spot.y+size*.45),spot.tx-(spot.x+size*.43))*180/Math.PI+163+540)%360-180}/><span className="coach-guide-shadow"/></div>
   </div>}

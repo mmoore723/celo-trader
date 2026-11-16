@@ -1,4 +1,5 @@
 import { LearningPortal } from "../components/learning/LearningPortal";
+import { OptionLab } from "../components/learning/OptionLab";
 import { Foundations } from "../components/learning/Foundations";
 /**
  * Learning Portal plus the strategy and operations reference material.
@@ -205,18 +206,12 @@ export function Playbooks() {
   return (
     <div className="p-4 flex flex-col gap-4">
       {params.has('strategy') ? <PairLearning strategyCatalog={strategyCatalog?.strategies ?? []} /> : <>
-      {/* Tab bar */}
-      <div className="flex gap-2 border-b pb-2" style={{ borderColor: "var(--border)" }}>
-        {(["course", "playbooks", "foundations", "glossary", "log-guide", "how-it-works"] as const).map((t) => (
-          <button
-            key={t}
-            className={`btn btn-sm ${tab === t ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => setTab(t)}
-          >
-            {t === "course" ? "Learning path" : t === "foundations" ? "Chart basics" : t === "playbooks" ? "Strategy lessons" : t === "glossary" ? "Trading Glossary" : t === "log-guide" ? "Log Dictionary" : "How It Works"}
-          </button>
-        ))}
-      </div>
+      <label className="flex items-center gap-3 flex-wrap"><span className="font-semibold">Learning Portal</span>
+        <select className="input" style={{width:'auto',maxWidth:'100%'}} aria-label="Learning Portal section" value={tab} onChange={e=>setTab(e.target.value)}>
+          <option value="course">Courses</option><option value="playbooks">Strategy lessons</option><option value="foundations">Chart practice</option><option value="lab">Options lab</option><option value="glossary">Trading glossary</option><option value="log-guide">Log dictionary</option><option value="how-it-works">How the bot works</option>
+        </select>
+      </label>
+      {tab === 'lab' && <OptionLab />}
       {tab === 'course' && <LearningPortal />}
       {tab === 'foundations' && <Foundations />}
       {tab === 'glossary' && <section className="card p-5"><h2 className="text-xl font-semibold mb-4">Trading concepts</h2><dl className="space-y-4">{['VWAP','FVG','ATR','RSI','MACD','SMA','EMA','RVOL'].map(term => <div key={term}><dt className="font-semibold">{term}</dt><dd className="text-sm mt-1">{GLOSSARY[term]}</dd></div>)}</dl></section>}
