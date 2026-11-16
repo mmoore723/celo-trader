@@ -56,7 +56,7 @@ test('opening lessons teach distinct steps and test a new application without re
   assert.ok(w.challenge.correct>=0&&w.challenge.correct<w.challenge.choices.length);
   assert.notEqual(w.challenge.prompt,lesson.questions[0].prompt);
   const html=renderToStaticMarkup(createElement(LessonWorkshop,{workshop:w,onReview:()=>{}}));
-  assert.match(html,/By the end:/);assert.match(html,/Walk through it/);assert.match(html,/Try a new situation/);
+  assert.match(html,/By the end:/);assert.match(html,/For example/);assert.match(html,/Try a new situation/);
   assert.ok(html.includes(w.steps[0].title));assert.ok(!html.includes(w.steps[3].explain));
  }
  assert.match(read('components/learning/LearningPortal.tsx'),/current\.workshop/);
@@ -286,4 +286,12 @@ test('higher-high teaching candles have visible bodies without changing confirme
 test('continuous lesson gives reading time proportional to explanation length',()=>{
  assert.equal(readingTime('Short explanation.'),6000);
  assert.equal(readingTime(Array(100).fill('word').join(' ')),35000);
+});
+
+test('guided lesson has one playback button and hides manual navigation',()=>{
+ const lesson=lessons.find(l=>l.workshop.visual?.kind==='candles')??lessons[4];
+ const html=renderToStaticMarkup(createElement(LessonWorkshop,{workshop:lesson.workshop,onReview:()=>{}}));
+ assert.equal((html.match(/>Play lesson</g)||[]).length,1);
+ assert.doesNotMatch(html,/>Next candle<|>Previous candle</);
+ assert.match(html,/<details class="workshop-manual"><summary>Lesson controls/);
 });

@@ -57,3 +57,16 @@
 @media(max-width:620px){.workshop-observation{min-height:130px;padding-right:94px!important;padding-left:12px!important}.coach-local-anchor{width:68px;height:109px;right:12px}}
 
 .workshop-playback{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:16px 0}.workshop-playback span{font-size:.9rem;color:var(--ink-muted)}
+
+/* One primary lesson player; navigation stays available on request. */
+.workshop-playback{position:sticky;top:0;z-index:2;background:var(--surface,#fff);padding:12px 0;border-bottom:1px solid var(--border);margin:0 0 18px}
+.workshop-playback span{max-width:440px}
+.workshop-goal{background:none;border:0;padding:0;margin:16px 0;color:var(--ink-muted)}
+.workshop-example{border:0;border-left:3px solid var(--border);border-radius:0;padding:4px 16px;margin:18px 0}
+.workshop-example h4{margin-bottom:4px}
+.workshop-manual,.lesson-stage-menu{margin:18px 0;font-size:.9rem}
+.workshop-manual>summary,.lesson-stage-menu>summary{cursor:pointer;color:var(--ink-muted)}
+.workshop-candle-position{display:flex;align-items:start;justify-content:space-between;gap:16px;font-size:.85rem;color:var(--ink-muted);padding:10px 0}
+.workshop-candle-position label{display:grid;gap:8px}
+.workshop-candle-position summary{cursor:pointer}
+.learning-portal .portal-lesson>h2{margin-bottom:16px}

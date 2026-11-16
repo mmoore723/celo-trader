@@ -24,3 +24,5 @@
 .coach-guided[data-motion=off] .coach-guide-traveler{transition:none}
 
 .coach-guided:has(.lesson-workshop){padding-right:0}
+
+.coach-guide-options{margin-bottom:12px;font-size:.8rem;color:var(--ink-muted)}.coach-guide-options>summary{cursor:pointer}.coach-guide-options .coach-guide-tools{margin-top:8px}

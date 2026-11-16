@@ -25,8 +25,9 @@ export function CoachGuide({children}:{children:React.ReactNode}){
    if(!target&&active){active=null;target=[...el.querySelectorAll('[data-coach-focus="true"],.portal-resume .btn,.portal-lesson h2')].find(visible)!;}
    if(!target){setSpot(s=>s.visible?{...s,visible:false}:s);return;}
    const r=el.getBoundingClientRect(),t=target.getBoundingClientRect(),size=window.innerWidth<620?68:104;
-   const local=target.closest('.lesson-workshop')?.querySelector('.coach-local-anchor');
+   const local=target.closest('.lesson-workshop')?.querySelector('.coach-local-anchor')??el.querySelector('.lesson-workshop .coach-local-anchor');
    const anchor=local?.getBoundingClientRect();
+   if(anchor&&(anchor.top<88||anchor.bottom>window.innerHeight-40)){setSpot(s=>s.visible?{...s,visible:false}:s);return;}
    const x=anchor?anchor.left:r.right-size-2,y=anchor?anchor.top:Math.max(88,Math.min(window.innerHeight-size*1.6-58,t.top+t.height/2-size*.35));
    const next={x,y,tx:t.left+t.width/2,ty:t.top+t.height/2,width:t.width,height:t.height,visible:r.right>size&&r.left<window.innerWidth&&r.bottom>88,chart:!!target.closest('svg'),key:target.getAttribute('data-coach-key')??target.getAttribute('aria-label')??target.textContent?.slice(0,80)??'chart'};
    setSpot(old=>Object.keys(next).every(k=>next[k as keyof Spot]===old[k as keyof Spot])?old:next);
@@ -51,7 +52,7 @@ export function CoachGuide({children}:{children:React.ReactNode}){
  },[spot.key,spot.visible,paused,reduced]);
  const size=typeof window!=='undefined'&&window.innerWidth<620?68:104;
  return <div ref={root} className="coach-guided" data-motion={paused||reduced?'off':'on'}>
-  <div className="coach-guide-tools" data-guide-ui><span>Coach Celo follows your lesson</span><button type="button" onClick={()=>setPaused(!paused)} aria-pressed={paused}>{paused?'Resume movement':'Pause movement'}</button><button type="button" onClick={()=>setHidden(!hidden)} aria-pressed={hidden}>{hidden?'Show Coach':'Hide Coach'}</button></div>
+  <details className="coach-guide-options" data-guide-ui><summary>Coach options</summary><div className="coach-guide-tools"><button type="button" onClick={()=>setPaused(!paused)} aria-pressed={paused}>{paused?'Resume movement':'Pause movement'}</button><button type="button" onClick={()=>setHidden(!hidden)} aria-pressed={hidden}>{hidden?'Show Coach':'Hide Coach'}</button></div></details>
   <div className="coach-guided-content">{children}</div>
   {!hidden&&spot.visible&&<div data-guide-ui className="coach-guide-layer" aria-hidden="true">
    <svg className="coach-guide-pointer" width="100%" height="100%">{phase!=='walking'&&<><path d={`M ${spot.x+size*.13} ${spot.y+size*.3} Q ${spot.x-12} ${spot.ty}, ${spot.tx} ${spot.ty}`} fill="none" stroke="var(--accent,#3159db)" strokeWidth="1.5" strokeDasharray="4 5" opacity=".45"/><circle cx={spot.tx} cy={spot.ty} r={spot.chart?9:16} fill="none" stroke="var(--accent,#3159db)" strokeWidth="2" className="coach-guide-ring"/></>}</svg>
