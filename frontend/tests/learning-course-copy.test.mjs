@@ -269,3 +269,15 @@ test('sequence keys use completed closes, including the deceptive wick',()=>{
  const k=retestSequence(2);assert.ok(k.scene.visual.bars[7].high>85);assert.ok(k.scene.visual.bars[7].close<85);
  assert.equal(gradeRetestSequence(2,['85','2, 6','8','11','85.2','passed'])[2],false);
 });
+
+test('higher-high teaching candles have visible bodies without changing confirmed structure',()=>{
+ const v=lessons.find(l=>l.workshop?.visual?.title==='Trace the sequence, then the challenge').workshop.visual;
+ for(const b of v.bars){assert.ok(b.high>=Math.max(b.open,b.close));assert.ok(b.low<=Math.min(b.open,b.close));}
+ assert.ok(v.bars[1].close-v.bars[1].open>.8);
+ assert.ok(v.bars[3].close-v.bars[3].open>1.5);
+ assert.ok(v.bars[2].low<v.bars[1].low);
+ assert.ok(v.bars[2].low<v.bars[3].low);
+ assert.equal(v.bars[4].low,101.9);
+ assert.ok(v.bars[4].low<v.bars[3].low);
+ assert.equal(v.bars[7].close,101.5);
+});

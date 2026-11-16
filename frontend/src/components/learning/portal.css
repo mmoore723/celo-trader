@@ -47,3 +47,11 @@
 @media(max-width:1100px){.portal-layout{grid-template-columns:1fr}.portal-map{max-height:320px;overflow:auto}}
 
 .retest-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:18px 0}.retest-pair>article{min-width:0;border:1px solid var(--border,#d3dfef);border-radius:16px;padding:14px}.retest-pair .teaching-diagram{margin:0}.retest-pair fieldset{border:0;padding:12px 0}.retest-pair fieldset label{display:block;padding:8px 0}.retest-pair input{margin-right:8px}.retest-comparison>.btn{margin-top:12px}@media(max-width:900px){.retest-pair{grid-template-columns:1fr}}
+
+/* Keep the lesson chart full width and its guide beside the current explanation. */
+.workshop-columns{grid-template-columns:minmax(0,1fr)}
+.workshop-columns>.coach-celo{max-width:none}
+.workshop-observation{position:relative;min-height:180px;padding:20px 136px 20px 20px!important;line-height:1.7}
+.coach-local-anchor{position:absolute;right:16px;top:10px;width:104px;height:166px;pointer-events:none}
+.workshop-chart-controls{flex-wrap:wrap;gap:10px}
+@media(max-width:620px){.workshop-observation{min-height:130px;padding-right:94px!important;padding-left:12px!important}.coach-local-anchor{width:68px;height:109px;right:12px}}

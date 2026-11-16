@@ -1,4 +1,8 @@
-import React,{useState} from 'react';
+import React from 'react';
 import{createRoot}from'react-dom/client';
 import{CoachGuide}from'../src/components/learning/CoachGuide';
-function App(){const [step,setStep]=useState(0);return <CoachGuide><h1>Coach Celo: follow the candle</h1><div className="workshop-visual"><p>Animation preview. These are teaching examples.</p><svg viewBox="0 0 650 380"><path d="M20 220H630" stroke="#8ba4b6" strokeDasharray="5 5"/>{[100,240,380,520].map((x,i)=><g key={x}><path d={`M${x} ${80+i*30}V${280-i*20}`} stroke={i%2?'#c53951':'#07835d'} strokeWidth="3"/><rect x={x-18} y={130+i*15} width="36" height="65" fill={i%2?'#c53951':'#07835d'}/><text x={x} y="320" textAnchor="middle">{i+1}</text>{step===i&&<circle data-coach-focus="true" data-coach-key={`candle-${i}`} cx={x} cy={162+i*15} r="27" fill="none" stroke="#3159db" strokeWidth="2"/>}</g>)}</svg><p>Coach points at candle {step+1}.</p><button onClick={()=>setStep((step+1)%4)}>Next candle</button></div><div className="portal-lesson" style={{marginTop:80,padding:24,background:'white'}}><h2>Continue to the practice button</h2><button>Try this example</button></div></CoachGuide>}createRoot(document.getElementById('root')!).render(<App/>);
+import{LessonWorkshop}from'../src/components/learning/LessonWorkshop';
+import lessons from '../../api/routes/learning_course_content.json';
+import '../src/components/learning/portal.css';
+const workshop=lessons.find(l=>l.workshop?.visual?.title==='Trace the sequence, then the challenge')!.workshop;
+createRoot(document.getElementById('root')!).render(<CoachGuide><h1>Higher highs and higher lows</h1><LessonWorkshop workshop={workshop as any} onReview={()=>{}}/></CoachGuide>);

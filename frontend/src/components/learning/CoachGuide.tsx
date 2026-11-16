@@ -21,11 +21,13 @@ export function CoachGuide({children}:{children:React.ReactNode}){
    const inScope=active??el;
    const targets=[...inScope.querySelectorAll('[data-coach-focus="true"]')].filter(visible);
    let target=targets[0];
-   if(!target)target=[...inScope.querySelectorAll('.workshop-route .selected,.workshop-controls .btn-primary:not(:disabled),.portal-resume .btn,.portal-teach,.portal-example,h3,h2')].find(visible)!;
+   if(!target)target=[...inScope.querySelectorAll('.workshop-observation,.workshop-route .selected,.workshop-controls .btn-primary:not(:disabled),.portal-resume .btn,.portal-teach,.portal-example,h3,h2')].find(visible)!;
    if(!target&&active){active=null;target=[...el.querySelectorAll('[data-coach-focus="true"],.portal-resume .btn,.portal-lesson h2')].find(visible)!;}
    if(!target){setSpot(s=>s.visible?{...s,visible:false}:s);return;}
    const r=el.getBoundingClientRect(),t=target.getBoundingClientRect(),size=window.innerWidth<620?68:104;
-   const x=r.right-size-2,y=Math.max(88,Math.min(window.innerHeight-size*1.6-58,t.top+t.height/2-size*.35));
+   const local=target.closest('.lesson-workshop')?.querySelector('.coach-local-anchor');
+   const anchor=local?.getBoundingClientRect();
+   const x=anchor?anchor.left:r.right-size-2,y=anchor?anchor.top:Math.max(88,Math.min(window.innerHeight-size*1.6-58,t.top+t.height/2-size*.35));
    const next={x,y,tx:t.left+t.width/2,ty:t.top+t.height/2,width:t.width,height:t.height,visible:r.right>size&&r.left<window.innerWidth&&r.bottom>88,chart:!!target.closest('svg'),key:target.getAttribute('data-coach-key')??target.getAttribute('aria-label')??target.textContent?.slice(0,80)??'chart'};
    setSpot(old=>Object.keys(next).every(k=>next[k as keyof Spot]===old[k as keyof Spot])?old:next);
   };
