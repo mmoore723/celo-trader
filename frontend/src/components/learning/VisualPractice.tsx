@@ -27,7 +27,7 @@ export function TeachingDiagram({scene,step=-1,revealCount,hideAnswers=false}:{s
  {!hideAnswers&&v.reference!==undefined&&count>=(v.referenceAt??0)&&<g><line x1="55" x2="555" y1={y(v.reference)} y2={y(v.reference)} stroke="#8153ae" strokeWidth="2" strokeDasharray="6 4"/><text x="550" y={y(v.reference)-8} textAnchor="end" fill="currentColor" fontSize="12">Reference {fmt(v.reference)}</text></g>}
  {v.kind==='path'&&<polyline points={v.values!.slice(0,count).map((n,i)=>`${x(i)},${y(n)}`).join(' ')} fill="none" stroke="#3159db" strokeWidth="3"/>}
  {labels.map((label,i)=>{const active=focus.includes(i),b=v.bars?.[i],n=v.values?.[i]??b?.close??0;return <g key={i} data-highlighted={active}>
- {active&&<rect x={x(i)-25} y="26" width="50" height="215" rx="8" fill="#3159db" fillOpacity=".12" stroke="#3159db" strokeWidth="2" strokeDasharray="4 3"/>}
+ {active&&<rect data-coach-focus="true" data-coach-key={`${scene.title}:${step}:${i}`} x={x(i)-25} y="26" width="50" height="215" rx="8" fill="#3159db" fillOpacity=".12" stroke="#3159db" strokeWidth="2" strokeDasharray="4 3"/>}
  {b?<><line x1={x(i)} x2={x(i)} y1={y(b.high)} y2={y(b.low)} stroke={b.close>=b.open?'#147c57':'#bc3851'} strokeWidth="3"/><rect x={x(i)-10} y={Math.min(y(b.open),y(b.close))} width="20" height={Math.max(2,Math.abs(y(b.open)-y(b.close)))} fill={b.close>=b.open?'#147c57':'#bc3851'}/></>:v.kind==='bars'?<rect x={x(i)-16} y={Math.min(y(0),y(n))} width="32" height={Math.max(2,Math.abs(y(n)-y(0)))} fill={n>=0?'#3159db':'#bc3851'}/>:<circle cx={x(i)} cy={y(n)} r={active?7:4} fill="#3159db"/>}
  <text x={x(i)} y="258" textAnchor="middle" fill="currentColor" fontSize="12">{label}</text>
  {!hideAnswers&&<text x={x(i)} y="277" textAnchor="middle" fill="currentColor" fontSize="12">{fmt(n)}</text>}

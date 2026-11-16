@@ -1,1 +1,24 @@
 .coach-celo{display:flex;align-items:center;gap:15px;background:linear-gradient(120deg,var(--surface),var(--accent-subtle));border:1px solid var(--border);border-radius:16px;padding:16px;margin:18px 0;color:var(--ink)}.coach-celo img{width:85px;height:120px;object-fit:contain;flex-shrink:0}.coach-celo strong{color:var(--accent);font-size:13px}.coach-celo p{margin:6px 0!important;font-size:14px;line-height:1.65}.broker-key-guide{padding:14px;border:1px solid var(--border);border-radius:12px;font-size:14px;line-height:1.65}.broker-key-guide summary{cursor:pointer;font-weight:650}.broker-key-guide p,.broker-key-guide ol{margin:12px 0}.broker-key-guide ol{padding-left:22px}.broker-key-guide li{margin:10px 0}.broker-key-guide a{text-decoration:underline;color:var(--accent)}
+
+/* The guide owns a reserved side lane; it cannot intercept clicks or cover lesson content. */
+.coach-guided{position:relative;padding-right:112px;min-width:0}
+.coach-guided-content{min-width:0}
+.coach-guide-tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--ink-muted);margin:0 0 16px}
+.coach-guide-tools button{padding:6px 9px;border:1px solid var(--border);border-radius:8px;color:var(--ink);background:var(--surface)}
+.coach-guide-tools button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.coach-guided .coach-celo{background:none;border:0;border-left:3px solid var(--accent);border-radius:0;padding:6px 0 6px 14px;align-self:start}
+.coach-guided .coach-celo>img{display:none}
+.coach-guide-layer{position:fixed;inset:0;z-index:30;pointer-events:none!important;overflow:hidden}
+.coach-guide-pointer{position:absolute;inset:0;pointer-events:none}
+.coach-guide-traveler{position:absolute;top:0;left:0;transition:transform .62s cubic-bezier(.3,.05,.3,1);pointer-events:none}
+.coach-guide-shadow{position:absolute;bottom:1px;left:30%;width:45%;height:5px;border-radius:50%;background:#1c355c18}
+.coach-guide-ring{animation:coach-focus 1.2s ease-out 2}
+@keyframes coach-focus{0%{stroke-opacity:.35;stroke-width:4}100%{stroke-opacity:1;stroke-width:2}}
+.coach-guided[data-motion=off] .coach-guide-traveler{transition:none}
+.coach-guided[data-motion=off] .coach-guided[data-motion=off] .coach-guide-ring{animation:none}
+@media(max-width:620px){.coach-guided{padding-right:74px}.coach-guide-tools{gap:8px}.coach-guide-tools span{width:100%}}
+@media(prefers-reduced-motion:reduce){.coach-guide-traveler{transition:none}.coach-guide-ring{animation:none!important}}
+
+.coach-rig{width:100%;height:100%;overflow:visible;position:relative;z-index:1}
+.coach-guide-traveler{transition:transform .75s cubic-bezier(.35,0,.3,1)}
+.coach-guided[data-motion=off] .coach-guide-traveler{transition:none}

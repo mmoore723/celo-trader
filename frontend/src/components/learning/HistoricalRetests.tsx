@@ -21,7 +21,7 @@ export function HistoricalRetests(){
  {bars.map((b,i)=>{const color=b.close>=b.open?'#147c57':'#bc3851',active=revealed&&focus.includes(i);return <g key={i}>
  {active&&<rect x={x(i)-12} y="28" width="24" height="240" fill="#3159db" opacity=".12"/>}
  <line x1={x(i)} x2={x(i)} y1={y(b.high)} y2={y(b.low)} stroke={color} strokeWidth="2"/><rect x={x(i)-7} y={y(Math.max(b.open,b.close))} width="14" height={Math.max(1,Math.abs(y(b.open)-y(b.close)))} fill={color}/>
- {active&&<circle cx={x(i)} cy={y(step===0?(e.direction==='bullish'?b.high:b.low):b.close)} r="4" fill="#3159db"/>}
+ {active&&<circle data-coach-focus="true" data-coach-key={`${e.id}:${step}:${i}`} cx={x(i)} cy={y(step===0?(e.direction==='bullish'?b.high:b.low):b.close)} r="4" fill="#3159db"/>}
  <text x={x(i)} y="289" textAnchor="middle" fill="currentColor" fontSize="12">{i+1}</text></g>})}</svg>
  <details><summary>Exact recorded prices</summary><div className="workshop-table-scroll"><table><thead><tr>{['Candle','Time ET','Open','High','Low','Close'].map(t=><th key={t}>{t}</th>)}</tr></thead><tbody>{bars.map((b,i)=><tr key={i}><th>{i+1}</th><td>{b.time}</td>{[b.open,b.high,b.low,b.close].map((v,k)=><td key={k}>${v}</td>)}</tr>)}</tbody></table></div></details>
  <p>Saved Tradier history, recovered later. This is a historical chart exercise, not a replay of when the bot received prices.</p>

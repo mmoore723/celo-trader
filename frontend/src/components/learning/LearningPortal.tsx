@@ -1,3 +1,4 @@
+import {CoachGuide} from './CoachGuide';
 import {VisualPractice} from './VisualPractice';
 import { LessonWorkshop, type Workshop } from './LessonWorkshop';
 import { CoachCelo } from './CoachCelo';
@@ -37,7 +38,7 @@ export function LearningPortal(){
   try{setFeedback(await read<Feedback>('/api/learning/course/answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lesson:item.id,choices:item.questions.map((_,i)=>choices[i])})}));await qc.invalidateQueries({queryKey:key});}
   catch(e){setSaveError((e as Error).message);}finally{setSaving(false);}
  }
- return <section className="learning-portal">
+ return <CoachGuide><section className="learning-portal">
   <header className="portal-welcome"><div><p className="portal-eyebrow">CELO LEARNING PORTAL</p><h1>Learn it. Try it. See why.</h1><p>Build your options skills through short lessons, chart challenges and hands-on experiments.</p></div>
    <div className="portal-progress"><progress aria-label="Lessons completed" value={completed} max={data.lessons.length}/><span>{completed} / {data.lessons.length} lessons completed</span></div>
    <nav className="flex flex-wrap gap-2 mt-4" aria-label="Learning activities">{[['catalog','Explore courses'],['chart','Chart challenges'],['lab','Options lab']].map(([id,label])=><button key={id} className={`btn ${view===id?'btn-primary':'btn-ghost'}`} onClick={()=>setView(id)}>{label}</button>)}</nav>
@@ -58,5 +59,5 @@ export function LearningPortal(){
    </article>}
   </div>}
   <footer className="portal-sources"><p>{data.disclaimer}</p><p>Continue learning with trusted resources: {data.sources.map(s=><a key={s.url} href={s.url} target="_blank" rel="noreferrer">{s.title}</a>)}</p></footer>
- </section>;
+ </section></CoachGuide>;
 }
