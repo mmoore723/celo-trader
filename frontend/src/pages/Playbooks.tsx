@@ -1,3 +1,4 @@
+import { CoachPresenter } from "../components/learning/CoachPresenter";
 import { LearningPortal } from "../components/learning/LearningPortal";
 import { OptionLab } from "../components/learning/OptionLab";
 import { Foundations } from "../components/learning/Foundations";
@@ -205,6 +206,7 @@ export function Playbooks() {
 
   return (
     <div className="p-4 flex flex-col gap-4">
+      <CoachPresenter />
       {params.has('strategy') ? <PairLearning strategyCatalog={strategyCatalog?.strategies ?? []} /> : <>
       <label className="flex items-center gap-3 flex-wrap"><span className="font-semibold">Learning Portal</span>
         <select className="input" style={{width:'auto',maxWidth:'100%'}} aria-label="Learning Portal section" value={tab} onChange={e=>setTab(e.target.value)}>

@@ -1,0 +1,4 @@
+.coach-presenter{align-self:flex-end;display:flex;align-items:center;gap:20px;max-width:100%;color:var(--ink);}
+.coach-presenter p{font-size:14px;color:var(--ink-muted);margin-top:4px}
+.coach-presenter video{display:block;width:300px;max-width:100%;aspect-ratio:17/11;object-fit:contain;background:#151b24;border-radius:14px;border:1px solid var(--border);}
+@media(max-width:640px){.coach-presenter{width:100%;justify-content:space-between;gap:12px}.coach-presenter video{width:52%;}.coach-presenter p{font-size:12px}}
