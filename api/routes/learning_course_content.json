@@ -3,8 +3,8 @@
     "id": "lesson-1",
     "unit": "Start here",
     "title": "A share and an option are different",
-    "teach": "A share is a small piece of ownership in a company. An option is a contract with a deadline. Buying an option does not mean you already own the shares. An ETF is a basket of investments traded like a stock.",
-    "example": "Buying one share for $40 costs $40. Buying a standard stock option quoted at $2 normally costs $200 because it represents 100 shares. These are different purchases.",
+    "teach": "Imagine a company divided into tiny pieces. Each piece is called a share. Buying a share makes you one of its owners. Its price can rise or fall, so you can make or lose money when you sell it. An option is a different purchase. You pay for an agreement that gives you a choice to buy or sell shares at an agreed price before a deadline. That agreement is called a contract. Buying it does not make you a shareholder.",
+    "example": "The screen says $2. One contract costs $2 times 100, which is $200 before fees. Two contracts cost $400. You are buying two agreements, not buying 200 shares of the company.",
     "watch": "An option buyer can lose the entire amount paid. Practice with pretend money first.",
     "questions": [
       {
@@ -18,30 +18,30 @@
       }
     ],
     "workshop": {
-      "goal": "Explain what you own, read an option quote, and calculate what one contract costs.",
+      "goal": "Tell a share from an option, then work out the price of one option purchase.",
       "steps": [
         {
-          "title": "Start with the thing you are buying",
-          "explain": "A share is ownership. If you buy one share of a company, you own a small part of it. A purchased option is a contract giving you a particular right for a limited time. Buying the contract does not put the shares into your account.",
-          "example": "One share at $40 costs $40. One standard option quoted at $2 costs $200 before fees. The $2 is a price per share covered by the contract, not the price for the whole contract."
+          "title": "A share means you own a small piece",
+          "explain": "Imagine a company divided into tiny pieces. Each piece is called a share. Buying a share makes you one of its owners. Its price can rise or fall, so you can make or lose money when you sell it.",
+          "example": "One share costs $40. You buy one, so you pay $40 before fees. If you later sell it for $45, you get $5 more than you paid. If you sell for $35, you lose $5."
         },
         {
-          "title": "Read the contract like a product label",
-          "explain": "The ticker tells you the investment. Call or put tells you the right. Strike tells you the agreed share price. Expiration tells you the deadline. Premium is the price of the contract, quoted per share. You need all five pieces to know what you are buying.",
-          "example": "XYZ $50 call, expiring June 18, quoted at $2: XYZ is the investment, call is the right to buy, $50 is the strike, June 18 is expiration, and $2 is the premium. This is a made-up teaching contract."
+          "title": "An option is an agreement, not ownership",
+          "explain": "An option is a different purchase. You pay for an agreement that gives you a choice to buy or sell shares at an agreed price before a deadline. That agreement is called a contract. Buying it does not make you a shareholder.",
+          "example": "Think of paying to reserve a choice for later. You paid for the choice, not the item itself. An option has a deadline, and the money you paid for that choice can be lost."
         },
         {
-          "title": "Separate the purchase from the right",
-          "explain": "For a standard 100-share call, paying $200 buys the contract. It does not buy 100 shares for $200. Using the right to buy shares is called exercising and requires paying the strike price for those shares.",
-          "example": "Exercising that $50 call normally requires $5,000 to purchase 100 shares. That is separate from the $200 already paid for the option."
+          "title": "The small price on screen is not the whole bill",
+          "explain": "For the standard stock options in this lesson, one contract covers 100 shares. The price on screen is for each of those shares. Multiply that displayed price by 100 to find the cost of one contract. Fees are extra.",
+          "example": "The screen says $2. One contract costs $2 times 100, which is $200 before fees. Two contracts cost $400. You are buying two agreements, not buying 200 shares of the company."
         },
         {
-          "title": "Know how the purchase can end",
-          "explain": "An option buyer can sell the contract to close it before expiration, if a buyer is available. Exercising is different from selling the option. If the contract expires worthless, the buyer loses the entire premium paid, plus costs.",
-          "example": "Buy one contract for $200 and later sell it for $250: the difference is $50 before fees. If it becomes worthless instead, the loss is $200 before fees. These are examples, not predictions."
+          "title": "What happens when you sell the option?",
+          "explain": "An option has its own price, which can change while you hold it. If a buyer is available, you can sell the agreement before its deadline. You make money only if the sale brings in more than you paid, including fees.",
+          "example": "You pay $200 for one contract and later sell it for $250. That is a $50 gain before fees. Sell it for $150 instead and you lose $50. If it becomes worthless, you lose the full $200 plus fees."
         }
       ],
-      "mistake": "The $50 strike is not a $50 option price. Do not multiply the strike to calculate what buying the option costs. Use the premium and the contract multiplier.",
+      "mistake": "A $2 price on screen means $200 for one standard 100-share contract, before fees. Buying that contract does not mean you own the shares.",
       "challenge": {
         "prompt": "A standard option is quoted at $1.25. You buy two contracts. What do you pay before fees?",
         "choices": [
@@ -54,7 +54,7 @@
       },
       "visualPractice": [
         {
-          "title": "A quote is not the whole bill",
+          "title": "From the screen price to the total cost",
           "prompt": "2 standard contracts cost $1.25 per share. What is the total before fees?",
           "choices": [
             "$250.00",
@@ -91,7 +91,7 @@
             },
             {
               "title": "Check the ticket",
-              "text": "Read the multiplier and quantity before buying. These practice prices exclude fees; adjusted contracts can have a different multiplier.",
+              "text": "Count the contracts, then multiply by the cost of one. Fees are added separately. These examples use standard contracts covering 100 shares each.",
               "focus": [
                 0,
                 1
@@ -100,7 +100,7 @@
           ]
         },
         {
-          "title": "A quote is not the whole bill",
+          "title": "From the screen price to the total cost",
           "prompt": "3 standard contracts cost $2.50 per share. What is the total before fees?",
           "choices": [
             "$750.00",
@@ -137,7 +137,7 @@
             },
             {
               "title": "Check the ticket",
-              "text": "Read the multiplier and quantity before buying. These practice prices exclude fees; adjusted contracts can have a different multiplier.",
+              "text": "Count the contracts, then multiply by the cost of one. Fees are added separately. These examples use standard contracts covering 100 shares each.",
               "focus": [
                 0,
                 1

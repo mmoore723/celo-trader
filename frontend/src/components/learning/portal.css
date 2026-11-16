@@ -70,3 +70,5 @@
 .workshop-candle-position label{display:grid;gap:8px}
 .workshop-candle-position summary{cursor:pointer}
 .learning-portal .portal-lesson>h2{margin-bottom:16px}
+
+.workshop-example:has(.coach-local-anchor){position:relative;padding-right:136px;min-height:180px}.workshop-example>.coach-local-anchor{position:absolute;right:8px;top:4px;width:104px;height:166px}.lesson-sound{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:.85rem}

@@ -21,8 +21,8 @@ export function CoachGuide({children,enabled=true}:{children:React.ReactNode;ena
    const inScope=active??el;
    const targets=[...inScope.querySelectorAll('[data-coach-focus="true"]')].filter(visible);
    let target=targets[0];
-   if(!target)target=[...inScope.querySelectorAll('.workshop-observation,.workshop-route .selected,.workshop-controls .btn-primary:not(:disabled),.portal-resume .btn,.portal-teach,.portal-example,h3,h2')].find(visible)!;
-   if(!target&&active){active=null;target=[...el.querySelectorAll('[data-coach-focus="true"],.portal-resume .btn,.portal-lesson h2')].find(visible)!;}
+   if(!target)target=[...inScope.querySelectorAll('.workshop-observation,.workshop-route .selected,.workshop-controls .btn-primary:not(:disabled),.portal-teach,.portal-example')].find(visible)!;
+   if(!target&&active){active=null;target=[...el.querySelectorAll('[data-coach-focus="true"]')].find(visible)!;}
    if(!target){setSpot(s=>s.visible?{...s,visible:false}:s);return;}
    const r=el.getBoundingClientRect(),t=target.getBoundingClientRect(),size=window.innerWidth<620?68:104;
    const local=target.closest('.lesson-workshop')?.querySelector('.coach-local-anchor')??el.querySelector('.lesson-workshop .coach-local-anchor');

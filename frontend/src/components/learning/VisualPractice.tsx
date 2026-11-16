@@ -20,7 +20,7 @@ export function TeachingDiagram({scene,step=-1,revealCount,hideAnswers=false}:{s
  const pad=Math.max((high-low)*.12,.1),y=(n:number)=>230-(n-low+pad)/(high-low+2*pad)*185;
  const x=(i:number)=>75+i*450/Math.max(1,v.labels.length-1);
  const fmt=(n:number)=>n.toLocaleString('en-US',{maximumFractionDigits:3});
- return <figure className="teaching-diagram"><figcaption><strong>{scene.title}</strong><span>Made-up teaching example · {v.unit}</span></figcaption>
+ return <figure className="teaching-diagram"><figcaption><strong>{scene.title}</strong></figcaption>
  {v.kind==='flow'?<ol className="teaching-flow">{labels.map((label,i)=><li key={i} data-highlighted={focus.includes(i)}><b>{i+1}</b><span>{label}</span>{focus.includes(i)&&<strong className="teaching-look">Look here</strong>}</li>)}</ol>:<>
  <svg viewBox="0 0 600 290" role="img" aria-label={`${scene.title}. ${step<0?'Inspect the example.':scene.steps[step].title+'. '+scene.steps[step].text}`}>
  {[low,(low+high)/2,high].map((n,i)=><g key={i}><line x1="55" x2="555" y1={y(n)} y2={y(n)} stroke="currentColor" opacity=".15"/><text x="50" y={y(n)+4} textAnchor="end" fill="currentColor" fontSize="12">{fmt(n)}</text></g>)}

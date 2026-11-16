@@ -295,3 +295,18 @@ test('guided lesson has one playback button and hides manual navigation',()=>{
  assert.doesNotMatch(html,/>Next candle<|>Previous candle</);
  assert.match(html,/<details class="workshop-manual"><summary>Lesson controls/);
 });
+
+test('lesson speech completes once and cancels safely on navigation',async()=>{
+ const {narrateLesson}=await import('data:text/javascript;base64,'+Buffer.from(workshopCode).toString('base64'));
+ const oldWindow=globalThis.window,oldSpeech=globalThis.SpeechSynthesisUtterance;
+ let spoken,cancelled=0,completed=0;
+ globalThis.window={speechSynthesis:{speak:u=>{spoken=u;},cancel:()=>{cancelled++;}}};
+ globalThis.SpeechSynthesisUtterance=class{constructor(text){this.text=text;}};
+ try{
+  const stop=narrateLesson('One contract costs two hundred dollars.',true,()=>completed++);
+  assert.equal(spoken.text,'One contract costs two hundred dollars.');
+  spoken.onend();spoken.onend();assert.equal(completed,1);stop();
+  const stopNext=narrateLesson('Next section',true,()=>completed++);
+  stopNext();spoken.onend();assert.equal(completed,1);assert.equal(cancelled,2);
+ }finally{globalThis.window=oldWindow;globalThis.SpeechSynthesisUtterance=oldSpeech;}
+});
