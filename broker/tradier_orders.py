@@ -110,6 +110,12 @@ class TradierOrdersMixin:
         previous = statuses.get(symbol, {})
         statuses[symbol] = current
         self.earnings_status = statuses
+        if current["status"] == "loading":
+            if previous.get("status") != "loading":
+                log_event("INFO", "broker.earnings",
+                          f"[{symbol}] Checking the earnings calendar. The lookup is running in the background; "
+                          "the result is not ready yet.")
+            return None
         if current["status"] not in {"available", "not_applicable"}:
             _debounced_log("WARNING", "broker.earnings",
                            f"[{symbol}] Earnings data unavailable ({current['reason']}). "
@@ -117,7 +123,12 @@ class TradierOrdersMixin:
                            "this is NOT confirmation of no earnings.")
             return None
         if previous.get("status") not in {"available", "not_applicable"}:
+            explanation = (
+                "The provider confirms this is a fund or index, so company earnings dates do not apply."
+                if current["status"] == "not_applicable" else
+                "Recent and upcoming company earnings dates are available for the earnings check."
+            )
             log_event("INFO", "broker.earnings",
-                      f"[{symbol}] Earnings calendar ready: {current['source']}; "
-                      f"status={current['status']}; checked_at={current['checked_at']}.")
+                      f"[{symbol}] Earnings calendar checked. {explanation} "
+                      f"Source: {current['source']}. Checked at {current['checked_at']}.")
         return list(current["dates"])

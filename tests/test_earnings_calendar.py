@@ -77,7 +77,7 @@ class CalendarTests(TestCase):
 
     def test_warning_and_recovery(self):
         client = TradierOrdersMixin()
-        with patch.object(cal, "snapshot", return_value=cal._result("loading", "pending")), \
+        with patch.object(cal, "snapshot", return_value=cal._result("unavailable", "request failed")), \
                 patch("broker.tradier_orders._debounced_log") as warning:
             self.assertIsNone(client.get_earnings("AAPL"))
             warning.assert_called_once()
@@ -86,3 +86,21 @@ class CalendarTests(TestCase):
             self.assertEqual(client.get_earnings("AAPL"), ["2099-01-01"])
             client.get_earnings("AAPL")
             event.assert_called_once()
+
+    def test_loading_is_not_a_failure_and_logs_once(self):
+        client = TradierOrdersMixin()
+        with patch.object(cal, "snapshot", return_value=cal._result("loading", "pending")), \
+                patch("broker.tradier_orders.log_event") as event, \
+                patch("broker.tradier_orders._debounced_log") as warning:
+            self.assertIsNone(client.get_earnings("QQQ"))
+            self.assertIsNone(client.get_earnings("QQQ"))
+            warning.assert_not_called()
+            event.assert_called_once()
+            self.assertIn("Checking the earnings calendar", event.call_args.args[2])
+
+    def test_non_company_recovery_is_explained(self):
+        client = TradierOrdersMixin()
+        with patch.object(cal, "snapshot", return_value=cal._result("not_applicable", dates=[])), \
+                patch("broker.tradier_orders.log_event") as event:
+            self.assertEqual(client.get_earnings("QQQ"), [])
+            self.assertIn("company earnings dates do not apply", event.call_args.args[2])
