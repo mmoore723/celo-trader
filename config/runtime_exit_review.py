@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'automatic-sizing-preview-20261115.1'
+REVISION = 'live-activity-checks-20261117.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

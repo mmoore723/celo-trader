@@ -67,8 +67,10 @@ def _session_vwap(bars: tuple[Bar, ...]) -> float:
 
 def _candidate_from_completed_bars(bars: tuple[Bar, ...]) -> tuple[Side, Bar, float, float, float, float] | None:
     """Return the first causal failed break, matching the selected paid rule."""
+    from trading.diagnostics.entry_checks import record_checks, add_check
     opening = _opening_range(bars)
     if opening is None:
+        add_check("Opening range", reason="Waiting for the complete opening range.", pending=True)
         return None
     range_high, range_low = opening
     width = range_high - range_low
@@ -77,24 +79,33 @@ def _candidate_from_completed_bars(bars: tuple[Bar, ...]) -> tuple[Side, Bar, fl
     breakout_side: Side | None = None
     breakout_bar: Bar | None = None
     for index, bar in enumerate(bars):
+        record_checks([])
+        add_check("Opening range", width > 0, f"Range ${range_low:.2f} to ${range_high:.2f}.")
         clock = bar.timestamp.time()
         if clock < opening_end():
             continue
         if breakout_side is None:
             if clock > parameter('breakout_deadline', BREAKOUT_DEADLINE):
+                add_check("Break deadline", False, "No qualifying break before the configured deadline.")
                 return None
             excursion = width * parameter('minimum_excursion_range', MINIMUM_EXCURSION_RANGE)
             if bar.close >= range_high + excursion:
                 breakout_side, breakout_bar = Side.LONG, bar
             elif bar.close <= range_low - excursion:
                 breakout_side, breakout_bar = Side.SHORT, bar
+            add_check("Range break", True if breakout_side else None, f"Completed candle {bar.timestamp}; close ${bar.close:.2f}; required excursion ${excursion:.2f}.", pending=breakout_side is None)
             continue
         if clock > parameter('failure_deadline', FAILURE_DEADLINE):
+            add_check("Recovery deadline", False, "The configured recovery deadline has passed.")
             return None
         assert breakout_bar is not None
         prefix = bars[: index + 1]
         vwap = bar.close + (_session_vwap(prefix)-bar.close)*parameter("vwap_target_fraction",1.)
         room = width * parameter('minimum_vwap_room_range', MINIMUM_VWAP_ROOM_RANGE)
+        add_check("Range break", True, f"First break at {breakout_bar.timestamp}.")
+        recovered = (bar.close <= range_high and bar.close < bar.open) if breakout_side is Side.LONG else (bar.close >= range_low and bar.close > bar.open)
+        add_check("Recovery candle", recovered, f"Completed candle {bar.timestamp}: open ${bar.open:.2f}, close ${bar.close:.2f}. Must return inside the range in the opposite direction.")
+        add_check("Room to VWAP", bar.close-vwap >= room if breakout_side is Side.LONG else vwap-bar.close >= room, f"VWAP ${vwap:.2f}; minimum room ${room:.2f}.")
         if breakout_side is Side.LONG and bar.close <= range_high and bar.close < bar.open:
             if bar.close - vwap >= room:
                 stop = max(breakout_bar.high, bar.high) + width * parameter('stop_buffer_range', STOP_BUFFER_RANGE)
@@ -130,6 +141,8 @@ def evaluate(
     # order.  Historical/research calls still work because they advance the
     # input frame one completed bar at a time.
     if trigger_time != pd.Timestamp(bars[-1].timestamp):
+        from trading.diagnostics.entry_checks import add_check
+        add_check("Fresh setup", False, f"The first recovery occurred at {trigger_time}; it is no longer the latest candle.")
         return None
     session_key = (_execution_scope(execution_scope), ticker, trigger.timestamp.date().isoformat())
     if _emitted_trigger_by_session.get(session_key) == trigger_time:

@@ -149,6 +149,7 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
     handles a bot restart in the middle of a valid setup without changing the
     rule.  The state transitions mirror the paid research strategy exactly.
     """
+    from trading.diagnostics.entry_checks import record_checks, add_check
     today = list(bars)
     if not today:
         return None
@@ -157,7 +158,9 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
     latest_signal: Signal | None = None
     minimum = max(parameter('slow_ema', SLOW_EMA), parameter('atr_bars', ATR_BARS) + 1)
     for index, current in enumerate(today):
+        record_checks([])
         clock = current.timestamp.time()
+        add_check("Entry time", parameter("entry_start", ENTRY_START) <= clock <= parameter("entry_end", ENTRY_END), f"Completed candle at {clock}; uses this ticker's saved entry window.")
         if not (parameter('entry_start', ENTRY_START) <= clock <= parameter('entry_end', ENTRY_END)) or index + 1 < minimum or reference is None:
             continue
         history = today[:index + 1]
@@ -168,10 +171,16 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
         vwap = _vwap(history)
         if atr <= 0:
             continue
+        add_check("EMA / VWAP alignment", (fast > slow and current.close > vwap) or (fast < slow and current.close < vwap),
+                  f"Close ${current.close:.2f}; VWAP ${vwap:.2f}; fast/slow averages ${fast:.2f}/${slow:.2f}.")
+        add_check("Impulse", True if leg else None, "A qualifying impulse is active." if leg else "Waiting for the configured move from the reference price.", pending=leg is None)
+        add_check("Pullback", True if leg and leg.pullback_extreme is not None else None, "Waiting for the controlled pullback to the fast average." if not leg or leg.pullback_extreme is None else f"Pullback extreme ${leg.pullback_extreme:.2f}.", pending=not leg or leg.pullback_extreme is None)
+        add_check("Reclaim", reason="Waiting for a completed reclaim candle.", pending=True)
         had_leg = leg is not None
         if leg is not None:
             elapsed = index - leg.impulse_index
             if elapsed > parameter('pullback_limit_bars', PULLBACK_LIMIT_BARS):
+                add_check("Impulse", False, "The impulse expired before the pullback completed.")
                 leg = None
             else:
                 previous = today[index - 1]
@@ -179,17 +188,21 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                     leg.impulse_extreme = max(leg.impulse_extreme, current.high)
                     retrace = leg.impulse_extreme - current.low
                     if current.close <= vwap or fast <= slow or retrace > parameter('pullback_max_atr', PULLBACK_MAX_ATR) * atr:
+                        add_check("Pullback", False, "VWAP or trend alignment failed, or the pullback became too deep.")
                         leg = None
                     elif leg.pullback_extreme is None:
                         if retrace >= parameter('pullback_min_atr', PULLBACK_MIN_ATR) * atr and current.low <= fast:
                             leg.pullback_extreme = current.low
                             leg.pullback_prior_high = previous.high
+                            add_check("Pullback", True, f"Pullback reached ${current.low:.2f} at the fast average.")
                     else:
                         leg.pullback_extreme = min(leg.pullback_extreme, current.low)
                         if current.close > previous.high and current.close > fast:
                             context = describe_price_action(
                                 history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
                             )
+                            add_check("Reclaim", True, "Completed close crossed the prior candle extreme and the fast average.")
+                            add_check("Candle confirmation", not parameter("require_directional_confirmation",True) or _has_directional_confirmation(context, "bullish"), "Checking the configured momentum, engulfing or rejection condition.")
                             if not (not parameter("require_directional_confirmation",True) or _has_directional_confirmation(context, "bullish")):
                                 leg = None
                                 continue
@@ -221,17 +234,21 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
                     leg.impulse_extreme = min(leg.impulse_extreme, current.low)
                     retrace = current.high - leg.impulse_extreme
                     if current.close >= vwap or fast >= slow or retrace > parameter('pullback_max_atr', PULLBACK_MAX_ATR) * atr:
+                        add_check("Pullback", False, "VWAP or trend alignment failed, or the pullback became too deep.")
                         leg = None
                     elif leg.pullback_extreme is None:
                         if retrace >= parameter('pullback_min_atr', PULLBACK_MIN_ATR) * atr and current.high >= fast:
                             leg.pullback_extreme = current.high
                             leg.pullback_prior_low = previous.low
+                            add_check("Pullback", True, f"Pullback reached ${current.high:.2f} at the fast average.")
                     else:
                         leg.pullback_extreme = max(leg.pullback_extreme, current.high)
                         if current.close < previous.low and current.close < fast:
                             context = describe_price_action(
                                 history, atr=atr, fast_ema=fast, slow_ema=slow, vwap=vwap,
                             )
+                            add_check("Reclaim", True, "Completed close crossed the prior candle extreme and the fast average.")
+                            add_check("Candle confirmation", not parameter("require_directional_confirmation",True) or _has_directional_confirmation(context, "bearish"), "Checking the configured momentum, engulfing or rejection condition.")
                             if not (not parameter("require_directional_confirmation",True) or _has_directional_confirmation(context, "bearish")):
                                 leg = None
                                 continue
@@ -264,8 +281,10 @@ def _signal_at_latest_bar(bars: tuple[_Bar, ...]) -> Signal | None:
         if leg is None and not had_leg:
             if current.close > vwap and fast > slow and current.close - reference >= parameter('impulse_atr', IMPULSE_ATR) * atr:
                 leg = _Leg("bullish", current.high, index)
+                add_check("Impulse", True, f"Upward impulse confirmed from reference ${reference:.2f}.")
             elif current.close < vwap and fast < slow and reference - current.close >= parameter('impulse_atr', IMPULSE_ATR) * atr:
                 leg = _Leg("bearish", current.low, index)
+                add_check("Impulse", True, f"Downward impulse confirmed from reference ${reference:.2f}.")
     if latest_signal is None or latest_signal.trigger_bar != today[-1].timestamp:
         return None
     return latest_signal
@@ -293,11 +312,15 @@ def update_two_leg_trend_pullback(
     if state.get("key") != key:
         state.clear()
         state["key"] = key
+    from trading.diagnostics.entry_checks import add_check
     if state.get("emitted_bar") == bars[-1].timestamp.isoformat():
+        add_check("Fresh setup", False, "This completed setup has already been processed.")
         return None, "already_emitted"
     if _reference_close(list(bars)) is None:
+        add_check("Reference candle", reason="Waiting for the configured reference candle to complete.", pending=True)
         return None, "waiting_for_0945_reference"
     if bars[-1].timestamp.time() > parameter('entry_end', ENTRY_END):
+        add_check("Entry time", False, "The configured entry window has ended.")
         return None, "entry_window_expired"
     signal = _signal_at_latest_bar(bars)
     if signal is None:

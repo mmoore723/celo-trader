@@ -1,6 +1,7 @@
 """Shared quote/bar inputs; execution and research supply separate state."""
 import logging
 
+from trading.diagnostics.entry_checks import capture_checks, finish_checks
 from database import record_underlying_quote
 from trading.cross_ticker_shadow import update_orb, update_two_leg
 from trading.orb_retouch_execution import update_one_minute_orb_retouch
@@ -43,9 +44,10 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
                         price=price, quote=quote, settings=settings)
                 try:
                     from config.engine_parameters import for_pair, attach
-                    with for_pair(settings if ORB in enabled else {}, ORB, ticker):
+                    with for_pair(settings if ORB in enabled else {}, ORB, ticker), capture_checks(ORB, ticker, enabled=ORB in enabled):
                         signal, status = evaluate(slot, frame, ticker=ticker, quote_price=price, now=decision_now)
                         signal = attach(signal)
+                        finish_checks(signal)
                 except Exception as exc:
                     orb_evidence.finish(evidence, slot, None, 'evaluation_error', error=type(exc).__name__)
                     raise
@@ -71,9 +73,10 @@ def evaluate_injected_setups(state, frame, ticker, enabled, observed, alpaca, se
                     evidence = two_leg_evidence.begin(slot, frame, now=decision_now, settings=settings)
                 try:
                     from config.engine_parameters import for_pair, attach
-                    with for_pair(settings if TWO_LEG in enabled else {}, TWO_LEG, ticker):
+                    with for_pair(settings if TWO_LEG in enabled else {}, TWO_LEG, ticker), capture_checks(TWO_LEG, ticker, enabled=TWO_LEG in enabled):
                         signal, status = evaluate(slot, frame, ticker=ticker, now=decision_now)
                         signal = attach(signal)
+                        finish_checks(signal)
                 except Exception as exc:
                     two_leg_evidence.finish(evidence, slot, None, 'evaluation_error', error=type(exc).__name__)
                     raise

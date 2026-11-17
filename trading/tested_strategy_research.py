@@ -173,7 +173,12 @@ def _latest_candidate(strategy: object, bars: tuple[ResearchBar, ...], *, resear
         history.append(bar)
         if research_strategy_id is not None:
             prepare_bar(research_strategy_id, strategy)
+        from trading.diagnostics.entry_checks import record_checks
+        record_checks([])
         candidate = strategy.evaluate(history)
+        if bar is bars[-1]:
+            from trading.diagnostics.entry_checks import library_checks
+            library_checks(strategy, history)
         if candidate is not None:
             latest = candidate
     if latest is not None and latest.timestamp == bars[-1].timestamp:

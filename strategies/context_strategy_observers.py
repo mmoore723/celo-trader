@@ -253,6 +253,7 @@ def _kaufman(closes: Sequence[float], periods: int = 10) -> float | None:
 
 
 def _vwap_candidate(today: pd.DataFrame, *, ticker: str, strategy_id: str, execution_scope: str | None, now: object | None) -> Signal | None:
+    from trading.diagnostics.entry_checks import record_checks, add_check
     ticker = ticker.strip().upper()
     allowed = _VWAP_KER_TICKERS if strategy_id == VWAP_KER10_LONG else _VWAP_DISPLACEMENT_TICKERS
     if ticker not in allowed:
@@ -272,6 +273,8 @@ def _vwap_candidate(today: pd.DataFrame, *, ticker: str, strategy_id: str, execu
         vwaps.append(price_volume / volume)
     displacement = False
     for index, bar in enumerate(session):
+        record_checks([])
+        add_check("Entry time", parameter("entry_start",time(9,45)) <= bar.timestamp.time() < parameter("entry_end",time(16)), f"Completed candle at {bar.timestamp}; uses the saved entry window.")
         if bar.timestamp.time() == (datetime.combine(bar.timestamp.date(),parameter("displacement_checkpoint",time(10,30)))-timedelta(minutes=parameter("entry_timeframe_minutes",5))).time():
             displacement = bar.close >= vwaps[index] * (1+parameter('displacement_fraction',.01))
         if index < 1 or not parameter("entry_start",time(9,45)) <= bar.timestamp.time() < parameter("entry_end",time(16)):
@@ -282,16 +285,23 @@ def _vwap_candidate(today: pd.DataFrame, *, ticker: str, strategy_id: str, execu
         current_vwap = vwaps[index]
         touch_reclaim = previous_close > previous_vwap and bar.low <= current_vwap and bar.close > ema9
         previous_high = max(item.high for item in session[max(0,index-parameter("prior_extreme_lookback_bars",2000)):index])
+        add_check("Prior close / VWAP", previous_close > previous_vwap, f"Previous close ${previous_close:.2f}; VWAP ${previous_vwap:.2f}.")
+        add_check("VWAP touch", bar.low <= current_vwap, f"Low ${bar.low:.2f}; VWAP ${current_vwap:.2f}.")
+        add_check("EMA reclaim", bar.close > ema9, f"Close ${bar.close:.2f}; average ${ema9:.2f}.")
+        add_check("Room to prior high", previous_high > bar.close, f"Prior high ${previous_high:.2f}; close ${bar.close:.2f}.")
+        add_check("Trend context", reason="Checked after the touch and reclaim pass.", pending=True)
         if not touch_reclaim or previous_high <= bar.close:
             continue
         visible_at = pd.Timestamp(bar.timestamp) + timedelta(minutes=parameter("entry_timeframe_minutes",5))
         hourly = _hourly(history, visible_at)
         ker = _kaufman([item["close"] for item in hourly], parameter('efficiency_period',10))
         context_ok = ker is not None and ker > parameter('efficiency_minimum',.60) if strategy_id == VWAP_KER10_LONG else displacement and bar.timestamp.time() >= parameter("displacement_checkpoint",time(10,30))
+        add_check("Trend context", context_ok, f"Hourly efficiency: {ker}; checkpoint displacement: {displacement}. Uses the saved context threshold.")
         if not context_ok:
             continue
         key = (_execution_scope(execution_scope), ticker, strategy_id, visible_at.isoformat())
         if key in _emitted:
+            add_check("Fresh setup", False, f"The setup at {visible_at} was already processed.")
             return None
         _emitted.add(key)
         return Signal(

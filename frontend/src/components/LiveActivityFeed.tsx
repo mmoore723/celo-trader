@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useBotStore, type LogEntry } from '../store/bot';
+import { activityChecks } from '../lib/activityChecks.js';
 import { strategyName } from '../lib/strategyIdentity.js';
 
 function text(value: unknown): string { return typeof value === 'string' ? value : ''; }
@@ -13,16 +14,6 @@ function isThinking(entry: LogEntry) {
   const message = entry.message || '';
   if (/database initiali[sz]ed|AlpacaClient: routing|https?:\/\/|research_scan|execution_scan|research_bar_recovery|quote_capture|socket|websocket|GET \/api|POST \/api/i.test(message)) return false;
   return Boolean(entry.ticker || entry.strategy_id || entry.conditions || entry.checks || /\[[A-Z]{1,6}\]|setup|POSITION LIVE|holding|entry|exit|trade|signal|waiting|watching/i.test(message));
-}
-function checksFor(entry: LogEntry) {
-  const values = entry.conditions ?? entry.checks;
-  if (!Array.isArray(values)) return [];
-  return values.filter((v) => v && typeof v === 'object').map((v) => ({
-    name: text(v.name) || text(v.label) || 'Check',
-    state: v.passed === true ? 'passed' : v.passed === false ? 'failed' :
-      ['evaluating', 'pending'].includes(v.status) ? 'pending' : 'unknown',
-    reason: text(v.reason) || text(v.detail) || 'No further explanation recorded.',
-  }));
 }
 export function LiveActivityFeed() {
   const { logs, connected } = useBotStore();
@@ -41,7 +32,7 @@ export function LiveActivityFeed() {
     <div className="activity-scroll" ref={scroller} onScroll={e => { if (!paused && e.currentTarget.scrollTop > 30) pause(); }}>
       {shown.map((entry, index) => {
         if (!keys.current.has(entry)) keys.current.set(entry, ++counter.current);
-        const checks = checksFor(entry);
+        const checks = activityChecks(entry);
         const message = entry.message || text(entry.event) || 'Recorded update';
         const ticker = text(entry.ticker) || message.match(/\[([A-Z]{1,6})\]/)?.[1] || message.match(/ticker=([A-Z]+)/)?.[1] || 'System';
         const strategy = text(entry.strategy_id) || text(entry.strategy);
@@ -50,7 +41,7 @@ export function LiveActivityFeed() {
         const passed = checks.length > 0 && checks.every(c => c.state === 'passed');
         const state = failed ? 'failed' : pending ? 'pending' : passed ? 'passed' : 'unknown';
         const managing = /POSITION LIVE|Holding|In a trade/.test(message);
-        const label = failed ? 'Check failed' : pending ? 'Evaluating' : passed ? 'Chart checks passed' : managing ? 'Managing position' : /no (entry |trade )?setup|continuing to watch/i.test(message) ? 'Scanning' : 'Recorded update';
+        const label = failed ? 'Check failed' : pending ? 'Priming' : passed ? 'Chart checks passed' : managing ? 'Managing position' : /no (entry |trade )?setup|continuing to watch/i.test(message) ? 'Scanning' : 'Recorded update';
         return <article key={keys.current.get(entry)} className={`activity-entry ${index === 0 ? 'latest' : ''}`} data-state={state}>
           {index === 0 && <div className="activity-latest">Latest entry</div>}
           <div className="activity-title"><strong>{ticker}</strong><span className="activity-state">{label}</span><time>{eventTime(entry.ts)}</time></div>

@@ -131,6 +131,18 @@ class TrendContinuation:
                 bars, atr=atr, fast_ema=fast, slow_ema=slow,
             ).features(),
         }
+        from trading.diagnostics.entry_checks import record_checks
+        bullish = fast > slow
+        aligned = fast != slow
+        breakout = current.close > prior_high if bullish else current.close < prior_low
+        level = prior_high if bullish else prior_low
+        record_checks([
+            {'name': f'EMA {self.config.fast_ema}/{self.config.slow_ema}', 'passed': aligned,
+             'reason': f'Fast average ${fast:.2f}; slow average ${slow:.2f}.'},
+            {'name': 'Range break', 'status': 'passed' if breakout and aligned else 'pending',
+             'reason': f'Close ${current.close:.2f}; waiting for a close {"above" if bullish else "below"} ${level:.2f}.'
+                       if not breakout else f'Close ${current.close:.2f} crossed ${level:.2f}.'},
+        ])
         if fast > slow and current.close > prior_high:
             stop = min(current.low, current.close - self.config.stop_atr_multiple * atr)
             risk = current.close - stop

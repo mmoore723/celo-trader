@@ -66,6 +66,7 @@ def update_one_minute_orb_retouch(
     This function is pure with respect to brokerage: the caller persists the
     small supplied state dictionary and routes any returned signal normally.
     """
+    from trading.diagnostics.entry_checks import add_check
     if ticker.strip().upper() != TICKER or quote_price is None or quote_price <= 0:
         return None, "not_applicable"
     from config.strategy_inputs import aggregate_entry_bars
@@ -82,20 +83,27 @@ def update_one_minute_orb_retouch(
 
     context = first_close_confirmed_breakout(bars, entry_deadline=parameter('entry_deadline', ENTRY_DEADLINE))
     if context is None:
+        add_check("Opening-range break", reason="Waiting for a completed close outside the opening range.", pending=True)
         return None, "building_or_waiting_for_breakout"
+    add_check("Opening-range break", True, f"Break confirmed at {context.breakout_time}; retouch level ${context.retouch_level:.2f}.")
     if not parameter("allow_long" if context.side is Side.LONG else "allow_short", context.side is VALIDATED_SIDE):
         # The first clean break defines the session's ORB sequence.  A short
         # break is deliberately not turned into a later long setup: the paid
         # TSLA rule that passed was calls-only.
+        add_check("Allowed direction", False, "This break is opposite the direction enabled for this ticker.")
         state["terminal"] = "outside_validated_direction"
         return None, "outside_validated_direction"
+    add_check("Allowed direction", True, "The breakout matches the enabled direction.")
     state["breakout_time"] = context.breakout_time.isoformat()
     state["side"] = context.side.value
     state["retouch_level"] = context.retouch_level
     if now.time() > parameter('entry_deadline', ENTRY_DEADLINE):
+        add_check("Entry time", False, "The configured entry deadline has passed.")
         state["terminal"] = "entry_window_expired"
         return None, "entry_window_expired"
+    add_check("Entry time", True, "The entry deadline has not passed.")
     status = retouch_status(context, float(quote_price), tolerance_pct=parameter('retouch_tolerance_pct', RETOUCH_TOLERANCE_PCT))
+    add_check("First retouch", None if status == "ready" else status != "failed", f"Quote ${quote_price:.2f}; retouch level ${context.retouch_level:.2f}.", pending=status == "ready")
     if status == "ready":
         return None, "armed_waiting_for_first_retouch"
     if status == "failed":

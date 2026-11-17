@@ -53,14 +53,18 @@ def _session_vwap(bars: Sequence[Bar]) -> float:
 
 def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
     """Return the exact first-retest FVG premise used by the paid study."""
+    from trading.diagnostics.entry_checks import record_checks, add_check
     if not bars:
+        add_check("Completed candles", reason="Waiting for completed candles.", pending=True)
         return None
     current_date = bars[-1].timestamp.date()
     today = tuple(bar for bar in bars if bar.timestamp.date() == current_date)
     minimum = max(parameter('slow_ema', _SLOW_EMA), parameter('atr_bars', _ATR_BARS) + 1, 6)
     if len(today) < minimum:
+        add_check("Completed candles", reason=f"{len(today)} available; need {minimum}.", pending=True)
         return None
     current = today[-1]
+    add_check("Entry time", parameter("start", _START) <= current.timestamp.time() < parameter("end", _END), f"Completed candle at {current.timestamp.time()}; uses the saved afternoon window.")
     if not (parameter('start', _START) <= current.timestamp.time() < parameter('end', _END)):
         return None
     atr = _atr(today, parameter('atr_bars', _ATR_BARS))
@@ -76,19 +80,28 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
     newest = len(today) - 3
     oldest = max(1, newest - parameter('scan_bars', _SCAN_BARS) + 1)
 
+    add_check("Price gap", reason="Waiting for a qualifying three-candle gap.", pending=True)
     for middle in range(newest, oldest - 1, -1):
         before, after = today[middle - 1], today[middle + 1]
         intervening = today[middle + 2:-1]
         if before.high < after.low:
             lower, upper = before.high, after.low
+            record_checks([])
+            add_check("Price gap", True, f"Testing bullish gap ${lower:.2f} to ${upper:.2f}, formed at {after.timestamp}.")
+            add_check("Gap size", upper-lower >= parameter('min_gap_atr', _MIN_GAP_ATR)*atr, f"Gap ${upper-lower:.2f}; minimum ${parameter('min_gap_atr', _MIN_GAP_ATR)*atr:.2f}.")
+            add_check("EMA alignment", fast > slow, f"Fast ${fast:.2f}; slow ${slow:.2f}.")
+            add_check("VWAP", current.close > vwap, f"Completed close ${current.close:.2f}; VWAP ${vwap:.2f}.")
+            add_check("Close confirmation", _trigger_close_confirms_direction("bullish", current.close, fast), f"Close ${current.close:.2f} versus fast average ${fast:.2f}.")
             if upper - lower < parameter('min_gap_atr', _MIN_GAP_ATR) * atr or not (
                 fast > slow and current.close > vwap
                 and _trigger_close_confirms_direction("bullish", current.close, fast)
             ):
                 continue
+            add_check("First retest", not parameter("require_first_retest",True) or not any(bar.low <= upper and bar.high >= lower for bar in intervening), "The gap must not have been touched earlier when first-retest checking is enabled.")
             if parameter("require_first_retest",True) and any(bar.low <= upper and bar.high >= lower for bar in intervening):
                 continue
             midpoint = (lower + upper) / 2.0
+            add_check("Retest close", current.low <= upper and current.high >= lower and (not parameter("require_midpoint_close",True) or current.close > midpoint), f"Candle range ${current.low:.2f} to ${current.high:.2f}; close ${current.close:.2f}; gap midpoint ${midpoint:.2f}.")
             if current.low <= upper and current.high >= lower and (not parameter("require_midpoint_close",True) or current.close > midpoint):
                 stop = min(current.low, current.close - parameter("stop_atr_multiple",1.) * atr)
                 risk = current.close - stop
@@ -112,14 +125,22 @@ def _signal_from_completed_bars(bars: Sequence[Bar]) -> Signal | None:
                     )
         elif before.low > after.high:
             lower, upper = after.high, before.low
+            record_checks([])
+            add_check("Price gap", True, f"Testing bearish gap ${lower:.2f} to ${upper:.2f}, formed at {after.timestamp}.")
+            add_check("Gap size", upper-lower >= parameter('min_gap_atr', _MIN_GAP_ATR)*atr, f"Gap ${upper-lower:.2f}; minimum ${parameter('min_gap_atr', _MIN_GAP_ATR)*atr:.2f}.")
+            add_check("EMA alignment", fast < slow, f"Fast ${fast:.2f}; slow ${slow:.2f}.")
+            add_check("VWAP", current.close < vwap, f"Completed close ${current.close:.2f}; VWAP ${vwap:.2f}.")
+            add_check("Close confirmation", _trigger_close_confirms_direction("bearish", current.close, fast), f"Close ${current.close:.2f} versus fast average ${fast:.2f}.")
             if upper - lower < parameter('min_gap_atr', _MIN_GAP_ATR) * atr or not (
                 fast < slow and current.close < vwap
                 and _trigger_close_confirms_direction("bearish", current.close, fast)
             ):
                 continue
+            add_check("First retest", not parameter("require_first_retest",True) or not any(bar.low <= upper and bar.high >= lower for bar in intervening), "The gap must not have been touched earlier when first-retest checking is enabled.")
             if parameter("require_first_retest",True) and any(bar.low <= upper and bar.high >= lower for bar in intervening):
                 continue
             midpoint = (lower + upper) / 2.0
+            add_check("Retest close", current.low <= upper and current.high >= lower and (not parameter("require_midpoint_close",True) or current.close < midpoint), f"Candle range ${current.low:.2f} to ${current.high:.2f}; close ${current.close:.2f}; gap midpoint ${midpoint:.2f}.")
             if current.low <= upper and current.high >= lower and (not parameter("require_midpoint_close",True) or current.close < midpoint):
                 stop = max(current.high, current.close + parameter("stop_atr_multiple",1.) * atr)
                 risk = stop - current.close

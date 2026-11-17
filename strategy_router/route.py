@@ -359,8 +359,10 @@ def route_signals(
                 try:
                     from config.engine_parameters import for_pair, attach
                     from config import get_settings
-                    with for_pair(get_settings(), strategy_id, ticker):
+                    from trading.diagnostics.entry_checks import capture_checks, finish_checks
+                    with for_pair(get_settings(), strategy_id, ticker), capture_checks(strategy_id, ticker, enabled=not quiet):
                         sig = attach(fn(today, ticker=ticker))
+                        finish_checks(sig)
                 except Exception as exc:
                     capture('finish', ticket, None, error=type(exc).__name__)
                     raise
