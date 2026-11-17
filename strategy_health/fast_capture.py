@@ -64,7 +64,7 @@ def capture_horizon(entry, calendar, metadata):
 
 
 class Registry:
-    def __init__(self, root, *, timeout=.2):
+    def __init__(self, root, *, timeout=.2, reclaim_index=False):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.root/'fast_capture.sqlite3', timeout=timeout)
@@ -94,10 +94,13 @@ class Registry:
           -- The primary key already indexes registration, symbol and receipt.
           -- Readers constrain both registration and symbol, so a second copy
           -- of every link only wastes disk and adds write work.
-          PRAGMA secure_delete=OFF;
-          DROP INDEX IF EXISTS link_registration_receipt;
           PRAGMA journal_size_limit=16777216;
         ''')
+        if reclaim_index:
+            # Only the asynchronous writer performs storage maintenance.
+            # Main quote requests continue into the durable spool meanwhile.
+            self.db.execute('PRAGMA secure_delete=OFF')
+            self.db.execute('DROP INDEX IF EXISTS link_registration_receipt')
 
     def register(self, *, account, mode, strategy, ticker, version, symbol, entry_at,
                  until_at, origin, origin_id, policy, metadata, now):

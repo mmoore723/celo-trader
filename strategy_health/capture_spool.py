@@ -87,7 +87,8 @@ class ReceiptSpool:
         from strategy_health.fast_capture import Registry
         registry = None
         try:
-            registry = Registry(self.root, timeout=.2)
+            registry = Registry(self.root, timeout=.2, reclaim_index=True)
+            registry.db.execute('PRAGMA cache_size=-65536')
             checkpoint_at = 0
             while not self.stop.is_set():
                 try:

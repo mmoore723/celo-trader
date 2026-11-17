@@ -16,7 +16,8 @@ Nice=15
 # Quote persistence must keep up with the five-second capture target.
 # Nice=15 preserves execution priority; cap capture at half of one core.
 CPUQuota=50%
-MemoryMax=256M
+# Allow SQLite page cache and bounded recovery without reclaim thrashing.
+MemoryMax=512M
 StandardOutput=journal
 StandardError=journal
 UMask=0077

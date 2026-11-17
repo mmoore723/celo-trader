@@ -96,7 +96,7 @@ class ReceiptSpoolTests(FastCaptureTests):
         self.r.record([SYMBOL],{'quotes':{'quote':self.quote()}},NOW,NOW)
         before={table:[tuple(r) for r in self.r.db.execute('select * from '+table)] for table in ('observations','links','registrations','batches')}
         self.r.db.execute('CREATE INDEX link_registration_receipt ON links(registration,received_at)')
-        migrated=Registry(self.root)
+        migrated=Registry(self.root,reclaim_index=True)
         try:
             for table,rows in before.items():self.assertEqual(rows,[tuple(r) for r in migrated.db.execute('select * from '+table)])
             self.assertNotIn('link_registration_receipt',[r[1] for r in migrated.db.execute('pragma index_list(links)')])
