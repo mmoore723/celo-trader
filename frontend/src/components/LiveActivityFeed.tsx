@@ -37,22 +37,23 @@ export function LiveActivityFeed() {
         const ticker = text(entry.ticker) || message.match(/\[([A-Z]{1,6})\]/)?.[1] || message.match(/ticker=([A-Z]+)/)?.[1] || 'System';
         const strategy = text(entry.strategy_id) || text(entry.strategy);
         const failed = checks.some(c => c.state === 'failed');
+        const waiting = checks.some(c => c.state === 'waiting');
         const pending = checks.some(c => c.state === 'pending');
         const passed = checks.length > 0 && checks.every(c => c.state === 'passed');
-        const state = failed ? 'failed' : pending ? 'pending' : passed ? 'passed' : 'unknown';
+        const state = failed ? 'failed' : waiting ? 'waiting' : pending ? 'pending' : passed ? 'passed' : 'unknown';
         const managing = /POSITION LIVE|Holding|In a trade/.test(message);
-        const label = failed ? 'Check failed' : pending ? 'Priming' : passed ? 'Chart checks passed' : managing ? 'Managing position' : /no (entry |trade )?setup|continuing to watch/i.test(message) ? 'Scanning' : 'Recorded update';
+        const label = failed ? 'Check failed' : waiting ? 'Waiting for candles' : pending ? 'Priming' : passed ? 'Chart checks passed' : managing ? 'Managing position' : /no (entry |trade )?setup|continuing to watch/i.test(message) ? 'Scanning' : 'Recorded update';
         return <article key={keys.current.get(entry)} className={`activity-entry ${index === 0 ? 'latest' : ''}`} data-state={state}>
           {index === 0 && <div className="activity-latest">Latest entry</div>}
           <div className="activity-title"><strong>{ticker}</strong><span className="activity-state">{label}</span><time>{eventTime(entry.ts)}</time></div>
           {strategy && <div className="activity-strategy">{strategyName(strategy)}</div>}
-          <p className="activity-message">{message.length > 220 ? message.slice(0, 217) + '…' : message}</p>
+          <p className="activity-message">{waiting && 'Waiting for completed candle history. '}{message.length > 220 ? message.slice(0, 217) + '…' : message}</p>
           {message.length > 220 && <details onToggle={e => { if (e.currentTarget.open && !paused) pause(); }}><summary>Full recorded explanation</summary><p className="activity-message">{message}</p></details>}
-          {checks.length > 0 ? <div className="activity-checks">{checks.map((check, i) => <details key={i} data-state={check.state} onToggle={e => { if (e.currentTarget.open && !paused) pause(); }}><summary>{check.state === 'passed' ? '✓' : check.state === 'failed' ? '×' : check.state === 'pending' ? '◷' : '·'} {check.name}</summary><p>{check.reason}</p></details>)}</div> : <div className="activity-unrecorded">Individual strategy checks were not included in this update.</div>}
+          {checks.length > 0 ? <div className="activity-checks">{checks.map((check, i) => <details key={i} data-state={check.state} onToggle={e => { if (e.currentTarget.open && !paused) pause(); }}><summary>{check.state === 'passed' ? '✓' : check.state === 'failed' ? '×' : ['pending', 'waiting'].includes(check.state) ? '◷' : '·'} {check.name}</summary><p>{check.reason}</p></details>)}</div> : <div className="activity-unrecorded">Individual strategy checks were not included in this update.</div>}
         </article>;
       })}
       {!shown.length && <p className="activity-empty">{filter ? 'No matching thinking updates.' : 'Waiting for the next setup or trading decision. Network messages are in the diagnostic log.'}</p>}
     </div>
-    <footer>● Green: passed · ● Amber: evaluating · ● Red: failed · Gray: unrecorded<br/>Chart checks alone do not mean an order was approved.</footer>
+    <footer>● Green: passed · ● Amber: priming · ● Red: failed · Gray: waiting for candles or unrecorded<br/>Chart checks alone do not mean an order was approved.</footer>
   </section>;
 }

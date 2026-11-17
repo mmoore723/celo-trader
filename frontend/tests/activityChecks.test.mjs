@@ -11,3 +11,15 @@ test('empty conditions does not hide checks and prose never implies readiness', 
   assert.deepEqual(activityChecks({message:'All checks passed'}),[]);
   assert.equal(activityChecks({checks:[{name:'VWAP',status:'unchecked'}]})[0].state,'unknown');
 });
+
+test('candle history waits are separate from entry conditions still priming', () => {
+  const rows = activityChecks({checks:[
+    {name:'Completed candles',status:'pending',reason:'17 available; need 20.'},
+    {name:'Rejection close',status:'pending',reason:'Waiting for a candle close.'},
+    {name:'Completed candles',passed:true},
+    {name:'Completed candles',passed:false},
+    {name:'Completed candles',status:'unknown'},
+  ]});
+  assert.deepEqual(rows.map(x=>x.state), ['waiting','pending','passed','failed','unknown']);
+  assert.equal(rows[0].reason, '17 available; need 20.');
+});

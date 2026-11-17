@@ -28,4 +28,17 @@ await page.getByRole('button',{name:'Theme',exact:true}).click();
 assert.ok(await page.locator('html').evaluate(e=>e.classList.contains('dark')));
 await page.getByRole('button',{name:'Theme',exact:true}).click();
 await page.screenshot({path:'/tmp/celo-feed-verified.png',fullPage:true});
+await page.evaluate(async()=>{
+  const {useBotStore}=await import('/src/store/bot.ts');
+  useBotStore.setState({logs:[
+    {ticker:'SPY',message:'17 available; need 20.',checks:[{name:'Completed candles',status:'pending'}]},
+    {ticker:'AMZN',message:'Waiting for rejection close.',checks:[{name:'VWAP',passed:true},{name:'Rejection close',status:'pending'}]},
+  ]});
+});
+await page.getByRole('button',{name:'Show newest updates'}).click();
+assert.equal(await page.getByText('Waiting for candles',{exact:true}).count(),1);
+assert.equal(await page.getByText('Priming',{exact:true}).count(),1);
+assert.equal(await page.locator('.activity-entry[data-state=waiting]').count(),1);
+assert.equal(await page.locator('.activity-entry[data-state=pending]').count(),1);
+await page.screenshot({path:'/tmp/celo-waiting-vs-priming.png',fullPage:true});
 assert.deepEqual(errors,[]);await browser.close();console.log('PASS: cards, exact checks, newest, pause, filter, details, mobile, theme, no browser errors');
