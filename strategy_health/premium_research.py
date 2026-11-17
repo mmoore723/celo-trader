@@ -122,7 +122,7 @@ class CaptureReader:
         if clock(reg['registered_at'])>clock(sample['entry_quote_at'])+timedelta(seconds=10):
             raise ValueError('late_contract_registration')
         rows=self.db.execute('''SELECT o.received_at,o.payload FROM links l JOIN observations o
-            ON o.symbol=l.symbol AND o.received_at=l.received_at WHERE l.registration=? ORDER BY o.received_at LIMIT 100001''',(reg['id'],)).fetchall()
+            ON o.symbol=l.symbol AND o.received_at=l.received_at WHERE l.registration=? AND l.symbol=? ORDER BY l.received_at LIMIT 100001''',(reg['id'],reg['symbol'])).fetchall()
         if len(rows)>100000: raise ValueError('quote_budget_exceeded')
         return [dict(received_at=r['received_at'],quote=json.loads(r['payload'])) for r in rows]
 

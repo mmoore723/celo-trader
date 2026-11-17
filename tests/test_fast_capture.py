@@ -116,8 +116,8 @@ class FastCaptureTests(unittest.TestCase):
         self.add()
         plans=[r[3] for r in self.r.db.execute('EXPLAIN QUERY PLAN SELECT id FROM registrations WHERE symbol=? AND entry_at<=? AND until_at>=?',(SYMBOL,NOW.isoformat(),NOW.isoformat()))]
         self.assertTrue(any('registration_contract_window' in p for p in plans))
-        plans=[r[3] for r in self.r.db.execute('EXPLAIN QUERY PLAN SELECT max(received_at) FROM links WHERE registration=?',('one',))]
-        self.assertTrue(any('link_registration_receipt' in p for p in plans))
+        plans=[r[3] for r in self.r.db.execute('EXPLAIN QUERY PLAN SELECT max(received_at) FROM links WHERE registration=? AND symbol=?',('one',SYMBOL))]
+        self.assertTrue(any('sqlite_autoindex_links_1' in p for p in plans))
 
     def test_restart_idempotence_preserves_metadata_and_extends_horizon(self):
         identity=self.add(); original=dict(self.r.db.execute('SELECT * FROM registrations').fetchone())

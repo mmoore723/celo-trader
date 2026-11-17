@@ -6,6 +6,18 @@ from pathlib import Path
 import shutil
 import threading
 import time
+from datetime import datetime, timezone
+
+
+def error_code(exc):
+    # Only expose known validation codes, never arbitrary provider payloads.
+    reason = str(exc)
+    if isinstance(exc, ValueError) and reason in {
+        "capture_disk_reserve_below_1GB", "capture_receipt_backlog_limit",
+        "unexpected_or_duplicate_contract", "capture_timestamp_requires_timezone",
+    }:
+        return reason
+    return getattr(exc, "sqlite_errorname", type(exc).__name__)
 
 
 class ReceiptSpool:
@@ -76,20 +88,40 @@ class ReceiptSpool:
         registry = None
         try:
             registry = Registry(self.root, timeout=.2)
+            checkpoint_at = 0
             while not self.stop.is_set():
                 try:
+                    if time.monotonic() >= checkpoint_at:
+                        # Outside the write transaction. Do not wait for readers
+                        # or hold up quote requests; retry on the next interval.
+                        registry.db.execute('PRAGMA busy_timeout=0')
+                        try:
+                            registry.db.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchall()
+                        finally:
+                            registry.db.execute('PRAGMA busy_timeout=200')
+                        checkpoint_at = time.monotonic()+30
                     if not self.drain_one(registry):
                         self.stop.wait(.1)
                 except Exception as exc:
-                    self.error = 'receipt_write_' + type(exc).__name__
+                    self.error = 'receipt_write_' + error_code(exc)
                     self.stop.wait(1)
         except Exception as exc:
-            self.error = 'receipt_worker_' + type(exc).__name__
+            self.error = 'receipt_worker_' + error_code(exc)
         finally:
             if registry:
                 registry.db.close()
 
     def health(self):
         paths = sorted(self.path.glob('*.json'))
+        oldest = None
+        if paths:
+            try:
+                # Filename is the original request clock, not modification time.
+                oldest = datetime.strptime(paths[0].name.split('-')[0], '%Y%m%dT%H%M%S%f').replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
         return dict(pending_batches=len(paths), error=self.error, last_persisted_receipt=self.last_saved,
+                    oldest_pending_at=oldest.isoformat() if oldest else None,
+                    oldest_pending_seconds=max(0,(datetime.now(timezone.utc)-oldest).total_seconds()) if oldest else 0,
+                    disk_free_bytes=shutil.disk_usage(self.root).free,
                     worker_alive=bool(self.thread and self.thread.is_alive()))

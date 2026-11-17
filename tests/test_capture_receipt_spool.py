@@ -62,3 +62,43 @@ class ReceiptSpoolTests(FastCaptureTests):
                 self.assertEqual(2,spool.health()['pending_batches'])
             finally:
                 release.set();spool.stop.set();spool.thread.join(3)
+
+    def test_storage_error_reports_reason_without_payload(self):
+        from strategy_health.capture_spool import error_code
+        self.assertEqual('capture_disk_reserve_below_1GB', error_code(ValueError('capture_disk_reserve_below_1GB')))
+        self.assertEqual('ValueError', error_code(ValueError('private provider response')))
+
+    def test_backlog_health_uses_original_clock(self):
+        spool=ReceiptSpool(self.root,start=False)
+        spool.enqueue([SYMBOL],{'quotes':{'quote':self.quote()}},NOW,NOW)
+        report=spool.health()
+        self.assertEqual(NOW.isoformat(),report['oldest_pending_at'])
+        self.assertGreater(report['oldest_pending_seconds'],10)
+        self.assertGreater(report['disk_free_bytes'],0)
+
+    def test_disk_reserve_failure_keeps_receipt_then_recovers(self):
+        from collections import namedtuple
+        usage=namedtuple('usage','total used free')
+        self.add();spool=ReceiptSpool(self.root,start=False)
+        spool.enqueue([SYMBOL],{'quotes':{'quote':self.quote()}},NOW,NOW)
+        original=list(spool.path.glob('*.json'))[0].read_bytes()
+        with patch('shutil.disk_usage',return_value=usage(10**10,10**10,100)):
+            with self.assertRaisesRegex(ValueError,'capture_disk_reserve_below_1GB'):spool.drain_one(self.r)
+        self.assertEqual(original,list(spool.path.glob('*.json'))[0].read_bytes())
+        self.assertTrue(spool.drain_one(self.r))
+        row=self.r.db.execute('select requested_at,received_at,payload from observations').fetchone()
+        self.assertEqual((NOW.isoformat(),NOW.isoformat()),tuple(row)[:2])
+        self.assertEqual(self.quote(),json.loads(row['payload']))
+
+    def test_index_migration_preserves_all_evidence(self):
+        from strategy_health.fast_capture import Registry
+        identity=self.add()
+        self.r.record([SYMBOL],{'quotes':{'quote':self.quote()}},NOW,NOW)
+        before={table:[tuple(r) for r in self.r.db.execute('select * from '+table)] for table in ('observations','links','registrations','batches')}
+        self.r.db.execute('CREATE INDEX link_registration_receipt ON links(registration,received_at)')
+        migrated=Registry(self.root)
+        try:
+            for table,rows in before.items():self.assertEqual(rows,[tuple(r) for r in migrated.db.execute('select * from '+table)])
+            self.assertNotIn('link_registration_receipt',[r[1] for r in migrated.db.execute('pragma index_list(links)')])
+            self.assertEqual(NOW.isoformat(),migrated.health(NOW)[__import__('strategy_health.fast_capture',fromlist=['scope_key']).scope_key('paper-a','paper')][0]['last_collection'])
+        finally:migrated.db.close()

@@ -91,7 +91,12 @@ class Registry:
           CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY, recorded_at TEXT, kind TEXT, detail TEXT);
           CREATE INDEX IF NOT EXISTS registration_contract_window ON registrations(symbol,entry_at,until_at);
-          CREATE INDEX IF NOT EXISTS link_registration_receipt ON links(registration,received_at);
+          -- The primary key already indexes registration, symbol and receipt.
+          -- Readers constrain both registration and symbol, so a second copy
+          -- of every link only wastes disk and adds write work.
+          PRAGMA secure_delete=OFF;
+          DROP INDEX IF EXISTS link_registration_receipt;
+          PRAGMA journal_size_limit=16777216;
         ''')
 
     def register(self, *, account, mode, strategy, ticker, version, symbol, entry_at,
@@ -186,7 +191,7 @@ class Registry:
     def health(self, now):
         grouped = {}
         for r in self.db.execute('''SELECT r.*,
-            (SELECT max(l.received_at) FROM links l WHERE l.registration=r.id) AS received_at,
+            (SELECT max(l.received_at) FROM links l WHERE l.registration=r.id AND l.symbol=r.symbol) AS received_at,
             p.error,p.max_gap,p.gaps_over_10 FROM registrations r
             JOIN polling p ON p.symbol=r.symbol WHERE r.until_at>=?''',(now.isoformat(),)):
             group = grouped.setdefault(scope_key(r['account'],r['mode']),{})
@@ -446,9 +451,9 @@ def main():
             state='blocked'; error=str(exc) if isinstance(exc,ValueError) else type(exc).__name__
         if time.monotonic()>=publish_at or args.once:
             writer_health = spool.health() if spool else {'synchronous':True}
-            if spool and (writer_health['error'] or not writer_health['worker_alive']):
+            if spool and (writer_health['error'] or not writer_health['worker_alive'] or writer_health.get('oldest_pending_seconds',0)>10):
                 state='capture_persistence_delayed'
-                error=writer_health['error'] or 'receipt_worker_not_running'
+                error=writer_health['error'] or ('receipt_worker_not_running' if not writer_health['worker_alive'] else 'receipt_indexing_behind_capture')
             report={'heartbeat_at':datetime.now(timezone.utc).isoformat(),'status':state,'error':error,
                 'discovery':discovery,'discovery_scope':discovery_scope,'scopes':registry.health(datetime.now(timezone.utc)),
                 'batch_size':BATCH,'request_interval_seconds':BATCH_INTERVAL,
