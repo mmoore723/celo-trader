@@ -20,6 +20,8 @@ import requests
 
 ET = ZoneInfo('America/New_York')
 SOURCE = 'tradier_consolidated_v1'
+REQUESTS_PER_MINUTE = 30
+STOCK_QUOTE_TARGET_SECONDS = 5
 ENDPOINTS = {'calendar', 'quotes', 'timesales', 'options/expirations', 'options/chains'}
 
 
@@ -45,6 +47,8 @@ class Feed:
         self.session = requests.Session()
         self.session.headers.update(Authorization='Bearer ' + token, Accept='application/json')
         self.next_request = 0.0
+        self.last_quota_available = None
+        self.quota_backoffs = 0
 
     def quotes(self, symbols):
         if (not isinstance(symbols, list) or not 1 <= len(symbols) <= 600
@@ -69,7 +73,9 @@ class Feed:
                                         params=params, timeout=(2, 8), allow_redirects=False)
         received = utcnow()
         available = response.headers.get('X-Ratelimit-Available')
-        if available is not None and int(available) < 40:
+        self.last_quota_available = int(available) if available is not None else None
+        if self.last_quota_available is not None and self.last_quota_available < 40:
+            self.quota_backoffs += 1
             self.next_request = time.monotonic() + 60
         if response.status_code in (400, 429):
             # Quota errors can be HTTP 400; preserve the failed request, not its
@@ -139,6 +145,10 @@ class Archive:
             requested_epoch REAL, received_epoch REAL, contracts INTEGER, fresh INTEGER);
           CREATE INDEX IF NOT EXISTS chain_refreshes_scope
             ON chain_refreshes(day,ticker,expiration,received_epoch);
+          CREATE TABLE IF NOT EXISTS capture_failures (
+            id INTEGER PRIMARY KEY, day TEXT, kind TEXT, ticker TEXT, expiration TEXT,
+            requested_at TEXT, failed_at TEXT, reason TEXT);
+          CREATE INDEX IF NOT EXISTS capture_failures_day ON capture_failures(day);
           CREATE TABLE IF NOT EXISTS rotation_cursor (
             day TEXT, lane TEXT, ticker TEXT,
             PRIMARY KEY(day,lane));
@@ -222,7 +232,13 @@ class Archive:
                 WHERE day=? AND kind=? AND ticker=? AND expiration=?''',
                 (next_at,received.isoformat(),day,kind,ticker,expiration))
 
+    def record_failure(self, day, kind, ticker, expiration, requested, error):
+        with self.db:
+            self.db.execute('INSERT INTO capture_failures(day,kind,ticker,expiration,requested_at,failed_at,reason) VALUES (?,?,?,?,?,?,?)',
+                (day,kind,ticker,expiration,requested.isoformat(),utcnow().isoformat(),error))
+
     def fail(self, task, error, now):
+        self.record_failure(task['day'],task['kind'],task['ticker'],task['expiration'],now,error)
         with self.db:
             self.db.execute('''UPDATE tasks SET failures=failures+1,error=?,next_at=?
                 WHERE day=? AND kind=? AND ticker=? AND expiration=?''',
@@ -260,14 +276,56 @@ def chain_cadence(archive, day, ticker, now):
                  age_seconds=max(0,now.timestamp()-r['last_received'])) for r in rows]
 
 
+def allow_history_recovery(window, now):
+    """Old sessions can be recovered later; today's observations cannot."""
+    return not window or not window[0] <= now <= window[1]
+
+
+class QuoteSchedule:
+    """A failed stock request must yield to bars/options, not monopolize slots."""
+    def __init__(self):
+        self.next_at = 0.0
+        self.failures = 0
+        self.error = None
+        self.last_success_at = None
+
+    def due(self, clock):
+        return clock >= self.next_at
+
+    def finish(self, clock, *, error=None, received=None):
+        self.error = error
+        self.failures = self.failures + 1 if error else 0
+        delay = min(300, 10 * 2 ** min(self.failures - 1, 5)) if error else STOCK_QUOTE_TARGET_SECONDS
+        self.next_at = clock + delay
+        if not error and received is not None:
+            self.last_success_at = received.isoformat()
+
+
+def capacity_report(expirations, ticker_count):
+    # Optimistic lower bounds, not promises: excludes latency, retries and other
+    # clients sharing the provider quota. Preserve every expiration in rotation.
+    stock_rpm = 60 / STOCK_QUOTE_TARGET_SECONDS
+    bar_rpm = ticker_count * 60 / 180
+    inventory_rpm = ticker_count / 60
+    remaining = max(0, REQUESTS_PER_MINUTE - stock_rpm - bar_rpm - inventory_rpm)
+    required = stock_rpm + bar_rpm + inventory_rpm + expirations
+    return dict(request_budget_per_minute=REQUESTS_PER_MINUTE,
+                listed_expirations=expirations, requested_chain_interval_seconds=60,
+                minimum_requests_per_minute_for_targets=round(required, 2),
+                targets_fit_budget=required <= REQUESTS_PER_MINUTE,
+                optimistic_chain_rotation_minutes=round(expirations / remaining, 2) if remaining else None,
+                explanation='Each expiration needs a separate request. Actual rotations also include provider delays and quota backoff. Selected trade contracts use the separate fast collector.')
+
+
 def summary(archive, day, tickers, window, now):
     expected = max(0, int((min(now,window[1])-window[0]).total_seconds()//60)) if window else 0
     rows = []
     for ticker in tickers:
-        bars = archive.db.execute('SELECT minute FROM bars WHERE day=? AND ticker=? ORDER BY minute', (day,ticker)).fetchall()
+        bars = archive.db.execute('SELECT minute,first_received_at FROM bars WHERE day=? AND ticker=? ORDER BY minute', (day,ticker)).fetchall()
         seen = {r[0] for r in bars}
         missing = [(window[0]+timedelta(minutes=n)).isoformat() for n in range(expected)
                    if (window[0]+timedelta(minutes=n)).isoformat() not in seen] if window else []
+        late = sum((datetime.fromisoformat(r['first_received_at']) - datetime.fromisoformat(r['minute']) - timedelta(minutes=1)).total_seconds() > 300 for r in bars if window and window[0] <= datetime.fromisoformat(r['minute']) < min(now,window[1]))
         tasks = [dict(r) for r in archive.db.execute('SELECT * FROM tasks WHERE day=? AND ticker=?', (day,ticker))]
         chains = [r for r in tasks if r['kind']=='chain']
         contracts = archive.db.execute('''SELECT count(*),sum(last_quote IS NOT NULL),max(last_seen)
@@ -278,6 +336,10 @@ def summary(archive, day, tickers, window, now):
         rows.append(dict(ticker=ticker, expected_minutes=expected, captured_minutes=expected-len(missing),
             coverage_pct=round(100*(expected-len(missing))/expected,1) if expected else None,
             missing_minutes=missing, first_bar=bars[0][0] if bars else None,last_bar=bars[-1][0] if bars else None,
+            bars_received_over5min_late=late,
+            timely_bar_minutes=max(0,expected-len(missing)-late),
+            timely_bar_coverage_pct=round(100*max(0,expected-len(missing)-late)/expected,1) if expected else None,
+            quote_minutes_basis='stock_snapshots_not_option_quotes',
             quote_minutes=quotes[0],fresh_quote_minutes=quotes[1] or 0,last_quote_at=quotes[2],
             listed_expirations=len(chains),captured_expirations=sum(bool(r['last_ok']) for r in chains),
             contracts_discovered=contracts[0],contracts_with_fresh_snapshot=contracts[1] or 0,
@@ -287,7 +349,11 @@ def summary(archive, day, tickers, window, now):
             max_option_refresh_gap_seconds=max((r['max_gap_seconds'] for r in cadence if r['max_gap_seconds'] is not None),default=None),
             oldest_option_refresh_age_seconds=max((r['age_seconds'] for r in cadence),default=None),
             errors=[dict(kind=r['kind'],expiration=r['expiration'],reason=r['error']) for r in tasks if r['error']] ))
-    return dict(day=day,source=SOURCE,heartbeat_at=now.isoformat(),tickers=rows,
+    failures = [dict(r) for r in archive.db.execute('SELECT kind,ticker,reason,count(*) AS failed_attempts,max(failed_at) AS last_failure_at FROM capture_failures WHERE day=? GROUP BY kind,ticker,reason',(day,))]
+    return dict(capacity=capacity_report(sum(r['listed_expirations'] for r in rows),len(tickers)),
+                disk_free_bytes=shutil.disk_usage(archive.root).free,
+                failure_history=failures,
+                day=day,source=SOURCE,heartbeat_at=now.isoformat(),tickers=rows,
                 session_start=window[0].isoformat() if window else None,
                 session_end=window[1].isoformat() if window else None,
                 status='collecting' if window and window[0]<=now<=window[1] else 'outside_session',
@@ -355,7 +421,8 @@ def main():
     archive = Archive(root / 'session_capture')
     feed = Feed(get_api_keys().get('tradier_market_api_key'))
     calendar, calendar_month = None, None
-    last_quotes, last_summary, last_recovery, rotation = 0., 0., 0., 0
+    stock_schedule = QuoteSchedule()
+    last_summary, last_recovery, rotation = 0., 0., 0
     previous = {}
     enrolled = None
     health_path = root/'session_capture_health.json'
@@ -386,7 +453,7 @@ def main():
             # Restart after a session: repair only sessions previously enrolled.
             # Recovered candles keep their later receipt time. Never backfill
             # quotes using a current quote or invent an unseen option snapshot.
-            if time.monotonic() >= feed.next_request and time.monotonic()-last_recovery>=60:
+            if allow_history_recovery(window, now) and time.monotonic() >= feed.next_request and time.monotonic()-last_recovery>=60:
                 oldest=(local.date()-timedelta(days=9)).isoformat()
                 pending=archive.db.execute('''SELECT * FROM tasks WHERE kind='bars' AND day<?
                     AND day>=? AND next_at<=? ORDER BY next_at,day,ticker''',(day,oldest,now.timestamp())).fetchall()
@@ -411,18 +478,23 @@ def main():
                         archive.fail(task,str(exc) if isinstance(exc,ValueError) else type(exc).__name__,now)
                     last_recovery=time.monotonic()
             if active and tickers and time.monotonic() >= feed.next_request:
-                if now <= window[1] and time.monotonic()-last_quotes >= 5:
-                    payload, received = feed.get('quotes',dict(symbols=','.join(tickers),greeks='false',includeLotSize='true'))
-                    quotes = {r.get('symbol'):r for r in objects((payload.get('quotes') or {}).get('quote'))}
-                    with archive.db:
-                        archive.record(day,'stock_quotes','*',dict(symbols=tickers),now,received,payload)
-                        for ticker in tickers:
-                            fresh = int(quote_validation(quotes.get(ticker,{}),received)=='fresh')
-                            archive.db.execute('''INSERT INTO quote_minutes VALUES (?,?,?,?,?)
-                                ON CONFLICT(day,ticker,minute) DO UPDATE SET received_at=excluded.received_at,
-                                fresh=max(quote_minutes.fresh,excluded.fresh)''',
-                                (day,ticker,received.astimezone(ET).replace(second=0,microsecond=0).isoformat(),received.isoformat(),fresh))
-                    last_quotes = time.monotonic()
+                if now <= window[1] and stock_schedule.due(time.monotonic()):
+                    try:
+                        payload, received = feed.get('quotes',dict(symbols=','.join(tickers),greeks='false',includeLotSize='true'))
+                        quotes = {r.get('symbol'):r for r in objects((payload.get('quotes') or {}).get('quote'))}
+                        with archive.db:
+                            archive.record(day,'stock_quotes','*',dict(symbols=tickers),now,received,payload)
+                            for ticker in tickers:
+                                fresh = int(quote_validation(quotes.get(ticker,{}),received)=='fresh')
+                                archive.db.execute('''INSERT INTO quote_minutes VALUES (?,?,?,?,?)
+                                    ON CONFLICT(day,ticker,minute) DO UPDATE SET received_at=excluded.received_at,
+                                    fresh=max(quote_minutes.fresh,excluded.fresh)''',
+                                    (day,ticker,received.astimezone(ET).replace(second=0,microsecond=0).isoformat(),received.isoformat(),fresh))
+                        stock_schedule.finish(time.monotonic(), received=received)
+                    except Exception as exc:
+                        error = str(exc) if isinstance(exc,ValueError) else type(exc).__name__
+                        stock_schedule.finish(time.monotonic(), error=error)
+                        archive.record_failure(day,'stock_quotes','*','',now,error)
                 else:
                     # Alternate candle work and option work, preventing either
                     # the large chain inventory or bar recovery from starvation.
@@ -451,6 +523,8 @@ def main():
                             archive.fail(task,str(exc) if isinstance(exc,ValueError) else type(exc).__name__,now)
             if time.monotonic()-last_summary>=15 or args.once:
                 previous=summary(archive,day,tickers,window,utcnow())
+                previous['stock_quote_poll'] = dict(error=stock_schedule.error,consecutive_failures=stock_schedule.failures,last_success_at=stock_schedule.last_success_at)
+                previous['provider_quota'] = dict(last_available=feed.last_quota_available,backoffs=feed.quota_backoffs)
                 atomic_write_json(health_path,previous)
                 atomic_write_json(archive.root/('coverage-'+day+'.json'),previous)
                 last_summary=time.monotonic()

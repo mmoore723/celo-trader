@@ -282,4 +282,89 @@ class SessionCaptureTests(unittest.TestCase):
         self.assertTrue(all(r['captured_minutes']==960 and r['coverage_pct']==100 for r in report['tickers']))
 
 
+
+class CaptureSchedulingRepairTests(unittest.TestCase):
+    def test_failed_stock_requests_yield_and_backoff_is_bounded(self):
+        from strategy_health.session_capture import QuoteSchedule
+        schedule=QuoteSchedule()
+        self.assertTrue(schedule.due(0))
+        schedule.finish(0,error='ReadTimeout')
+        self.assertFalse(schedule.due(2))
+        self.assertTrue(schedule.due(10))
+        for n in range(20):
+            schedule.finish(1000,error='provider_http_429')
+        self.assertEqual(1300,schedule.next_at)
+        schedule.finish(2000,received=NOW)
+        self.assertEqual(0,schedule.failures)
+        self.assertIsNone(schedule.error)
+        self.assertEqual(2005,schedule.next_at)
+        self.assertEqual(NOW.isoformat(),schedule.last_success_at)
+
+    def test_history_recovery_yields_entire_current_capture_window(self):
+        from strategy_health.session_capture import allow_history_recovery
+        self.assertFalse(allow_history_recovery(WINDOW,NOW))
+        self.assertFalse(allow_history_recovery(WINDOW,WINDOW[1]))
+        self.assertTrue(allow_history_recovery(WINDOW,WINDOW[1]+timedelta(seconds=1)))
+        self.assertTrue(allow_history_recovery(None,NOW))
+
+    def test_budget_cannot_claim_436_expirations_refresh_every_minute(self):
+        from strategy_health.session_capture import capacity_report
+        report=capacity_report(436,20)
+        self.assertFalse(report['targets_fit_budget'])
+        self.assertEqual(455,report['minimum_requests_per_minute_for_targets'])
+        self.assertGreater(report['optimistic_chain_rotation_minutes'],39)
+
+    def test_later_recovery_is_not_timely_and_failure_history_survives_success(self):
+        with TemporaryDirectory() as root:
+            a=Archive(root)
+            try:
+                a.enqueue(DAY,['SPY'])
+                task=dict(a.db.execute("select * from tasks where kind='bars'").fetchone())
+                a.fail(task,'ReadTimeout',NOW)
+                rows=[dict(time=f'{DAY} 04:00:00',open=1,high=2,low=1,close=2,volume=10)]
+                later=NOW+timedelta(minutes=10)
+                a.accept(task,{},later,later,{'series':{'data':rows}},WINDOW)
+                report=summary(a,DAY,['SPY'],WINDOW,later)
+                self.assertEqual(1,report['tickers'][0]['captured_minutes'])
+                self.assertEqual(1,report['tickers'][0]['bars_received_over5min_late'])
+                self.assertEqual(0,report['tickers'][0]['timely_bar_minutes'])
+                self.assertEqual([],report['tickers'][0]['errors'])
+                self.assertEqual(1,report['failure_history'][0]['failed_attempts'])
+                a.record_failure(DAY,'stock_quotes','*','',NOW,'capture_disk_reserve_below_1GB')
+            finally:
+                a.db.close()
+            reopened=Archive(root)
+            try:
+                self.assertEqual(2,len(summary(reopened,DAY,['SPY'],WINDOW,later)['failure_history']))
+            finally:reopened.db.close()
+
+    def test_worker_timeout_yields_to_candle_capture_without_order_calls(self):
+        from strategy_health import session_capture as capture
+        with TemporaryDirectory() as root:
+            feed=Mock(next_request=0, last_quota_available=None, quota_backoffs=0)
+            calendar={'calendar':{'days':{'day':{'date':DAY,'status':'open'}}}}
+            bars={'series':{'data':[dict(time=f'{DAY} 04:00:00',open=1,high=2,low=1,close=2,volume=10)]}}
+            feed.get.side_effect=[(calendar,NOW),TimeoutError('timeout'),(bars,NOW)]
+            clock=[1000.]
+            def advance(_):
+                clock[0]+=1
+                if clock[0]>=1002: raise KeyboardInterrupt()
+            with patch('sys.argv',['capture','--user','test']), \
+                 patch('auth.context.set_current_user'), \
+                 patch('config.get_settings',return_value={}), \
+                 patch('config.get_api_keys',return_value={}), \
+                 patch('config.get_user_data_dir',return_value=root), \
+                 patch('config.research_universe.selected_tickers',return_value=['SPY']), \
+                 patch.object(capture,'Feed',return_value=feed), \
+                 patch.object(capture,'utcnow',return_value=NOW), \
+                 patch.object(capture.time,'monotonic',side_effect=lambda:clock[0]), \
+                 patch.object(capture.time,'sleep',side_effect=advance):
+                with self.assertRaises(KeyboardInterrupt): capture.main()
+            self.assertEqual(['calendar','quotes','timesales'],[c.args[0] for c in feed.get.call_args_list])
+            archive=Archive(Path(root)/'session_capture')
+            try:
+                self.assertEqual(1,archive.db.execute('select count(*) from bars').fetchone()[0])
+                self.assertEqual('TimeoutError',archive.db.execute('select reason from capture_failures').fetchone()[0])
+            finally: archive.db.close()
+
 if __name__=='__main__': unittest.main()
