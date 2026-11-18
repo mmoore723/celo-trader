@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
 from hashlib import sha256
 import json
+from strategy_health.quote_storage import decode_text
 import sqlite3
 import time
 import numpy as np
@@ -124,7 +125,7 @@ class CaptureReader:
         rows=self.db.execute('''SELECT o.received_at,o.payload FROM links l JOIN observations o
             ON o.symbol=l.symbol AND o.received_at=l.received_at WHERE l.registration=? AND l.symbol=? ORDER BY l.received_at LIMIT 100001''',(reg['id'],reg['symbol'])).fetchall()
         if len(rows)>100000: raise ValueError('quote_budget_exceeded')
-        return [dict(received_at=r['received_at'],quote=json.loads(r['payload'])) for r in rows]
+        return [dict(received_at=r['received_at'],quote=json.loads(decode_text(r['payload']))) for r in rows]
 
 
 def compare(conn, reader, *, samples, completed, account, mode, strategy, ticker, version, partial=False, native_exits=None, exact_baseline=None):

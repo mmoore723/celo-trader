@@ -160,3 +160,30 @@ Open your configured HTTPS domain through nginx, not port 8501.
 - **Data transfer**: First 100GB outbound free
 
 **Total after free tier**: ~$10–12/month
+
+### Quote compression and generated asset retention
+
+Fast option observations use a versioned zlib payload with SHA-256 integrity
+checking. Reads accept both original JSON and compressed payloads. Every converted
+row is decoded and compared byte for byte before committing. Registration keys,
+receipt/source times, validation and links are unchanged. Evidence identities
+are calculated from the original text, not its compressed representation.
+
+After a healthy release, generated asset retention protects the current page,
+four previous committed pages and their imported assets, plus a 24-hour grace
+period. Only old hashed JS, CSS and source maps are eligible. Evidence, unknown
+files and symlinks are excluded. Clients left open on much older releases may
+need a refresh.
+
+Existing quote rows may be compressed with:
+`venv/bin/python -m strategy_health.quote_storage user_data/admin/fast_capture/fast_capture.sqlite3 --seconds 60`
+The resumable cursor commits atomically with each 500-row batch. Lock conflicts
+retry; corrupt data stops migration. No VACUUM runs. Payload savings and SQLite
+reusable pages are NOT filesystem space recovered. Do not delete the database,
+WAL, logs, archives or backups to reclaim evidence space.
+
+Rollback: keep the new quote decoder in both research readers. Revert only the
+writer's encode_text call to write plain JSON, then release via deploy.sh. Mixed
+formats remain readable. Never roll back to a reader without the decoder after
+compressed observations have been written. Asset cleanup can be disabled; old
+web assets can be restored from their original Git commit.

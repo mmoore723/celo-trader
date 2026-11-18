@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
+from strategy_health.quote_storage import decode_text
 from pathlib import Path
 import sqlite3
 import time
@@ -191,10 +192,12 @@ class ExitArchiveReader:
                 (registration_id, entry.contract, entry.filled_at.isoformat(), through.isoformat()))
         quotes, rejected, provenance = [], [], []
         for row in rows:
-            identity = hashlib.sha256((row['symbol'] + row['received_at'] + row['payload']).encode()).hexdigest()
-            evidence = 'fast_capture:' + identity
+            evidence = 'fast_capture_corrupt:' + row['symbol'] + ':' + row['received_at']
             try:
-                raw = json.loads(row['payload'])
+                original = decode_text(row['payload'])
+                identity = hashlib.sha256((row['symbol'] + row['received_at'] + original).encode()).hexdigest()
+                evidence = 'fast_capture:' + identity
+                raw = json.loads(original)
                 if raw.get('symbol') != entry.contract:
                     raise ValueError('payload_contract_mismatch')
                 received = timestamp(row['received_at']); requested = timestamp(row['requested_at'])

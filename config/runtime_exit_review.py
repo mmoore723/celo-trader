@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'capture-storage-recovery-20261117.2'
+REVISION = 'quote-compression-20261118.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

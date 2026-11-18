@@ -44,6 +44,7 @@ PRODUCTION_PATHS=(
   deploy/DEPLOY_GUIDE.md
   deploy/celo-dashboard-logrotate
   deploy/celo-journald.conf
+  deploy/generated_asset_retention.py
   deploy/release_retention.py
   docs/adr/0004-atomic-tradier-broker-cutover.md
   docs/audits/2026-11-07-entry-data-parity.md
@@ -274,7 +275,7 @@ fi
 
 echo "==> Applying post-health storage retention..."
 ssh -i "$EC2_KEY" "$EC2_HOST" \
-  "cd $EC2_DIR && $EC2_DIR/venv/bin/python deploy/release_retention.py --root /var/tmp --keep 2 && $EC2_DIR/venv/bin/python deploy/application_log_retention.py --root $EC2_DIR/log --retention-days 14 && sudo systemctl restart systemd-journald && sudo journalctl --vacuum-size=512M && sudo /usr/sbin/logrotate --force /etc/logrotate.d/celo-trader"
+  "cd $EC2_DIR && $EC2_DIR/venv/bin/python deploy/generated_asset_retention.py --apply && $EC2_DIR/venv/bin/python deploy/release_retention.py --root /var/tmp --keep 2 && $EC2_DIR/venv/bin/python deploy/application_log_retention.py --root $EC2_DIR/log --retention-days 14 && sudo systemctl restart systemd-journald && sudo journalctl --vacuum-size=512M && sudo /usr/sbin/logrotate --force /etc/logrotate.d/celo-trader"
 
 echo ""
 echo "✓ Done. Dashboard: https://celotrader.com"

@@ -88,7 +88,7 @@ class ReceiptSpoolTests(FastCaptureTests):
         self.assertTrue(spool.drain_one(self.r))
         row=self.r.db.execute('select requested_at,received_at,payload from observations').fetchone()
         self.assertEqual((NOW.isoformat(),NOW.isoformat()),tuple(row)[:2])
-        self.assertEqual(self.quote(),json.loads(row['payload']))
+        self.assertEqual(self.quote(),json.loads(__import__('strategy_health.quote_storage',fromlist=['decode_text']).decode_text(row['payload'])))
 
     def test_index_migration_preserves_all_evidence(self):
         from strategy_health.fast_capture import Registry

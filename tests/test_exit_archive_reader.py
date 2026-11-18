@@ -56,6 +56,19 @@ class ArchiveReaderTests(unittest.TestCase):
         self.assertFalse(read['coverage_verified']); self.assertFalse(read['entry_levels_verified'])
         self.assertEqual(T+timedelta(seconds=5),read['quotes'][0].bid_at)
 
+    def test_quote_compression_preserves_evidence_identity(self):
+        from strategy_health.quote_storage import decode_text, migrate_batch
+        self.record()
+        with self.registry.db:
+            for rowid, payload in self.registry.db.execute('SELECT rowid,payload FROM observations').fetchall():
+                self.registry.db.execute('UPDATE observations SET payload=? WHERE rowid=?', (decode_text(payload),rowid))
+        before = self.read()
+        migrate_batch(self.registry.db)
+        self.assertEqual(before, self.read())
+        with self.registry.db:
+            self.registry.db.execute("UPDATE observations SET payload=?", (b'corrupt',))
+        self.assertEqual('unknown_quote_storage_format', self.read()['rejected'][0]['reason'])
+
     def test_scope_isolation(self):
         for field,value in [('account','b'),('mode','live'),('strategy','other'),('ticker','QQQ'),('version','v2')]:
             with self.subTest(field=field), self.assertRaisesRegex(ValueError,'scope_mismatch'):

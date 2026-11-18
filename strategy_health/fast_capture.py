@@ -4,6 +4,7 @@ Registrations are capture requests, never experiment enrollment or order intents
 Source databases are read-only. Old holding archives are not changed.
 """
 import argparse
+from strategy_health.quote_storage import encode_text
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -168,7 +169,7 @@ class Registry:
                 raw=by_symbol.get(symbol,{'symbol':symbol,'capture_error':'missing_provider_quote'})
                 valid=quote_validation(raw,received)
                 fresh+=int(valid=='fresh'); missing+=int(symbol not in by_symbol)
-                observations.append((symbol,received_text,requested_text,valid,json.dumps(raw,allow_nan=False)))
+                observations.append((symbol,received_text,requested_text,valid,encode_text(json.dumps(raw,allow_nan=False))))
                 if symbol not in existing:
                     previous=prior.get(symbol)
                     gap=max(0,(received-stamp(previous)).total_seconds()) if previous else 0
