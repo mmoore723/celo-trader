@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = 'quote-compression-20261118.1'
+REVISION = 'exit-quote-latency-20261118.1'
 MANIFEST = 'config/runtime_reviews/' + REVISION + '.json'
 
 

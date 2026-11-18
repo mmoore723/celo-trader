@@ -84,16 +84,18 @@ class AlpacaCoreMixin:
             raise _AlpacaCircuitOpenError(
                 f"circuit open until {_cb_open_until:.0f} — skipping {url}"
             )
+        from broker.read_budget import request_policy
+        timeout, retries = request_policy(url.startswith(self.data + "/"))
         def call():
             with _LatencyTimer(logger, "alpaca_http_get", url=url):
-                r = requests.get(url, headers=self.headers, params=params, timeout=10)
+                r = requests.get(url, headers=self.headers, params=params, timeout=timeout)
                 r.raise_for_status()
                 data = r.json()
                 if data is None:
                     raise ValueError(f"Empty JSON response from {url}")
                 return data
         try:
-            result = _retry(call)
+            result = _retry(call, retries=retries)
             _cb_record_success()   # successful call resets the failure counter
             return result
         except requests.exceptions.ConnectionError as e:

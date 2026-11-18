@@ -43,9 +43,11 @@ class TradierCoreMixin:
 
     def _get(self, endpoint: str, params: dict = None) -> dict:
         url = f"{self.base}{endpoint}"
+        from broker.read_budget import request_policy
+        timeout, retries = request_policy(endpoint.startswith("/markets/"))
         def call():
             with _LatencyTimer(logger, "tradier_http_get", endpoint=endpoint):
-                r = requests.get(url, headers=self.headers, params=params, timeout=10)
+                r = requests.get(url, headers=self.headers, params=params, timeout=timeout)
                 r.raise_for_status()
                 # Tradier sandbox endpoints occasionally return an empty body
                 # (e.g. /markets/fundamentals/calendars on free-tier keys).
@@ -97,7 +99,7 @@ class TradierCoreMixin:
                         )
                     return {}
         try:
-            result = _retry(call)
+            result = _retry(call, retries=retries)
             # 2026-07-31: clear the alert window on a good call — see broker_health.py
             try:
                 from broker_health import record_broker_success

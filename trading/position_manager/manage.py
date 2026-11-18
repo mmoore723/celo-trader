@@ -307,7 +307,10 @@ def _manage_open_position(
                             bid_price=exit_bid, reference_quote=exit_quote,
                             pricing_unavailable=exit_bid is None)
             return
-        quote = tradier.get_option_quote(trade["contract_symbol"])
+        from contextlib import nullcontext
+        from broker.read_budget import market_read_budget
+        with market_read_budget(2) if _replacement_profit else nullcontext():
+            quote = tradier.get_option_quote(trade["contract_symbol"])
         note('option_quote_received_by_manager',quote)
         alpaca_positions = alpaca.get_positions()
         alpaca_pos = next(
@@ -419,7 +422,7 @@ def _manage_open_position(
         _minute_key = now_et.strftime("%Y-%m-%d %H:%M")
         df_under: Optional[pd.DataFrame] = ps.get("cached_underlying_df")
 
-        if ps.get("last_bar_fetch_minute") != _minute_key:
+        if not _replacement_profit and ps.get("last_bar_fetch_minute") != _minute_key:
             try:
                 from signals import bars_to_df
                 _bars, _err, _ = alpaca.get_session_bars(ticker, "1Min")
@@ -446,7 +449,8 @@ def _manage_open_position(
         if ps.get("last_5m_fetch_key") != _5m_bar_key:
             try:
                 from signals import bars_to_df as _btd
-                _b5, _e5, _ = alpaca.get_session_bars(ticker, "5Min")
+                with market_read_budget(2) if _replacement_profit else nullcontext():
+                    _b5, _e5, _ = alpaca.get_session_bars(ticker, "5Min")
                 if _b5 and not _e5:
                     df_5m = _btd(_b5)
                     ps["cached_5m_df"]      = df_5m
@@ -458,11 +462,12 @@ def _manage_open_position(
         import json as _policy_json
         _policy_context=trade.get('strategy_context_json') or {}
         if isinstance(_policy_context,str):_policy_context=_policy_json.loads(_policy_context)
-        _failsafe_frame = configured_frame(alpaca,ticker,_policy_context.get('premium_exit_policy'),now_et,ps,df_5m)
+        with market_read_budget(2) if _replacement_profit else nullcontext():
+            _failsafe_frame = configured_frame(alpaca,ticker,_policy_context.get('premium_exit_policy'),now_et,ps,df_5m)
 
         _15m_bar_key = now_et.strftime("%Y-%m-%d %H:") + str(now_et.minute // 15)
         df_15m: Optional[pd.DataFrame] = ps.get("cached_15m_df")
-        if ps.get("last_15m_fetch_key") != _15m_bar_key:
+        if not _replacement_profit and ps.get("last_15m_fetch_key") != _15m_bar_key:
             try:
                 from signals import bars_to_df as _btd
                 _b15, _e15, _ = alpaca.get_session_bars(ticker, "15Min")
@@ -475,7 +480,7 @@ def _manage_open_position(
 
         _1h_bar_key = now_et.strftime("%Y-%m-%d %H")
         df_1h: Optional[pd.DataFrame] = ps.get("cached_1h_df")
-        if ps.get("last_1h_fetch_key") != _1h_bar_key:
+        if not _replacement_profit and ps.get("last_1h_fetch_key") != _1h_bar_key:
             try:
                 from signals import bars_to_df as _btd
                 _b1h, _e1h = alpaca.get_bars(ticker, "1Hour", limit=100)
@@ -750,6 +755,12 @@ def _manage_open_position(
             result = ps.get('compression_repair_frame', pd.DataFrame())
             note('compression_bars_lookup_result',result)
             return result
+        if _replacement_profit:
+            # Validate at the actual decision clock, after any candle fetch.
+            from trading.position_manager.quote_check import refresh_exit_quote
+            quote, now_et = refresh_exit_quote(tradier, trade, quote, _now_et)
+            bid_price = float(quote.get("bid") or current_price) if quote else current_price
+
         _reviewed_exit = _evaluate_reviewed_strategy_exit(
             trade,
             entry_time,

@@ -7,7 +7,7 @@ import re
 def is_failsafe_reason(reason):
     return bool(re.fullmatch(r"adverse_\d+x\d+m_[0-9.]+pct_loss", str(reason or "")))
 
-from strategy_health.premium_rules import clock, valid_quote
+from strategy_health.premium_rules import clock, quote_validation
 
 TIMEFRAMES = (1,2,3,4,5,10,15,20,30,60)
 
@@ -71,7 +71,8 @@ def apply(state, *, trade, quantity, sold, quote, now, frame, spec=None):
         return out,None
     check=candle_check(frame,trade['entry_time'],now,trade.get('option_type'),spec['consecutive_candles'],spec['timeframe_minutes'])
     out['failsafe_check']=check
-    q=valid_quote(quote,now,quantity,trade['contract_symbol'])
+    q, validation=quote_validation(quote,now,quantity,trade['contract_symbol'])
+    out['failsafe_quote_check']=validation
     if not q:
         out['failsafe_status']='waiting_for_fresh_sized_option_bid'
         return out,None

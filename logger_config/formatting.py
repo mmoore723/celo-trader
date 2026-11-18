@@ -37,6 +37,7 @@ class _JsonFormatter(logging.Formatter):
             "timestamp":   self.formatTime(record, datefmt="%Y-%m-%dT%H:%M:%S"),
             "level":       record.levelname,
             "module_name": record.name,
+            "thread_name": record.threadName,
             "line_number": record.lineno,
             "message":     record.getMessage(),
         }

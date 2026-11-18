@@ -149,7 +149,9 @@ logger = logging.getLogger("celo_trader.trading_logic")
 # ── Per-tick evaluation ───────────────────────────────────────────────────────
 
 from config.engine_parameters import entry_cycle
+from broker.read_budget import entry_read_scope, start_entry_read_budget
 
+@entry_read_scope
 @entry_cycle
 def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
           scan_ticker: str | None = None, execution_only: bool = False) -> None:
@@ -487,6 +489,9 @@ def _tick(alpaca: AlpacaClient, tradier: TradierClient, *,
     else:
         _US["status"] = "collecting_data"
 
+    # Slow entry data must yield to the next position-protection pass.
+    # Order and account requests retain their existing handling.
+    start_entry_read_budget(open_trades)
     settings = get_settings()
     # This value is needed by the router-observation lane below, long before
     # order placement.  Keep one source of truth for the whole tick so paper

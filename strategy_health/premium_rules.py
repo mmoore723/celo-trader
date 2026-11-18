@@ -49,22 +49,43 @@ def clock(value):
     return (t.replace(tzinfo=ZoneInfo('America/New_York')) if t.tzinfo is None else t).astimezone(timezone.utc)
 
 
-def valid_quote(quote, received, quantity, symbol=None):
-    """Reject missing sizes, stale or future clocks, crossed markets and wrong contracts."""
+def quote_validation(quote, received, quantity, symbol=None):
+    """Explain the existing quote gates without relaxing any requirement."""
+    details = {'required_size': quantity, 'max_age_seconds': MAX_AGE, 'reasons': []}
+    reasons = details['reasons']
     try:
-        if not isinstance(quote, dict) or quantity <= 0: return None
-        if symbol and quote.get('symbol') != symbol: return None
-        vals = [quote.get(k) for k in ('bid', 'ask', 'bidsize', 'asksize')]
-        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in vals): return None
-        bid, ask, size, asksize = vals
-        if not 0 < bid <= ask or size < quantity or asksize <= 0: return None
         now = clock(received)
+        details['evaluated_at'] = now.isoformat()
+        if not isinstance(quote, dict) or quantity <= 0:
+            reasons.append('quote_or_quantity_unavailable')
+            return None, details
+        if symbol and quote.get('symbol') != symbol:
+            reasons.append('wrong_contract')
+        vals = [quote.get(k) for k in ('bid', 'ask', 'bidsize', 'asksize')]
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in vals):
+            reasons.append('invalid_price_or_size')
+            return None, details
+        bid, ask, size, asksize = vals
+        details.update(bid=bid, ask=ask, bid_size=size, ask_size=asksize)
+        if not 0 < bid <= ask: reasons.append('invalid_or_crossed_market')
+        if size < quantity: reasons.append('insufficient_bid_size')
+        if asksize <= 0: reasons.append('missing_ask_size')
         stamps = [datetime.fromtimestamp(float(quote[k])/1000, timezone.utc) for k in ('bid_date', 'ask_date')]
-        if any(not 0 <= (now-t).total_seconds() <= MAX_AGE for t in stamps): return None
+        for side, stamp in zip(('bid', 'ask'), stamps):
+            age = (now-stamp).total_seconds()
+            details[side+'_age_seconds'] = age
+            if age < 0: reasons.append(side+'_timestamp_in_future')
+            elif age > MAX_AGE: reasons.append(side+'_stale')
+        if reasons: return None, details
         return dict(bid=bid, ask=ask, bid_size=size, bid_at=stamps[0].isoformat(),
-                    ask_at=stamps[1].isoformat(), received_at=now.isoformat())
+                    ask_at=stamps[1].isoformat(), received_at=now.isoformat()), details
     except (ValueError, TypeError, KeyError, OverflowError):
-        return None
+        reasons.append('invalid_timestamp_or_input')
+        return None, details
+
+
+def valid_quote(quote, received, quantity, symbol=None):
+    return quote_validation(quote, received, quantity, symbol)[0]
 
 
 def advance(rule, state, *, entry, quantity, quote, received, symbol=None):
