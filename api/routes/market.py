@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 import pytz
 from pathlib import Path
+from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from api.models import Bar, Quote, ScannerResult, OptionsChainRow
 from trading.state import _now_et
@@ -45,6 +46,24 @@ def _market_is_open() -> bool:
         return False
     hm = now.hour * 60 + now.minute
     return 9 * 60 + 30 <= hm < 16 * 60
+
+
+@router.get("/archived-bars/{ticker}")
+def get_archived_bars(
+    ticker: str,
+    timeframe: Literal["1Min", "5Min", "15Min", "1Hour"] = "1Min",
+    period: Literal["5D", "1M", "3M"] = "5D",
+):
+    from config import get_user_data_dir
+    from api.routes.archived_chart import archived_chart
+    import time
+    import sqlite3
+    import zlib
+    try:
+        return archived_chart(str(get_user_data_dir(create=False) / "session_capture" / "session_capture.sqlite3"),
+                              ticker.upper(), timeframe, period, int(time.time() // 60))
+    except (sqlite3.Error, zlib.error, ValueError, KeyError, TypeError):
+        raise HTTPException(status_code=503, detail="Saved chart history could not be read. Try again shortly.")
 
 
 @router.get("/bars/{ticker}", response_model=list[Bar])

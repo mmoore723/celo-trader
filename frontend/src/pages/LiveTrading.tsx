@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import { exitReason, strategyName as readableStrategy } from "../lib/strategyIdentity.js";
 import { ChevronDown, Newspaper, RefreshCw, Radio, Bot } from "lucide-react";
 import { BoomerangReplay, type BoomerangReplayHandle } from "../components/charts/BoomerangReplay";
+import { useAuth } from "../contexts/AuthContext";
 import { useBotStore } from "../store/bot";
 import { api, type Trade, type ChartAnnotation, type NewsArticle, type ScannerOpportunity } from "../lib/api";
 import { setupDrawings } from "../lib/setupDrawings";
@@ -137,6 +138,7 @@ function toDiscordStr(ev: any): string {
 }
 
 export function LiveTrading() {
+  const { user } = useAuth();
   const [ticker,          setTicker]          = useState("SPY");
   const [tf,              setTf]              = useState("1Min");
   const [period,          setPeriod]          = useState<Period>("1D");
@@ -207,18 +209,17 @@ export function LiveTrading() {
   const barsRefetchMs = tf === "1Min" ? 15_000 : tf === "5Min" ? 30_000 : 60_000;
 
   // ── Data queries ────────────────────────────────────────────────────────────
-  // 1-minute bars: yfinance only reliably serves ~1 trading day.
-  // Requesting 5D/1M/3M of 1-minute data makes the API fail, which triggers
-  // an unhandled promise rejection → React error boundary → red outline on chart.
-  // Cap to 1D silently when the user picks 1m.
-  const effectivePeriod: Period = tf === "1Min" && period !== "1D" ? "1D" : period;
-
-  const { data: bars = [], isLoading: barsLoading } = useQuery({
-    queryKey: ["bars", ticker, tf, effectivePeriod, "premarket"],
-    queryFn: () => api.market.bars(ticker, tf, barLimitForPeriod(tf, effectivePeriod), true),
-    refetchInterval: barsRefetchMs,
-    retry: false,   // fail fast — retries pile up and delay visible feedback
+  const effectivePeriod = period;
+  const { data: chartHistory, isLoading: barsLoading, error: barsError } = useQuery({
+    queryKey: ["bars", user?.user_id ?? user?.email, ticker, tf, effectivePeriod, "archive-aware"],
+    queryFn: async () => effectivePeriod === "1D"
+      ? { bars: await api.market.bars(ticker, tf, barLimitForPeriod(tf, effectivePeriod), true), coverage: null }
+      : api.market.archivedBars(ticker, tf, effectivePeriod).then(history => ({ bars: history.bars, coverage: history })),
+    refetchInterval: effectivePeriod === "1D" ? barsRefetchMs : 60_000,
+    retry: false,
   });
+  const bars = useMemo(() => chartHistory?.bars ?? [], [chartHistory]);
+  const historyCoverage = chartHistory?.coverage;
 
   // Mid-session, even a one-day-sized tail can include yesterday because the
   // current session is not complete yet.  A 1D chart must display one actual
@@ -674,6 +675,17 @@ export function LiveTrading() {
           {displayedTrade && <div className="px-3 py-2 text-xs text-ink-muted">
             Stock-price risk/reward references for trade #{displayedTrade.id}. Option premium paid: ${displayedTrade.entry_price.toFixed(2)} x 100 x {displayedTrade.contracts} contracts.
             {stockPositionLevels.filter(row => row.type === "zone").length < 2 ? " Some stock entry/stop/target levels were not recorded; missing boxes are not invented." : " Stock moves are not option-dollar P&L."}
+          </div>}
+          {barsError && <div role="alert" className="px-3 py-2 text-sm">Chart data could not be loaded. No substitute candles are shown.</div>}
+          {historyCoverage && <div className="px-3 py-2 text-xs text-ink-muted">
+            Saved candles: {historyCoverage.dates[0]} through {historyCoverage.dates.at(-1)} · 4 AM to 4 PM Eastern.
+            <details><summary>Data coverage: {historyCoverage.missing_dates.length} dates without bars; {historyCoverage.gaps.reduce((n, g) => n + g.minutes, 0)} missing minutes on available dates</summary>
+              <p>{historyCoverage.note}</p>
+              <p>{historyCoverage.recovered_minutes} candles arrived over five minutes late. Historical display is not proof they were available during trading. VWAP and indicators use available candles only.</p>
+              <p>{historyCoverage.partial_buckets_omitted} incomplete larger candles omitted.</p>
+              {historyCoverage.missing_dates.length > 0 && <p>No saved bars: {historyCoverage.missing_dates.join(", ")}</p>}
+              <div style={{maxHeight: 160, overflowY: "auto"}}>{historyCoverage.gaps.map(g => <div key={g.start}>{g.start.slice(0,16).replace("T", " ")} to {g.end.slice(11,16)} ET: {g.minutes} minutes unavailable</div>)}</div>
+            </details>
           </div>}
           <div className="px-3 py-2 text-xs text-ink-muted">Day view includes available premarket candles from 4 AM Eastern. Green Buy arrows show entries. Red Sell arrows show exits. Trading hours are unchanged.</div>
           {showSwings && <details className="px-3 py-1 text-xs text-ink-muted">

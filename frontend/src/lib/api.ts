@@ -1372,6 +1372,7 @@ export const api = {
     alpacaDailyPnl: () => request<{date:string; pnl:number}[]>("/api/trades/alpaca-daily-pnl"),
   },
   market: {
+    archivedBars: (ticker: string, tf: string, period: string) => request<{bars: Bar[]; source: string; dates: string[]; missing_dates: string[]; gaps: {start: string; end: string; minutes: number}[]; partial_buckets_omitted: number; recovered_minutes: number; note: string}>(`/api/market/archived-bars/${ticker}?timeframe=${tf}&period=${period}`),
     bars:    (ticker: string, tf="5Min", limit=400, premarket=false) => request<Bar[]>(`/api/market/bars/${ticker}?timeframe=${tf}&limit=${limit}&premarket=${premarket}`),
     quotes:  (tickers: string) => request<Quote[]>(`/api/market/quotes?tickers=${tickers}`),
     scanner:   () => request<ScannerResult[]>("/api/market/scanner"),
