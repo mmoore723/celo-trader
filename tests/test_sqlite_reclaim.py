@@ -19,11 +19,10 @@ class ReclaimTests(unittest.TestCase):
             before=list(db.iterdump());db.close()
             plan=leaf_ranges(path)
             self.assertGreater(plan['leaf_pages'],0)
-            def zero_unused(args,check):
-                offset=int(args[4]);length=int(args[6])
-                with path.open('r+b') as f:f.seek(offset);f.write(b'\0'*length)
+            def zero_unused(fd,offset,length):
+                os.pwrite(fd,b'\0'*length,offset)
             digest=hashlib.sha256(path.read_bytes()).hexdigest()
-            with patch('deploy.sqlite_reclaim.subprocess.run',side_effect=zero_unused):
+            with patch('deploy.sqlite_reclaim.punch_range',side_effect=zero_unused):
                 result=reclaim(path,apply=True,backup_sha256=digest)
             self.assertTrue(result['applied'])
             with sqlite3.connect(path) as db:

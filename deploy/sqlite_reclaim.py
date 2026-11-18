@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import sqlite3
 import struct
-import subprocess
+import ctypes
 
 
 def leaf_ranges(path):
@@ -69,6 +69,17 @@ def active_hash(path,ranges):
     return digest.hexdigest()
 
 
+def punch_range(fd, offset, length):
+    """Use the same Linux fallocate operation without spawning a process per page."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    call = libc.fallocate
+    call.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_longlong, ctypes.c_longlong]
+    call.restype = ctypes.c_int
+    if call(fd, 0x03, offset, length) != 0:  # KEEP_SIZE | PUNCH_HOLE
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
 def reclaim(path, *, apply=False, backup_sha256=None):
     path=Path(path).absolute()
     if path.is_symlink() or not path.is_file():raise ValueError('unsafe_database_path')
@@ -77,6 +88,7 @@ def reclaim(path, *, apply=False, backup_sha256=None):
     db=sqlite3.connect('file:'+str(path)+'?mode=rw',uri=True,timeout=1)
     try:
         if db.execute('PRAGMA journal_mode').fetchone()[0]!='delete':raise ValueError('requires_offline_rollback_journal_mode')
+        db.execute('PRAGMA cache_size=-65536')
         db.execute('BEGIN EXCLUSIVE')
         if db.execute('PRAGMA integrity_check').fetchall()!=[('ok',)]:raise ValueError('pre_integrity_failed')
         plan=leaf_ranges(path)
@@ -89,9 +101,10 @@ def reclaim(path, *, apply=False, backup_sha256=None):
             for block in iter(lambda:stream.read(4*1024*1024),b''):full.update(block)
         if full.hexdigest()!=backup_sha256:raise ValueError('database_changed_since_backup')
         protected=active_hash(path,plan['ranges'])
-        for offset,length in plan['ranges']:
-            subprocess.run(['fallocate','--punch-hole','--keep-size','--offset',str(offset),'--length',str(length),str(path)],check=True)
-        with path.open('rb') as stream:os.fsync(stream.fileno())
+        with path.open('r+b') as stream:
+            for offset,length in plan['ranges']:
+                punch_range(stream.fileno(), offset, length)
+            os.fsync(stream.fileno())
         if active_hash(path,plan['ranges'])!=protected:raise RuntimeError('PROTECTED_BYTES_CHANGED_RESTORE_BACKUP')
         if db.execute('PRAGMA integrity_check').fetchall()!=[('ok',)]:raise RuntimeError('POST_INTEGRITY_FAILED_RESTORE_BACKUP')
         result.update(applied=True,protected_sha256=protected,allocated_after=path.stat().st_blocks*512,recovered_bytes=before-path.stat().st_blocks*512)
