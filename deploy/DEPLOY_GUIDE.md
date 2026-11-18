@@ -187,3 +187,28 @@ writer's encode_text call to write plain JSON, then release via deploy.sh. Mixed
 formats remain readable. Never roll back to a reader without the decoder after
 compressed observations have been written. Asset cleanup can be disabled; old
 web assets can be restored from their original Git commit.
+
+
+### Offline reclamation without a second server database copy
+
+`deploy/sqlite_reclaim.py` is a manual maintenance tool, not an automatic release
+step. It releases only SQLite freelist leaf pages using Linux hole punching.
+Freelist trunks and every live byte, including all indexes, are protected.
+This reduces allocated disk blocks, not the database's logical file length.
+
+Finish quote migration first. Stop every writer to this database and verify the
+market is closed. Checkpoint WAL and switch this database to DELETE journal mode.
+Stream a complete gzip backup to separate storage, verify its decompressed SHA256
+against the frozen database and confirm sufficient backup capacity. Keep that
+backup. Never use an unverified or same-disk backup as justification to proceed.
+Run dry-run, then apply with `--backup-sha256` from the verified full backup.
+The tool requires an exclusive SQLite lock, passes integrity_check before and
+after, validates every freelist pointer, and compares SHA256 of ALL bytes outside
+the unused leaf ranges. On any failure stop and investigate before resuming.
+Rollback is to restore the verified full backup while writers remain stopped.
+Restore WAL mode after success, restart the previously running services, and
+verify capture and settings. Trading rules and settings are outside this tool.
+
+Never punch a freelist trunk, an active page or a file with an active WAL. Do not
+use this tool against unsupported filesystems. Test actual fallocate behavior on
+a disposable database on the target Linux filesystem before the evidence archive.

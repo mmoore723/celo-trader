@@ -44,6 +44,7 @@ PRODUCTION_PATHS=(
   deploy/DEPLOY_GUIDE.md
   deploy/celo-dashboard-logrotate
   deploy/celo-journald.conf
+  deploy/sqlite_reclaim.py
   deploy/generated_asset_retention.py
   deploy/release_retention.py
   docs/adr/0004-atomic-tradier-broker-cutover.md
