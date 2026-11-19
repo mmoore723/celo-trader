@@ -191,6 +191,8 @@ def save(settings,sid,ticker,version,expected,entry,actor,risk=None,profit=None,
         if settings.get('paper_trading') is not True or not assigned or assigned.get('rule')!='trend_partial_profit' or not assigned.get('replace_native_exit'):
             raise ValueError('This pair does not have an assigned paper partial-profit exit')
         content['profit']=validate_profit(profit)
+        from trading.chart_invalidation_exit import validate as validate_chart
+        validate_chart({**assigned,**content['profit']})
         content['base_policy_fingerprint']=assigned['fingerprint']
     if contract_timer is not None:
         from config.research_pair_policy import build
@@ -247,11 +249,16 @@ def validate_risk(values):
 def validate_profit(values):
     from trading.trend_profit_exit import valid_thresholds
     from trading.adverse_candle_exit import validate
-    if not isinstance(values,dict) or not {'gain_pct','giveback_pct','adverse_candle_failsafe'}<=set(values) or set(values)-{'gain_pct','giveback_pct','adverse_candle_failsafe','partial_sell_pct'}:
+    if not isinstance(values,dict) or not {'gain_pct','giveback_pct','adverse_candle_failsafe'}<=set(values) or set(values)-{'gain_pct','giveback_pct','adverse_candle_failsafe','partial_sell_pct','chart_invalidation_exit'}:
         raise ValueError('Profit settings must include gain, giveback and the candle fail-safe')
     policy={**values,'configuration_editor':1}
     if not valid_thresholds(policy):raise ValueError('Profit gain must be above 0% and at most 1000%; giveback above 0% and at most 99%; first-sale amount above 0% and below 100%')
     validate(policy)
+    chart=values.get('chart_invalidation_exit')
+    if chart is not None:
+        from trading.chart_invalidation_exit import SPEC
+        if chart != SPEC or values.get('adverse_candle_failsafe') is not None:
+            raise ValueError('Chart protection replaces candle-and-loss protection')
     return values
 
 def profit_selection(settings,sid,ticker,version,assignment):

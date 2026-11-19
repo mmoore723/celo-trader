@@ -443,7 +443,7 @@ def _manage_open_position(
         _5m_bar_key = now_et.strftime("%Y-%m-%d %H:") + str(now_et.minute // 5)
         from trading.trend_profit_exit import replacement_policy
         _replacement = replacement_policy(trade)
-        if _replacement and _replacement.get('adverse_candle_failsafe'):
+        if _replacement and (_replacement.get('adverse_candle_failsafe') or _replacement.get('chart_invalidation_exit')):
             _5m_bar_key = _minute_key  # Retry late closed bars without a five-minute blind window.
         df_5m: Optional[pd.DataFrame] = ps.get("cached_5m_df")
         if ps.get("last_5m_fetch_key") != _5m_bar_key:

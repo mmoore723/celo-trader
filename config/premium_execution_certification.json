@@ -1,24 +1,25 @@
 {
   "version": "premium-exits-v2",
   "passed": true,
-  "validation": "71 premium rules, execution and runtime integrity checks passed offline after lossless quote reader integration; 88 focused storage, spool and archive checks passed. No trading policy changes. Not live-validated.",
+  "validation": "QQQ-only chart invalidation integration; regression results recorded before release. Not profitability validated.",
   "focused_premium_tests": 71,
-  "checked_at": "2026-11-18T05:45:12.052215+00:00",
+  "checked_at": "2026-11-19T10:16:52.134384+00:00",
   "sources": {
-    "strategy_health/premium_rules.py": "4d28d392a77048a7b373070a5d4aef25f06009d267c37c3893ddcf05f3471bc2",
+    "strategy_health/premium_rules.py": "2e7b6ee90c2f0924933fbe0e5ddf74709d240beee8a002fb2c9fd04981311509",
     "strategy_health/premium_research.py": "f23654102390e64d813d67db4cc5d070724b8e0198a6228701fd9c9ce3c9aca5",
     "strategy_health/premium_native.py": "90094ca0b5d8a3ca45eb444b8330c3a6fd57820bf002822b6b08f648d03ae061",
     "strategy_health/premium_approval.py": "390fba942f726f6f946993a11c6200597d4c2d2d6032274849bb564693dd6c05",
-    "trading/premium_policy.py": "c07252bb4b0d486d17e360dae2bf0e8f9534e3d8ea8ed29d31fc2f9aac8d4378",
+    "trading/premium_policy.py": "d0bd170a8c8259b6650c090f13e697fa8fcbef69144f0c9751dc85dde3fc466f",
     "trading/position_manager/close.py": "66cf44f64e76f622a5da2eb30cc00c806c07cf27e29c865cb72e252b644feb53",
-    "trading/position_manager/manage.py": "452a631433fe2d6008de12a35e4fb0094606dfbbb6b31f584eca40a1775ee70e",
-    "trading/entry/tick.py": "d44178ae857e7350d2f09263f311c545d0bbd32fe71fff0b7a629238900cfe25",
+    "trading/position_manager/manage.py": "900fe9c74e6016de1b034eae282a4a4fab764a5ecb51ae0bdce1ebcdd754fb50",
+    "trading/entry/tick.py": "2116e552c5637b8de46ad41ce53f603c37516af90febe57731be8949f4a7e2d1",
     "broker/alpaca_orders.py": "887c38ebf184bdf8a2723ed69bfac4bda92c7bfc25639eedda0a511c767cfd17",
     "broker/tradier_execution.py": "ebf07a9e45111e92558b97a1082a8a67161dfbf1601bbbe9a4b60b4747b9d642",
-    "trading/trend_profit_exit.py": "a31966cc1edbbc30633fb41dc134be0e2685678e01287efe1a5c64b943816729",
+    "trading/trend_profit_exit.py": "0538d4136e06743929ee5a32ae862e40f3c1f9007c331aa9752c3c0b23f22cd6",
     "trading/recovery_state.py": "325fed6389593d1adad2bbd041252fd8e6068c049210aa7467ffd29631b1e286",
     "trading/position_manager/exit_preflight.py": "8f59fa88a083c7289d9cc02a268c330a1f99f05586935468c6a6aff76aeaa016",
-    "trading/adverse_candle_exit.py": "6b945facea5e2337230e4102acffa383a960b32dba228f96d7c4f0ad56853d8e",
-    "strategy_health/quote_storage.py": "fcd6e54621ed32281df204baff7f19bac5124e726dffb0fd97c10a52c1b407c7"
+    "trading/adverse_candle_exit.py": "ff38ddab5bc90976dc6761d9ab04a287436e09ef5c80295154c0e2404be9d1ff",
+    "strategy_health/quote_storage.py": "fcd6e54621ed32281df204baff7f19bac5124e726dffb0fd97c10a52c1b407c7",
+    "trading/chart_invalidation_exit.py": "534ce187cdc996b00de03dd2cd0cf3ceec7650ff4789af6f89cdf8236d5cf64b"
   }
 }

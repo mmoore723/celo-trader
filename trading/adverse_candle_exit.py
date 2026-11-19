@@ -5,7 +5,7 @@ import math
 import re
 
 def is_failsafe_reason(reason):
-    return bool(re.fullmatch(r"adverse_\d+x\d+m_[0-9.]+pct_loss", str(reason or "")))
+    return reason == 'chart_invalidation_1x5m' or bool(re.fullmatch(r"adverse_\d+x\d+m_[0-9.]+pct_loss", str(reason or "")))
 
 from strategy_health.premium_rules import clock, quote_validation
 

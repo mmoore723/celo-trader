@@ -103,6 +103,8 @@ def replacement_policy(trade):
         raise ValueError('Invalid frozen replacement profit policy')
     from trading.adverse_candle_exit import validate
     validate(policy)
+    from trading.chart_invalidation_exit import validate as validate_chart
+    validate_chart(policy)
     return policy
 
 
@@ -113,5 +115,7 @@ def policy_label(policy):
     if policy.get('adverse_candle_failsafe'):
         spec=policy['adverse_candle_failsafe']
         suffix += f"; before +{gain}%, sell all after {spec['consecutive_candles']} adverse completed {spec['timeframe_minutes']}-minute candles AND {spec['loss_pct']}% option loss"
+    if policy.get('chart_invalidation_exit'):
+        suffix += f'; before +{gain}%, sell all when one completed 5-minute candle closes beyond the original setup invalidation level'
     amount='half' if policy.get('partial_sell_pct',50)==50 else str(policy['partial_sell_pct'])+'%'
     return f'Take {amount} at +{gain}%, then {giveback}% peak-profit giveback'+suffix

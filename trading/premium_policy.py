@@ -66,6 +66,8 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
         return False,'hold'
     from trading.adverse_candle_exit import validate as validate_failsafe
     spec=validate_failsafe(policy)
+    from trading.chart_invalidation_exit import validate as validate_chart
+    chart_spec=validate_chart(policy)
     previous=context.get('premium_exit_state') or {}
     if policy['rule'] == TREND_RULE:
         if (trade.get('strategy_id'), trade.get('ticker')) not in PAIRS:
@@ -79,6 +81,11 @@ def evaluate(conn, trade, quote, now, *, native_exit=False, native_reason='hold'
             from trading.adverse_candle_exit import apply
             state, protection=apply(state,trade=trade,quantity=int(current[0]),sold=sold_quantity(conn,trade),
                                    quote=quote,now=now,frame=five_minute_bars,spec=spec)
+            if protection: decision=protection
+        if chart_spec:
+            from trading.chart_invalidation_exit import apply as apply_chart
+            state, protection=apply_chart(state,trade=trade,quantity=int(current[0]),sold=sold_quantity(conn,trade),
+                                          quote=quote,now=now,frame=five_minute_bars)
             if protection: decision=protection
     else:
         state=advance(policy['rule'],previous,entry=float(trade['entry_price']),

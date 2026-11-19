@@ -50,6 +50,7 @@ export function strategyName(name) {
 export function exitReason(reason) {
   if (!reason) return 'Exit reason not recorded';
   const key = reason.split(/[\s(]/)[0];
+  if (key === 'chart_invalidation_1x5m') return '5-Minute Setup Invalidation';
   const adverse = key.match(/^adverse_(\d+)x(\d+)m_([0-9.]+)pct_loss$/);
   if (adverse) return `${adverse[1]}-Candle / ${adverse[3]}% Loss Fail-Safe${adverse[2]==='5'?'':` (${adverse[2]}-minute candles)`}`;
   const premium = key.match(/^premium_(\d+)pct$/);
